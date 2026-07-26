@@ -1,13 +1,13 @@
 ---
 name: android-release-build
-description: Builds the WallHub Android Release APK on the configured Windows LAN build worker, receives the artifact in the LXC, and installs it on the connected ADB device. Use automatically after modifying Android source code, when validating Android changes, or when the user requests a Release APK. Do not run Gradle inside the LXC.
+description: Builds WallHub on the legacy Windows LAN worker and installs its APK from the LXC. Use only when GitHub Actions or artifact access is unavailable, or when the user explicitly requests the LAN fallback. Do not run Gradle inside the LXC.
 ---
 
 # Android Release Build And Device Install
 
 The LXC is the source of truth. The Windows build worker synchronizes the current Android source from the LXC over SMB, runs `:app:assembleRelease`, then returns the APK and log to `/root/builds`.
 
-After completing Android code changes, perform the complete build, artifact, install, and verification workflow below unless the user explicitly requests build only.
+The normal path is the `github-actions-adb-deploy` skill. Use this fallback only under its trigger conditions.
 
 ## 1. Confirm The ADB Target
 
@@ -17,14 +17,7 @@ Keep an existing ADB server running because restarting it clears wireless-debugg
 adb devices -l
 ```
 
-The configured wireless device is currently `192.168.2.190:39519`. If it is not listed, reconnect it and check again:
-
-```bash
-adb connect 192.168.2.190:39519
-adb devices -l
-```
-
-Use only a row whose state is exactly `device`. If it is `offline`, `unauthorized`, unreachable, or absent after reconnecting, report the ADB blocker. If multiple devices are online, use the user's explicitly selected serial; never install to every device implicitly.
+Use only a row whose state is exactly `device`. If no device is online, report the ADB blocker. If multiple devices are online, use the user's explicitly selected serial; never install to every device implicitly. Do not store a wireless host or port because it can change.
 
 ## 2. Request The Remote Release Build
 

@@ -14,6 +14,8 @@ Use JDK 17 or newer, Android SDK Platform 36, and Build Tools 35.0.0. The checke
 
 The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Use `./gradlew` for Linux or macOS.
 
+Do not run Gradle in the LXC. After Android source changes, automatically use the `github-actions-adb-deploy` repository skill: commit a clean `main`, run `scripts/push-build-install.sh`, and require the commit-bound GitHub Actions artifact, current ADB-device install, and cold-start verification to succeed. Use `android-release-build` only as an explicit or outage fallback.
+
 ## Coding Style & Naming Conventions
 
 Follow Kotlin's official style (`kotlin.code.style=official`): four-space indentation, trailing commas in multiline declarations and calls, and Android Studio's import ordering. Use `PascalCase` for classes, Compose functions, and files; `camelCase` for functions and properties; and `UPPER_SNAKE_CASE` for constants. Resource names use lowercase snake case, usually prefixed `wallhub_`. Keep shared UI in `core:designsystem`, contracts in `core:model`, and service or storage implementations in `data`. No standalone formatter is configured; `lintDebug` is the enforced static check.

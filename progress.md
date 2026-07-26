@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-本轮目标是完成发现页筛选交互、筛选 Chip、管理页工作区切换、下载选项、发现页与资料库长按菜单以及共享分页控件的优化，并完成真机回归、开发日志记录和最终 Release 构建安装。
+发现页筛选、管理页交互、菜单、分页与 MPKG 修复已完成。当前目标是把已验证的 GitHub Actions 到 ADB 路径固化为默认项目 Skill，并完成中英文 README、Logo、进展文档和开发日志的同步。
 
 ## 已完成事项
 
@@ -86,11 +86,14 @@
 - 本轮修改和真机验证已写入 `docs/development-log.md`。
 - `git diff --check` 已通过。
 - 当前源码已建立 Git 基线，首个提交为 `5e6f45f`；后续工程清理也已拆分为独立提交，可直接使用 `git diff`、`git revert` 和 `git bisect` 定位或回退。
-- 已绑定 GitHub 远程仓库 `https://github.com/ChEnLeo-7/WallHub2.0-For-Android.git`，当前环境没有 GitHub 凭据，因此尚未推送；推送后现有 GitHub Actions 将首次运行全量 JVM 测试和 `lintDebug`。
+- 已绑定并推送 GitHub 远程仓库 `https://github.com/ChEnLeo-7/WallHub2.0-For-Android.git`；GitHub API Token 由 LXC 外部配置文件按需加载，不写入仓库或日志。
 - 构建依赖已集中到 `gradle/libs.versions.toml`，零消费者的 `:core:testing` 已移除，八份重复的 `AppLanguage.text(...)` 已收敛到 `core:designsystem`。
-- GitHub Actions 工作流已调整为：完成首次推送并配置稳定签名 Secret 后，`main` 推送和手动触发将运行 `testDebugUnitTest lintDebug`、构建 Release 并上传带 commit SHA 的 APK artifact；PR 仅执行测试和 lint，不读取签名 Secret。当前 GitHub 远程仍为空，尚未实际触发过该工作流。
+- GitHub Actions 工作流已投入使用：`main` 推送和手动触发运行 `testDebugUnitTest lintDebug`、构建签名 Release 并上传带 commit SHA 的 APK artifact；PR 仅执行测试和 lint，不读取签名 Secret。
 - 新增 `scripts/push-build-install.sh` 与 `scripts/install-github-release-apk.sh`：前者推送当前干净的 `main` commit，后者只等待并下载同一 SHA 的成功 Action artifact，校验 commit 标记、SHA-256 与设备上已安装 APK 的签名证书后才执行 `adb install -r`，绝不自动卸载或绕过签名冲突。安装前会实时读取 `adb devices -l`，仅在恰有一个 `device` 状态目标时自动选择；地址和端口不写死，零个或多个目标均停止并要求明确选择。使用和 Secret 设置见 `docs/github-actions-adb.md`。
 - LAN 回退构建任务 `20260726T161036Z-991119252` 已验证 Gradle 的无 Secret debug 签名 fallback、完整 DEX、证书连续性、原位安装和冷启动；当前设备 APK 与 GitHub Actions Secret 所需证书 SHA-256 均为 `940402C12B4270F1000C61882A42EC610292AB776F28F85784D6954EA7DB074D`。
+- 首次 GitHub Actions 端到端验收已在 commit `97817431aabca35fa456d1e168c38224f94bfc1f` 完成；日常入口又在 commit `9b1b0b6c8c32c32a091460e08fe7b663da46ac39`、run `30214074910` 完成同 SHA artifact 下载、动态 ADB 选择、原位安装和冷启动验收，PID `27171` 存活且日志无致命异常、ANR 或 OOM。
+- 新增 `.opencode/skills/github-actions-adb-deploy/SKILL.md` 并在 `AGENTS.md` 设为 Android 源码修改后的默认验证流程；`android-release-build` 仅保留为 GitHub 不可用或用户明确要求时的 LAN 回退。
+- `README.md` 已重构为 GitHub 默认中文入口，新增 `README_EN.md`；两份 README 均使用由 `app/src/main/res/drawable/ic_wallhub.xml` 同源转换的 `docs/assets/wallhub-logo.svg`。
 
 ## 关键决策
 
@@ -144,46 +147,44 @@
 - 文件：`local-snapshots/wallhub-android-source-before-filter-swipe-chips-menus-pagination-20260726.tar.gz`
 - SHA-256：`4361B68FA13AAD801C0734F8DB976E9F3F5318496DCF7F39437D8EA8159EAD00`
 
-### 最终 Release
+### 最终 GitHub Actions Release
 
-- 构建任务：`20260726T161036Z-991119252`
-- 构建机：`MYCOLORFUL`
-- APK：`/root/builds/wallhub-release-20260726T161036Z-991119252.apk`
-- 大小：`30,200,591` 字节
-- SHA-256：`3214353A05F1332852285D79B02D71C404DF9437D7870435CFE5405EFC8C60F8`
+- Commit：`9b1b0b6c8c32c32a091460e08fe7b663da46ac39`
+- Action run：`30214074910`
+- Artifact：`wallhub-release-9b1b0b6c8c32c32a091460e08fe7b663da46ac39`（ID `8635348246`）
+- 大小：`30,184,207` 字节
+- SHA-256：`4F380EE17E6F2D0513BDFE0C5445E5EB29610DA2867E3E07E8BAD29427D81E4F`
 - DEX：`classes.dex` 至 `classes8.dex`
+- 签名证书 SHA-256：`940402C12B4270F1000C61882A42EC610292AB776F28F85784D6954EA7DB074D`
 - 包名：`com.wallhub.android`
 - 安装版本：`0.8.24 (34)`
-- 安装设备：`192.168.2.190:40283`
-- 设备型号：Samsung `SM_G9900`
+- 安装设备：脚本执行时唯一处于 `device` 状态的 Samsung `SM_G9900`
 - 安装结果：`adb install -r` 成功
-- 最终冷启动 PID：`23835`
+- 最终冷启动 PID：`27171`
 - 冷启动结果：进程保持存活，PID 定向日志未发现 WallHub `FATAL EXCEPTION`、ANR 或 OOM。
 
 ## 构建和环境约束
 
 - 不要在当前 LXC 中运行 Gradle。
-- 修改 Android 源码后自动使用仓库技能 `android-release-build`。
-- 远程 Release 命令：`/usr/local/bin/request-android-release-build --wait`。
-- 远程工作流当前只执行 `:app:assembleRelease`，不执行 JVM 或仪器测试。
-- 必须使用当前任务状态 JSON 返回的 artifact，不要按修改时间猜测最新 APK。
-- 远程工作区曾因失败的 Hilt/ASM 增量状态生成缺少 app class 的异常 APK；每次最终构建必须确认包含完整 DEX，并执行安装和冷启动。
+- 修改 Android 源码后自动使用仓库技能 `github-actions-adb-deploy`，唯一日常入口为 `scripts/push-build-install.sh`。
+- 默认工作流必须从干净的本地 `main` commit 出发，只接受同一 SHA 的成功 Action run 和 `wallhub-release-<commit-sha>` artifact。
+- GitHub Actions 必须通过 `testDebugUnitTest lintDebug`、稳定签名 Release 组装和 artifact 上传；LXC 脚本继续验证 commit 标记、SHA-256、ZIP、DEX、签名、安装版本与冷启动日志。
+- `android-release-build` 与 `/usr/local/bin/request-android-release-build --wait` 仅在 GitHub Actions 或 artifact 访问不可用、或用户明确要求时作为 LAN 回退；LAN 成功不能替代默认 CI 验收。
 - 当前设备连接端口可能变化；开始工作前先运行 `adb devices -l`，只使用状态为 `device` 的明确目标。
 - 保持现有 ADB server，不要无故重启，否则可能丢失无线调试会话。
 
 ## 未完成待办
 
 - 当前用户提出的七项 UI 与交互需求已全部完成，没有已知功能阻塞项。
-- 远程 Release 流程未运行新增或既有 JVM 测试；仓库已绑定 GitHub 远程并保留 `.github/workflows/verify.yml`，待从有凭据的环境首次推送后运行全量 `testDebugUnitTest lintDebug :app:assembleDebug`。
-- GitHub Actions 首次部署前，必须将签发当前 Samsung 测试设备安装包的 keystore 配置为四个 `WALLHUB_RELEASE_*` Secret；设备当前证书 SHA-256 为 `940402C12B4270F1000C61882A42EC610292AB776F28F85784D6954EA7DB074D`。未配置时 Action 将显式失败而不会发布无法原位安装的 APK。
-- 首次 GitHub Actions 端到端流程已在 commit `97817431aabca35fa456d1e168c38224f94bfc1f` 跑通：全量 JVM 测试、`lintDebug`、签名 Secret、Release 组装和 artifact 上传全部成功；LXC 下载同一 SHA artifact 后校验 SHA-256、`classes.dex` 至 `classes8.dex`、ZIP 完整性和证书，动态选择当时唯一在线 ADB 设备并完成原位安装，冷启动 PID `26012` 存活且未发现 `FATAL EXCEPTION`、ANR 或 OOM。
+- GitHub Actions 签名 Secret、全量 JVM 测试、`lintDebug`、Release artifact、动态 ADB 安装和冷启动均已实际验收，无待完成的流程迁移项。
+- 新增项目 Skill 属于 OpenCode 启动时配置；提交后需退出并重启 OpenCode，新会话才会自动发现 `github-actions-adb-deploy`。
 - Steam 会话在一次重新安装后的首次冷启动进入过可重试断线态，手动点击“重试恢复”后成功加载资料库。该现象不属于本轮 UI 回归，但如果再次出现，可单独对 Steam 会话恢复和 RPC 做故障注入诊断。
 - 设备上的 `uiautomator` 每次 dump 结束可能在 Houdini 转译层产生自身 SIGSEGV；后续检查日志时应按 WallHub PID 或包名过滤。
-- 若继续发布新 APK，需要再次更新 `docs/development-log.md`，重新远程构建、检查 DEX 和 SHA-256、安装到明确设备并完成冷启动验证。
+- 若继续发布新 APK，需要再次更新 `docs/development-log.md`，提交干净的 `main` 后运行 `scripts/push-build-install.sh`，并要求同 SHA artifact、动态 ADB 安装和冷启动验证全部成功。
 
 ## 新对话建议起点
 
 1. 先阅读本文件及 `docs/development-log.md` 的 `0.8.24 (34)` 最新记录。
 2. 运行 `adb devices -l` 确认当前设备序列号。
 3. 根据新需求检查相关源码，不要重复实现本文件中已完成的功能。
-4. 修改 Android 源码后加载 `android-release-build` 技能并执行完整远程构建、安装和冷启动验证流程。
+4. 修改 Android 源码后加载 `github-actions-adb-deploy` 技能并运行 `scripts/push-build-install.sh`；仅在 GitHub 不可用或用户明确要求时使用 `android-release-build`。

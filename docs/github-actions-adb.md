@@ -110,5 +110,6 @@ publish an APK.
 - A signing mismatch stops before installation and leaves device data intact.
 - A non-`device` ADB target stops before any download or install.
 - A dead process, fatal exception, ANR or OOM fails the post-install cold-start verification.
-- The old LAN builder remains available only as a fallback until the first
-  GitHub Actions deployment is verified end to end.
+- The old LAN builder remains available only when GitHub Actions or artifact
+  access is unavailable, or when the LAN fallback is explicitly requested.
+  The normal GitHub Actions deployment has already been verified end to end.
