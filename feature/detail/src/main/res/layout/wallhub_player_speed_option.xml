@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="72dp"
+    android:layout_height="40dp"
+    android:layout_margin="2dp"
+    android:background="@drawable/wallhub_player_speed_menu_option"
+    android:clickable="true"
+    android:focusable="true"
+    android:fontFamily="sans-serif-medium"
+    android:gravity="center"
+    android:textColor="@color/wallhub_player_speed_menu_option_text"
+    android:textSize="13sp" />

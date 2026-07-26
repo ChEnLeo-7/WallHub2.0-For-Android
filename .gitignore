@@ -1,0 +1,18 @@
+.gradle/
+.kotlin/
+build/
+**/build/
+local.properties
+.idea/
+*.iml
+
+# Local archives, recordings and source snapshots
+/archive/
+/local-artifacts/
+/local-snapshots/
+
+# Signing credentials and machine-specific configuration
+*.jks
+*.keystore
+keystore.properties
+signing.properties

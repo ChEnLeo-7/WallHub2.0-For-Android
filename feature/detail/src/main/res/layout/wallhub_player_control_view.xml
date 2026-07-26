@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merge xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <View
+        android:id="@id/exo_controls_background"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@drawable/wallhub_player_bottom_gradient" />
+
+    <FrameLayout
+        android:id="@id/exo_bottom_bar"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:layout_gravity="bottom"
+        android:background="@android:color/transparent"
+        android:layoutDirection="ltr">
+
+        <LinearLayout
+            android:id="@+id/wallhub_player_control_row"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
+
+            <com.wallhub.android.feature.detail.WallHubIconShadowImageButton
+                android:id="@id/exo_play_pause"
+                style="@style/ExoStyledControls.Button.Center.PlayPause"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="0dp"
+                android:layout_marginEnd="0dp"
+                android:background="@drawable/wallhub_player_control_chip"
+                android:elevation="0dp"
+                android:padding="8dp" />
+
+            <LinearLayout
+                android:id="@id/exo_time"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:importantForAccessibility="noHideDescendants"
+                android:layoutDirection="ltr"
+                android:paddingStart="2dp"
+                android:paddingEnd="2dp">
+
+                <TextView
+                    android:id="@id/exo_position"
+                    style="@style/ExoStyledControls.TimeText.Position"
+                    android:paddingStart="2dp"
+                    android:paddingEnd="2dp"
+                    android:textSize="12sp" />
+
+                <TextView
+                    style="@style/ExoStyledControls.TimeText.Separator"
+                    android:paddingStart="1dp"
+                    android:paddingEnd="1dp"
+                    android:text="@string/wallhub_player_time_separator"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@id/exo_duration"
+                    style="@style/ExoStyledControls.TimeText.Duration"
+                    android:paddingStart="2dp"
+                    android:paddingEnd="2dp"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <LinearLayout
+                android:id="@id/exo_basic_controls"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/wallhub_playback_speed"
+                    android:layout_width="60dp"
+                    android:layout_height="32dp"
+                    android:background="@drawable/wallhub_player_speed_selector"
+                    android:clickable="true"
+                    android:contentDescription="@string/wallhub_player_playback_speed"
+                    android:drawableEnd="@drawable/wallhub_player_expand_more"
+                    android:drawableTint="#FFFFFFFF"
+                    android:focusable="true"
+                    android:fontFamily="sans"
+                    android:gravity="center"
+                    android:paddingStart="7dp"
+                    android:paddingEnd="4dp"
+                    android:text="@string/wallhub_player_default_speed"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <com.wallhub.android.feature.detail.WallHubIconShadowImageButton
+                    android:id="@+id/wallhub_mute"
+                    android:layout_width="40dp"
+                    android:layout_height="42dp"
+                    android:background="@drawable/wallhub_player_control_chip"
+                    android:contentDescription="@string/wallhub_player_mute"
+                    android:elevation="0dp"
+                    android:padding="9dp"
+                    android:src="@drawable/wallhub_player_volume_up" />
+
+                <SeekBar
+                    android:id="@+id/wallhub_volume"
+                    android:layout_width="80dp"
+                    android:layout_height="42dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@string/wallhub_player_volume"
+                    android:max="100"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:progress="100"
+                    android:progressBackgroundTint="#66FFFFFF"
+                    android:progressTint="#FFFFFFFF"
+                    android:splitTrack="false"
+                    android:thumbTint="#FFFFFFFF" />
+
+                <com.wallhub.android.feature.detail.WallHubIconShadowImageButton
+                    android:id="@id/exo_fullscreen"
+                    style="@style/ExoStyledControls.Button.Bottom.FullScreen"
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:layout_marginStart="0dp"
+                    android:layout_marginEnd="0dp"
+                    android:background="@drawable/wallhub_player_control_chip"
+                    android:elevation="0dp"
+                    android:padding="9dp" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+
+    <View
+        android:id="@id/exo_progress_placeholder"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:layout_gravity="bottom"
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="10dp"
+        android:layout_marginBottom="42dp" />
+
+    <LinearLayout
+        android:id="@id/exo_minimal_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="8dp"
+        android:layout_marginBottom="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <com.wallhub.android.feature.detail.WallHubIconShadowImageButton
+            android:id="@id/exo_minimal_fullscreen"
+            style="@style/ExoStyledControls.Button.Bottom.FullScreen"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:layout_marginStart="0dp"
+            android:layout_marginEnd="0dp"
+            android:background="@drawable/wallhub_player_control_chip"
+            android:elevation="0dp"
+            android:padding="9dp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@id/exo_center_controls"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:orientation="horizontal"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/exo_top_controls"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <View
+            android:id="@+id/exo_media_route_button_placeholder"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:visibility="gone" />
+    </LinearLayout>
+</merge>

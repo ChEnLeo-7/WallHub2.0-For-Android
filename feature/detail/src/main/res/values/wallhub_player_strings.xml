@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wallhub_player_mute">静音</string>
+    <string name="wallhub_player_unmute">取消静音</string>
+    <string name="wallhub_player_playback_speed">播放速度</string>
+    <string name="wallhub_player_volume">播放音量</string>
+    <string name="wallhub_player_time_separator">/</string>
+    <string name="wallhub_player_default_speed">1x</string>
+    <string name="wallhub_player_speed_menu_title">播放速度</string>
+</resources>

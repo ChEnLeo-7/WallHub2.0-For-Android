@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="WallHubPlayerSpeedPopupAnimation">
+        <item name="android:windowEnterAnimation">@anim/wallhub_player_speed_popup_enter</item>
+        <item name="android:windowExitAnimation">@anim/wallhub_player_speed_popup_exit</item>
+    </style>
+</resources>
