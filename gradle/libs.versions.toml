@@ -2,7 +2,6 @@
 # Build tooling
 agp = "8.10.1"
 kotlin = "2.1.21"
-ksp = "2.1.21-2.0.2"
 hilt = "2.57.2"
 
 # AndroidX
@@ -104,4 +103,3 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }
-ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
