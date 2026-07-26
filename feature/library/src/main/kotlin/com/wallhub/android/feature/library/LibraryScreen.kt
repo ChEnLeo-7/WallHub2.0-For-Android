@@ -103,6 +103,7 @@ import com.wallhub.android.core.designsystem.WallHubSurfaceCard
 import com.wallhub.android.core.designsystem.rememberWallHubDirectionalCollapseConnection
 import com.wallhub.android.core.designsystem.formatMegabytes
 import com.wallhub.android.core.designsystem.wallHubText
+import com.wallhub.android.core.designsystem.text
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
@@ -1365,8 +1366,6 @@ private fun WorkshopType.label(language: AppLanguage): String = when (this) {
     WorkshopType.WEB -> language.text("网站", "Web")
     WorkshopType.UNKNOWN -> language.text("壁纸", "Wallpaper")
 }
-
-private fun AppLanguage.text(zh: String, en: String): String = if (this == AppLanguage.EN) en else zh
 
 private fun String.isSteamAuthorPlaceholder(): Boolean =
     this == "Steam 创作者" || startsWith("Steam 用户 ")

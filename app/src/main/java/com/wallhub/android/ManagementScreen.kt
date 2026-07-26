@@ -91,6 +91,7 @@ import com.wallhub.android.core.designsystem.WallHubFabDefaultElevation
 import com.wallhub.android.core.designsystem.WallHubFilterChip
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 import com.wallhub.android.core.designsystem.WallHubSlidingSingleChoiceControl
+import com.wallhub.android.core.designsystem.text
 import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.HomePaginationMode
@@ -1174,8 +1175,6 @@ private fun LibraryUiState.activeFilterCount(): Int =
     (if (collection != LibraryCollectionTab.SUBSCRIPTIONS) 1 else 0) +
         (if (typeFilter != LibraryTypeFilter.ALL) 1 else 0) +
         (if (paginationMode != HomePaginationMode.INFINITE_SCROLL) 1 else 0)
-
-private fun AppLanguage.text(zh: String, en: String): String = if (this == AppLanguage.EN) en else zh
 
 private fun LocalWallpaperFormatFilter.managementLabel(language: AppLanguage): String = when (this) {
     LocalWallpaperFormatFilter.ALL -> language.text("全部", "All")

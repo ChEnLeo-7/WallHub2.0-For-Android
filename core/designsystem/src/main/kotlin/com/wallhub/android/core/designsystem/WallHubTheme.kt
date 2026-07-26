@@ -94,6 +94,14 @@ val LocalWallHubLanguage = staticCompositionLocalOf { AppLanguage.ZH }
 fun wallHubText(zh: String, en: String): String =
     if (LocalWallHubLanguage.current == AppLanguage.EN) en else zh
 
+/**
+ * Selects the Chinese or English literal for an explicit [AppLanguage].
+ *
+ * Use this outside composition, or wherever the language is already resolved.
+ * Prefer [wallHubText] inside composables that can read [LocalWallHubLanguage].
+ */
+fun AppLanguage.text(zh: String, en: String): String = if (this == AppLanguage.EN) en else zh
+
 @Composable
 @Suppress("DEPRECATION")
 private fun WallHubSystemBars(

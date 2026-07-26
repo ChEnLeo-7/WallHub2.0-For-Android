@@ -196,6 +196,7 @@ import com.wallhub.android.core.designsystem.WallHubSecondaryButton
 import com.wallhub.android.core.designsystem.WallHubToastHost
 import com.wallhub.android.core.designsystem.WallHubPaginationControl
 import com.wallhub.android.core.designsystem.formatMegabytes
+import com.wallhub.android.core.designsystem.text
 import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadTaskRepository
@@ -4730,8 +4731,6 @@ private fun Set<WorkshopRating>.isRatingSelected(
 }
 
 private fun HomeUiState.text(zh: String, en: String): String = if (language == AppLanguage.EN) en else zh
-
-private fun AppLanguage.text(zh: String, en: String): String = if (this == AppLanguage.EN) en else zh
 
 private fun WorkshopSort.label(language: AppLanguage): String = when (this) {
     WorkshopSort.TRENDING -> if (language == AppLanguage.EN) "Popular" else "热门"

@@ -69,6 +69,7 @@ import com.wallhub.android.core.designsystem.WallHubContextMenuPositionProvider 
 import com.wallhub.android.core.designsystem.WallHubContextMenuSurface
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
+import com.wallhub.android.core.designsystem.text
 import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.WorkshopSummary
 
@@ -477,8 +478,6 @@ private class LibraryCardPositionHolder {
     var cardCoordinates: LayoutCoordinates? = null
     var touchCoordinates: LayoutCoordinates? = null
 }
-
-private fun AppLanguage.text(zh: String, en: String): String = if (this == AppLanguage.EN) en else zh
 
 private fun String.isSteamAuthorPlaceholder(): Boolean =
     this == "Steam 创作者" || startsWith("Steam 用户 ")

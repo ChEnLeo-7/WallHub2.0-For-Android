@@ -104,6 +104,7 @@ import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubAnimatedSelectionCheck
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import com.wallhub.android.core.designsystem.text
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
@@ -2154,8 +2155,6 @@ private fun HomePaginationMode.label(language: AppLanguage): String = when (this
     HomePaginationMode.INFINITE_SCROLL -> language.text("瀑布流拼接", "Infinite scroll")
     HomePaginationMode.PAGED -> language.text("Web 页码模式", "Web-style pages")
 }
-
-private fun AppLanguage.text(zh: String, en: String): String = if (this == AppLanguage.EN) en else zh
 
 private const val DEFAULT_CUSTOM_MONET_HEX = "#5B7AA0"
 private const val STEAM_API_KEY_URL = "https://steamcommunity.com/dev/apikey"

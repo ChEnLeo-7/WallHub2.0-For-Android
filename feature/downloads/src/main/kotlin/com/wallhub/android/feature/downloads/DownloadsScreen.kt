@@ -61,6 +61,7 @@ import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
 import com.wallhub.android.core.designsystem.formatMegabytes
 import com.wallhub.android.core.designsystem.wallHubText
+import com.wallhub.android.core.designsystem.text
 import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadRequest
@@ -653,8 +654,6 @@ private fun DownloadAction.label(language: AppLanguage): String = when (this) {
     DownloadAction.CANCEL -> language.text("取消", "Cancel")
     DownloadAction.DELETE -> language.text("删除", "Delete")
 }
-
-private fun AppLanguage.text(zh: String, en: String): String = if (this == AppLanguage.EN) en else zh
 
 private fun DownloadAction.icon() = when (this) {
     DownloadAction.PAUSE -> Icons.Outlined.Pause

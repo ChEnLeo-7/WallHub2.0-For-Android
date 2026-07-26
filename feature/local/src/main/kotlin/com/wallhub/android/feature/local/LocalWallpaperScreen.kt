@@ -98,6 +98,7 @@ import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
 import com.wallhub.android.core.designsystem.formatMegabytes
 import com.wallhub.android.core.designsystem.rememberWallHubDirectionalCollapseConnection
+import com.wallhub.android.core.designsystem.text
 import com.wallhub.android.core.model.LocalWallpaperFormat
 import com.wallhub.android.core.model.LocalWallpaperImportState
 import com.wallhub.android.core.model.LocalWallpaperResource
@@ -1704,8 +1705,6 @@ private fun formatLocalSize(bytes: Long): String = when {
     bytes < 1024L * 1024L -> "${bytes / 1024L} KB"
     else -> formatMegabytes(bytes)
 }
-
-private fun AppLanguage.text(zh: String, en: String): String = if (this == AppLanguage.EN) en else zh
 
 private val LOCAL_DETAIL_ACTION_BREAKPOINT = 460.dp
 private val LOCAL_HEADER_COLLAPSE_DISTANCE = 44.dp

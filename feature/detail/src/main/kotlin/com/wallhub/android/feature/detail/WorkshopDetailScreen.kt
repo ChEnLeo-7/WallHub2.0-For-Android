@@ -117,6 +117,7 @@ import com.wallhub.android.core.designsystem.WallHubSecondaryButton
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
 import com.wallhub.android.core.designsystem.WallHubToastHost
 import com.wallhub.android.core.designsystem.formatMegabytes
+import com.wallhub.android.core.designsystem.text
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadStatus
@@ -2269,5 +2270,3 @@ private fun ExportFormat.label(language: AppLanguage): String = when (this) {
     ExportFormat.MPKG -> language.text("MPKG（移动端）", "MPKG (mobile)")
     ExportFormat.ZIP -> language.text("ZIP 压缩包", "ZIP archive")
 }
-
-private fun AppLanguage.text(zh: String, en: String): String = if (this == AppLanguage.EN) en else zh
