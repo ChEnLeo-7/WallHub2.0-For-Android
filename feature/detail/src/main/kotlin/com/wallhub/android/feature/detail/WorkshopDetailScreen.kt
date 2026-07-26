@@ -2241,16 +2241,6 @@ private fun DownloadChoiceSheet(
     }
 }
 
-@Composable
-private fun DetailFact(label: String, value: String, onClick: (() -> Unit)? = null) {
-    Text(
-        text = "$label：$value",
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick),
-    )
-}
-
 private fun WorkshopType.label(language: AppLanguage): String = when (this) {
     WorkshopType.VIDEO -> language.text("视频", "Video")
     WorkshopType.SCENE -> language.text("场景", "Scene")

@@ -1608,29 +1608,6 @@ private fun SettingsCategoryIndex(
     }
 }
 
-@Composable
-private fun SettingsCategoryHeader(
-    category: SettingsCategory,
-    language: AppLanguage,
-) {
-    Row(
-        modifier = Modifier.padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        SettingsLeadingIcon(
-            icon = category.icon,
-            prominent = true,
-        )
-        Text(
-            text = category.label(language),
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
 private fun SteamSessionState.settingsSummary(language: AppLanguage): String = when (phase) {
     SteamSessionPhase.SIGNED_IN -> language.text("已登录：${accountName.orEmpty()}", "Signed in: ${accountName.orEmpty()}")
     SteamSessionPhase.RESTORABLE -> language.text("已保存登录状态", "Saved sign-in available")
