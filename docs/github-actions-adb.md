@@ -14,6 +14,11 @@ file and commit marker, checks the signing certificate against the APK already
 installed on the device, and finally performs `adb install -r`.
 
 It never uninstalls the app and never uses `-d` to bypass a version conflict.
+It does not store an ADB host or port: immediately before installation, it
+reads `adb devices -l` and automatically uses the one serial whose state is
+exactly `device`. If no device or multiple devices are connected, it stops
+without installing; pass `--serial <current-adb-serial>` only to explicitly
+choose among multiple connected devices.
 
 ## One-Time GitHub Setup
 
@@ -68,7 +73,14 @@ After committing a source change on `main`:
 
 ```bash
 export GITHUB_TOKEN=<fine-grained-token-if-needed>
-scripts/push-build-install.sh --serial 192.168.2.190:40283
+scripts/push-build-install.sh
+```
+
+When more than one device is currently connected, choose one explicitly from
+the `adb devices -l` output:
+
+```bash
+scripts/push-build-install.sh --serial <current-adb-serial>
 ```
 
 `GITHUB_TOKEN` is not required while the repository remains public and GitHub

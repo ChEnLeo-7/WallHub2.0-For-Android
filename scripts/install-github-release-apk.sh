@@ -4,7 +4,6 @@ set -euo pipefail
 readonly REPOSITORY="${WALLHUB_GITHUB_REPOSITORY:-ChEnLeo-7/WallHub2.0-For-Android}"
 readonly WORKFLOW_FILE="${WALLHUB_GITHUB_WORKFLOW:-verify.yml}"
 readonly APPLICATION_ID="com.wallhub.android"
-readonly DEFAULT_DEVICE="192.168.2.190:40283"
 readonly POLL_SECONDS=10
 readonly TIMEOUT_SECONDS=3600
 
@@ -17,7 +16,8 @@ only that run's signed Release APK artifact, verifies its checksum and signing
 certificate, then installs it in place on one connected ADB device.
 
 Defaults:
-  --serial  WALLHUB_ADB_SERIAL or 192.168.2.190:40283
+  --serial  Automatically select the only currently connected device.
+            Required when zero or multiple devices are connected.
   --sha     the current HEAD commit
 
 Environment:
@@ -25,9 +25,10 @@ Environment:
                                token needs Actions artifacts read access.
   WALLHUB_GITHUB_REPOSITORY    Defaults to ChEnLeo-7/WallHub2.0-For-Android.
   WALLHUB_GITHUB_WORKFLOW      Defaults to verify.yml.
-  WALLHUB_ADB_SERIAL           Default ADB device serial.
 
-The script refuses to uninstall the app or bypass signing mismatch checks.
+The target is resolved immediately before installation, never from a hard-coded
+address. The script refuses to uninstall the app or bypass signing mismatch
+checks.
 EOF
 }
 
@@ -58,7 +59,45 @@ api_get() {
     curl "${curl_args[@]}" "$url"
 }
 
-serial="${WALLHUB_ADB_SERIAL:-$DEFAULT_DEVICE}"
+resolve_adb_target() {
+    local requested_serial="$1"
+    local candidate_serial
+    local candidate_state
+    local ignored
+    local -a connected_serials=()
+
+    while read -r candidate_serial candidate_state ignored; do
+        [[ "$candidate_serial" == "List" || -z "$candidate_serial" ]] && continue
+        [[ "$candidate_state" == "device" ]] && connected_serials+=("$candidate_serial")
+    done < <(adb devices -l)
+
+    if [[ -n "$requested_serial" ]]; then
+        local adb_state
+        adb_state="$(adb -s "$requested_serial" get-state 2>/dev/null || true)"
+        if [[ "$adb_state" != "device" ]]; then
+            adb devices -l >&2
+            fail "Requested ADB target $requested_serial is not connected with state device"
+        fi
+        printf '%s\n' "$requested_serial"
+        return
+    fi
+
+    case "${#connected_serials[@]}" in
+        1)
+            printf '%s\n' "${connected_serials[0]}"
+            ;;
+        0)
+            adb devices -l >&2
+            fail "No ADB target is connected with state device"
+            ;;
+        *)
+            adb devices -l >&2
+            fail "Multiple ADB targets are connected; rerun with --serial <adb-serial>"
+            ;;
+    esac
+}
+
+serial=""
 sha="$(git rev-parse HEAD)"
 
 while (($# > 0)); do
@@ -91,9 +130,6 @@ require_command python3
 
 apksigner="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/opt/android-sdk}}/build-tools/35.0.0/apksigner"
 [[ -x "$apksigner" ]] || fail "apksigner is unavailable at $apksigner"
-
-adb_state="$(adb -s "$serial" get-state 2>/dev/null || true)"
-[[ "$adb_state" == "device" ]] || fail "ADB target $serial is not connected with state device"
 
 repository_api="https://api.github.com/repos/$REPOSITORY"
 workflow_runs_url="$repository_api/actions/workflows/$WORKFLOW_FILE/runs?event=push&head_sha=$sha&per_page=20"
@@ -168,6 +204,9 @@ unzip -q "$archive_path" -d "$artifact_dir"
 
 artifact_certificate="$("$apksigner" verify --print-certs "$apk_path" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}')"
 [[ -n "$artifact_certificate" ]] || fail "Cannot read the artifact signing certificate"
+
+serial="$(resolve_adb_target "$serial")"
+printf 'Selected current ADB target: %s\n' "$serial"
 
 installed_apk="$(adb -s "$serial" shell pm path "$APPLICATION_ID" 2>/dev/null | tr -d '\r' | cut -d: -f2 | head -n 1)"
 if [[ -n "$installed_apk" ]]; then
