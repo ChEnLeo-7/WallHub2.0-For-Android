@@ -265,6 +265,7 @@ object ShaderCompatibility {
     fun rewrite(source: String): String {
         var output = source.replace(Regex("\\bsample\\b"), "_sample")
         mapOf(
+            Regex("(?<![A-Za-z0-9_])vec4\\(1, 0, 0, 1\\)") to "vec4(1.0, 0.0, 0.0, 1.0)",
             Regex("(?<![A-Za-z0-9_])vec2\\(1, 0\\)") to "vec2(1.0, 0.0)",
             Regex("(?<![A-Za-z0-9_])vec2\\(0, 1\\)") to "vec2(0.0, 1.0)",
             Regex("(?<![A-Za-z0-9_])vec2\\(0, -0\\.5\\)") to "vec2(0.0, -0.5)",
