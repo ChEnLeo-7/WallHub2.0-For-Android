@@ -1,6 +1,6 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
 }
 
 android {
@@ -23,19 +23,19 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
-    implementation("com.google.dagger:hilt-android:2.57.2")
-    implementation("in.dragonbra:javasteam:1.8.0") {
+    implementation(libs.hilt.android)
+    implementation(libs.javasteam) {
         exclude(group = "com.squareup.okhttp3", module = "okhttp-jvm")
     }
-    implementation("com.squareup.okhttp3:okhttp-android:5.3.2")
-    implementation("com.google.protobuf:protobuf-java:4.31.1")
-    implementation("com.madgag.spongycastle:prov:1.58.0.0")
-    implementation("org.tukaani:xz:1.10")
-    implementation("com.github.luben:zstd-jni:1.5.7-3@aar")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.10.1")
+    implementation(libs.okhttp.android)
+    implementation(libs.protobuf.java)
+    implementation(libs.spongycastle.prov)
+    implementation(libs.xz)
+    implementation("com.github.luben:zstd-jni:${libs.versions.zstd.get()}@aar")
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.jdk8)
 
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlin:kotlin-test:2.1.21")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

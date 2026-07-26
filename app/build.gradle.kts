@@ -1,9 +1,9 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.kapt")
-    id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.dagger.hilt.android")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.kapt)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.hilt.android)
 }
 
 android {
@@ -67,22 +67,22 @@ dependencies {
     implementation(project(":feature:local"))
     implementation(project(":feature:settings"))
 
-    implementation(platform("androidx.compose:compose-bom:2025.01.01"))
-    implementation("androidx.activity:activity-compose:1.10.0")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    implementation("androidx.navigation:navigation-compose:2.8.9")
-    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
-    implementation("androidx.work:work-runtime-ktx:2.10.0")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("com.google.dagger:hilt-android:2.57.2")
-    implementation("io.coil-kt:coil:2.7.0")
-    implementation("io.coil-kt:coil-gif:2.7.0")
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.material)
+    implementation(libs.hilt.android)
+    implementation(libs.coil)
+    implementation(libs.coil.gif)
 
-    kapt("com.google.dagger:hilt-compiler:2.57.2")
+    kapt(libs.hilt.compiler)
 
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlin:kotlin-test:2.1.21")
-    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
+    debugImplementation(libs.androidx.compose.ui.tooling)
 }

@@ -1,6 +1,6 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
 }
 
 android {
@@ -22,6 +22,6 @@ android {
 }
 
 dependencies {
-    api("junit:junit:4.13.2")
-    api("org.jetbrains.kotlin:kotlin-test:2.1.21")
+    api(libs.junit)
+    api(libs.kotlin.test)
 }

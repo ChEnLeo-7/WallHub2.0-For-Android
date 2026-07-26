@@ -1,6 +1,6 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
 }
 
 android {
@@ -24,5 +24,5 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:database"))
-    implementation("javax.inject:javax.inject:1")
+    implementation(libs.javax.inject)
 }

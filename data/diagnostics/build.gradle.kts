@@ -1,6 +1,6 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
 }
 
 android {
@@ -23,9 +23,9 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
-    implementation("com.google.dagger:hilt-android:2.57.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+    implementation(libs.hilt.android)
+    implementation(libs.kotlinx.coroutines.android)
 
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlin:kotlin-test:2.1.21")
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
 }

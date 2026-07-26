@@ -1,7 +1,7 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -28,16 +28,16 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
-    api(platform("androidx.compose:compose-bom:2025.01.01"))
-    api("androidx.compose.material3:material3")
-    api("androidx.compose.material:material-icons-extended")
-    api("androidx.compose.ui:ui")
-    api("androidx.compose.ui:ui-tooling-preview")
-    api("androidx.compose.runtime:runtime-saveable")
-    api("dev.chrisbanes.haze:haze:1.3.1")
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
-    implementation("com.google.android.material:material:1.12.0")
-    testImplementation("junit:junit:4.13.2")
-    debugImplementation("androidx.compose.ui:ui-tooling")
+    api(platform(libs.androidx.compose.bom))
+    api(libs.androidx.compose.material3)
+    api(libs.androidx.compose.material.icons.extended)
+    api(libs.androidx.compose.ui)
+    api(libs.androidx.compose.ui.tooling.preview)
+    api(libs.androidx.compose.runtime.saveable)
+    api(libs.haze)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.material)
+    testImplementation(libs.junit)
+    debugImplementation(libs.androidx.compose.ui.tooling)
 }

@@ -1,7 +1,7 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
-    id("com.google.devtools.ksp")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -24,10 +24,10 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
-    implementation("androidx.datastore:datastore-preferences:1.1.2")
-    api("androidx.room:room-runtime:2.8.4")
-    implementation("androidx.room:room-ktx:2.8.4")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+    implementation(libs.androidx.datastore.preferences)
+    api(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    implementation(libs.kotlinx.coroutines.android)
 
-    ksp("androidx.room:room-compiler:2.8.4")
+    ksp(libs.androidx.room.compiler)
 }
