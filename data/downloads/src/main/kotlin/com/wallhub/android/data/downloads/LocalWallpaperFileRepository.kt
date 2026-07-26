@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import com.wallhub.android.core.database.FormalTaskRecordDao
@@ -302,6 +303,7 @@ class LocalWallpaperFileRepository @Inject constructor(
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun scanMediaStoreDownloads(source: LocalWallpaperSource): SourceScan {
         val projection = arrayOf(
             MediaStore.Downloads._ID,
