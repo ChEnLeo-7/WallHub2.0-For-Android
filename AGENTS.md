@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This is a Kotlin, Jetpack Compose, multi-module Android application. `app/` owns the shell, navigation, and dependency injection. Shared models, persistence, UI primitives, and test dependencies live under `core/`; integrations and repositories live under `data/`; screens are grouped under `feature/` (`home`, `detail`, `downloads`, `library`, and `settings`). Most Kotlin source uses `src/main/kotlin`; the app keeps Kotlin in `app/src/main/java`. Put JVM tests in each module's `src/test/kotlin` tree and resources in `src/main/res`. `archive/`, `local-artifacts/`, and `local-snapshots/` are ignored local material.
+This is a Kotlin, Jetpack Compose, multi-module Android application. `app/` owns the shell, navigation, and dependency injection. Shared models, persistence, and UI primitives live under `core/`; integrations and repositories live under `data/`; screens are grouped under `feature/` (`home`, `detail`, `downloads`, `library`, `local`, and `settings`). Most Kotlin source uses `src/main/kotlin`; the app keeps Kotlin in `app/src/main/java`. Put JVM tests in each module's `src/test/kotlin` tree and resources in `src/main/res`. Dependency and plugin versions are centralized in `gradle/libs.versions.toml`. `archive/`, `local-artifacts/`, and `local-snapshots/` are ignored local material.
 
 ## Build, Test, and Development Commands
 
@@ -24,7 +24,7 @@ Local tests use JUnit 4 and `kotlin-test`; coroutine-heavy modules also use `kot
 
 ## Commit & Pull Request Guidelines
 
-This checkout has no Git commit history, so no established message pattern exists. Use short, imperative, scoped subjects such as `fix(downloads): resume paused tasks`. Keep each commit focused. Pull requests should explain the behavior and affected modules, link issues when applicable, report commands run, and include screenshots or recordings for UI or motion changes. CI must pass. When publishing an APK, add update, fix, and verification notes to `docs/development-log.md`.
+Use short, imperative, scoped subjects such as `fix(downloads): resume paused tasks`. Keep each commit focused. Pull requests should explain the behavior and affected modules, link issues when applicable, report commands run, and include screenshots or recordings for UI or motion changes. CI must pass. When publishing an APK, add update, fix, and verification notes to `docs/development-log.md`.
 
 ## Security & Configuration
 

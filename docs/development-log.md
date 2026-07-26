@@ -71,6 +71,10 @@
 - 发现页紧凑筛选导航改用 Material 3 原生 `PrimaryTabRow` / `Tab`，宽屏筛选导航改用原生 `NavigationDrawerItem`；四个标签等宽，计数徽标使用固定槽位。发现页和管理页筛选 Chip 永久保留固定前导图标槽，选中勾选不再挤压文字或相邻选项。
 - 发现页和资料库长按菜单移除缩放、方向位移和触点 transform origin，仅保留完整尺寸 Popup 的透明度渐变；元数据值固定为单行省略，异步作者名不再改变菜单高度和定位。
 - 正式 PKG 转 MPKG 改为索引读取、未修改条目文件切片、逐纹理临时落盘和最终原子替换；输出索引固定记录并复制源文件精确长度，重复规范化路径会明确拒绝，不再静默覆盖条目。
+- 为当前源码建立首个 Git 基线提交，并绑定空的 GitHub 远程仓库 `https://github.com/ChEnLeo-7/WallHub2.0-For-Android.git`；构建产物、本地配置、签名材料、归档和源码快照继续由 `.gitignore` 排除，后续改动可使用提交级差异、回退和二分定位，不再依赖整包快照作为唯一恢复手段。
+- 新增 `gradle/libs.versions.toml`，集中管理 Android Gradle Plugin、Kotlin、Compose、Hilt、AndroidX、JavaSteam、Media3、网络、转换和测试依赖版本；应用、核心、数据和功能模块的构建脚本统一改用版本目录别名，依赖坐标和作用域保持不变。
+- 删除零源文件、零消费者的 `:core:testing` 模块；各模块继续通过版本目录声明自身 JVM 测试依赖。
+- 将八份重复的 `AppLanguage.text(zh, en)` 合并到 `core:designsystem`，覆盖应用壳和各功能模块的既有调用；同时移除三个仓库内无调用点的常量或 Composable 声明。
 
 #### 修复
 
@@ -219,6 +223,7 @@
 - Samsung `SM_G9900` 真机确认筛选手势从“浏览”同步切换到“内容”，内容区无重复标题；选中“视频”时 Chip 从 `128 px` 扩展为 `167 px`，未选项无固定前导空槽。管理三段导航在 `1080 px` 宽度下等分完整且选中状态与 Pager 同步；资料库视频菜单顺序为“下载 / 视频播放 / 打开 Steam”，无“查看详情”，点击视频播放直接进入带播放器控件的在线全屏页。
 - 真机把发现页临时切换为 Web 页码模式后确认首页、当前、末页和跳页四个触控区完整且互不重叠；当前为第 `1` 页时首页角色仍固定显示，验证后已恢复原“瀑布流拼接”偏好。Steam 会话在安装后首次恢复曾进入可重试断线态，点击重试后成功重新加载资料库；应用全程无崩溃。
 - 最终远程 Release 任务 `20260726T112833Z-849010322` 在 `MYCOLORFUL` 完成 `:app:assembleRelease`；APK 位于 `/root/builds/wallhub-release-20260726T112833Z-849010322.apk`，大小 `30,200,591` 字节，包含 `classes.dex` 至 `classes8.dex`，SHA-256 为 `0E8EDDFEC09792036F8F0ED88F8012124E89BBC16736BD93A10085DE6E7EE192`。已通过 `adb install -r` 原位安装到 `192.168.2.190:40283`（Samsung `SM_G9900`），设备端确认 `com.wallhub.android` 为 `0.8.24 (34)`；最终冷启动后 PID `18320` 保持存活，PID 定向日志未发现 WallHub `FATAL EXCEPTION`、ANR 或 OOM。本轮远程流程仅执行 Release 组装，未运行 JVM 或仪器测试。
+- 工程安全网与构建脚本清理后的远程 Release 任务 `20260726T154027Z-375117234` 在 `MYCOLORFUL` 完成 `:app:assembleRelease`；当前任务 APK 位于 `/root/builds/wallhub-release-20260726T154027Z-375117234.apk`，大小 `30,200,591` 字节，包含 `classes.dex` 至 `classes8.dex`，ZIP 完整性检查无错误，SHA-256 为 `3214353A05F1332852285D79B02D71C404DF9437D7870435CFE5405EFC8C60F8`。已通过 `adb install -r` 原位安装到 `192.168.2.190:40283`（Samsung `SM_G9900`），设备端确认 `com.wallhub.android` 为 `0.8.24 (34)`；冷启动后 PID `22966` 保持存活，PID 定向日志未发现 WallHub `FATAL EXCEPTION`、ANR 或 OOM。本轮远程流程仍仅执行 Release 组装，未运行 JVM 或仪器测试。
 
 ### 0.8.20 (30) — 2026-07-20
 

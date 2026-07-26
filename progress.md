@@ -85,7 +85,9 @@
 
 - 本轮修改和真机验证已写入 `docs/development-log.md`。
 - `git diff --check` 已通过。
-- 当前仓库没有 Git 提交历史，源码大部分显示为未跟踪文件；不要把 `git status` 中的全部未跟踪文件误判为本轮新增。
+- 当前源码已建立 Git 基线，首个提交为 `5e6f45f`；后续工程清理也已拆分为独立提交，可直接使用 `git diff`、`git revert` 和 `git bisect` 定位或回退。
+- 已绑定 GitHub 远程仓库 `https://github.com/ChEnLeo-7/WallHub2.0-For-Android.git`，当前环境没有 GitHub 凭据，因此尚未推送；推送后现有 GitHub Actions 将首次运行全量 JVM 测试和 `lintDebug`。
+- 构建依赖已集中到 `gradle/libs.versions.toml`，零消费者的 `:core:testing` 已移除，八份重复的 `AppLanguage.text(...)` 已收敛到 `core:designsystem`。
 
 ## 关键决策
 
@@ -141,18 +143,18 @@
 
 ### 最终 Release
 
-- 构建任务：`20260726T112833Z-849010322`
+- 构建任务：`20260726T154027Z-375117234`
 - 构建机：`MYCOLORFUL`
-- APK：`/root/builds/wallhub-release-20260726T112833Z-849010322.apk`
+- APK：`/root/builds/wallhub-release-20260726T154027Z-375117234.apk`
 - 大小：`30,200,591` 字节
-- SHA-256：`0E8EDDFEC09792036F8F0ED88F8012124E89BBC16736BD93A10085DE6E7EE192`
+- SHA-256：`3214353A05F1332852285D79B02D71C404DF9437D7870435CFE5405EFC8C60F8`
 - DEX：`classes.dex` 至 `classes8.dex`
 - 包名：`com.wallhub.android`
 - 安装版本：`0.8.24 (34)`
 - 安装设备：`192.168.2.190:40283`
 - 设备型号：Samsung `SM_G9900`
 - 安装结果：`adb install -r` 成功
-- 最终冷启动 PID：`18320`
+- 最终冷启动 PID：`22966`
 - 冷启动结果：进程保持存活，PID 定向日志未发现 WallHub `FATAL EXCEPTION`、ANR 或 OOM。
 
 ## 构建和环境约束
@@ -169,7 +171,7 @@
 ## 未完成待办
 
 - 当前用户提出的七项 UI 与交互需求已全部完成，没有已知功能阻塞项。
-- 远程 Release 流程未运行新增或既有 JVM 测试；如果后续获得允许的独立 Gradle 测试环境，应补跑相关模块测试及全量 `testDebugUnitTest lintDebug`。
+- 远程 Release 流程未运行新增或既有 JVM 测试；仓库已绑定 GitHub 远程并保留 `.github/workflows/verify.yml`，待从有凭据的环境首次推送后运行全量 `testDebugUnitTest lintDebug :app:assembleDebug`。
 - Steam 会话在一次重新安装后的首次冷启动进入过可重试断线态，手动点击“重试恢复”后成功加载资料库。该现象不属于本轮 UI 回归，但如果再次出现，可单独对 Steam 会话恢复和 RPC 做故障注入诊断。
 - 设备上的 `uiautomator` 每次 dump 结束可能在 Houdini 转译层产生自身 SIGSEGV；后续检查日志时应按 WallHub PID 或包名过滤。
 - 若继续发布新 APK，需要再次更新 `docs/development-log.md`，重新远程构建、检查 DEX 和 SHA-256、安装到明确设备并完成冷启动验证。
