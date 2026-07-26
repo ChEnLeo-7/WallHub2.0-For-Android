@@ -73,6 +73,8 @@ class RoomDownloadTaskRepositoryTest {
 
         override suspend fun find(taskId: String): FormalTaskRecordEntity? = records[taskId]
 
+        override suspend fun listAll(): List<FormalTaskRecordEntity> = records.values.toList()
+
         override suspend fun findActiveForWorkshop(workshopId: Long): FormalTaskRecordEntity? = records.values
             .firstOrNull { it.workshopId == workshopId && it.status in ACTIVE_STATUSES }
 
