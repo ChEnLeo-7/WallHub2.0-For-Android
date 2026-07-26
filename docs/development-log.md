@@ -75,6 +75,8 @@
 - 新增 `gradle/libs.versions.toml`，集中管理 Android Gradle Plugin、Kotlin、Compose、Hilt、AndroidX、JavaSteam、Media3、网络、转换和测试依赖版本；应用、核心、数据和功能模块的构建脚本统一改用版本目录别名，依赖坐标和作用域保持不变。
 - 删除零源文件、零消费者的 `:core:testing` 模块；各模块继续通过版本目录声明自身 JVM 测试依赖。
 - 将八份重复的 `AppLanguage.text(zh, en)` 合并到 `core:designsystem`，覆盖应用壳和各功能模块的既有调用；同时移除三个仓库内无调用点的常量或 Composable 声明。
+- GitHub Actions 改为 `main` 推送时运行 `testDebugUnitTest lintDebug`，随后使用 `WALLHUB_RELEASE_*` Secret 中的稳定 keystore 组装 Release 并上传保留 14 天、名称绑定 commit SHA 的 APK artifact；PR 只运行测试和 lint，完全不读取签名 Secret。Release 未配置完整 Secret 时会明确失败，不会上传由临时 debug keystore 签发且无法原位安装的 APK。
+- 新增 `scripts/push-build-install.sh` 与 `scripts/install-github-release-apk.sh`。前者仅推送干净的本地 `main`，后者只接受同一 SHA 的成功 Action run，校验 artifact commit 标记、SHA-256 和已安装 APK 的证书后才执行 `adb install -r`；签名不一致、设备不可用或 artifact 不匹配时会拒绝操作，不会卸载应用或清除数据。完整 Secret 设置和使用方式见 `docs/github-actions-adb.md`。
 
 #### 修复
 
@@ -224,6 +226,7 @@
 - 真机把发现页临时切换为 Web 页码模式后确认首页、当前、末页和跳页四个触控区完整且互不重叠；当前为第 `1` 页时首页角色仍固定显示，验证后已恢复原“瀑布流拼接”偏好。Steam 会话在安装后首次恢复曾进入可重试断线态，点击重试后成功重新加载资料库；应用全程无崩溃。
 - 最终远程 Release 任务 `20260726T112833Z-849010322` 在 `MYCOLORFUL` 完成 `:app:assembleRelease`；APK 位于 `/root/builds/wallhub-release-20260726T112833Z-849010322.apk`，大小 `30,200,591` 字节，包含 `classes.dex` 至 `classes8.dex`，SHA-256 为 `0E8EDDFEC09792036F8F0ED88F8012124E89BBC16736BD93A10085DE6E7EE192`。已通过 `adb install -r` 原位安装到 `192.168.2.190:40283`（Samsung `SM_G9900`），设备端确认 `com.wallhub.android` 为 `0.8.24 (34)`；最终冷启动后 PID `18320` 保持存活，PID 定向日志未发现 WallHub `FATAL EXCEPTION`、ANR 或 OOM。本轮远程流程仅执行 Release 组装，未运行 JVM 或仪器测试。
 - 工程安全网与构建脚本清理后的远程 Release 任务 `20260726T154027Z-375117234` 在 `MYCOLORFUL` 完成 `:app:assembleRelease`；当前任务 APK 位于 `/root/builds/wallhub-release-20260726T154027Z-375117234.apk`，大小 `30,200,591` 字节，包含 `classes.dex` 至 `classes8.dex`，ZIP 完整性检查无错误，SHA-256 为 `3214353A05F1332852285D79B02D71C404DF9437D7870435CFE5405EFC8C60F8`。已通过 `adb install -r` 原位安装到 `192.168.2.190:40283`（Samsung `SM_G9900`），设备端确认 `com.wallhub.android` 为 `0.8.24 (34)`；冷启动后 PID `22966` 保持存活，PID 定向日志未发现 WallHub `FATAL EXCEPTION`、ANR 或 OOM。本轮远程流程仍仅执行 Release 组装，未运行 JVM 或仪器测试。
+- GitHub Actions 到 ADB 流程迁移后的 LAN 回退构建任务 `20260726T161036Z-991119252` 在 `MYCOLORFUL` 完成 `:app:assembleRelease`，验证本地未注入 `WALLHUB_RELEASE_*` 时仍使用既有 debug 签名 fallback。当前任务 APK 位于 `/root/builds/wallhub-release-20260726T161036Z-991119252.apk`，大小 `30,200,591` 字节，包含 `classes.dex` 至 `classes8.dex`，ZIP 完整性检查无错误，SHA-256 为 `3214353A05F1332852285D79B02D71C404DF9437D7870435CFE5405EFC8C60F8`，签名证书 SHA-256 为 `940402C12B4270F1000C61882A42EC610292AB776F28F85784D6954EA7DB074D`。已通过 `adb install -r` 原位安装到 `192.168.2.190:40283`（Samsung `SM_G9900`），设备端确认 `com.wallhub.android` 为 `0.8.24 (34)`；冷启动后 PID `23835` 保持存活，PID 定向日志未发现 WallHub `FATAL EXCEPTION`、ANR 或 OOM。启动期间记录 `49` 帧 Choreographer skipped frame，未与本轮运行时改动关联，后续如持续出现应独立进行启动性能诊断。
 
 ### 0.8.20 (30) — 2026-07-20
 

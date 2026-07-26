@@ -90,6 +90,7 @@
 - 构建依赖已集中到 `gradle/libs.versions.toml`，零消费者的 `:core:testing` 已移除，八份重复的 `AppLanguage.text(...)` 已收敛到 `core:designsystem`。
 - GitHub Actions 已调整为：`main` 推送和手动触发时运行 `testDebugUnitTest lintDebug`、使用稳定签名 Secret 构建 Release 并上传带 commit SHA 的 APK artifact；PR 仅执行测试和 lint，不读取签名 Secret。
 - 新增 `scripts/push-build-install.sh` 与 `scripts/install-github-release-apk.sh`：前者推送当前干净的 `main` commit，后者只等待并下载同一 SHA 的成功 Action artifact，校验 commit 标记、SHA-256 与设备上已安装 APK 的签名证书后才执行 `adb install -r`，绝不自动卸载或绕过签名冲突。使用和 Secret 设置见 `docs/github-actions-adb.md`。
+- LAN 回退构建任务 `20260726T161036Z-991119252` 已验证 Gradle 的无 Secret debug 签名 fallback、完整 DEX、证书连续性、原位安装和冷启动；当前设备 APK 与 GitHub Actions Secret 所需证书 SHA-256 均为 `940402C12B4270F1000C61882A42EC610292AB776F28F85784D6954EA7DB074D`。
 
 ## 关键决策
 
@@ -145,9 +146,9 @@
 
 ### 最终 Release
 
-- 构建任务：`20260726T154027Z-375117234`
+- 构建任务：`20260726T161036Z-991119252`
 - 构建机：`MYCOLORFUL`
-- APK：`/root/builds/wallhub-release-20260726T154027Z-375117234.apk`
+- APK：`/root/builds/wallhub-release-20260726T161036Z-991119252.apk`
 - 大小：`30,200,591` 字节
 - SHA-256：`3214353A05F1332852285D79B02D71C404DF9437D7870435CFE5405EFC8C60F8`
 - DEX：`classes.dex` 至 `classes8.dex`
@@ -156,7 +157,7 @@
 - 安装设备：`192.168.2.190:40283`
 - 设备型号：Samsung `SM_G9900`
 - 安装结果：`adb install -r` 成功
-- 最终冷启动 PID：`22966`
+- 最终冷启动 PID：`23835`
 - 冷启动结果：进程保持存活，PID 定向日志未发现 WallHub `FATAL EXCEPTION`、ANR 或 OOM。
 
 ## 构建和环境约束
