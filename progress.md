@@ -88,7 +88,7 @@
 - 当前源码已建立 Git 基线，首个提交为 `5e6f45f`；后续工程清理也已拆分为独立提交，可直接使用 `git diff`、`git revert` 和 `git bisect` 定位或回退。
 - 已绑定 GitHub 远程仓库 `https://github.com/ChEnLeo-7/WallHub2.0-For-Android.git`，当前环境没有 GitHub 凭据，因此尚未推送；推送后现有 GitHub Actions 将首次运行全量 JVM 测试和 `lintDebug`。
 - 构建依赖已集中到 `gradle/libs.versions.toml`，零消费者的 `:core:testing` 已移除，八份重复的 `AppLanguage.text(...)` 已收敛到 `core:designsystem`。
-- GitHub Actions 已调整为：`main` 推送和手动触发时运行 `testDebugUnitTest lintDebug`、使用稳定签名 Secret 构建 Release 并上传带 commit SHA 的 APK artifact；PR 仅执行测试和 lint，不读取签名 Secret。
+- GitHub Actions 工作流已调整为：完成首次推送并配置稳定签名 Secret 后，`main` 推送和手动触发将运行 `testDebugUnitTest lintDebug`、构建 Release 并上传带 commit SHA 的 APK artifact；PR 仅执行测试和 lint，不读取签名 Secret。当前 GitHub 远程仍为空，尚未实际触发过该工作流。
 - 新增 `scripts/push-build-install.sh` 与 `scripts/install-github-release-apk.sh`：前者推送当前干净的 `main` commit，后者只等待并下载同一 SHA 的成功 Action artifact，校验 commit 标记、SHA-256 与设备上已安装 APK 的签名证书后才执行 `adb install -r`，绝不自动卸载或绕过签名冲突。使用和 Secret 设置见 `docs/github-actions-adb.md`。
 - LAN 回退构建任务 `20260726T161036Z-991119252` 已验证 Gradle 的无 Secret debug 签名 fallback、完整 DEX、证书连续性、原位安装和冷启动；当前设备 APK 与 GitHub Actions Secret 所需证书 SHA-256 均为 `940402C12B4270F1000C61882A42EC610292AB776F28F85784D6954EA7DB074D`。
 

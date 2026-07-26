@@ -27,7 +27,7 @@ chmod +x gradlew
 
 The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`. Public releases must use a dedicated production signing key configured through local or GitHub Actions secrets.
 
-For the development-device flow, pushes to `main` run GitHub Actions tests and lint, build a signed Release APK, and upload it as a commit-bound artifact. `scripts/push-build-install.sh` pushes the current commit and safely downloads and installs that exact artifact. See `docs/github-actions-adb.md` for one-time signing setup and usage.
+For the development-device flow, the checked-in GitHub Actions workflow will run tests and lint, build a signed Release APK, and upload a commit-bound artifact after the repository receives its first push and signing secrets are configured. `scripts/push-build-install.sh` then pushes the current commit and safely downloads and installs that exact artifact. See `docs/github-actions-adb.md` for one-time setup and usage.
 
 ## Project Structure
 

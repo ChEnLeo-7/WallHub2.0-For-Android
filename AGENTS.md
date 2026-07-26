@@ -6,7 +6,7 @@ This is a Kotlin, Jetpack Compose, multi-module Android application. `app/` owns
 
 ## Build, Test, and Development Commands
 
-Use JDK 17 or newer, Android SDK Platform 36, and Build Tools 35.0.0. CI runs on GitHub Actions and publishes a signed Release APK artifact for pushes to `main`; see `docs/github-actions-adb.md` for the required signing secrets and the local download/install commands. From PowerShell:
+Use JDK 17 or newer, Android SDK Platform 36, and Build Tools 35.0.0. The checked-in CI workflow will publish a signed Release APK artifact after pushes to `main` once the repository receives its first push and the required signing secrets are configured; see `docs/github-actions-adb.md` for setup and local download/install commands. From PowerShell:
 
 - `.\gradlew.bat testDebugUnitTest lintDebug :app:assembleDebug` runs the full CI verification suite and builds the debug APK.
 - `.\gradlew.bat :feature:home:testDebugUnitTest` runs one module's unit tests; substitute another Gradle module path as needed.

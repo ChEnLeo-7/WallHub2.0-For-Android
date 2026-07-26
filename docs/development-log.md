@@ -75,7 +75,7 @@
 - 新增 `gradle/libs.versions.toml`，集中管理 Android Gradle Plugin、Kotlin、Compose、Hilt、AndroidX、JavaSteam、Media3、网络、转换和测试依赖版本；应用、核心、数据和功能模块的构建脚本统一改用版本目录别名，依赖坐标和作用域保持不变。
 - 删除零源文件、零消费者的 `:core:testing` 模块；各模块继续通过版本目录声明自身 JVM 测试依赖。
 - 将八份重复的 `AppLanguage.text(zh, en)` 合并到 `core:designsystem`，覆盖应用壳和各功能模块的既有调用；同时移除三个仓库内无调用点的常量或 Composable 声明。
-- GitHub Actions 改为 `main` 推送时运行 `testDebugUnitTest lintDebug`，随后使用 `WALLHUB_RELEASE_*` Secret 中的稳定 keystore 组装 Release 并上传保留 14 天、名称绑定 commit SHA 的 APK artifact；PR 只运行测试和 lint，完全不读取签名 Secret。Release 未配置完整 Secret 时会明确失败，不会上传由临时 debug keystore 签发且无法原位安装的 APK。
+- 已提交 GitHub Actions 工作流配置：首次推送完成后，`main` 推送将运行 `testDebugUnitTest lintDebug`，随后使用 `WALLHUB_RELEASE_*` Secret 中的稳定 keystore 组装 Release 并上传保留 14 天、名称绑定 commit SHA 的 APK artifact；PR 只运行测试和 lint，完全不读取签名 Secret。Release 未配置完整 Secret 时会明确失败，不会上传由临时 debug keystore 签发且无法原位安装的 APK。当前 GitHub 远程仍为空，该流程尚未实际触发。
 - 新增 `scripts/push-build-install.sh` 与 `scripts/install-github-release-apk.sh`。前者仅推送干净的本地 `main`，后者只接受同一 SHA 的成功 Action run，校验 artifact commit 标记、SHA-256 和已安装 APK 的证书后才执行 `adb install -r`；签名不一致、设备不可用或 artifact 不匹配时会拒绝操作，不会卸载应用或清除数据。完整 Secret 设置和使用方式见 `docs/github-actions-adb.md`。
 
 #### 修复
