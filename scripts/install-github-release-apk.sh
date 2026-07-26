@@ -202,6 +202,15 @@ unzip -q "$archive_path" -d "$artifact_dir"
     sha256sum --check wallhub-release.apk.sha256
 )
 
+unzip -tq "$apk_path"
+mapfile -t dex_entries < <(
+    unzip -Z1 "$apk_path" |
+        grep -E '^classes([0-9]+)?\.dex$' |
+        sort -V
+)
+[[ "${dex_entries[0]:-}" == "classes.dex" ]] || fail "Downloaded APK is missing classes.dex"
+printf 'APK DEX entries: %s\n' "${dex_entries[*]}"
+
 artifact_certificate="$("$apksigner" verify --print-certs "$apk_path" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}')"
 [[ -n "$artifact_certificate" ]] || fail "Cannot read the artifact signing certificate"
 
@@ -228,4 +237,21 @@ grep -qx 'Success' "$work_dir/install.log" || fail "ADB installation did not rep
 adb -s "$serial" shell pm path "$APPLICATION_ID"
 adb -s "$serial" shell dumpsys package "$APPLICATION_ID" | grep -m 2 -E 'versionCode=|versionName='
 
-printf 'Installed GitHub Actions artifact for %s on %s.\n' "$sha" "$serial"
+printf 'Cold-starting %s...\n' "$APPLICATION_ID"
+adb -s "$serial" logcat -c
+adb -s "$serial" shell am force-stop "$APPLICATION_ID"
+adb -s "$serial" shell monkey -p "$APPLICATION_ID" 1 > "$work_dir/launch.log"
+sleep 10
+
+pid="$(adb -s "$serial" shell pidof "$APPLICATION_ID" | tr -d '\r\n')"
+[[ -n "$pid" ]] || fail "$APPLICATION_ID did not remain alive after cold start"
+
+adb -s "$serial" logcat -d --pid="$pid" -v brief > "$work_dir/pid-logcat.txt"
+adb -s "$serial" logcat -d -v brief > "$work_dir/full-logcat.txt"
+if grep -E 'FATAL EXCEPTION|OutOfMemoryError' "$work_dir/pid-logcat.txt" ||
+    grep -E "ANR in $APPLICATION_ID|Application Not Responding: $APPLICATION_ID" "$work_dir/full-logcat.txt"; then
+    fail "Cold-start logs contain a fatal exception, ANR, or OOM"
+fi
+
+printf 'Installed GitHub Actions artifact for %s on %s; cold-start PID %s is alive with no fatal exception, ANR, or OOM.\n' \
+    "$sha" "$serial" "$pid"

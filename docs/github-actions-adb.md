@@ -10,8 +10,10 @@ local source change -> commit -> push main -> GitHub Actions -> signed Release A
 local `main` branch, pushes its exact HEAD to `origin`, then waits for the
 successful `verify.yml` push run for that same commit SHA. It downloads only
 the matching `wallhub-release-<sha>` artifact, verifies its embedded SHA-256
-file and commit marker, checks the signing certificate against the APK already
-installed on the device, and finally performs `adb install -r`.
+file, commit marker, ZIP structure, DEX entries and signing certificate against
+the APK already installed on the device, then performs `adb install -r`. After
+installation it cold-starts WallHub, requires the process to remain alive, and
+rejects PID logs containing a fatal exception, ANR or OOM.
 
 It never uninstalls the app and never uses `-d` to bypass a version conflict.
 It does not store an ADB host or port: immediately before installation, it
@@ -104,7 +106,9 @@ publish an APK.
 
 - A failed test, lint or Release build stops the Action before artifact upload.
 - The installer rejects an artifact from another commit or with a wrong hash.
+- A malformed APK or APK without `classes.dex` is rejected before installation.
 - A signing mismatch stops before installation and leaves device data intact.
 - A non-`device` ADB target stops before any download or install.
+- A dead process, fatal exception, ANR or OOM fails the post-install cold-start verification.
 - The old LAN builder remains available only as a fallback until the first
   GitHub Actions deployment is verified end to end.

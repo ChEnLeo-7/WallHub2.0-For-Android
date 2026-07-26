@@ -176,6 +176,7 @@
 - 当前用户提出的七项 UI 与交互需求已全部完成，没有已知功能阻塞项。
 - 远程 Release 流程未运行新增或既有 JVM 测试；仓库已绑定 GitHub 远程并保留 `.github/workflows/verify.yml`，待从有凭据的环境首次推送后运行全量 `testDebugUnitTest lintDebug :app:assembleDebug`。
 - GitHub Actions 首次部署前，必须将签发当前 Samsung 测试设备安装包的 keystore 配置为四个 `WALLHUB_RELEASE_*` Secret；设备当前证书 SHA-256 为 `940402C12B4270F1000C61882A42EC610292AB776F28F85784D6954EA7DB074D`。未配置时 Action 将显式失败而不会发布无法原位安装的 APK。
+- 首次 GitHub Actions 端到端流程已在 commit `97817431aabca35fa456d1e168c38224f94bfc1f` 跑通：全量 JVM 测试、`lintDebug`、签名 Secret、Release 组装和 artifact 上传全部成功；LXC 下载同一 SHA artifact 后校验 SHA-256、`classes.dex` 至 `classes8.dex`、ZIP 完整性和证书，动态选择当时唯一在线 ADB 设备并完成原位安装，冷启动 PID `26012` 存活且未发现 `FATAL EXCEPTION`、ANR 或 OOM。
 - Steam 会话在一次重新安装后的首次冷启动进入过可重试断线态，手动点击“重试恢复”后成功加载资料库。该现象不属于本轮 UI 回归，但如果再次出现，可单独对 Steam 会话恢复和 RPC 做故障注入诊断。
 - 设备上的 `uiautomator` 每次 dump 结束可能在 Houdini 转译层产生自身 SIGSEGV；后续检查日志时应按 WallHub PID 或包名过滤。
 - 若继续发布新 APK，需要再次更新 `docs/development-log.md`，重新远程构建、检查 DEX 和 SHA-256、安装到明确设备并完成冷启动验证。
