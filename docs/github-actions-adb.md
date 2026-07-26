@@ -85,6 +85,16 @@ the `adb devices -l` output:
 scripts/push-build-install.sh --serial <current-adb-serial>
 ```
 
+For an install-only device where WallHub must not be opened after replacement:
+
+```bash
+scripts/push-build-install.sh --install-only
+```
+
+This still verifies the commit-bound artifact, checksum, DEX, signing
+certificate, installation, package path and version. It skips log clearing,
+force-stop, launch and cold-start checks.
+
 `GITHUB_TOKEN` is not required while the repository remains public and GitHub
 allows anonymous artifact reads, but supplying a fine-grained token with
 repository Actions artifacts read access makes the download path reliable and

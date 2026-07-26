@@ -81,6 +81,7 @@
 - commit `9b1b0b6c8c32c32a091460e08fe7b663da46ac39` 的日常入口 `scripts/push-build-install.sh` 已完成第二次端到端验收：Action run `30214074910` 成功，脚本只下载同 SHA artifact，动态选择当时唯一在线 ADB 设备，原位安装后冷启动 PID `27171` 存活，未发现 WallHub `FATAL EXCEPTION`、ANR 或 OOM。
 - 新增项目 Skill `.opencode/skills/github-actions-adb-deploy/SKILL.md`，将“干净 `main` commit -> 推送 -> 同 SHA GitHub Actions -> artifact 校验 -> 动态 ADB 安装 -> 冷启动”固化为 Android 源码修改后的默认验证路径；原 `android-release-build` Skill 降级为 GitHub 不可用或用户明确要求时的 LAN 回退，且不再记录固定无线 ADB 地址或端口。
 - 重构 GitHub 默认 `README.md` 为中文项目入口，新增对应英文 `README_EN.md`，完整覆盖项目特色、核心功能、快速开始、开发环境、参考鸣谢与免责说明；新增 `docs/assets/wallhub-logo.svg`，其路径和配色直接转换自应用资源 `app/src/main/res/drawable/ic_wallhub.xml`。
+- GitHub Actions 到 ADB 日常入口新增显式 `--install-only` 模式：仍执行同 SHA artifact、校验和、DEX、签名、安装及包版本验证，但不会清理日志、停止或启动 WallHub，也不会执行冷启动测试。
 
 #### 修复
 

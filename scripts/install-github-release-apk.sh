@@ -9,7 +9,7 @@ readonly TIMEOUT_SECONDS=3600
 
 usage() {
     cat <<'EOF'
-Usage: scripts/install-github-release-apk.sh [--serial <adb-serial>] [--sha <commit-sha>]
+Usage: scripts/install-github-release-apk.sh [--serial <adb-serial>] [--sha <commit-sha>] [--install-only]
 
 Waits for the successful GitHub Actions workflow run for a commit, downloads
 only that run's signed Release APK artifact, verifies its checksum and signing
@@ -19,6 +19,9 @@ Defaults:
   --serial  Automatically select the only currently connected device.
             Required when zero or multiple devices are connected.
   --sha     the current HEAD commit
+
+Options:
+  --install-only  Install and verify the APK without launching WallHub.
 
 Environment:
   GITHUB_TOKEN                 Required for private repositories. A fine-grained
@@ -99,6 +102,7 @@ resolve_adb_target() {
 
 serial=""
 sha="$(git rev-parse HEAD)"
+install_only=false
 
 while (($# > 0)); do
     case "$1" in
@@ -111,6 +115,10 @@ while (($# > 0)); do
             (($# >= 2)) || fail "--sha requires a value"
             sha="$2"
             shift 2
+            ;;
+        --install-only)
+            install_only=true
+            shift
             ;;
         --help|-h)
             usage
@@ -236,6 +244,12 @@ grep -qx 'Success' "$work_dir/install.log" || fail "ADB installation did not rep
 
 adb -s "$serial" shell pm path "$APPLICATION_ID"
 adb -s "$serial" shell dumpsys package "$APPLICATION_ID" | grep -m 2 -E 'versionCode=|versionName='
+
+if [[ "$install_only" == true ]]; then
+    printf 'Installed GitHub Actions artifact for %s on %s without launching %s.\n' \
+        "$sha" "$serial" "$APPLICATION_ID"
+    exit 0
+fi
 
 printf 'Cold-starting %s...\n' "$APPLICATION_ID"
 adb -s "$serial" logcat -c

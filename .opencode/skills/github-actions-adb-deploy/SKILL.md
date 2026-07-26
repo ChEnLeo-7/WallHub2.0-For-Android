@@ -73,6 +73,14 @@ The script must complete all gates for the same commit SHA:
 
 Completion criterion: the script exits successfully after reporting the commit SHA, selected device, installed package version, and live cold-start PID.
 
+When the user explicitly requests installation without opening WallHub, use:
+
+```bash
+scripts/push-build-install.sh --install-only
+```
+
+`--install-only` ends after package/version verification and does not clear logs, force-stop, launch, or cold-start-check WallHub. Preserve the normal cold-start path unless the user explicitly requests install-only behavior.
+
 ## 4. Handle Failure At The Failed Gate
 
 - Action failure: inspect the run URL and authenticated job logs; fix the first failing test, lint, signing, or build step, commit, and rerun the normal path.
