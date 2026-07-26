@@ -88,6 +88,8 @@
 - 当前源码已建立 Git 基线，首个提交为 `5e6f45f`；后续工程清理也已拆分为独立提交，可直接使用 `git diff`、`git revert` 和 `git bisect` 定位或回退。
 - 已绑定 GitHub 远程仓库 `https://github.com/ChEnLeo-7/WallHub2.0-For-Android.git`，当前环境没有 GitHub 凭据，因此尚未推送；推送后现有 GitHub Actions 将首次运行全量 JVM 测试和 `lintDebug`。
 - 构建依赖已集中到 `gradle/libs.versions.toml`，零消费者的 `:core:testing` 已移除，八份重复的 `AppLanguage.text(...)` 已收敛到 `core:designsystem`。
+- GitHub Actions 已调整为：`main` 推送和手动触发时运行 `testDebugUnitTest lintDebug`、使用稳定签名 Secret 构建 Release 并上传带 commit SHA 的 APK artifact；PR 仅执行测试和 lint，不读取签名 Secret。
+- 新增 `scripts/push-build-install.sh` 与 `scripts/install-github-release-apk.sh`：前者推送当前干净的 `main` commit，后者只等待并下载同一 SHA 的成功 Action artifact，校验 commit 标记、SHA-256 与设备上已安装 APK 的签名证书后才执行 `adb install -r`，绝不自动卸载或绕过签名冲突。使用和 Secret 设置见 `docs/github-actions-adb.md`。
 
 ## 关键决策
 
@@ -172,6 +174,7 @@
 
 - 当前用户提出的七项 UI 与交互需求已全部完成，没有已知功能阻塞项。
 - 远程 Release 流程未运行新增或既有 JVM 测试；仓库已绑定 GitHub 远程并保留 `.github/workflows/verify.yml`，待从有凭据的环境首次推送后运行全量 `testDebugUnitTest lintDebug :app:assembleDebug`。
+- GitHub Actions 首次部署前，必须将签发当前 Samsung 测试设备安装包的 keystore 配置为四个 `WALLHUB_RELEASE_*` Secret；设备当前证书 SHA-256 为 `940402C12B4270F1000C61882A42EC610292AB776F28F85784D6954EA7DB074D`。未配置时 Action 将显式失败而不会发布无法原位安装的 APK。
 - Steam 会话在一次重新安装后的首次冷启动进入过可重试断线态，手动点击“重试恢复”后成功加载资料库。该现象不属于本轮 UI 回归，但如果再次出现，可单独对 Steam 会话恢复和 RPC 做故障注入诊断。
 - 设备上的 `uiautomator` 每次 dump 结束可能在 Houdini 转译层产生自身 SIGSEGV；后续检查日志时应按 WallHub PID 或包名过滤。
 - 若继续发布新 APK，需要再次更新 `docs/development-log.md`，重新远程构建、检查 DEX 和 SHA-256、安装到明确设备并完成冷启动验证。

@@ -3,10 +3,16 @@ name: Android CI
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
   pull_request:
 
 permissions:
   contents: read
+
+concurrency:
+  group: android-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
@@ -16,11 +22,67 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: "17"
+          cache: gradle
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK packages
         run: yes | sdkmanager "platforms;android-36" "build-tools;35.0.0"
       - name: Verify Android application
         run: |
           chmod +x gradlew
-          ./gradlew testDebugUnitTest lintDebug :app:assembleDebug
+          ./gradlew testDebugUnitTest lintDebug
+      - name: Require Release signing secrets
+        if: github.event_name != 'pull_request'
+        env:
+          WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
+          WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
+          WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
+          WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for variable in \
+            WALLHUB_RELEASE_KEYSTORE_BASE64 \
+            WALLHUB_RELEASE_STORE_PASSWORD \
+            WALLHUB_RELEASE_KEY_ALIAS \
+            WALLHUB_RELEASE_KEY_PASSWORD; do
+            if [ -z "${!variable}" ]; then
+              echo "::error::Missing GitHub Actions secret: $variable"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - name: Restore Release signing keystore
+        if: github.event_name != 'pull_request'
+        env:
+          WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
+          WALLHUB_RELEASE_STORE_FILE: ${{ runner.temp }}/wallhub-release.keystore
+        run: |
+          printf '%s' "$WALLHUB_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$WALLHUB_RELEASE_STORE_FILE"
+          test -s "$WALLHUB_RELEASE_STORE_FILE"
+          chmod 600 "$WALLHUB_RELEASE_STORE_FILE"
+      - name: Assemble signed Release APK
+        if: github.event_name != 'pull_request'
+        env:
+          WALLHUB_RELEASE_STORE_FILE: ${{ runner.temp }}/wallhub-release.keystore
+          WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
+          WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
+          WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease
+      - name: Package Release APK artifact
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p artifact
+          cp app/build/outputs/apk/release/app-release.apk artifact/wallhub-release.apk
+          (
+            cd artifact
+            sha256sum wallhub-release.apk > wallhub-release.apk.sha256
+          )
+          printf '%s\n' "$GITHUB_SHA" > artifact/commit-sha.txt
+      - name: Upload signed Release APK
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallhub-release-${{ github.sha }}
+          path: artifact/
+          if-no-files-found: error
+          retention-days: 14

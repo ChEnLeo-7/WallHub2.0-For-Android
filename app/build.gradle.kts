@@ -6,6 +6,22 @@ plugins {
     alias(libs.plugins.hilt.android)
 }
 
+val releaseStoreFile = providers.environmentVariable("WALLHUB_RELEASE_STORE_FILE").orNull
+val releaseStorePassword = providers.environmentVariable("WALLHUB_RELEASE_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("WALLHUB_RELEASE_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("WALLHUB_RELEASE_KEY_PASSWORD").orNull
+val releaseSigningValues = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+)
+val hasReleaseSigning = releaseSigningValues.all { !it.isNullOrBlank() }
+
+check(releaseSigningValues.all { it.isNullOrBlank() } || hasReleaseSigning) {
+    "Configure all WALLHUB_RELEASE_* signing variables or none of them."
+}
+
 android {
     namespace = "com.wallhub.android"
     compileSdk = 36
@@ -20,10 +36,23 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    if (hasReleaseSigning) {
+        signingConfigs.create("releaseSigning") {
+            storeFile = file(requireNotNull(releaseStoreFile))
+            storePassword = requireNotNull(releaseStorePassword)
+            keyAlias = requireNotNull(releaseKeyAlias)
+            keyPassword = requireNotNull(releaseKeyPassword)
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("releaseSigning")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
