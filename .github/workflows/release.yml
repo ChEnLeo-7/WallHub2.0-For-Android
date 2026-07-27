@@ -306,7 +306,7 @@ jobs:
             'SIGNING-CERTIFICATE-SHA256.txt' \
             'SOURCE-COMMIT.txt' | sort)"
           release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id")"
-          actual_assets="$(python3 -c 'import json, sys; print("\\n".join(asset["name"] for asset in json.load(sys.stdin).get("assets", [])))' <<<"$release_json" | sort)"
+          actual_assets="$(python3 -c 'import json, sys; print("\n".join(asset["name"] for asset in json.load(sys.stdin).get("assets", [])))' <<<"$release_json" | sort)"
           [[ "$actual_assets" == "$expected_assets" ]] || {
             echo "::error::Draft Release assets do not match the expected set"
             diff -u <(printf '%s\n' "$expected_assets") <(printf '%s\n' "$actual_assets") || true
