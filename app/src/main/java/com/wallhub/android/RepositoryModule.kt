@@ -9,6 +9,7 @@ import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.LocalWallpaperRepository
+import com.wallhub.android.core.model.LauncherIconController
 import com.wallhub.android.core.model.WorkshopRepository
 import com.wallhub.android.data.diagnostics.FileDiagnosticRepository
 import com.wallhub.android.data.downloads.LocalWallpaperFileRepository
@@ -32,6 +33,12 @@ abstract class RepositoryModule {
     abstract fun bindSettingsRepository(
         repository: DataStoreSettingsRepository,
     ): SettingsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindLauncherIconController(
+        controller: AndroidLauncherIconController,
+    ): LauncherIconController
 
     @Binds
     @Singleton

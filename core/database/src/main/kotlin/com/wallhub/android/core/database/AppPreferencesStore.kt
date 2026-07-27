@@ -55,6 +55,12 @@ class AppPreferencesStore(context: Context) {
         }
     }
 
+    suspend fun setThemedLauncherIconEnabled(enabled: Boolean) {
+        applicationContext.dataStore.edit { preferences ->
+            preferences[Keys.useThemedLauncherIcon] = enabled
+        }
+    }
+
     suspend fun setHomePreferences(
         pageSize: Int,
         columns: Int,
@@ -200,6 +206,7 @@ class AppPreferencesStore(context: Context) {
             accent = preferences.enumValue(Keys.accent, AccentPreference.MONET),
             customAccentColor = preferences[Keys.customAccentColor].orEmpty().ifBlank { "#5B7AA0" },
             useSystemMonet = preferences[Keys.useSystemMonet] ?: true,
+            useThemedLauncherIcon = preferences[Keys.useThemedLauncherIcon] ?: true,
             outputTreeUri = preferences[Keys.outputTreeUri],
             outputDirectoryLabel = preferences[Keys.outputDirectoryLabel],
             localManagementTreeUri = preferences[Keys.localManagementTreeUri],
@@ -254,6 +261,7 @@ class AppPreferencesStore(context: Context) {
         val accent = stringPreferencesKey("accent")
         val customAccentColor = stringPreferencesKey("custom_accent_color")
         val useSystemMonet = booleanPreferencesKey("use_system_monet")
+        val useThemedLauncherIcon = booleanPreferencesKey("use_themed_launcher_icon")
         val outputTreeUri = stringPreferencesKey("output_tree_uri")
         val outputDirectoryLabel = stringPreferencesKey("output_directory_label")
         val localManagementTreeUri = stringPreferencesKey("local_management_tree_uri")

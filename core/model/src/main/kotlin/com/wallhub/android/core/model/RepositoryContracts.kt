@@ -19,6 +19,8 @@ interface SettingsRepository {
 
     suspend fun setSystemMonetEnabled(enabled: Boolean) = Unit
 
+    suspend fun setThemedLauncherIconEnabled(enabled: Boolean) = Unit
+
     suspend fun setHomePreferences(
         pageSize: Int,
         columns: Int,
@@ -61,6 +63,10 @@ interface SettingsRepository {
     suspend fun clearLocalManagementDirectory() = Unit
 
     suspend fun setLocalWallpaperViewMode(mode: LocalWallpaperViewMode) = Unit
+}
+
+interface LauncherIconController {
+    fun setThemedIconEnabled(enabled: Boolean)
 }
 
 interface SteamAccessRepository {

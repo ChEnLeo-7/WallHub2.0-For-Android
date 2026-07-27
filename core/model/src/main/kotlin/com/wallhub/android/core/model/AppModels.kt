@@ -90,6 +90,7 @@ data class AppPreferences(
     val accent: AccentPreference = AccentPreference.MONET,
     val customAccentColor: String = "#5B7AA0",
     val useSystemMonet: Boolean = true,
+    val useThemedLauncherIcon: Boolean = true,
     val outputTreeUri: String? = null,
     val outputDirectoryLabel: String? = null,
     val localManagementTreeUri: String? = null,

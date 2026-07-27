@@ -34,6 +34,10 @@ class DataStoreSettingsRepository @Inject constructor(
         store.setSystemMonetEnabled(enabled)
     }
 
+    override suspend fun setThemedLauncherIconEnabled(enabled: Boolean) {
+        store.setThemedLauncherIconEnabled(enabled)
+    }
+
     override suspend fun setHomePreferences(
         pageSize: Int,
         columns: Int,

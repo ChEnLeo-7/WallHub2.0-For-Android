@@ -93,6 +93,7 @@ import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.AccentPreference
 import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.DiagnosticRepository
+import com.wallhub.android.core.model.LauncherIconController
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
@@ -190,6 +191,7 @@ private enum class SteamStreamCachePreset(val limitMb: Int?) {
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
+    private val launcherIconController: LauncherIconController,
     private val steamSessionRepository: SteamSessionRepository,
     private val diagnosticRepository: DiagnosticRepository,
     private val steamAccessRepository: SteamAccessRepository,
@@ -234,6 +236,13 @@ class SettingsViewModel @Inject constructor(
                 settingsRepository.setAccent(AccentPreference.DEFAULT)
             }
             settingsRepository.setSystemMonetEnabled(enabled)
+        }
+    }
+
+    fun setThemedLauncherIconEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setThemedLauncherIconEnabled(enabled)
+            runCatching { launcherIconController.setThemedIconEnabled(enabled) }
         }
     }
 
@@ -393,6 +402,7 @@ fun SettingsRoute(
         onLanguageChange = viewModel::setLanguage,
         onAccentChange = viewModel::setAccent,
         onSystemMonetEnabledChange = viewModel::setSystemMonetEnabled,
+        onThemedLauncherIconEnabledChange = viewModel::setThemedLauncherIconEnabled,
         onHomePreferencesChange = viewModel::setHomePreferences,
         onHomePaginationModeChange = viewModel::setHomePaginationMode,
         onDownloadPreferencesChange = viewModel::setDownloadPreferences,
@@ -435,6 +445,7 @@ fun SettingsScreen(
     onLanguageChange: (AppLanguage) -> Unit,
     onAccentChange: (AccentPreference, String?) -> Unit,
     onSystemMonetEnabledChange: (Boolean) -> Unit,
+    onThemedLauncherIconEnabledChange: (Boolean) -> Unit,
     onHomePreferencesChange: (Int, Int, Boolean, HomeCardAction, Boolean) -> Unit,
     onHomePaginationModeChange: (HomePaginationMode) -> Unit,
     onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit,
@@ -634,6 +645,7 @@ fun SettingsScreen(
                         onThemePreferenceChange = onThemePreferenceChange,
                         onAccentChange = onAccentChange,
                         onSystemMonetEnabledChange = onSystemMonetEnabledChange,
+                        onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
                         onHomePreferencesChange = onHomePreferencesChange,
                         onHomePaginationModeChange = onHomePaginationModeChange,
                     )
@@ -1478,6 +1490,7 @@ private fun AppearanceSettingsContent(
     onThemePreferenceChange: (ThemePreference) -> Unit,
     onAccentChange: (AccentPreference, String?) -> Unit,
     onSystemMonetEnabledChange: (Boolean) -> Unit,
+    onThemedLauncherIconEnabledChange: (Boolean) -> Unit,
     onHomePreferencesChange: (Int, Int, Boolean, HomeCardAction, Boolean) -> Unit,
     onHomePaginationModeChange: (HomePaginationMode) -> Unit,
 ) {
@@ -1538,6 +1551,25 @@ private fun AppearanceSettingsContent(
             enabled = preferences.useSystemMonet,
             language = preferences.language,
             onEnabledChange = onSystemMonetEnabledChange,
+        )
+        SettingsItemDivider()
+        val themedIconsSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+        SettingsSwitchRow(
+            title = text("图标跟随系统取色", "Themed app icon"),
+            supportingText = if (themedIconsSupported) {
+                text(
+                    "允许系统启动器按壁纸莫奈色显示应用图标",
+                    "Let the system launcher tint the app icon from wallpaper colors",
+                )
+            } else {
+                text(
+                    "需要 Android 13 或更高版本",
+                    "Requires Android 13 or newer",
+                )
+            },
+            checked = themedIconsSupported && preferences.useThemedLauncherIcon,
+            enabled = themedIconsSupported,
+            onCheckedChange = onThemedLauncherIconEnabledChange,
         )
         SettingsItemDivider()
         AccentPreferenceChoiceRow(
