@@ -27,6 +27,7 @@
 - 路由历史按 Wi-Fi、蜂窝、以太网和系统 VPN 类型隔离；网络变化、设置变化或手动刷新会清理路由与连接池。评论等写操作关闭自动连接重试和重定向，避免请求体可能发出后跨候选地址重复提交。
 - 使用新的蓝色下载与齿轮品牌图替换旧绿色 `W` Logo；APK 启动图标新增五档密度资源、Android 8+ adaptive icon 和 Android 13+ monochrome themed icon，README 中英文项目页同步使用原始高清 Logo。
 - APK 启动图标单独改用留白更完整的新构图，项目 README Logo 保持不变；外观设置新增“图标跟随系统取色”，Android 13+ 通过 adaptive icon `monochrome` 图层与 launcher 莫奈着色，并使用双 `activity-alias` 在系统主题图标和固定彩色图标之间切换。
+- 将 adaptive icon 的彩色与单色前景统一缩至原画布的 `84%` 并居中，`mdpi` 有效图形边界由约 `67×60` 收紧为 `56×50`，增加 launcher 遮罩内留白；legacy 图标、蓝色底板和项目 README Logo 保持不变。
 
 #### 验证
 
