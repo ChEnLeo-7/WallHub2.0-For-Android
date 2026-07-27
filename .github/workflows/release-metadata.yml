@@ -95,7 +95,7 @@ jobs:
           import json
           import sys
           for asset in json.load(sys.stdin).get("assets", []):
-              print(f"{asset[\"id\"]}\t{asset[\"name\"]}")
+              print("{}\t{}".format(asset["id"], asset["name"]))
           ' <<<"$release_json" > "$RUNNER_TEMP/release-assets.tsv"
           while IFS=$'\t' read -r asset_id asset_name; do
             if [[ "$asset_name" != *.apk ]]; then

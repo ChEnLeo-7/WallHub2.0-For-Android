@@ -214,7 +214,12 @@ python3 -c '
 import json
 import sys
 for asset in json.load(sys.stdin).get("assets", []):
-    print(f"{asset[\"id\"]}\t{asset[\"name\"]}\t{asset[\"browser_download_url\"]}\t{asset.get(\"digest\", \"\")}")
+    print("{}\t{}\t{}\t{}".format(
+        asset["id"],
+        asset["name"],
+        asset["browser_download_url"],
+        asset.get("digest", ""),
+    ))
 ' <<<"$release_json" > "$assets_file"
 
 expected_names="$(printf '%s\n' \
