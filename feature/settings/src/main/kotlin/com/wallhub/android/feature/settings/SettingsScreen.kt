@@ -97,7 +97,12 @@ import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
+import com.wallhub.android.core.model.SteamAccessMode
+import com.wallhub.android.core.model.SteamAccessPhase
+import com.wallhub.android.core.model.SteamAccessRepository
+import com.wallhub.android.core.model.SteamAccessState
 import com.wallhub.android.core.model.ThemePreference
+import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
@@ -187,6 +192,7 @@ class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val steamSessionRepository: SteamSessionRepository,
     private val diagnosticRepository: DiagnosticRepository,
+    private val steamAccessRepository: SteamAccessRepository,
 ) : ViewModel() {
     private val mutableDiagnosticExportState = MutableStateFlow(DiagnosticExportUiState())
 
@@ -204,6 +210,8 @@ class SettingsViewModel @Inject constructor(
 
     val diagnosticExportState: StateFlow<DiagnosticExportUiState> =
         mutableDiagnosticExportState.asStateFlow()
+
+    val steamAccessState: StateFlow<SteamAccessState> = steamAccessRepository.state
 
     fun setTheme(theme: ThemePreference) {
         viewModelScope.launch { settingsRepository.setTheme(theme) }
@@ -271,6 +279,30 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.setOnlineStreamCacheLimitMb(limitMb) }
     }
 
+    fun setDownloadProxyEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setDownloadProxyEnabled(enabled) }
+    }
+
+    fun setSteamAccessEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setSteamAccessEnabled(enabled) }
+    }
+
+    fun setSteamAccessMode(mode: SteamAccessMode) {
+        viewModelScope.launch { settingsRepository.setSteamAccessMode(mode) }
+    }
+
+    fun setSteamAccessDohEndpoints(endpoints: List<String>) {
+        viewModelScope.launch { settingsRepository.setSteamAccessDohEndpoints(endpoints) }
+    }
+
+    fun setSteamAccessHosts(hosts: String) {
+        viewModelScope.launch { settingsRepository.setSteamAccessHosts(hosts) }
+    }
+
+    fun refreshSteamAccess() {
+        steamAccessRepository.refresh()
+    }
+
     fun setSteamApiKey(apiKey: String) {
         viewModelScope.launch { settingsRepository.setSteamApiKey(apiKey) }
     }
@@ -327,6 +359,7 @@ fun SettingsRoute(
     val preferences by viewModel.preferences.collectAsState()
     val session by viewModel.session.collectAsState()
     val diagnosticExportState by viewModel.diagnosticExportState.collectAsState()
+    val steamAccessState by viewModel.steamAccessState.collectAsState()
     val outputDirectoryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
     ) { treeUri ->
@@ -363,9 +396,16 @@ fun SettingsRoute(
         onHomePreferencesChange = viewModel::setHomePreferences,
         onHomePaginationModeChange = viewModel::setHomePaginationMode,
         onDownloadPreferencesChange = viewModel::setDownloadPreferences,
+        onDownloadProxyEnabledChange = viewModel::setDownloadProxyEnabled,
         onOnlineStreamCacheLimitChange = viewModel::setOnlineStreamCacheLimitMb,
         onSteamApiKeyChange = viewModel::setSteamApiKey,
         onOnlineChunkPlaybackEnabledChange = viewModel::setOnlineChunkPlaybackEnabled,
+        steamAccessState = steamAccessState,
+        onSteamAccessEnabledChange = viewModel::setSteamAccessEnabled,
+        onSteamAccessModeChange = viewModel::setSteamAccessMode,
+        onSteamAccessDohEndpointsChange = viewModel::setSteamAccessDohEndpoints,
+        onSteamAccessHostsChange = viewModel::setSteamAccessHosts,
+        onRefreshSteamAccess = viewModel::refreshSteamAccess,
         session = session,
         onOpenSteamLogin = onOpenSteamLogin,
         onLogoutSteam = viewModel::logoutSteam,
@@ -398,9 +438,16 @@ fun SettingsScreen(
     onHomePreferencesChange: (Int, Int, Boolean, HomeCardAction, Boolean) -> Unit,
     onHomePaginationModeChange: (HomePaginationMode) -> Unit,
     onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit,
+    onDownloadProxyEnabledChange: (Boolean) -> Unit,
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
     onSteamApiKeyChange: (String) -> Unit,
     onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
+    steamAccessState: SteamAccessState,
+    onSteamAccessEnabledChange: (Boolean) -> Unit,
+    onSteamAccessModeChange: (SteamAccessMode) -> Unit,
+    onSteamAccessDohEndpointsChange: (List<String>) -> Unit,
+    onSteamAccessHostsChange: (String) -> Unit,
+    onRefreshSteamAccess: () -> Unit,
     session: SteamSessionState,
     onOpenSteamLogin: () -> Unit,
     onLogoutSteam: () -> Unit,
@@ -574,6 +621,7 @@ fun SettingsScreen(
                         onSelectOutputDirectory = onSelectOutputDirectory,
                         onClearOutputDirectory = onClearOutputDirectory,
                         onDownloadPreferencesChange = onDownloadPreferencesChange,
+                        onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
                     )
                 }
                 if (displayedCategory == SettingsCategory.APPEARANCE) {
@@ -593,6 +641,12 @@ fun SettingsScreen(
                 if (displayedCategory == SettingsCategory.EXPERIMENTAL) {
                     ExperimentalSettingsContent(
                         preferences = preferences,
+                        steamAccessState = steamAccessState,
+                        onSteamAccessEnabledChange = onSteamAccessEnabledChange,
+                        onSteamAccessModeChange = onSteamAccessModeChange,
+                        onSteamAccessDohEndpointsChange = onSteamAccessDohEndpointsChange,
+                        onSteamAccessHostsChange = onSteamAccessHostsChange,
+                        onRefreshSteamAccess = onRefreshSteamAccess,
                         onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
                         onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
                         onRequestNotifications = onRequestNotifications,
@@ -820,6 +874,7 @@ private fun DownloadSettingsContent(
     onSelectOutputDirectory: () -> Unit,
     onClearOutputDirectory: () -> Unit,
     onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit,
+    onDownloadProxyEnabledChange: (Boolean) -> Unit,
 ) {
     fun text(zh: String, en: String): String = if (preferences.language == AppLanguage.EN) en else zh
     fun saveDownloadPreferences(
@@ -911,11 +966,31 @@ private fun DownloadSettingsContent(
     SettingsSection(
         title = text("网络代理", "Network proxy"),
         supportingText = text(
-            "留空时使用系统默认网络连接",
-            "Leave empty to use the system network connection",
+            "当前版本仅用于下载和在线播放，并与 Steam 连接增强互斥",
+            "Currently used by downloads and online playback; mutually exclusive with Steam access enhancement",
         ),
         icon = Icons.Outlined.Tune,
     ) {
+        if (preferences.downloadProxyRequiresConfirmation) {
+            SettingsNotice(
+                title = text("旧版代理需要确认", "Legacy proxy needs confirmation"),
+                message = text(
+                    "已保留旧版代理地址，但不会自动启用。请确认地址后再开启代理。",
+                    "The saved legacy address was kept but is not enabled automatically. Confirm it before enabling the proxy.",
+                ),
+            )
+        }
+        SettingsSwitchRow(
+            title = text("使用网络代理", "Use network proxy"),
+            supportingText = text(
+                "开启后自动关闭 Steam 连接增强；代理失败不会改用增强线路",
+                "Enabling this turns off Steam access enhancement; proxy failures do not use enhanced routes",
+            ),
+            checked = preferences.downloadProxyEnabled,
+            enabled = isSupportedDownloadProxyUrl(preferences.downloadProxyUrl),
+            onCheckedChange = onDownloadProxyEnabledChange,
+        )
+        SettingsItemDivider()
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1095,19 +1170,136 @@ private fun SteamSettingsContent(
 @Composable
 private fun ExperimentalSettingsContent(
     preferences: AppPreferences,
+    steamAccessState: SteamAccessState,
+    onSteamAccessEnabledChange: (Boolean) -> Unit,
+    onSteamAccessModeChange: (SteamAccessMode) -> Unit,
+    onSteamAccessDohEndpointsChange: (List<String>) -> Unit,
+    onSteamAccessHostsChange: (String) -> Unit,
+    onRefreshSteamAccess: () -> Unit,
     onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
     onRequestNotifications: () -> Unit,
 ) {
     fun text(zh: String, en: String): String = if (preferences.language == AppLanguage.EN) en else zh
+    var dohEndpoints by remember(preferences.steamAccessDohEndpoints) {
+        mutableStateOf(preferences.steamAccessDohEndpoints.joinToString("\n"))
+    }
+    var hostsText by remember(preferences.steamAccessHosts) {
+        mutableStateOf(preferences.steamAccessHosts)
+    }
 
     SettingsNotice(
-        title = text("实验功能可能改变播放行为", "Experimental features may change playback behavior"),
+        title = text("实验功能可能改变网络与播放行为", "Experimental features may change networking and playback"),
         message = text(
             "遇到稳定性问题时，可关闭相关开关恢复默认流程。",
             "Turn off the related option to return to the default flow if stability issues occur.",
         ),
     )
+
+    SettingsSection(
+        title = text("Steam 连接增强", "Steam access enhancement"),
+        supportingText = text(
+            "移植自 WallHub Webview 的智能解析与候选 IP 选路，并保留完整 TLS 验证",
+            "Smart resolution and candidate-IP routing ported from WallHub Webview with full TLS verification",
+        ),
+        icon = Icons.Outlined.Language,
+    ) {
+        SettingsSwitchRow(
+            title = text("启用内置连接增强", "Enable built-in access enhancement"),
+            supportingText = if (preferences.downloadProxyEnabled) {
+                text("网络代理已启用，请先关闭代理", "Network proxy is enabled; turn it off first")
+            } else {
+                text(
+                    "优先使用经过验证的候选 IP，失败时回退系统网络",
+                    "Prefer verified candidate IPs and fall back to the system network",
+                )
+            },
+            checked = preferences.steamAccessEnabled,
+            enabled = !preferences.downloadProxyEnabled,
+            onCheckedChange = onSteamAccessEnabledChange,
+        )
+        SettingsItemDivider()
+        SettingChoiceRow(
+            title = text("选路模式", "Routing mode"),
+            selectedValue = preferences.steamAccessMode,
+            values = SteamAccessMode.entries,
+            label = { mode ->
+                when (mode) {
+                    SteamAccessMode.SMART_DOH -> text("智能 DoH", "Smart DoH")
+                    SteamAccessMode.HOSTS -> "Hosts"
+                }
+            },
+            onSelected = onSteamAccessModeChange,
+        )
+        SettingsItemDivider()
+        SettingsListItem(
+            headlineContent = { Text(text("连接状态", "Connection status")) },
+            supportingContent = {
+                Text(steamAccessState.summary(preferences.language))
+            },
+        )
+        SettingsActionArea {
+            FilledTonalButton(
+                onClick = onRefreshSteamAccess,
+                enabled = preferences.steamAccessEnabled,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Outlined.Refresh, contentDescription = null)
+                Text(
+                    text("重新解析与预热", "Resolve and warm up again"),
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+        if (preferences.steamAccessMode == SteamAccessMode.SMART_DOH) {
+            SettingsItemDivider()
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SettingsFilledTextField(
+                    value = dohEndpoints,
+                    onValueChange = { dohEndpoints = it },
+                    label = { Text(text("DoH 地址（每行一个）", "DoH endpoints (one per line)")) },
+                    singleLine = false,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Button(
+                    onClick = {
+                        onSteamAccessDohEndpointsChange(
+                            dohEndpoints.lineSequence().map(String::trim).filter(String::isNotBlank).toList(),
+                        )
+                    },
+                    enabled = dohEndpoints.lineSequence().any { it.isNotBlank() } &&
+                        dohEndpoints != preferences.steamAccessDohEndpoints.joinToString("\n"),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(text("保存 DoH 设置", "Save DoH settings"))
+                }
+            }
+        } else {
+            SettingsItemDivider()
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SettingsFilledTextField(
+                    value = hostsText,
+                    onValueChange = { hostsText = it },
+                    label = { Text(text("应用内 Hosts", "In-app Hosts")) },
+                    singleLine = false,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Button(
+                    onClick = { onSteamAccessHostsChange(hostsText) },
+                    enabled = hostsText != preferences.steamAccessHosts,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(text("保存 Hosts", "Save Hosts"))
+                }
+            }
+        }
+    }
 
     SettingsSection(
         title = text("在线播放", "Online playback"),
@@ -1522,6 +1714,7 @@ private fun SettingsSwitchRow(
     title: String,
     supportingText: String,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     SettingsListItem(
@@ -1530,6 +1723,7 @@ private fun SettingsSwitchRow(
             .clip(MaterialTheme.shapes.medium)
             .toggleable(
                 value = checked,
+                enabled = enabled,
                 role = Role.Switch,
                 onValueChange = onCheckedChange,
             ),
@@ -1538,6 +1732,7 @@ private fun SettingsSwitchRow(
         trailingContent = {
             Switch(
                 checked = checked,
+                enabled = enabled,
                 onCheckedChange = null,
             )
         },
@@ -1622,6 +1817,24 @@ private fun SteamSessionState.settingsSummary(language: AppLanguage): String = w
     -> message ?: language.text("Steam 登录需要重新验证", "Steam sign-in needs verification")
 
     SteamSessionPhase.SIGNED_OUT -> language.text("未登录", "Not signed in")
+}
+
+private fun SteamAccessState.summary(language: AppLanguage): String {
+    val phaseLabel = when (phase) {
+        SteamAccessPhase.DISABLED -> language.text("已关闭", "Disabled")
+        SteamAccessPhase.RESOLVING -> language.text("正在解析", "Resolving")
+        SteamAccessPhase.READY -> language.text("可用", "Ready")
+        SteamAccessPhase.DEGRADED -> language.text("已降级", "Degraded")
+        SteamAccessPhase.FAILED -> language.text("失败", "Failed")
+    }
+    val details = buildList {
+        add(phaseLabel)
+        if (networkType != "unknown") add(networkType)
+        selectedAddress?.let(::add)
+        if (candidateCount > 0) add(language.text("$candidateCount 个候选", "$candidateCount candidates"))
+        if (fallbackCount > 0) add(language.text("回退 $fallbackCount 次", "$fallbackCount fallbacks"))
+    }
+    return details.joinToString(" · ") + message?.let { "\n$it" }.orEmpty()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

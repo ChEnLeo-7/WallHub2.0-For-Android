@@ -12,17 +12,22 @@ import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 
 @Singleton
 class SteamWorkshopVideoStreamRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val credentialProvider: SteamContentCredentialProvider,
     private val settingsRepository: SettingsRepository,
+    private val steamHttpClientFactory: SteamHttpClientFactory,
 ) : WorkshopVideoStreamRepository {
     override suspend fun open(workshopId: Long): WorkshopVideoStreamSession = withContext(Dispatchers.IO) {
         require(workshopId > 0L) { "创意工坊项目 ID 无效" }
         val preferences = settingsRepository.preferences.first()
-        val target = SteamWorkshopContentApi().fetchContentTarget(workshopId)
+        val activeProxyUrl = preferences.downloadProxyUrl.takeIf { preferences.downloadProxyEnabled }.orEmpty()
+        val target = SteamWorkshopContentApi(
+            steamHttpClientFactory.newBuilder().applyDownloadProxy(activeProxyUrl),
+        ).fetchContentTarget(workshopId)
         check(target.contentTypeHint == "video") { "该项目不是可在线播放的视频壁纸" }
         val cacheDirectory = File(
             context.cacheDir,
@@ -33,7 +38,7 @@ class SteamWorkshopVideoStreamRepository @Inject constructor(
             credential = credentialProvider.loadContentCredential(),
             options = SteamContentDownloadOptions(
                 chunkConcurrency = preferences.chunkDownloadConcurrency,
-                proxyUrl = preferences.downloadProxyUrl,
+                proxyUrl = activeProxyUrl,
             ),
             cacheDirectory = cacheDirectory,
             cacheLimitBytes = preferences.mediaCacheLimitMb.toLong() * 1024L * 1024L,

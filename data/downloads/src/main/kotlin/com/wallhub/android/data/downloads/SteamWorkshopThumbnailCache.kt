@@ -27,10 +27,13 @@ import okhttp3.Request
 import okhttp3.Response
 import org.json.JSONObject
 
-internal class SteamWorkshopThumbnailCache(context: Context) {
+internal class SteamWorkshopThumbnailCache(
+    context: Context,
+    clientBuilder: OkHttpClient.Builder,
+) {
     private val directory = File(context.cacheDir, CACHE_DIRECTORY).apply { mkdirs() }
     private val resolveMutex = Mutex()
-    private val client = OkHttpClient.Builder()
+    private val client = clientBuilder
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(25, TimeUnit.SECONDS)
         .callTimeout(35, TimeUnit.SECONDS)

@@ -13,7 +13,10 @@ import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.LocalWallpaperViewMode
+import com.wallhub.android.core.model.DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
+import com.wallhub.android.core.model.SteamAccessMode
 import com.wallhub.android.core.model.ThemePreference
+import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -84,6 +87,7 @@ class AppPreferencesStore(context: Context) {
             preferences[Keys.maxConcurrentDownloads] = maxConcurrentDownloads.coerceIn(1, 4)
             preferences[Keys.chunkDownloadConcurrency] = chunkDownloadConcurrency.coerceIn(12, 48)
             preferences[Keys.downloadProxyUrl] = proxyUrl.trim()
+            if (!isSupportedDownloadProxyUrl(proxyUrl)) preferences[Keys.downloadProxyEnabled] = false
             preferences[Keys.mediaCacheLimitMb] = mediaCacheLimitMb.coerceAtLeast(128)
         }
     }
@@ -91,6 +95,45 @@ class AppPreferencesStore(context: Context) {
     suspend fun setOnlineStreamCacheLimitMb(limitMb: Int) {
         applicationContext.dataStore.edit { preferences ->
             preferences[Keys.mediaCacheLimitMb] = limitMb.coerceAtLeast(128)
+        }
+    }
+
+    suspend fun setDownloadProxyEnabled(enabled: Boolean) {
+        applicationContext.dataStore.edit { preferences ->
+            val canEnable = enabled && isSupportedDownloadProxyUrl(preferences[Keys.downloadProxyUrl].orEmpty())
+            preferences[Keys.downloadProxyEnabled] = canEnable
+            if (canEnable) preferences[Keys.steamAccessEnabled] = false
+        }
+    }
+
+    suspend fun setSteamAccessEnabled(enabled: Boolean) {
+        applicationContext.dataStore.edit { preferences ->
+            preferences[Keys.steamAccessEnabled] = enabled
+            if (enabled) preferences[Keys.downloadProxyEnabled] = false
+        }
+    }
+
+    suspend fun setSteamAccessMode(mode: SteamAccessMode) {
+        applicationContext.dataStore.edit { preferences ->
+            preferences[Keys.steamAccessMode] = mode.name
+        }
+    }
+
+    suspend fun setSteamAccessDohEndpoints(endpoints: List<String>) {
+        applicationContext.dataStore.edit { preferences ->
+            val normalized = endpoints.asSequence()
+                .map(String::trim)
+                .filter { endpoint -> endpoint.length <= 2_048 && endpoint.startsWith("https://") }
+                .distinct()
+                .take(8)
+                .toList()
+            preferences[Keys.steamAccessDohEndpoints] = normalized.joinToString("\n")
+        }
+    }
+
+    suspend fun setSteamAccessHosts(hosts: String) {
+        applicationContext.dataStore.edit { preferences ->
+            preferences[Keys.steamAccessHosts] = hosts.trim().take(1_048_576)
         }
     }
 
@@ -178,6 +221,20 @@ class AppPreferencesStore(context: Context) {
             chunkDownloadConcurrency = (preferences[Keys.chunkDownloadConcurrency] ?: 24)
                 .let { saved -> if (saved <= 12) 24 else saved.coerceIn(12, 48) },
             downloadProxyUrl = preferences[Keys.downloadProxyUrl].orEmpty(),
+            downloadProxyEnabled = preferences[Keys.downloadProxyEnabled] ?: false,
+            downloadProxyRequiresConfirmation = preferences[Keys.downloadProxyEnabled] == null &&
+                !preferences[Keys.downloadProxyUrl].isNullOrBlank(),
+            steamAccessEnabled = preferences[Keys.steamAccessEnabled] ?: false,
+            steamAccessMode = preferences.enumValue(Keys.steamAccessMode, SteamAccessMode.SMART_DOH),
+            steamAccessDohEndpoints = preferences[Keys.steamAccessDohEndpoints]
+                ?.lineSequence()
+                ?.map(String::trim)
+                ?.filter(String::isNotBlank)
+                ?.distinct()
+                ?.toList()
+                ?.takeIf { endpoints -> endpoints.isNotEmpty() }
+                ?: DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS,
+            steamAccessHosts = preferences[Keys.steamAccessHosts].orEmpty(),
             mediaCacheLimitMb = (preferences[Keys.mediaCacheLimitMb] ?: 512).coerceAtLeast(128),
             steamApiKey = preferences[Keys.steamApiKey].orEmpty(),
             onlineChunkPlaybackEnabled = preferences[Keys.onlineChunkPlaybackEnabled] ?: false,
@@ -211,6 +268,11 @@ class AppPreferencesStore(context: Context) {
         val maxConcurrentDownloads = intPreferencesKey("max_concurrent_downloads")
         val chunkDownloadConcurrency = intPreferencesKey("chunk_download_concurrency")
         val downloadProxyUrl = stringPreferencesKey("download_proxy_url")
+        val downloadProxyEnabled = booleanPreferencesKey("download_proxy_enabled")
+        val steamAccessEnabled = booleanPreferencesKey("steam_access_enabled")
+        val steamAccessMode = stringPreferencesKey("steam_access_mode")
+        val steamAccessDohEndpoints = stringPreferencesKey("steam_access_doh_endpoints")
+        val steamAccessHosts = stringPreferencesKey("steam_access_hosts")
         val mediaCacheLimitMb = intPreferencesKey("media_cache_limit_mb")
         val steamApiKey = stringPreferencesKey("steam_api_key")
         val onlineChunkPlaybackEnabled = booleanPreferencesKey("online_chunk_playback_enabled")

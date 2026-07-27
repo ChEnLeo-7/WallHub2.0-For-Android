@@ -6,6 +6,7 @@ import com.wallhub.android.core.model.DownloadTaskRepository
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamContentCredentialProvider
+import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.LocalWallpaperRepository
 import com.wallhub.android.core.model.WorkshopRepository
@@ -15,6 +16,7 @@ import com.wallhub.android.data.downloads.RoomDownloadTaskRepository
 import com.wallhub.android.data.downloads.SteamWorkshopVideoStreamRepository
 import com.wallhub.android.data.settings.DataStoreSettingsRepository
 import com.wallhub.android.data.steam.SecureSteamSessionRepository
+import com.wallhub.android.data.steamaccess.SteamAccessManager
 import com.wallhub.android.data.workshop.CommunityWorkshopRepository
 import dagger.Binds
 import dagger.Module
@@ -42,6 +44,12 @@ abstract class RepositoryModule {
     abstract fun bindSteamContentCredentialProvider(
         repository: SecureSteamSessionRepository,
     ): SteamContentCredentialProvider
+
+    @Binds
+    @Singleton
+    abstract fun bindSteamAccessRepository(
+        repository: SteamAccessManager,
+    ): SteamAccessRepository
 
     @Binds
     @Singleton

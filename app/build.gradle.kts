@@ -30,8 +30,8 @@ android {
         applicationId = "com.wallhub.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 34
-        versionName = "0.8.24"
+        versionCode = 35
+        versionName = "0.8.25"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -85,6 +85,7 @@ dependencies {
     implementation(project(":core:designsystem"))
     implementation(project(":core:database"))
     implementation(project(":data:settings"))
+    implementation(project(":data:steamaccess"))
     implementation(project(":data:steam"))
     implementation(project(":data:workshop"))
     implementation(project(":data:downloads"))

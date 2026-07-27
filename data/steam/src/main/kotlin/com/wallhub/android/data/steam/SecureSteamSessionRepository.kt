@@ -80,10 +80,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import okhttp3.OkHttpClient
 import okhttp3.FormBody
 import okhttp3.Request
 import org.json.JSONObject
+import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 
 internal data class PersistedSteamCredential(
     val accountName: String,
@@ -98,12 +98,18 @@ internal data class PersistedSteamCredential(
 class SecureSteamSessionRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val diagnostics: DiagnosticRepository,
+    clientFactory: SteamHttpClientFactory,
 ) : SteamSessionRepository, SteamContentCredentialProvider, AccountWorkshopRepository {
     private val credentialStore = EncryptedSteamCredentialStore(context.applicationContext)
-    private val communityClient = OkHttpClient.Builder()
+    private val communityClient = clientFactory.newBuilder()
         .callTimeout(COMMUNITY_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .build()
-    private val steamDirectoryClient = createSteamDirectoryClient()
+    private val communityMutationClient = communityClient.newBuilder()
+        .retryOnConnectionFailure(false)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
+    private val steamDirectoryClient = createSteamDirectoryClient(clientFactory)
     private val steamServerListProvider = SteamWebSocketServerListProvider()
     private val authorDisplayNames = ConcurrentHashMap<Long, String>()
     private val mutableSession = MutableStateFlow(SteamSessionState())
@@ -454,12 +460,12 @@ class SecureSteamSessionRepository @Inject constructor(
                     .build(),
             )
             .build()
-        communityClient.newCall(request).execute().use { response ->
+        communityMutationClient.newCall(request).execute().use { response ->
+            if (response.header("Location")?.contains("/login", ignoreCase = true) == true) {
+                throw IllegalStateException("Steam 社区登录状态已失效，请重新登录")
+            }
             if (!response.isSuccessful) {
                 throw IllegalStateException("Steam 评论提交失败（HTTP ${response.code}）")
-            }
-            if (response.request.url.encodedPath.contains("/login", ignoreCase = true)) {
-                throw IllegalStateException("Steam 社区登录状态已失效，请重新登录")
             }
             val payload = response.body.string()
             val json = runCatching { JSONObject(payload) }.getOrNull()

@@ -89,6 +89,7 @@ class FormalWorkshopDownloadWorker(
     private val conversionScheduler: ConversionWorkScheduler,
     private val settingsRepository: SettingsRepository,
     private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
+    private val steamHttpClientFactory: com.wallhub.android.data.steamaccess.SteamHttpClientFactory,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val taskId = inputData.getString(KEY_TASK_ID) ?: return@withContext Result.failure()
@@ -106,7 +107,14 @@ class FormalWorkshopDownloadWorker(
                 status = DownloadStatus.RESOLVING,
                 message = "正在读取 Steam 公共创意工坊详情…",
             )
-            val target = SteamWorkshopContentApi().fetchContentTarget(task.workshopId)
+            val downloadPreferences = settingsRepository.preferences.first()
+            val activeProxyUrl = downloadPreferences.downloadProxyUrl
+                .takeIf { downloadPreferences.downloadProxyEnabled }
+                .orEmpty()
+            val target = SteamWorkshopContentApi(
+                steamHttpClientFactory.newBuilder().applyDownloadProxy(activeProxyUrl),
+            )
+                .fetchContentTarget(task.workshopId)
             val credential = credentialProvider.loadContentCredential()
             if (
                 !task.accountName.isNullOrBlank() &&
@@ -159,7 +167,6 @@ class FormalWorkshopDownloadWorker(
             var lastSpeedAt = System.currentTimeMillis()
             var lastSpeedBytes = task.downloadedBytes
             val controlProbe = TaskControlProbe(taskDao, taskId)
-            val downloadPreferences = settingsRepository.preferences.first()
             val download = downloadConcurrencyGovernor.withSlot(
                 taskId = taskId,
                 priority = task.queuePosition,
@@ -171,7 +178,7 @@ class FormalWorkshopDownloadWorker(
                     credential = credential,
                     options = SteamContentDownloadOptions(
                         chunkConcurrency = downloadPreferences.chunkDownloadConcurrency,
-                        proxyUrl = downloadPreferences.downloadProxyUrl,
+                        proxyUrl = activeProxyUrl,
                     ),
                     control = controlProbe::current,
                 ) { progress ->

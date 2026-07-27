@@ -1,5 +1,7 @@
 package com.wallhub.android.core.model
 
+import java.net.URI
+
 enum class ThemePreference {
     SYSTEM,
     LIGHT,
@@ -31,6 +33,30 @@ enum class HomePaginationMode {
     INFINITE_SCROLL,
     PAGED,
 }
+
+enum class SteamAccessMode {
+    SMART_DOH,
+    HOSTS,
+}
+
+enum class SteamAccessPhase {
+    DISABLED,
+    READY,
+    RESOLVING,
+    DEGRADED,
+    FAILED,
+}
+
+data class SteamAccessState(
+    val phase: SteamAccessPhase = SteamAccessPhase.DISABLED,
+    val networkType: String = "unknown",
+    val activeHost: String? = null,
+    val selectedAddress: String? = null,
+    val candidateCount: Int = 0,
+    val fallbackCount: Long = 0L,
+    val message: String? = null,
+    val updatedAt: Long = System.currentTimeMillis(),
+)
 
 enum class SteamSessionPhase {
     SIGNED_OUT,
@@ -78,6 +104,12 @@ data class AppPreferences(
     val maxConcurrentDownloads: Int = 1,
     val chunkDownloadConcurrency: Int = 24,
     val downloadProxyUrl: String = "",
+    val downloadProxyEnabled: Boolean = false,
+    val downloadProxyRequiresConfirmation: Boolean = false,
+    val steamAccessEnabled: Boolean = false,
+    val steamAccessMode: SteamAccessMode = SteamAccessMode.SMART_DOH,
+    val steamAccessDohEndpoints: List<String> = DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS,
+    val steamAccessHosts: String = "",
     val mediaCacheLimitMb: Int = 512,
     val steamApiKey: String = "",
     /**
@@ -86,6 +118,18 @@ data class AppPreferences(
      */
     val onlineChunkPlaybackEnabled: Boolean = false,
 )
+
+val DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS = listOf(
+    "https://1.12.12.12/resolve",
+    "https://doh.pub/resolve",
+    "https://dns.alidns.com/resolve",
+)
+
+fun isSupportedDownloadProxyUrl(raw: String): Boolean {
+    val uri = runCatching { URI(raw.trim()) }.getOrNull() ?: return false
+    val supportedScheme = uri.scheme?.lowercase() in setOf("http", "https", "socks", "socks5")
+    return supportedScheme && !uri.host.isNullOrBlank() && (uri.port == -1 || uri.port in 1..65_535)
+}
 
 data class AppError(
     val title: String,

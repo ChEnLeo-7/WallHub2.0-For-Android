@@ -38,6 +38,16 @@ interface SettingsRepository {
 
     suspend fun setOnlineStreamCacheLimitMb(limitMb: Int) = Unit
 
+    suspend fun setDownloadProxyEnabled(enabled: Boolean) = Unit
+
+    suspend fun setSteamAccessEnabled(enabled: Boolean) = Unit
+
+    suspend fun setSteamAccessMode(mode: SteamAccessMode) = Unit
+
+    suspend fun setSteamAccessDohEndpoints(endpoints: List<String>) = Unit
+
+    suspend fun setSteamAccessHosts(hosts: String) = Unit
+
     suspend fun setSteamApiKey(apiKey: String) = Unit
 
     suspend fun setOnlineChunkPlaybackEnabled(enabled: Boolean) = Unit
@@ -51,6 +61,12 @@ interface SettingsRepository {
     suspend fun clearLocalManagementDirectory() = Unit
 
     suspend fun setLocalWallpaperViewMode(mode: LocalWallpaperViewMode) = Unit
+}
+
+interface SteamAccessRepository {
+    val state: StateFlow<SteamAccessState>
+
+    fun refresh()
 }
 
 interface SteamSessionRepository {

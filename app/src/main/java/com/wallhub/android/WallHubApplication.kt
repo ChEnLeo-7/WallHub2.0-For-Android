@@ -8,6 +8,7 @@ import coil.ImageLoaderFactory
 import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
 import com.wallhub.android.data.downloads.WallHubDownloadWorkerFactory
+import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -15,6 +16,9 @@ import javax.inject.Inject
 class WallHubApplication : Application(), Configuration.Provider, ImageLoaderFactory {
     @Inject
     lateinit var workerFactory: WallHubDownloadWorkerFactory
+
+    @Inject
+    lateinit var steamHttpClientFactory: SteamHttpClientFactory
 
     override fun onCreate() {
         super.onCreate()
@@ -27,6 +31,7 @@ class WallHubApplication : Application(), Configuration.Provider, ImageLoaderFac
             .build()
 
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
+        .okHttpClient(steamHttpClientFactory.newBuilder().build())
         .components {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 add(ImageDecoderDecoder.Factory())

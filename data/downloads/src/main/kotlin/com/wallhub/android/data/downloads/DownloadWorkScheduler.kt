@@ -81,6 +81,7 @@ class WallHubDownloadWorkerFactory @Inject constructor(
     private val conversionScheduler: ConversionWorkScheduler,
     private val settingsRepository: com.wallhub.android.core.model.SettingsRepository,
     private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
+    private val steamHttpClientFactory: com.wallhub.android.data.steamaccess.SteamHttpClientFactory,
 ) : WorkerFactory() {
     override fun createWorker(
         appContext: Context,
@@ -96,6 +97,7 @@ class WallHubDownloadWorkerFactory @Inject constructor(
                 conversionScheduler = conversionScheduler,
                 settingsRepository = settingsRepository,
                 downloadConcurrencyGovernor = downloadConcurrencyGovernor,
+                steamHttpClientFactory = steamHttpClientFactory,
             )
 
             FormalWorkshopConversionWorker::class.java.name -> FormalWorkshopConversionWorker(

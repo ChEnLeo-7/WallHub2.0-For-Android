@@ -21,8 +21,10 @@ internal data class WorkshopContentTarget(
         get() = appId
 }
 
-internal class SteamWorkshopContentApi {
-    private val client = OkHttpClient.Builder()
+internal class SteamWorkshopContentApi(
+    clientBuilder: OkHttpClient.Builder,
+) {
+    private val client = clientBuilder
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS)

@@ -23,6 +23,7 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation(project(":data:steamaccess"))
     implementation(libs.hilt.android)
     implementation(libs.okhttp.android)
     implementation(libs.kotlinx.coroutines.android)

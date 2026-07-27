@@ -9,6 +9,7 @@ import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.LocalWallpaperViewMode
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.ThemePreference
+import com.wallhub.android.core.model.SteamAccessMode
 import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
 
@@ -58,6 +59,26 @@ class DataStoreSettingsRepository @Inject constructor(
 
     override suspend fun setOnlineStreamCacheLimitMb(limitMb: Int) {
         store.setOnlineStreamCacheLimitMb(limitMb)
+    }
+
+    override suspend fun setDownloadProxyEnabled(enabled: Boolean) {
+        store.setDownloadProxyEnabled(enabled)
+    }
+
+    override suspend fun setSteamAccessEnabled(enabled: Boolean) {
+        store.setSteamAccessEnabled(enabled)
+    }
+
+    override suspend fun setSteamAccessMode(mode: SteamAccessMode) {
+        store.setSteamAccessMode(mode)
+    }
+
+    override suspend fun setSteamAccessDohEndpoints(endpoints: List<String>) {
+        store.setSteamAccessDohEndpoints(endpoints)
+    }
+
+    override suspend fun setSteamAccessHosts(hosts: String) {
+        store.setSteamAccessHosts(hosts)
     }
 
     override suspend fun setSteamApiKey(apiKey: String) {

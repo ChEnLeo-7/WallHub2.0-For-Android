@@ -45,16 +45,18 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import org.json.JSONObject
+import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 
 class LocalWallpaperFileRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val settingsRepository: SettingsRepository,
     private val taskDao: FormalTaskRecordDao,
     private val metadataDao: LocalWallpaperMetadataDao,
+    clientFactory: SteamHttpClientFactory,
 ) : LocalWallpaperRepository {
     private val applicationContext = context.applicationContext
     private val resolver = applicationContext.contentResolver
-    private val thumbnailCache = SteamWorkshopThumbnailCache(applicationContext)
+    private val thumbnailCache = SteamWorkshopThumbnailCache(applicationContext, clientFactory.newBuilder())
     private val projectContentUris = ConcurrentHashMap<String, List<String>>()
 
     override fun scan(): Flow<LocalWallpaperScanSnapshot> = flow {

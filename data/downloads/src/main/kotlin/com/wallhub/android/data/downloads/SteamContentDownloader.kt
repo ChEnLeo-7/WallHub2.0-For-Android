@@ -28,9 +28,6 @@ import java.io.Closeable
 import java.io.File
 import java.io.FileInputStream
 import java.io.RandomAccessFile
-import java.net.InetSocketAddress
-import java.net.Proxy
-import java.net.URI
 import java.security.MessageDigest
 import java.util.ArrayDeque
 import java.util.concurrent.TimeUnit
@@ -1054,9 +1051,7 @@ internal class SteamContentDownloader {
             .readTimeout(CDN_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .writeTimeout(CDN_WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(true)
-        options.proxyUrl.takeIf(String::isNotBlank)?.let { proxyUrl ->
-            httpClientBuilder.proxy(parseProxy(proxyUrl))
-        }
+        httpClientBuilder.applyDownloadProxy(options.proxyUrl)
         val httpClient = httpClientBuilder.build()
         return SteamCdnClient(
             SteamClient(
@@ -1088,21 +1083,6 @@ internal class SteamContentDownloader {
     } else {
         failures.take(MAX_CDN_ERROR_DETAILS)
             .joinToString(prefix = "Steam CDN $kind 下载失败：", separator = "；")
-    }
-
-    private fun parseProxy(raw: String): Proxy {
-        val uri = runCatching { URI(raw.trim()) }.getOrElse {
-            throw IllegalArgumentException("下载代理地址无效")
-        }
-        val host = uri.host?.takeIf(String::isNotBlank)
-            ?: throw IllegalArgumentException("下载代理缺少主机名")
-        val type = when (uri.scheme?.lowercase()) {
-            "http", "https" -> Proxy.Type.HTTP
-            "socks", "socks5" -> Proxy.Type.SOCKS
-            else -> throw IllegalArgumentException("下载代理仅支持 HTTP(S) 或 SOCKS5")
-        }
-        val port = if (uri.port > 0) uri.port else if (type == Proxy.Type.SOCKS) 1080 else 8080
-        return Proxy(type, InetSocketAddress(host, port))
     }
 
     private suspend fun openContentSession(

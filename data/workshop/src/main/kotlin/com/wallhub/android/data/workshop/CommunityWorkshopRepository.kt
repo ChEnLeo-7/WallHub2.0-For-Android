@@ -14,6 +14,7 @@ import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -23,7 +24,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
@@ -31,8 +31,9 @@ import org.json.JSONObject
 @Singleton
 class CommunityWorkshopRepository @Inject constructor(
     private val settingsRepository: SettingsRepository,
+    clientFactory: SteamHttpClientFactory,
 ) : WorkshopRepository {
-    private val client = OkHttpClient.Builder()
+    private val client = clientFactory.newBuilder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS)

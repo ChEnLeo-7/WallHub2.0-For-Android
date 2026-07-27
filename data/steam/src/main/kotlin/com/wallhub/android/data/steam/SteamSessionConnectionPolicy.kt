@@ -8,11 +8,15 @@ import `in`.dragonbra.javasteam.steam.steamclient.configuration.SteamConfigurati
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
+import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 
 internal const val STEAM_DIRECTORY_CALL_TIMEOUT_MS = 12_000L
 internal const val STEAM_RPC_TIMEOUT_MS = 15_000L
 
-internal fun createSteamDirectoryClient(): OkHttpClient = OkHttpClient.Builder()
+internal fun createSteamDirectoryClient(clientFactory: SteamHttpClientFactory): OkHttpClient =
+    createSteamDirectoryClient(clientFactory.newBuilder())
+
+internal fun createSteamDirectoryClient(builder: OkHttpClient.Builder = OkHttpClient.Builder()): OkHttpClient = builder
     .callTimeout(STEAM_DIRECTORY_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
     .connectTimeout(6_000L, TimeUnit.MILLISECONDS)
     .readTimeout(8_000L, TimeUnit.MILLISECONDS)
