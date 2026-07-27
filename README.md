@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/wallhub-logo.svg" width="128" height="128" alt="WallHub Logo">
+  <img src="docs/assets/wallhub-logo.png" width="128" height="128" alt="WallHub Logo">
   <h1>WallHub for Android</h1>
   <p><strong>把 Wallpaper Engine 创意工坊带到 Android：原生浏览、在线播放、可靠下载与移动端壁纸管理，一站完成。</strong></p>
   <p>
