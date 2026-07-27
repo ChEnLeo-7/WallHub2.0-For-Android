@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-发现页筛选、管理页交互、菜单、分页、MPKG 修复和 GitHub Actions 到 ADB 流程均已完成。MPKG 无损减积研究已通过三个真实场景将最终生产候选收敛到 HC3；源码已接入固定 HC3、协作取消和 `EXPORTING` 提交边界，等待构建、直接生产转换、取消延迟和热量验证，ETC2 保持实验状态。
+发现页筛选、管理页交互、菜单、分页、MPKG 修复和 GitHub Actions 到 ADB 流程均已完成。MPKG 无损减积已接入固定 HC3、协作取消和 `EXPORTING` 提交边界，并通过 CI、同 SHA APK 安装、三场景直接生产转换和转换器取消探针；剩余门槛是完整 WorkManager 取消链路和可用 thermal HAL，ETC2 保持实验状态。
 
 ## 已完成事项
 
@@ -115,7 +115,7 @@
   - HC3 中位基准总耗时约 Fast `1.83x`，按 payload 差额粗估完整包减少约 `2.57%`。
   - HC5 约 `2.74x`，粗估完整包减少约 `2.98%`。
   - HC6 约 `3.53x`，粗估完整包减少约 `3.07%`。
-  - 当前基准不是源 `scene.pkg` 的完整生产转换，不能直接应用完整转换 `2x` 门槛；HC3 源码已接入但仍需直接生产验证。
+  - 该 ART 基准不是源 `scene.pkg` 的完整生产转换；后续直接生产复测已确认聚合约 Fast `1.67x`。
 - HC7 已淘汰为默认候选；后续三场景完整比较也淘汰 HC6，并最终选择 HC3。
 - 取消响应审计后的源码接入已覆盖 archive entry、目录遍历和每 `1 MiB` MPKG/ZIP payload 复制；已有输出继续受原子临时文件保护。单个受限 TEX 解码/HC3 压缩仍不可中断。转换后新增 `EXPORTING` 状态并隐藏取消操作，使外部文件提交与任务完成不可被中途取消。
 - 热量采样期间 battery temperature 保持 `36.0 C`、thermal status 为 `0`，但设备报告 thermal HAL 未就绪，结果不足以通过生产热量门槛。
@@ -126,6 +126,9 @@
 - 独立 comparator 已验证三个 HC3/HC6 MPKG 的索引和顺序一致、非 RGBA 条目逐字节不变、TEX header 除 stored length 外不变，151 个 TEX 的解压 RGBA 全部逐字节一致。
 - 三个 HC3 MPKG 均从官方客户端强制停止状态冷启动进入 `PreviewActivity`：`3742497499` 为 `4,266 ms`，`3746422401` 为 `3,697 ms`，`3768443264` 为 `1,574 ms`。人物、服装、头发、水流、透明层、飞机、尾焰、雨、反射、粒子和文字完整，无 LZ4/包损坏错误、崩溃、ANR 或 OOM；没有点击应用壁纸。
 - HC3 输出 SHA-256：`3742497499` 为 `C6D648C302A4E4902F786DAA5C2C031327E2CE505EF4C46231FBB08A8C684970`，`3746422401` 为 `E7E0E38823981A35E89345CB65A75F6670C7D72F620F03183F9BE35CE150E421`，`3768443264` 为 `95B07DC966C7F23A94FEA9383D0FB2A6E5C6296902EA1923C88EE55408F078F4`。
+- commit `b3b3fb4d27d7b28affb31676c573a8a419081dfe` 的 GitHub Actions run `30259581383` 已通过全量 JVM 测试、`lintDebug`、签名 Release 和 artifact 上传；artifact ID `8650420913` 已安装到 Samsung `SM_G9900`，冷启动 PID `16991` 无致命异常、ANR 或 OOM。
+- 安装后的生产 `WorkshopConverter` 直接时间为 `2,602.295 / 1,903.877 / 904.633 ms`，三场景聚合 `5,410.805 ms`，约 Fast 中位合计 `1.67x`；三份 MPKG 大小与 SHA-256 均精确匹配隔离 HC3 候选。
+- 一次性生产转换取消探针测得请求到取消观察 `14.495 ms`，已有输出哨兵保持不变，临时文件为 `0`。该探针未覆盖 UI、Room 和 WorkManager 的完整状态链路。
 - 另有两个含动画/视频或 tail profile 的特殊场景在临时 `app_process` 转换中被系统 `Killed`，没有错误 MPKG 残留；原因未确定，不计入 HC3 收益与兼容性统计。
 
 ### 文档和静态检查
@@ -223,12 +226,11 @@
 ## 未完成待办
 
 - 当前用户提出的七项 UI 与交互需求已全部完成，没有已知功能阻塞项。
-- MPKG ART 压缩阶段、Java heap、PSS、RSS、GC、三场景完整包体、独立逐字节比较和官方客户端画面验证已完成；HC3 源码接入和取消边界也已完成，但尚未构建部署。
-- 需要先通过 GitHub Actions 的全量 JVM 测试、`lintDebug` 和 Release 组装，再安装同一 commit artifact。
-- 需要直接复跑三个源 `scene.pkg`，以真实生产时间替代当前校正估算，并测 WorkManager 真实取消延迟。
+- MPKG ART、内存、三场景包体、逐字节比较、官方客户端画面、HC3 源码接入、CI、部署和直接生产转换均已完成。
+- 仍需测 UI → Room → WorkManager 的真实取消延迟；当前只完成转换器级 `14.495 ms` 探针。
 - 需要在 thermal HAL 可用的设备上测真实完整场景连续转换；当前 Samsung 设备只能提供 coarse battery temperature 和 thermal status。
 - ETC2 自动生产化仍缺少可靠的材质、scene、shader uniform 和采样语义分类，以及 Mali/Xclipse 等独立 GPU 家族验证。
-- GitHub Actions 签名 Secret、全量 JVM 测试、`lintDebug`、Release artifact、动态 ADB 安装和冷启动流程此前已完成基线验收；当前 HC3 变更仍需以新 commit 重新跑完整流程。
+- 当前 HC3 commit 已重新通过 GitHub Actions、同 SHA artifact、动态 ADB 安装和冷启动完整流程。
 - 新增项目 Skill 属于 OpenCode 启动时配置；提交后需退出并重启 OpenCode，新会话才会自动发现 `github-actions-adb-deploy`。
 - Steam 会话在一次重新安装后的首次冷启动进入过可重试断线态，手动点击“重试恢复”后成功加载资料库。该现象不属于本轮 UI 回归，但如果再次出现，可单独对 Steam 会话恢复和 RPC 做故障注入诊断。
 - 设备上的 `uiautomator` 每次 dump 结束可能在 Houdini 转译层产生自身 SIGSEGV；后续检查日志时应按 WallHub PID 或包名过滤。

@@ -24,7 +24,7 @@
 - 真实 Workshop `3746422401` 的 53 个 RGBA TEX 首先证明 HC 有实际价值；后续 Android ART 冷进程基准淘汰 HC7，并将完整场景候选收敛到 HC3/HC6。
 - 三场景完整转换校正结果最终选择 **HC3**：聚合时间约为 Fast `1.60x`，而 HC6 约为 `2.87x`；HC6 只比 HC3 再少 `3,102,212` 字节。HC3 在速度、最终包体和无损兼容性之间形成更合理的 Pareto 点。
 - 三个 HC3 MPKG 均由独立 comparator 验证索引、非纹理条目、TEX header 和解压 RGBA，并在官方 Wallpaper Engine `2.8.8 (4354)` 冷启动进入 `PreviewActivity` 后完整渲染。没有 LZ4 解压错误、包损坏、崩溃、ANR 或 OOM。
-- 研究完成后，生产源码已最小化切换到固定 HC3，并加入 archive entry、MPKG/ZIP payload 和目录遍历取消边界；导出开始后进入不可取消的 `EXPORTING` 提交阶段。该源码尚未经过 GitHub Actions 构建、安装或直接三场景生产实测，因此当前性能结论仍来自校正估算。
+- 研究完成后，生产源码已最小化切换到固定 HC3，并加入 archive entry、MPKG/ZIP payload 和目录遍历取消边界；导出开始后进入不可取消的 `EXPORTING` 提交阶段。commit `b3b3fb4` 已通过 GitHub Actions、同 SHA artifact 安装和三个源场景直接生产转换；聚合直接时间约为 Fast `1.67x`。
 - ETC2 仍不能无条件应用。相同真实场景中高频法线、背景和数据纹理的二次编码 PSNR 可低至约 `10-30 dB`；保守原型只转换两张明确颜色纹理，完整包为 `200,001,989` 字节，并通过官方客户端，但仅比无损 HC7 再少 `170,315` 字节。
 
 ## 当前生产路径基线
@@ -402,14 +402,13 @@ TEX header、LZ4 包装和 MPKG 打包由独立测试工具负责。这样可以
 
 隔离原型、Android ART 压缩阶段基准、三场景完整 MPKG 验证和 HC3/取消边界源码接入已经完成，下一步优先级调整为：
 
-1. 通过 GitHub Actions 运行全量 JVM 测试、`lintDebug` 和 Release 组装，再安装同一 commit artifact 并完成冷启动检查；当前不能在 LXC 中运行 Gradle。
-2. 使用接入 HC3 的生产转换器直接运行三个源 `scene.pkg`，以真实完整转换时间替代校正估算，并复核最终 MPKG SHA、包体和官方客户端画面。
-3. 在真实 Worker 中测量请求取消到临时文件和 staging 清理完成的延迟；转换阶段在 archive entry、目录遍历、shader 处理步骤和每 `1 MiB` 文件复制块之间检查取消，单个受限 TEX 解码/HC3 压缩或单次 shader 处理仍不可中断；`EXPORTING` 提交阶段不提供取消操作。
-4. 在 thermal HAL 正常的设备上连续运行真实完整场景，复测转换时间、Java heap、PSS、GC 和热量。
-5. ETC2 继续保持实验路径，先建立材质、scene 描述、shader uniform 和采样语义分类；不能只按文件名或 PSNR 自动放行。
-6. 使用更多普通颜色、Alpha、法线、mask、位移和背景纹理校准 ETC2 阈值，并覆盖 Mali 与 Xclipse 等独立 GPU 家族。
-7. 从官方 format-5 TEX 建立只含路径、尺寸和 SHA-256 的结构 golden manifest，不提交官方版权 payload。
-8. ETC2 只有在多场景、多 GPU 和语义分类全部通过后才考虑生产接入；当前更合理的第一生产候选是无损 HC3。
+1. 在真实 UI → Room → WorkManager 链路中测量请求取消到临时文件和 staging 清理完成的端到端延迟；当前一次性生产转换探针已测得转换器回调延迟 `14.495 ms`、已有输出保留和零临时文件，但不覆盖数据库和 Worker 状态迁移。
+2. 在 thermal HAL 正常的设备上连续运行真实完整场景，复测转换时间、Java heap、PSS、GC 和热量。
+3. 对特殊动画/视频和 tail TEX 场景诊断临时 `app_process` 被系统 `Killed` 的原因。
+4. ETC2 继续保持实验路径，先建立材质、scene 描述、shader uniform 和采样语义分类；不能只按文件名或 PSNR 自动放行。
+5. 使用更多普通颜色、Alpha、法线、mask、位移和背景纹理校准 ETC2 阈值，并覆盖 Mali 与 Xclipse 等独立 GPU 家族。
+6. 从官方 format-5 TEX 建立只含路径、尺寸和 SHA-256 的结构 golden manifest，不提交官方版权 payload。
+7. ETC2 只有在多场景、多 GPU 和语义分类全部通过后才考虑生产接入；当前更合理的第一生产候选是无损 HC3。
 
 ## 阶段三：ADB 隔离原型结果
 
@@ -839,10 +838,12 @@ HC3 输出 SHA-256：
 
 ### 最终判断
 
-- **推荐 HC3 作为下一步生产候选。** 它保持 TEX/MPKG 格式和 RGBA 内容不变，在三个真实场景上聚合减少 `4.40%`，校正完整时间约为 Fast `1.60x`。
+- **HC3 已作为生产无损默认值部署。** 它保持 TEX/MPKG 格式和 RGBA 内容不变，在三个真实场景上聚合减少 `4.40%`。
 - HC6 和 HC7 不再作为默认候选；额外尺寸收益不足以补偿 CPU 时间。
 - 阶段五测量期间生产代码仍使用 Fast，也没有重新部署 WallHub；测量完成后源码已固定为 HC3 并加入协作取消和 `EXPORTING` 提交边界。
-- 当前接入尚未构建或部署。下一步是按项目 GitHub Actions 到 ADB 流程验证，再用直接生产转换复跑三个源场景。
+- commit `b3b3fb4` 已通过 GitHub Actions run `30259581383`，同 SHA Release artifact 已安装并冷启动成功。
+- 安装后的生产转换器直接复跑三个场景，输出大小和 SHA-256 全部与本阶段 HC3 候选一致；直接时间为 `2,602.295 / 1,903.877 / 904.633 ms`，聚合约 Fast `1.67x`。
+- 生产转换取消探针测得请求到协作边界 `14.495 ms`，已有输出保留且无临时文件；完整 WorkManager 端到端取消仍需验证。
 - thermal HAL 未就绪和特殊动画/tail 场景未诊断仍是残余风险。
 
 ## 主要来源
