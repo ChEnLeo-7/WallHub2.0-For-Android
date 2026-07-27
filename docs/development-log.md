@@ -33,6 +33,7 @@
 
 - GitHub Actions run `30266556810` 在 commit `b200cae616a6bc7c1d44dd3805131b262712f625` 通过全量 JVM 测试、`lintDebug`、签名 Release 组装和 artifact 上传；提交绑定 APK 完成 SHA-256、ZIP、八个 DEX 与签名证书检查，并已原位安装到 `192.168.2.190:39055`。WallHub `0.8.25 (35)` 冷启动 PID `3707` 存活，日志无致命异常、ANR 或 OOM。
 - GitHub Actions run `30269430089` 在 commit `9080ca5652ee64fd87678d2b91107cf68e162d60` 再次通过全量 JVM 测试、`lintDebug`、签名 Release 组装和提交绑定 artifact 校验，并原位安装到同一 Android 15 设备。真机从设置关闭主题图标后 launcher 唯一入口切换为 `MainActivityColorIcon`，重新开启后恢复 `MainActivityThemedIcon`，切换期间 PID `5404` 未退出；随后强制冷启动 PID `6285` 存活、DataStore 选择保持且日志无致命异常、ANR 或 OOM。
+- GitHub Actions run `30271536333` 在 commit `912b9ea5d179f303bec5ddb2f042c8224134c58d` 通过同一套测试、lint、签名 Release 与 artifact 校验，并原位安装到 Android 15 设备；冷启动 PID `7839` 存活且无致命异常、ANR 或 OOM。launcher 桌面截图确认缩小后的 WallHub 前景与相邻壁纸引擎图标具有接近的视觉占比，四周留白完整，当前入口继续保持 `MainActivityThemedIcon`。
 
 ### 0.8.24 (34) — 2026-07-24
 
