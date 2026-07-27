@@ -14,7 +14,7 @@ Use JDK 17 or newer, Android SDK Platform 36, and Build Tools 35.0.0. The checke
 
 The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Use `./gradlew` for Linux or macOS.
 
-Do not run Gradle in the LXC. After Android source changes, automatically use the `github-actions-adb-deploy` repository skill: commit a clean `main`, run `scripts/push-build-install.sh`, and require the commit-bound GitHub Actions artifact, current ADB-device install, and cold-start verification to succeed. Use `android-release-build` only as an explicit or outage fallback.
+Do not run Gradle in the LXC. After Android source changes, automatically use the `github-actions-adb-deploy` repository skill: commit a clean `main`, run `scripts/push-build-install.sh`, and require the commit-bound GitHub Actions artifact, current ADB-device install, and cold-start verification to succeed. Use `android-release-build` only as an explicit or outage fallback. For a public versioned GitHub Release, use the `wallhub-release-publish` repository skill and `scripts/publish-github-release.sh`; require bilingual notes, ABI-specific plus universal APKs, generated SHA-256 values, exact source/tag binding, and post-download verification.
 
 ## Coding Style & Naming Conventions
 

@@ -17,6 +17,7 @@ val releaseSigningValues = listOf(
     releaseKeyPassword,
 )
 val hasReleaseSigning = releaseSigningValues.all { !it.isNullOrBlank() }
+val publishAbiApks = providers.gradleProperty("wallhub.publishAbiApks").orNull == "true"
 
 check(releaseSigningValues.all { it.isNullOrBlank() } || hasReleaseSigning) {
     "Configure all WALLHUB_RELEASE_* signing variables or none of them."
@@ -34,6 +35,15 @@ android {
         versionName = "0.8.25"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    splits {
+        abi {
+            isEnable = publishAbiApks
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            isUniversalApk = publishAbiApks
+        }
     }
 
     if (hasReleaseSigning) {

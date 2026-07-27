@@ -1,0 +1,290 @@
+name: Publish GitHub Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag matching app versionName, for example v0.8.25
+        required: true
+        type: string
+      release_notes_file:
+        description: Versioned bilingual release notes under docs/releases
+        required: true
+        type: string
+      prerelease:
+        description: Publish as a prerelease
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wallhub-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      BUILD_TOOLS_VERSION: "35.0.0"
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_NOTES_FILE: ${{ inputs.release_notes_file }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK packages
+        run: yes | sdkmanager "platforms;android-36" "build-tools;${BUILD_TOOLS_VERSION}"
+      - name: Validate release request
+        id: release_meta
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
+            echo "::error::Releases must be dispatched from main"
+            exit 1
+          }
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || {
+            echo "::error::Invalid release tag: $RELEASE_TAG"
+            exit 1
+          }
+          [[ "$RELEASE_NOTES_FILE" =~ ^docs/releases/v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?\.md$ ]] || {
+            echo "::error::Release notes must be a versioned Markdown file under docs/releases"
+            exit 1
+          }
+          test -f "$RELEASE_NOTES_FILE"
+
+          git fetch origin main --tags
+          [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || {
+            echo "::error::Dispatched commit is not the latest origin/main"
+            exit 1
+          }
+          [[ -z "$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG")" ]] || {
+            echo "::error::Tag already exists: $RELEASE_TAG"
+            exit 1
+          }
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release already exists: $RELEASE_TAG"
+            exit 1
+          fi
+
+          version_name="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts)"
+          version_code="$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\)/\1/p' app/build.gradle.kts)"
+          [[ -n "$version_name" && -n "$version_code" ]]
+          [[ "$RELEASE_TAG" == "v$version_name" ]] || {
+            echo "::error::Tag $RELEASE_TAG does not match versionName $version_name"
+            exit 1
+          }
+          [[ "$RELEASE_NOTES_FILE" == "docs/releases/$RELEASE_TAG.md" ]] || {
+            echo "::error::Release notes filename must match tag: docs/releases/$RELEASE_TAG.md"
+            exit 1
+          }
+
+          grep -q '^## 中文$' "$RELEASE_NOTES_FILE"
+          grep -q '^### 此次更新$' "$RELEASE_NOTES_FILE"
+          grep -q '^### 修改$' "$RELEASE_NOTES_FILE"
+          grep -q '^### 修复$' "$RELEASE_NOTES_FILE"
+          grep -q '^### 下载说明$' "$RELEASE_NOTES_FILE"
+          grep -q '^## English$' "$RELEASE_NOTES_FILE"
+          grep -q '^### Updates$' "$RELEASE_NOTES_FILE"
+          grep -q '^### Changes$' "$RELEASE_NOTES_FILE"
+          grep -q '^### Fixes$' "$RELEASE_NOTES_FILE"
+          grep -q '^### Download guide$' "$RELEASE_NOTES_FILE"
+
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Verify Android application
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest lintDebug
+      - name: Require Release signing secrets
+        env:
+          WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
+          WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
+          WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
+          WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for variable in \
+            WALLHUB_RELEASE_KEYSTORE_BASE64 \
+            WALLHUB_RELEASE_STORE_PASSWORD \
+            WALLHUB_RELEASE_KEY_ALIAS \
+            WALLHUB_RELEASE_KEY_PASSWORD; do
+            if [ -z "${!variable}" ]; then
+              echo "::error::Missing GitHub Actions secret: $variable"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - name: Restore Release signing keystore
+        env:
+          WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
+          WALLHUB_RELEASE_STORE_FILE: ${{ runner.temp }}/wallhub-release.keystore
+        run: |
+          printf '%s' "$WALLHUB_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$WALLHUB_RELEASE_STORE_FILE"
+          test -s "$WALLHUB_RELEASE_STORE_FILE"
+          chmod 600 "$WALLHUB_RELEASE_STORE_FILE"
+      - name: Assemble signed architecture APKs
+        env:
+          WALLHUB_RELEASE_STORE_FILE: ${{ runner.temp }}/wallhub-release.keystore
+          WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
+          WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
+          WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease -Pwallhub.publishAbiApks=true
+      - name: Package and verify Release assets
+        env:
+          VERSION_NAME: ${{ steps.release_meta.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          release_dir="$GITHUB_WORKSPACE/release-assets"
+          mkdir -p "$release_dir"
+
+          declare -A patterns=(
+            [universal]='app-universal-release.apk'
+            [arm64-v8a]='app-arm64-v8a-release.apk'
+            [armeabi-v7a]='app-armeabi-v7a-release.apk'
+            [x86]='app-x86-release.apk'
+            [x86_64]='app-x86_64-release.apk'
+          )
+          labels=(universal arm64-v8a armeabi-v7a x86 x86_64)
+          for label in "${labels[@]}"; do
+            source_apk="app/build/outputs/apk/release/${patterns[$label]}"
+            test -s "$source_apk" || {
+              echo "::error::Missing expected APK: $source_apk"
+              find app/build/outputs/apk -type f -name '*.apk' -print || true
+              exit 1
+            }
+            cp "$source_apk" "$release_dir/WallHub-${VERSION_NAME}-${label}.apk"
+          done
+
+          apksigner="$ANDROID_HOME/build-tools/${BUILD_TOOLS_VERSION}/apksigner"
+          zipalign="$ANDROID_HOME/build-tools/${BUILD_TOOLS_VERSION}/zipalign"
+          expected_all_abis=$'arm64-v8a\narmeabi-v7a\nx86\nx86_64'
+          signing_certificate=''
+          for label in "${labels[@]}"; do
+            apk="$release_dir/WallHub-${VERSION_NAME}-${label}.apk"
+            unzip -tq "$apk"
+            unzip -Z1 "$apk" | grep -qx 'classes.dex'
+            "$zipalign" -c -P 16 4 "$apk"
+            "$apksigner" verify --verbose "$apk"
+
+            certificate="$($apksigner verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print toupper($2); exit}')"
+            test -n "$certificate"
+            if [[ -z "$signing_certificate" ]]; then
+              signing_certificate="$certificate"
+            else
+              [[ "$certificate" == "$signing_certificate" ]]
+            fi
+
+            packaged_abis="$(unzip -Z1 "$apk" | sed -n 's#^lib/\([^/]*\)/.*#\1#p' | sort -u)"
+            if [[ "$label" == universal ]]; then
+              [[ "$packaged_abis" == "$expected_all_abis" ]] || {
+                echo "::error::Universal APK ABI set is unexpected: $packaged_abis"
+                exit 1
+              }
+            else
+              [[ "$packaged_abis" == "$label" ]] || {
+                echo "::error::$label APK contains unexpected ABIs: $packaged_abis"
+                exit 1
+              }
+            fi
+          done
+
+          (
+            cd "$release_dir"
+            sha256sum WallHub-*.apk > SHA256SUMS.txt
+          )
+          printf '%s\n' "$GITHUB_SHA" > "$release_dir/SOURCE-COMMIT.txt"
+          printf '%s\n' "$signing_certificate" > "$release_dir/SIGNING-CERTIFICATE-SHA256.txt"
+
+          cp "$RELEASE_NOTES_FILE" "$release_dir/release-notes.md"
+          {
+            printf '\n## SHA-256 / SHA-256 checksums\n\n'
+            printf '| File / 文件 | SHA-256 |\n'
+            printf '|---|---|\n'
+            while read -r checksum filename; do
+              printf '| `%s` | `%s` |\n' "$filename" "$checksum"
+            done < "$release_dir/SHA256SUMS.txt"
+            printf '\n## Source / 源码\n\n'
+            printf -- '- Commit: `%s`\n' "$GITHUB_SHA"
+            printf -- '- Version: `%s (%s)`\n' "${{ steps.release_meta.outputs.version_name }}" "${{ steps.release_meta.outputs.version_code }}"
+            printf -- '- Signing certificate SHA-256: `%s`\n' "$signing_certificate"
+          } >> "$release_dir/release-notes.md"
+      - name: Upload seven-day Release bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallhub-release-bundle-${{ github.sha }}
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Create draft GitHub Release and upload assets
+        env:
+          VERSION_NAME: ${{ steps.release_meta.outputs.version_name }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          mapfile -t assets < <(find release-assets -maxdepth 1 -type f ! -name 'release-notes.md' -print | sort)
+          [[ "${#assets[@]}" -eq 8 ]]
+
+          create_args=(
+            release create "$RELEASE_TAG"
+            "${assets[@]}"
+            --repo "$GITHUB_REPOSITORY"
+            --target "$GITHUB_SHA"
+            --title "WallHub for Android ${VERSION_NAME}"
+            --notes-file release-assets/release-notes.md
+            --draft
+          )
+          if [[ "$PRERELEASE" == true ]]; then
+            create_args+=(--prerelease --latest=false)
+          else
+            create_args+=(--latest)
+          fi
+          gh "${create_args[@]}"
+
+          expected_assets="$(printf '%s\n' \
+            "WallHub-${VERSION_NAME}-arm64-v8a.apk" \
+            "WallHub-${VERSION_NAME}-armeabi-v7a.apk" \
+            "WallHub-${VERSION_NAME}-universal.apk" \
+            "WallHub-${VERSION_NAME}-x86.apk" \
+            "WallHub-${VERSION_NAME}-x86_64.apk" \
+            'SHA256SUMS.txt' \
+            'SIGNING-CERTIFICATE-SHA256.txt' \
+            'SOURCE-COMMIT.txt' | sort)"
+          actual_assets="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.assets[].name' | sort)"
+          [[ "$actual_assets" == "$expected_assets" ]] || {
+            echo "::error::Draft Release assets do not match the expected set"
+            diff -u <(printf '%s\n' "$expected_assets") <(printf '%s\n' "$actual_assets") || true
+            exit 1
+          }
+
+          edit_args=(release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false)
+          if [[ "$PRERELEASE" == true ]]; then
+            edit_args+=(--prerelease --latest=false)
+          else
+            edit_args+=(--latest)
+          fi
+          gh "${edit_args[@]}"
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url,tagName,isDraft,isPrerelease
+      - name: Publish summary
+        env:
+          VERSION_NAME: ${{ steps.release_meta.outputs.version_name }}
+        run: |
+          {
+            echo "## Published WallHub for Android ${VERSION_NAME}"
+            echo
+            echo "- Tag: \`${RELEASE_TAG}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- APKs: universal, arm64-v8a, armeabi-v7a, x86, x86_64"
+            echo "- Release assets persist until the GitHub Release is deleted."
+            echo "- The duplicate Actions bundle is retained for 7 days."
+          } >> "$GITHUB_STEP_SUMMARY"

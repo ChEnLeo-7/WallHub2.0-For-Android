@@ -106,11 +106,15 @@ The Action does the following for pushes to `main` and manual dispatches:
 1. Uses Temurin JDK 17, Android API 36 and Build Tools 35.0.0.
 2. Runs `testDebugUnitTest lintDebug`.
 3. Restores the secret keystore and builds `:app:assembleRelease`.
-4. Uploads a 14-day `wallhub-release-<commit-sha>` artifact containing the APK,
+4. Uploads a 7-day `wallhub-release-<commit-sha>` artifact containing the APK,
    SHA-256 file and commit marker.
 
 Pull requests run tests and lint but do not consume the signing secrets or
 publish an APK.
+
+## Public GitHub Releases
+
+The 7-day Actions artifact is for commit-bound ADB deployment, not public distribution. Versioned public releases use `.github/workflows/release.yml` and publish permanent universal plus ABI-specific APK assets, bilingual notes, checksums, source commit, and signing certificate metadata. See [GitHub Release Publishing](github-release.md) for the complete process.
 
 ## Failure Handling
 
