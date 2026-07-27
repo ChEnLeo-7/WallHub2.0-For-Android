@@ -96,9 +96,18 @@ jobs:
               exit 1
             }
           fi
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Release already exists: $RELEASE_TAG"
-            exit 1
+          releases_json="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")"
+          existing_release="$(python3 -c 'import json, sys; releases = json.load(sys.stdin); tag = sys.argv[1]; print(json.dumps(next((release for release in releases if release.get("tag_name") == tag), {})))' "$RELEASE_TAG" <<<"$releases_json")"
+          existing_release_id="$(python3 -c 'import json, sys; print(json.load(sys.stdin).get("id", ""))' <<<"$existing_release")"
+          if [[ -n "$existing_release_id" ]]; then
+            existing_draft="$(python3 -c 'import json, sys; print(str(json.load(sys.stdin).get("draft", False)).lower())' <<<"$existing_release")"
+            if [[ "$existing_draft" == true ]]; then
+              echo "::notice::Removing confirmed failed draft Release $existing_release_id before rebuilding"
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$existing_release_id"
+            else
+              echo "::error::Published Release already exists: $RELEASE_TAG"
+              exit 1
+            fi
           fi
 
           version_name="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts)"
@@ -280,6 +289,13 @@ jobs:
           fi
           gh "${create_args[@]}"
 
+          releases_json="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")"
+          release_id="$(python3 -c 'import json, sys; releases = json.load(sys.stdin); tag = sys.argv[1]; matches = [release for release in releases if release.get("tag_name") == tag and release.get("draft")]; print(matches[0]["id"] if len(matches) == 1 else "")' "$RELEASE_TAG" <<<"$releases_json")"
+          [[ -n "$release_id" ]] || {
+            echo "::error::Expected exactly one draft Release for $RELEASE_TAG"
+            exit 1
+          }
+
           expected_assets="$(printf '%s\n' \
             "WallHub-${VERSION_NAME}-arm64-v8a.apk" \
             "WallHub-${VERSION_NAME}-armeabi-v7a.apk" \
@@ -289,20 +305,23 @@ jobs:
             'SHA256SUMS.txt' \
             'SIGNING-CERTIFICATE-SHA256.txt' \
             'SOURCE-COMMIT.txt' | sort)"
-          actual_assets="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.assets[].name' | sort)"
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id")"
+          actual_assets="$(python3 -c 'import json, sys; print("\\n".join(asset["name"] for asset in json.load(sys.stdin).get("assets", [])))' <<<"$release_json" | sort)"
           [[ "$actual_assets" == "$expected_assets" ]] || {
             echo "::error::Draft Release assets do not match the expected set"
             diff -u <(printf '%s\n' "$expected_assets") <(printf '%s\n' "$actual_assets") || true
             exit 1
           }
 
-          edit_args=(release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false)
-          if [[ "$PRERELEASE" == true ]]; then
-            edit_args+=(--prerelease --latest=false)
-          else
-            edit_args+=(--latest)
-          fi
-          gh "${edit_args[@]}"
+          make_latest=true
+          [[ "$PRERELEASE" == true ]] && make_latest=false
+          gh api \
+            --method PATCH \
+            "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            -F draft=false \
+            -F prerelease="$PRERELEASE" \
+            -f make_latest="$make_latest" \
+            --silent
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url,tagName,isDraft,isPrerelease
       - name: Publish summary
         env:
