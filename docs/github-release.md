@@ -33,7 +33,7 @@ The four stable signing secrets used by `verify.yml` are also used by `release.y
 
 The workflow has repository `contents: write` permission so the provided `GITHUB_TOKEN` can create a tag, upload assets, and publish the Release. Repository Actions settings must allow workflow write permissions; no personal token is stored in the workflow.
 
-The local publisher requires `GITHUB_TOKEN` with Actions read/write and Contents read/write access. Load the existing token without printing it:
+The local publisher requires `GITHUB_TOKEN` with Actions read and Contents read access. Existing Git SSH credentials push `main` and the version tag, which triggers the workflow without requiring Actions write permission on the local token. Load the token without printing it:
 
 ```bash
 set -a
@@ -68,12 +68,12 @@ scripts/publish-github-release.sh \
 Add `--prerelease` only for a prerelease tag and notes file. The script:
 
 1. Validates the tag against `versionName` and checks every required bilingual heading.
-2. Pushes the exact local `main` commit.
-3. Dispatches `.github/workflows/release.yml` for that commit.
+2. Pushes the exact local `main` commit and an immutable `v<version>` tag.
+3. Waits for the tag-triggered `.github/workflows/release.yml` run.
 4. Waits for tests, lint, signing, split builds, checksums, and Release publication.
 5. Downloads all published assets and independently verifies SHA-256, ZIP/DEX structure, ABI isolation, source commit, and signing certificate.
 
-The workflow first creates a draft Release, compares the uploaded asset names with the complete expected set, and only then makes it public. A stable Release is marked Latest. A prerelease is not marked Latest.
+The workflow first creates a draft Release, compares the uploaded asset names with the complete expected set, and only then makes it public. A stable Release is marked Latest. A prerelease tag must include a suffix such as `-beta.1`, is published with `--prerelease`, and is not marked Latest. The workflow also retains a manual dispatch entry for repository operators with Actions write access.
 
 ## Failure Recovery
 

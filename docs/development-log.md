@@ -28,7 +28,7 @@
 - 使用新的蓝色下载与齿轮品牌图替换旧绿色 `W` Logo；APK 启动图标新增五档密度资源、Android 8+ adaptive icon 和 Android 13+ monochrome themed icon，README 中英文项目页同步使用原始高清 Logo。
 - APK 启动图标单独改用留白更完整的新构图，项目 README Logo 保持不变；外观设置新增“图标跟随系统取色”，Android 13+ 通过 adaptive icon `monochrome` 图层与 launcher 莫奈着色，并使用双 `activity-alias` 在系统主题图标和固定彩色图标之间切换。
 - 将 adaptive icon 的彩色与单色前景统一缩至原画布的 `84%` 并居中，`mdpi` 有效图形边界由约 `67×60` 收紧为 `56×50`，增加 launcher 遮罩内留白；legacy 图标、蓝色底板和项目 README Logo 保持不变。
-- 日常 GitHub Actions APK artifact 保留期由 14 天调整为 7 天；新增手动 GitHub Release 工作流，基于最新 `main` 构建 universal、`arm64-v8a`、`armeabi-v7a`、`x86`、`x86_64` 五个稳定签名 APK，并发布双语更新/修改/修复/下载说明、逐文件 SHA-256、源码 commit 与签名证书信息。
+- 日常 GitHub Actions APK artifact 保留期由 14 天调整为 7 天；新增 tag 推送与手动 dispatch 双入口的 GitHub Release 工作流，基于最新 `main` 构建 universal、`arm64-v8a`、`armeabi-v7a`、`x86`、`x86_64` 五个稳定签名 APK，并发布双语更新/修改/修复/下载说明、逐文件 SHA-256、源码 commit 与签名证书信息。
 - 新增 `wallhub-release-publish` 项目 Skill、REST API 发布脚本和完整发布文档，将版本/tag 校验、双语 notes、ABI 隔离、draft 门槛、资产下载复验和发布后记录固化为统一流程。
 
 #### 验证

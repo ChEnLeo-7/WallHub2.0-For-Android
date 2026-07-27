@@ -80,7 +80,7 @@ Run the publisher from a clean `main`. Add `--prerelease` only when explicitly r
 
 The publisher must succeed through every gate:
 
-1. Push exact `main` and dispatch `release.yml`.
+1. Push exact `main` and the matching version tag, which triggers `release.yml`.
 2. Require tag, notes filename, and `versionName` to match.
 3. Require tests, lint, stable signing, and five APK outputs.
 4. Require each split APK to contain only its named ABI and universal to contain all four ABIs.

@@ -1,6 +1,9 @@
 name: Publish GitHub Release
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
@@ -21,7 +24,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: wallhub-release-${{ inputs.tag }}
+  group: wallhub-release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -29,8 +32,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BUILD_TOOLS_VERSION: "35.0.0"
-      RELEASE_TAG: ${{ inputs.tag }}
-      RELEASE_NOTES_FILE: ${{ inputs.release_notes_file }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      RELEASE_NOTES_FILE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes_file || format('docs/releases/{0}.md', github.ref_name) }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -48,10 +51,24 @@ jobs:
         id: release_meta
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
-            echo "::error::Releases must be dispatched from main"
-            exit 1
-          }
+          case "$GITHUB_EVENT_NAME" in
+            workflow_dispatch)
+              [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
+                echo "::error::Manual Releases must be dispatched from main"
+                exit 1
+              }
+              ;;
+            push)
+              [[ "$GITHUB_REF" == "refs/tags/$RELEASE_TAG" ]] || {
+                echo "::error::Tag-triggered Release ref does not match $RELEASE_TAG"
+                exit 1
+              }
+              ;;
+            *)
+              echo "::error::Unsupported Release event: $GITHUB_EVENT_NAME"
+              exit 1
+              ;;
+          esac
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || {
             echo "::error::Invalid release tag: $RELEASE_TAG"
             exit 1
@@ -64,13 +81,21 @@ jobs:
 
           git fetch origin main --tags
           [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || {
-            echo "::error::Dispatched commit is not the latest origin/main"
+            echo "::error::Release commit is not the latest origin/main"
             exit 1
           }
-          [[ -z "$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG")" ]] || {
-            echo "::error::Tag already exists: $RELEASE_TAG"
-            exit 1
-          }
+          remote_tag="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" | awk '{print $1}')"
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            [[ -z "$remote_tag" ]] || {
+              echo "::error::Tag already exists: $RELEASE_TAG"
+              exit 1
+            }
+          else
+            [[ "$remote_tag" == "$GITHUB_SHA" ]] || {
+              echo "::error::Remote tag does not resolve to the Release commit"
+              exit 1
+            }
+          fi
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release already exists: $RELEASE_TAG"
             exit 1
@@ -229,7 +254,7 @@ jobs:
       - name: Create draft GitHub Release and upload assets
         env:
           VERSION_NAME: ${{ steps.release_meta.outputs.version_name }}
-          PRERELEASE: ${{ inputs.prerelease }}
+          PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || (github.event_name == 'push' && contains(github.ref_name, '-')) }}
         run: |
           set -euo pipefail
           mapfile -t assets < <(find release-assets -maxdepth 1 -type f ! -name 'release-notes.md' -print | sort)
@@ -239,11 +264,15 @@ jobs:
             release create "$RELEASE_TAG"
             "${assets[@]}"
             --repo "$GITHUB_REPOSITORY"
-            --target "$GITHUB_SHA"
             --title "WallHub for Android ${VERSION_NAME}"
             --notes-file release-assets/release-notes.md
             --draft
           )
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            create_args+=(--verify-tag)
+          else
+            create_args+=(--target "$GITHUB_SHA")
+          fi
           if [[ "$PRERELEASE" == true ]]; then
             create_args+=(--prerelease --latest=false)
           else

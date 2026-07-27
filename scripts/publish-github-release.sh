@@ -11,11 +11,12 @@ usage() {
     cat <<'EOF'
 Usage: scripts/publish-github-release.sh --tag <vX.Y.Z> --notes <docs/releases/vX.Y.Z.md> [--prerelease]
 
-Pushes the exact clean local main commit, dispatches release.yml for that commit,
-waits for publication, then downloads and verifies every GitHub Release asset.
+Pushes the exact clean local main commit and version tag, waits for the tag-
+triggered release.yml run, then downloads and verifies every Release asset.
 
 Required environment:
-  GITHUB_TOKEN  Token with repository Actions write/read and Contents write/read.
+  GITHUB_TOKEN  Token with repository Actions read and Contents read access.
+                Git SSH credentials perform the main and tag pushes.
 
 Optional environment:
   WALLHUB_GITHUB_REPOSITORY  Defaults to ChEnLeo-7/WallHub2.0-For-Android.
@@ -94,6 +95,11 @@ require_command unzip
 
 [[ -n "${GITHUB_TOKEN:-}" ]] || fail "GITHUB_TOKEN is required"
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || fail "Invalid tag: $tag"
+if [[ "$prerelease" == true ]]; then
+    [[ "$tag" == *-* ]] || fail "Prerelease tags must include a suffix, for example v1.0.0-beta.1"
+else
+    [[ "$tag" != *-* ]] || fail "A suffixed tag requires --prerelease"
+fi
 [[ "$notes_file" == "docs/releases/$tag.md" ]] || fail "Notes must be docs/releases/$tag.md"
 [[ -f "$notes_file" ]] || fail "Release notes do not exist: $notes_file"
 [[ "$(git branch --show-current)" == "$BRANCH" ]] || fail "Run from the $BRANCH branch"
@@ -127,7 +133,7 @@ if api_get "$repository_api/releases/tags/$tag" >/dev/null 2>&1; then
 fi
 [[ -z "$(git ls-remote --tags origin "refs/tags/$tag")" ]] || fail "Tag already exists: $tag"
 
-runs_url="$repository_api/actions/workflows/$WORKFLOW_FILE/runs?event=workflow_dispatch&branch=$BRANCH&per_page=50"
+runs_url="$repository_api/actions/workflows/$WORKFLOW_FILE/runs?event=push&per_page=50"
 before_json="$(api_get "$runs_url")"
 before_ids="$(python3 -c '
 import json
@@ -136,21 +142,13 @@ for run in json.load(sys.stdin).get("workflow_runs", []):
     print(run["id"])
 ' <<<"$before_json")"
 
-dispatch_payload="$(python3 -c '
-import json
-import sys
-print(json.dumps({
-    "ref": "main",
-    "inputs": {
-        "tag": sys.argv[1],
-        "release_notes_file": sys.argv[2],
-        "prerelease": sys.argv[3],
-    },
-}))
-' "$tag" "$notes_file" "$prerelease")"
-api_request POST "$repository_api/actions/workflows/$WORKFLOW_FILE/dispatches" "$dispatch_payload" >/dev/null
+git tag "$tag" "$sha"
+if ! git push origin "refs/tags/$tag"; then
+    git tag --delete "$tag" >/dev/null
+    fail "Cannot push Release tag $tag"
+fi
 
-printf 'Dispatched %s for %s at %s.\n' "$WORKFLOW_FILE" "$tag" "$sha"
+printf 'Pushed %s for %s; waiting for %s.\n' "$tag" "$sha" "$WORKFLOW_FILE"
 deadline=$((SECONDS + TIMEOUT_SECONDS))
 run_id=""
 run_url=""
@@ -183,7 +181,7 @@ print(json.dumps(match))
                 ;;
         esac
     else
-        printf 'Waiting for the dispatched Release workflow run...\n'
+        printf 'Waiting for the tag-triggered Release workflow run...\n'
     fi
     sleep "$POLL_SECONDS"
 done
