@@ -48,4 +48,17 @@ class DownloadTaskTest {
 
         assertEquals(setOf(DownloadAction.CANCEL), task.availableActions)
     }
+
+    @Test
+    fun `exporting task exposes no actions`() {
+        val task = DownloadTask(
+            id = "task",
+            workshopId = 1L,
+            title = "Wallpaper",
+            type = WorkshopType.SCENE,
+            status = DownloadStatus.EXPORTING,
+        )
+
+        assertTrue(task.availableActions.isEmpty())
+    }
 }

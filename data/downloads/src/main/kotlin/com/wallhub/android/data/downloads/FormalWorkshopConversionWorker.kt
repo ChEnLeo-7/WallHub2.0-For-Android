@@ -34,10 +34,15 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.withContext
 
 class FormalWorkshopConversionWorker(
@@ -48,21 +53,52 @@ class FormalWorkshopConversionWorker(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val taskId = inputData.getString(KEY_TASK_ID) ?: return@withContext Result.failure()
         var task = taskDao.find(taskId) ?: return@withContext Result.failure()
-        if (task.status == DownloadStatus.COMPLETED.name) return@withContext Result.success()
-        val sourceDirectory = task.stagingDirectory?.let(::File)
-            ?.canonicalFile
-            ?.takeIf(File::isDirectory)
-            ?: return@withContext fail(task, "下载暂存文件不存在，无法转换")
-        val persistentRoot = File(applicationContext.filesDir, WORKSHOP_STAGING_DIRECTORY_NAME)
-        val legacyRoot = File(applicationContext.cacheDir, WORKSHOP_STAGING_DIRECTORY_NAME)
-        if (!isManagedWorkshopStagingDirectory(persistentRoot, legacyRoot, sourceDirectory)) {
-            return@withContext fail(task, "下载暂存目录无效")
+        if (task.status == DownloadStatus.COMPLETED.name) {
+            FormalWorkshopConversionCancellation.clear(taskId)
+            return@withContext Result.success()
+        }
+        FormalWorkshopConversionCancellation.start(taskId)
+        if (task.status == DownloadStatus.EXPORTING.name) {
+            try {
+                return@withContext failOrCancelBeforeConversion(
+                    taskId = taskId,
+                    task = task,
+                    sourceDirectory = null,
+                    message = "上次导出被系统中断，请检查输出目录后重试",
+                )
+            } finally {
+                FormalWorkshopConversionCancellation.clear(taskId)
+            }
+        }
+        val sourceDirectory: File
+        try {
+            sourceDirectory = task.stagingDirectory?.let(::File)
+                ?.canonicalFile
+                ?.takeIf(File::isDirectory)
+                ?: error("下载暂存文件不存在，无法转换")
+            val persistentRoot = File(applicationContext.filesDir, WORKSHOP_STAGING_DIRECTORY_NAME)
+            val legacyRoot = File(applicationContext.cacheDir, WORKSHOP_STAGING_DIRECTORY_NAME)
+            require(isManagedWorkshopStagingDirectory(persistentRoot, legacyRoot, sourceDirectory)) {
+                "下载暂存目录无效"
+            }
+        } catch (error: Throwable) {
+            try {
+                return@withContext failOrCancelBeforeConversion(
+                    taskId = taskId,
+                    task = task,
+                    sourceDirectory = null,
+                    message = error.message ?: error.javaClass.simpleName,
+                )
+            } finally {
+                FormalWorkshopConversionCancellation.clear(taskId)
+            }
         }
         val temporaryDirectory = File(applicationContext.cacheDir, "wallhub-conversion/$taskId")
+        if (task.requestedAction == DownloadAction.CANCEL.name) {
+            FormalWorkshopConversionCancellation.clear(taskId)
+            return@withContext cancelTask(task, sourceDirectory)
+        }
         try {
-            if (task.requestedAction == DownloadAction.CANCEL.name) {
-                return@withContext cancelTask(task, sourceDirectory)
-            }
             setForeground(createForegroundInfo())
             task = update(
                 task,
@@ -72,75 +108,96 @@ class FormalWorkshopConversionWorker(
             )
             temporaryDirectory.deleteRecursively()
             check(temporaryDirectory.mkdirs() || temporaryDirectory.isDirectory) { "无法创建转换临时目录" }
-            val conversion = convert(task, sourceDirectory, temporaryDirectory)
-            if (taskDao.find(taskId)?.requestedAction == DownloadAction.CANCEL.name) {
-                return@withContext cancelTask(task, sourceDirectory)
+            val workContext = currentCoroutineContext()
+            val checkCancellation = {
+                workContext.ensureActive()
+                FormalWorkshopConversionCancellation.check(taskId)
             }
-            task = update(
-                task,
-                message = if (task.outputTreeUri.isNullOrBlank()) {
-                    "正在导出到 Download/WallHub…"
-                } else {
-                    "正在导出到所选目录…"
-                },
+            val conversion = convert(
+                task = task,
+                sourceDirectory = sourceDirectory,
+                temporaryDirectory = temporaryDirectory,
+                checkCancellation = checkCancellation,
             )
-            val exportedFile = task.outputTreeUri
-                ?.takeIf(String::isNotBlank)
-                ?.let { outputTreeUri ->
-                    ExportedFile(
-                        uri = SafExportGateway.exportFile(
-                            context = applicationContext,
-                            outputTreeUri = Uri.parse(outputTreeUri),
-                            source = conversion.outputFile,
-                            outputName = conversion.outputFile.name,
-                            mimeType = conversion.mimeType,
-                        ),
-                        label = "已导出到所选目录",
+            FormalWorkshopConversionCancellation.beginFinalization(taskId)
+            withContext(NonCancellable) {
+                task = update(
+                    task,
+                    status = DownloadStatus.EXPORTING,
+                    message = if (task.outputTreeUri.isNullOrBlank()) {
+                        "正在导出到 Download/WallHub…"
+                    } else {
+                        "正在导出到所选目录…"
+                    },
+                )
+                val exportedFile = task.outputTreeUri
+                    ?.takeIf(String::isNotBlank)
+                    ?.let { outputTreeUri ->
+                        ExportedFile(
+                            uri = SafExportGateway.exportFile(
+                                context = applicationContext,
+                                outputTreeUri = Uri.parse(outputTreeUri),
+                                source = conversion.outputFile,
+                                outputName = conversion.outputFile.name,
+                                mimeType = conversion.mimeType,
+                            ),
+                            label = "已导出到所选目录",
+                        )
+                    }
+                    ?: PublicDownloadsExportGateway.exportFile(
+                        context = applicationContext,
+                        source = conversion.outputFile,
+                        outputName = conversion.outputFile.name,
+                        mimeType = conversion.mimeType,
+                    )
+                val keepVideoSourceForLocalPlayback = task.type.equals(
+                    WorkshopType.VIDEO.name,
+                    ignoreCase = true,
+                )
+                val completed = update(
+                    task,
+                    status = DownloadStatus.COMPLETED,
+                    stagingDirectory = sourceDirectory.absolutePath,
+                    outputUri = exportedFile.uri,
+                    outputLabel = exportedFile.label,
+                    message = conversion.message(exportedFile.uri),
+                    requestedAction = null,
+                    clearRequestedAction = true,
+                )
+                // Keep completed output recoverable even if best-effort source cleanup fails.
+                if (!keepVideoSourceForLocalPlayback && sourceDirectory.deleteRecursively()) {
+                    runCatching { taskDao.clearStagingDirectory(completed.taskId) }
+                }
+                Result.success()
+            }
+        } catch (error: CancellationException) {
+            withContext(NonCancellable) {
+                val userCancelled = FormalWorkshopConversionCancellation.claimCancellation(taskId)
+                val latest = taskDao.find(taskId)
+                if (
+                    latest?.requestedAction == DownloadAction.CANCEL.name ||
+                    userCancelled
+                ) {
+                    cancelTask(latest ?: task, sourceDirectory)
+                } else {
+                    throw error
+                }
+            }
+        } catch (error: Throwable) {
+            withContext(NonCancellable) {
+                val userCancelled = FormalWorkshopConversionCancellation.claimCancellation(taskId)
+                val latest = taskDao.find(taskId)
+                if (latest?.requestedAction == DownloadAction.CANCEL.name || userCancelled) {
+                    cancelTask(latest ?: task, sourceDirectory)
+                } else {
+                    fail(
+                        task = latest ?: task,
+                        message = error.message ?: error.javaClass.simpleName,
                     )
                 }
-                ?: PublicDownloadsExportGateway.exportFile(
-                    context = applicationContext,
-                    source = conversion.outputFile,
-                    outputName = conversion.outputFile.name,
-                    mimeType = conversion.mimeType,
-                )
-            // Local video playback needs the original media file. Keep the private staging
-            // directory only for completed video projects; all other project sources are
-            // still removed after export as before.
-            val keepVideoSourceForLocalPlayback = task.type.equals(
-                WorkshopType.VIDEO.name,
-                ignoreCase = true,
-            )
-            if (!keepVideoSourceForLocalPlayback) {
-                sourceDirectory.deleteRecursively()
             }
-            update(
-                task,
-                status = DownloadStatus.COMPLETED,
-                stagingDirectory = if (keepVideoSourceForLocalPlayback) {
-                    sourceDirectory.absolutePath
-                } else {
-                    null
-                },
-                outputUri = exportedFile.uri,
-                outputLabel = exportedFile.label,
-                message = conversion.message(exportedFile.uri),
-                requestedAction = null,
-                clearRequestedAction = true,
-            )
-            Result.success()
-        } catch (error: CancellationException) {
-            val latest = taskDao.find(taskId)
-            if (latest?.requestedAction == DownloadAction.CANCEL.name) {
-                return@withContext cancelTask(latest, sourceDirectory)
-            }
-            throw error
-        } catch (error: Throwable) {
-            fail(
-                task = taskDao.find(taskId) ?: task,
-                message = error.message ?: error.javaClass.simpleName,
-            )
         } finally {
+            FormalWorkshopConversionCancellation.clear(taskId)
             temporaryDirectory.deleteRecursively()
         }
     }
@@ -149,6 +206,7 @@ class FormalWorkshopConversionWorker(
         task: FormalTaskRecordEntity,
         sourceDirectory: File,
         temporaryDirectory: File,
+        checkCancellation: () -> Unit,
     ): ConversionResult {
         val contentHint = task.type.lowercase(Locale.ROOT)
         val targetFormat = task.exportFormat.toExportFormat()
@@ -158,6 +216,7 @@ class FormalWorkshopConversionWorker(
                 sourceDirectory = sourceDirectory,
                 outputFile = File(temporaryDirectory, outputName(task, detected.outputExtension)),
                 contentHint = contentHint,
+                checkCancellation = checkCancellation,
             )
 
             ExportFormat.MPKG -> {
@@ -166,12 +225,13 @@ class FormalWorkshopConversionWorker(
                     sourceDirectory = sourceDirectory,
                     outputFile = File(temporaryDirectory, outputName(task, "mpkg")),
                     contentHint = contentHint,
+                    checkCancellation = checkCancellation,
                 )
             }
 
             ExportFormat.ZIP -> {
                 val outputFile = File(temporaryDirectory, outputName(task, "zip"))
-                writeZip(sourceDirectory, outputFile)
+                writeZip(sourceDirectory, outputFile, checkCancellation)
                 ConversionResult(
                     outputFile = outputFile,
                     mimeType = "application/zip",
@@ -185,8 +245,14 @@ class FormalWorkshopConversionWorker(
         sourceDirectory: File,
         outputFile: File,
         contentHint: String,
+        checkCancellation: () -> Unit,
     ): ConversionResult {
-        val report = WorkshopConverter.convert(sourceDirectory, outputFile, contentHint)
+        val report = WorkshopConverter.convert(
+            inputDir = sourceDirectory,
+            outputFile = outputFile,
+            contentTypeHint = contentHint,
+            checkCancellation = checkCancellation,
+        )
         return ConversionResult(
             outputFile = report.outputFile,
             mimeType = if (report.kind == WorkshopKind.WEB) "application/zip" else "application/octet-stream",
@@ -197,21 +263,33 @@ class FormalWorkshopConversionWorker(
         )
     }
 
-    private fun writeZip(sourceDirectory: File, outputFile: File) {
+    private fun writeZip(
+        sourceDirectory: File,
+        outputFile: File,
+        checkCancellation: () -> Unit,
+    ) {
         val root = sourceDirectory.canonicalFile
         writeAtomically(outputFile) { temporaryFile ->
             ZipOutputStream(BufferedOutputStream(FileOutputStream(temporaryFile))).use { output ->
                 root.walkTopDown()
                     .filter(File::isFile)
+                    .onEach { checkCancellation() }
                     .map { file -> file.canonicalFile }
                     .filter { file -> file.toPath().startsWith(root.toPath()) }
                     .sortedBy { file -> root.toPath().relativize(file.toPath()).toString().lowercase(Locale.ROOT) }
                     .forEach { file ->
+                        checkCancellation()
                         val path = root.toPath().relativize(file.toPath()).toString().replace('\\', '/')
                         require(path.isSafeRelativePath()) { "ZIP 文件路径无效：$path" }
                         output.putNextEntry(ZipEntry(path))
                         BufferedInputStream(FileInputStream(file)).use { input ->
-                            input.copyTo(output, bufferSize = COPY_BUFFER_SIZE)
+                            val buffer = ByteArray(COPY_BUFFER_SIZE)
+                            while (true) {
+                                checkCancellation()
+                                val read = input.read(buffer)
+                                if (read < 0) break
+                                output.write(buffer, 0, read)
+                            }
                         }
                         output.closeEntry()
                     }
@@ -221,9 +299,9 @@ class FormalWorkshopConversionWorker(
 
     private suspend fun cancelTask(
         task: FormalTaskRecordEntity,
-        sourceDirectory: File,
+        sourceDirectory: File?,
     ): Result {
-        sourceDirectory.deleteRecursively()
+        sourceDirectory?.deleteRecursively()
         update(
             task,
             status = DownloadStatus.CANCELLED,
@@ -235,6 +313,21 @@ class FormalWorkshopConversionWorker(
             message = "转换任务已取消，暂存文件已清理",
         )
         return Result.success()
+    }
+
+    private suspend fun failOrCancelBeforeConversion(
+        taskId: String,
+        task: FormalTaskRecordEntity,
+        sourceDirectory: File?,
+        message: String,
+    ): Result = withContext(NonCancellable) {
+        val userCancelled = FormalWorkshopConversionCancellation.claimCancellation(taskId)
+        val latest = taskDao.find(taskId)
+        if (latest?.requestedAction == DownloadAction.CANCEL.name || userCancelled) {
+            cancelTask(latest ?: task, sourceDirectory)
+        } else {
+            fail(latest ?: task, message)
+        }
     }
 
     private suspend fun fail(
@@ -345,6 +438,78 @@ class FormalWorkshopConversionWorker(
     }
 }
 
+internal object FormalWorkshopConversionCancellation {
+    private enum class State {
+        ACTIVE,
+        REQUEST_PERSISTING,
+        CANCEL_REQUESTED,
+        FINALIZING,
+    }
+
+    private val states = ConcurrentHashMap<String, State>()
+
+    fun start(taskId: String) {
+        states.putIfAbsent(taskId, State.ACTIVE)
+    }
+
+    suspend fun beginRequest(taskId: String): Boolean {
+        while (true) {
+            when (val current = states[taskId]) {
+                State.REQUEST_PERSISTING -> yield()
+                State.CANCEL_REQUESTED -> return false
+                State.FINALIZING -> return false
+                State.ACTIVE -> if (states.replace(taskId, current, State.REQUEST_PERSISTING)) return true
+                null -> if (states.putIfAbsent(taskId, State.REQUEST_PERSISTING) == null) return true
+            }
+        }
+    }
+
+    fun completeRequest(taskId: String) {
+        states.replace(taskId, State.REQUEST_PERSISTING, State.CANCEL_REQUESTED)
+    }
+
+    fun abortRequest(taskId: String) {
+        states.replace(taskId, State.REQUEST_PERSISTING, State.ACTIVE)
+    }
+
+    fun check(taskId: String) {
+        if (states[taskId] == State.CANCEL_REQUESTED) {
+            throw CancellationException("Workshop conversion was cancelled")
+        }
+    }
+
+    suspend fun beginFinalization(taskId: String) {
+        currentCoroutineContext().ensureActive()
+        while (true) {
+            when (val current = states[taskId]) {
+                State.CANCEL_REQUESTED -> throw CancellationException("Workshop conversion was cancelled")
+                State.REQUEST_PERSISTING -> yield()
+                State.FINALIZING -> return
+                State.ACTIVE -> if (states.replace(taskId, current, State.FINALIZING)) return
+                null -> if (states.putIfAbsent(taskId, State.FINALIZING) == null) return
+            }
+        }
+    }
+
+    suspend fun claimCancellation(taskId: String): Boolean {
+        while (true) {
+            when (val current = states[taskId]) {
+                State.CANCEL_REQUESTED -> return true
+                State.REQUEST_PERSISTING -> yield()
+                State.FINALIZING -> return false
+                State.ACTIVE -> if (states.replace(taskId, current, State.FINALIZING)) return false
+                null -> if (states.putIfAbsent(taskId, State.FINALIZING) == null) return false
+            }
+        }
+    }
+
+    fun isRequested(taskId: String): Boolean = states[taskId] == State.CANCEL_REQUESTED
+
+    fun clear(taskId: String) {
+        states.remove(taskId)
+    }
+}
+
 internal data class ExportedFile(
     val uri: String,
     val label: String,
@@ -368,7 +533,7 @@ internal object SafExportGateway {
         try {
             context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                 BufferedInputStream(FileInputStream(source)).use { input ->
-                    input.copyTo(output, bufferSize = 1024 * 1024)
+                    input.copyTo(output, bufferSize = COPY_BUFFER_SIZE)
                 }
             } ?: error("无法写入导出文件")
             if (previous != null) {

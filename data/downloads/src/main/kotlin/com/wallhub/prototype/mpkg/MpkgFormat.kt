@@ -14,13 +14,14 @@ const val VIDEO_MPKG_MAGIC = "PKGM0014"
 sealed interface MpkgPayload {
     val length: Long
 
-    fun writeTo(output: BufferedOutputStream)
+    fun writeTo(output: BufferedOutputStream, checkCancellation: () -> Unit = {})
 }
 
 data class ByteArrayPayload(val bytes: ByteArray) : MpkgPayload {
     override val length: Long get() = bytes.size.toLong()
 
-    override fun writeTo(output: BufferedOutputStream) {
+    override fun writeTo(output: BufferedOutputStream, checkCancellation: () -> Unit) {
+        checkCancellation()
         output.write(bytes)
     }
 }
@@ -34,11 +35,12 @@ data class FilePayload(
         require(length >= 0L && length <= file.length()) { "MPKG source file length is invalid: $file" }
     }
 
-    override fun writeTo(output: BufferedOutputStream) {
+    override fun writeTo(output: BufferedOutputStream, checkCancellation: () -> Unit) {
         FileInputStream(file).use { input ->
             val buffer = ByteArray(COPY_BUFFER_SIZE)
             var remaining = length
             while (remaining > 0L) {
+                checkCancellation()
                 val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
                 require(read > 0) { "Unexpected end of MPKG source file: $file" }
                 output.write(buffer, 0, read)
@@ -60,12 +62,13 @@ data class FileSlicePayload(
         }
     }
 
-    override fun writeTo(output: BufferedOutputStream) {
+    override fun writeTo(output: BufferedOutputStream, checkCancellation: () -> Unit) {
         RandomAccessFile(file, "r").use { input ->
             input.seek(offset)
             val buffer = ByteArray(COPY_BUFFER_SIZE)
             var remaining = length
             while (remaining > 0L) {
+                checkCancellation()
                 val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
                 require(read > 0) { "Unexpected end of MPKG source file: $file" }
                 output.write(buffer, 0, read)
@@ -94,10 +97,16 @@ data class MpkgManifest(
 object MpkgWriter {
     private const val MAX_U32 = 0xffff_ffffL
 
-    fun write(entries: List<MpkgInputEntry>, outputFile: File, magic: String): MpkgManifest {
+    fun write(
+        entries: List<MpkgInputEntry>,
+        outputFile: File,
+        magic: String,
+        checkCancellation: () -> Unit = {},
+    ): MpkgManifest {
         require(magic.startsWith("PKGM")) { "Unsupported MPKG magic: $magic" }
         val normalized = linkedMapOf<String, MpkgInputEntry>()
         entries.forEach { entry ->
+            checkCancellation()
             val path = normalizePath(entry.path)
             require(normalized.put(path, entry.copy(path = path)) == null) {
                 "Duplicate MPKG entry path: $path"
@@ -133,7 +142,10 @@ object MpkgWriter {
                 output.write(magicBytes)
                 output.writeIntLe(manifestEntries.size)
                 output.write(table)
-                ordered.forEach { entry -> entry.payload.writeTo(output) }
+                ordered.forEach { entry ->
+                    checkCancellation()
+                    entry.payload.writeTo(output, checkCancellation)
+                }
             }
         }
         return MpkgManifest(magic, manifestEntries)

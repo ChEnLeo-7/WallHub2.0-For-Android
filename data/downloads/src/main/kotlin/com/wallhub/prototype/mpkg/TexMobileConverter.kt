@@ -63,7 +63,7 @@ private data class TexMipmap(
 )
 
 /**
- * A pure Kotlin compatibility path for WallHub's "fast" MPKG profile.
+ * A pure Kotlin compatibility path for WallHub's lossless MPKG profile.
  * It converts common scene TEX formats to RGBA8888 + LZ4. ETC2 remains an
  * explicitly separate NDK validation item because Android has no public ETC2 encoder API.
  */
@@ -192,12 +192,12 @@ object TexMobileConverter {
         }
         return PreparedTexConversion(
             texture = MobileRgbaTexture(tex.flags, tex.imageWidth, tex.imageHeight, tex.unknown, rgba),
-            reason = "RGBA8888 + LZ4",
+            reason = "RGBA8888 + LZ4 HC3",
         )
     }
 
     private fun compress(rgba: ByteArray): Pair<ByteArray, Int> {
-        val compressor = LZ4Factory.fastestJavaInstance().fastCompressor()
+        val compressor = LZ4Factory.fastestJavaInstance().highCompressor(LZ4_COMPRESSION_LEVEL)
         val compressed = ByteArray(compressor.maxCompressedLength(rgba.size))
         val length = compressor.compress(rgba, 0, rgba.size, compressed, 0, compressed.size)
         return compressed to length
@@ -574,5 +574,6 @@ object TexMobileConverter {
 }
 
 private const val MOBILE_TEX_HEADER_SIZE = 91
+private const val LZ4_COMPRESSION_LEVEL = 3
 private const val MAX_MOBILE_RGBA_BYTES = 48 * 1024 * 1024
 private const val MAX_DECOMPRESSED_TEX_BYTES = MAX_MOBILE_RGBA_BYTES

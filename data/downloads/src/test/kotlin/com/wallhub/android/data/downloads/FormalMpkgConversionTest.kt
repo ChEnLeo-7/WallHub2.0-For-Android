@@ -14,6 +14,9 @@ import com.wallhub.prototype.mpkg.WorkshopConverter
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.file.Files
+import java.util.Random
+import kotlinx.coroutines.CancellationException
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
@@ -127,6 +130,60 @@ class FormalMpkgConversionTest {
     }
 
     @Test
+    fun `mobile TEX writer uses LZ4 HC3`() {
+        val rgba = hc3Fixture()
+        val tex = TexMobileConverter.writeMobileRgba(
+            flags = 0,
+            width = 128,
+            height = 128,
+            rgba = rgba,
+        )
+        val factory = net.jpountz.lz4.LZ4Factory.fastestJavaInstance()
+        val compressor = factory.highCompressor(3)
+        val expected = ByteArray(compressor.maxCompressedLength(rgba.size))
+        val expectedLength = compressor.compress(rgba, 0, rgba.size, expected, 0, expected.size)
+        val hc2 = factory.highCompressor(2).compress(rgba)
+        val hc4 = factory.highCompressor(4).compress(rgba)
+
+        assertContentEquals(expected.copyOf(expectedLength), tex.copyOfRange(MOBILE_TEX_HEADER_SIZE, tex.size))
+        assertFalse(hc2.contentEquals(expected.copyOf(expectedLength)))
+        assertFalse(hc4.contentEquals(expected.copyOf(expectedLength)))
+        StrictMobileTexReader(tex).assertRgba(width = 128, height = 128, expected = rgba)
+    }
+
+    @Test
+    fun `scene cancellation preserves existing output during package write`() {
+        val root = Files.createTempDirectory("wallhub-scene-cancel-test").toFile()
+        try {
+            File(root, "preview.jpg").writeBytes(byteArrayOf(1, 2, 3))
+            File(root, "project.json").writeText("{\"type\":\"scene\",\"title\":\"Scene\"}")
+            PkgTestWriter.write(
+                File(root, "scene.pkg"),
+                listOf(
+                    PkgEntry("one.bin", ByteArray(2 * 1024 * 1024) { it.toByte() }),
+                    PkgEntry("two.bin", byteArrayOf(2)),
+                ),
+            )
+            val originalOutput = byteArrayOf(9, 8, 7)
+            val output = File(root, "output.mpkg").apply { writeBytes(originalOutput) }
+            var checks = 0
+
+            assertFailsWith<CancellationException> {
+                WorkshopConverter.convert(root, output, "scene") {
+                    checks += 1
+                    if (checks == 10) throw CancellationException("cancel test")
+                }
+            }
+
+            assertEquals(10, checks)
+            assertContentEquals(originalOutput, output.readBytes())
+            assertTrue(root.listFiles().orEmpty().none { it.name.contains(".assets-") || it.name.endsWith(".tmp") })
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `scene conversion rejects unsupported desktop texture`() {
         val root = Files.createTempDirectory("wallhub-scene-unsupported-tex-test").toFile()
         try {
@@ -207,6 +264,30 @@ class FormalMpkgConversionTest {
         output.toByteArray()
     }
 
+    private fun hc3Fixture(): ByteArray {
+        val random = Random(0)
+        val dictionary = ByteArray(16_384).also(random::nextBytes)
+        val output = ByteArray(65_536)
+        var offset = 0
+        while (offset < output.size) {
+            val source = random.nextInt(dictionary.size - 512)
+            val length = minOf(8 + random.nextInt(505), output.size - offset)
+            dictionary.copyInto(output, offset, source, source + length)
+            offset += length
+            if (random.nextInt(5) == 0 && offset < output.size) {
+                output[offset] = random.nextInt().toByte()
+                offset += 1
+            }
+        }
+        return output
+    }
+
+    private fun net.jpountz.lz4.LZ4Compressor.compress(source: ByteArray): ByteArray {
+        val output = ByteArray(maxCompressedLength(source.size))
+        val length = compress(source, 0, source.size, output, 0, output.size)
+        return output.copyOf(length)
+    }
+
     private fun writeUncompressedMipmap(
         output: ByteArrayOutputStream,
         width: Int,
@@ -284,5 +365,9 @@ class FormalMpkgConversionTest {
                 offset += 4
             }
         }
+    }
+
+    private companion object {
+        const val MOBILE_TEX_HEADER_SIZE = 91
     }
 }

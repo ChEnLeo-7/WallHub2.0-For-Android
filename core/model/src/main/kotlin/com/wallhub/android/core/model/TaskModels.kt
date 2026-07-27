@@ -6,6 +6,7 @@ enum class DownloadStatus {
     DOWNLOADING,
     PAUSED,
     CONVERTING,
+    EXPORTING,
     COMPLETED,
     FAILED,
     CANCELLED,
@@ -75,6 +76,7 @@ data class DownloadTask(
             -> setOf(DownloadAction.PAUSE, DownloadAction.CANCEL)
 
             DownloadStatus.CONVERTING -> setOf(DownloadAction.CANCEL)
+            DownloadStatus.EXPORTING -> emptySet()
             DownloadStatus.PAUSED -> setOf(DownloadAction.RESUME, DownloadAction.CANCEL)
             DownloadStatus.FAILED -> setOf(DownloadAction.RETRY, DownloadAction.DELETE)
             DownloadStatus.CANCELLED -> setOf(DownloadAction.RETRY, DownloadAction.DELETE)

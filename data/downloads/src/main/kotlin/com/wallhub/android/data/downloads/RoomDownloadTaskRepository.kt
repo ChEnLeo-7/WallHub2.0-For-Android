@@ -17,9 +17,11 @@ import javax.inject.Inject
 import java.io.File
 import java.util.UUID
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 class RoomDownloadTaskRepository @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -144,13 +146,22 @@ class RoomDownloadTaskRepository @Inject constructor(
 
             DownloadAction.CANCEL -> {
                 if (task.status == DownloadStatus.CONVERTING) {
-                    upsert(
-                        task.copy(
-                            requestedAction = action,
-                            message = "正在取消转换并清理暂存文件",
-                            updatedAt = System.currentTimeMillis(),
-                        ),
-                    )
+                    if (!FormalWorkshopConversionCancellation.beginRequest(taskId)) return
+                    try {
+                        withContext(NonCancellable) {
+                            upsert(
+                                task.copy(
+                                    requestedAction = action,
+                                    message = "正在取消转换并清理暂存文件",
+                                    updatedAt = System.currentTimeMillis(),
+                                ),
+                            )
+                            FormalWorkshopConversionCancellation.completeRequest(taskId)
+                        }
+                    } catch (error: Throwable) {
+                        FormalWorkshopConversionCancellation.abortRequest(taskId)
+                        throw error
+                    }
                     return
                 }
                 if (activeWorker) {

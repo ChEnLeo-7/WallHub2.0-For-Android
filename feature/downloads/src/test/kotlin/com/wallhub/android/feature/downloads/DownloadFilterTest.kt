@@ -8,11 +8,12 @@ import org.junit.Test
 
 class DownloadFilterTest {
     @Test
-    fun `downloading filter keeps queued paused and converting tasks`() {
+    fun `downloading filter keeps all active tasks`() {
         val active = listOf(
             task("queued", DownloadStatus.QUEUED),
             task("paused", DownloadStatus.PAUSED),
             task("converting", DownloadStatus.CONVERTING),
+            task("exporting", DownloadStatus.EXPORTING),
         )
         val all = active + listOf(
             task("completed", DownloadStatus.COMPLETED),

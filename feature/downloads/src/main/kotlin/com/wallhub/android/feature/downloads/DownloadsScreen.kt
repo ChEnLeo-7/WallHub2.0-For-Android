@@ -604,6 +604,7 @@ internal fun filterTasks(
             DownloadStatus.DOWNLOADING,
             DownloadStatus.PAUSED,
             DownloadStatus.CONVERTING,
+            DownloadStatus.EXPORTING,
             )
 
             DownloadFilter.QUEUED -> task.status == DownloadStatus.QUEUED
@@ -641,6 +642,7 @@ private fun DownloadStatus.label(language: AppLanguage): String = when (this) {
     DownloadStatus.DOWNLOADING -> language.text("下载中", "Downloading")
     DownloadStatus.PAUSED -> language.text("已暂停", "Paused")
     DownloadStatus.CONVERTING -> language.text("转换中", "Converting")
+    DownloadStatus.EXPORTING -> language.text("导出中", "Exporting")
     DownloadStatus.COMPLETED -> language.text("已完成", "Completed")
     DownloadStatus.FAILED -> language.text("失败", "Failed")
     DownloadStatus.CANCELLED -> language.text("已取消", "Cancelled")

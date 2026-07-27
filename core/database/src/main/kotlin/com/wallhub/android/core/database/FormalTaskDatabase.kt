@@ -86,7 +86,7 @@ interface FormalTaskRecordDao {
 
     @Query(
         "SELECT * FROM formal_task_records WHERE workshopId = :workshopId " +
-            "AND status IN ('QUEUED', 'RESOLVING', 'DOWNLOADING', 'PAUSED', 'CONVERTING') " +
+            "AND status IN ('QUEUED', 'RESOLVING', 'DOWNLOADING', 'PAUSED', 'CONVERTING', 'EXPORTING') " +
             "ORDER BY updatedAt DESC LIMIT 1",
     )
     suspend fun findActiveForWorkshop(workshopId: Long): FormalTaskRecordEntity?
@@ -99,6 +99,9 @@ interface FormalTaskRecordDao {
 
     @Query("UPDATE formal_task_records SET queuePosition = :position WHERE taskId = :taskId")
     suspend fun updateQueuePosition(taskId: String, position: Long)
+
+    @Query("UPDATE formal_task_records SET stagingDirectory = NULL WHERE taskId = :taskId")
+    suspend fun clearStagingDirectory(taskId: String)
 
     @Transaction
     suspend fun updateQueueOrder(taskIds: List<String>) {

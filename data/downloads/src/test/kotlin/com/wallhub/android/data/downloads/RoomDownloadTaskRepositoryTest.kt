@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import org.junit.Test
 
 class RoomDownloadTaskRepositoryTest {
@@ -44,6 +45,29 @@ class RoomDownloadTaskRepositoryTest {
         assertEquals(DownloadStatus.DOWNLOADING.name, stored.status)
         assertEquals(DownloadAction.PAUSE.name, stored.requestedAction)
         assertEquals("已请求暂停，下载器会保留已验证的数据", stored.message)
+    }
+
+    @Test
+    fun `cancel request signals active conversion`() = runBlocking {
+        val dao = FakeTaskDao(record(DownloadStatus.CONVERTING.name, requestedAction = null))
+        val repository = RoomDownloadTaskRepository(
+            context = ContextWrapper(null),
+            taskDao = dao,
+            credentialProvider = NoCredentialProvider,
+            workScheduler = NoOpDownloadScheduler,
+            conversionScheduler = NoOpConversionScheduler,
+            settingsRepository = EmptySettingsRepository,
+            downloadConcurrencyGovernor = DownloadConcurrencyGovernor(),
+        )
+
+        try {
+            repository.requestAction(TASK_ID, DownloadAction.CANCEL)
+
+            assertEquals(DownloadAction.CANCEL.name, dao.find(TASK_ID)?.requestedAction)
+            assertTrue(FormalWorkshopConversionCancellation.isRequested(TASK_ID))
+        } finally {
+            FormalWorkshopConversionCancellation.clear(TASK_ID)
+        }
     }
 
     private fun record(
@@ -90,6 +114,11 @@ class RoomDownloadTaskRepositoryTest {
             flow.value = records.values.toList()
         }
 
+        override suspend fun clearStagingDirectory(taskId: String) {
+            records[taskId]?.let { task -> records[taskId] = task.copy(stagingDirectory = null) }
+            flow.value = records.values.toList()
+        }
+
         override suspend fun delete(taskId: String): Int {
             val removed = if (records.remove(taskId) != null) 1 else 0
             flow.value = records.values.toList()
@@ -112,6 +141,7 @@ class RoomDownloadTaskRepositoryTest {
             DownloadStatus.DOWNLOADING.name,
             DownloadStatus.PAUSED.name,
             DownloadStatus.CONVERTING.name,
+            DownloadStatus.EXPORTING.name,
         )
     }
 

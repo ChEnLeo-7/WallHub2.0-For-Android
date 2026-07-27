@@ -50,16 +50,22 @@ object WorkshopConverter {
         inputDir: File,
         outputFile: File,
         contentTypeHint: String? = null,
+        checkCancellation: () -> Unit = {},
     ): WorkshopConversionReport {
         require(inputDir.isDirectory) { "Workshop input directory is missing" }
+        checkCancellation()
         return when (detect(inputDir, contentTypeHint)) {
-            WorkshopKind.VIDEO -> convertVideo(inputDir, outputFile)
-            WorkshopKind.SCENE -> convertScene(inputDir, outputFile)
-            WorkshopKind.WEB -> convertWeb(inputDir, outputFile)
+            WorkshopKind.VIDEO -> convertVideo(inputDir, outputFile, checkCancellation)
+            WorkshopKind.SCENE -> convertScene(inputDir, outputFile, checkCancellation)
+            WorkshopKind.WEB -> convertWeb(inputDir, outputFile, checkCancellation)
         }
     }
 
-    private fun convertVideo(inputDir: File, outputFile: File): WorkshopConversionReport {
+    private fun convertVideo(
+        inputDir: File,
+        outputFile: File,
+        checkCancellation: () -> Unit,
+    ): WorkshopConversionReport {
         val project = readProject(inputDir)
         val preview = findPreview(inputDir) ?: error("Video workshop is missing preview.*")
         val rawVideoName = project.string("file") ?: error("Video project.json is missing file")
@@ -75,11 +81,16 @@ object WorkshopConverter {
             ),
             outputFile = outputFile,
             magic = VIDEO_MPKG_MAGIC,
+            checkCancellation = checkCancellation,
         )
         return WorkshopConversionReport(WorkshopKind.VIDEO, outputFile)
     }
 
-    private fun convertScene(inputDir: File, outputFile: File): WorkshopConversionReport {
+    private fun convertScene(
+        inputDir: File,
+        outputFile: File,
+        checkCancellation: () -> Unit,
+    ): WorkshopConversionReport {
         val projectFile = File(inputDir, "project.json")
         require(projectFile.isFile) { "Scene workshop is missing project.json" }
         val preview = findPreview(inputDir) ?: error("Scene workshop is missing preview.*")
@@ -96,6 +107,7 @@ object WorkshopConverter {
         try {
             val entries = mutableListOf<MpkgInputEntry>()
             archive.entries.forEachIndexed { index, entry ->
+                checkCancellation()
                 val extension = entry.path.substringAfterLast('.', "").lowercase(Locale.ROOT)
                 if (extension in audioExtensions) {
                     removedAudio += 1
@@ -115,11 +127,15 @@ object WorkshopConverter {
                         entries += MpkgInputEntry(entry.path, FilePayload(transformed))
                     }
                     "frag", "vert" -> {
+                        checkCancellation()
                         val original = archive.readBytes(entry).toString(Charsets.UTF_8)
+                        checkCancellation()
                         val rewritten = ShaderCompatibility.rewrite(original)
+                        checkCancellation()
                         if (rewritten != original) rewrittenShaders += 1
                         val transformed = File(transformedDirectory, "$index.$extension")
                         transformed.writeText(rewritten, Charsets.UTF_8)
+                        checkCancellation()
                         entries += MpkgInputEntry(entry.path, FilePayload(transformed))
                     }
                     else -> entries += MpkgInputEntry(
@@ -130,7 +146,7 @@ object WorkshopConverter {
             }
             entries += MpkgInputEntry("project.json", FilePayload(projectFile))
             entries += MpkgInputEntry(preview.name, FilePayload(preview))
-            MpkgWriter.write(entries, outputFile, SCENE_MPKG_MAGIC)
+            MpkgWriter.write(entries, outputFile, SCENE_MPKG_MAGIC, checkCancellation)
         } finally {
             transformedDirectory.deleteRecursively()
         }
@@ -145,16 +161,28 @@ object WorkshopConverter {
         )
     }
 
-    private fun convertWeb(inputDir: File, outputFile: File): WorkshopConversionReport {
+    private fun convertWeb(
+        inputDir: File,
+        outputFile: File,
+        checkCancellation: () -> Unit,
+    ): WorkshopConversionReport {
         val outputPath = outputFile.canonicalFile.toPath()
-        val files = walkFiles(inputDir).filterNot { it.canonicalFile.toPath() == outputPath }
+        val files = walkFiles(inputDir, checkCancellation)
+            .filterNot { it.canonicalFile.toPath() == outputPath }
         writeAtomically(outputFile) { temporaryFile ->
             ZipOutputStream(BufferedOutputStream(FileOutputStream(temporaryFile))).use { zip ->
                 files.forEach { file ->
+                    checkCancellation()
                     val path = relativePath(inputDir, file)
                     zip.putNextEntry(ZipEntry(path))
                     BufferedInputStream(FileInputStream(file)).use { input ->
-                        input.copyTo(zip, bufferSize = 1024 * 1024)
+                        val buffer = ByteArray(COPY_BUFFER_SIZE)
+                        while (true) {
+                            checkCancellation()
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            zip.write(buffer, 0, read)
+                        }
                     }
                     zip.closeEntry()
                 }
@@ -209,9 +237,10 @@ object WorkshopConverter {
         return MpkgWriter.normalizePath(rootPath.relativize(path).toString())
     }
 
-    private fun walkFiles(root: File): List<File> {
+    private fun walkFiles(root: File, checkCancellation: () -> Unit): List<File> {
         return root.walkTopDown()
             .filter { it.isFile }
+            .onEach { checkCancellation() }
             .sortedBy { relativePath(root, it).lowercase(Locale.ROOT) }
             .toList()
     }
@@ -309,3 +338,4 @@ object ShaderCompatibility {
 }
 
 private const val MAX_DESKTOP_TEX_BYTES = 64L * 1024L * 1024L
+private const val COPY_BUFFER_SIZE = 1024 * 1024
