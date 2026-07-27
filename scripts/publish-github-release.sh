@@ -43,6 +43,9 @@ api_request() {
         --silent
         --show-error
         --location
+        --retry 5
+        --retry-all-errors
+        --retry-delay 2
         --request "$method"
         --header "Accept: $accept"
         --header "Authorization: Bearer $GITHUB_TOKEN"
@@ -211,7 +214,7 @@ python3 -c '
 import json
 import sys
 for asset in json.load(sys.stdin).get("assets", []):
-    print(f"{asset[\"id\"]}\t{asset[\"name\"]}")
+    print(f"{asset[\"id\"]}\t{asset[\"name\"]}\t{asset[\"browser_download_url\"]}")
 ' <<<"$release_json" > "$assets_file"
 
 expected_names="$(printf '%s\n' \
@@ -229,9 +232,20 @@ actual_names="$(cut -f2 "$assets_file" | sort)"
     fail "Published Release assets do not match the expected set"
 }
 
-while IFS=$'\t' read -r asset_id asset_name; do
+while IFS=$'\t' read -r asset_id asset_name download_url; do
     printf 'Downloading Release asset %s...\n' "$asset_name"
-    api_request GET "$repository_api/releases/assets/$asset_id" "" application/octet-stream > "$work_dir/$asset_name"
+    if ! curl \
+        --fail \
+        --location \
+        --retry 10 \
+        --retry-all-errors \
+        --retry-delay 2 \
+        --continue-at - \
+        --output "$work_dir/$asset_name" \
+        "$download_url"; then
+        rm -f "$work_dir/$asset_name"
+        api_request GET "$repository_api/releases/assets/$asset_id" "" application/octet-stream > "$work_dir/$asset_name"
+    fi
     [[ -s "$work_dir/$asset_name" ]] || fail "Downloaded asset is empty: $asset_name"
 done < "$assets_file"
 
@@ -247,7 +261,8 @@ expected_certificate="$(tr -d '\r\n' < "$work_dir/SIGNING-CERTIFICATE-SHA256.txt
 expected_all_abis=$'arm64-v8a\narmeabi-v7a\nx86\nx86_64'
 for apk in "$work_dir"/WallHub-*.apk; do
     unzip -tq "$apk"
-    unzip -Z1 "$apk" | grep -qx 'classes.dex' || fail "$apk is missing classes.dex"
+    entries="$(unzip -Z1 "$apk")"
+    grep -qx 'classes.dex' <<<"$entries" || fail "$apk is missing classes.dex"
     certificate="$($apksigner verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print toupper($2); exit}')"
     [[ "$certificate" == "$expected_certificate" ]] || fail "Signing certificate mismatch for $apk"
 
@@ -260,7 +275,7 @@ for apk in "$work_dir"/WallHub-*.apk; do
         *-x86.apk) label=x86 ;;
         *-universal.apk) label=universal ;;
     esac
-    packaged_abis="$(unzip -Z1 "$apk" | sed -n 's#^lib/\([^/]*\)/.*#\1#p' | sort -u)"
+    packaged_abis="$(sed -n 's#^lib/\([^/]*\)/.*#\1#p' <<<"$entries" | sort -u)"
     if [[ "$label" == universal ]]; then
         [[ "$packaged_abis" == "$expected_all_abis" ]] || fail "Universal APK ABI set is unexpected"
     else

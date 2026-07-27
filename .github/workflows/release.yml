@@ -207,7 +207,8 @@ jobs:
           for label in "${labels[@]}"; do
             apk="$release_dir/WallHub-${VERSION_NAME}-${label}.apk"
             unzip -tq "$apk"
-            unzip -Z1 "$apk" | grep -qx 'classes.dex'
+            entries="$(unzip -Z1 "$apk")"
+            grep -qx 'classes.dex' <<<"$entries"
             "$zipalign" -c -P 16 4 "$apk"
             "$apksigner" verify --verbose "$apk"
 
@@ -219,7 +220,7 @@ jobs:
               [[ "$certificate" == "$signing_certificate" ]]
             fi
 
-            packaged_abis="$(unzip -Z1 "$apk" | sed -n 's#^lib/\([^/]*\)/.*#\1#p' | sort -u)"
+            packaged_abis="$(sed -n 's#^lib/\([^/]*\)/.*#\1#p' <<<"$entries" | sort -u)"
             if [[ "$label" == universal ]]; then
               [[ "$packaged_abis" == "$expected_all_abis" ]] || {
                 echo "::error::Universal APK ABI set is unexpected: $packaged_abis"
