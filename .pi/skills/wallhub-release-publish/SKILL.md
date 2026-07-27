@@ -27,7 +27,7 @@ Completion criterion: one reviewed source commit on `main` is ready to become `v
 
 ## 2. Write Bilingual Release Notes
 
-Create `docs/releases/v<version>.md`. It must contain substantive content under every heading:
+Create `docs/releases/v<version>.md`. Start at `## 中文`; do not add an H1 that repeats the GitHub Release title. The file must contain substantive content under every heading:
 
 ```text
 ## 中文
@@ -85,7 +85,7 @@ The publisher must succeed through every gate:
 3. Require tests, lint, stable signing, and five APK outputs.
 4. Require each split APK to contain only its named ABI and universal to contain all four ABIs.
 5. Create a draft, upload the complete expected asset set, then publish it.
-6. Download every public asset and verify `SHA256SUMS.txt`, `classes.dex`, ZIP integrity, source commit, ABI set, and signing certificate.
+6. Download every public APK and verify GitHub's SHA-256 asset digest, the checksum shown in the Release body, `classes.dex`, ZIP integrity, source commit, ABI set, and signing certificate.
 7. Require the tag to resolve to the exact dispatched commit.
 
 Release assets are:
@@ -96,16 +96,17 @@ WallHub-<version>-armeabi-v7a.apk
 WallHub-<version>-x86.apk
 WallHub-<version>-x86_64.apk
 WallHub-<version>-universal.apk
-SHA256SUMS.txt
-SOURCE-COMMIT.txt
-SIGNING-CERTIFICATE-SHA256.txt
 ```
 
-Completion criterion: the Release is public, all eight assets verify after downloading from GitHub, and a stable release is marked Latest.
+Only these five APKs are uploaded by the workflow. Checksums, source commit, version, and signing certificate are rendered directly in the Release body. GitHub's automatic source ZIP and tarball remain present for every tag.
+
+Completion criterion: the Release is public, all five APK assets verify after downloading from GitHub, and a stable release is marked Latest.
 
 ## 5. Record Publication
 
 Append the Release URL, tag, source SHA, workflow run, checksum/ABI/certificate verification, install target, version, and cold-start result to `docs/development-log.md`. Commit and push this as a documentation-only follow-up, then require its CI run to pass.
+
+When correcting an existing Release body or uploaded asset list, edit `docs/releases/v<version>.md` and use `.github/workflows/release-metadata.yml`. It preserves generated checksum/source/certificate text, removes manually uploaded non-APK assets, and requires the body to start at `## 中文`.
 
 Completion criterion: `main` and `origin/main` agree, the publication record is committed, and unrelated local changes remain untouched.
 

@@ -16,9 +16,8 @@ Each stable Release contains:
 | `WallHub-<version>-x86_64.apk` | 64-bit x86 emulators and desktop Android environments |
 | `WallHub-<version>-x86.apk` | Legacy 32-bit x86 emulators |
 | `WallHub-<version>-universal.apk` | Fallback when the device ABI is unknown; larger because it contains all ABIs |
-| `SHA256SUMS.txt` | SHA-256 checksums for every APK |
-| `SOURCE-COMMIT.txt` | Exact source commit used by the workflow |
-| `SIGNING-CERTIFICATE-SHA256.txt` | Signing certificate identity shared by all APKs |
+
+Only the five APKs are uploaded as GitHub Release assets. The Release body directly contains every APK SHA-256, the exact source commit, app version, and signing certificate SHA-256. GitHub automatically adds `Source code (zip)` and `Source code (tar.gz)` for every tag; workflows cannot remove those generated source links.
 
 The architecture APKs are real ABI splits. WallHub currently packages native libraries for `arm64-v8a`, `armeabi-v7a`, `x86`, and `x86_64`. Normal CI keeps ABI splitting disabled and continues to produce `app-release.apk`; only `release.yml` enables splits with `-Pwallhub.publishAbiApks=true`.
 
@@ -53,7 +52,7 @@ set +a
 4. Commit only the intended source, workflow, documentation, and skill changes on `main`.
 5. Require a clean worktree and inspect the exact commit that will be tagged.
 
-The Markdown file does not hardcode APK checksums. `release.yml` appends the checksums calculated from the signed assets, source commit, app version, and signing certificate to the published body.
+The Markdown file does not hardcode APK checksums and must not repeat the GitHub Release title as an H1. `release.yml` appends the checksums calculated from the signed assets, source commit, app version, and signing certificate to the published body. Metadata text files remain inside the 7-day Actions bundle for recovery but are not public Release assets.
 
 ## Publish
 
@@ -71,9 +70,15 @@ Add `--prerelease` only for a prerelease tag and notes file. The script:
 2. Pushes the exact local `main` commit and an immutable `v<version>` tag.
 3. Waits for the tag-triggered `.github/workflows/release.yml` run.
 4. Waits for tests, lint, signing, split builds, checksums, and Release publication.
-5. Downloads all published assets and independently verifies SHA-256, ZIP/DEX structure, ABI isolation, source commit, and signing certificate.
+5. Downloads all five published APK assets and independently verifies GitHub's asset digest, the SHA-256 shown in the Release body, ZIP/DEX structure, ABI isolation, source commit, and signing certificate.
 
 The workflow first creates a draft Release, compares the uploaded asset names with the complete expected set, and only then makes it public. A stable Release is marked Latest. A prerelease tag must include a suffix such as `-beta.1`, is published with `--prerelease`, and is not marked Latest. The workflow also retains a manual dispatch entry for repository operators with Actions write access.
+
+## Correct Existing Release Metadata
+
+Edit the versioned `docs/releases/v<version>.md` file and push it to `main`. `.github/workflows/release-metadata.yml` updates the existing Release body while preserving the generated SHA-256/source/certificate section, then removes any manually uploaded non-APK assets. It verifies that the body starts at `## 中文` and that exactly five APK assets remain. A repository operator can also dispatch the workflow manually with an existing tag.
+
+GitHub's automatic source ZIP and tarball remain visible because they are generated from the tag rather than uploaded assets.
 
 ## Failure Recovery
 

@@ -267,8 +267,8 @@ jobs:
           PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || (github.event_name == 'push' && contains(github.ref_name, '-')) }}
         run: |
           set -euo pipefail
-          mapfile -t assets < <(find release-assets -maxdepth 1 -type f ! -name 'release-notes.md' -print | sort)
-          [[ "${#assets[@]}" -eq 8 ]]
+          mapfile -t assets < <(find release-assets -maxdepth 1 -type f -name '*.apk' -print | sort)
+          [[ "${#assets[@]}" -eq 5 ]]
 
           create_args=(
             release create "$RELEASE_TAG"
@@ -302,10 +302,7 @@ jobs:
             "WallHub-${VERSION_NAME}-armeabi-v7a.apk" \
             "WallHub-${VERSION_NAME}-universal.apk" \
             "WallHub-${VERSION_NAME}-x86.apk" \
-            "WallHub-${VERSION_NAME}-x86_64.apk" \
-            'SHA256SUMS.txt' \
-            'SIGNING-CERTIFICATE-SHA256.txt' \
-            'SOURCE-COMMIT.txt' | sort)"
+            "WallHub-${VERSION_NAME}-x86_64.apk" | sort)"
           release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id")"
           actual_assets="$(python3 -c 'import json, sys; print("\n".join(asset["name"] for asset in json.load(sys.stdin).get("assets", [])))' <<<"$release_json" | sort)"
           [[ "$actual_assets" == "$expected_assets" ]] || {

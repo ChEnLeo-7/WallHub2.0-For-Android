@@ -28,8 +28,8 @@
 - 使用新的蓝色下载与齿轮品牌图替换旧绿色 `W` Logo；APK 启动图标新增五档密度资源、Android 8+ adaptive icon 和 Android 13+ monochrome themed icon，README 中英文项目页同步使用原始高清 Logo。
 - APK 启动图标单独改用留白更完整的新构图，项目 README Logo 保持不变；外观设置新增“图标跟随系统取色”，Android 13+ 通过 adaptive icon `monochrome` 图层与 launcher 莫奈着色，并使用双 `activity-alias` 在系统主题图标和固定彩色图标之间切换。
 - 将 adaptive icon 的彩色与单色前景统一缩至原画布的 `84%` 并居中，`mdpi` 有效图形边界由约 `67×60` 收紧为 `56×50`，增加 launcher 遮罩内留白；legacy 图标、蓝色底板和项目 README Logo 保持不变。
-- 日常 GitHub Actions APK artifact 保留期由 14 天调整为 7 天；新增 tag 推送与手动 dispatch 双入口的 GitHub Release 工作流，基于最新 `main` 构建 universal、`arm64-v8a`、`armeabi-v7a`、`x86`、`x86_64` 五个稳定签名 APK，并发布双语更新/修改/修复/下载说明、逐文件 SHA-256、源码 commit 与签名证书信息。
-- 新增 `wallhub-release-publish` 项目 Skill、REST API 发布脚本和完整发布文档，将版本/tag 校验、双语 notes、ABI 隔离、draft 门槛、资产下载复验和发布后记录固化为统一流程。
+- 日常 GitHub Actions APK artifact 保留期由 14 天调整为 7 天；新增 tag 推送与手动 dispatch 双入口的 GitHub Release 工作流，基于最新 `main` 构建 universal、`arm64-v8a`、`armeabi-v7a`、`x86`、`x86_64` 五个稳定签名 APK。Release 正文直接发布双语更新/修改/修复/下载说明、逐文件 SHA-256、源码 commit 与签名证书信息，不重复页面标题；人工上传的 Assets 只包含五个 APK。
+- 新增 `wallhub-release-publish` 项目 Skill、REST API 发布脚本和完整发布文档，将版本/tag 校验、双语 notes、ABI 隔离、draft 门槛、资产下载复验和发布后记录固化为统一流程；新增 Release metadata 同步工作流，用于在不重发 APK 的情况下移除重复正文标题、同步版本化 notes 并清理非 APK 人工资产。
 
 #### 验证
 
@@ -37,7 +37,7 @@
 - GitHub Actions run `30269430089` 在 commit `9080ca5652ee64fd87678d2b91107cf68e162d60` 再次通过全量 JVM 测试、`lintDebug`、签名 Release 组装和提交绑定 artifact 校验，并原位安装到同一 Android 15 设备。真机从设置关闭主题图标后 launcher 唯一入口切换为 `MainActivityColorIcon`，重新开启后恢复 `MainActivityThemedIcon`，切换期间 PID `5404` 未退出；随后强制冷启动 PID `6285` 存活、DataStore 选择保持且日志无致命异常、ANR 或 OOM。
 - GitHub Actions run `30271536333` 在 commit `912b9ea5d179f303bec5ddb2f042c8224134c58d` 通过同一套测试、lint、签名 Release 与 artifact 校验，并原位安装到 Android 15 设备；冷启动 PID `7839` 存活且无致命异常、ANR 或 OOM。launcher 桌面截图确认缩小后的 WallHub 前景与相邻壁纸引擎图标具有接近的视觉占比，四周留白完整，当前入口继续保持 `MainActivityThemedIcon`。
 - 发布流程的日常兼容验证 run `30294884035` 在 commit `8de9e9287561eeaee37b05fe82f019cf2ac9ce85` 通过全量测试、lint、默认 universal Release artifact 与 ADB 原位安装，证明按需 ABI split 未改变普通 `app-release.apk` 路径；WallHub 冷启动 PID `13717` 存活且无致命异常、ANR 或 OOM。
-- 首个公开 [GitHub Release `v0.8.25`](https://github.com/ChEnLeo-7/WallHub2.0-For-Android/releases/tag/v0.8.25) 由 run `30297929213` 从 tag commit `398c993096f25a46f79bc1861cf69f02c53f8be1` 发布并标记为 Latest。两次发布前 draft 门槛分别发现 draft 按 tag 查询 404 和资产名称换行比较错误，均未产生公开 Release；修复后八个资产完整发布。重新下载五个 APK 后，逐文件 SHA-256、ZIP、`classes.dex`、单 ABI 隔离 / universal 四 ABI、源码 commit 和签名证书 `940402C12B4270F1000C61882A42EC610292AB776F28F85784D6954EA7DB074D` 全部通过。
+- 首个公开 [GitHub Release `v0.8.25`](https://github.com/ChEnLeo-7/WallHub2.0-For-Android/releases/tag/v0.8.25) 由 run `30297929213` 从 tag commit `398c993096f25a46f79bc1861cf69f02c53f8be1` 发布并标记为 Latest。两次发布前 draft 门槛分别发现 draft 按 tag 查询 404 和资产名称换行比较错误，均未产生公开 Release；修复后五个 APK 资产完整发布，SHA-256、源码 commit、版本和签名证书直接展示在正文。重新下载五个 APK 后，GitHub asset digest / 正文 SHA-256、ZIP、`classes.dex`、单 ABI 隔离 / universal 四 ABI、源码 commit 和签名证书 `940402C12B4270F1000C61882A42EC610292AB776F28F85784D6954EA7DB074D` 全部通过。
 
 ### 0.8.24 (34) — 2026-07-24
 

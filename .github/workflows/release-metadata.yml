@@ -1,0 +1,124 @@
+name: Sync GitHub Release Metadata
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/releases/**"
+      - ".github/workflows/release-metadata.yml"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Release tag; defaults to the current app version
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wallhub-release-metadata-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REQUESTED_TAG: ${{ inputs.tag || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve and validate Release
+        id: release
+        run: |
+          set -euo pipefail
+          version_name="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts)"
+          tag="${REQUESTED_TAG:-v$version_name}"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          notes_file="docs/releases/$tag.md"
+          test -f "$notes_file"
+          [[ "$(head -n 1 "$notes_file")" == '## 中文' ]] || {
+            echo "::error::Release notes must start at ## 中文 and must not repeat the Release title"
+            exit 1
+          }
+          for heading in \
+            '## 中文' \
+            '### 此次更新' \
+            '### 修改' \
+            '### 修复' \
+            '### 下载说明' \
+            '## English' \
+            '### Updates' \
+            '### Changes' \
+            '### Fixes' \
+            '### Download guide'; do
+            grep -qxF "$heading" "$notes_file"
+          done
+
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag")"
+          release_id="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])' <<<"$release_json")"
+          current_body="$RUNNER_TEMP/current-release-body.md"
+          python3 -c 'import json, sys; print(json.load(sys.stdin).get("body", ""), end="")' <<<"$release_json" > "$current_body"
+          python3 - "$notes_file" "$current_body" "$RUNNER_TEMP/release-patch.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          notes = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").strip()
+          current = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
+          marker = "## SHA-256 / SHA-256 checksums"
+          marker_index = current.find(marker)
+          if marker_index < 0:
+              raise SystemExit("Current Release body is missing the generated SHA-256 section")
+          generated = current[marker_index:].strip()
+          body = f"{notes}\n\n{generated}\n"
+          pathlib.Path(sys.argv[3]).write_text(json.dumps({"body": body}), encoding="utf-8")
+          PY
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+      - name: Update body and keep APK assets only
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          gh api \
+            --method PATCH \
+            "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            --input "$RUNNER_TEMP/release-patch.json" \
+            --silent
+
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"
+          python3 -c '
+          import json
+          import sys
+          for asset in json.load(sys.stdin).get("assets", []):
+              print(f"{asset[\"id\"]}\t{asset[\"name\"]}")
+          ' <<<"$release_json" > "$RUNNER_TEMP/release-assets.tsv"
+          while IFS=$'\t' read -r asset_id asset_name; do
+            if [[ "$asset_name" != *.apk ]]; then
+              echo "Removing non-APK Release asset: $asset_name"
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id"
+            fi
+          done < "$RUNNER_TEMP/release-assets.tsv"
+
+          final_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"
+          printf '%s' "$final_json" > "$RUNNER_TEMP/final-release.json"
+          python3 - "$RELEASE_TAG" "$RUNNER_TEMP/final-release.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          release = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
+          tag = sys.argv[1]
+          assets = sorted(asset["name"] for asset in release.get("assets", []))
+          if release.get("tag_name") != tag or release.get("draft"):
+              raise SystemExit("Release identity or publication state changed unexpectedly")
+          if len(assets) != 5 or any(not name.endswith(".apk") for name in assets):
+              raise SystemExit(f"Expected exactly five APK assets, found: {assets}")
+          if not release.get("body", "").startswith("## 中文\n"):
+              raise SystemExit("Release body still repeats the page title")
+          print(json.dumps({"url": release["html_url"], "assets": assets}, ensure_ascii=False))
+          PY

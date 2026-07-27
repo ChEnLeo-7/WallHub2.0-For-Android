@@ -214,7 +214,7 @@ python3 -c '
 import json
 import sys
 for asset in json.load(sys.stdin).get("assets", []):
-    print(f"{asset[\"id\"]}\t{asset[\"name\"]}\t{asset[\"browser_download_url\"]}")
+    print(f"{asset[\"id\"]}\t{asset[\"name\"]}\t{asset[\"browser_download_url\"]}\t{asset.get(\"digest\", \"\")}")
 ' <<<"$release_json" > "$assets_file"
 
 expected_names="$(printf '%s\n' \
@@ -222,17 +222,17 @@ expected_names="$(printf '%s\n' \
     "WallHub-$version_name-armeabi-v7a.apk" \
     "WallHub-$version_name-universal.apk" \
     "WallHub-$version_name-x86.apk" \
-    "WallHub-$version_name-x86_64.apk" \
-    'SHA256SUMS.txt' \
-    'SIGNING-CERTIFICATE-SHA256.txt' \
-    'SOURCE-COMMIT.txt' | sort)"
+    "WallHub-$version_name-x86_64.apk" | sort)"
 actual_names="$(cut -f2 "$assets_file" | sort)"
 [[ "$actual_names" == "$expected_names" ]] || {
     diff -u <(printf '%s\n' "$expected_names") <(printf '%s\n' "$actual_names") || true
-    fail "Published Release assets do not match the expected set"
+    fail "Published Release assets do not match the expected APK-only set"
 }
 
-while IFS=$'\t' read -r asset_id asset_name download_url; do
+release_body="$(python3 -c 'import json, sys; print(json.load(sys.stdin).get("body", ""))' <<<"$release_json")"
+[[ "$release_body" == *"$sha"* ]] || fail "Release body is missing the source commit"
+while IFS=$'\t' read -r asset_id asset_name download_url asset_digest; do
+    [[ "$asset_digest" == sha256:* ]] || fail "GitHub did not report a SHA-256 digest for $asset_name"
     printf 'Downloading Release asset %s...\n' "$asset_name"
     if ! curl \
         --fail \
@@ -247,24 +247,26 @@ while IFS=$'\t' read -r asset_id asset_name download_url; do
         api_request GET "$repository_api/releases/assets/$asset_id" "" application/octet-stream > "$work_dir/$asset_name"
     fi
     [[ -s "$work_dir/$asset_name" ]] || fail "Downloaded asset is empty: $asset_name"
+    expected_checksum="${asset_digest#sha256:}"
+    actual_checksum="$(sha256sum "$work_dir/$asset_name" | awk '{print $1}')"
+    [[ "$actual_checksum" == "$expected_checksum" ]] || fail "SHA-256 mismatch for $asset_name"
+    [[ "$release_body" == *"$expected_checksum"* ]] || fail "Release body is missing SHA-256 for $asset_name"
 done < "$assets_file"
-
-[[ "$(tr -d '\r\n' < "$work_dir/SOURCE-COMMIT.txt")" == "$sha" ]] || fail "SOURCE-COMMIT.txt does not match"
-(
-    cd "$work_dir"
-    sha256sum --check SHA256SUMS.txt
-)
 
 apksigner="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/opt/android-sdk}}/build-tools/35.0.0/apksigner"
 [[ -x "$apksigner" ]] || fail "apksigner is unavailable at $apksigner"
-expected_certificate="$(tr -d '\r\n' < "$work_dir/SIGNING-CERTIFICATE-SHA256.txt")"
+expected_certificate=""
 expected_all_abis=$'arm64-v8a\narmeabi-v7a\nx86\nx86_64'
 for apk in "$work_dir"/WallHub-*.apk; do
     unzip -tq "$apk"
     entries="$(unzip -Z1 "$apk")"
     grep -qx 'classes.dex' <<<"$entries" || fail "$apk is missing classes.dex"
     certificate="$($apksigner verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print toupper($2); exit}')"
-    [[ "$certificate" == "$expected_certificate" ]] || fail "Signing certificate mismatch for $apk"
+    if [[ -z "$expected_certificate" ]]; then
+        expected_certificate="$certificate"
+    else
+        [[ "$certificate" == "$expected_certificate" ]] || fail "Signing certificate mismatch for $apk"
+    fi
 
     label="${apk##*-}"
     label="${label%.apk}"
@@ -282,11 +284,7 @@ for apk in "$work_dir"/WallHub-*.apk; do
         [[ "$packaged_abis" == "$label" ]] || fail "$label APK contains unexpected ABIs: $packaged_abis"
     fi
 done
-
-release_body="$(python3 -c 'import json, sys; print(json.load(sys.stdin).get("body", ""))' <<<"$release_json")"
-while read -r checksum filename; do
-    [[ "$release_body" == *"$checksum"* ]] || fail "Release body is missing SHA-256 for $filename"
-done < "$work_dir/SHA256SUMS.txt"
+[[ "$release_body" == *"$expected_certificate"* ]] || fail "Release body is missing the signing certificate SHA-256"
 
 printf 'Published and verified GitHub Release: %s\n' "$release_url"
 printf 'Release workflow: %s\n' "$run_url"
