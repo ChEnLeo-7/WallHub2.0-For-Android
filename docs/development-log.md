@@ -22,6 +22,7 @@
 - 2026-07-27：MPKG 场景纹理的无损 raw-LZ4 压缩从 Fast 切换为固定 HC3；三场景隔离验证覆盖 151 个 TEX、`587,959,836` 字节 RGBA，完整包聚合减少约 `4.40%`，独立逐字节比较和官方 Wallpaper Engine 预览均通过。
 - 2026-07-27：Workshop 转换加入 archive entry、目录遍历、shader 步骤和每 `1 MiB` MPKG/ZIP payload 的协作取消检查；转换完成后进入不可取消的 `EXPORTING` 提交状态，避免外部输出替换与取消竞争，并在完成记录持久化后再清理源 staging。
 - 2026-07-27：新增 HC3 level 区分、MPKG 中途取消原子回滚、转换取消信号及 `EXPORTING` 操作状态测试。GitHub Actions JVM 测试、`lintDebug`、Release artifact、ADB 安装、冷启动和直接生产三场景复测仍待执行。
+- 2026-07-27：GitHub Actions run `30259227737` 在 commit `5ad592f94874c738c851e789e7ff94d8def31e76` 的 `:data:downloads:compileDebugKotlin` 阶段发现 `SafExportGateway` 缺少局部复制缓冲常量；CI 在构建 artifact 前停止，设备 APK 未改变。已恢复该常量并准备以新 commit 重新运行完整验证。
 - 首页与资料库分页改为 Material 3 离散按钮组，仅展示去重后的最小页、当前页和已知最大页；当前页按钮可打开页码输入对话框，最小页和最大页可一击直达。
 - 发现页读取 Steam 社区页面 SSR 数据中的 `total_pages` 与 `total_count`，分页栏会在右侧省略号后显示服务端当前可直接跳转的最大页（当前为第 `1000` 页）。
 - 当前页可打开页码输入对话框；输入区显示服务端当前已知最大页码，但允许输入任意大于 `0` 且可表示的整数页码，不再受当前 `totalPages` 限制。

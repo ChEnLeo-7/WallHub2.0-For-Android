@@ -516,6 +516,8 @@ internal data class ExportedFile(
 )
 
 internal object SafExportGateway {
+    private const val COPY_BUFFER_SIZE = 1024 * 1024
+
     fun exportFile(
         context: Context,
         outputTreeUri: Uri,
