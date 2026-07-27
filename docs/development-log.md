@@ -29,7 +29,7 @@
 
 #### 验证
 
-- 待 GitHub Actions 完成全量 JVM 测试、`lintDebug`、签名 Release 组装、提交绑定 artifact、ADB 原位安装与冷启动验证。
+- GitHub Actions run `30266556810` 在 commit `b200cae616a6bc7c1d44dd3805131b262712f625` 通过全量 JVM 测试、`lintDebug`、签名 Release 组装和 artifact 上传；提交绑定 APK 完成 SHA-256、ZIP、八个 DEX 与签名证书检查，并已原位安装到 `192.168.2.190:39055`。WallHub `0.8.25 (35)` 冷启动 PID `3707` 存活，日志无致命异常、ANR 或 OOM。
 
 ### 0.8.24 (34) — 2026-07-24
 
