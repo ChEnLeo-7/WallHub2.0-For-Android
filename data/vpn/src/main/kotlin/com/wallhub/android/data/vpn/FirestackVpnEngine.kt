@@ -196,7 +196,8 @@ private class WallHubFirestackBridge(
     }
 
     override fun onQuery(uid: Gostr?, domain: Gostr?, qtyp: Long): DNSOpts = DNSOpts().apply {
-        setTIDCSV("${Backend.System}:${Backend.Base}")
+        setPIDCSV(Backend.Base)
+        setTIDCSV(Backend.System)
     }
 
     override fun onUpstreamAnswer(summary: DNSSummary?, unmodifiedipcsv: Gostr?): DNSOpts? = null
