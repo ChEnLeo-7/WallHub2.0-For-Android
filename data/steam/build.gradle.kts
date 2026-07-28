@@ -22,7 +22,7 @@ android {
     }
 }
 
-val protobufVersion = libs.findVersion("protobuf-java").get().requiredVersion
+val protobufVersion = libs.versions.protobuf.java.get()
 
 protobuf {
     protoc {
