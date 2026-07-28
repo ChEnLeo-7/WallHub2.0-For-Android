@@ -300,7 +300,7 @@ class SteamAccelerationVpnService : VpnService() {
             getString(R.string.wallhub_vpn_notification_starting)
         }
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_wallhub)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(getString(R.string.wallhub_vpn_notification_title))
             .setContentText(content)
             .setContentIntent(contentIntent)
