@@ -17,8 +17,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -119,32 +117,32 @@ class SteamVpnSocksServer(
                     downstream.soTimeout = FIRST_FLIGHT_TIMEOUT_MS
                     Socks5Protocol.sendSuccess(downstream.getOutputStream())
                     kotlinx.coroutines.coroutineScope {
-                        val transfers = listOf(
-                            async {
-                                relayClientToUpstream(
-                                    downstream = downstream,
-                                    input = downstream.getInputStream(),
-                                    output = direct.getOutputStream(),
-                                    upstream = direct,
-                                )
-                            },
-                            async {
-                                relay(
-                                    input = direct.getInputStream(),
-                                    output = downstream.getOutputStream(),
-                                    onEof = { runCatching { downstream.shutdownOutput() } },
-                                )
-                            },
-                        )
-                        transfers.forEach { transfer ->
-                            transfer.invokeOnCompletion { failure ->
-                                if (failure != null) {
-                                    runCatching { downstream.close() }
-                                    runCatching { direct.close() }
-                                }
+                        val download = launch {
+                            relay(
+                                input = direct.getInputStream(),
+                                output = downstream.getOutputStream(),
+                                onEof = { runCatching { downstream.shutdownOutput() } },
+                            )
+                        }
+                        download.invokeOnCompletion { failure ->
+                            if (failure != null) {
+                                runCatching { downstream.close() }
+                                runCatching { direct.close() }
                             }
                         }
-                        transfers.awaitAll()
+                        try {
+                            relayClientToUpstream(
+                                downstream = downstream,
+                                input = downstream.getInputStream(),
+                                output = direct.getOutputStream(),
+                                upstream = direct,
+                            )
+                            download.join()
+                        } catch (error: Throwable) {
+                            runCatching { downstream.close() }
+                            runCatching { direct.close() }
+                            throw error
+                        }
                     }
                 }
             } finally {
