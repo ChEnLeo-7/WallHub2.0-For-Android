@@ -91,9 +91,13 @@ class TlsClientHelloRecordFragmenter(
                 if (!hostPolicy(location.host)) return Result.Passthrough(Reason.HOST_NOT_TARGETED)
                 if (recordsRead > 1) return Result.Passthrough(Reason.ALREADY_FRAGMENTED)
 
-                val splitAt = location.start + (location.length / 2).coerceAtLeast(1)
-                if (splitAt !in 1 until payload.size) return Result.Passthrough(Reason.MALFORMED)
-                val records = fragmentHandshake(payload, legacyVersion, splitAt)
+                val hostSplit = location.start + (location.length / 2).coerceAtLeast(1)
+                if (hostSplit !in 1 until payload.size) return Result.Passthrough(Reason.MALFORMED)
+                val records = fragmentHandshake(
+                    handshake = payload,
+                    legacyVersion = legacyVersion,
+                    preferredSplits = listOf(REFERENCE_PREFIX_SPLIT_BYTES, hostSplit),
+                )
                 val output = ByteArrayOutputStream(bytes.size + (records.size - 1) * TLS_RECORD_HEADER_SIZE)
                 records.forEach(output::write)
                 output.write(bytes, consumedInputBytes, bytes.size - consumedInputBytes)
@@ -181,17 +185,18 @@ class TlsClientHelloRecordFragmenter(
     private fun fragmentHandshake(
         handshake: ByteArray,
         legacyVersion: ByteArray,
-        preferredSplit: Int,
+        preferredSplits: List<Int>,
     ): List<ByteArray> {
+        val requestedBoundaries = (preferredSplits + handshake.size)
+            .filter { boundary -> boundary in 1..handshake.size }
+            .distinct()
+            .sorted()
         val boundaries = mutableListOf(0)
-        var cursor = 0
-        while (cursor < preferredSplit) {
-            cursor = minOf(cursor + MAX_TLS_PLAINTEXT_BYTES, preferredSplit)
-            boundaries += cursor
-        }
-        while (cursor < handshake.size) {
-            cursor = minOf(cursor + MAX_TLS_PLAINTEXT_BYTES, handshake.size)
-            boundaries += cursor
+        requestedBoundaries.forEach { requested ->
+            while (requested - boundaries.last() > MAX_TLS_PLAINTEXT_BYTES) {
+                boundaries += boundaries.last() + MAX_TLS_PLAINTEXT_BYTES
+            }
+            if (requested != boundaries.last()) boundaries += requested
         }
 
         return boundaries.zipWithNext { start, end ->
@@ -224,6 +229,7 @@ class TlsClientHelloRecordFragmenter(
         const val MAX_BUFFERED_BYTES = 64 * 1024
         const val MAX_TLS_PLAINTEXT_BYTES = 1 shl 14
         private const val TLS_RECORD_HEADER_SIZE = 5
+        private const val REFERENCE_PREFIX_SPLIT_BYTES = 32
         private const val HANDSHAKE_HEADER_SIZE = 4
         private const val TLS_HANDSHAKE_CONTENT_TYPE = 22
         private const val CLIENT_HELLO_HANDSHAKE_TYPE = 1

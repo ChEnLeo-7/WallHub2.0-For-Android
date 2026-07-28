@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class TlsClientHelloRecordFragmenterTest {
     private val fragmenter = TlsClientHelloRecordFragmenter()
@@ -16,8 +17,12 @@ class TlsClientHelloRecordFragmenterTest {
         val result = assertIs<TlsClientHelloRecordFragmenter.Result.Fragmented>(fragmenter.inspect(input))
 
         assertEquals("steamcommunity.com", result.host)
-        assertEquals(2, result.recordCount)
+        assertEquals(3, result.recordCount)
         assertContentEquals(recordPayload(input), reassembledHandshake(result.bytes, result.recordCount))
+        val recordPayloads = recordPayloads(result.bytes, result.recordCount)
+        assertEquals(32, recordPayloads.first().size)
+        val hostBytes = "steamcommunity.com".toByteArray(Charsets.US_ASCII)
+        assertTrue(recordPayloads.none { payload -> payload.containsSequence(hostBytes) })
     }
 
     @Test
@@ -128,6 +133,25 @@ class TlsClientHelloRecordFragmenterTest {
     ) + payload
 
     private fun recordPayload(record: ByteArray): ByteArray = record.copyOfRange(5, record.size)
+
+    private fun recordPayloads(records: ByteArray, count: Int): List<ByteArray> {
+        val payloads = mutableListOf<ByteArray>()
+        var offset = 0
+        repeat(count) {
+            val length = ((records[offset + 3].toInt() and 0xff) shl 8) or
+                (records[offset + 4].toInt() and 0xff)
+            payloads += records.copyOfRange(offset + 5, offset + 5 + length)
+            offset += 5 + length
+        }
+        return payloads
+    }
+
+    private fun ByteArray.containsSequence(sequence: ByteArray): Boolean =
+        sequence.isNotEmpty() && indices.any { start ->
+            start + sequence.size <= size && sequence.indices.all { index ->
+                this[start + index] == sequence[index]
+            }
+        }
 
     private fun reassembledHandshake(records: ByteArray, count: Int): ByteArray {
         val output = ByteArrayOutputStream()

@@ -41,16 +41,23 @@ class FirestackVpnEngine(
         tunFd: Int,
         mtu: Int,
         socksPort: Int,
+        upstreamDnsServers: List<String>,
     ) {
         check(tunnel == null) { "Firestack engine is already running" }
+        check(upstreamDnsServers.isNotEmpty()) { "No underlying DNS servers are available" }
         configureFirestack()
+        val defaultDns = Intra.newDefaultDNS(
+            gostr(Backend.DNS53),
+            gostr(upstreamDnsServers.joinToString(",")),
+            gostr(""),
+        )
         val connected = Intra.connect(
             tunFd.toLong(),
             mtu.toLong(),
             mtu.toLong(),
             TUN_INTERFACE_ADDRESSES,
             TUN_DNS_ADDRESSES,
-            null,
+            defaultDns,
             bridge,
         )
         try {

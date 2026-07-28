@@ -65,9 +65,15 @@ class SteamAccelerationVpnService : VpnService() {
         SteamVpnRuntime.replace(SteamVpnState(phase = SteamVpnPhase.PREPARING))
         try {
             check(prepare(this) == null) { "VPN permission is not granted" }
-            val underlyingNetwork = selectUnderlyingNetwork()
+            val underlyingNetwork = checkNotNull(selectUnderlyingNetwork()) {
+                "No underlying network is available"
+            }
+            val linkProperties = connectivityManager.getLinkProperties(underlyingNetwork)
+            val upstreamDnsServers = linkProperties?.dnsServers.orEmpty().mapNotNull { address ->
+                address.hostAddress?.let(::dnsEndpoint)
+            }
             val mtu = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                connectivityManager.getLinkProperties(underlyingNetwork)?.mtu
+                linkProperties?.mtu
                     ?.takeIf { value -> value in MIN_MTU..MAX_MTU }
                     ?: DEFAULT_MTU
             } else {
@@ -92,6 +98,7 @@ class SteamAccelerationVpnService : VpnService() {
                 tunFd = established.fd,
                 mtu = mtu,
                 socksPort = directServer.port,
+                upstreamDnsServers = upstreamDnsServers,
             )
             SteamVpnRuntime.update { current ->
                 current.copy(
@@ -135,6 +142,9 @@ class SteamAccelerationVpnService : VpnService() {
         underlyingNetwork?.let { network -> builder.setUnderlyingNetworks(arrayOf(network)) }
         return builder.establish()
     }
+
+    private fun dnsEndpoint(hostAddress: String): String =
+        if (hostAddress.contains(':')) "[$hostAddress]:53" else "$hostAddress:53"
 
     private fun selectUnderlyingNetwork(): Network? {
         val active = connectivityManager.activeNetwork

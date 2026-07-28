@@ -192,8 +192,7 @@ class SteamVpnSocksServer(
 
                 is TlsClientHelloRecordFragmenter.Result.Fragmented -> {
                     downstream.soTimeout = 0
-                    output.write(result.bytes)
-                    output.flush()
+                    writeFragmentedFirstFlight(output, result)
                     eventListener(SocksRelayEvent(fragmentedHost = result.host))
                     relay(input, output) { runCatching { upstream.shutdownOutput() } }
                     return
@@ -204,6 +203,30 @@ class SteamVpnSocksServer(
         output.write(buffered.toByteArray())
         output.flush()
         relay(input, output) { runCatching { upstream.shutdownOutput() } }
+    }
+
+    private fun writeFragmentedFirstFlight(
+        output: OutputStream,
+        result: TlsClientHelloRecordFragmenter.Result.Fragmented,
+    ) {
+        var offset = 0
+        repeat(result.recordCount) {
+            check(result.bytes.size - offset >= TLS_RECORD_HEADER_BYTES) {
+                "Fragmented TLS record header is incomplete"
+            }
+            val payloadLength =
+                ((result.bytes[offset + 3].toInt() and 0xff) shl 8) or
+                    (result.bytes[offset + 4].toInt() and 0xff)
+            val recordEnd = offset + TLS_RECORD_HEADER_BYTES + payloadLength
+            check(recordEnd <= result.bytes.size) { "Fragmented TLS record is incomplete" }
+            output.write(result.bytes, offset, recordEnd - offset)
+            output.flush()
+            offset = recordEnd
+        }
+        if (offset < result.bytes.size) {
+            output.write(result.bytes, offset, result.bytes.size - offset)
+            output.flush()
+        }
     }
 
     private fun relay(
@@ -238,6 +261,7 @@ class SteamVpnSocksServer(
         private const val HANDSHAKE_TIMEOUT_MS = 10_000
         private const val FIRST_FLIGHT_TIMEOUT_MS = 1_500
         private const val STREAM_BUFFER_BYTES = 16 * 1024
+        private const val TLS_RECORD_HEADER_BYTES = 5
         private const val DEFAULT_MAX_CONCURRENT_FLOWS = 512
     }
 }
