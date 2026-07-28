@@ -1,3 +1,5 @@
+import com.google.protobuf.gradle.*
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
@@ -27,6 +29,13 @@ val protobufVersion = libs.versions.protobuf.java.get()
 protobuf {
     protoc {
         artifact = "com.google.protobuf:protoc:$protobufVersion"
+    }
+    generateProtoTasks {
+        all().configureEach {
+            builtins {
+                create("java")
+            }
+        }
     }
 }
 
