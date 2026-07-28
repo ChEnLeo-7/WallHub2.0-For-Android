@@ -514,11 +514,10 @@ class SecureSteamSessionRepository @Inject constructor(
         if (authenticatedSession?.isUsable == true) return true
         if (authenticationJob?.isActive != true) return false
         return withTimeoutOrNull(PUBLIC_BROWSE_SESSION_WAIT_MS) {
-            while (true) {
-                if (authenticatedSession?.isUsable == true) return@withTimeoutOrNull true
-                if (authenticationJob?.isActive != true) return@withTimeoutOrNull false
+            while (authenticatedSession?.isUsable != true && authenticationJob?.isActive == true) {
                 delay(PUBLIC_BROWSE_SESSION_POLL_MS)
             }
+            authenticatedSession?.isUsable == true
         } ?: false
     }
 
