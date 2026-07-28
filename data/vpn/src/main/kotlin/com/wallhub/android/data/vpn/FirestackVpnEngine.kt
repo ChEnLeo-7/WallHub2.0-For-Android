@@ -61,6 +61,10 @@ class FirestackVpnEngine(
             bridge,
         )
         try {
+            Intra.setSystemDNS(
+                connected,
+                gostr(upstreamDnsServers.joinToString(",")),
+            )
             val proxyId = gostr(DIRECT_PROXY_ID)
             val proxyUrl = gostr("socks5://127.0.0.1:$socksPort")
             connected.proxies.addProxy(proxyId, proxyUrl)
@@ -192,7 +196,7 @@ private class WallHubFirestackBridge(
     }
 
     override fun onQuery(uid: Gostr?, domain: Gostr?, qtyp: Long): DNSOpts = DNSOpts().apply {
-        setTIDCSV("${Backend.Default}:${Backend.Base}")
+        setTIDCSV("${Backend.System}:${Backend.Base}")
     }
 
     override fun onUpstreamAnswer(summary: DNSSummary?, unmodifiedipcsv: Gostr?): DNSOpts? = null
