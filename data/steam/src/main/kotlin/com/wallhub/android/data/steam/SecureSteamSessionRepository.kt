@@ -13,6 +13,8 @@ import `in`.dragonbra.javasteam.steam.authentication.AuthPollResult
 import `in`.dragonbra.javasteam.steam.authentication.AuthSession
 import `in`.dragonbra.javasteam.steam.authentication.AuthSessionDetails
 import `in`.dragonbra.javasteam.steam.authentication.IAuthenticator
+import `in`.dragonbra.javasteam.steam.handlers.steamfriends.SteamFriends
+import `in`.dragonbra.javasteam.steam.handlers.steamfriends.callback.PersonaStateCallback
 import `in`.dragonbra.javasteam.steam.handlers.steamuser.ChatMode
 import `in`.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails
 import `in`.dragonbra.javasteam.steam.handlers.steamuser.SteamUser
@@ -104,6 +106,7 @@ class SecureSteamSessionRepository @Inject constructor(
     private val steamServerListProvider = SteamWebSocketServerListProvider()
     private val authorDisplayNames = ConcurrentHashMap<Long, String>()
     private val steamProfiles = ConcurrentHashMap<Long, SteamProfile>()
+    private val pendingPersonaProfiles = ConcurrentHashMap<Long, CompletableDeferred<SteamProfile>>()
     private val mutableSession = MutableStateFlow(SteamSessionState())
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lifecycleLock = Any()
@@ -596,19 +599,44 @@ class SecureSteamSessionRepository @Inject constructor(
                     val publicData = account.publicData
                     val displayName = publicData.personaName.trim()
                     if (publicData.steamid <= 0L || displayName.isBlank()) return@forEach
-                    val avatarHash = publicData.shaDigestAvatar.toByteArray()
-                        .takeIf { hash -> hash.isNotEmpty() && hash.any { byte -> byte.toInt() != 0 } }
-                        ?.joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
                     steamProfiles[publicData.steamid] = SteamProfile(
                         displayName = displayName,
-                        avatarUrl = avatarHash?.let { hash ->
-                            "https://avatars.fastly.steamstatic.com/${hash}_medium.jpg"
-                        },
+                        avatarUrl = publicData.shaDigestAvatar.toByteArray().toSteamAvatarUrl(),
                     )
                 }
             }
         }
+        if (steamSession.isAuthenticated) {
+            resolvePersonaProfiles(
+                steamSession = steamSession,
+                steamIds = validIds.filterNot(steamProfiles::containsKey).toSet(),
+            )
+        }
         return validIds.mapNotNull { steamId -> steamProfiles[steamId]?.let { steamId to it } }.toMap()
+    }
+
+    private suspend fun resolvePersonaProfiles(
+        steamSession: SteamClientSession,
+        steamIds: Set<Long>,
+    ) {
+        if (steamIds.isEmpty()) return
+        val ownedRequests = linkedMapOf<Long, CompletableDeferred<SteamProfile>>()
+        val requests = steamIds.associateWith { steamId ->
+            val candidate = CompletableDeferred<SteamProfile>()
+            pendingPersonaProfiles.putIfAbsent(steamId, candidate)?.also {
+                candidate.cancel()
+            } ?: candidate.also { ownedRequests[steamId] = it }
+        }
+        try {
+            steamSession.friends.requestFriendInfo(steamIds.map { steamId -> SteamID(steamId) })
+            withTimeoutOrNull(PERSONA_RPC_TIMEOUT_MS) {
+                requests.values.forEach { request -> request.await() }
+            }
+        } finally {
+            ownedRequests.forEach { (steamId, request) ->
+                pendingPersonaProfiles.remove(steamId, request)
+            }
+        }
     }
 
     private suspend fun <T> withAuthenticatedSteamSession(
@@ -1084,6 +1112,7 @@ class SecureSteamSessionRepository @Inject constructor(
         val client = SteamClient(configuration)
         val callbackManager = CallbackManager(client)
         val user = client.getHandler(SteamUser::class.java) ?: error("SteamUser handler unavailable")
+        val friends = client.getHandler(SteamFriends::class.java) ?: error("SteamFriends handler unavailable")
         val unified = client.getHandler(SteamUnifiedMessages::class.java)
             ?: error("SteamUnifiedMessages handler unavailable")
         val connected = CompletableDeferred<Unit>()
@@ -1125,6 +1154,17 @@ class SecureSteamSessionRepository @Inject constructor(
                 loggedOn.completeExceptionally(error)
             }
         }
+        subscriptions += callbackManager.subscribe(PersonaStateCallback::class.java) { callback ->
+            val steamId = callback.friendId.convertToUInt64()
+            val displayName = callback.playerName.trim()
+            if (steamId <= 0L || displayName.isBlank()) return@subscribe
+            val profile = SteamProfile(
+                displayName = displayName,
+                avatarUrl = callback.avatarHash.toSteamAvatarUrl(),
+            )
+            steamProfiles[steamId] = profile
+            pendingPersonaProfiles.remove(steamId)?.complete(profile)
+        }
         val callbackJob = callbackScope.launch {
             while (isActive) {
                 try {
@@ -1146,6 +1186,7 @@ class SecureSteamSessionRepository @Inject constructor(
             generation = generation,
             client = client,
             user = user,
+            friends = friends,
             unified = unified,
             connected = connected,
             loggedOn = loggedOn,
@@ -1390,6 +1431,7 @@ class SecureSteamSessionRepository @Inject constructor(
         val generation: Long,
         val client: SteamClient,
         val user: SteamUser,
+        val friends: SteamFriends,
         val unified: SteamUnifiedMessages,
         val connected: CompletableDeferred<Unit>,
         val loggedOn: CompletableDeferred<Unit>,
@@ -1456,6 +1498,7 @@ class SecureSteamSessionRepository @Inject constructor(
         const val MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES = 400
         const val MAX_PROFILE_BATCH_SIZE = 100
         const val PROFILE_RPC_TIMEOUT_MS = 5_000L
+        const val PERSONA_RPC_TIMEOUT_MS = 5_000L
     }
 }
 
@@ -1485,6 +1528,12 @@ internal fun normalizeWorkshopCommentRequest(
         ownerId = normalizedOwnerId,
         text = normalizedText,
     )
+}
+
+private fun ByteArray.toSteamAvatarUrl(): String? {
+    if (isEmpty() || all { byte -> byte.toInt() == 0 }) return null
+    val hash = joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    return "https://avatars.fastly.steamstatic.com/${hash}_medium.jpg"
 }
 
 private class EncryptedSteamCredentialStore(context: Context) {
