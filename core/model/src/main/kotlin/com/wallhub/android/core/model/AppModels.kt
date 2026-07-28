@@ -136,7 +136,7 @@ data class AppPreferences(
     val downloadProxyUrl: String = "",
     val downloadProxyEnabled: Boolean = false,
     val downloadProxyRequiresConfirmation: Boolean = false,
-    val steamAccessEnabled: Boolean = false,
+    val steamAccessEnabled: Boolean = true,
     val steamAccessMode: SteamAccessMode = SteamAccessMode.SMART_DOH,
     val steamAccessDohEndpoints: List<String> = DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS,
     val steamAccessHosts: String = "",

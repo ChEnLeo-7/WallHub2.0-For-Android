@@ -27,6 +27,7 @@ dependencies {
     api(libs.okhttp.android)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.json)
+    implementation(libs.spongycastle.prov)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)

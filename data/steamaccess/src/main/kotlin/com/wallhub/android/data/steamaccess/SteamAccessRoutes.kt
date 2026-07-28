@@ -3,10 +3,9 @@ package com.wallhub.android.data.steamaccess
 import java.net.InetAddress
 
 internal object SteamAccessRoutes {
-    private val excludedSuffixes = listOf(".steamcontent.com", ".steamserver.net")
-
     private val aliases = mapOf(
         "steamcommunity.com" to listOf("steamcommunity-a.akamaihd.net.edgesuite.net"),
+        "www.steamcommunity.com" to listOf("steamcommunity-a.akamaihd.net.edgesuite.net"),
         "api.steampowered.com" to listOf(
             "api.steampowered.com.edgekey.net",
             "api.steampowered.com.edgesuite.net",
@@ -15,8 +14,6 @@ internal object SteamAccessRoutes {
             "community.steam-api.com.edgekey.net",
             "community.steam-api.com.edgesuite.net",
         ),
-        "store.steampowered.com" to listOf("steamstore-a.akamaihd.net.edgesuite.net"),
-        "images.steamusercontent.com" to listOf("steamuserimages-a.akamaihd.net.edgesuite.net"),
     )
 
     private val seedAddresses = mapOf(
@@ -46,32 +43,17 @@ internal object SteamAccessRoutes {
         ),
     )
 
-    fun supports(hostname: String): Boolean {
-        val host = hostname.lowercase().trimEnd('.')
-        if (host.isBlank() || excludedSuffixes.any(host::endsWith)) return false
-        return host == "steamcommunity.com" || host.endsWith(".steamcommunity.com") ||
-            host == "steampowered.com" || host.endsWith(".steampowered.com") ||
-            host == "steam-api.com" || host.endsWith(".steam-api.com") ||
-            host == "steamusercontent.com" || host.endsWith(".steamusercontent.com") ||
-            host == "steamstatic.com" || host.endsWith(".steamstatic.com") ||
-            host == "akamaihd.net" || host.endsWith(".akamaihd.net")
-    }
+    fun supports(hostname: String): Boolean = SteamDomainPolicy.supports(hostname)
 
-    fun aliases(hostname: String): List<String> {
-        val host = hostname.lowercase().trimEnd('.')
-        aliases[host]?.let { return it }
-        return when {
-            host.endsWith(".steamcommunity.com") -> aliases.getValue("steamcommunity.com")
-            host.endsWith(".steamusercontent.com") -> aliases.getValue("images.steamusercontent.com")
-            host == "checkout.steampowered.com" || host == "media.steampowered.com" ->
-                aliases.getValue("store.steampowered.com")
-            else -> emptyList()
-        }
-    }
+    fun aliases(hostname: String): List<String> = aliases[hostname.lowercase().trimEnd('.')].orEmpty()
 
-    fun seeds(hostname: String): List<InetAddress> = seedAddresses[hostname.lowercase()]
+    fun seeds(hostname: String): List<InetAddress> {
+        val host = hostname.lowercase().trimEnd('.')
+        val seedHost = if (host == "www.steamcommunity.com") "steamcommunity.com" else host
+        return seedAddresses[seedHost]
         .orEmpty()
         .mapNotNull { address -> runCatching { InetAddress.getByName(address) }.getOrNull() }
+    }
 }
 
 internal object SteamHostsParser {

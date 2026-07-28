@@ -48,14 +48,7 @@ internal class SteamAccessProbe(
             .build()
         val successful = runCatching {
             client.newCall(request).execute().use { response ->
-                when (hostname.lowercase()) {
-                    "api.steampowered.com", "community.steam-api.com" -> {
-                        if (!response.isSuccessful) return@use false
-                        val prefix = response.peekBody(PROBE_BODY_LIMIT.toLong()).string()
-                        prefix.trimStart().startsWith("{")
-                    }
-                    else -> response.isSuccessful
-                }
+                response.code in 200..499
             }
         }.getOrDefault(false)
         return SteamProbeResult(
@@ -65,17 +58,10 @@ internal class SteamAccessProbe(
         )
     }
 
-    private fun probePath(hostname: String): String = when (hostname.lowercase()) {
-        "api.steampowered.com", "community.steam-api.com" ->
-            "/ISteamWebAPIUtil/GetSupportedAPIList/v1/?format=json"
-        "store.steampowered.com", "checkout.steampowered.com", "media.steampowered.com" ->
-            "/app/431960"
-        else -> "/workshop/browse/?appid=431960&numperpage=1"
-    }
+    private fun probePath(hostname: String): String = SteamDomainPolicy.probePath(hostname)
 
     private companion object {
         const val MAX_PROBE_ADDRESSES = 4
         const val TOTAL_PROBE_BUDGET_MS = 3_000L
-        const val PROBE_BODY_LIMIT = 512
     }
 }

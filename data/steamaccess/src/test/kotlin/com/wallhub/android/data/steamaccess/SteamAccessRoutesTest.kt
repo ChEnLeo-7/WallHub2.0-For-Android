@@ -7,9 +7,13 @@ import kotlin.test.assertTrue
 
 class SteamAccessRoutesTest {
     @Test
-    fun `gateway supports community and web api but excludes depot hosts`() {
+    fun `gateway supports exact core services and excludes subdomains and cdn hosts`() {
         assertTrue(SteamAccessRoutes.supports("steamcommunity.com"))
+        assertTrue(SteamAccessRoutes.supports("www.steamcommunity.com"))
         assertTrue(SteamAccessRoutes.supports("api.steampowered.com"))
+        assertTrue(SteamAccessRoutes.supports("community.steam-api.com"))
+        assertFalse(SteamAccessRoutes.supports("evil.steamcommunity.com"))
+        assertFalse(SteamAccessRoutes.supports("steamuserimages-a.akamaihd.net"))
         assertFalse(SteamAccessRoutes.supports("cache1.steamcontent.com"))
         assertFalse(SteamAccessRoutes.supports("cmp1-sea1.steamserver.net"))
     }
