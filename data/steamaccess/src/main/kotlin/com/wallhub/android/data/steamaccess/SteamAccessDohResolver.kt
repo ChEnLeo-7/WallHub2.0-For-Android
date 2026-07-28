@@ -1,5 +1,6 @@
 package com.wallhub.android.data.steamaccess
 
+import com.wallhub.android.core.model.STEAM_ACCESS_DOH_ENDPOINT_LIMIT
 import java.net.InetAddress
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
@@ -8,6 +9,12 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
+
+internal data class SteamDohQuery(
+    val hostname: String,
+    val endpoint: String,
+    val recordType: Int,
+)
 
 internal class SteamAccessDohResolver(
     private val client: OkHttpClient,
@@ -18,11 +25,8 @@ internal class SteamAccessDohResolver(
         endpoints: List<String>,
         includeIpv6: Boolean,
     ): List<InetAddress> {
-        val recordTypes = if (includeIpv6) listOf(TYPE_A, TYPE_AAAA) else listOf(TYPE_A)
-        val tasks = hostnames.flatMap { hostname ->
-            endpoints.take(MAX_ENDPOINTS).flatMap { endpoint ->
-                recordTypes.map { type -> Callable { resolveOne(hostname, endpoint, type) } }
-            }
+        val tasks = queryPlan(hostnames, endpoints, includeIpv6).map { query ->
+            Callable { resolveOne(query.hostname, query.endpoint, query.recordType) }
         }
         if (tasks.isEmpty()) return emptyList()
         return executor.invokeAll(tasks, QUERY_BUDGET_MS, TimeUnit.MILLISECONDS)
@@ -51,8 +55,20 @@ internal class SteamAccessDohResolver(
         private const val TYPE_A = 1
         private const val TYPE_AAAA = 28
         private const val QUERY_BUDGET_MS = 3_000L
-        private const val MAX_ENDPOINTS = 8
         private const val MAX_RESPONSE_BYTES = 64L * 1024L
+
+        internal fun queryPlan(
+            hostnames: List<String>,
+            endpoints: List<String>,
+            includeIpv6: Boolean,
+        ): List<SteamDohQuery> {
+            val recordTypes = if (includeIpv6) listOf(TYPE_A, TYPE_AAAA) else listOf(TYPE_A)
+            return endpoints.take(STEAM_ACCESS_DOH_ENDPOINT_LIMIT).flatMap { endpoint ->
+                hostnames.flatMap { hostname ->
+                    recordTypes.map { type -> SteamDohQuery(hostname, endpoint, type) }
+                }
+            }
+        }
 
         internal fun parseAddresses(body: String, expectedType: Int): List<InetAddress> {
             val answers = runCatching { JSONObject(body).optJSONArray("Answer") }.getOrNull()

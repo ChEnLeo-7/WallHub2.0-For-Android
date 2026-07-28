@@ -18,6 +18,7 @@ import com.wallhub.android.core.model.SteamAccessMode
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
+import com.wallhub.android.core.model.normalizeSteamAccessDohEndpoints
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -126,13 +127,13 @@ class AppPreferencesStore(context: Context) {
 
     suspend fun setSteamAccessDohEndpoints(endpoints: List<String>) {
         applicationContext.dataStore.edit { preferences ->
-            val normalized = endpoints.asSequence()
-                .map(String::trim)
-                .filter { endpoint -> endpoint.length <= 2_048 && endpoint.startsWith("https://") }
-                .distinct()
-                .take(8)
-                .toList()
-            preferences[Keys.steamAccessDohEndpoints] = normalized.joinToString("\n")
+            val normalized = normalizeSteamAccessDohEndpoints(endpoints)
+            preferences[Keys.steamAccessMode] = SteamAccessMode.SMART_DOH.name
+            if (normalized.isEmpty()) {
+                preferences.remove(Keys.steamAccessDohEndpoints)
+            } else {
+                preferences[Keys.steamAccessDohEndpoints] = normalized.joinToString("\n")
+            }
         }
     }
 
@@ -240,10 +241,8 @@ class AppPreferencesStore(context: Context) {
             steamAccessMode = preferences.enumValue(Keys.steamAccessMode, SteamAccessMode.SMART_DOH),
             steamAccessDohEndpoints = preferences[Keys.steamAccessDohEndpoints]
                 ?.lineSequence()
-                ?.map(String::trim)
-                ?.filter(String::isNotBlank)
-                ?.distinct()
                 ?.toList()
+                ?.let(::normalizeSteamAccessDohEndpoints)
                 ?.takeIf { endpoints -> endpoints.isNotEmpty() }
                 ?: DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS,
             steamAccessHosts = preferences[Keys.steamAccessHosts].orEmpty(),

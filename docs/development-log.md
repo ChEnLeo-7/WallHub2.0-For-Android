@@ -21,6 +21,7 @@
 
 - Steam 访问增强从失败的全设备 VPN/TLS Record Fragmentation 产品路径切换为 WallHub 进程内方案：移除 manifest `VpnService` 与设置入口，只对 `steamcommunity.com`、`www.steamcommunity.com`、`api.steampowered.com`、`community.steam-api.com` 自动检测直连；直连异常且严格无 SNI 探测成功时，由仅绑定 `127.0.0.1` 的认证 CONNECT/TLS 桥接入候选地址，下载、图片、视频、Depot、Steam CM 和其他应用流量不受影响。
 - 内置线路使用仅存活于应用进程的 P-256 临时根与精确 SAN 叶证书维持现有 OkHttp URL、Cookie、重定向和请求体语义，不向 Android 安装 CA；上游 ClientHello 明确清空 `server_name`，仍强制 Android 系统 CA 链和原 Steam 主机名验证。新增协议级 ClientHello 捕获、错误主机名拒绝、精确域名范围测试，并恢复默认开启的自动检测与手动刷新状态 UI；下载代理不再与核心服务访问线路互斥。
+- Steam 服务访问新增 DoH 地址与优先级编辑器：保留现有默认列表，支持添加自定义 HTTPS DoH、上移、下移、删除和恢复默认，按用户顺序优先采用解析结果；保存时统一执行 URL 安全校验、去重和八项上限，并一次性清理旧线路后重新检测。
 - 新增实验性 Steam 连接增强，移植 WallHub Webview 的多源 DoH、Steam 边缘别名、历史成功地址、低优先级 Akamai 保底地址、应用层探测、失败冷却和普通网络回退策略。
 - Android 安全实现始终保留原 Steam 请求域名、TLS SNI、系统 CA 链与主机名验证；未移植 Webview 的隐藏/假 SNI 和 `rejectUnauthorized: false` 行为。
 - Workshop、Steam Community、WebAPI、下载前详情、缩略图和 Coil 图片请求接入共享 Steam 网络客户端；JavaSteam Directory HTTP 同步接入，WebSocket CM 与 Depot/CDN 深度选路留待后续阶段。

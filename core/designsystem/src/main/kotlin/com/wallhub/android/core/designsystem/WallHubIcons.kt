@@ -12,12 +12,16 @@ import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
@@ -60,7 +64,10 @@ import androidx.compose.ui.unit.dp
 
 /** Official Material Design 3 icon aliases used throughout WallHub. */
 object WallHubIcons {
+    val Add: ImageVector get() = MaterialIcons.Outlined.Add
+    val ArrowDown: ImageVector get() = MaterialIcons.Outlined.ArrowDownward
     val ArrowLeft: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.ArrowBack
+    val ArrowUp: ImageVector get() = MaterialIcons.Outlined.ArrowUpward
     val Bell: ImageVector get() = MaterialIcons.Outlined.Notifications
     val Bookmark: ImageVector get() = MaterialIcons.Outlined.BookmarkBorder
     val Check: ImageVector get() = MaterialIcons.Outlined.Check
@@ -70,6 +77,7 @@ object WallHubIcons {
     val CircleX: ImageVector get() = MaterialIcons.Outlined.Cancel
     val Compass: ImageVector get() = MaterialIcons.Outlined.Explore
     val Copy: ImageVector get() = MaterialIcons.Outlined.ContentCopy
+    val Delete: ImageVector get() = MaterialIcons.Outlined.Delete
     val Download: ImageVector get() = MaterialIcons.Outlined.Download
     val Edit: ImageVector get() = MaterialIcons.Outlined.Edit
     val ExternalLink: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.OpenInNew
@@ -107,12 +115,16 @@ object WallHubIcons {
     val VisibilityOff: ImageVector get() = MaterialIcons.Outlined.VisibilityOff
 
     object Outlined {
+        val Add: ImageVector get() = WallHubIcons.Add
+        val ArrowDownward: ImageVector get() = WallHubIcons.ArrowDown
+        val ArrowUpward: ImageVector get() = WallHubIcons.ArrowUp
         val BookmarkBorder: ImageVector get() = WallHubIcons.Bookmark
         val Bookmarks: ImageVector get() = MaterialIcons.Outlined.Bookmarks
         val Cancel: ImageVector get() = WallHubIcons.CircleX
         val Check: ImageVector get() = WallHubIcons.Check
         val ContentCopy: ImageVector get() = WallHubIcons.Copy
         val DarkMode: ImageVector get() = WallHubIcons.Moon
+        val Delete: ImageVector get() = WallHubIcons.Delete
         val DeleteSweep: ImageVector get() = WallHubIcons.Trash2
         val Download: ImageVector get() = WallHubIcons.Download
         val Edit: ImageVector get() = WallHubIcons.Edit

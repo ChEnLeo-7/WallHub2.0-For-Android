@@ -20,4 +20,23 @@ class SteamAccessDohResolverTest {
         assertEquals(listOf("23.44.248.222"), ipv4.map { it.hostAddress })
         assertEquals(1, ipv6.size)
     }
+
+    @Test
+    fun `query plan gives each higher priority endpoint all hostnames first`() {
+        val queries = SteamAccessDohResolver.queryPlan(
+            hostnames = listOf("steamcommunity.com", "steamcommunity.edgesuite.net"),
+            endpoints = listOf("https://first.example/dns-query", "https://second.example/dns-query"),
+            includeIpv6 = false,
+        )
+
+        assertEquals(
+            listOf(
+                "https://first.example/dns-query|steamcommunity.com|1",
+                "https://first.example/dns-query|steamcommunity.edgesuite.net|1",
+                "https://second.example/dns-query|steamcommunity.com|1",
+                "https://second.example/dns-query|steamcommunity.edgesuite.net|1",
+            ),
+            queries.map { query -> "${query.endpoint}|${query.hostname}|${query.recordType}" },
+        )
+    }
 }

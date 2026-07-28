@@ -92,18 +92,21 @@ import androidx.lifecycle.viewModelScope
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.AccentPreference
 import com.wallhub.android.core.model.AppLanguage
+import com.wallhub.android.core.model.DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
 import com.wallhub.android.core.model.DiagnosticRepository
 import com.wallhub.android.core.model.LauncherIconController
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
+import com.wallhub.android.core.model.STEAM_ACCESS_DOH_ENDPOINT_LIMIT
 import com.wallhub.android.core.model.SteamAccessPhase
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamAccessState
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
+import com.wallhub.android.core.model.normalizeSteamAccessDohEndpoint
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
@@ -296,6 +299,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.setSteamAccessEnabled(enabled) }
     }
 
+    fun setSteamAccessDohEndpoints(endpoints: List<String>) {
+        viewModelScope.launch { settingsRepository.setSteamAccessDohEndpoints(endpoints) }
+    }
+
     fun refreshSteamAccess() {
         steamAccessRepository.refresh()
     }
@@ -405,6 +412,7 @@ fun SettingsRoute(
         onOnlineChunkPlaybackEnabledChange = viewModel::setOnlineChunkPlaybackEnabled,
         steamAccessState = steamAccessState,
         onSteamAccessEnabledChange = viewModel::setSteamAccessEnabled,
+        onSteamAccessDohEndpointsChange = viewModel::setSteamAccessDohEndpoints,
         onRefreshSteamAccess = viewModel::refreshSteamAccess,
         session = session,
         onOpenSteamLogin = onOpenSteamLogin,
@@ -446,6 +454,7 @@ fun SettingsScreen(
     onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
     steamAccessState: SteamAccessState,
     onSteamAccessEnabledChange: (Boolean) -> Unit,
+    onSteamAccessDohEndpointsChange: (List<String>) -> Unit,
     onRefreshSteamAccess: () -> Unit,
     session: SteamSessionState,
     onOpenSteamLogin: () -> Unit,
@@ -588,7 +597,9 @@ fun SettingsScreen(
                         session = session,
                         steamAccessEnabled = preferences.steamAccessEnabled,
                         steamAccessState = steamAccessState,
+                        steamAccessDohEndpoints = preferences.steamAccessDohEndpoints,
                         onSteamAccessEnabledChange = onSteamAccessEnabledChange,
+                        onSteamAccessDohEndpointsChange = onSteamAccessDohEndpointsChange,
                         onRefreshSteamAccess = onRefreshSteamAccess,
                         savedApiKey = preferences.steamApiKey,
                         apiKey = steamApiKey,
@@ -1019,7 +1030,9 @@ private fun SteamSettingsContent(
     session: SteamSessionState,
     steamAccessEnabled: Boolean,
     steamAccessState: SteamAccessState,
+    steamAccessDohEndpoints: List<String>,
     onSteamAccessEnabledChange: (Boolean) -> Unit,
+    onSteamAccessDohEndpointsChange: (List<String>) -> Unit,
     onRefreshSteamAccess: () -> Unit,
     savedApiKey: String,
     apiKey: String,
@@ -1113,6 +1126,12 @@ private fun SteamSettingsContent(
             checked = steamAccessEnabled,
             onCheckedChange = onSteamAccessEnabledChange,
         )
+        SettingsItemDivider()
+        SteamAccessDohEndpointsSetting(
+            endpoints = steamAccessDohEndpoints,
+            language = language,
+            onSave = onSteamAccessDohEndpointsChange,
+        )
         SettingsActionArea {
             FilledTonalButton(
                 onClick = onRefreshSteamAccess,
@@ -1197,6 +1216,223 @@ private fun SteamSettingsContent(
                         language.text("保存 Steam API Key", "Save Steam API Key")
                     },
                 )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SteamAccessDohEndpointsSetting(
+    endpoints: List<String>,
+    language: AppLanguage,
+    onSave: (List<String>) -> Unit,
+) {
+    var sheetVisible by rememberSaveable { mutableStateOf(false) }
+    var draftEndpoints by remember { mutableStateOf(endpoints) }
+    var endpointText by rememberSaveable { mutableStateOf("") }
+    var endpointError by rememberSaveable { mutableStateOf<String?>(null) }
+
+    fun openEditor() {
+        draftEndpoints = endpoints
+        endpointText = ""
+        endpointError = null
+        sheetVisible = true
+    }
+
+    fun addEndpoint() {
+        val normalized = normalizeSteamAccessDohEndpoint(endpointText)
+        endpointError = when {
+            normalized == null -> language.text(
+                "请输入有效的 HTTPS DoH 地址",
+                "Enter a valid HTTPS DoH URL",
+            )
+
+            normalized in draftEndpoints -> language.text(
+                "此 DoH 地址已在列表中",
+                "This DoH URL is already in the list",
+            )
+
+            draftEndpoints.size >= STEAM_ACCESS_DOH_ENDPOINT_LIMIT -> language.text(
+                "最多可配置 $STEAM_ACCESS_DOH_ENDPOINT_LIMIT 个 DoH 地址",
+                "Up to $STEAM_ACCESS_DOH_ENDPOINT_LIMIT DoH URLs are supported",
+            )
+
+            else -> null
+        }
+        if (endpointError == null && normalized != null) {
+            draftEndpoints = draftEndpoints + normalized
+            endpointText = ""
+        }
+    }
+
+    SettingsListItem(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = ::openEditor),
+        headlineContent = {
+            Text(language.text("DoH 地址与优先级", "DoH URLs and priority"))
+        },
+        supportingContent = {
+            Text(
+                language.text(
+                    "${endpoints.size} 个地址，优先使用 ${endpoints.firstOrNull().orEmpty()}",
+                    "${endpoints.size} URLs; first: ${endpoints.firstOrNull().orEmpty()}",
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        trailingContent = {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+            )
+        },
+    )
+
+    if (sheetVisible) {
+        ModalBottomSheet(onDismissRequest = { sheetVisible = false }) {
+            SettingsSheetContent {
+                Text(
+                    text = language.text("DoH 地址与优先级", "DoH URLs and priority"),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    text = language.text(
+                        "列表顶部优先，最多 $STEAM_ACCESS_DOH_ENDPOINT_LIMIT 个；保存后会重新检测 Steam 线路。",
+                        "Top entries have priority, up to $STEAM_ACCESS_DOH_ENDPOINT_LIMIT. Saving checks Steam routes again.",
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                draftEndpoints.forEachIndexed { index, endpoint ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 64.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "${index + 1}",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.widthIn(min = 24.dp),
+                        )
+                        Text(
+                            text = endpoint,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 8.dp),
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        IconButton(
+                            onClick = {
+                                draftEndpoints = draftEndpoints.toMutableList().apply {
+                                    add(index - 1, removeAt(index))
+                                }
+                            },
+                            enabled = index > 0,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.ArrowUpward,
+                                contentDescription = language.text("提高优先级", "Move up"),
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                draftEndpoints = draftEndpoints.toMutableList().apply {
+                                    add(index + 1, removeAt(index))
+                                }
+                            },
+                            enabled = index < draftEndpoints.lastIndex,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.ArrowDownward,
+                                contentDescription = language.text("降低优先级", "Move down"),
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                draftEndpoints = draftEndpoints.toMutableList().apply { removeAt(index) }
+                            },
+                            enabled = draftEndpoints.size > 1,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Delete,
+                                contentDescription = language.text("删除 DoH 地址", "Delete DoH URL"),
+                            )
+                        }
+                    }
+                    if (index < draftEndpoints.lastIndex) SettingsItemDivider()
+                }
+                SettingsFilledTextField(
+                    value = endpointText,
+                    onValueChange = { value ->
+                        endpointText = value
+                        endpointError = null
+                    },
+                    label = { Text(language.text("添加 DoH 地址", "Add DoH URL")) },
+                    placeholder = { Text("https://dns.example/dns-query") },
+                    supportingText = endpointError?.let { error -> { Text(error) } },
+                    isError = endpointError != null,
+                    singleLine = true,
+                    trailingIcon = {
+                        IconButton(
+                            onClick = ::addEndpoint,
+                            enabled = endpointText.isNotBlank() &&
+                                draftEndpoints.size < STEAM_ACCESS_DOH_ENDPOINT_LIMIT,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Add,
+                                contentDescription = language.text("添加", "Add"),
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedButton(
+                    onClick = {
+                        draftEndpoints = DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
+                        endpointText = ""
+                        endpointError = null
+                    },
+                    enabled = draftEndpoints != DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Refresh,
+                        contentDescription = null,
+                    )
+                    Text(
+                        text = language.text("恢复默认列表", "Restore default list"),
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = { sheetVisible = false },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(language.text("取消", "Cancel"))
+                    }
+                    Button(
+                        onClick = {
+                            onSave(draftEndpoints)
+                            sheetVisible = false
+                        },
+                        enabled = draftEndpoints != endpoints,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(language.text("保存", "Save"))
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
             }
         }
     }

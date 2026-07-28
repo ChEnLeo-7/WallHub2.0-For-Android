@@ -150,11 +150,33 @@ data class AppPreferences(
     val onlineChunkPlaybackEnabled: Boolean = false,
 )
 
+const val STEAM_ACCESS_DOH_ENDPOINT_LIMIT = 8
+
 val DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS = listOf(
     "https://1.12.12.12/resolve",
     "https://doh.pub/resolve",
     "https://dns.alidns.com/resolve",
 )
+
+fun normalizeSteamAccessDohEndpoint(raw: String): String? {
+    val value = raw.trim()
+    if (value.isEmpty() || value.length > 2_048) return null
+    val uri = runCatching { URI(value) }.getOrNull() ?: return null
+    val validPort = uri.port == -1 || uri.port in 1..65_535
+    return value.takeIf {
+        uri.scheme.equals("https", ignoreCase = true) &&
+            !uri.host.isNullOrBlank() &&
+            uri.userInfo == null &&
+            uri.fragment == null &&
+            validPort
+    }
+}
+
+fun normalizeSteamAccessDohEndpoints(endpoints: List<String>): List<String> = endpoints.asSequence()
+    .mapNotNull(::normalizeSteamAccessDohEndpoint)
+    .distinct()
+    .take(STEAM_ACCESS_DOH_ENDPOINT_LIMIT)
+    .toList()
 
 fun isSupportedDownloadProxyUrl(raw: String): Boolean {
     val uri = runCatching { URI(raw.trim()) }.getOrNull() ?: return false
