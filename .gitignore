@@ -16,3 +16,11 @@ local.properties
 *.keystore
 keystore.properties
 signing.properties
+
+# Local agent instructions, skills, and working documentation
+/AGENTS.md
+/progress.md
+/.pi/skills/wallhub-release-publish/
+/.opencode/skills/
+/docs/github-release.md
+/docs/github-actions-adb.md

@@ -70,7 +70,7 @@ Debug APK 输出到：
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-依赖与插件版本集中维护在 `gradle/libs.versions.toml`。Release 签名材料、`local.properties`、APK/AAB、构建缓存和本地快照均不应提交到仓库。维护者的 GitHub Actions 到 ADB 自动验证流程见 [`docs/github-actions-adb.md`](docs/github-actions-adb.md)。
+依赖与插件版本集中维护在 `gradle/libs.versions.toml`。Release 签名材料、`local.properties`、APK/AAB、构建缓存和本地快照均不应提交到仓库。
 
 ## 参考与鸣谢
 

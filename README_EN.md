@@ -66,7 +66,7 @@ The Debug APK is generated at:
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Dependency and plugin versions are centralized in `gradle/libs.versions.toml`. Never commit signing material, `local.properties`, APK/AAB output, build caches, or local snapshots. Maintainers can find the GitHub Actions-to-ADB verification workflow in [`docs/github-actions-adb.md`](docs/github-actions-adb.md).
+Dependency and plugin versions are centralized in `gradle/libs.versions.toml`. Never commit signing material, `local.properties`, APK/AAB output, build caches, or local snapshots.
 
 ## References And Acknowledgements
 
