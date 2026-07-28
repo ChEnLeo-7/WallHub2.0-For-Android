@@ -1396,7 +1396,7 @@ private fun SteamAccessDohEndpointsSetting(
                     modifier = Modifier
                         .padding(24.dp)
                         .widthIn(max = 560.dp)
-                        .fillMaxHeight(0.85f)
+                        .heightIn(min = 480.dp, max = 720.dp)
                         .imePadding(),
                     shape = MaterialTheme.shapes.extraLarge,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
