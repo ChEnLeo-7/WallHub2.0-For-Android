@@ -1,5 +1,6 @@
 package com.wallhub.android.data.vpn
 
+import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.InputStream
@@ -13,6 +14,7 @@ import java.net.SocketTimeoutException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,6 +45,7 @@ class SteamVpnSocksServer(
     private val maxConcurrentFlows: Int = DEFAULT_MAX_CONCURRENT_FLOWS,
 ) : Closeable {
     private val running = AtomicBoolean(false)
+    private val nextRelayId = AtomicLong(1L)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val permits = Semaphore(maxConcurrentFlows)
     private val activeSockets = ConcurrentHashMap.newKeySet<Socket>()
@@ -86,6 +89,8 @@ class SteamVpnSocksServer(
     }
 
     private suspend fun handle(client: Socket) {
+        val relayId = nextRelayId.getAndIncrement()
+        Log.d(LOG_TAG, "flow=$relayId accepted")
         client.use { downstream ->
             downstream.tcpNoDelay = true
             downstream.soTimeout = HANDSHAKE_TIMEOUT_MS
@@ -96,6 +101,10 @@ class SteamVpnSocksServer(
                 return
             }
 
+            Log.d(
+                LOG_TAG,
+                "flow=$relayId negotiated=${if (target.address == null) "domain" else if (target.address.address.size == 4) "ipv4" else "ipv6"}",
+            )
             val upstream = runCatching {
                 socketFactory.connect(
                     SocksTarget(
@@ -110,12 +119,14 @@ class SteamVpnSocksServer(
                 return
             }
 
+            Log.d(LOG_TAG, "flow=$relayId upstream-connected")
             activeSockets += upstream
             try {
                 upstream.use { direct ->
                     direct.tcpNoDelay = true
                     downstream.soTimeout = FIRST_FLIGHT_TIMEOUT_MS
                     Socks5Protocol.sendSuccess(downstream.getOutputStream())
+                    Log.d(LOG_TAG, "flow=$relayId success-replied")
                     kotlinx.coroutines.coroutineScope {
                         val download = launch {
                             relay(
@@ -132,6 +143,7 @@ class SteamVpnSocksServer(
                         }
                         try {
                             relayClientToUpstream(
+                                relayId = relayId,
                                 downstream = downstream,
                                 input = downstream.getInputStream(),
                                 output = direct.getOutputStream(),
@@ -139,6 +151,7 @@ class SteamVpnSocksServer(
                             )
                             download.join()
                         } catch (error: Throwable) {
+                            Log.d(LOG_TAG, "flow=$relayId failed=${error.javaClass.simpleName}")
                             runCatching { downstream.close() }
                             runCatching { direct.close() }
                             throw error
@@ -152,6 +165,7 @@ class SteamVpnSocksServer(
     }
 
     private fun relayClientToUpstream(
+        relayId: Long,
         downstream: Socket,
         input: InputStream,
         output: OutputStream,
@@ -160,6 +174,7 @@ class SteamVpnSocksServer(
         val buffered = ByteArrayOutputStream()
         val chunk = ByteArray(STREAM_BUFFER_BYTES)
         while (buffered.size() <= TlsClientHelloRecordFragmenter.MAX_BUFFERED_BYTES) {
+            Log.d(LOG_TAG, "flow=$relayId before-first-flight-read buffered=${buffered.size()}")
             val read = try {
                 input.read(chunk)
             } catch (_: SocketTimeoutException) {
@@ -171,6 +186,7 @@ class SteamVpnSocksServer(
                 relay(input, output) { runCatching { upstream.shutdownOutput() } }
                 return
             }
+            Log.d(LOG_TAG, "flow=$relayId first-flight-read=$read")
             if (read < 0) {
                 if (buffered.size() > 0) output.write(buffered.toByteArray())
                 runCatching { upstream.shutdownOutput() }
@@ -179,8 +195,13 @@ class SteamVpnSocksServer(
             buffered.write(chunk, 0, read)
             val bytes = buffered.toByteArray()
             when (val result = fragmenter.inspect(bytes)) {
-                TlsClientHelloRecordFragmenter.Result.NeedMore -> continue
+                TlsClientHelloRecordFragmenter.Result.NeedMore -> {
+                    Log.d(LOG_TAG, "flow=$relayId inspect=need-more")
+                    continue
+                }
+
                 is TlsClientHelloRecordFragmenter.Result.Passthrough -> {
+                    Log.d(LOG_TAG, "flow=$relayId inspect=passthrough-${result.reason}")
                     downstream.soTimeout = 0
                     output.write(bytes)
                     output.flush()
@@ -189,6 +210,7 @@ class SteamVpnSocksServer(
                 }
 
                 is TlsClientHelloRecordFragmenter.Result.Fragmented -> {
+                    Log.d(LOG_TAG, "flow=$relayId inspect=fragmented records=${result.recordCount}")
                     downstream.soTimeout = 0
                     writeFragmentedFirstFlight(output, result)
                     eventListener(SocksRelayEvent(fragmentedHost = result.host))
@@ -254,6 +276,7 @@ class SteamVpnSocksServer(
     }
 
     companion object {
+        private const val LOG_TAG = "WallHubVpnRelay"
         private const val SOCKS_BIND_ADDRESS = "127.0.0.1"
         private const val ACCEPT_BACKLOG = 128
         private const val HANDSHAKE_TIMEOUT_MS = 10_000
