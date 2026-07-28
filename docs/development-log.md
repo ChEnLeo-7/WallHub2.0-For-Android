@@ -34,7 +34,8 @@
 
 #### 验证
 
-- Unified Messages 发现页首次验证 run `30332798691` 在 `:data:steam:compileDebugKotlin` 发现会话等待 lambda 被推断为 `Unit`；CI 在签名构建与 artifact 上传前停止，ADB 设备仍保持原 `0.8.25 (35)` APK。等待逻辑已改为条件循环后显式返回会话可用状态，并准备重新执行完整验证。
+- Unified Messages 发现页首次验证 run `30332798691` 在 `:data:steam:compileDebugKotlin` 发现会话等待 lambda 被推断为 `Unit`；CI 在签名构建与 artifact 上传前停止，ADB 设备仍保持原 `0.8.25 (35)` APK。等待逻辑随后改为条件循环后显式返回会话可用状态。
+- 修复提交 `787149a865003199cdafb2ba8d7d0108c40e5b20` 的 GitHub Actions run `30332934611` 通过全量 JVM 测试、`lintDebug`、稳定签名 Release APK 组装和提交绑定 artifact 校验，并原位安装到 Android 15 设备 `192.168.2.190:5555`；冷启动 PID `6424` 存活。保持系统代理为 `null`、网络 `NOT_VPN` 后连续两次自动冷启动，发现页均在 18 秒内通过 Unified Messages 加载约 `49656` 个项目，可见真实标题、类型、订阅数、收藏数和文件大小，未出现 `connection closed`、重试或持续加载；最终 PID `8125` 存活且日志无致命异常、ANR 或 OOM。本次仅使用 7 天 Actions artifact，未创建 tag 或 GitHub Release。
 - GitHub Actions run `30266556810` 在 commit `b200cae616a6bc7c1d44dd3805131b262712f625` 通过全量 JVM 测试、`lintDebug`、签名 Release 组装和 artifact 上传；提交绑定 APK 完成 SHA-256、ZIP、八个 DEX 与签名证书检查，并已原位安装到 `192.168.2.190:39055`。WallHub `0.8.25 (35)` 冷启动 PID `3707` 存活，日志无致命异常、ANR 或 OOM。
 - GitHub Actions run `30269430089` 在 commit `9080ca5652ee64fd87678d2b91107cf68e162d60` 再次通过全量 JVM 测试、`lintDebug`、签名 Release 组装和提交绑定 artifact 校验，并原位安装到同一 Android 15 设备。真机从设置关闭主题图标后 launcher 唯一入口切换为 `MainActivityColorIcon`，重新开启后恢复 `MainActivityThemedIcon`，切换期间 PID `5404` 未退出；随后强制冷启动 PID `6285` 存活、DataStore 选择保持且日志无致命异常、ANR 或 OOM。
 - GitHub Actions run `30271536333` 在 commit `912b9ea5d179f303bec5ddb2f042c8224134c58d` 通过同一套测试、lint、签名 Release 与 artifact 校验，并原位安装到 Android 15 设备；冷启动 PID `7839` 存活且无致命异常、ANR 或 OOM。launcher 桌面截图确认缩小后的 WallHub 前景与相邻壁纸引擎图标具有接近的视觉占比，四周留白完整，当前入口继续保持 `MainActivityThemedIcon`。
