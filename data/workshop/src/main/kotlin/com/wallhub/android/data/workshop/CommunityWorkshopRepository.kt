@@ -5,6 +5,7 @@ import com.wallhub.android.core.model.FavoriteState
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
+import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopComment
 import com.wallhub.android.core.model.WorkshopCommentPage
@@ -22,7 +23,6 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
@@ -45,43 +45,46 @@ class CommunityWorkshopRepository @Inject constructor(
 
     override suspend fun browse(query: WorkshopBrowseQuery): WorkshopPage = withContext(Dispatchers.IO) {
         val normalizedQuery = query.normalized()
-        val steamApiKey = settingsRepository.preferences.first().steamApiKey.trim()
-        val page = if (normalizedQuery.creatorId == null) {
-            try {
+        val preferences = settingsRepository.preferences.first()
+        val steamApiKey = preferences.steamApiKey.trim()
+        when (preferences.steamWorkshopDataSource) {
+            SteamWorkshopDataSource.COMMUNITY_HTML -> browseViaCommunity(normalizedQuery, steamApiKey)
+            SteamWorkshopDataSource.WEB_API -> {
+                require(steamApiKey.isNotEmpty()) { "Steam Web API 数据源需要先配置 API Key" }
+                require(normalizedQuery.creatorId == null) { "Steam Web API 数据源暂不支持按作者浏览" }
+                enrichPageAuthors(browseViaSteamApi(normalizedQuery, steamApiKey), steamApiKey)
+            }
+
+            SteamWorkshopDataSource.CM_WEBSOCKET -> {
+                require(normalizedQuery.creatorId == null) { "Steam CM 数据源暂不支持按作者浏览" }
                 unifiedWorkshopRepository.browsePublic(normalizedQuery)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Throwable) {
-                null
+                    ?: error("暂时无法建立 Steam CM WebSocket 会话")
             }
-        } else {
-            null
-        } ?: if (steamApiKey.isNotEmpty() && normalizedQuery.creatorId == null) {
-            try {
-                browseViaSteamApi(normalizedQuery, steamApiKey)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Throwable) {
-                browseViaCommunity(normalizedQuery, steamApiKey)
-            }
-        } else {
-            browseViaCommunity(normalizedQuery, steamApiKey)
         }
-        enrichPageAuthors(page, steamApiKey)
     }
 
     override suspend fun getDetail(workshopId: Long): WorkshopDetail = withContext(Dispatchers.IO) {
         require(workshopId > 0L) { "创意工坊项目 ID 无效" }
-        val steamApiKey = settingsRepository.preferences.first().steamApiKey.trim()
-        val detail = try {
-            unifiedWorkshopRepository.getPublicDetail(workshopId)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Throwable) {
-            null
-        } ?: getDetails(listOf(workshopId), steamApiKey).firstOrNull()
-            ?: error("Steam 未返回该创意工坊项目，可能已删除或不可公开访问")
-        enrichDetailAuthor(detail, steamApiKey)
+        val preferences = settingsRepository.preferences.first()
+        val steamApiKey = preferences.steamApiKey.trim()
+        when (preferences.steamWorkshopDataSource) {
+            SteamWorkshopDataSource.COMMUNITY_HTML -> {
+                val detail = getDetails(listOf(workshopId), steamApiKey).firstOrNull()
+                    ?: error("Steam 未返回该创意工坊项目，可能已删除或不可公开访问")
+                val authorName = CommunityWorkshopParser.extractAuthorName(get(buildDetailUrl(workshopId)))
+                detail.copy(summary = detail.summary.copy(author = authorName ?: detail.summary.author))
+            }
+
+            SteamWorkshopDataSource.WEB_API -> {
+                val detail = getDetails(listOf(workshopId), steamApiKey).firstOrNull()
+                    ?: error("Steam Web API 未返回该创意工坊项目")
+                enrichDetailAuthor(detail, steamApiKey)
+            }
+
+            SteamWorkshopDataSource.CM_WEBSOCKET -> unifiedWorkshopRepository
+                .getPublicDetail(workshopId)
+                ?: error("Steam CM 未返回该创意工坊项目")
+        }
     }
 
     override suspend fun getComments(
@@ -93,32 +96,157 @@ class CommunityWorkshopRepository @Inject constructor(
         require(workshopId > 0L) { "创意工坊项目 ID 无效" }
         val safeStart = start.coerceAtLeast(0)
         val safeCount = count.coerceIn(1, MAX_COMMENT_PAGE_SIZE)
-        val steamApiKey = settingsRepository.preferences.first().steamApiKey.trim()
+        val preferences = settingsRepository.preferences.first()
+        val steamApiKey = preferences.steamApiKey.trim()
         val safeOwnerId = ownerId.orEmpty().filter(Char::isDigit).takeIf(String::isNotBlank)
-            ?: getDetails(listOf(workshopId), steamApiKey)
-                .firstOrNull()
-                ?.creatorId
-                ?.filter(Char::isDigit)
-                ?.takeIf(String::isNotBlank)
-            ?: error("无法确定该创意工坊项目的作者")
-        val page = try {
-            unifiedWorkshopRepository.getAuthenticatedComments(
+            ?: resolveWorkshopOwnerId(workshopId, preferences.steamWorkshopDataSource, steamApiKey)
+        when (preferences.steamWorkshopDataSource) {
+            SteamWorkshopDataSource.COMMUNITY_HTML -> requestCommunityCommentsPage(
                 workshopId = workshopId,
                 start = safeStart,
                 count = safeCount,
                 ownerId = safeOwnerId,
             )
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Throwable) {
-            null
-        } ?: requestPublicCommentsPage(
-            workshopId = workshopId,
-            start = safeStart,
-            count = safeCount,
-            ownerId = safeOwnerId,
+
+            SteamWorkshopDataSource.WEB_API -> enrichCommentAuthors(
+                page = requestPublicCommentsPage(
+                    workshopId = workshopId,
+                    start = safeStart,
+                    count = safeCount,
+                    ownerId = safeOwnerId,
+                ),
+                steamApiKey = steamApiKey,
+            )
+
+            SteamWorkshopDataSource.CM_WEBSOCKET -> unifiedWorkshopRepository
+                .getAuthenticatedComments(
+                    workshopId = workshopId,
+                    start = safeStart,
+                    count = safeCount,
+                    ownerId = safeOwnerId,
+                )
+                ?: error("Steam CM 评论需要先登录 Steam")
+        }
+    }
+
+    private suspend fun resolveWorkshopOwnerId(
+        workshopId: Long,
+        source: SteamWorkshopDataSource,
+        steamApiKey: String,
+    ): String {
+        val creatorId = when (source) {
+            SteamWorkshopDataSource.CM_WEBSOCKET -> unifiedWorkshopRepository
+                .getPublicDetail(workshopId)
+                ?.creatorId
+            SteamWorkshopDataSource.COMMUNITY_HTML,
+            SteamWorkshopDataSource.WEB_API,
+            -> getDetails(listOf(workshopId), steamApiKey).firstOrNull()?.creatorId
+        }
+        return creatorId?.filter(Char::isDigit)?.takeIf(String::isNotBlank)
+            ?: error("无法确定该创意工坊项目的作者")
+    }
+
+    private fun requestCommunityCommentsPage(
+        workshopId: Long,
+        start: Int,
+        count: Int,
+        ownerId: String,
+    ): WorkshopCommentPage {
+        val routes = listOf(
+            ownerId to "$COMMUNITY_COMMENTS_HTML_URL/$ownerId/$workshopId/",
+            "" to "$COMMUNITY_COMMENTS_HTML_URL/$workshopId/-1/",
         )
-        enrichCommentAuthors(page, steamApiKey)
+        var lastFailure: Throwable? = null
+        routes.forEach { (routeOwnerId, url) ->
+            listOf(true, false).forEach { usePost ->
+                try {
+                    requestCommunityCommentsRoute(
+                        url = url,
+                        workshopId = workshopId,
+                        start = start,
+                        count = count,
+                        ownerId = routeOwnerId,
+                        creatorId = ownerId,
+                        usePost = usePost,
+                    )?.let { return it }
+                } catch (error: Throwable) {
+                    lastFailure = error
+                }
+            }
+        }
+        throw lastFailure ?: IOException("Steam Community 未返回评论数据")
+    }
+
+    private fun requestCommunityCommentsRoute(
+        url: String,
+        workshopId: Long,
+        start: Int,
+        count: Int,
+        ownerId: String,
+        creatorId: String,
+        usePost: Boolean,
+    ): WorkshopCommentPage? {
+        val form = FormBody.Builder()
+            .add("start", start.toString())
+            .add("count", count.toString())
+            .add("feature2", "-1")
+            .add("l", "schinese")
+            .add("userreview_offset", "-1")
+            .build()
+        val requestUrl = if (usePost) {
+            url
+        } else {
+            Uri.parse(url).buildUpon()
+                .appendQueryParameter("start", start.toString())
+                .appendQueryParameter("count", count.toString())
+                .appendQueryParameter("feature2", "-1")
+                .appendQueryParameter("l", "schinese")
+                .appendQueryParameter("userreview_offset", "-1")
+                .build()
+                .toString()
+        }
+        val request = Request.Builder()
+            .url(requestUrl)
+            .apply { if (usePost) post(form) else get() }
+            .header("Accept", "application/json,text/javascript,*/*;q=0.01")
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.7")
+            .header("Origin", "https://steamcommunity.com")
+            .header("Referer", buildDetailUrl(workshopId))
+            .header("User-Agent", USER_AGENT)
+            .header("X-Requested-With", "XMLHttpRequest")
+            .build()
+        val payload = client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("Steam Community 评论请求失败：HTTP ${response.code}")
+            }
+            JSONObject(response.body.string())
+        }
+        val html = sequenceOf("comments_html", "html", "comments")
+            .map(payload::optString)
+            .firstOrNull(String::isNotBlank)
+            .orEmpty()
+        val comments = CommunityWorkshopParser.parseComments(html, count, creatorId)
+        val failed = when (val success = payload.opt("success")) {
+            false -> true
+            is Number -> success.toInt() == 0
+            is String -> success == "0" || success.equals("false", ignoreCase = true)
+            else -> false
+        }
+        if (comments.isEmpty() && failed) return null
+        val total = sequenceOf("total_count", "total", "comment_count")
+            .mapNotNull { key -> payload.opt(key)?.toString()?.toIntOrNull() }
+            .firstOrNull()
+            ?.coerceAtLeast(0)
+        val nextStart = start + maxOf(comments.size, count)
+        return WorkshopCommentPage(
+            comments = comments,
+            start = start,
+            count = count,
+            nextStart = nextStart,
+            total = total,
+            hasMore = if (total != null) nextStart < total else comments.size >= count,
+            ownerId = ownerId.ifBlank { null },
+        )
     }
 
     private fun requestPublicCommentsPage(
@@ -601,6 +729,8 @@ class CommunityWorkshopRepository @Inject constructor(
             "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
         const val COMMUNITY_COMMENTS_API_URL =
             "https://api.steampowered.com/ICommunityService/GetCommentThread/v1/"
+        const val COMMUNITY_COMMENTS_HTML_URL =
+            "https://steamcommunity.com/comment/PublishedFile_Public/render"
         val WORKSHOP_TYPE_TAGS = setOf("Scene", "Video", "Web")
         val CONTENT_RATING_TAGS = setOf("Everyone", "Questionable", "Mature")
         val COMMUNITY_GENRE_TAGS = setOf(

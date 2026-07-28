@@ -15,6 +15,7 @@ import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.LocalWallpaperViewMode
 import com.wallhub.android.core.model.DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
 import com.wallhub.android.core.model.SteamAccessMode
+import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
 import kotlinx.coroutines.flow.Flow
@@ -154,6 +155,12 @@ class AppPreferencesStore(context: Context) {
         }
     }
 
+    suspend fun setSteamWorkshopDataSource(source: SteamWorkshopDataSource) {
+        applicationContext.dataStore.edit { preferences ->
+            preferences[Keys.steamWorkshopDataSource] = source.name
+        }
+    }
+
     suspend fun setOnlineChunkPlaybackEnabled(enabled: Boolean) {
         applicationContext.dataStore.edit { preferences ->
             preferences[Keys.onlineChunkPlaybackEnabled] = enabled
@@ -244,6 +251,10 @@ class AppPreferencesStore(context: Context) {
             steamAccessHosts = preferences[Keys.steamAccessHosts].orEmpty(),
             mediaCacheLimitMb = (preferences[Keys.mediaCacheLimitMb] ?: 512).coerceAtLeast(128),
             steamApiKey = preferences[Keys.steamApiKey].orEmpty(),
+            steamWorkshopDataSource = preferences.enumValue(
+                Keys.steamWorkshopDataSource,
+                SteamWorkshopDataSource.COMMUNITY_HTML,
+            ),
             onlineChunkPlaybackEnabled = preferences[Keys.onlineChunkPlaybackEnabled] ?: false,
         )
     }
@@ -283,6 +294,7 @@ class AppPreferencesStore(context: Context) {
         val steamAccessHosts = stringPreferencesKey("steam_access_hosts")
         val mediaCacheLimitMb = intPreferencesKey("media_cache_limit_mb")
         val steamApiKey = stringPreferencesKey("steam_api_key")
+        val steamWorkshopDataSource = stringPreferencesKey("steam_workshop_data_source")
         val onlineChunkPlaybackEnabled = booleanPreferencesKey("online_chunk_playback_enabled")
     }
 }

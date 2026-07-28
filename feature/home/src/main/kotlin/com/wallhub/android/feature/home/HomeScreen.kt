@@ -204,6 +204,7 @@ import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.requiresLegacyPublicDownloadPermission
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopFilterCatalog
@@ -379,6 +380,7 @@ data class HomeUiState(
     val multiSelect: Boolean = true,
     val matureContentEnabled: Boolean = false,
     val steamApiKey: String = "",
+    val steamWorkshopDataSource: SteamWorkshopDataSource = SteamWorkshopDataSource.COMMUNITY_HTML,
     val cardAction: HomeCardAction = HomeCardAction.DOWNLOAD,
     val paginationMode: HomePaginationMode = HomePaginationMode.INFINITE_SCROLL,
     val outputTreeUri: String? = null,
@@ -469,13 +471,15 @@ class HomeViewModel @Inject constructor(
                 val requiresReload = previous.pageSize != preferences.homePageSize ||
                     previous.matureContentEnabled != preferences.matureContentEnabled ||
                     previous.paginationMode != preferences.homePaginationMode ||
-                    previous.steamApiKey != preferences.steamApiKey
+                    previous.steamApiKey != preferences.steamApiKey ||
+                    previous.steamWorkshopDataSource != preferences.steamWorkshopDataSource
                 mutableState.value = previous.copy(
                     language = preferences.language,
                     pageSize = preferences.homePageSize,
                     columns = preferences.homeColumns,
                     multiSelect = preferences.homeFilterMultiSelect,
                     steamApiKey = preferences.steamApiKey,
+                    steamWorkshopDataSource = preferences.steamWorkshopDataSource,
                     cardAction = preferences.homeCardAction,
                     paginationMode = preferences.homePaginationMode,
                     matureContentEnabled = preferences.matureContentEnabled,

@@ -102,6 +102,7 @@ import com.wallhub.android.core.model.SteamAccessMode
 import com.wallhub.android.core.model.SteamAccessPhase
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamAccessState
+import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
 import com.wallhub.android.core.model.HomeCardAction
@@ -316,6 +317,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.setSteamApiKey(apiKey) }
     }
 
+    fun setSteamWorkshopDataSource(source: SteamWorkshopDataSource) {
+        viewModelScope.launch { settingsRepository.setSteamWorkshopDataSource(source) }
+    }
+
     fun setOnlineChunkPlaybackEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.setOnlineChunkPlaybackEnabled(enabled) }
     }
@@ -409,6 +414,7 @@ fun SettingsRoute(
         onDownloadProxyEnabledChange = viewModel::setDownloadProxyEnabled,
         onOnlineStreamCacheLimitChange = viewModel::setOnlineStreamCacheLimitMb,
         onSteamApiKeyChange = viewModel::setSteamApiKey,
+        onSteamWorkshopDataSourceChange = viewModel::setSteamWorkshopDataSource,
         onOnlineChunkPlaybackEnabledChange = viewModel::setOnlineChunkPlaybackEnabled,
         steamAccessState = steamAccessState,
         onSteamAccessEnabledChange = viewModel::setSteamAccessEnabled,
@@ -452,6 +458,7 @@ fun SettingsScreen(
     onDownloadProxyEnabledChange: (Boolean) -> Unit,
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
     onSteamApiKeyChange: (String) -> Unit,
+    onSteamWorkshopDataSourceChange: (SteamWorkshopDataSource) -> Unit,
     onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
     steamAccessState: SteamAccessState,
     onSteamAccessEnabledChange: (Boolean) -> Unit,
@@ -659,6 +666,7 @@ fun SettingsScreen(
                         onSteamAccessDohEndpointsChange = onSteamAccessDohEndpointsChange,
                         onSteamAccessHostsChange = onSteamAccessHostsChange,
                         onRefreshSteamAccess = onRefreshSteamAccess,
+                        onSteamWorkshopDataSourceChange = onSteamWorkshopDataSourceChange,
                         onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
                         onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
                         onRequestNotifications = onRequestNotifications,
@@ -1111,8 +1119,8 @@ private fun SteamSettingsContent(
     SettingsSection(
         title = "Steam Web API",
         supportingText = language.text(
-            "优先通过 Web API 浏览创意工坊，失败时自动回退",
-            "Prefer the Web API for Workshop browsing with automatic fallback",
+            "供 Web API 数据源与匿名昵称补全使用",
+            "Used by the Web API source and anonymous profile enrichment",
         ),
         icon = Icons.Outlined.Tune,
     ) {
@@ -1188,6 +1196,7 @@ private fun ExperimentalSettingsContent(
     onSteamAccessDohEndpointsChange: (List<String>) -> Unit,
     onSteamAccessHostsChange: (String) -> Unit,
     onRefreshSteamAccess: () -> Unit,
+    onSteamWorkshopDataSourceChange: (SteamWorkshopDataSource) -> Unit,
     onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
     onRequestNotifications: () -> Unit,
@@ -1207,6 +1216,41 @@ private fun ExperimentalSettingsContent(
             "Turn off the related option to return to the default flow if stability issues occur.",
         ),
     )
+
+    SettingsSection(
+        title = text("创意工坊数据源", "Workshop data source"),
+        icon = Icons.Outlined.Language,
+    ) {
+        SettingChoiceRow(
+            title = text("数据获取源", "Data source"),
+            selectedValue = preferences.steamWorkshopDataSource,
+            values = SteamWorkshopDataSource.entries,
+            label = { source ->
+                when (source) {
+                    SteamWorkshopDataSource.COMMUNITY_HTML -> "Steam Community HTML"
+                    SteamWorkshopDataSource.WEB_API -> "Steam Web API"
+                    SteamWorkshopDataSource.CM_WEBSOCKET -> "Steam CM WebSocket"
+                }
+            },
+            supportingText = when (preferences.steamWorkshopDataSource) {
+                SteamWorkshopDataSource.COMMUNITY_HTML -> text(
+                    "使用 Steam Community 页面获取公开数据",
+                    "Use Steam Community pages for public data",
+                )
+
+                SteamWorkshopDataSource.WEB_API -> text(
+                    "发现页需要有效的 Steam API Key",
+                    "Discovery requires a valid Steam API key",
+                )
+
+                SteamWorkshopDataSource.CM_WEBSOCKET -> text(
+                    "公开发现与详情支持匿名 CM；评论需要登录",
+                    "Public discovery and details support anonymous CM; comments require sign-in",
+                )
+            },
+            onSelected = onSteamWorkshopDataSourceChange,
+        )
+    }
 
     SettingsSection(
         title = text("Steam 连接增强", "Steam access enhancement"),

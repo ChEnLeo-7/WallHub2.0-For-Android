@@ -52,6 +52,8 @@ interface SettingsRepository {
 
     suspend fun setSteamApiKey(apiKey: String) = Unit
 
+    suspend fun setSteamWorkshopDataSource(source: SteamWorkshopDataSource) = Unit
+
     suspend fun setOnlineChunkPlaybackEnabled(enabled: Boolean) = Unit
 
     suspend fun setOutputDirectory(treeUri: String, label: String)

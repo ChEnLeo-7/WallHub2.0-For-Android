@@ -10,6 +10,7 @@ import com.wallhub.android.core.model.LocalWallpaperViewMode
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.ThemePreference
 import com.wallhub.android.core.model.SteamAccessMode
+import com.wallhub.android.core.model.SteamWorkshopDataSource
 import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
 
@@ -87,6 +88,10 @@ class DataStoreSettingsRepository @Inject constructor(
 
     override suspend fun setSteamApiKey(apiKey: String) {
         store.setSteamApiKey(apiKey)
+    }
+
+    override suspend fun setSteamWorkshopDataSource(source: SteamWorkshopDataSource) {
+        store.setSteamWorkshopDataSource(source)
     }
 
     override suspend fun setOnlineChunkPlaybackEnabled(enabled: Boolean) {

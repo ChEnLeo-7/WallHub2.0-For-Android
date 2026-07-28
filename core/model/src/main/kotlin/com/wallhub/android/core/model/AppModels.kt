@@ -39,6 +39,12 @@ enum class SteamAccessMode {
     HOSTS,
 }
 
+enum class SteamWorkshopDataSource {
+    COMMUNITY_HTML,
+    WEB_API,
+    CM_WEBSOCKET,
+}
+
 enum class SteamAccessPhase {
     DISABLED,
     READY,
@@ -113,6 +119,7 @@ data class AppPreferences(
     val steamAccessHosts: String = "",
     val mediaCacheLimitMb: Int = 512,
     val steamApiKey: String = "",
+    val steamWorkshopDataSource: SteamWorkshopDataSource = SteamWorkshopDataSource.COMMUNITY_HTML,
     /**
      * Streams a video directly from Steam Depot chunks. This remains opt-in because a
      * completed local download is more predictable on mobile networks and after app restarts.
