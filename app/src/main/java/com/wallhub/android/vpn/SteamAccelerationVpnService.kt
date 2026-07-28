@@ -10,6 +10,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.VpnService
+import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
@@ -65,9 +66,13 @@ class SteamAccelerationVpnService : VpnService() {
         try {
             check(prepare(this) == null) { "VPN permission is not granted" }
             val underlyingNetwork = selectUnderlyingNetwork()
-            val mtu = connectivityManager.getLinkProperties(underlyingNetwork)?.mtu
-                ?.takeIf { value -> value in MIN_MTU..MAX_MTU }
-                ?: DEFAULT_MTU
+            val mtu = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                connectivityManager.getLinkProperties(underlyingNetwork)?.mtu
+                    ?.takeIf { value -> value in MIN_MTU..MAX_MTU }
+                    ?: DEFAULT_MTU
+            } else {
+                DEFAULT_MTU
+            }
             val established = establishInterface(mtu, underlyingNetwork)
                 ?: error("Android did not establish the VPN interface")
             tunInterface = established
