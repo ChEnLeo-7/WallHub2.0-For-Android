@@ -58,7 +58,7 @@ class SteamVpnSocksServer(
         check(running.compareAndSet(false, true)) { "SOCKS server is already running" }
         val socket = ServerSocket().apply {
             reuseAddress = true
-            bind(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), ACCEPT_BACKLOG)
+            bind(InetSocketAddress(InetAddress.getByName(SOCKS_BIND_ADDRESS), 0), ACCEPT_BACKLOG)
         }
         serverSocket = socket
         acceptJob = scope.launch {
@@ -233,6 +233,7 @@ class SteamVpnSocksServer(
     }
 
     companion object {
+        private const val SOCKS_BIND_ADDRESS = "127.0.0.1"
         private const val ACCEPT_BACKLOG = 128
         private const val HANDSHAKE_TIMEOUT_MS = 10_000
         private const val FIRST_FLIGHT_TIMEOUT_MS = 1_500

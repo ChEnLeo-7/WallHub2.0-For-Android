@@ -44,7 +44,15 @@ class FirestackVpnEngine(
     ) {
         check(tunnel == null) { "Firestack engine is already running" }
         configureFirestack()
-        val connected = Intra.connect3(tunFd.toLong(), mtu.toLong(), bridge)
+        val connected = Intra.connect(
+            tunFd.toLong(),
+            mtu.toLong(),
+            mtu.toLong(),
+            TUN_INTERFACE_ADDRESSES,
+            TUN_DNS_ADDRESSES,
+            null,
+            bridge,
+        )
         try {
             val proxyId = gostr(DIRECT_PROXY_ID)
             val proxyUrl = gostr("socks5://127.0.0.1:$socksPort")
@@ -88,6 +96,10 @@ class FirestackVpnEngine(
         private const val NO_SOCKET_TIMEOUT_SECONDS = 0
         private const val FIRESTACK_ERROR_LOG_LEVEL = 5
         private const val FIRESTACK_NO_CONSOLE_LOG_LEVEL = 8
+        private const val TUN_INTERFACE_ADDRESSES =
+            "10.111.222.1/24,fd66:f83a:c650::1/120"
+        private const val TUN_DNS_ADDRESSES =
+            "10.111.222.3:53,[fd66:f83a:c650::3]:53"
     }
 }
 
