@@ -22,6 +22,7 @@
 - 新增实验性 Steam 连接增强，移植 WallHub Webview 的多源 DoH、Steam 边缘别名、历史成功地址、低优先级 Akamai 保底地址、应用层探测、失败冷却和普通网络回退策略。
 - Android 安全实现始终保留原 Steam 请求域名、TLS SNI、系统 CA 链与主机名验证；未移植 Webview 的隐藏/假 SNI 和 `rejectUnauthorized: false` 行为。
 - Workshop、Steam Community、WebAPI、下载前详情、缩略图和 Coil 图片请求接入共享 Steam 网络客户端；JavaSteam Directory HTTP 同步接入，WebSocket CM 与 Depot/CDN 深度选路留待后续阶段。
+- 已登录用户的发现页优先通过现有 JavaSteam CM 会话调用 `PublishedFile.QueryFiles#1`，直接读取 protobuf 详情并复用现有筛选与分页语义；启动时存在已保存凭据则最多等待 12 秒完成会话恢复，Unified RPC 不可用时依次回退 Steam Web API Key 和 Community HTML。
 - 设置的实验功能页增加连接增强开关、智能 DoH/应用内 Hosts 模式、解析端点、状态摘要和手动重新预热；连接增强默认关闭，并与显式代理启用状态互斥。
 - 下载代理新增独立启用开关；旧版已保存地址继续保留但不会静默启用，需用户确认。启用后下载、在线播放及其前置 Steam 公共详情请求使用代理，代理失败不会回退连接增强。
 - 路由历史按 Wi-Fi、蜂窝、以太网和系统 VPN 类型隔离；网络变化、设置变化或手动刷新会清理路由与连接池。评论等写操作关闭自动连接重试和重定向，避免请求体可能发出后跨候选地址重复提交。

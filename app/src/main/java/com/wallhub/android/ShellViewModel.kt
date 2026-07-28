@@ -28,6 +28,7 @@ class ShellViewModel @Inject constructor(
     )
 
     init {
+        steamSessionRepository.restorePersistedSession()
         viewModelScope.launch {
             runCatching {
                 diagnosticRepository.record(
@@ -38,7 +39,6 @@ class ShellViewModel @Inject constructor(
                     ),
                 )
             }
-            steamSessionRepository.restorePersistedSession()
         }
     }
 

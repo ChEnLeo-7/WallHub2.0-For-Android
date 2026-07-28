@@ -35,13 +35,14 @@ import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.WorkshopInteraction
 import com.wallhub.android.core.model.WorkshopPage
 import com.wallhub.android.core.model.WorkshopSummary
-import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.core.model.WORKSHOP_COMMENT_MAX_LENGTH
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.core.model.SteamContentCredentialProvider
+import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
+import com.wallhub.android.core.model.WorkshopBrowseQuery
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.Closeable
 import java.nio.charset.StandardCharsets
@@ -80,6 +81,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.FormBody
 import okhttp3.Request
 import org.json.JSONObject
@@ -99,7 +101,7 @@ class SecureSteamSessionRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val diagnostics: DiagnosticRepository,
     clientFactory: SteamHttpClientFactory,
-) : SteamSessionRepository, SteamContentCredentialProvider, AccountWorkshopRepository {
+) : SteamSessionRepository, SteamContentCredentialProvider, AccountWorkshopRepository, SteamUnifiedWorkshopRepository {
     private val credentialStore = EncryptedSteamCredentialStore(context.applicationContext)
     private val communityClient = clientFactory.newBuilder()
         .callTimeout(COMMUNITY_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -217,6 +219,28 @@ class SecureSteamSessionRepository @Inject constructor(
                 accountName = credential.accountName,
                 refreshToken = credential.refreshToken,
             )
+        }
+    }
+
+    override suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage? {
+        if (!awaitPublicBrowseSession()) return null
+        return withContext(Dispatchers.IO) {
+            requestMutex.withLock {
+                val steamSession = authenticatedSession?.takeIf { session -> session.isUsable }
+                    ?: return@withLock null
+                val service = steamSession.unified.createService(PublishedFile::class.java)
+                val response = awaitSteamRpc(
+                    steamSession = steamSession,
+                    operation = "public_query_files",
+                ) {
+                    val rpcResponse = service.queryFiles(buildUnifiedWorkshopBrowseRequest(query)).await()
+                    check(rpcResponse.result == EResult.OK) {
+                        "Steam PublishedFile.QueryFiles returned ${rpcResponse.result}"
+                    }
+                    rpcResponse.body.build()
+                }
+                mapUnifiedWorkshopBrowseResponse(query, response)
+            }
         }
     }
 
@@ -486,6 +510,18 @@ class SecureSteamSessionRepository @Inject constructor(
         }
     }
 
+    private suspend fun awaitPublicBrowseSession(): Boolean {
+        if (authenticatedSession?.isUsable == true) return true
+        if (authenticationJob?.isActive != true) return false
+        return withTimeoutOrNull(PUBLIC_BROWSE_SESSION_WAIT_MS) {
+            while (true) {
+                if (authenticatedSession?.isUsable == true) return@withTimeoutOrNull true
+                if (authenticationJob?.isActive != true) return@withTimeoutOrNull false
+                delay(PUBLIC_BROWSE_SESSION_POLL_MS)
+            }
+        } ?: false
+    }
+
     private suspend fun <T> withAuthenticatedSteamSession(
         block: suspend (SteamClientSession) -> T,
     ): T = withContext(Dispatchers.IO) {
@@ -574,46 +610,6 @@ class SecureSteamSessionRepository @Inject constructor(
         AccountWorkshopCollection.SUBSCRIPTIONS -> "mysubscriptions"
         AccountWorkshopCollection.FAVORITES -> "myfavorites"
         AccountWorkshopCollection.VOTED -> "myvotes"
-    }
-
-    private fun SteammessagesPublishedfileSteamclient.PublishedFileDetails.toWorkshopSummary(
-        collection: AccountWorkshopCollection,
-    ): WorkshopSummary {
-        val sourceTags = tagsList.mapNotNull { tag -> tag.tag.trim().takeIf(String::isNotBlank) }
-        val type = when {
-            sourceTags.any { it.equals("Video", ignoreCase = true) } -> WorkshopType.VIDEO
-            sourceTags.any { it.equals("Scene", ignoreCase = true) } -> WorkshopType.SCENE
-            sourceTags.any { it.equals("Web", ignoreCase = true) || it.equals("Website", ignoreCase = true) } -> {
-                WorkshopType.WEB
-            }
-
-            else -> WorkshopType.UNKNOWN
-        }
-        return WorkshopSummary(
-            id = publishedfileid,
-            title = title.ifBlank { "壁纸 $publishedfileid" },
-            author = "Steam 用户 $creator",
-            creatorId = creator.toString(),
-            previewUrl = previewUrl.takeIf(String::isNotBlank),
-            type = type,
-            tags = sourceTags,
-            subscriptions = subscriptions.toLong().takeIf { it > 0L }
-                ?: lifetimeSubscriptions.toLong().takeIf { it > 0L },
-            favorites = favorited.toLong().takeIf { it > 0L }
-                ?: lifetimeFavorited.toLong().takeIf { it > 0L },
-            views = views.toLong().takeIf { it > 0L },
-            fileSizeBytes = fileSize.takeIf { it > 0L },
-            subscriptionState = if (collection == AccountWorkshopCollection.SUBSCRIPTIONS) {
-                SubscriptionState.SUBSCRIBED
-            } else {
-                SubscriptionState.UNKNOWN
-            },
-            favoriteState = if (collection == AccountWorkshopCollection.FAVORITES) {
-                FavoriteState.FAVORITED
-            } else {
-                FavoriteState.UNKNOWN
-            },
-        )
     }
 
     private fun String.extractWorkshopAuthorDisplayName(): String? {
@@ -1386,6 +1382,8 @@ class SecureSteamSessionRepository @Inject constructor(
         const val AUTH_STATUS_POLL_INTERVAL_MS = 2_000L
         const val WEB_ACCESS_TOKEN_TIMEOUT_MS = 30_000L
         const val COMMUNITY_REQUEST_TIMEOUT_MS = 30_000L
+        const val PUBLIC_BROWSE_SESSION_WAIT_MS = 12_000L
+        const val PUBLIC_BROWSE_SESSION_POLL_MS = 100L
         const val CALLBACK_WAIT_MS = 1_000L
         const val SUBSCRIPTION_LIST_TYPE = 1
         const val FAVORITE_RELATIONSHIP = 1

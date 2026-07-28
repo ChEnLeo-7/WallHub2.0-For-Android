@@ -120,6 +120,12 @@ interface WorkshopVideoStreamRepository {
     suspend fun open(workshopId: Long): WorkshopVideoStreamSession
 }
 
+/** Public Workshop browsing over a live Steam Connection Manager session. */
+interface SteamUnifiedWorkshopRepository {
+    /** Returns null when no signed-in CM session is available. */
+    suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage?
+}
+
 interface WorkshopRepository {
     /** Reads a public Wallpaper Engine Workshop page without requiring a Steam Web API key. */
     suspend fun browse(query: WorkshopBrowseQuery): WorkshopPage

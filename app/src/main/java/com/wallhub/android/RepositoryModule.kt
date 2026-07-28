@@ -7,6 +7,7 @@ import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.SteamAccessRepository
+import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.LocalWallpaperRepository
 import com.wallhub.android.core.model.LauncherIconController
@@ -63,6 +64,12 @@ abstract class RepositoryModule {
     abstract fun bindAccountWorkshopRepository(
         repository: SecureSteamSessionRepository,
     ): AccountWorkshopRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindSteamUnifiedWorkshopRepository(
+        repository: SecureSteamSessionRepository,
+    ): SteamUnifiedWorkshopRepository
 
     @Binds
     @Singleton

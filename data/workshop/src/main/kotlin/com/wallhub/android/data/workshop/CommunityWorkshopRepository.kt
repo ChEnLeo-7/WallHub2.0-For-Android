@@ -4,6 +4,7 @@ import android.net.Uri
 import com.wallhub.android.core.model.FavoriteState
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SubscriptionState
+import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopComment
 import com.wallhub.android.core.model.WorkshopCommentPage
@@ -31,6 +32,7 @@ import org.json.JSONObject
 @Singleton
 class CommunityWorkshopRepository @Inject constructor(
     private val settingsRepository: SettingsRepository,
+    private val unifiedWorkshopRepository: SteamUnifiedWorkshopRepository,
     clientFactory: SteamHttpClientFactory,
 ) : WorkshopRepository {
     private val client = clientFactory.newBuilder()
@@ -41,6 +43,13 @@ class CommunityWorkshopRepository @Inject constructor(
 
     override suspend fun browse(query: WorkshopBrowseQuery): WorkshopPage = withContext(Dispatchers.IO) {
         val normalizedQuery = query.normalized()
+        if (normalizedQuery.creatorId == null) {
+            try {
+                unifiedWorkshopRepository.browsePublic(normalizedQuery)?.let { return@withContext it }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {}
+        }
         val steamApiKey = settingsRepository.preferences.first().steamApiKey.trim()
         if (steamApiKey.isNotEmpty() && normalizedQuery.creatorId == null) {
             try {
