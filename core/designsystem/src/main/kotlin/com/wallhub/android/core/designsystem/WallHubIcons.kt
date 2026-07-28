@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.DragIndicator
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -79,6 +80,7 @@ object WallHubIcons {
     val Copy: ImageVector get() = MaterialIcons.Outlined.ContentCopy
     val Delete: ImageVector get() = MaterialIcons.Outlined.Delete
     val Download: ImageVector get() = MaterialIcons.Outlined.Download
+    val DragHandle: ImageVector get() = MaterialIcons.Outlined.DragIndicator
     val Edit: ImageVector get() = MaterialIcons.Outlined.Edit
     val ExternalLink: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.OpenInNew
     val Filter: ImageVector get() = MaterialIcons.Outlined.FilterList
@@ -127,6 +129,7 @@ object WallHubIcons {
         val Delete: ImageVector get() = WallHubIcons.Delete
         val DeleteSweep: ImageVector get() = WallHubIcons.Trash2
         val Download: ImageVector get() = WallHubIcons.Download
+        val DragIndicator: ImageVector get() = WallHubIcons.DragHandle
         val Edit: ImageVector get() = WallHubIcons.Edit
         val Explore: ImageVector get() = WallHubIcons.Compass
         val FavoriteBorder: ImageVector get() = WallHubIcons.Heart

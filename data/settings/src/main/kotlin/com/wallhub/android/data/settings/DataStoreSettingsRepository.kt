@@ -78,8 +78,11 @@ class DataStoreSettingsRepository @Inject constructor(
         store.setSteamAccessMode(mode)
     }
 
-    override suspend fun setSteamAccessDohEndpoints(endpoints: List<String>) {
-        store.setSteamAccessDohEndpoints(endpoints)
+    override suspend fun setSteamAccessDohEndpoints(
+        endpoints: List<String>,
+        disabledEndpoints: Set<String>,
+    ) {
+        store.setSteamAccessDohEndpoints(endpoints, disabledEndpoints)
     }
 
     override suspend fun setSteamAccessHosts(hosts: String) {

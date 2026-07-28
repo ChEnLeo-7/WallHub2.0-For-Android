@@ -13,6 +13,7 @@ import com.wallhub.android.core.model.SteamAccessMode
 import com.wallhub.android.core.model.SteamAccessPhase
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamAccessState
+import com.wallhub.android.core.model.enabledSteamAccessDohEndpoints
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
 import java.net.InetAddress
@@ -83,6 +84,8 @@ class SteamAccessManager @Inject internal constructor(
     private var parsedHosts: Map<String, List<InetAddress>> = emptyMap()
 
     private var preferencesInitialized = false
+    // evictAll can close live TLS sockets, so refresh work must never run on the UI caller.
+    private val refreshQueue = SteamAccessRefreshQueue(scope, ::performRefresh)
 
     override val state: StateFlow<SteamAccessState> = mutableState.asStateFlow()
 
@@ -103,6 +106,7 @@ class SteamAccessManager @Inject internal constructor(
                     preferences.steamAccessEnabled != next.steamAccessEnabled ||
                     preferences.steamAccessMode != next.steamAccessMode ||
                     preferences.steamAccessDohEndpoints != next.steamAccessDohEndpoints ||
+                    preferences.steamAccessDisabledDohEndpoints != next.steamAccessDisabledDohEndpoints ||
                     preferences.steamAccessHosts != next.steamAccessHosts
                 preferences = next
                 preferencesInitialized = true
@@ -158,19 +162,34 @@ class SteamAccessManager @Inject internal constructor(
     }
 
     override fun refresh() {
-        invalidateRoutes()
-        val settings = preferences
-        if (!settings.steamAccessEnabled) {
-            mutableState.value = SteamAccessState(phase = SteamAccessPhase.DISABLED)
-            return
-        }
-        mutableState.value = SteamAccessState(
-            phase = SteamAccessPhase.RESOLVING,
-            networkType = currentNetworkType(),
-            message = "正在检测 Steam 服务直连状态",
-        )
-        scope.launch {
+        refreshQueue.request()
+    }
+
+    private fun performRefresh() {
+        runCatching {
+            invalidateRoutes()
+            val settings = preferences
+            if (!settings.steamAccessEnabled) {
+                mutableState.value = SteamAccessState(phase = SteamAccessPhase.DISABLED)
+                return
+            }
+            mutableState.value = SteamAccessState(
+                phase = SteamAccessPhase.RESOLVING,
+                networkType = currentNetworkType(),
+                message = "正在检测 Steam 服务直连状态",
+            )
             CORE_WARMUP_HOSTS.forEach { host -> runCatching { routeFor(host) } }
+        }.onFailure { error ->
+            mutableState.value = mutableState.value.copy(
+                phase = SteamAccessPhase.FAILED,
+                message = "Steam 线路检测失败：${error.javaClass.simpleName}",
+                updatedAt = System.currentTimeMillis(),
+            )
+            recordDiagnostic(
+                level = DiagnosticLevel.WARNING,
+                message = "Steam route refresh failed",
+                attributes = mapOf("error" to error.javaClass.simpleName),
+            )
         }
     }
 
@@ -227,7 +246,7 @@ class SteamAccessManager @Inject internal constructor(
             SteamAccessMode.HOSTS -> parsedHosts[hostname].orEmpty()
             SteamAccessMode.SMART_DOH -> dohResolver.resolve(
                 hostnames = listOf(hostname) + SteamAccessRoutes.aliases(hostname),
-                endpoints = settings.steamAccessDohEndpoints,
+                endpoints = settings.enabledSteamAccessDohEndpoints(),
                 includeIpv6 = currentNetworkSupportsIpv6(),
             )
         }
@@ -293,8 +312,7 @@ class SteamAccessManager @Inject internal constructor(
     }
 
     private fun invalidateNetworkState() {
-        invalidateRoutes()
-        if (preferences.steamAccessEnabled) refresh()
+        refresh()
     }
 
     private fun invalidateRoutes() {

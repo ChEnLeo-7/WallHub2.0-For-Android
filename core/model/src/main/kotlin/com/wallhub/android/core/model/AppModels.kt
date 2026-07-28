@@ -139,6 +139,7 @@ data class AppPreferences(
     val steamAccessEnabled: Boolean = true,
     val steamAccessMode: SteamAccessMode = SteamAccessMode.SMART_DOH,
     val steamAccessDohEndpoints: List<String> = DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS,
+    val steamAccessDisabledDohEndpoints: Set<String> = emptySet(),
     val steamAccessHosts: String = "",
     val mediaCacheLimitMb: Int = 512,
     val steamApiKey: String = "",
@@ -177,6 +178,10 @@ fun normalizeSteamAccessDohEndpoints(endpoints: List<String>): List<String> = en
     .distinct()
     .take(STEAM_ACCESS_DOH_ENDPOINT_LIMIT)
     .toList()
+
+fun AppPreferences.enabledSteamAccessDohEndpoints(): List<String> = steamAccessDohEndpoints.filterNot(
+    steamAccessDisabledDohEndpoints::contains,
+)
 
 fun isSupportedDownloadProxyUrl(raw: String): Boolean {
     val uri = runCatching { URI(raw.trim()) }.getOrNull() ?: return false

@@ -47,7 +47,10 @@ interface SettingsRepository {
 
     suspend fun setSteamAccessMode(mode: SteamAccessMode) = Unit
 
-    suspend fun setSteamAccessDohEndpoints(endpoints: List<String>) = Unit
+    suspend fun setSteamAccessDohEndpoints(
+        endpoints: List<String>,
+        disabledEndpoints: Set<String> = emptySet(),
+    ) = Unit
 
     suspend fun setSteamAccessHosts(hosts: String) = Unit
 

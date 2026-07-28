@@ -125,14 +125,21 @@ class AppPreferencesStore(context: Context) {
         }
     }
 
-    suspend fun setSteamAccessDohEndpoints(endpoints: List<String>) {
+    suspend fun setSteamAccessDohEndpoints(
+        endpoints: List<String>,
+        disabledEndpoints: Set<String>,
+    ) {
         applicationContext.dataStore.edit { preferences ->
             val normalized = normalizeSteamAccessDohEndpoints(endpoints)
+                .ifEmpty { DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS }
+            val disabled = normalizeSteamAccessDohEndpoints(disabledEndpoints.toList())
+                .filterTo(linkedSetOf()) { endpoint -> endpoint in normalized }
             preferences[Keys.steamAccessMode] = SteamAccessMode.SMART_DOH.name
-            if (normalized.isEmpty()) {
-                preferences.remove(Keys.steamAccessDohEndpoints)
+            preferences[Keys.steamAccessDohEndpoints] = normalized.joinToString("\n")
+            if (disabled.isEmpty()) {
+                preferences.remove(Keys.steamAccessDisabledDohEndpoints)
             } else {
-                preferences[Keys.steamAccessDohEndpoints] = normalized.joinToString("\n")
+                preferences[Keys.steamAccessDisabledDohEndpoints] = disabled.joinToString("\n")
             }
         }
     }
@@ -206,6 +213,18 @@ class AppPreferencesStore(context: Context) {
         val theme = preferences[Keys.theme]
             ?.let { value -> runCatching { ThemePreference.valueOf(value) }.getOrNull() }
             ?: ThemePreference.SYSTEM
+        val steamAccessDohEndpoints = preferences[Keys.steamAccessDohEndpoints]
+            ?.lineSequence()
+            ?.toList()
+            ?.let(::normalizeSteamAccessDohEndpoints)
+            ?.takeIf { endpoints -> endpoints.isNotEmpty() }
+            ?: DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
+        val disabledSteamAccessDohEndpoints = preferences[Keys.steamAccessDisabledDohEndpoints]
+            ?.lineSequence()
+            ?.toList()
+            ?.let(::normalizeSteamAccessDohEndpoints)
+            ?.filterTo(linkedSetOf()) { endpoint -> endpoint in steamAccessDohEndpoints }
+            .orEmpty()
         return AppPreferences(
             theme = theme,
             language = preferences.enumValue(Keys.language, AppLanguage.ZH),
@@ -239,12 +258,8 @@ class AppPreferencesStore(context: Context) {
                 !preferences[Keys.downloadProxyUrl].isNullOrBlank(),
             steamAccessEnabled = preferences[Keys.steamAccessEnabled] ?: true,
             steamAccessMode = preferences.enumValue(Keys.steamAccessMode, SteamAccessMode.SMART_DOH),
-            steamAccessDohEndpoints = preferences[Keys.steamAccessDohEndpoints]
-                ?.lineSequence()
-                ?.toList()
-                ?.let(::normalizeSteamAccessDohEndpoints)
-                ?.takeIf { endpoints -> endpoints.isNotEmpty() }
-                ?: DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS,
+            steamAccessDohEndpoints = steamAccessDohEndpoints,
+            steamAccessDisabledDohEndpoints = disabledSteamAccessDohEndpoints,
             steamAccessHosts = preferences[Keys.steamAccessHosts].orEmpty(),
             mediaCacheLimitMb = (preferences[Keys.mediaCacheLimitMb] ?: 512).coerceAtLeast(128),
             steamApiKey = preferences[Keys.steamApiKey].orEmpty(),
@@ -288,6 +303,7 @@ class AppPreferencesStore(context: Context) {
         val steamAccessEnabled = booleanPreferencesKey("steam_access_enabled")
         val steamAccessMode = stringPreferencesKey("steam_access_mode")
         val steamAccessDohEndpoints = stringPreferencesKey("steam_access_doh_endpoints")
+        val steamAccessDisabledDohEndpoints = stringPreferencesKey("steam_access_disabled_doh_endpoints")
         val steamAccessHosts = stringPreferencesKey("steam_access_hosts")
         val mediaCacheLimitMb = intPreferencesKey("media_cache_limit_mb")
         val steamApiKey = stringPreferencesKey("steam_api_key")

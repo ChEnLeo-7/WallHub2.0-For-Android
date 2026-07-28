@@ -27,6 +27,20 @@ class SteamAccessDohEndpointsTest {
     }
 
     @Test
+    fun `disabled endpoints remain ordered but are excluded from active DoH queries`() {
+        val first = "https://first.example/dns-query"
+        val second = "https://second.example/dns-query"
+        val third = "https://third.example/dns-query"
+        val preferences = AppPreferences(
+            steamAccessDohEndpoints = listOf(first, second, third),
+            steamAccessDisabledDohEndpoints = setOf(second),
+        )
+
+        assertEquals(listOf(first, third), preferences.enabledSteamAccessDohEndpoints())
+        assertEquals(listOf(first, second, third), preferences.steamAccessDohEndpoints)
+    }
+
+    @Test
     fun `list normalizer preserves priority while removing duplicates and enforcing limit`() {
         val endpoints = buildList {
             add("https://preferred.example/dns-query")
