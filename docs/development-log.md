@@ -36,6 +36,8 @@
 
 #### 验证
 
+- 匿名 CM 与 Unified 评论实现的早期 Actions runs `30337585428`、`30337781962`、`30337973931`、`30338170087`、`30338342330`、`30338665095` 依次暴露 protobuf version-catalog accessor、Java builtin 输出和 Kotlin 返回类型/重复常量问题；各门槛均在失败点停止，未安装失败 APK。修复后的 run `30339054623` 在 commit `2058d892ecfeab785efeff8bdefeb38d4547e356` 首次通过全量 JVM 测试、`lintDebug`、稳定签名 Release 组装和 artifact 校验，并原位安装成功。
+- 最终 persona 后备提交 `3e9e9c59b484ea4bfcc0647cec5d7947e75f988f` 的 Actions run `30340354584` 再次通过全部测试、lint、签名 Release APK 与提交绑定 artifact 校验；APK 原位安装到 Android 15 设备 `192.168.2.190:5555`，冷启动 PID `12498` 存活。设备保存的 Steam refresh token 已被服务器判定失效且未配置 API Key，因此本轮属于完全匿名实测：发现页通过匿名 CM 显示约 `50214` 个项目，项目 `3737237256` 详情约 `3.207 s` 显示完整统计/标签/时间/大小，公共 Unified Web API 评论约 `3.029 s` 显示总数 `195` 与真实正文；作者和评论者按设计使用通用名称，日志无 `connection closed`、致命异常、ANR 或 OOM。登录态 Community 评论与 persona 昵称仍需用户重新登录后补充真机验证，本次未修改或清除保存凭据。
 - Unified Messages 发现页首次验证 run `30332798691` 在 `:data:steam:compileDebugKotlin` 发现会话等待 lambda 被推断为 `Unit`；CI 在签名构建与 artifact 上传前停止，ADB 设备仍保持原 `0.8.25 (35)` APK。等待逻辑随后改为条件循环后显式返回会话可用状态。
 - 修复提交 `787149a865003199cdafb2ba8d7d0108c40e5b20` 的 GitHub Actions run `30332934611` 通过全量 JVM 测试、`lintDebug`、稳定签名 Release APK 组装和提交绑定 artifact 校验，并原位安装到 Android 15 设备 `192.168.2.190:5555`；冷启动 PID `6424` 存活。保持系统代理为 `null`、网络 `NOT_VPN` 后连续两次自动冷启动，发现页均在 18 秒内通过 Unified Messages 加载约 `49656` 个项目，可见真实标题、类型、订阅数、收藏数和文件大小，未出现 `connection closed`、重试或持续加载；最终 PID `8125` 存活且日志无致命异常、ANR 或 OOM。本次仅使用 7 天 Actions artifact，未创建 tag 或 GitHub Release。
 - GitHub Actions run `30266556810` 在 commit `b200cae616a6bc7c1d44dd3805131b262712f625` 通过全量 JVM 测试、`lintDebug`、签名 Release 组装和 artifact 上传；提交绑定 APK 完成 SHA-256、ZIP、八个 DEX 与签名证书检查，并已原位安装到 `192.168.2.190:39055`。WallHub `0.8.25 (35)` 冷启动 PID `3707` 存活，日志无致命异常、ANR 或 OOM。
