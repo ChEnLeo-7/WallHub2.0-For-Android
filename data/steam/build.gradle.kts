@@ -22,9 +22,11 @@ android {
     }
 }
 
+val protobufVersion = libs.versions.protobuf.get()
+
 protobuf {
     protoc {
-        artifact = "com.google.protobuf:protoc:${libs.versions.protobuf.get()}"
+        artifact = "com.google.protobuf:protoc:$protobufVersion"
     }
 }
 
