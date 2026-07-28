@@ -504,6 +504,7 @@ class SecureSteamSessionRepository @Inject constructor(
             }
             response.body.build()
         }
+        Unit
     }
 
     private suspend fun <T> withPublicSteamSession(

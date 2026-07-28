@@ -195,7 +195,6 @@ private fun Int.toMaximumPage(pageSize: Int): Int {
         .toInt()
 }
 
-private const val WALLPAPER_ENGINE_APP_ID = 431960
 private const val MAX_PUBLIC_WORKSHOP_PAGE_SIZE = 30
 private const val MAX_PUBLIC_WORKSHOP_TAGS = 48
 private const val MAX_PUBLIC_WORKSHOP_SEARCH_LENGTH = 128
