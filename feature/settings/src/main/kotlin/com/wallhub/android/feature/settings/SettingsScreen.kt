@@ -1,7 +1,10 @@
 package com.wallhub.android.feature.settings
 
 import android.Manifest
+import android.app.Activity
 import android.content.ContentResolver
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.graphics.Color as AndroidColor
 import android.content.pm.PackageManager
@@ -26,6 +29,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -36,25 +40,36 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -65,6 +80,10 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -80,7 +99,10 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -1221,23 +1243,43 @@ private fun SteamSettingsContent(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3WindowSizeClassApi::class,
+)
 @Composable
 private fun SteamAccessDohEndpointsSetting(
     endpoints: List<String>,
     language: AppLanguage,
     onSave: (List<String>) -> Unit,
 ) {
-    var sheetVisible by rememberSaveable { mutableStateOf(false) }
-    var draftEndpoints by remember { mutableStateOf(endpoints) }
+    val activity = LocalContext.current.findActivity()
+    val compactWindow = activity == null ||
+        calculateWindowSizeClass(activity).widthSizeClass == WindowWidthSizeClass.Compact
+    val focusManager = LocalFocusManager.current
+    var editorVisible by rememberSaveable { mutableStateOf(false) }
+    var confirmDiscardVisible by rememberSaveable { mutableStateOf(false) }
+    var draftEndpoints by rememberSaveable { mutableStateOf(endpoints) }
     var endpointText by rememberSaveable { mutableStateOf("") }
     var endpointError by rememberSaveable { mutableStateOf<String?>(null) }
+    val hasSavedChanges = draftEndpoints != endpoints
+    val hasUnsavedWork = hasSavedChanges || endpointText.isNotBlank()
 
     fun openEditor() {
         draftEndpoints = endpoints
         endpointText = ""
         endpointError = null
-        sheetVisible = true
+        confirmDiscardVisible = false
+        editorVisible = true
+    }
+
+    fun requestClose() {
+        focusManager.clearFocus()
+        if (hasUnsavedWork) {
+            confirmDiscardVisible = true
+        } else {
+            editorVisible = false
+        }
     }
 
     fun addEndpoint() {
@@ -1263,6 +1305,14 @@ private fun SteamAccessDohEndpointsSetting(
         if (endpointError == null && normalized != null) {
             draftEndpoints = draftEndpoints + normalized
             endpointText = ""
+            focusManager.clearFocus()
+        }
+    }
+
+    fun moveEndpoint(index: Int, destination: Int) {
+        if (destination !in draftEndpoints.indices) return
+        draftEndpoints = draftEndpoints.toMutableList().apply {
+            add(destination, removeAt(index))
         }
     }
 
@@ -1292,148 +1342,452 @@ private fun SteamAccessDohEndpointsSetting(
         },
     )
 
-    if (sheetVisible) {
-        ModalBottomSheet(onDismissRequest = { sheetVisible = false }) {
-            SettingsSheetContent {
-                Text(
-                    text = language.text("DoH 地址与优先级", "DoH URLs and priority"),
-                    style = MaterialTheme.typography.titleLarge,
+    if (editorVisible) {
+        val editor: @Composable (Modifier) -> Unit = { modifier ->
+            SteamAccessDohEditor(
+                modifier = modifier,
+                endpoints = draftEndpoints,
+                endpointText = endpointText,
+                endpointError = endpointError,
+                language = language,
+                hasChanges = hasSavedChanges,
+                onEndpointTextChange = { value ->
+                    endpointText = value
+                    endpointError = null
+                },
+                onAddEndpoint = ::addEndpoint,
+                onMoveUp = { index -> moveEndpoint(index, index - 1) },
+                onMoveDown = { index -> moveEndpoint(index, index + 1) },
+                onDelete = { index ->
+                    draftEndpoints = draftEndpoints.toMutableList().apply { removeAt(index) }
+                },
+                onRestoreDefaults = {
+                    draftEndpoints = DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
+                    endpointText = ""
+                    endpointError = null
+                    focusManager.clearFocus()
+                },
+                onCancel = ::requestClose,
+                onSave = {
+                    focusManager.clearFocus()
+                    onSave(draftEndpoints)
+                    editorVisible = false
+                },
+            )
+        }
+        if (compactWindow) {
+            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            ModalBottomSheet(
+                onDismissRequest = ::requestClose,
+                sheetState = sheetState,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                tonalElevation = 1.dp,
+            ) {
+                editor(
+                    Modifier
+                        .fillMaxHeight(0.92f)
+                        .imePadding()
+                        .navigationBarsPadding(),
                 )
-                Text(
-                    text = language.text(
-                        "列表顶部优先，最多 $STEAM_ACCESS_DOH_ENDPOINT_LIMIT 个；保存后会重新检测 Steam 线路。",
-                        "Top entries have priority, up to $STEAM_ACCESS_DOH_ENDPOINT_LIMIT. Saving checks Steam routes again.",
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                draftEndpoints.forEachIndexed { index, endpoint ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 64.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "${index + 1}",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.widthIn(min = 24.dp),
-                        )
-                        Text(
-                            text = endpoint,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 8.dp),
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        IconButton(
-                            onClick = {
-                                draftEndpoints = draftEndpoints.toMutableList().apply {
-                                    add(index - 1, removeAt(index))
-                                }
-                            },
-                            enabled = index > 0,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.ArrowUpward,
-                                contentDescription = language.text("提高优先级", "Move up"),
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                draftEndpoints = draftEndpoints.toMutableList().apply {
-                                    add(index + 1, removeAt(index))
-                                }
-                            },
-                            enabled = index < draftEndpoints.lastIndex,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.ArrowDownward,
-                                contentDescription = language.text("降低优先级", "Move down"),
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                draftEndpoints = draftEndpoints.toMutableList().apply { removeAt(index) }
-                            },
-                            enabled = draftEndpoints.size > 1,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Delete,
-                                contentDescription = language.text("删除 DoH 地址", "Delete DoH URL"),
-                            )
-                        }
-                    }
-                    if (index < draftEndpoints.lastIndex) SettingsItemDivider()
+            }
+        } else {
+            BasicAlertDialog(onDismissRequest = ::requestClose) {
+                Surface(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .widthIn(max = 560.dp)
+                        .fillMaxHeight(0.85f)
+                        .imePadding(),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    tonalElevation = 6.dp,
+                ) {
+                    editor(Modifier.fillMaxSize())
                 }
-                SettingsFilledTextField(
-                    value = endpointText,
-                    onValueChange = { value ->
-                        endpointText = value
-                        endpointError = null
-                    },
-                    label = { Text(language.text("添加 DoH 地址", "Add DoH URL")) },
-                    placeholder = { Text("https://dns.example/dns-query") },
-                    supportingText = endpointError?.let { error -> { Text(error) } },
-                    isError = endpointError != null,
-                    singleLine = true,
-                    trailingIcon = {
-                        IconButton(
-                            onClick = ::addEndpoint,
-                            enabled = endpointText.isNotBlank() &&
-                                draftEndpoints.size < STEAM_ACCESS_DOH_ENDPOINT_LIMIT,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Add,
-                                contentDescription = language.text("添加", "Add"),
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
+            }
+        }
+    }
+
+    if (confirmDiscardVisible) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscardVisible = false },
+            title = {
+                Text(language.text("放弃更改？", "Discard changes?"))
+            },
+            text = {
+                Text(
+                    language.text(
+                        "尚未保存的 DoH 地址和优先级调整将丢失。",
+                        "Unsaved DoH URLs and priority changes will be lost.",
+                    ),
                 )
-                OutlinedButton(
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDiscardVisible = false }) {
+                    Text(language.text("继续编辑", "Keep editing"))
+                }
+            },
+            confirmButton = {
+                TextButton(
                     onClick = {
-                        draftEndpoints = DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
+                        confirmDiscardVisible = false
+                        editorVisible = false
                         endpointText = ""
                         endpointError = null
                     },
-                    enabled = draftEndpoints != DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS,
-                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Refresh,
-                        contentDescription = null,
-                    )
-                    Text(
-                        text = language.text("恢复默认列表", "Restore default list"),
-                        modifier = Modifier.padding(start = 8.dp),
+                    Text(language.text("放弃", "Discard"))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SteamAccessDohEditor(
+    endpoints: List<String>,
+    endpointText: String,
+    endpointError: String?,
+    language: AppLanguage,
+    hasChanges: Boolean,
+    onEndpointTextChange: (String) -> Unit,
+    onAddEndpoint: () -> Unit,
+    onMoveUp: (Int) -> Unit,
+    onMoveDown: (Int) -> Unit,
+    onDelete: (Int) -> Unit,
+    onRestoreDefaults: () -> Unit,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Column(
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = language.text("DoH 地址与优先级", "DoH URLs and priority"),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            Text(
+                text = language.text(
+                    "列表顶部的 DoH 结果优先进入 Steam 候选线路。",
+                    "Results from DoH URLs at the top enter Steam route candidates first.",
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(vertical = 8.dp),
+        ) {
+            itemsIndexed(
+                items = endpoints,
+                key = { _, endpoint -> endpoint },
+            ) { index, endpoint ->
+                SteamAccessDohEndpointItem(
+                    endpoint = endpoint,
+                    priority = index + 1,
+                    isFirst = index == 0,
+                    isLast = index == endpoints.lastIndex,
+                    canDelete = endpoints.size > 1,
+                    language = language,
+                    onMoveUp = { onMoveUp(index) },
+                    onMoveDown = { onMoveDown(index) },
+                    onDelete = { onDelete(index) },
+                )
+                if (index < endpoints.lastIndex) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant,
                     )
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = { sheetVisible = false },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(language.text("取消", "Cancel"))
-                    }
-                    Button(
-                        onClick = {
-                            onSave(draftEndpoints)
-                            sheetVisible = false
-                        },
-                        enabled = draftEndpoints != endpoints,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(language.text("保存", "Save"))
-                    }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
             }
+            item(key = "add-endpoint") {
+                HorizontalDivider(
+                    modifier = Modifier.padding(top = 8.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = language.text("添加地址", "Add URL"),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    OutlinedTextField(
+                        value = endpointText,
+                        onValueChange = onEndpointTextChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(language.text("HTTPS DoH 地址", "HTTPS DoH URL")) },
+                        placeholder = { Text("https://dns.example/dns-query") },
+                        supportingText = {
+                            Text(
+                                endpointError ?: if (endpoints.size >= STEAM_ACCESS_DOH_ENDPOINT_LIMIT) {
+                                    language.text(
+                                        "已达到 $STEAM_ACCESS_DOH_ENDPOINT_LIMIT 个地址上限",
+                                        "The $STEAM_ACCESS_DOH_ENDPOINT_LIMIT URL limit is reached",
+                                    )
+                                } else {
+                                    language.text(
+                                        "将添加到列表末尾，之后可调整优先级",
+                                        "Added at the end; priority can be adjusted afterwards",
+                                    )
+                                },
+                            )
+                        },
+                        isError = endpointError != null,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Uri,
+                            imeAction = ImeAction.Done,
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { if (endpointText.isNotBlank()) onAddEndpoint() },
+                        ),
+                    )
+                    FilledTonalButton(
+                        onClick = onAddEndpoint,
+                        enabled = endpointText.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Add,
+                            contentDescription = null,
+                        )
+                        Text(
+                            text = language.text("添加到列表", "Add to list"),
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                }
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            TextButton(
+                onClick = onRestoreDefaults,
+                enabled = endpoints != DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Refresh,
+                    contentDescription = null,
+                )
+                Text(
+                    text = language.text("恢复默认列表", "Restore defaults"),
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TextButton(
+                    onClick = onCancel,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(language.text("取消", "Cancel"))
+                }
+                Button(
+                    onClick = onSave,
+                    enabled = hasChanges,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(language.text("保存", "Save"))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SteamAccessDohEndpointItem(
+    endpoint: String,
+    priority: Int,
+    isFirst: Boolean,
+    isLast: Boolean,
+    canDelete: Boolean,
+    language: AppLanguage,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val compactActions = maxWidth < 520.dp
+        Column {
+            ListItem(
+                headlineContent = {
+                    Text(
+                        text = endpoint,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = if (isFirst) {
+                            language.text("最高优先级", "Highest priority")
+                        } else {
+                            language.text("优先级 $priority", "Priority $priority")
+                        },
+                        color = if (isFirst) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                },
+                leadingContent = {
+                    SteamAccessDohPriorityBadge(priority = priority)
+                },
+                trailingContent = if (compactActions) {
+                    {
+                        IconButton(
+                            onClick = onDelete,
+                            enabled = canDelete,
+                            colors = IconButtonDefaults.iconButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error,
+                            ),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Delete,
+                                contentDescription = language.text(
+                                    "删除 $endpoint",
+                                    "Delete $endpoint",
+                                ),
+                            )
+                        }
+                    }
+                } else {
+                    {
+                        SteamAccessDohIconActions(
+                            endpoint = endpoint,
+                            isFirst = isFirst,
+                            isLast = isLast,
+                            canDelete = canDelete,
+                            language = language,
+                            onMoveUp = onMoveUp,
+                            onMoveDown = onMoveDown,
+                            onDelete = onDelete,
+                        )
+                    }
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = Color.Transparent,
+                    headlineColor = MaterialTheme.colorScheme.onSurface,
+                    supportingColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    leadingIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    trailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+            )
+            if (compactActions) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 64.dp, end = 8.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(
+                        onClick = onMoveUp,
+                        enabled = !isFirst,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.ArrowUpward,
+                            contentDescription = null,
+                        )
+                        Text(
+                            text = language.text("上移", "Move up"),
+                            modifier = Modifier.padding(start = 4.dp),
+                        )
+                    }
+                    TextButton(
+                        onClick = onMoveDown,
+                        enabled = !isLast,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.ArrowDownward,
+                            contentDescription = null,
+                        )
+                        Text(
+                            text = language.text("下移", "Move down"),
+                            modifier = Modifier.padding(start = 4.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SteamAccessDohPriorityBadge(priority: Int) {
+    Surface(
+        modifier = Modifier.size(32.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = priority.toString(),
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SteamAccessDohIconActions(
+    endpoint: String,
+    isFirst: Boolean,
+    isLast: Boolean,
+    canDelete: Boolean,
+    language: AppLanguage,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row {
+        IconButton(
+            onClick = onMoveUp,
+            enabled = !isFirst,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.ArrowUpward,
+                contentDescription = language.text("提高 $endpoint 的优先级", "Move $endpoint up"),
+            )
+        }
+        IconButton(
+            onClick = onMoveDown,
+            enabled = !isLast,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.ArrowDownward,
+                contentDescription = language.text("降低 $endpoint 的优先级", "Move $endpoint down"),
+            )
+        }
+        IconButton(
+            onClick = onDelete,
+            enabled = canDelete,
+            colors = IconButtonDefaults.iconButtonColors(
+                contentColor = MaterialTheme.colorScheme.error,
+            ),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Delete,
+                contentDescription = language.text("删除 $endpoint", "Delete $endpoint"),
+            )
         }
     }
 }
@@ -2511,6 +2865,12 @@ private data class MonetHsv(
         "#%06X",
         AndroidColor.HSVToColor(floatArrayOf(hue, saturation, brightness)) and 0x00FFFFFF,
     )
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 private fun String.toMonetHsv(): MonetHsv {
