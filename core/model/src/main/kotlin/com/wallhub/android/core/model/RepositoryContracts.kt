@@ -120,10 +120,20 @@ interface WorkshopVideoStreamRepository {
     suspend fun open(workshopId: Long): WorkshopVideoStreamSession
 }
 
-/** Public Workshop browsing over a live Steam Connection Manager session. */
+/** Public Workshop data over signed-in or anonymous Steam Connection Manager sessions. */
 interface SteamUnifiedWorkshopRepository {
-    /** Returns null when no signed-in CM session is available. */
+    /** Returns null only when a CM session cannot be established or the RPC is unavailable. */
     suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage?
+
+    suspend fun getPublicDetail(workshopId: Long): WorkshopDetail?
+
+    /** Returns null when no signed-in CM session is available for Community RPCs. */
+    suspend fun getAuthenticatedComments(
+        workshopId: Long,
+        start: Int,
+        count: Int,
+        ownerId: String,
+    ): WorkshopCommentPage?
 }
 
 interface WorkshopRepository {

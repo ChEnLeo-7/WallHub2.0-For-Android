@@ -3,6 +3,7 @@ package com.wallhub.android.data.workshop
 import com.wallhub.android.core.model.WorkshopType
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.json.JSONObject
 import org.junit.Test
 
 class CommunityWorkshopParserTest {
@@ -122,6 +123,36 @@ class CommunityWorkshopParserTest {
         assertEquals(1_712_345_678L, comments[0].timestamp)
         assertEquals("Carol", comments[1].author)
         assertEquals("Looks great", comments[1].text)
+    }
+
+    @Test
+    fun `maps public unified comment response without community html`() {
+        val page = parsePublicCommentsPage(
+            payload = JSONObject(
+                """
+                {
+                  "steamid":"76561198000000000",
+                  "start":0,
+                  "count":2,
+                  "total_count":3,
+                  "comments":[
+                    {"steamid":"76561198000000000","timestamp":1712345678,"text":"Creator"},
+                    {"steamid":"76561198000000001","timestamp":1712345679,"text":"Reader"}
+                  ]
+                }
+                """.trimIndent(),
+            ),
+            requestedStart = 0,
+            requestedCount = 2,
+            creatorId = "76561198000000000",
+        )
+
+        assertEquals(2, page.comments.size)
+        assertEquals("76561198000000001", page.comments[1].authorId)
+        assertTrue(page.comments[0].isCreator)
+        assertEquals(2, page.nextStart)
+        assertEquals(3, page.total)
+        assertTrue(page.hasMore)
     }
 
     @Test

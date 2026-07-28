@@ -3,11 +3,11 @@ package com.wallhub.android.data.steam
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import android.text.Html
 import android.util.Base64
 import `in`.dragonbra.javasteam.enums.EOSType
 import `in`.dragonbra.javasteam.enums.EResult
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesPublishedfileSteamclient
+import `in`.dragonbra.javasteam.rpc.service.Player
 import `in`.dragonbra.javasteam.rpc.service.PublishedFile
 import `in`.dragonbra.javasteam.steam.authentication.AuthPollResult
 import `in`.dragonbra.javasteam.steam.authentication.AuthSession
@@ -24,33 +24,34 @@ import `in`.dragonbra.javasteam.steam.steamclient.callbacks.ConnectedCallback
 import `in`.dragonbra.javasteam.steam.steamclient.callbacks.DisconnectedCallback
 import `in`.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration
 import `in`.dragonbra.javasteam.types.SteamID
-import com.wallhub.android.core.model.DiagnosticEvent
-import com.wallhub.android.core.model.DiagnosticLevel
-import com.wallhub.android.core.model.DiagnosticRepository
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
+import com.wallhub.android.core.model.DiagnosticEvent
+import com.wallhub.android.core.model.DiagnosticLevel
+import com.wallhub.android.core.model.DiagnosticRepository
 import com.wallhub.android.core.model.FavoriteState
-import com.wallhub.android.core.model.SubscriptionState
-import com.wallhub.android.core.model.WorkshopInteraction
-import com.wallhub.android.core.model.WorkshopPage
-import com.wallhub.android.core.model.WorkshopSummary
-import com.wallhub.android.core.model.WORKSHOP_COMMENT_MAX_LENGTH
+import com.wallhub.android.core.model.SteamContentCredential
+import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
-import com.wallhub.android.core.model.SteamContentCredential
-import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
+import com.wallhub.android.core.model.SubscriptionState
+import com.wallhub.android.core.model.WORKSHOP_COMMENT_MAX_LENGTH
 import com.wallhub.android.core.model.WorkshopBrowseQuery
+import com.wallhub.android.core.model.WorkshopCommentPage
+import com.wallhub.android.core.model.WorkshopDetail
+import com.wallhub.android.core.model.WorkshopInteraction
+import com.wallhub.android.core.model.WorkshopPage
+import com.wallhub.android.core.model.WorkshopSummary
+import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.Closeable
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
-import java.security.SecureRandom
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -82,10 +83,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
-import okhttp3.FormBody
-import okhttp3.Request
-import org.json.JSONObject
-import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 
 internal data class PersistedSteamCredential(
     val accountName: String,
@@ -103,21 +100,15 @@ class SecureSteamSessionRepository @Inject constructor(
     clientFactory: SteamHttpClientFactory,
 ) : SteamSessionRepository, SteamContentCredentialProvider, AccountWorkshopRepository, SteamUnifiedWorkshopRepository {
     private val credentialStore = EncryptedSteamCredentialStore(context.applicationContext)
-    private val communityClient = clientFactory.newBuilder()
-        .callTimeout(COMMUNITY_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .build()
-    private val communityMutationClient = communityClient.newBuilder()
-        .retryOnConnectionFailure(false)
-        .followRedirects(false)
-        .followSslRedirects(false)
-        .build()
     private val steamDirectoryClient = createSteamDirectoryClient(clientFactory)
     private val steamServerListProvider = SteamWebSocketServerListProvider()
     private val authorDisplayNames = ConcurrentHashMap<Long, String>()
+    private val steamProfiles = ConcurrentHashMap<Long, SteamProfile>()
     private val mutableSession = MutableStateFlow(SteamSessionState())
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lifecycleLock = Any()
     private val requestMutex = Mutex()
+    private val anonymousSessionMutex = Mutex()
     private val credentialMutex = Mutex()
     private val pendingCode = AtomicReference<CompletableFuture<String>?>(null)
     private val nextSessionId = AtomicLong(0L)
@@ -126,6 +117,9 @@ class SecureSteamSessionRepository @Inject constructor(
 
     @Volatile
     private var authenticatedSession: SteamClientSession? = null
+
+    @Volatile
+    private var anonymousSession: SteamClientSession? = null
 
     @Volatile
     private var authenticationJob: Job? = null
@@ -222,25 +216,86 @@ class SecureSteamSessionRepository @Inject constructor(
         }
     }
 
-    override suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage? {
-        if (!awaitPublicBrowseSession()) return null
-        return withContext(Dispatchers.IO) {
-            requestMutex.withLock {
-                val steamSession = authenticatedSession?.takeIf { session -> session.isUsable }
-                    ?: return@withLock null
-                val service = steamSession.unified.createService(PublishedFile::class.java)
-                val response = awaitSteamRpc(
-                    steamSession = steamSession,
-                    operation = "public_query_files",
-                ) {
-                    val rpcResponse = service.queryFiles(buildUnifiedWorkshopBrowseRequest(query)).await()
-                    check(rpcResponse.result == EResult.OK) {
-                        "Steam PublishedFile.QueryFiles returned ${rpcResponse.result}"
-                    }
-                    rpcResponse.body.build()
+    override suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage? =
+        withPublicSteamSession { steamSession ->
+            val service = steamSession.unified.createService(PublishedFile::class.java)
+            val response = awaitSteamRpc(
+                steamSession = steamSession,
+                operation = "public_query_files",
+            ) {
+                val rpcResponse = service.queryFiles(buildUnifiedWorkshopBrowseRequest(query)).await()
+                check(rpcResponse.result == EResult.OK) {
+                    "Steam PublishedFile.QueryFiles returned ${rpcResponse.result}"
                 }
-                mapUnifiedWorkshopBrowseResponse(query, response)
+                rpcResponse.body.build()
             }
+            val page = mapUnifiedWorkshopBrowseResponse(query, response)
+            if (!steamSession.isAuthenticated) return@withPublicSteamSession page
+            val profiles = resolveSteamProfiles(
+                steamSession = steamSession,
+                steamIds = page.items.mapNotNull { item -> item.creatorId?.toLongOrNull() }.toSet(),
+            )
+            page.copy(
+                items = page.items.map { item ->
+                    item.copy(author = item.creatorId?.toLongOrNull()?.let(profiles::get)?.displayName ?: item.author)
+                },
+            )
+        }
+
+    override suspend fun getPublicDetail(workshopId: Long): WorkshopDetail? =
+        withPublicSteamSession { steamSession ->
+            val service = steamSession.unified.createService(PublishedFile::class.java)
+            val response = awaitSteamRpc(steamSession, "public_get_details") {
+                val rpcResponse = service.getDetails(buildUnifiedWorkshopDetailRequest(workshopId)).await()
+                check(rpcResponse.result == EResult.OK) {
+                    "Steam PublishedFile.GetDetails returned ${rpcResponse.result}"
+                }
+                rpcResponse.body.build()
+            }
+            val detail = response.publishedfiledetailsList
+                .firstOrNull { item ->
+                    item.publishedfileid == workshopId && item.result == EResult.OK.code()
+                }
+                ?: return@withPublicSteamSession null
+            val profile = if (steamSession.isAuthenticated) {
+                resolveSteamProfiles(steamSession, setOf(detail.creator))[detail.creator]
+            } else {
+                steamProfiles[detail.creator]
+            }
+            mapUnifiedWorkshopDetail(detail, profile)
+        }
+
+    override suspend fun getAuthenticatedComments(
+        workshopId: Long,
+        start: Int,
+        count: Int,
+        ownerId: String,
+    ): WorkshopCommentPage? = withContext(Dispatchers.IO) {
+        requestMutex.withLock {
+            val steamSession = authenticatedSession?.takeIf { session ->
+                session.isUsable && session.isAuthenticated
+            } ?: return@withLock null
+            val service = steamSession.unified.createService(CommunityUnifiedService::class.java)
+            val response = awaitSteamRpc(steamSession, "community_get_comment_thread") {
+                val rpcResponse = service.getCommentThread(
+                    buildCommunityCommentRequest(workshopId, ownerId, start, count),
+                ).await()
+                check(rpcResponse.result == EResult.OK) {
+                    "Steam Community.GetCommentThread returned ${rpcResponse.result}"
+                }
+                rpcResponse.body.build()
+            }
+            val profiles = resolveSteamProfiles(
+                steamSession = steamSession,
+                steamIds = response.commentsList.map { comment -> comment.steamid }.toSet(),
+            )
+            mapCommunityComments(
+                response = response,
+                requestedStart = start,
+                requestedCount = count,
+                creatorId = ownerId,
+                profiles = profiles,
+            )
         }
     }
 
@@ -329,16 +384,25 @@ class SecureSteamSessionRepository @Inject constructor(
     override suspend fun resolveAuthorDisplayName(workshopId: Long): String? {
         require(workshopId > 0L) { "创意工坊项目 ID 无效" }
         authorDisplayNames[workshopId]?.let { return it }
-        return withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url("https://steamcommunity.com/sharedfiles/filedetails/?id=$workshopId")
-                .get()
-                .build()
-            val displayName = communityClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@use null
-                response.body.string().extractWorkshopAuthorDisplayName()
+        return withAuthenticatedSteamSession { steamSession ->
+            val service = steamSession.unified.createService(PublishedFile::class.java)
+            val response = awaitSteamRpc(steamSession, "author_get_workshop_details") {
+                val rpcResponse = service.getDetails(buildUnifiedWorkshopDetailRequest(workshopId)).await()
+                check(rpcResponse.result == EResult.OK) {
+                    "Steam PublishedFile.GetDetails returned ${rpcResponse.result}"
+                }
+                rpcResponse.body.build()
             }
-            displayName?.also { authorDisplayNames.putIfAbsent(workshopId, it) }
+            val creatorId = response.publishedfiledetailsList
+                .firstOrNull { detail ->
+                    detail.publishedfileid == workshopId && detail.result == EResult.OK.code()
+                }
+                ?.creator
+                ?.takeIf { it > 0L }
+                ?: return@withAuthenticatedSteamSession null
+            resolveSteamProfiles(steamSession, setOf(creatorId))[creatorId]
+                ?.displayName
+                ?.also { displayName -> authorDisplayNames.putIfAbsent(workshopId, displayName) }
         }
     }
 
@@ -432,93 +496,118 @@ class SecureSteamSessionRepository @Inject constructor(
         text: String,
     ) = withAuthenticatedSteamSession { steamSession ->
         val normalized = normalizeWorkshopCommentRequest(workshopId, ownerId, text)
-
-        val credential = credentialMutex.withLock { credentialStore.load() }
-            ?: error("Steam 登录状态不可用，请重新登录")
-        val accountSteamId = steamSession.accountSteamId.await()
-        val generated = withTimeout(WEB_ACCESS_TOKEN_TIMEOUT_MS) {
-            steamSession.client.authentication
-                .generateAccessTokenForApp(accountSteamId, credential.refreshToken)
-                .await()
+        val service = steamSession.unified.createService(CommunityUnifiedService::class.java)
+        awaitSteamRpc(steamSession, "community_post_comment") {
+            val response = service.postCommentToThread(buildCommunityPostRequest(normalized)).await()
+            check(response.result == EResult.OK) {
+                "Steam Community.PostCommentToThread returned ${response.result}"
+            }
+            response.body.build()
         }
-        check(generated.accessToken.isNotBlank()) { "Steam 未返回社区访问令牌" }
-        if (generated.refreshToken.isNotBlank() && generated.refreshToken != credential.refreshToken) {
-            credentialMutex.withLock {
-                ensureCurrentGeneration(steamSession.generation)
-                credentialStore.save(credential.copy(refreshToken = generated.refreshToken))
-            }
-        }
-        ensureCurrentGeneration(steamSession.generation)
+    }
 
-        val accountId = accountSteamId.convertToUInt64().toString()
-        val sessionId = randomHex(12)
-        val clientSessionId = randomHex(8)
-        val secureLogin = java.net.URLEncoder.encode(
-            "$accountId||${generated.accessToken}",
-            StandardCharsets.UTF_8.name(),
-        )
-        val cookie = listOf(
-            "steamLoginSecure=$secureLogin",
-            "sessionid=$sessionId",
-            "clientsessionid=$clientSessionId",
-        ).joinToString("; ")
-        val request = Request.Builder()
-            .url(
-                "https://steamcommunity.com/comment/PublishedFile_Public/post/" +
-                    "${normalized.ownerId}/${normalized.workshopId}/",
-            )
-            .header("Accept", "application/json, text/javascript, */*; q=0.01")
-            .header("Cookie", cookie)
-            .header("Origin", "https://steamcommunity.com")
-            .header(
-                "Referer",
-                "https://steamcommunity.com/sharedfiles/filedetails/?id=${normalized.workshopId}",
-            )
-            .header("User-Agent", COMMUNITY_USER_AGENT)
-            .header("X-Requested-With", "XMLHttpRequest")
-            .post(
-                FormBody.Builder()
-                    .add("comment", normalized.text)
-                    .add("count", "10")
-                    .add("sessionid", sessionId)
-                    .build(),
-            )
-            .build()
-        communityMutationClient.newCall(request).execute().use { response ->
-            if (response.header("Location")?.contains("/login", ignoreCase = true) == true) {
-                throw IllegalStateException("Steam 社区登录状态已失效，请重新登录")
+    private suspend fun <T> withPublicSteamSession(
+        block: suspend (SteamClientSession) -> T,
+    ): T? = withContext(Dispatchers.IO) {
+        requestMutex.withLock {
+            val steamSession = acquirePublicSteamSession() ?: return@withLock null
+            block(steamSession)
+        }
+    }
+
+    private suspend fun acquirePublicSteamSession(): SteamClientSession? {
+        authenticatedSession?.takeIf { session -> session.isUsable }?.let { return it }
+        if (authenticationJob?.isActive == true) {
+            withTimeoutOrNull(PUBLIC_BROWSE_SESSION_WAIT_MS) {
+                while (authenticatedSession?.isUsable != true && authenticationJob?.isActive == true) {
+                    delay(PUBLIC_BROWSE_SESSION_POLL_MS)
+                }
             }
-            if (!response.isSuccessful) {
-                throw IllegalStateException("Steam 评论提交失败（HTTP ${response.code}）")
-            }
-            val payload = response.body.string()
-            val json = runCatching { JSONObject(payload) }.getOrNull()
-            val errorMessage = json?.optString("error_message")
-                ?.takeIf(String::isNotBlank)
-                ?: json?.optString("error")?.takeIf(String::isNotBlank)
-            val success = when (val value = json?.opt("success")) {
-                null -> errorMessage == null &&
-                    !payload.contains("g_steamID = false", ignoreCase = true) &&
-                    !payload.contains("loginForm", ignoreCase = true)
-                is Boolean -> value
-                is Number -> value.toInt() != 0
-                else -> value.toString().equals("true", ignoreCase = true) || value.toString() == "1"
-            }
-            if (!success) {
-                throw IllegalStateException(errorMessage ?: "Steam 未接受这条评论")
+            authenticatedSession?.takeIf { session -> session.isUsable }?.let { return it }
+        }
+        return anonymousSessionMutex.withLock {
+            authenticatedSession?.takeIf { session -> session.isUsable }?.let { return@withLock it }
+            anonymousSession?.takeIf { session -> session.isUsable }?.let { return@withLock it }
+            anonymousSession?.close()
+            anonymousSession = null
+            val generation = synchronized(lifecycleLock) { sessionGeneration }
+            val candidate = createSteamSession(generation)
+            try {
+                connect(candidate, generation)
+                withTimeout(ANONYMOUS_LOGON_TIMEOUT_MS) {
+                    candidate.user.logOnAnonymous()
+                    candidate.loggedOn.await()
+                    candidate.accountSteamId.await()
+                }
+                anonymousSession = candidate
+                recordSessionEvent(generation, "anonymous_logon_success")
+                candidate
+            } catch (error: CancellationException) {
+                candidate.close()
+                throw error
+            } catch (error: Throwable) {
+                candidate.close()
+                recordSessionEvent(
+                    generation = generation,
+                    stage = "anonymous_logon_failure",
+                    outcome = error.javaClass.simpleName,
+                )
+                null
             }
         }
     }
 
-    private suspend fun awaitPublicBrowseSession(): Boolean {
-        if (authenticatedSession?.isUsable == true) return true
-        if (authenticationJob?.isActive != true) return false
-        return withTimeoutOrNull(PUBLIC_BROWSE_SESSION_WAIT_MS) {
-            while (authenticatedSession?.isUsable != true && authenticationJob?.isActive == true) {
-                delay(PUBLIC_BROWSE_SESSION_POLL_MS)
+    private suspend fun resolveSteamProfiles(
+        steamSession: SteamClientSession,
+        steamIds: Set<Long>,
+    ): Map<Long, SteamProfile> {
+        val validIds = steamIds.filterTo(linkedSetOf()) { steamId -> steamId > 0L }
+        if (validIds.isEmpty()) return emptyMap()
+        val missingIds = validIds.filterNot(steamProfiles::containsKey)
+        if (missingIds.isNotEmpty()) {
+            val service = steamSession.unified.createService(Player::class.java)
+            missingIds.chunked(MAX_PROFILE_BATCH_SIZE).forEach { batch ->
+                val response = try {
+                    withTimeout(PROFILE_RPC_TIMEOUT_MS) {
+                        awaitSteamRpc(steamSession, "player_get_link_details") {
+                            val rpcResponse = service.getPlayerLinkDetails(
+                                `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesPlayerSteamclient
+                                    .CPlayer_GetPlayerLinkDetails_Request
+                                    .newBuilder()
+                                    .addAllSteamids(batch)
+                                    .build(),
+                            ).await()
+                            check(rpcResponse.result == EResult.OK) {
+                                "Steam Player.GetPlayerLinkDetails returned ${rpcResponse.result}"
+                            }
+                            rpcResponse.body.build()
+                        }
+                    }
+                } catch (_: TimeoutCancellationException) {
+                    return@forEach
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Throwable) {
+                    return@forEach
+                }
+                response.accountsList.forEach { account ->
+                    if (!account.hasPublicData()) return@forEach
+                    val publicData = account.publicData
+                    val displayName = publicData.personaName.trim()
+                    if (publicData.steamid <= 0L || displayName.isBlank()) return@forEach
+                    val avatarHash = publicData.shaDigestAvatar.toByteArray()
+                        .takeIf { hash -> hash.isNotEmpty() && hash.any { byte -> byte.toInt() != 0 } }
+                        ?.joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
+                    steamProfiles[publicData.steamid] = SteamProfile(
+                        displayName = displayName,
+                        avatarUrl = avatarHash?.let { hash ->
+                            "https://avatars.fastly.steamstatic.com/${hash}_medium.jpg"
+                        },
+                    )
+                }
             }
-            authenticatedSession?.isUsable == true
-        } ?: false
+        }
+        return validIds.mapNotNull { steamId -> steamProfiles[steamId]?.let { steamId to it } }.toMap()
     }
 
     private suspend fun <T> withAuthenticatedSteamSession(
@@ -609,34 +698,6 @@ class SecureSteamSessionRepository @Inject constructor(
         AccountWorkshopCollection.SUBSCRIPTIONS -> "mysubscriptions"
         AccountWorkshopCollection.FAVORITES -> "myfavorites"
         AccountWorkshopCollection.VOTED -> "myvotes"
-    }
-
-    private fun String.extractWorkshopAuthorDisplayName(): String? {
-        val creatorsBlock = CREATORS_BLOCK_PATTERN.find(this) ?: return null
-        val friendContentIndex = indexOf(
-            string = "friendBlockContent",
-            startIndex = creatorsBlock.range.last + 1,
-            ignoreCase = true,
-        )
-        if (friendContentIndex < 0) return null
-        val contentStart = indexOf('>', friendContentIndex)
-        if (contentStart < 0) return null
-        val lineBreakIndex = indexOf(
-            string = "<br",
-            startIndex = contentStart + 1,
-            ignoreCase = true,
-        )
-        val contentEnd = if (lineBreakIndex >= 0) {
-            lineBreakIndex
-        } else {
-            indexOf("</div>", contentStart + 1, ignoreCase = true)
-        }
-        if (contentEnd <= contentStart) return null
-        return Html.fromHtml(substring(contentStart + 1, contentEnd), Html.FROM_HTML_MODE_LEGACY)
-            .toString()
-            .lineSequence()
-            .map(String::trim)
-            .firstOrNull(String::isNotBlank)
     }
 
     private fun startLogin(login: PendingLogin) {
@@ -1347,6 +1408,9 @@ class SecureSteamSessionRepository @Inject constructor(
         val isUsable: Boolean
             get() = !closed.get() && !disconnected.get() && client.isConnected
 
+        val isAuthenticated: Boolean
+            get() = authenticated.get()
+
         fun tryMarkAuthenticated(): Boolean {
             if (closed.get() || disconnected.get() || !client.isConnected) return false
             authenticated.set(true)
@@ -1373,14 +1437,13 @@ class SecureSteamSessionRepository @Inject constructor(
         const val DEVICE_FRIENDLY_NAME = "WallHub Android"
         const val CONNECT_TIMEOUT_MS = 15_000L
         const val LOGON_TIMEOUT_MS = 30_000L
+        const val ANONYMOUS_LOGON_TIMEOUT_MS = 20_000L
         const val RESTORE_TOTAL_TIMEOUT_MS = 60_000L
         const val RESTORE_ATTEMPTS = 2
         const val RESTORE_RETRY_DELAY_MS = 1_000L
         const val AUTH_SESSION_BEGIN_TIMEOUT_MS = 30_000L
         const val AUTH_POLL_TIMEOUT_MS = 5 * 60_000L
         const val AUTH_STATUS_POLL_INTERVAL_MS = 2_000L
-        const val WEB_ACCESS_TOKEN_TIMEOUT_MS = 30_000L
-        const val COMMUNITY_REQUEST_TIMEOUT_MS = 30_000L
         const val PUBLIC_BROWSE_SESSION_WAIT_MS = 12_000L
         const val PUBLIC_BROWSE_SESSION_POLL_MS = 100L
         const val CALLBACK_WAIT_MS = 1_000L
@@ -1390,12 +1453,8 @@ class SecureSteamSessionRepository @Inject constructor(
         const val MAX_ACCOUNT_WORKSHOP_TAGS = 6
         const val MAX_ACCOUNT_WORKSHOP_SEARCH_LENGTH = 120
         const val MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES = 400
-        const val COMMUNITY_USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36"
-        val CREATORS_BLOCK_PATTERN = Regex(
-            """(?i)<div\b[^>]*\bclass\s*=\s*["'][^"']*\bcreatorsBlock\b[^"']*["'][^>]*>""",
-        )
+        const val MAX_PROFILE_BATCH_SIZE = 100
+        const val PROFILE_RPC_TIMEOUT_MS = 5_000L
     }
 }
 
@@ -1426,10 +1485,6 @@ internal fun normalizeWorkshopCommentRequest(
         text = normalizedText,
     )
 }
-
-private fun randomHex(byteCount: Int): String = ByteArray(byteCount)
-    .also(SecureRandom()::nextBytes)
-    .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
 private class EncryptedSteamCredentialStore(context: Context) {
     private val preferences = context.getSharedPreferences(

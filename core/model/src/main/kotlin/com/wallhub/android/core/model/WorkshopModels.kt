@@ -116,6 +116,7 @@ data class WorkshopDetail(
 data class WorkshopComment(
     val author: String,
     val text: String,
+    val authorId: String? = null,
     val avatarUrl: String? = null,
     val isCreator: Boolean = false,
     val timestamp: Long? = null,

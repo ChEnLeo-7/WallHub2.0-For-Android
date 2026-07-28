@@ -17,6 +17,7 @@ import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -35,6 +36,7 @@ class CommunityWorkshopRepository @Inject constructor(
     private val unifiedWorkshopRepository: SteamUnifiedWorkshopRepository,
     clientFactory: SteamHttpClientFactory,
 ) : WorkshopRepository {
+    private val steamProfiles = ConcurrentHashMap<String, SteamWebProfile>()
     private val client = clientFactory.newBuilder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -43,33 +45,43 @@ class CommunityWorkshopRepository @Inject constructor(
 
     override suspend fun browse(query: WorkshopBrowseQuery): WorkshopPage = withContext(Dispatchers.IO) {
         val normalizedQuery = query.normalized()
-        if (normalizedQuery.creatorId == null) {
-            try {
-                unifiedWorkshopRepository.browsePublic(normalizedQuery)?.let { return@withContext it }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Throwable) {}
-        }
         val steamApiKey = settingsRepository.preferences.first().steamApiKey.trim()
-        if (steamApiKey.isNotEmpty() && normalizedQuery.creatorId == null) {
+        val page = if (normalizedQuery.creatorId == null) {
             try {
-                return@withContext browseViaSteamApi(normalizedQuery, steamApiKey)
+                unifiedWorkshopRepository.browsePublic(normalizedQuery)
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: Throwable) {}
+            } catch (_: Throwable) {
+                null
+            }
+        } else {
+            null
+        } ?: if (steamApiKey.isNotEmpty() && normalizedQuery.creatorId == null) {
+            try {
+                browseViaSteamApi(normalizedQuery, steamApiKey)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                browseViaCommunity(normalizedQuery, steamApiKey)
+            }
+        } else {
+            browseViaCommunity(normalizedQuery, steamApiKey)
         }
-        browseViaCommunity(normalizedQuery, steamApiKey)
+        enrichPageAuthors(page, steamApiKey)
     }
 
     override suspend fun getDetail(workshopId: Long): WorkshopDetail = withContext(Dispatchers.IO) {
         require(workshopId > 0L) { "创意工坊项目 ID 无效" }
         val steamApiKey = settingsRepository.preferences.first().steamApiKey.trim()
-        val detail = getDetails(listOf(workshopId)).firstOrNull()
+        val detail = try {
+            unifiedWorkshopRepository.getPublicDetail(workshopId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
+        } ?: getDetails(listOf(workshopId), steamApiKey).firstOrNull()
             ?: error("Steam 未返回该创意工坊项目，可能已删除或不可公开访问")
-        val authorName = runCatching {
-            CommunityWorkshopParser.extractAuthorName(get(buildDetailUrl(workshopId)))
-        }.getOrNull()
-        detail.copy(summary = detail.summary.copy(author = authorName ?: detail.summary.author))
+        enrichDetailAuthor(detail, steamApiKey)
     }
 
     override suspend fun getComments(
@@ -81,108 +93,154 @@ class CommunityWorkshopRepository @Inject constructor(
         require(workshopId > 0L) { "创意工坊项目 ID 无效" }
         val safeStart = start.coerceAtLeast(0)
         val safeCount = count.coerceIn(1, MAX_COMMENT_PAGE_SIZE)
-        val safeOwnerId = ownerId.orEmpty().filter(Char::isDigit)
-        val routes = buildList {
-            if (safeOwnerId.isNotBlank()) {
-                add(safeOwnerId to "$COMMENTS_BASE_URL/$safeOwnerId/$workshopId/")
-            }
-            add("" to "$COMMENTS_BASE_URL/$workshopId/-1/")
-        }
-        var lastFailure: Throwable? = null
-        routes.forEach { (routeOwnerId, url) ->
-            listOf(true, false).forEach { usePost ->
-                try {
-                    requestCommentsPage(
-                        url = url,
-                        workshopId = workshopId,
-                        start = safeStart,
-                        count = safeCount,
-                        ownerId = routeOwnerId,
-                        creatorId = safeOwnerId,
-                        usePost = usePost,
-                    )?.let { return@withContext it }
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Throwable) {
-                    lastFailure = error
-                }
-            }
-        }
-        throw lastFailure ?: IOException("Steam 未返回评论数据")
+        val steamApiKey = settingsRepository.preferences.first().steamApiKey.trim()
+        val safeOwnerId = ownerId.orEmpty().filter(Char::isDigit).takeIf(String::isNotBlank)
+            ?: getDetails(listOf(workshopId), steamApiKey)
+                .firstOrNull()
+                ?.creatorId
+                ?.filter(Char::isDigit)
+                ?.takeIf(String::isNotBlank)
+            ?: error("无法确定该创意工坊项目的作者")
+        val page = try {
+            unifiedWorkshopRepository.getAuthenticatedComments(
+                workshopId = workshopId,
+                start = safeStart,
+                count = safeCount,
+                ownerId = safeOwnerId,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
+        } ?: requestPublicCommentsPage(
+            workshopId = workshopId,
+            start = safeStart,
+            count = safeCount,
+            ownerId = safeOwnerId,
+        )
+        enrichCommentAuthors(page, steamApiKey)
     }
 
-    private fun requestCommentsPage(
-        url: String,
+    private fun requestPublicCommentsPage(
         workshopId: Long,
         start: Int,
         count: Int,
         ownerId: String,
-        creatorId: String,
-        usePost: Boolean,
-    ): WorkshopCommentPage? {
-        val form = FormBody.Builder()
-            .add("start", start.toString())
-            .add("count", count.toString())
-            .add("feature2", "-1")
-            .add("l", "schinese")
-            .add("userreview_offset", "-1")
-            .build()
-        val requestUrl = if (usePost) {
-            url
-        } else {
-            Uri.parse(url).buildUpon()
-                .appendQueryParameter("start", start.toString())
-                .appendQueryParameter("count", count.toString())
-                .appendQueryParameter("feature2", "-1")
-                .appendQueryParameter("l", "schinese")
-                .appendQueryParameter("userreview_offset", "-1")
-                .build()
-                .toString()
-        }
+    ): WorkshopCommentPage {
+        val input = JSONObject()
+            .put("steamid", ownerId)
+            .put("comment_thread_type", PUBLISHED_FILE_PUBLIC_COMMENT_THREAD)
+            .put("gidfeature", workshopId.toString())
+            .put("start", start)
+            .put("count", count)
         val request = Request.Builder()
-            .url(requestUrl)
-            .apply { if (usePost) post(form) else get() }
-            .header("Accept", "application/json,text/javascript,*/*;q=0.01")
-            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.7")
-            .header("Origin", "https://steamcommunity.com")
-            .header("Referer", buildDetailUrl(workshopId))
+            .url(COMMUNITY_COMMENTS_API_URL)
+            .header("Accept", "application/json")
             .header("User-Agent", USER_AGENT)
-            .header("X-Requested-With", "XMLHttpRequest")
+            .post(FormBody.Builder().add("input_json", input.toString()).build())
             .build()
-        val body = client.newCall(request).execute().use { response ->
+        val payload = client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Steam 评论请求失败：HTTP ${response.code}")
+                throw IOException("Steam 公共评论请求失败：HTTP ${response.code}")
             }
-            response.body.string()
+            val result = response.header("X-EResult")?.toIntOrNull()
+            val body = response.body.string()
+            if (result != null && result != RESULT_OK) {
+                throw IOException("Steam 公共评论请求失败：EResult $result")
+            }
+            JSONObject(body).optJSONObject("response") ?: JSONObject()
         }
-        val payload = JSONObject(body)
-        val html = sequenceOf("comments_html", "html", "comments")
-            .map(payload::optString)
-            .firstOrNull(String::isNotBlank)
-            .orEmpty()
-        val comments = CommunityWorkshopParser.parseComments(html, count, creatorId)
-        val explicitlyFailed = when (val success = payload.opt("success")) {
-            false -> true
-            is Number -> success.toInt() == 0
-            is String -> success == "0" || success.equals("false", ignoreCase = true)
-            else -> false
-        }
-        if (comments.isEmpty() && explicitlyFailed) return null
-        val total = sequenceOf("total_count", "total", "comment_count")
-            .mapNotNull { key -> payload.opt(key)?.toString()?.toIntOrNull() }
-            .firstOrNull()
-            ?.coerceAtLeast(0)
-        val nextStart = start + maxOf(comments.size, count)
-        return WorkshopCommentPage(
-            comments = comments,
-            start = start,
-            count = count,
-            nextStart = nextStart,
-            total = total,
-            hasMore = if (total != null) nextStart < total else comments.size >= count,
-            ownerId = ownerId.ifBlank { null },
+        return parsePublicCommentsPage(payload, start, count, ownerId)
+    }
+
+    private fun enrichPageAuthors(page: WorkshopPage, steamApiKey: String): WorkshopPage {
+        val profiles = loadSteamProfiles(
+            steamIds = page.items.mapNotNull(WorkshopSummary::creatorId).toSet(),
+            steamApiKey = steamApiKey,
+        )
+        if (profiles.isEmpty()) return page
+        return page.copy(
+            items = page.items.map { item ->
+                val profile = item.creatorId?.let(profiles::get) ?: return@map item
+                item.copy(author = profile.displayName)
+            },
         )
     }
+
+    private fun enrichDetailAuthor(detail: WorkshopDetail, steamApiKey: String): WorkshopDetail {
+        if (!detail.summary.author.isFallbackSteamName()) return detail
+        val creatorId = detail.creatorId ?: detail.summary.creatorId ?: return detail
+        val profile = loadSteamProfiles(setOf(creatorId), steamApiKey)[creatorId] ?: return detail
+        return detail.copy(summary = detail.summary.copy(author = profile.displayName))
+    }
+
+    private fun enrichCommentAuthors(
+        page: WorkshopCommentPage,
+        steamApiKey: String,
+    ): WorkshopCommentPage {
+        val profiles = loadSteamProfiles(
+            steamIds = page.comments.mapNotNull(WorkshopComment::authorId).toSet(),
+            steamApiKey = steamApiKey,
+        )
+        if (profiles.isEmpty()) return page
+        return page.copy(
+            comments = page.comments.map { comment ->
+                val profile = comment.authorId?.let(profiles::get) ?: return@map comment
+                comment.copy(author = profile.displayName, avatarUrl = profile.avatarUrl)
+            },
+        )
+    }
+
+    private fun loadSteamProfiles(
+        steamIds: Set<String>,
+        steamApiKey: String,
+    ): Map<String, SteamWebProfile> {
+        val validIds = steamIds.mapNotNull { value ->
+            value.filter(Char::isDigit).takeIf(String::isNotBlank)
+        }.toSet()
+        if (validIds.isEmpty() || steamApiKey.isBlank()) return emptyMap()
+        val missing = validIds.filterNot(steamProfiles::containsKey)
+        missing.chunked(MAX_STEAM_PROFILE_BATCH_SIZE).forEach { batch ->
+            val url = Uri.Builder()
+                .scheme("https")
+                .authority("api.steampowered.com")
+                .appendPath("ISteamUser")
+                .appendPath("GetPlayerSummaries")
+                .appendPath("v2")
+                .appendQueryParameter("key", steamApiKey)
+                .appendQueryParameter("steamids", batch.joinToString(","))
+                .build()
+                .toString()
+            val request = Request.Builder()
+                .url(url)
+                .header("Accept", "application/json")
+                .header("User-Agent", USER_AGENT)
+                .build()
+            runCatching {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use
+                    val players = JSONObject(response.body.string())
+                        .optJSONObject("response")
+                        ?.optJSONArray("players")
+                        ?: JSONArray()
+                    for (index in 0 until players.length()) {
+                        val player = players.optJSONObject(index) ?: continue
+                        val steamId = player.optString("steamid").takeIf(String::isNotBlank) ?: continue
+                        val displayName = player.optString("personaname").trim()
+                        if (displayName.isBlank()) continue
+                        steamProfiles[steamId] = SteamWebProfile(
+                            displayName = displayName,
+                            avatarUrl = player.optString("avatarfull").takeIf(String::isNotBlank),
+                        )
+                    }
+                }
+            }
+        }
+        return validIds.mapNotNull { steamId -> steamProfiles[steamId]?.let { steamId to it } }.toMap()
+    }
+
+    private fun String.isFallbackSteamName(): Boolean =
+        equals("Steam 创作者", ignoreCase = true) || startsWith("Steam 用户")
 
     private fun browseViaCommunity(
         normalizedQuery: WorkshopBrowseQuery,
@@ -535,11 +593,14 @@ class CommunityWorkshopRepository @Inject constructor(
         const val MAX_COMMENT_PAGE_SIZE = 50
         const val MAX_SEARCH_LENGTH = 128
         const val MAX_REQUIRED_TAGS = 48
+        const val MAX_STEAM_PROFILE_BATCH_SIZE = 100
+        const val PUBLISHED_FILE_PUBLIC_COMMENT_THREAD = 5
+        const val RESULT_OK = 1
         const val USER_AGENT = "WallHub-Android/0.5 (Public Workshop Browser)"
         const val PUBLISHED_FILE_DETAILS_URL =
             "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
-        const val COMMENTS_BASE_URL =
-            "https://steamcommunity.com/comment/PublishedFile_Public/render"
+        const val COMMUNITY_COMMENTS_API_URL =
+            "https://api.steampowered.com/ICommunityService/GetCommentThread/v1/"
         val WORKSHOP_TYPE_TAGS = setOf("Scene", "Video", "Web")
         val CONTENT_RATING_TAGS = setOf("Everyone", "Questionable", "Mature")
         val COMMUNITY_GENRE_TAGS = setOf(
@@ -560,6 +621,53 @@ class CommunityWorkshopRepository @Inject constructor(
             "Dynamic resolution",
         )
     }
+}
+
+private data class SteamWebProfile(
+    val displayName: String,
+    val avatarUrl: String?,
+)
+
+internal fun parsePublicCommentsPage(
+    payload: JSONObject,
+    requestedStart: Int,
+    requestedCount: Int,
+    creatorId: String,
+): WorkshopCommentPage {
+    val values = payload.optJSONArray("comments") ?: JSONArray()
+    val comments = buildList {
+        for (index in 0 until values.length()) {
+            val value = values.optJSONObject(index) ?: continue
+            if (value.optBoolean("deleted") || value.optBoolean("hidden")) continue
+            val text = value.optString("text").trim()
+            if (text.isBlank()) continue
+            val authorId = value.opt("steamid")?.toString()?.takeIf(String::isNotBlank)
+            add(
+                WorkshopComment(
+                    author = "Steam 用户",
+                    authorId = authorId,
+                    text = text,
+                    isCreator = authorId == creatorId,
+                    timestamp = value.opt("timestamp")?.toString()?.toLongOrNull(),
+                ),
+            )
+        }
+    }
+    val start = payload.opt("start")?.toString()?.toIntOrNull()?.coerceAtLeast(0)
+        ?: requestedStart
+    val pageCount = payload.opt("count")?.toString()?.toIntOrNull()?.takeIf { it > 0 }
+        ?: requestedCount
+    val total = payload.opt("total_count")?.toString()?.toIntOrNull()?.coerceAtLeast(0)
+    val nextStart = start + pageCount
+    return WorkshopCommentPage(
+        comments = comments,
+        start = start,
+        count = pageCount,
+        nextStart = nextStart,
+        total = total,
+        hasMore = if (total != null) nextStart < total else comments.size >= pageCount,
+        ownerId = payload.opt("steamid")?.toString()?.takeIf(String::isNotBlank) ?: creatorId,
+    )
 }
 
 internal object CommunityWorkshopParser {
