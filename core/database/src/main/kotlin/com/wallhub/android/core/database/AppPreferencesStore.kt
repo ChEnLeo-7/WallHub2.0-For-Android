@@ -113,10 +113,9 @@ class AppPreferencesStore(context: Context) {
         }
     }
 
-    suspend fun setSteamAccessEnabled(enabled: Boolean) {
+    suspend fun setSteamAccessEnabled(@Suppress("UNUSED_PARAMETER") enabled: Boolean) {
         applicationContext.dataStore.edit { preferences ->
-            preferences[Keys.steamAccessEnabled] = enabled
-            if (enabled) preferences[Keys.downloadProxyEnabled] = false
+            preferences.remove(Keys.steamAccessEnabled)
         }
     }
 
@@ -238,7 +237,7 @@ class AppPreferencesStore(context: Context) {
             downloadProxyEnabled = preferences[Keys.downloadProxyEnabled] ?: false,
             downloadProxyRequiresConfirmation = preferences[Keys.downloadProxyEnabled] == null &&
                 !preferences[Keys.downloadProxyUrl].isNullOrBlank(),
-            steamAccessEnabled = preferences[Keys.steamAccessEnabled] ?: false,
+            steamAccessEnabled = false,
             steamAccessMode = preferences.enumValue(Keys.steamAccessMode, SteamAccessMode.SMART_DOH),
             steamAccessDohEndpoints = preferences[Keys.steamAccessDohEndpoints]
                 ?.lineSequence()

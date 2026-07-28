@@ -96,6 +96,7 @@ dependencies {
     implementation(project(":core:database"))
     implementation(project(":data:settings"))
     implementation(project(":data:steamaccess"))
+    implementation(project(":data:vpn"))
     implementation(project(":data:steam"))
     implementation(project(":data:workshop"))
     implementation(project(":data:downloads"))

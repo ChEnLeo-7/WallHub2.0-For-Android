@@ -1,6 +1,7 @@
 package com.wallhub.android.feature.settings
 
 import android.Manifest
+import android.app.Activity
 import android.content.ContentResolver
 import android.content.Intent
 import android.graphics.Color as AndroidColor
@@ -98,10 +99,9 @@ import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
-import com.wallhub.android.core.model.SteamAccessMode
-import com.wallhub.android.core.model.SteamAccessPhase
-import com.wallhub.android.core.model.SteamAccessRepository
-import com.wallhub.android.core.model.SteamAccessState
+import com.wallhub.android.core.model.SteamVpnController
+import com.wallhub.android.core.model.SteamVpnPhase
+import com.wallhub.android.core.model.SteamVpnState
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
@@ -195,7 +195,7 @@ class SettingsViewModel @Inject constructor(
     private val launcherIconController: LauncherIconController,
     private val steamSessionRepository: SteamSessionRepository,
     private val diagnosticRepository: DiagnosticRepository,
-    private val steamAccessRepository: SteamAccessRepository,
+    private val steamVpnController: SteamVpnController,
 ) : ViewModel() {
     private val mutableDiagnosticExportState = MutableStateFlow(DiagnosticExportUiState())
 
@@ -214,7 +214,7 @@ class SettingsViewModel @Inject constructor(
     val diagnosticExportState: StateFlow<DiagnosticExportUiState> =
         mutableDiagnosticExportState.asStateFlow()
 
-    val steamAccessState: StateFlow<SteamAccessState> = steamAccessRepository.state
+    val steamVpnState: StateFlow<SteamVpnState> = steamVpnController.state
 
     fun setTheme(theme: ThemePreference) {
         viewModelScope.launch { settingsRepository.setTheme(theme) }
@@ -290,27 +290,18 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setDownloadProxyEnabled(enabled: Boolean) {
+        if (enabled) steamVpnController.stop()
         viewModelScope.launch { settingsRepository.setDownloadProxyEnabled(enabled) }
     }
 
-    fun setSteamAccessEnabled(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.setSteamAccessEnabled(enabled) }
+    fun prepareSteamVpn(): Intent? = steamVpnController.prepareIntent()
+
+    fun startSteamVpn() {
+        steamVpnController.start()
     }
 
-    fun setSteamAccessMode(mode: SteamAccessMode) {
-        viewModelScope.launch { settingsRepository.setSteamAccessMode(mode) }
-    }
-
-    fun setSteamAccessDohEndpoints(endpoints: List<String>) {
-        viewModelScope.launch { settingsRepository.setSteamAccessDohEndpoints(endpoints) }
-    }
-
-    fun setSteamAccessHosts(hosts: String) {
-        viewModelScope.launch { settingsRepository.setSteamAccessHosts(hosts) }
-    }
-
-    fun refreshSteamAccess() {
-        steamAccessRepository.refresh()
+    fun stopSteamVpn() {
+        steamVpnController.stop()
     }
 
     fun setSteamApiKey(apiKey: String) {
@@ -373,7 +364,7 @@ fun SettingsRoute(
     val preferences by viewModel.preferences.collectAsState()
     val session by viewModel.session.collectAsState()
     val diagnosticExportState by viewModel.diagnosticExportState.collectAsState()
-    val steamAccessState by viewModel.steamAccessState.collectAsState()
+    val steamVpnState by viewModel.steamVpnState.collectAsState()
     val outputDirectoryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
     ) { treeUri ->
@@ -394,6 +385,11 @@ fun SettingsRoute(
     val notificationLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { }
+    val vpnConsentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) viewModel.startSteamVpn()
+    }
     val diagnosticExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/plain"),
     ) { documentUri ->
@@ -416,12 +412,19 @@ fun SettingsRoute(
         onSteamApiKeyChange = viewModel::setSteamApiKey,
         onSteamWorkshopDataSourceChange = viewModel::setSteamWorkshopDataSource,
         onOnlineChunkPlaybackEnabledChange = viewModel::setOnlineChunkPlaybackEnabled,
-        steamAccessState = steamAccessState,
-        onSteamAccessEnabledChange = viewModel::setSteamAccessEnabled,
-        onSteamAccessModeChange = viewModel::setSteamAccessMode,
-        onSteamAccessDohEndpointsChange = viewModel::setSteamAccessDohEndpoints,
-        onSteamAccessHostsChange = viewModel::setSteamAccessHosts,
-        onRefreshSteamAccess = viewModel::refreshSteamAccess,
+        steamVpnState = steamVpnState,
+        onSteamVpnEnabledChange = { enabled ->
+            if (enabled) {
+                val consentIntent = viewModel.prepareSteamVpn()
+                if (consentIntent == null) {
+                    viewModel.startSteamVpn()
+                } else {
+                    vpnConsentLauncher.launch(consentIntent)
+                }
+            } else {
+                viewModel.stopSteamVpn()
+            }
+        },
         session = session,
         onOpenSteamLogin = onOpenSteamLogin,
         onLogoutSteam = viewModel::logoutSteam,
@@ -460,12 +463,8 @@ fun SettingsScreen(
     onSteamApiKeyChange: (String) -> Unit,
     onSteamWorkshopDataSourceChange: (SteamWorkshopDataSource) -> Unit,
     onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
-    steamAccessState: SteamAccessState,
-    onSteamAccessEnabledChange: (Boolean) -> Unit,
-    onSteamAccessModeChange: (SteamAccessMode) -> Unit,
-    onSteamAccessDohEndpointsChange: (List<String>) -> Unit,
-    onSteamAccessHostsChange: (String) -> Unit,
-    onRefreshSteamAccess: () -> Unit,
+    steamVpnState: SteamVpnState,
+    onSteamVpnEnabledChange: (Boolean) -> Unit,
     session: SteamSessionState,
     onOpenSteamLogin: () -> Unit,
     onLogoutSteam: () -> Unit,
@@ -660,12 +659,8 @@ fun SettingsScreen(
                 if (displayedCategory == SettingsCategory.EXPERIMENTAL) {
                     ExperimentalSettingsContent(
                         preferences = preferences,
-                        steamAccessState = steamAccessState,
-                        onSteamAccessEnabledChange = onSteamAccessEnabledChange,
-                        onSteamAccessModeChange = onSteamAccessModeChange,
-                        onSteamAccessDohEndpointsChange = onSteamAccessDohEndpointsChange,
-                        onSteamAccessHostsChange = onSteamAccessHostsChange,
-                        onRefreshSteamAccess = onRefreshSteamAccess,
+                        steamVpnState = steamVpnState,
+                        onSteamVpnEnabledChange = onSteamVpnEnabledChange,
                         onSteamWorkshopDataSourceChange = onSteamWorkshopDataSourceChange,
                         onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
                         onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
@@ -986,8 +981,8 @@ private fun DownloadSettingsContent(
     SettingsSection(
         title = text("网络代理", "Network proxy"),
         supportingText = text(
-            "当前版本仅用于下载和在线播放，并与 Steam 连接增强互斥",
-            "Currently used by downloads and online playback; mutually exclusive with Steam access enhancement",
+            "当前版本仅用于下载和在线播放，并与 Android 全局 Steam 代理互斥",
+            "Currently used by downloads and online playback; mutually exclusive with the Android global Steam proxy",
         ),
         icon = Icons.Outlined.Tune,
     ) {
@@ -1003,8 +998,8 @@ private fun DownloadSettingsContent(
         SettingsSwitchRow(
             title = text("使用网络代理", "Use network proxy"),
             supportingText = text(
-                "开启后自动关闭 Steam 连接增强；代理失败不会改用增强线路",
-                "Enabling this turns off Steam access enhancement; proxy failures do not use enhanced routes",
+                "开启后自动停止 Android 全局 Steam 代理；代理失败不会切换其他线路",
+                "Enabling this stops the Android global Steam proxy; failures do not switch to another route",
             ),
             checked = preferences.downloadProxyEnabled,
             enabled = isSupportedDownloadProxyUrl(preferences.downloadProxyUrl),
@@ -1190,24 +1185,14 @@ private fun SteamSettingsContent(
 @Composable
 private fun ExperimentalSettingsContent(
     preferences: AppPreferences,
-    steamAccessState: SteamAccessState,
-    onSteamAccessEnabledChange: (Boolean) -> Unit,
-    onSteamAccessModeChange: (SteamAccessMode) -> Unit,
-    onSteamAccessDohEndpointsChange: (List<String>) -> Unit,
-    onSteamAccessHostsChange: (String) -> Unit,
-    onRefreshSteamAccess: () -> Unit,
+    steamVpnState: SteamVpnState,
+    onSteamVpnEnabledChange: (Boolean) -> Unit,
     onSteamWorkshopDataSourceChange: (SteamWorkshopDataSource) -> Unit,
     onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
     onRequestNotifications: () -> Unit,
 ) {
     fun text(zh: String, en: String): String = if (preferences.language == AppLanguage.EN) en else zh
-    var dohEndpoints by remember(preferences.steamAccessDohEndpoints) {
-        mutableStateOf(preferences.steamAccessDohEndpoints.joinToString("\n"))
-    }
-    var hostsText by remember(preferences.steamAccessHosts) {
-        mutableStateOf(preferences.steamAccessHosts)
-    }
 
     SettingsNotice(
         title = text("实验功能可能改变网络与播放行为", "Experimental features may change networking and playback"),
@@ -1253,107 +1238,38 @@ private fun ExperimentalSettingsContent(
     }
 
     SettingsSection(
-        title = text("Steam 连接增强", "Steam access enhancement"),
+        title = text("Android 全局 Steam 代理", "Android global Steam proxy"),
         supportingText = text(
-            "移植自 WallHub Webview 的智能解析与候选 IP 选路，并保留完整 TLS 验证",
-            "Smart resolution and candidate-IP routing ported from WallHub Webview with full TLS verification",
+            "全设备流量通过本地 VPN 转发；仅 Steam Community TLS 首包会按策略分片",
+            "Routes the whole device through a local VPN; only Steam Community TLS first flights are fragmented",
         ),
         icon = Icons.Outlined.Language,
     ) {
         SettingsSwitchRow(
-            title = text("启用内置连接增强", "Enable built-in access enhancement"),
-            supportingText = if (preferences.downloadProxyEnabled) {
-                text("网络代理已启用，请先关闭代理", "Network proxy is enabled; turn it off first")
-            } else {
-                text(
-                    "优先使用经过验证的候选 IP，失败时回退系统网络",
-                    "Prefer verified candidate IPs and fall back to the system network",
-                )
-            },
-            checked = preferences.steamAccessEnabled,
-            enabled = !preferences.downloadProxyEnabled,
-            onCheckedChange = onSteamAccessEnabledChange,
-        )
-        SettingsItemDivider()
-        SettingChoiceRow(
-            title = text("选路模式", "Routing mode"),
-            selectedValue = preferences.steamAccessMode,
-            values = SteamAccessMode.entries,
-            label = { mode ->
-                when (mode) {
-                    SteamAccessMode.SMART_DOH -> text("智能 DoH", "Smart DoH")
-                    SteamAccessMode.HOSTS -> "Hosts"
-                }
-            },
-            onSelected = onSteamAccessModeChange,
+            title = text("启用全局代理", "Enable global proxy"),
+            supportingText = steamVpnState.summary(preferences.language),
+            checked = steamVpnState.isActive,
+            enabled = steamVpnState.phase != SteamVpnPhase.STOPPING,
+            onCheckedChange = onSteamVpnEnabledChange,
         )
         SettingsItemDivider()
         SettingsListItem(
-            headlineContent = { Text(text("连接状态", "Connection status")) },
+            headlineContent = { Text(text("实时连接", "Live connections")) },
             supportingContent = {
-                Text(steamAccessState.summary(preferences.language))
+                Text(
+                    text(
+                        "活动 ${steamVpnState.activeFlows} · Community 分片 ${steamVpnState.fragmentedConnections}",
+                        "${steamVpnState.activeFlows} active · ${steamVpnState.fragmentedConnections} Community fragments",
+                    ),
+                )
             },
         )
-        SettingsActionArea {
-            FilledTonalButton(
-                onClick = onRefreshSteamAccess,
-                enabled = preferences.steamAccessEnabled,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(Icons.Outlined.Refresh, contentDescription = null)
-                Text(
-                    text("重新解析与预热", "Resolve and warm up again"),
-                    modifier = Modifier.padding(start = 8.dp),
-                )
-            }
-        }
-        if (preferences.steamAccessMode == SteamAccessMode.SMART_DOH) {
+        steamVpnState.engineBuild?.let { build ->
             SettingsItemDivider()
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                SettingsFilledTextField(
-                    value = dohEndpoints,
-                    onValueChange = { dohEndpoints = it },
-                    label = { Text(text("DoH 地址（每行一个）", "DoH endpoints (one per line)")) },
-                    singleLine = false,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Button(
-                    onClick = {
-                        onSteamAccessDohEndpointsChange(
-                            dohEndpoints.lineSequence().map(String::trim).filter(String::isNotBlank).toList(),
-                        )
-                    },
-                    enabled = dohEndpoints.lineSequence().any { it.isNotBlank() } &&
-                        dohEndpoints != preferences.steamAccessDohEndpoints.joinToString("\n"),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(text("保存 DoH 设置", "Save DoH settings"))
-                }
-            }
-        } else {
-            SettingsItemDivider()
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                SettingsFilledTextField(
-                    value = hostsText,
-                    onValueChange = { hostsText = it },
-                    label = { Text(text("应用内 Hosts", "In-app Hosts")) },
-                    singleLine = false,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Button(
-                    onClick = { onSteamAccessHostsChange(hostsText) },
-                    enabled = hostsText != preferences.steamAccessHosts,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(text("保存 Hosts", "Save Hosts"))
-                }
-            }
+            SettingsListItem(
+                headlineContent = { Text("Firestack") },
+                supportingContent = { Text(build) },
+            )
         }
     }
 
@@ -1895,22 +1811,16 @@ private fun SteamSessionState.settingsSummary(language: AppLanguage): String = w
     SteamSessionPhase.SIGNED_OUT -> language.text("未登录", "Not signed in")
 }
 
-private fun SteamAccessState.summary(language: AppLanguage): String {
+private fun SteamVpnState.summary(language: AppLanguage): String {
     val phaseLabel = when (phase) {
-        SteamAccessPhase.DISABLED -> language.text("已关闭", "Disabled")
-        SteamAccessPhase.RESOLVING -> language.text("正在解析", "Resolving")
-        SteamAccessPhase.READY -> language.text("可用", "Ready")
-        SteamAccessPhase.DEGRADED -> language.text("已降级", "Degraded")
-        SteamAccessPhase.FAILED -> language.text("失败", "Failed")
+        SteamVpnPhase.DISABLED -> language.text("已关闭", "Disabled")
+        SteamVpnPhase.PREPARING -> language.text("正在建立全设备 VPN", "Starting the device-wide VPN")
+        SteamVpnPhase.RUNNING -> language.text("全设备代理运行中", "Device-wide proxy is running")
+        SteamVpnPhase.STOPPING -> language.text("正在停止", "Stopping")
+        SteamVpnPhase.REVOKED -> language.text("VPN 权限已撤销", "VPN permission was revoked")
+        SteamVpnPhase.FAILED -> language.text("启动失败", "Startup failed")
     }
-    val details = buildList {
-        add(phaseLabel)
-        if (networkType != "unknown") add(networkType)
-        selectedAddress?.let(::add)
-        if (candidateCount > 0) add(language.text("$candidateCount 个候选", "$candidateCount candidates"))
-        if (fallbackCount > 0) add(language.text("回退 $fallbackCount 次", "$fallbackCount fallbacks"))
-    }
-    return details.joinToString(" · ") + message?.let { "\n$it" }.orEmpty()
+    return phaseLabel + message?.let { "\n$it" }.orEmpty()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wallhub_vpn_session_name">WallHub Android 全局 Steam 代理</string>
+    <string name="wallhub_vpn_channel_name">全局 Steam 代理</string>
+    <string name="wallhub_vpn_channel_description">显示 WallHub 全设备 VPN 的运行状态</string>
+    <string name="wallhub_vpn_notification_title">Android 全局 Steam 代理</string>
+    <string name="wallhub_vpn_notification_starting">正在建立全设备网络</string>
+    <string name="wallhub_vpn_notification_running">%1$d 条活动连接 · %2$d 次 Community TLS 分片</string>
+    <string name="wallhub_vpn_stop">停止</string>
+</resources>

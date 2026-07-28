@@ -7,6 +7,7 @@ import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.SteamAccessRepository
+import com.wallhub.android.core.model.SteamVpnController
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.LocalWallpaperRepository
@@ -20,6 +21,7 @@ import com.wallhub.android.data.settings.DataStoreSettingsRepository
 import com.wallhub.android.data.steam.SecureSteamSessionRepository
 import com.wallhub.android.data.steamaccess.SteamAccessManager
 import com.wallhub.android.data.workshop.CommunityWorkshopRepository
+import com.wallhub.android.vpn.AndroidSteamVpnController
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -58,6 +60,12 @@ abstract class RepositoryModule {
     abstract fun bindSteamAccessRepository(
         repository: SteamAccessManager,
     ): SteamAccessRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindSteamVpnController(
+        controller: AndroidSteamVpnController,
+    ): SteamVpnController
 
     @Binds
     @Singleton

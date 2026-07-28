@@ -64,6 +64,29 @@ data class SteamAccessState(
     val updatedAt: Long = System.currentTimeMillis(),
 )
 
+enum class SteamVpnPhase {
+    DISABLED,
+    PREPARING,
+    RUNNING,
+    STOPPING,
+    REVOKED,
+    FAILED,
+}
+
+data class SteamVpnState(
+    val phase: SteamVpnPhase = SteamVpnPhase.DISABLED,
+    val activeFlows: Int = 0,
+    val fragmentedConnections: Long = 0L,
+    val uploadedBytes: Long = 0L,
+    val downloadedBytes: Long = 0L,
+    val engineBuild: String? = null,
+    val message: String? = null,
+    val updatedAt: Long = System.currentTimeMillis(),
+) {
+    val isActive: Boolean
+        get() = phase == SteamVpnPhase.PREPARING || phase == SteamVpnPhase.RUNNING
+}
+
 enum class SteamSessionPhase {
     SIGNED_OUT,
     RESTORABLE,
