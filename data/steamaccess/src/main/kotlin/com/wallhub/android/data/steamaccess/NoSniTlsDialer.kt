@@ -123,7 +123,7 @@ internal class NoSniTlsDialer internal constructor(
             if (!hostnameVerifier.verify(hostname, sslSocket.session)) {
                 throw SSLPeerUnverifiedException("Certificate does not match $hostname")
             }
-            sslSocket.soTimeout = RELAY_READ_TIMEOUT_MS
+            sslSocket.soTimeout = 0
             return AuthenticatedSteamSocket(
                 address = address,
                 socket = sslSocket,
@@ -146,6 +146,5 @@ internal class NoSniTlsDialer internal constructor(
         const val RACE_DELAY_MS = 200L
         const val CONNECT_TIMEOUT_MS = 4_000
         const val HANDSHAKE_TIMEOUT_MS = 5_000
-        const val RELAY_READ_TIMEOUT_MS = 60_000
     }
 }

@@ -10,6 +10,8 @@ import java.net.Socket
 import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
 import java.util.Base64
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.Executors
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -49,6 +51,7 @@ internal class SteamLoopbackTlsBridge @Inject constructor(
     private fun handle(clientSocket: Socket) {
         var upstreamSocket: Socket? = null
         var securedClientSocket: Socket? = null
+        var tunnelEstablished = false
         try {
             clientSocket.soTimeout = HEADER_TIMEOUT_MS
             clientSocket.tcpNoDelay = true
@@ -71,13 +74,14 @@ internal class SteamLoopbackTlsBridge @Inject constructor(
 
             writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
             val securedClient = privateCa.createServerSocket(clientSocket, host).apply {
-                soTimeout = RELAY_TIMEOUT_MS
+                soTimeout = 0
                 startHandshake()
             }
             securedClientSocket = securedClient
+            tunnelEstablished = true
             relay(securedClient, upstream.socket)
         } catch (error: Throwable) {
-            runCatching { accessManager.recordBridgeFailure(error) }
+            if (!tunnelEstablished) runCatching { accessManager.recordBridgeFailure(error) }
             if (securedClientSocket == null && !clientSocket.isClosed) {
                 runCatching {
                     writeResponse(
@@ -94,18 +98,20 @@ internal class SteamLoopbackTlsBridge @Inject constructor(
     }
 
     private fun relay(client: Socket, upstream: Socket) {
-        val clientToUpstream = executor.submit {
+        val completion = ExecutorCompletionService<Unit>(executor)
+        val clientToUpstream = completion.submit(Callable {
             client.getInputStream().copyTo(upstream.getOutputStream(), RELAY_BUFFER_BYTES)
             upstream.getOutputStream().flush()
-        }
-        val upstreamToClient = executor.submit {
+        })
+        val upstreamToClient = completion.submit(Callable {
             upstream.getInputStream().copyTo(client.getOutputStream(), RELAY_BUFFER_BYTES)
             client.getOutputStream().flush()
-        }
+        })
         try {
-            clientToUpstream.get()
-            upstreamToClient.get()
+            completion.take().get()
         } finally {
+            client.closeQuietly()
+            upstream.closeQuietly()
             clientToUpstream.cancel(true)
             upstreamToClient.cancel(true)
         }
@@ -174,7 +180,6 @@ internal class SteamLoopbackTlsBridge @Inject constructor(
         const val TOKEN_BYTES = 32
         const val MAX_HEADER_BYTES = 16 * 1024
         const val HEADER_TIMEOUT_MS = 5_000
-        const val RELAY_TIMEOUT_MS = 60_000
         const val RELAY_BUFFER_BYTES = 32 * 1024
         val HEADER_TERMINATOR = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte(), '\r'.code.toByte(), '\n'.code.toByte())
     }
