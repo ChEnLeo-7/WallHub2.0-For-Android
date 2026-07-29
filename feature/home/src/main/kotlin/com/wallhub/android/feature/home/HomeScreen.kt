@@ -6,6 +6,8 @@ import android.net.Uri
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animate
@@ -19,6 +21,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.ScrollState
@@ -3988,6 +3991,7 @@ private fun HomeFiltersSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(max = contentMaxHeight),
+                        transitionSpec = { homeFilterPageContentTransform() },
                         label = "HomeFilterPage",
                     ) { page ->
                         HomeFilterPageContent(
@@ -4018,6 +4022,7 @@ private fun HomeFiltersSheet(
                         AnimatedContent(
                             targetState = selectedPage,
                             modifier = Modifier.weight(1f),
+                            transitionSpec = { homeFilterPageContentTransform() },
                             label = "HomeFilterPage",
                         ) { page ->
                             HomeFilterPageContent(
@@ -4034,6 +4039,28 @@ private fun HomeFiltersSheet(
         }
     }
 }
+
+private fun homeFilterPageContentTransform(): ContentTransform =
+    (fadeIn(
+        animationSpec = tween(
+            durationMillis = HOME_FILTER_PAGE_ENTER_DURATION_MS,
+            delayMillis = HOME_FILTER_PAGE_EXIT_DURATION_MS,
+            easing = FastOutSlowInEasing,
+        ),
+    ) togetherWith fadeOut(
+        animationSpec = tween(
+            durationMillis = HOME_FILTER_PAGE_EXIT_DURATION_MS,
+            easing = FastOutSlowInEasing,
+        ),
+    )).using(
+        SizeTransform(clip = true) { _, _ ->
+            tween(
+                durationMillis = HOME_FILTER_SHEET_PAGE_SIZE_DURATION_MS,
+                delayMillis = HOME_FILTER_PAGE_EXIT_DURATION_MS,
+                easing = FastOutSlowInEasing,
+            )
+        },
+    )
 
 @Composable
 private fun HomeFilterSheetHeader(
@@ -4939,6 +4966,9 @@ private val HOME_RESOLUTION_LABELS_ZH = mapOf(
 )
 
 private const val FILTER_COLLAPSE_OFFSET_PX = 24
+private const val HOME_FILTER_PAGE_EXIT_DURATION_MS = 90
+private const val HOME_FILTER_PAGE_ENTER_DURATION_MS = 150
+private const val HOME_FILTER_SHEET_PAGE_SIZE_DURATION_MS = 220
 private const val FILTER_SAVER_SEPARATOR = "\u001F"
 private const val HOME_FILTER_PAGE_SIZE_DURATION_MS = 300
 private val HOME_FILTER_PAGE_EASING = CubicBezierEasing(0.2f, 0f, 0f, 1f)

@@ -1061,7 +1061,7 @@ private fun BasicSettingsContent(
     val installed = appUpdateState.installed
 
     SettingsSection(
-        title = language.text("关于 WallHub", "About WallHub"),
+        title = "WallHub For Android",
         icon = Icons.Outlined.Info,
     ) {
         AboutWallHubContent(

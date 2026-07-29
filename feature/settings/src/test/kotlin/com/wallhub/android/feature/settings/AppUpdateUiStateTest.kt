@@ -2,6 +2,7 @@ package com.wallhub.android.feature.settings
 
 import com.wallhub.android.core.model.AppReleaseInfo
 import com.wallhub.android.core.model.InstalledAppInfo
+import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -12,6 +13,7 @@ class AppUpdateUiStateTest {
         packageName = "com.wallhub.android",
         versionName = "0.8.25",
         versionCode = 35L,
+        lastUpdateTimeMillis = 1_700_000_000_000L,
     )
     private val release = AppReleaseInfo(
         tagName = "v0.8.26",
@@ -73,7 +75,13 @@ class AppUpdateUiStateTest {
 
     @Test
     fun `about metadata keeps community and contribution details`() {
+        assertEquals("WallHub For Android", WALLHUB_PROJECT_TITLE)
         assertEquals("1082323527", WALLHUB_QQ_GROUP_NUMBER)
+        assertTrue(WALLHUB_QQ_GROUP_JOIN_URI.startsWith("mqqapi://card/show_pslcard?"))
+        assertTrue(WALLHUB_QQ_GROUP_JOIN_URI.contains("uin=1082323527"))
+        assertTrue(WALLHUB_QQ_GROUP_JOIN_URI.contains("card_type=group"))
+        assertEquals("2023-11-14", formatAppUpdateDate(installed.lastUpdateTimeMillis, ZoneOffset.UTC))
+        assertEquals("—", formatAppUpdateDate(0L, ZoneOffset.UTC))
         assertEquals("CHENLEO_7", WALLHUB_AUTHOR.displayName)
         assertEquals("ChEnLeo-7", WALLHUB_AUTHOR.githubAccount)
         assertEquals(

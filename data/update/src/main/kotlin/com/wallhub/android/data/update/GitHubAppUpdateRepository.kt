@@ -52,6 +52,7 @@ class GitHubAppUpdateRepository @Inject constructor(
             packageName = context.packageName,
             versionName = packageInfo.versionName.orEmpty(),
             versionCode = packageInfo.compatLongVersionCode(),
+            lastUpdateTimeMillis = packageInfo.lastUpdateTime,
         )
     }
 

@@ -1,10 +1,9 @@
 package com.wallhub.android.feature.settings
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -46,7 +45,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImagePainter
@@ -57,6 +58,9 @@ import com.mikepenz.markdown.m3.Markdown
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.InstalledAppInfo
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 internal data class WallHubPerson(
@@ -74,7 +78,10 @@ internal data class WallHubPerson(
     fun role(language: AppLanguage): String = if (language == AppLanguage.EN) roleEn else roleZh
 }
 
+internal const val WALLHUB_PROJECT_TITLE = "WallHub For Android"
 internal const val WALLHUB_QQ_GROUP_NUMBER = "1082323527"
+internal const val WALLHUB_QQ_GROUP_JOIN_URI =
+    "mqqapi://card/show_pslcard?src_type=internal&version=1&uin=$WALLHUB_QQ_GROUP_NUMBER&card_type=group&source=qrcode"
 internal const val WALLHUB_REPOSITORY_LABEL = "ChEnLeo-7/WallHub2.0-For-Android"
 internal const val WALLHUB_REPOSITORY_URL =
     "https://github.com/ChEnLeo-7/WallHub2.0-For-Android"
@@ -124,14 +131,28 @@ internal fun AboutWallHubContent(
     fun openUrl(url: String) {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
     }
+    fun openQqGroup() {
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(WALLHUB_QQ_GROUP_JOIN_URI)).apply {
+                    addCategory(Intent.CATEGORY_BROWSABLE)
+                },
+            )
+        }.onFailure {
+            Toast.makeText(
+                context,
+                language.aboutText(
+                    "未找到可打开 QQ 加群链接的应用",
+                    "No app can open the QQ group invitation",
+                ),
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
 
-    AboutListItem(
-        headline = installed.appName,
-        supporting = language.aboutText(
-            "版本 ${installed.versionName} (${installed.versionCode}) · ${installed.packageName}",
-            "Version ${installed.versionName} (${installed.versionCode}) · ${installed.packageName}",
-        ),
-        leadingContent = { AboutIcon(Icons.Info) },
+    WallHubProjectHeader(
+        language = language,
+        installed = installed,
     )
     AboutDivider()
     WallHubPersonRow(
@@ -150,28 +171,15 @@ internal fun AboutWallHubContent(
     AboutDivider()
     AboutListItem(
         headline = language.aboutText("QQ 交流群", "QQ community group"),
-        supporting = WALLHUB_QQ_GROUP_NUMBER,
+        supporting = language.aboutText(
+            "$WALLHUB_QQ_GROUP_NUMBER · 点击打开加群页面",
+            "$WALLHUB_QQ_GROUP_NUMBER · Open the group invitation",
+        ),
         leadingContent = { AboutIcon(Icons.MessageCircle) },
         trailingContent = {
-            IconButton(
-                onClick = {
-                    val clipboard = context.getSystemService(ClipboardManager::class.java)
-                    clipboard.setPrimaryClip(
-                        ClipData.newPlainText("WallHub QQ", WALLHUB_QQ_GROUP_NUMBER),
-                    )
-                    Toast.makeText(
-                        context,
-                        language.aboutText("群号已复制", "Group number copied"),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                },
-            ) {
-                Icon(
-                    imageVector = Icons.Copy,
-                    contentDescription = language.aboutText("复制群号", "Copy group number"),
-                )
-            }
+            Icon(imageVector = Icons.ExternalLink, contentDescription = null)
         },
+        modifier = Modifier.clickable { openQqGroup() },
     )
     AboutDivider()
     AboutListItem(
@@ -261,6 +269,54 @@ internal fun AboutWallHubContent(
             language = language,
             onOpenGitHub = { openUrl(release.htmlUrl) },
             onDismiss = { releaseNotesVisible = false },
+        )
+    }
+}
+
+@Composable
+private fun WallHubProjectHeader(
+    language: AppLanguage,
+    installed: InstalledAppInfo,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.wallhub_logo),
+            contentDescription = language.aboutText("WallHub 项目 LOGO", "WallHub project logo"),
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .size(156.dp)
+                .clip(MaterialTheme.shapes.extraLarge),
+        )
+        Text(
+            text = WALLHUB_PROJECT_TITLE,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            text = language.aboutText(
+                "版本 ${installed.versionName} (${installed.versionCode}) · 更新日期 ${formatAppUpdateDate(installed.lastUpdateTimeMillis)}",
+                "Version ${installed.versionName} (${installed.versionCode}) · Updated ${formatAppUpdateDate(installed.lastUpdateTimeMillis)}",
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            text = language.aboutText(
+                "开源的 Wallpaper Engine 创意工坊浏览、下载与移动端壁纸管理工具。",
+                "An open-source Wallpaper Engine Workshop browser, downloader, and mobile wallpaper manager.",
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 560.dp),
         )
     }
 }
@@ -508,6 +564,18 @@ private fun AppUpdateUiState.statusLabel(language: AppLanguage): String = when (
 
 private fun AppLanguage.aboutText(zh: String, en: String): String =
     if (this == AppLanguage.EN) en else zh
+
+internal fun formatAppUpdateDate(
+    epochMillis: Long,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): String = if (epochMillis > 0L) {
+    Instant.ofEpochMilli(epochMillis)
+        .atZone(zoneId)
+        .toLocalDate()
+        .format(DateTimeFormatter.ISO_LOCAL_DATE)
+} else {
+    "—"
+}
 
 private fun formatAboutUpdateSize(bytes: Long): String = String.format(
     Locale.getDefault(),

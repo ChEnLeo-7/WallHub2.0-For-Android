@@ -1,7 +1,6 @@
 package com.wallhub.android.core.designsystem
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.Spring
@@ -554,12 +553,6 @@ fun WallHubFilterChip(
         onClick = onClick,
         modifier = modifier
             .heightIn(min = minHeight)
-            .animateContentSize(
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow,
-                ),
-            )
             .then(
                 if (singleChoice) Modifier.semantics { role = Role.RadioButton } else Modifier,
             ),
@@ -576,8 +569,11 @@ fun WallHubFilterChip(
             disabledContainerColor = containerColor.copy(alpha = 0.6f),
             disabledLabelColor = contentColor.copy(alpha = 0.5f),
         ),
-        leadingIcon = if (selectionIconState.currentState || selectionIconState.targetState) {
-            {
+        leadingIcon = {
+            Box(
+                modifier = Modifier.size(FILTER_CHIP_ICON_SIZE),
+                contentAlignment = Alignment.Center,
+            ) {
                 AnimatedVisibility(
                     visibleState = selectionIconState,
                     enter = fadeIn(tween(durationMillis = 160)) + scaleIn(
@@ -596,8 +592,6 @@ fun WallHubFilterChip(
                     )
                 }
             }
-        } else {
-            null
         },
         label = {
             Text(

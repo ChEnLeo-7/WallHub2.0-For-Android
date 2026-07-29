@@ -58,6 +58,7 @@ data class InstalledAppInfo(
     val packageName: String,
     val versionName: String,
     val versionCode: Long,
+    val lastUpdateTimeMillis: Long = 0L,
 )
 
 data class AppReleaseInfo(
