@@ -13,6 +13,7 @@ import com.wallhub.android.core.model.SteamAccessMode
 import com.wallhub.android.core.model.SteamAccessPhase
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamAccessState
+import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.enabledSteamAccessDohEndpoints
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
@@ -26,6 +27,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -80,6 +82,8 @@ class SteamAccessManager @Inject internal constructor(
     private val scheduledRefreshes = ConcurrentHashMap<String, Job>()
     private val routeRefreshMutex = Mutex()
     private val routeGeneration = AtomicLong()
+    private val routePrewarmTracker = SteamRoutePrewarmTracker()
+    private val preferencesReady = CompletableDeferred<Unit>()
     private val mutableState = MutableStateFlow(SteamAccessState())
 
     internal val connectionPool = ConnectionPool(
@@ -144,6 +148,7 @@ class SteamAccessManager @Inject internal constructor(
                 if (routeSettingsChanged) {
                     handleRouteSettingsChanged(accessEnabledChanged)
                 }
+                preferencesReady.complete(Unit)
             }
         }
     }
@@ -169,7 +174,8 @@ class SteamAccessManager @Inject internal constructor(
 
     @Synchronized
     private fun handleRouteSettingsChanged(accessEnabledChanged: Boolean) {
-        routeGeneration.incrementAndGet()
+        val generation = routeGeneration.incrementAndGet()
+        routePrewarmTracker.invalidate(generation)
         routeSnapshots.markAllStale()
         cancelScheduledRefreshes()
         if (accessEnabledChanged) connectionPool.evictAll()
@@ -177,6 +183,31 @@ class SteamAccessManager @Inject internal constructor(
     }
 
     override fun lookup(hostname: String): List<InetAddress> = Dns.SYSTEM.lookup(hostname)
+
+    override suspend fun prewarmSteamIp(dataSource: SteamWorkshopDataSource): Boolean {
+        val host = when (dataSource) {
+            SteamWorkshopDataSource.COMMUNITY_HTML -> "steamcommunity.com"
+            SteamWorkshopDataSource.WEB_API -> "api.steampowered.com"
+            SteamWorkshopDataSource.CM_WEBSOCKET -> return true
+        }
+        preferencesReady.await()
+        while (true) {
+            if (!preferences.steamAccessEnabled) return true
+            val selectedNetworkType = networkType
+            val generation = routeGeneration.get()
+            val key = SteamRoutePrewarmKey(selectedNetworkType, generation, host)
+            val result = routePrewarmTracker.awaitCompletionOrInvalidation(key) {
+                requestRouteRefresh(host)
+            }
+            if (
+                result != null &&
+                routeGeneration.get() == generation &&
+                networkType == selectedNetworkType
+            ) {
+                return result
+            }
+        }
+    }
 
     internal fun shouldAccelerate(hostname: String): Boolean {
         val host = hostname.lowercase().trimEnd('.')
@@ -331,21 +362,31 @@ class SteamAccessManager @Inject internal constructor(
                         fallbackAvailable = fallbackAvailable,
                     )
                 } ?: return@launch
-                if (routeGeneration.get() == generation && networkType == selectedNetworkType) {
-                    val selected = routeSnapshots.publishKeepingUsable(cacheKey, route)
-                    val nextRefreshAt = if (selected == route) {
-                        route.freshUntil
-                    } else {
-                        System.currentTimeMillis() + FAILED_REFRESH_RETRY_MS
-                    }
-                    scheduleBackgroundRefresh(
-                        hostname = host,
-                        selectedNetworkType = selectedNetworkType,
-                        generation = generation,
-                        freshUntil = nextRefreshAt,
-                    )
+                val selected = commitRouteRefresh(
+                    cacheKey = cacheKey,
+                    hostname = host,
+                    selectedNetworkType = selectedNetworkType,
+                    generation = generation,
+                    route = route,
+                ) ?: return@launch
+                val nextRefreshAt = if (selected == route) {
+                    route.freshUntil
+                } else {
+                    System.currentTimeMillis() + FAILED_REFRESH_RETRY_MS
                 }
+                scheduleBackgroundRefresh(
+                    hostname = host,
+                    selectedNetworkType = selectedNetworkType,
+                    generation = generation,
+                    freshUntil = nextRefreshAt,
+                )
             } catch (error: Throwable) {
+                completeFailedRouteRefresh(
+                    cacheKey = cacheKey,
+                    hostname = host,
+                    selectedNetworkType = selectedNetworkType,
+                    generation = generation,
+                )
                 recordDiagnostic(
                     level = DiagnosticLevel.WARNING,
                     message = "Steam route background refresh failed",
@@ -358,6 +399,38 @@ class SteamAccessManager @Inject internal constructor(
                 refreshInFlight.remove(refreshKey)
             }
         }
+    }
+
+    @Synchronized
+    private fun commitRouteRefresh(
+        cacheKey: String,
+        hostname: String,
+        selectedNetworkType: String,
+        generation: Long,
+        route: SteamCachedRoute,
+    ): SteamCachedRoute? {
+        if (routeGeneration.get() != generation || networkType != selectedNetworkType) return null
+        val selected = routeSnapshots.publishKeepingUsable(cacheKey, route)
+        routePrewarmTracker.complete(
+            SteamRoutePrewarmKey(selectedNetworkType, generation, hostname),
+            selected.available,
+        )
+        return selected
+    }
+
+    @Synchronized
+    private fun completeFailedRouteRefresh(
+        cacheKey: String,
+        hostname: String,
+        selectedNetworkType: String,
+        generation: Long,
+    ) {
+        if (routeGeneration.get() != generation || networkType != selectedNetworkType) return
+        val fallbackAvailable = routeSnapshots.lookup(cacheKey).route?.available == true
+        routePrewarmTracker.complete(
+            SteamRoutePrewarmKey(selectedNetworkType, generation, hostname),
+            fallbackAvailable,
+        )
     }
 
     private fun scheduleBackgroundRefresh(
@@ -507,7 +580,8 @@ class SteamAccessManager @Inject internal constructor(
         if (activeNetwork == nextNetwork && networkType == nextType) return
         activeNetwork = nextNetwork
         networkType = nextType
-        routeGeneration.incrementAndGet()
+        val generation = routeGeneration.incrementAndGet()
+        routePrewarmTracker.invalidate(generation)
         routeSnapshots.clear()
         cancelScheduledRefreshes()
         connectionPool.evictAll()

@@ -204,6 +204,7 @@ import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.requiresLegacyPublicDownloadPermission
 import com.wallhub.android.core.model.WorkshopBrowseQuery
@@ -380,6 +381,7 @@ data class HomeUiState(
     val multiSelect: Boolean = true,
     val matureContentEnabled: Boolean = false,
     val steamApiKey: String = "",
+    val steamAccessEnabled: Boolean = true,
     val steamWorkshopDataSource: SteamWorkshopDataSource = SteamWorkshopDataSource.COMMUNITY_HTML,
     val cardAction: HomeCardAction = HomeCardAction.DOWNLOAD,
     val paginationMode: HomePaginationMode = HomePaginationMode.INFINITE_SCROLL,
@@ -392,6 +394,7 @@ data class HomeUiState(
     val hasNextPage: Boolean = false,
     val totalCount: Int? = null,
     val isInitialLoading: Boolean = true,
+    val isSteamIpPrewarming: Boolean = false,
     val isLoadingMore: Boolean = false,
     val isPageLoading: Boolean = false,
     val error: String? = null,
@@ -438,10 +441,21 @@ internal fun initialHomeUiState(authorSearchCreator: String?): HomeUiState {
     return HomeUiState().asAuthorSearchState(normalizedCreatorId)
 }
 
+internal fun shouldPrewarmSteamIp(
+    steamAccessEnabled: Boolean,
+    dataSource: SteamWorkshopDataSource,
+    append: Boolean,
+    hasItems: Boolean,
+): Boolean = steamAccessEnabled &&
+    !append &&
+    !hasItems &&
+    dataSource != SteamWorkshopDataSource.CM_WEBSOCKET
+
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val workshopRepository: WorkshopRepository,
     private val settingsRepository: SettingsRepository,
+    private val steamAccessRepository: SteamAccessRepository,
     private val downloadTaskRepository: DownloadTaskRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -472,6 +486,7 @@ class HomeViewModel @Inject constructor(
                     previous.matureContentEnabled != preferences.matureContentEnabled ||
                     previous.paginationMode != preferences.homePaginationMode ||
                     previous.steamApiKey != preferences.steamApiKey ||
+                    previous.steamAccessEnabled != preferences.steamAccessEnabled ||
                     previous.steamWorkshopDataSource != preferences.steamWorkshopDataSource
                 mutableState.value = previous.copy(
                     language = preferences.language,
@@ -479,6 +494,7 @@ class HomeViewModel @Inject constructor(
                     columns = preferences.homeColumns,
                     multiSelect = preferences.homeFilterMultiSelect,
                     steamApiKey = preferences.steamApiKey,
+                    steamAccessEnabled = preferences.steamAccessEnabled,
                     steamWorkshopDataSource = preferences.steamWorkshopDataSource,
                     cardAction = preferences.homeCardAction,
                     paginationMode = preferences.homePaginationMode,
@@ -677,14 +693,33 @@ class HomeViewModel @Inject constructor(
         scrollToTopOnSuccess: Boolean = false,
     ) {
         val requestState = mutableState.value
+        val shouldPrewarm = shouldPrewarmSteamIp(
+            steamAccessEnabled = requestState.steamAccessEnabled,
+            dataSource = requestState.steamWorkshopDataSource,
+            append = append,
+            hasItems = requestState.items.isNotEmpty(),
+        )
         loadJob = viewModelScope.launch {
             mutableState.value = requestState.copy(
                 isInitialLoading = !append && requestState.items.isEmpty(),
+                isSteamIpPrewarming = shouldPrewarm,
                 isLoadingMore = append,
                 isPageLoading = !append && requestState.items.isNotEmpty(),
                 error = null,
             )
             try {
+                if (shouldPrewarm) {
+                    val ready = steamAccessRepository.prewarmSteamIp(requestState.steamWorkshopDataSource)
+                    if (!ready) {
+                        error(
+                            requestState.text(
+                                "Steam IP预热失败，请检查网络后重试",
+                                "Steam IP prewarm failed. Check your network and retry.",
+                            ),
+                        )
+                    }
+                    mutableState.value = mutableState.value.copy(isSteamIpPrewarming = false)
+                }
                 val response = workshopRepository.browse(
                     WorkshopBrowseQuery(
                         page = page,
@@ -720,6 +755,7 @@ class HomeViewModel @Inject constructor(
                 if (version != requestVersion) return@launch
                 mutableState.value = requestState.copy(
                     isInitialLoading = false,
+                    isSteamIpPrewarming = false,
                     isLoadingMore = false,
                     isPageLoading = false,
                     error = error.message ?: "无法加载 Steam 创意工坊，请稍后重试",
@@ -756,6 +792,7 @@ class HomeViewModel @Inject constructor(
             hasNextPage = hasNextPage,
             totalCount = resolvedTotalCount,
             isInitialLoading = false,
+            isSteamIpPrewarming = false,
             isLoadingMore = false,
             isPageLoading = false,
             error = null,
@@ -1624,7 +1661,24 @@ private fun HomeResults(
     ) {
         when {
         state.isInitialLoading -> {
-            Box(modifier = Modifier.fillMaxSize())
+            if (state.isSteamIpPrewarming) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                ) {
+                    CircularProgressIndicator()
+                    Text(
+                        text = state.text("正在预热SteamIP", "Warming up Steam IP…"),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                Box(modifier = Modifier.fillMaxSize())
+            }
         }
 
         state.error != null && state.items.isEmpty() -> {

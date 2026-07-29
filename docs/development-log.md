@@ -19,6 +19,7 @@
 
 #### 更新
 
+- 内置加速开启时，发现页首次空结果加载现在先等待当前网络和路线代际的 Steam IP 预热完成；等待期间显示“正在预热SteamIP”，CM WebSocket 不受该 HTTPS 预热门控影响，预热失败会直接显示可重试错误而不再发送首个可能得到 `connection closed` 的 Workshop 请求。
 - Steam 内置线路改为非阻塞快照与 stale-while-revalidate 生命周期：`ProxySelector` 仅做内存查找，用户请求不再同步等待系统 DNS、DoH、直连与 no-SNI 探测；核心 host 按 fresh/soft-stale/hard-expiry 租约在后台单飞刷新，刷新失败继续使用最近健康线路，进程冷启动时先恢复当前网络类型下最近成功且未冷却的候选作为 5 分钟短期 stale 快照，避免首个 Community 请求抢在后台探测前按失败直连发出。普通手动/定时/设置刷新不再清空共享连接池，只有真实默认网络切换或加速开关变化才淘汰空闲连接；连接池提升到 12 条空闲连接和 10 分钟保活，新隧道在 CONNECT 200 前维持两地址竞速与 6 秒总预算，并将实际失败精确归因到候选 IP 进入冷却。候选历史加入 TLS 握手延迟 EWMA，同等健康度优先低延迟地址，所有写请求仍不执行透明重放。
 - Steam 设置页现在直接管理创意工坊数据源，保留 Community HTML、Web API 与 CM WebSocket 的严格通道语义及原有 DataStore 持久化；实验功能页仅保留在线播放、系统权限与应用信息。
 - 彻底清理已退役的全设备 VPN 实现及依赖图：删除旧 `VpnService`/controller/Hilt binding、`:data:vpn` 模块、Firestack 四 ABI AAR、VPN 专用模型/资源及过期许可证声明。普通 CI Release APK 不再打包未使用的 TUN 原生库，并新增 40 MiB APK 体积硬门槛防止依赖回归；历史 Actions artifact 在引入 Firestack 前为约 27.27 MB、引入后为约 55.01 MB。
