@@ -1,6 +1,5 @@
 package com.wallhub.android.core.model
 
-import android.content.Intent
 import java.io.Closeable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -79,17 +78,6 @@ interface SteamAccessRepository {
     val state: StateFlow<SteamAccessState>
 
     fun refresh()
-}
-
-interface SteamVpnController {
-    val state: StateFlow<SteamVpnState>
-
-    /** Returns the Android consent intent, or null when this app is already prepared. */
-    fun prepareIntent(): Intent?
-
-    fun start()
-
-    fun stop()
 }
 
 interface SteamSessionRepository {

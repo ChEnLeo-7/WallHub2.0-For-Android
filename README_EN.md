@@ -77,7 +77,6 @@ WallHub builds on and thanks:
 - [AndroidX Media3](https://developer.android.com/media/media3)
 - [Room](https://developer.android.com/training/data-storage/room), [WorkManager](https://developer.android.com/topic/libraries/architecture/workmanager), and [DataStore](https://developer.android.com/topic/libraries/architecture/datastore)
 - [Coil](https://coil-kt.github.io/coil/) and [Haze](https://github.com/chrisbanes/haze)
-- [Firestack](https://github.com/celzero/firestack) (MPL-2.0) for the Android global VPN userspace network stack
 
 Steam, Wallpaper Engine, and all related names, trademarks, content, and services belong to their respective owners. This independent open-source client is not affiliated with, authorized by, or endorsed by Valve Corporation, the Wallpaper Engine team, or Workshop creators.
 
@@ -85,4 +84,4 @@ Steam, Wallpaper Engine, and all related names, trademarks, content, and service
 
 This software is provided “as is” under the MIT License, without warranties of any kind. Users are responsible for complying with Steam, Wallpaper Engine, creator terms, and applicable laws, and assume all risks involving accounts, networking, storage, downloads, conversion, import, and content use. Respect creators and do not use this project to bypass platform rules or distribute content without authorization.
 
-See [`LICENSE`](LICENSE) for the project license and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for bundled third-party components and licenses.
+See [`LICENSE`](LICENSE) for the project license.

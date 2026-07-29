@@ -81,7 +81,6 @@ app/build/outputs/apk/debug/app-debug.apk
 - [AndroidX Media3](https://developer.android.com/media/media3)
 - [Room](https://developer.android.com/training/data-storage/room)、[WorkManager](https://developer.android.com/topic/libraries/architecture/workmanager) 与 [DataStore](https://developer.android.com/topic/libraries/architecture/datastore)
 - [Coil](https://coil-kt.github.io/coil/) 与 [Haze](https://github.com/chrisbanes/haze)
-- [Firestack](https://github.com/celzero/firestack)（MPL-2.0）用于 Android 全局 VPN 用户态网络栈
 
 Steam、Wallpaper Engine 及相关名称、商标、内容与服务归各自权利人所有。本项目为独立的开源客户端，与 Valve Corporation、Wallpaper Engine 团队及创意工坊内容作者不存在官方隶属、授权或背书关系。
 
@@ -89,4 +88,4 @@ Steam、Wallpaper Engine 及相关名称、商标、内容与服务归各自权�
 
 本软件按 MIT License 以“现状”提供，不附带任何明示或默示担保。使用者应遵守 Steam、Wallpaper Engine、创意工坊内容作者及所在地法律法规的相关条款，并自行承担账户、网络、存储、下载、转换、导入和内容使用风险。请尊重创作者权益，不要将本项目用于规避平台规则、未经授权分发内容或其他侵权行为。
 
-许可证全文见 [`LICENSE`](LICENSE)，第三方组件与对应许可证见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+许可证全文见 [`LICENSE`](LICENSE)。

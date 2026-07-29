@@ -19,6 +19,7 @@
 
 #### 更新
 
+- 彻底清理已退役的全设备 VPN 实现及依赖图：删除旧 `VpnService`/controller/Hilt binding、`:data:vpn` 模块、Firestack 四 ABI AAR、VPN 专用模型/资源及过期许可证声明。普通 CI Release APK 不再打包未使用的 TUN 原生库，并新增 40 MiB APK 体积硬门槛防止依赖回归；历史 Actions artifact 在引入 Firestack 前为约 27.27 MB、引入后为约 55.01 MB。
 - Steam 访问增强从失败的全设备 VPN/TLS Record Fragmentation 产品路径切换为 WallHub 进程内方案：移除 manifest `VpnService` 与设置入口，只对 `steamcommunity.com`、`www.steamcommunity.com`、`api.steampowered.com`、`community.steam-api.com` 自动检测直连；直连异常且严格无 SNI 探测成功时，由仅绑定 `127.0.0.1` 的认证 CONNECT/TLS 桥接入候选地址，下载、图片、视频、Depot、Steam CM 和其他应用流量不受影响。
 - 内置线路使用仅存活于应用进程的 P-256 临时根与精确 SAN 叶证书维持现有 OkHttp URL、Cookie、重定向和请求体语义，不向 Android 安装 CA；上游 ClientHello 明确清空 `server_name`，仍强制 Android 系统 CA 链和原 Steam 主机名验证。新增协议级 ClientHello 捕获、错误主机名拒绝、精确域名范围测试，并恢复默认开启的自动检测与手动刷新状态 UI；下载代理不再与核心服务访问线路互斥。
 - Steam 服务访问新增与 WallHub 现有筛选/设置风格一致的自定义 DoH 编辑底表：保留完整有序列表，支持添加、删除、逐项开启/关闭和恢复默认；排序改为长按拖动手柄，越过相邻项中点时实时交换并提供触觉反馈，不再使用上移/下移点按按钮。端点使用圆角 `surfaceContainerHigh` 列表卡，输入复用设置页 filled field，恢复/取消/保存使用与现有筛选操作一致的圆角层级；保存时统一执行 URL 安全校验、去重和八项上限，并一次性清理旧线路后重新检测。
