@@ -53,6 +53,27 @@ enum class SteamAccessPhase {
     FAILED,
 }
 
+data class InstalledAppInfo(
+    val appName: String,
+    val packageName: String,
+    val versionName: String,
+    val versionCode: Long,
+)
+
+data class AppReleaseInfo(
+    val tagName: String,
+    val versionName: String,
+    val releaseName: String,
+    val notes: String,
+    val publishedAt: String,
+    val htmlUrl: String,
+    val assetName: String,
+    val assetUrl: String,
+    val assetSizeBytes: Long,
+    val sha256: String,
+    val isNewer: Boolean,
+)
+
 data class SteamAccessState(
     val phase: SteamAccessPhase = SteamAccessPhase.DISABLED,
     val networkType: String = "unknown",

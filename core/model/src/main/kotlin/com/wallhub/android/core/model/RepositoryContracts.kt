@@ -74,6 +74,19 @@ interface LauncherIconController {
     fun setThemedIconEnabled(enabled: Boolean)
 }
 
+interface AppUpdateRepository {
+    val installedAppInfo: InstalledAppInfo
+
+    suspend fun latestRelease(): AppReleaseInfo
+
+    suspend fun downloadRelease(
+        release: AppReleaseInfo,
+        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
+    ): String
+
+    fun cancelDownload() = Unit
+}
+
 interface SteamAccessRepository {
     val state: StateFlow<SteamAccessState>
 

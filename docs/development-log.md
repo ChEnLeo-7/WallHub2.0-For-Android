@@ -19,9 +19,11 @@
 
 #### 更新
 
+- 基本设置新增完整的 WallHub 应用信息、作者与 QQ 社群、官方仓库、贡献人员和版本更新区域；可检查 GitHub 最新稳定 Release、查看说明、下载或重新下载 universal APK，并在 SHA-256、包名和安装证书均与当前 WallHub 匹配后交由 Android 系统安装器确认安装。应用不会静默安装、绕过系统未知来源授权或清除现有数据。
+- 发现页 Steam IP 预热状态现在只显示中央进度指示器，不再与下拉刷新指示器重复；筛选抽屉移除强制全高 Pager，按当前页内容动态收缩并在超过可用视口时页内滚动，修复“内容”页底部大面积留白。
 - 内置加速开启时，发现页首次空结果加载现在先等待当前网络和路线代际的 Steam IP 预热完成；等待期间显示“正在预热SteamIP”，CM WebSocket 不受该 HTTPS 预热门控影响，预热失败会直接显示可重试错误而不再发送首个可能得到 `connection closed` 的 Workshop 请求。
 - Steam 内置线路改为非阻塞快照与 stale-while-revalidate 生命周期：`ProxySelector` 仅做内存查找，用户请求不再同步等待系统 DNS、DoH、直连与 no-SNI 探测；核心 host 按 fresh/soft-stale/hard-expiry 租约在后台单飞刷新，刷新失败继续使用最近健康线路，进程冷启动时先恢复当前网络类型下最近成功且未冷却的候选作为 5 分钟短期 stale 快照，避免首个 Community 请求抢在后台探测前按失败直连发出。普通手动/定时/设置刷新不再清空共享连接池，只有真实默认网络切换或加速开关变化才淘汰空闲连接；连接池提升到 12 条空闲连接和 10 分钟保活，新隧道在 CONNECT 200 前维持两地址竞速与 6 秒总预算，并将实际失败精确归因到候选 IP 进入冷却。候选历史加入 TLS 握手延迟 EWMA，同等健康度优先低延迟地址，所有写请求仍不执行透明重放。
-- Steam 设置页现在直接管理创意工坊数据源，保留 Community HTML、Web API 与 CM WebSocket 的严格通道语义及原有 DataStore 持久化；实验功能页仅保留在线播放、系统权限与应用信息。
+- Steam 设置页现在直接管理创意工坊数据源，保留 Community HTML、Web API 与 CM WebSocket 的严格通道语义及原有 DataStore 持久化；实验功能页仅保留在线播放与系统权限，应用信息迁入基本设置。
 - 彻底清理已退役的全设备 VPN 实现及依赖图：删除旧 `VpnService`/controller/Hilt binding、`:data:vpn` 模块、Firestack 四 ABI AAR、VPN 专用模型/资源及过期许可证声明。普通 CI Release APK 不再打包未使用的 TUN 原生库，并新增 40 MiB APK 体积硬门槛防止依赖回归；历史 Actions artifact 在引入 Firestack 前为约 27.27 MB、引入后为约 55.01 MB。
 - Steam 访问增强从失败的全设备 VPN/TLS Record Fragmentation 产品路径切换为 WallHub 进程内方案：移除 manifest `VpnService` 与设置入口，只对 `steamcommunity.com`、`www.steamcommunity.com`、`api.steampowered.com`、`community.steam-api.com` 自动检测直连；直连异常且严格无 SNI 探测成功时，由仅绑定 `127.0.0.1` 的认证 CONNECT/TLS 桥接入候选地址，下载、图片、视频、Depot、Steam CM 和其他应用流量不受影响。
 - 内置线路使用仅存活于应用进程的 P-256 临时根与精确 SAN 叶证书维持现有 OkHttp URL、Cookie、重定向和请求体语义，不向 Android 安装 CA；上游 ClientHello 明确清空 `server_name`，仍强制 Android 系统 CA 链和原 Steam 主机名验证。新增协议级 ClientHello 捕获、错误主机名拒绝、精确域名范围测试，并恢复默认开启的自动检测与手动刷新状态 UI；下载代理不再与核心服务访问线路互斥。

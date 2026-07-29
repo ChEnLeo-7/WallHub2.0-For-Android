@@ -54,8 +54,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.isImeVisible
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
@@ -1659,7 +1657,7 @@ private fun HomeResults(
         if (shouldAutoLoadMore) onLoadNextPage()
     }
     PullToRefreshBox(
-        isRefreshing = state.isInitialLoading || state.isPageLoading,
+        isRefreshing = (state.isInitialLoading || state.isPageLoading) && !state.isSteamIpPrewarming,
         onRefresh = onRetry,
         modifier = modifier
             .fillMaxWidth()
@@ -3900,12 +3898,7 @@ private fun HomeFiltersSheet(
     LaunchedEffect(applied) {
         if (draft != applied) draft = applied
     }
-    val pagerState = rememberPagerState(
-        initialPage = pages.indexOf(initialPage).coerceAtLeast(0),
-        pageCount = pages::size,
-    )
-    val pagerScope = rememberCoroutineScope()
-    val selectedPage = pages[pagerState.currentPage.coerceIn(0, pages.lastIndex)]
+    var selectedPage by rememberSaveable { mutableStateOf(initialPage) }
     val browseScrollState = rememberScrollState()
     val contentScrollState = rememberScrollState()
     val themeScrollState = rememberScrollState()
@@ -3963,18 +3956,15 @@ private fun HomeFiltersSheet(
                         draft = draft,
                         language = config.language,
                         compact = true,
-                        onPageSelected = { page ->
-                            pagerScope.launch { pagerState.animateScrollToPage(pages.indexOf(page)) }
-                        },
+                        onPageSelected = { page -> selectedPage = page },
                     )
-                    HorizontalPager(
-                        state = pagerState,
+                    AnimatedContent(
+                        targetState = selectedPage,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
-                        key = { page -> pages[page].name },
-                    ) { pageIndex ->
-                        val page = pages[pageIndex]
+                            .heightIn(max = contentMaxHeight),
+                        label = "HomeFilterPage",
+                    ) { page ->
                         HomeFilterPageContent(
                             page = page,
                             config = config,
@@ -3987,7 +3977,7 @@ private fun HomeFiltersSheet(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f)
+                            .heightIn(max = contentMaxHeight)
                             .padding(horizontal = horizontalPadding),
                         horizontalArrangement = Arrangement.spacedBy(24.dp),
                     ) {
@@ -3997,17 +3987,14 @@ private fun HomeFiltersSheet(
                             draft = draft,
                             language = config.language,
                             compact = false,
-                            onPageSelected = { page ->
-                                pagerScope.launch { pagerState.animateScrollToPage(pages.indexOf(page)) }
-                            },
+                            onPageSelected = { page -> selectedPage = page },
                             modifier = Modifier.width(208.dp),
                         )
-                        HorizontalPager(
-                            state = pagerState,
+                        AnimatedContent(
+                            targetState = selectedPage,
                             modifier = Modifier.weight(1f),
-                            key = { page -> pages[page].name },
-                        ) { pageIndex ->
-                            val page = pages[pageIndex]
+                            label = "HomeFilterPage",
+                        ) { page ->
                             HomeFilterPageContent(
                                 page = page,
                                 config = config,

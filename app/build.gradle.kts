@@ -100,6 +100,7 @@ dependencies {
     implementation(project(":data:workshop"))
     implementation(project(":data:downloads"))
     implementation(project(":data:diagnostics"))
+    implementation(project(":data:update"))
     implementation(project(":feature:home"))
     implementation(project(":feature:detail"))
     implementation(project(":feature:downloads"))

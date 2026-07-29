@@ -2,6 +2,7 @@ package com.wallhub.android
 
 import com.wallhub.android.core.model.DiagnosticRepository
 import com.wallhub.android.core.model.AccountWorkshopRepository
+import com.wallhub.android.core.model.AppUpdateRepository
 import com.wallhub.android.core.model.DownloadTaskRepository
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionRepository
@@ -19,6 +20,7 @@ import com.wallhub.android.data.downloads.SteamWorkshopVideoStreamRepository
 import com.wallhub.android.data.settings.DataStoreSettingsRepository
 import com.wallhub.android.data.steam.SecureSteamSessionRepository
 import com.wallhub.android.data.steamaccess.SteamAccessManager
+import com.wallhub.android.data.update.GitHubAppUpdateRepository
 import com.wallhub.android.data.workshop.CommunityWorkshopRepository
 import dagger.Binds
 import dagger.Module
@@ -100,4 +102,10 @@ abstract class RepositoryModule {
     abstract fun bindDiagnosticRepository(
         repository: FileDiagnosticRepository,
     ): DiagnosticRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAppUpdateRepository(
+        repository: GitHubAppUpdateRepository,
+    ): AppUpdateRepository
 }
