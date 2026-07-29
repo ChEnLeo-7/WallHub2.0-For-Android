@@ -30,7 +30,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.resetMain
@@ -104,13 +103,13 @@ class HomeSteamIpPrewarmTest {
     @Test
     fun `initial browse remains blocked until prewarm completes`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val prewarm = CompletableDeferred<Boolean>()
         try {
-            val prewarm = CompletableDeferred<Boolean>()
             val steamAccess = FakeSteamAccessRepository { prewarm.await() }
             val workshop = FakeWorkshopRepository()
             val viewModel = homeViewModel(workshop, steamAccess)
 
-            runCurrent()
+            advanceUntilIdle()
 
             assertTrue(viewModel.uiState.value.isSteamIpPrewarming)
             assertEquals(0, workshop.browseRequests)
@@ -121,6 +120,8 @@ class HomeSteamIpPrewarmTest {
             assertEquals(1, workshop.browseRequests)
             assertFalse(viewModel.uiState.value.isSteamIpPrewarming)
         } finally {
+            prewarm.complete(true)
+            advanceUntilIdle()
             Dispatchers.resetMain()
         }
     }
