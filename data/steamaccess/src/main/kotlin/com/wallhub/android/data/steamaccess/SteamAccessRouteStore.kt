@@ -36,12 +36,21 @@ internal class SteamAccessRouteStore(context: Context) {
         }
     }
 
-    fun recordSuccess(networkType: String, hostname: String, address: InetAddress) {
+    fun recordSuccess(
+        networkType: String,
+        hostname: String,
+        address: InetAddress,
+        elapsedMs: Long? = null,
+    ) {
         update(networkType, hostname, address) { record ->
             record.put("success", record.optInt("success") + 1)
             record.put("consecutiveFailure", 0)
             record.put("lastSuccessAt", System.currentTimeMillis())
             record.put("cooldownUntil", 0L)
+            elapsedMs?.takeIf { value -> value >= 0L }?.let { value ->
+                val previous = record.optLong("latencyEwmaMs", value)
+                record.put("latencyEwmaMs", ((previous * 3L) + value) / 4L)
+            }
         }
     }
 
@@ -92,8 +101,9 @@ internal class SteamAccessRouteStore(context: Context) {
 
         internal fun score(record: JSONObject, now: Long): Int {
             val recentBonus = if (now - record.optLong("lastSuccessAt") < 30 * 60_000L) 400 else 0
+            val latencyPenalty = (record.optLong("latencyEwmaMs", 0L) / 10L).coerceAtMost(300L).toInt()
             return record.optInt("success") * 100 + recentBonus -
-                record.optInt("consecutiveFailure") * 150
+                record.optInt("consecutiveFailure") * 150 - latencyPenalty
         }
     }
 }

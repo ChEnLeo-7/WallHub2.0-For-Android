@@ -22,6 +22,23 @@ class SteamAccessRouteStoreTest {
     }
 
     @Test
+    fun `lower handshake latency wins when health history is otherwise equal`() {
+        val now = 1_000_000L
+        val fast = JSONObject()
+            .put("success", 2)
+            .put("lastSuccessAt", now)
+            .put("consecutiveFailure", 0)
+            .put("latencyEwmaMs", 120L)
+        val slow = JSONObject()
+            .put("success", 2)
+            .put("lastSuccessAt", now)
+            .put("consecutiveFailure", 0)
+            .put("latencyEwmaMs", 2_500L)
+
+        assertTrue(SteamAccessRouteStore.score(fast, now) > SteamAccessRouteStore.score(slow, now))
+    }
+
+    @Test
     fun `failure cooldown grows and caps at thirty minutes`() {
         assertEquals(3 * 60_000L, SteamAccessRouteStore.failureCooldown(1))
         assertEquals(10 * 60_000L, SteamAccessRouteStore.failureCooldown(2))

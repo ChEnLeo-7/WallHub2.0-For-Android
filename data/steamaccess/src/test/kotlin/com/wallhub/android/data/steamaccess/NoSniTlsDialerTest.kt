@@ -48,6 +48,63 @@ class NoSniTlsDialerTest {
     }
 
     @Test
+    fun `real connection race attributes completed candidate failures`() {
+        val privateCa = WallHubPrivateCa()
+        val socketFactory = socketFactoryTrusting(privateCa.rootCertificate())
+        val dialer = NoSniTlsDialer(socketFactory, exactSanVerifier())
+        val server = startTlsServer(privateCa, "steamcommunity.com")
+        val failures = mutableListOf<String>()
+
+        val accepted = dialer.connect(
+            hostname = "steamcommunity.com",
+            candidates = listOf(
+                InetAddress.getByName("127.0.0.2"),
+                InetAddress.getLoopbackAddress(),
+            ),
+            port = server.port,
+            onFailure = { address, _ -> failures += address.hostAddress },
+        )
+
+        assertEquals(InetAddress.getLoopbackAddress().hostAddress, accepted.address.hostAddress)
+        assertEquals(listOf("127.0.0.2"), failures)
+        accepted.socket.close()
+        server.close()
+    }
+
+    @Test
+    fun `race timeout attributes candidate and closes in-flight socket`() {
+        val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
+        val executor = Executors.newSingleThreadExecutor()
+        val closed = executor.submit<Boolean> {
+            server.accept().use { socket ->
+                while (socket.getInputStream().read() >= 0) Unit
+                true
+            }
+        }
+        val failures = mutableListOf<String>()
+        val dialer = NoSniTlsDialer(
+            socketFactory = defaultSocketFactory(),
+            hostnameVerifier = exactSanVerifier(),
+            raceDelayMs = 0L,
+            connectRaceBudgetMs = 150L,
+        )
+
+        assertFails {
+            dialer.connect(
+                hostname = "steamcommunity.com",
+                candidates = listOf(InetAddress.getLoopbackAddress()),
+                port = server.localPort,
+                onFailure = { address, _ -> failures += address.hostAddress },
+            )
+        }
+
+        assertEquals(listOf(InetAddress.getLoopbackAddress().hostAddress), failures)
+        assertTrue(closed.get(2, TimeUnit.SECONDS))
+        server.close()
+        executor.shutdownNow()
+    }
+
+    @Test
     fun `strict validation accepts original host and rejects another steam host`() {
         val privateCa = WallHubPrivateCa()
         val socketFactory = socketFactoryTrusting(privateCa.rootCertificate())

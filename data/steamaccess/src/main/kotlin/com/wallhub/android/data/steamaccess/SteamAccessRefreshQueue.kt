@@ -14,7 +14,7 @@ internal class SteamAccessRefreshQueue(
         scope.launch {
             while (true) {
                 requests.receive()
-                refreshAction()
+                runCatching(refreshAction)
             }
         }
     }

@@ -4,6 +4,7 @@ import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.security.SecureRandom
 import java.util.Collections
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -29,6 +30,8 @@ internal data class AuthenticatedSteamSocket(
 internal class NoSniTlsDialer internal constructor(
     private val socketFactory: SSLSocketFactory,
     private val hostnameVerifier: HostnameVerifier,
+    private val raceDelayMs: Long = RACE_DELAY_MS,
+    private val connectRaceBudgetMs: Long = CONNECT_RACE_BUDGET_MS,
 ) {
     @Inject
     constructor() : this(
@@ -36,40 +39,65 @@ internal class NoSniTlsDialer internal constructor(
             init(null, null, SecureRandom())
         }.socketFactory,
         hostnameVerifier = OkHttpClient().hostnameVerifier,
+        raceDelayMs = RACE_DELAY_MS,
+        connectRaceBudgetMs = CONNECT_RACE_BUDGET_MS,
     )
-
-    private val raceExecutor = Executors.newFixedThreadPool(MAX_RACING_THREADS) { runnable ->
-        Thread(runnable, "WallHub-NoSniDialer").apply { isDaemon = true }
-    }
 
     fun connect(
         hostname: String,
         candidates: List<InetAddress>,
         port: Int = HTTPS_PORT,
+        onFailure: (InetAddress, Throwable) -> Unit = { _, _ -> },
     ): AuthenticatedSteamSocket {
         val host = SteamDomainPolicy.requireSupported(hostname)
         val addresses = candidates.distinctBy(InetAddress::getHostAddress).take(MAX_RACE_ADDRESSES)
         if (addresses.isEmpty()) throw IOException("No no-SNI candidates for $host")
 
-        val openedSockets = ConcurrentLinkedQueue<SSLSocket>()
-        val completion = ExecutorCompletionService<Result<AuthenticatedSteamSocket>>(raceExecutor)
+        val openedSockets = ConcurrentLinkedQueue<Socket>()
+        val raceExecutor = Executors.newFixedThreadPool(addresses.size) { runnable ->
+            Thread(runnable, "WallHub-NoSniDialer").apply { isDaemon = true }
+        }
+        val completion = ExecutorCompletionService<DialAttempt>(raceExecutor)
         val futures = addresses.mapIndexed { index, address ->
             completion.submit(java.util.concurrent.Callable {
-                if (index > 0) Thread.sleep(RACE_DELAY_MS)
-                runCatching { authenticate(host, address, port, openedSockets) }
+                if (index > 0) Thread.sleep(raceDelayMs)
+                DialAttempt(
+                    address = address,
+                    result = runCatching { authenticate(host, address, port, openedSockets) },
+                )
             })
         }
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(connectRaceBudgetMs)
+        val completedAddresses = mutableSetOf<String>()
+        var winnerSocket: SSLSocket? = null
         var lastFailure: Throwable? = null
-        repeat(addresses.size) {
-            val result = completion.take().get()
-            result.onSuccess { winner ->
-                futures.forEach { future -> future.cancel(true) }
-                openedSockets.filter { socket -> socket !== winner.socket }.forEach { socket -> socket.closeQuietly() }
-                return winner
-            }.onFailure { error -> lastFailure = error }
+        try {
+            repeat(addresses.size) {
+                val remainingNanos = deadline - System.nanoTime()
+                if (remainingNanos <= 0L) return@repeat
+                val completed = completion.poll(remainingNanos, TimeUnit.NANOSECONDS) ?: return@repeat
+                val attempt = completed.get()
+                completedAddresses += attempt.address.hostAddress.orEmpty()
+                attempt.result.onSuccess { winner ->
+                    winnerSocket = winner.socket
+                    return winner
+                }.onFailure { error ->
+                    lastFailure = error
+                    runCatching { onFailure(attempt.address, error) }
+                }
+            }
+            val timeout = SocketTimeoutException(
+                "No no-SNI candidate connected within $connectRaceBudgetMs ms",
+            )
+            addresses.filterNot { address -> address.hostAddress.orEmpty() in completedAddresses }.forEach { address ->
+                runCatching { onFailure(address, timeout) }
+            }
+            throw IOException("No authenticated no-SNI route for $host", lastFailure ?: timeout)
+        } finally {
+            futures.forEach { future -> future.cancel(true) }
+            openedSockets.filter { socket -> socket !== winnerSocket }.forEach { socket -> socket.closeQuietly() }
+            raceExecutor.shutdownNow()
         }
-        openedSockets.forEach { socket -> socket.closeQuietly() }
-        throw IOException("No authenticated no-SNI route for $host", lastFailure)
     }
 
     fun probe(
@@ -97,10 +125,11 @@ internal class NoSniTlsDialer internal constructor(
         hostname: String,
         address: InetAddress,
         port: Int,
-        openedSockets: ConcurrentLinkedQueue<SSLSocket>?,
+        openedSockets: ConcurrentLinkedQueue<Socket>?,
     ): AuthenticatedSteamSocket {
         val startedAt = System.nanoTime()
         val rawSocket = Socket()
+        openedSockets?.add(rawSocket)
         try {
             rawSocket.tcpNoDelay = true
             rawSocket.soTimeout = HANDSHAKE_TIMEOUT_MS
@@ -112,6 +141,7 @@ internal class NoSniTlsDialer internal constructor(
                 true,
             ) as SSLSocket
             openedSockets?.add(sslSocket)
+            openedSockets?.remove(rawSocket)
             sslSocket.enabledProtocols = sslSocket.supportedProtocols
                 .filter { protocol -> protocol == "TLSv1.3" || protocol == "TLSv1.2" }
                 .toTypedArray()
@@ -130,6 +160,7 @@ internal class NoSniTlsDialer internal constructor(
                 elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt),
             )
         } catch (error: Throwable) {
+            openedSockets?.remove(rawSocket)
             rawSocket.closeQuietly()
             throw error
         }
@@ -139,11 +170,16 @@ internal class NoSniTlsDialer internal constructor(
         runCatching { close() }
     }
 
+    private data class DialAttempt(
+        val address: InetAddress,
+        val result: Result<AuthenticatedSteamSocket>,
+    )
+
     private companion object {
         const val HTTPS_PORT = 443
         const val MAX_RACE_ADDRESSES = 2
-        const val MAX_RACING_THREADS = 4
         const val RACE_DELAY_MS = 200L
+        const val CONNECT_RACE_BUDGET_MS = 6_000L
         const val CONNECT_TIMEOUT_MS = 4_000
         const val HANDSHAKE_TIMEOUT_MS = 5_000
     }

@@ -51,6 +51,7 @@ internal class SteamLoopbackTlsBridge @Inject constructor(
     private fun handle(clientSocket: Socket) {
         var upstreamSocket: Socket? = null
         var securedClientSocket: Socket? = null
+        var selectedRoute: SteamAccessManager.AcceleratedRoute? = null
         var tunnelEstablished = false
         try {
             clientSocket.soTimeout = HEADER_TIMEOUT_MS
@@ -67,12 +68,33 @@ internal class SteamLoopbackTlsBridge @Inject constructor(
             }
             val host = SteamDomainPolicy.requireSupported(request.host)
             if (request.port != HTTPS_PORT) throw IOException("Unsupported CONNECT port")
-            val candidates = accessManager.acceleratedAddresses(host)
-            val upstream = noSniTlsDialer.connect(host, candidates)
+            val route = accessManager.acceleratedRoute(host)
+            selectedRoute = route
+            val upstream = noSniTlsDialer.connect(
+                hostname = host,
+                candidates = route.addresses,
+                onFailure = { address, error ->
+                    accessManager.recordAcceleratedFailure(
+                        hostname = host,
+                        selectedNetworkType = route.networkType,
+                        generation = route.generation,
+                        address = address,
+                        error = error,
+                    )
+                },
+            )
             upstreamSocket = upstream.socket
-            accessManager.recordAcceleratedSuccess(host, upstream.address)
+            val committed = accessManager.commitAcceleratedRoute(
+                route = route,
+                hostname = host,
+                address = upstream.address,
+                elapsedMs = upstream.elapsedMs,
+                commitTunnel = {
+                    writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
+                },
+            )
+            if (!committed) throw IOException("Steam route changed during upstream connection")
 
-            writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
             val securedClient = privateCa.createServerSocket(clientSocket, host).apply {
                 soTimeout = 0
                 startHandshake()
@@ -81,7 +103,8 @@ internal class SteamLoopbackTlsBridge @Inject constructor(
             tunnelEstablished = true
             relay(securedClient, upstream.socket)
         } catch (error: Throwable) {
-            if (!tunnelEstablished) runCatching { accessManager.recordBridgeFailure(error) }
+            val routeIsCurrent = selectedRoute?.let(accessManager::isRouteCurrent) != false
+            if (!tunnelEstablished && routeIsCurrent) runCatching { accessManager.recordBridgeFailure(error) }
             if (securedClientSocket == null && !clientSocket.isClosed) {
                 runCatching {
                     writeResponse(
