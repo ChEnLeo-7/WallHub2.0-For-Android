@@ -21,7 +21,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.ScrollState
@@ -4040,27 +4039,28 @@ private fun HomeFiltersSheet(
     }
 }
 
-private fun homeFilterPageContentTransform(): ContentTransform =
-    (fadeIn(
+private fun homeFilterPageContentTransform(): ContentTransform = ContentTransform(
+    targetContentEnter = fadeIn(
         animationSpec = tween(
             durationMillis = HOME_FILTER_PAGE_ENTER_DURATION_MS,
             delayMillis = HOME_FILTER_PAGE_EXIT_DURATION_MS,
-            easing = FastOutSlowInEasing,
+            easing = HOME_FILTER_PAGE_EASING,
         ),
-    ) togetherWith fadeOut(
+    ),
+    initialContentExit = fadeOut(
         animationSpec = tween(
             durationMillis = HOME_FILTER_PAGE_EXIT_DURATION_MS,
-            easing = FastOutSlowInEasing,
+            easing = HOME_FILTER_PAGE_EASING,
         ),
-    )).using(
-        SizeTransform(clip = true) { _, _ ->
-            tween(
-                durationMillis = HOME_FILTER_SHEET_PAGE_SIZE_DURATION_MS,
-                delayMillis = HOME_FILTER_PAGE_EXIT_DURATION_MS,
-                easing = FastOutSlowInEasing,
-            )
-        },
-    )
+    ),
+    sizeTransform = SizeTransform(clip = true) { _, _ ->
+        tween(
+            durationMillis = HOME_FILTER_SHEET_PAGE_SIZE_DURATION_MS,
+            delayMillis = HOME_FILTER_PAGE_EXIT_DURATION_MS,
+            easing = HOME_FILTER_PAGE_EASING,
+        )
+    },
+)
 
 @Composable
 private fun HomeFilterSheetHeader(
