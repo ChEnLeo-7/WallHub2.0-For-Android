@@ -451,6 +451,17 @@ internal fun shouldPrewarmSteamIp(
     !hasItems &&
     dataSource != SteamWorkshopDataSource.CM_WEBSOCKET
 
+internal suspend fun requireSteamIpPrewarm(
+    shouldPrewarm: Boolean,
+    dataSource: SteamWorkshopDataSource,
+    steamAccessRepository: SteamAccessRepository,
+    failureMessage: String,
+) {
+    if (shouldPrewarm && !steamAccessRepository.prewarmSteamIp(dataSource)) {
+        error(failureMessage)
+    }
+}
+
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val workshopRepository: WorkshopRepository,
@@ -709,15 +720,15 @@ class HomeViewModel @Inject constructor(
             )
             try {
                 if (shouldPrewarm) {
-                    val ready = steamAccessRepository.prewarmSteamIp(requestState.steamWorkshopDataSource)
-                    if (!ready) {
-                        error(
-                            requestState.text(
-                                "Steam IP预热失败，请检查网络后重试",
-                                "Steam IP prewarm failed. Check your network and retry.",
-                            ),
-                        )
-                    }
+                    requireSteamIpPrewarm(
+                        shouldPrewarm = true,
+                        dataSource = requestState.steamWorkshopDataSource,
+                        steamAccessRepository = steamAccessRepository,
+                        failureMessage = requestState.text(
+                            "Steam IP预热失败，请检查网络后重试",
+                            "Steam IP prewarm failed. Check your network and retry.",
+                        ),
+                    )
                     mutableState.value = mutableState.value.copy(isSteamIpPrewarming = false)
                 }
                 val response = workshopRepository.browse(
