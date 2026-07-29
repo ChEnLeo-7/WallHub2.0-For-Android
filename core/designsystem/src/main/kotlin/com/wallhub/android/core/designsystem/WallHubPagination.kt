@@ -442,7 +442,7 @@ private data class PaginationWindow(
     val totalPages: Int,
 )
 
-private val PAGINATION_TOUCH_TARGET_SIZE = 48.dp
+private val PAGINATION_TOUCH_TARGET_SIZE = WallHubSizeTokens.minimumTouchTarget
 private val PAGINATION_TOUCH_INSET = 4.dp
 private val PAGINATION_VISUAL_HEIGHT = 52.dp
 private val PAGINATION_VISUAL_MIN_WIDTH = 40.dp

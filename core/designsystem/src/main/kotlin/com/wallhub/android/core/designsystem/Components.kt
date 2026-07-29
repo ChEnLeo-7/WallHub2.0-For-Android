@@ -207,9 +207,9 @@ fun WallHubTopToast(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = WALLHUB_TOAST_MIN_HEIGHT)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = WallHubSpacing.sm, vertical = WallHubSpacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
                 Surface(
                     shape = RoundedCornerShape(9.dp),
@@ -219,7 +219,7 @@ fun WallHubTopToast(
                     Icon(
                         imageVector = WallHubIcons.Outlined.Check,
                         contentDescription = null,
-                        modifier = Modifier.padding(6.dp),
+                        modifier = Modifier.padding(WallHubSpacing.xs),
                     )
                 }
                 Text(
@@ -489,7 +489,7 @@ fun WallHubFilterSheetHeader(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = FILTER_SHEET_HEADER_MIN_HEIGHT),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -813,7 +813,7 @@ private val WALLHUB_TOAST_BLUR_RADIUS = 18.dp
 private val WALLHUB_TOAST_TOP_OFFSET = 4.dp
 private val WALLHUB_TOAST_HORIZONTAL_MARGIN = 16.dp
 private val WALLHUB_TOAST_MAX_WIDTH = 420.dp
-private val WALLHUB_TOAST_MIN_HEIGHT = 48.dp
+private val WALLHUB_TOAST_MIN_HEIGHT = WallHubSizeTokens.minimumTouchTarget
 private val WALLHUB_TOAST_BORDER_WIDTH = 0.5.dp
 private const val WALLHUB_TOAST_Z_INDEX = 10f
 private const val WALLHUB_TOAST_DURATION_MS = 3_000L

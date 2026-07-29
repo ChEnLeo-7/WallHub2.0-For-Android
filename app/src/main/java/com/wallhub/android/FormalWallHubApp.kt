@@ -65,7 +65,9 @@ import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubGlobalToastHost
 import com.wallhub.android.core.designsystem.WallHubTheme
+import com.wallhub.android.core.designsystem.WallHubWindowSizeClass
 import com.wallhub.android.core.designsystem.rememberWallHubToastState
+import com.wallhub.android.core.designsystem.wallHubWindowSizeClass
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.feature.detail.LocalVideoPlayerRoute
@@ -159,7 +161,7 @@ fun FormalWallHubApp(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val useNavigationRail = maxWidth >= 720.dp
+            val useNavigationRail = wallHubWindowSizeClass(maxWidth) != WallHubWindowSizeClass.COMPACT
             if (useNavigationRail) {
                 Row(modifier = Modifier.fillMaxSize()) {
                     if (isTopLevelDestination) {

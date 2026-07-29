@@ -97,7 +97,7 @@ fun WallHubContextMenuSurface(
             modifier = Modifier
                 .heightIn(max = WallHubContextMenuDefaults.MaxHeight)
                 .verticalScroll(rememberScrollState())
-                .padding(vertical = 4.dp),
+            .padding(vertical = WallHubSpacing.xxs),
             content = content,
         )
     }
@@ -119,16 +119,16 @@ fun WallHubContextMenuMetadataItem(
             }
             .clickable(onClick = onClick)
             .semantics { role = Role.Button }
-            .padding(horizontal = 10.dp, vertical = 7.dp),
+            .padding(horizontal = WallHubSpacing.xs, vertical = 7.dp),
         verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
             modifier = Modifier
                 .padding(top = 3.dp)
-                .size(18.dp),
+                .size(WallHubSizeTokens.compactIcon),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -164,14 +164,14 @@ fun WallHubContextMenuAction(
             }
             .clickable(onClick = onClick)
             .semantics { role = Role.Button }
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = WallHubSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(WallHubSizeTokens.compactIcon),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
