@@ -180,8 +180,8 @@ private enum class SettingsCategory(
     STEAM(
         labelZh = "Steam",
         labelEn = "Steam",
-        descriptionZh = "登录状态与账户管理",
-        descriptionEn = "Sign-in state and account management",
+        descriptionZh = "账户、服务访问与创意工坊数据源",
+        descriptionEn = "Account, service access, and Workshop data source",
         icon = Icons.Outlined.PersonOutline,
     ),
     APPEARANCE(
@@ -194,8 +194,8 @@ private enum class SettingsCategory(
     EXPERIMENTAL(
         labelZh = "实验功能",
         labelEn = "Experimental",
-        descriptionZh = "创意工坊数据源与在线分块播放",
-        descriptionEn = "Workshop sources and online chunk streaming",
+        descriptionZh = "在线分块播放与系统权限",
+        descriptionEn = "Online chunk streaming and system permissions",
         icon = Icons.Outlined.Notifications,
     ),
     ;
@@ -628,8 +628,10 @@ fun SettingsScreen(
                         steamAccessState = steamAccessState,
                         steamAccessDohEndpoints = preferences.steamAccessDohEndpoints,
                         steamAccessDisabledDohEndpoints = preferences.steamAccessDisabledDohEndpoints,
+                        steamWorkshopDataSource = preferences.steamWorkshopDataSource,
                         onSteamAccessEnabledChange = onSteamAccessEnabledChange,
                         onSteamAccessDohEndpointsChange = onSteamAccessDohEndpointsChange,
+                        onSteamWorkshopDataSourceChange = onSteamWorkshopDataSourceChange,
                         onRefreshSteamAccess = onRefreshSteamAccess,
                         savedApiKey = preferences.steamApiKey,
                         apiKey = steamApiKey,
@@ -686,7 +688,6 @@ fun SettingsScreen(
                 if (displayedCategory == SettingsCategory.EXPERIMENTAL) {
                     ExperimentalSettingsContent(
                         preferences = preferences,
-                        onSteamWorkshopDataSourceChange = onSteamWorkshopDataSourceChange,
                         onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
                         onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
                         onRequestNotifications = onRequestNotifications,
@@ -1064,8 +1065,10 @@ private fun SteamSettingsContent(
     steamAccessState: SteamAccessState,
     steamAccessDohEndpoints: List<String>,
     steamAccessDisabledDohEndpoints: Set<String>,
+    steamWorkshopDataSource: SteamWorkshopDataSource,
     onSteamAccessEnabledChange: (Boolean) -> Unit,
     onSteamAccessDohEndpointsChange: (List<String>, Set<String>) -> Unit,
+    onSteamWorkshopDataSourceChange: (SteamWorkshopDataSource) -> Unit,
     onRefreshSteamAccess: () -> Unit,
     savedApiKey: String,
     apiKey: String,
@@ -1182,6 +1185,45 @@ private fun SteamSettingsContent(
                 )
             }
         }
+    }
+
+    SettingsSection(
+        title = language.text("创意工坊数据源", "Workshop data source"),
+        supportingText = language.text(
+            "为发现、详情与评论选择严格的数据通道",
+            "Choose the strict data channel used by discovery, details, and comments",
+        ),
+        icon = Icons.Outlined.Language,
+    ) {
+        SettingChoiceRow(
+            title = language.text("数据获取源", "Data source"),
+            selectedValue = steamWorkshopDataSource,
+            values = SteamWorkshopDataSource.entries,
+            label = { source ->
+                when (source) {
+                    SteamWorkshopDataSource.COMMUNITY_HTML -> "Steam Community HTML"
+                    SteamWorkshopDataSource.WEB_API -> "Steam Web API"
+                    SteamWorkshopDataSource.CM_WEBSOCKET -> "Steam CM WebSocket"
+                }
+            },
+            supportingText = when (steamWorkshopDataSource) {
+                SteamWorkshopDataSource.COMMUNITY_HTML -> language.text(
+                    "使用 Steam Community 页面获取公开数据",
+                    "Use Steam Community pages for public data",
+                )
+
+                SteamWorkshopDataSource.WEB_API -> language.text(
+                    "发现页需要有效的 Steam API Key",
+                    "Discovery requires a valid Steam API key",
+                )
+
+                SteamWorkshopDataSource.CM_WEBSOCKET -> language.text(
+                    "公开发现与详情支持匿名 CM；评论需要登录",
+                    "Public discovery and details support anonymous CM; comments require sign-in",
+                )
+            },
+            onSelected = onSteamWorkshopDataSourceChange,
+        )
     }
 
     SettingsSection(
@@ -1779,7 +1821,6 @@ private fun SteamAccessDohEndpointItem(
 @Composable
 private fun ExperimentalSettingsContent(
     preferences: AppPreferences,
-    onSteamWorkshopDataSourceChange: (SteamWorkshopDataSource) -> Unit,
     onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
     onRequestNotifications: () -> Unit,
@@ -1793,41 +1834,6 @@ private fun ExperimentalSettingsContent(
             "Turn off the related option to return to the default flow if stability issues occur.",
         ),
     )
-
-    SettingsSection(
-        title = text("创意工坊数据源", "Workshop data source"),
-        icon = Icons.Outlined.Language,
-    ) {
-        SettingChoiceRow(
-            title = text("数据获取源", "Data source"),
-            selectedValue = preferences.steamWorkshopDataSource,
-            values = SteamWorkshopDataSource.entries,
-            label = { source ->
-                when (source) {
-                    SteamWorkshopDataSource.COMMUNITY_HTML -> "Steam Community HTML"
-                    SteamWorkshopDataSource.WEB_API -> "Steam Web API"
-                    SteamWorkshopDataSource.CM_WEBSOCKET -> "Steam CM WebSocket"
-                }
-            },
-            supportingText = when (preferences.steamWorkshopDataSource) {
-                SteamWorkshopDataSource.COMMUNITY_HTML -> text(
-                    "使用 Steam Community 页面获取公开数据",
-                    "Use Steam Community pages for public data",
-                )
-
-                SteamWorkshopDataSource.WEB_API -> text(
-                    "发现页需要有效的 Steam API Key",
-                    "Discovery requires a valid Steam API key",
-                )
-
-                SteamWorkshopDataSource.CM_WEBSOCKET -> text(
-                    "公开发现与详情支持匿名 CM；评论需要登录",
-                    "Public discovery and details support anonymous CM; comments require sign-in",
-                )
-            },
-            onSelected = onSteamWorkshopDataSourceChange,
-        )
-    }
 
     SettingsSection(
         title = text("在线播放", "Online playback"),
