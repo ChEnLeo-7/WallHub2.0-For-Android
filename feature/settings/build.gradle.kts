@@ -35,6 +35,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.coil.compose)
+    implementation(libs.markdown.renderer.m3)
     implementation(libs.hilt.android)
     implementation(libs.kotlinx.coroutines.android)
 

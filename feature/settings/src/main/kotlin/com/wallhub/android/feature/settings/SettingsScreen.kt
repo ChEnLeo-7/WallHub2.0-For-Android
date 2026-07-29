@@ -1,8 +1,6 @@
 package com.wallhub.android.feature.settings
 
 import android.Manifest
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.ContentResolver
 import android.content.Intent
 import android.graphics.Color as AndroidColor
@@ -10,7 +8,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -64,7 +61,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
@@ -187,6 +183,11 @@ data class AppUpdateUiState(
     val totalBytes: Long = 0L,
     val message: String? = null,
 ) {
+    val canDownloadRelease: Boolean
+        get() = release?.isNewer == true &&
+            downloadedApkPath == null &&
+            (phase == AppUpdatePhase.AVAILABLE || phase == AppUpdatePhase.FAILED)
+
     val progress: Float
         get() = if (totalBytes > 0L) {
             (downloadedBytes.toDouble() / totalBytes.toDouble()).coerceIn(0.0, 1.0).toFloat()
@@ -410,8 +411,11 @@ class SettingsViewModel @Inject constructor(
         if (appUpdateJob != null) return
         mutableAppUpdateState.value = mutableAppUpdateState.value.copy(
             phase = AppUpdatePhase.CHECKING,
-            message = null,
+            release = null,
             downloadedApkPath = null,
+            downloadedBytes = 0L,
+            totalBytes = 0L,
+            message = null,
         )
         appUpdateJob = viewModelScope.launch {
             try {
@@ -1054,256 +1058,21 @@ private fun BasicSettingsContent(
     onInstallDownloadedRelease: (String) -> Unit,
     onExportDiagnostics: () -> Unit,
 ) {
-    val context = LocalContext.current
     val installed = appUpdateState.installed
-    val release = appUpdateState.release
-    fun openUrl(url: String) {
-        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-    }
-
-    SettingsSection(
-        title = language.text("内容访问", "Content access"),
-        supportingText = language.text(
-            "管理可能不适合所有用户的内容",
-            "Manage content that may not be suitable for everyone",
-        ),
-        icon = Icons.Outlined.Visibility,
-    ) {
-        SettingsSwitchRow(
-            title = language.text("NSFW 内容", "NSFW content"),
-            supportingText = language.text(
-                "开启前请确认你已了解这类内容的含义",
-                "Enable only if you understand what this content category includes",
-            ),
-            checked = matureContentEnabled,
-            onCheckedChange = onMatureContentEnabledChange,
-        )
-    }
 
     SettingsSection(
         title = language.text("关于 WallHub", "About WallHub"),
-        supportingText = language.text(
-            "应用身份、版本与社区入口",
-            "App identity, version, and community links",
-        ),
         icon = Icons.Outlined.Info,
     ) {
-        SettingsListItem(
-            headlineContent = { Text(installed.appName) },
-            supportingContent = {
-                Text(
-                    language.text(
-                        "版本 ${installed.versionName} (${installed.versionCode})\n${installed.packageName}",
-                        "Version ${installed.versionName} (${installed.versionCode})\n${installed.packageName}",
-                    ),
-                )
-            },
+        AboutWallHubContent(
+            language = language,
+            installed = installed,
+            appUpdateState = appUpdateState,
+            onCheckForAppUpdate = onCheckForAppUpdate,
+            onDownloadLatestRelease = onDownloadLatestRelease,
+            onCancelAppUpdateDownload = onCancelAppUpdateDownload,
+            onInstallDownloadedRelease = onInstallDownloadedRelease,
         )
-        SettingsItemDivider()
-        SettingsExternalLinkRow(
-            title = language.text("作者", "Author"),
-            value = "CHENLEO_7",
-            onClick = { openUrl(AUTHOR_GITHUB_URL) },
-        )
-        SettingsItemDivider()
-        SettingsListItem(
-            headlineContent = { Text(language.text("QQ 交流群", "QQ community group")) },
-            supportingContent = { Text(QQ_GROUP_NUMBER) },
-            trailingContent = {
-                IconButton(
-                    onClick = {
-                        val clipboard = context.getSystemService(ClipboardManager::class.java)
-                        clipboard.setPrimaryClip(ClipData.newPlainText("WallHub QQ", QQ_GROUP_NUMBER))
-                        Toast.makeText(
-                            context,
-                            language.text("群号已复制", "Group number copied"),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    },
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ContentCopy,
-                        contentDescription = language.text("复制群号", "Copy group number"),
-                    )
-                }
-            },
-        )
-        SettingsItemDivider()
-        SettingsExternalLinkRow(
-            title = language.text("GitHub 仓库", "GitHub repository"),
-            value = GITHUB_REPOSITORY_LABEL,
-            onClick = { openUrl(GITHUB_REPOSITORY_URL) },
-        )
-    }
-
-    SettingsSection(
-        title = language.text("贡献人员", "Contributors"),
-        supportingText = language.text(
-            "感谢参与 WallHub 开发与改进的贡献者",
-            "Thanks to the people who help build and improve WallHub",
-        ),
-        icon = Icons.Outlined.PersonOutline,
-    ) {
-        WALLHUB_CONTRIBUTORS.forEachIndexed { index, contributor ->
-            if (index > 0) SettingsItemDivider()
-            SettingsExternalLinkRow(
-                title = contributor.first,
-                value = contributor.second.removePrefix("https://github.com/"),
-                onClick = { openUrl(contributor.second) },
-            )
-        }
-    }
-
-    SettingsSection(
-        title = language.text("版本更新", "Version update"),
-        supportingText = language.text(
-            "从官方 GitHub Release 获取经过校验的 universal APK",
-            "Get a verified universal APK from the official GitHub Release",
-        ),
-        icon = Icons.Outlined.Download,
-    ) {
-        SettingsListItem(
-            headlineContent = {
-                Text(
-                    when (appUpdateState.phase) {
-                        AppUpdatePhase.IDLE -> language.text("尚未检查更新", "Not checked yet")
-                        AppUpdatePhase.CHECKING -> language.text("正在检查更新…", "Checking for updates…")
-                        AppUpdatePhase.AVAILABLE -> language.text(
-                            "发现新版本 ${release?.versionName.orEmpty()}",
-                            "Version ${release?.versionName.orEmpty()} is available",
-                        )
-                        AppUpdatePhase.UP_TO_DATE -> language.text("当前已是最新版", "WallHub is up to date")
-                        AppUpdatePhase.DOWNLOADING -> language.text(
-                            "正在下载 ${release?.assetName.orEmpty()}",
-                            "Downloading ${release?.assetName.orEmpty()}",
-                        )
-                        AppUpdatePhase.DOWNLOADED -> language.text(
-                            "安装包已下载并通过校验",
-                            "APK downloaded and verified",
-                        )
-                        AppUpdatePhase.FAILED -> language.text("更新操作失败", "Update operation failed")
-                    },
-                )
-            },
-            supportingContent = {
-                Text(
-                    release?.let {
-                        language.text(
-                            "最新 ${it.versionName} · ${formatUpdateSize(it.assetSizeBytes)} · ${it.publishedAt.take(10)}",
-                            "Latest ${it.versionName} · ${formatUpdateSize(it.assetSizeBytes)} · ${it.publishedAt.take(10)}",
-                        )
-                    } ?: language.text(
-                        "当前 ${installed.versionName} (${installed.versionCode})",
-                        "Current ${installed.versionName} (${installed.versionCode})",
-                    ),
-                )
-            },
-        )
-        if (appUpdateState.phase == AppUpdatePhase.DOWNLOADING) {
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                LinearProgressIndicator(
-                    progress = { appUpdateState.progress },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    text = "${formatUpdateSize(appUpdateState.downloadedBytes)} / " +
-                        formatUpdateSize(appUpdateState.totalBytes),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        release?.notes?.trim()?.takeIf(String::isNotEmpty)?.let { notes ->
-            SettingsItemDivider()
-            SettingsListItem(
-                headlineContent = { Text(language.text("Release 说明", "Release notes")) },
-                supportingContent = {
-                    Text(
-                        text = notes,
-                        maxLines = 8,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                trailingContent = {
-                    IconButton(onClick = { openUrl(release.htmlUrl) }) {
-                        Icon(
-                            imageVector = Icons.Outlined.OpenInNew,
-                            contentDescription = language.text("打开 Release", "Open Release"),
-                        )
-                    }
-                },
-            )
-        }
-        SettingsActionArea {
-            OutlinedButton(
-                onClick = onCheckForAppUpdate,
-                enabled = appUpdateState.phase !in setOf(
-                    AppUpdatePhase.CHECKING,
-                    AppUpdatePhase.DOWNLOADING,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null)
-                Text(
-                    text = language.text("检查更新", "Check for updates"),
-                    modifier = Modifier.padding(start = 8.dp),
-                )
-            }
-            if (release != null) {
-                TextButton(
-                    onClick = { openUrl(release.htmlUrl) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(imageVector = Icons.Outlined.OpenInNew, contentDescription = null)
-                    Text(
-                        text = language.text("打开 GitHub Release", "Open GitHub Release"),
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
-                }
-                if (appUpdateState.phase == AppUpdatePhase.DOWNLOADING) {
-                    OutlinedButton(
-                        onClick = onCancelAppUpdateDownload,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(language.text("取消下载", "Cancel download"))
-                    }
-                } else {
-                    FilledTonalButton(
-                        onClick = onDownloadLatestRelease,
-                        enabled = appUpdateState.phase != AppUpdatePhase.CHECKING,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(imageVector = Icons.Outlined.Download, contentDescription = null)
-                        Text(
-                            text = if (appUpdateState.downloadedApkPath == null) {
-                                language.text("下载最新版 universal APK", "Download latest universal APK")
-                            } else {
-                                language.text("重新下载安装包", "Download APK again")
-                            },
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
-                }
-            }
-            appUpdateState.downloadedApkPath?.let { path ->
-                Button(
-                    onClick = { onInstallDownloadedRelease(path) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(imageVector = Icons.Outlined.Download, contentDescription = null)
-                    Text(
-                        text = language.text("使用系统安装器安装", "Install with Android installer"),
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
-                }
-            }
-            appUpdateState.message?.let { message ->
-                SettingsStatusMessage(message = message, isFailure = true)
-            }
-        }
     }
 
     SettingsSection(
@@ -1349,25 +1118,21 @@ private fun BasicSettingsContent(
             }
         }
     }
-}
 
-@Composable
-private fun SettingsExternalLinkRow(
-    title: String,
-    value: String,
-    onClick: () -> Unit,
-) {
-    SettingsListItem(
-        headlineContent = { Text(title) },
-        supportingContent = { Text(value) },
-        trailingContent = {
-            Icon(
-                imageVector = Icons.Outlined.OpenInNew,
-                contentDescription = null,
-            )
-        },
-        modifier = Modifier.clickable(onClick = onClick),
-    )
+    SettingsSection(
+        title = language.text("内容访问", "Content access"),
+        icon = Icons.Outlined.Visibility,
+    ) {
+        SettingsSwitchRow(
+            title = language.text("NSFW 内容", "NSFW content"),
+            supportingText = language.text(
+                "控制发现页是否显示成人内容",
+                "Control whether mature content appears in Discover",
+            ),
+            checked = matureContentEnabled,
+            onCheckedChange = onMatureContentEnabledChange,
+        )
+    }
 }
 
 @Composable
@@ -3360,24 +3125,8 @@ private fun HomePaginationMode.label(language: AppLanguage): String = when (this
     HomePaginationMode.PAGED -> language.text("Web 页码模式", "Web-style pages")
 }
 
-private fun formatUpdateSize(bytes: Long): String = String.format(
-    Locale.getDefault(),
-    "%.1f MB",
-    bytes.coerceAtLeast(0L) / (1024.0 * 1024.0),
-)
-
 private const val DEFAULT_CUSTOM_MONET_HEX = "#5B7AA0"
 private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
-private const val AUTHOR_GITHUB_URL = "https://github.com/ChEnLeo-7"
-private const val QQ_GROUP_NUMBER = "3936095138"
-private const val GITHUB_REPOSITORY_LABEL = "ChEnLeo-7/WallHub2.0-For-Android"
-private const val GITHUB_REPOSITORY_URL =
-    "https://github.com/ChEnLeo-7/WallHub2.0-For-Android"
-private val WALLHUB_CONTRIBUTORS = listOf(
-    "uwugl" to "https://github.com/uwu-gl",
-    "cccp114" to "https://github.com/cccp114",
-    "hf5203344" to "https://github.com/hf5203344",
-)
 private const val STEAM_API_KEY_URL = "https://steamcommunity.com/dev/apikey"
 private const val SETTINGS_CATEGORY_INDEX_KEY = "settings-index"
 private const val SETTINGS_PAGE_ENTER_DURATION_MS = 340

@@ -76,7 +76,7 @@ WallHub builds on and thanks:
 - [JavaSteam](https://github.com/Longi94/JavaSteam)
 - [AndroidX Media3](https://developer.android.com/media/media3)
 - [Room](https://developer.android.com/training/data-storage/room), [WorkManager](https://developer.android.com/topic/libraries/architecture/workmanager), and [DataStore](https://developer.android.com/topic/libraries/architecture/datastore)
-- [Coil](https://coil-kt.github.io/coil/) and [Haze](https://github.com/chrisbanes/haze)
+- [Coil](https://coil-kt.github.io/coil/), [Multiplatform Markdown Renderer](https://github.com/mikepenz/multiplatform-markdown-renderer), and [Haze](https://github.com/chrisbanes/haze)
 
 Steam, Wallpaper Engine, and all related names, trademarks, content, and services belong to their respective owners. This independent open-source client is not affiliated with, authorized by, or endorsed by Valve Corporation, the Wallpaper Engine team, or Workshop creators.
 

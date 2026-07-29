@@ -28,6 +28,7 @@ javax-inject = "1"
 json = "20240303"
 lz4 = "1.8.0"
 material = "1.12.0"
+markdown-renderer = "0.33.0"
 okhttp = "5.3.2"
 protobuf-java = "4.31.1"
 protobuf-plugin = "0.9.5"
@@ -86,6 +87,7 @@ javasteam = { module = "in.dragonbra:javasteam", version.ref = "javasteam" }
 json = { module = "org.json:json", version.ref = "json" }
 lz4-java = { module = "org.lz4:lz4-java", version.ref = "lz4" }
 material = { module = "com.google.android.material:material", version.ref = "material" }
+markdown-renderer-m3 = { module = "com.mikepenz:multiplatform-markdown-renderer-m3", version.ref = "markdown-renderer" }
 okhttp-android = { module = "com.squareup.okhttp3:okhttp-android", version.ref = "okhttp" }
 protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf-java" }
 spongycastle-prov = { module = "com.madgag.spongycastle:prov", version.ref = "spongycastle" }
