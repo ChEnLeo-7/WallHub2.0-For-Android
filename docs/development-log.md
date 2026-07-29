@@ -50,6 +50,8 @@
 
 #### 验证
 
+- 关于页与筛选动效提交 `5440f347e86843ef326d3df0b2a9f918e57eef9d` 的 GitHub Actions run `30468272159` 在 `:feature:home:compileDebugKotlin` 首次发现独立 helper 无法调用 `AnimatedContentTransitionScope.using` 且引用了未导入 easing；CI 在 Release 组装与安装前停止。修复提交 `28b7bfadff2840bb1928ba40046b84795926487b` 直接构造 `ContentTransform` 并复用现有 easing，run `30468945921` 随后通过全量 JVM 测试、`lintDebug`、40 MiB APK 体积门槛、稳定签名 Release 组装与提交绑定 artifact 校验；`30,945,643` 字节 APK 已原位安装到 Android 15 设备 `192.168.2.190:5555`（`SM_G9900`），冷启动 PID `26591` 存活。修改前后均用 ADB `screenrecord` 录制发现页“浏览 → 内容”和管理页“全部 → 已完成”，并按 `15 fps` 拆帧：修复后发现页旧页先独立淡出，新页在动态高度调整后进入，不再同帧叠画；管理 Chip 边界与文字位置保持固定，旧/新勾选连续渐隐/渐显且无相邻遮挡。真机同时确认大 LOGO、标题、版本、更新日期和介绍居中且不显示包名；设备未安装 QQ/TIM 时点击群入口显示受控提示，进程保持存活，日志无致命异常、ANR 或 OOM。
+
 - 设置关于板块提交 `b25e1b805c55487d4f3c214ea127e684c387c19f` 的 GitHub Actions run `30461757854` 通过全量 JVM 测试、`lintDebug`、40 MiB APK 体积门槛、稳定签名 Release 组装和提交绑定 artifact 校验；`30,892,843` 字节 APK 已原位安装到 Android 15 设备 `192.168.2.190:5555`（`SM_G9900`），冷启动 PID `19664` 存活。真机确认作者及三位贡献人员头像全部加载、职责和 QQ 群 `1082323527` 正确，应用信息/社区/仓库/更新整合为单一板块；检查更新后仅显示一条 Release 说明入口，弹窗正确渲染并滚动显示 Markdown 标题、列表、粗体和代码样式；NSFW 位于诊断之后的基本设置最底部。当前版本与最新 Release 同为 `0.8.25`，因此按状态机不显示无效下载按钮；日志无致命异常、ANR 或 OOM。
 
 - 数据源选择提交 `9c5caee2f58c36ed88c1b0df277ab2163dc1d4a8` 的 GitHub Actions run `30344141361` 通过全量 JVM 测试、`lintDebug`、稳定签名 Release APK、提交绑定 artifact 校验、ADB 原位安装与冷启动，PID `16751` 存活。Android 15 真机确认新 DataStore key 缺失时默认显示 `Steam Community HTML`，底表完整显示三个通道；切换 `Steam CM WebSocket` 后发现页约 `3.066 s` 加载约 `50342` 个项目，强制停止与冷启动后仍保持 CM 选择；无 Key 切换 Web API 并冷启动后明确显示“需要先配置 API Key”和 `0` 个项目，没有回退 CM，随后恢复 CM 后重新加载约 `50352` 个项目。最终 PID `18333` 存活且日志无 `connection closed`、致命异常、ANR 或 OOM。当前直连网络阻断 Community，因此未将默认 HTML 的加载失败误判为实现故障；Web API 模式仍需配置有效 API Key 后验证真实发现结果。
