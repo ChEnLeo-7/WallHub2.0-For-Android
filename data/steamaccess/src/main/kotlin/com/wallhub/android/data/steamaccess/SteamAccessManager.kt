@@ -108,6 +108,7 @@ class SteamAccessManager @Inject internal constructor(
     override val state: StateFlow<SteamAccessState> = mutableState.asStateFlow()
 
     init {
+        restorePersistedRoutes()
         connectivityManager.registerDefaultNetworkCallback(
             object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) = handleDefaultNetwork(network)
@@ -143,6 +144,25 @@ class SteamAccessManager @Inject internal constructor(
                 if (routeSettingsChanged) {
                     handleRouteSettingsChanged(accessEnabledChanged)
                 }
+            }
+        }
+    }
+
+    private fun restorePersistedRoutes() {
+        val now = System.currentTimeMillis()
+        CORE_WARMUP_HOSTS.forEach { host ->
+            val candidates = routeStore.preferred(networkType, host).take(MAX_NO_SNI_PROBE_ADDRESSES)
+            if (candidates.isNotEmpty()) {
+                routeSnapshots.publish(
+                    routeKey(networkType, host),
+                    SteamCachedRoute(
+                        available = true,
+                        accelerated = true,
+                        addresses = candidates,
+                        freshUntil = 0L,
+                        staleUntil = now + BOOTSTRAP_ROUTE_STALE_MS,
+                    ),
+                )
             }
         }
     }
@@ -604,6 +624,7 @@ class SteamAccessManager @Inject internal constructor(
         const val ACCELERATED_ROUTE_FRESH_MS = 10 * 60_000L
         const val ACCELERATED_ROUTE_STALE_MS = 2 * 60 * 60_000L
         const val FAILED_ROUTE_TTL_MS = 60_000L
+        const val BOOTSTRAP_ROUTE_STALE_MS = 5 * 60_000L
         const val MAX_IDLE_CONNECTIONS = 12
         const val CONNECTION_KEEP_ALIVE_MINUTES = 10L
         const val MIN_REFRESH_DELAY_MS = 30_000L
