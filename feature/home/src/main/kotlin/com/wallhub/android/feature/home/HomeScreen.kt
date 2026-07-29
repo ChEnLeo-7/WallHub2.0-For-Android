@@ -91,6 +91,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -402,6 +404,17 @@ data class HomeUiState(
     val activeFilterCount: Int
         get() = filterSelection().activeSectionCount()
 }
+
+internal data class HomeLoadingIndicatorVisibility(
+    val showPullToRefresh: Boolean,
+    val showSteamIpPrewarm: Boolean,
+)
+
+internal fun HomeUiState.loadingIndicatorVisibility(): HomeLoadingIndicatorVisibility =
+    HomeLoadingIndicatorVisibility(
+        showPullToRefresh = (isInitialLoading || isPageLoading) && !isSteamIpPrewarming,
+        showSteamIpPrewarm = isInitialLoading && isSteamIpPrewarming,
+    )
 
 private fun String.creatorIdOrNull(): String? {
     val query = trim()
@@ -1656,9 +1669,21 @@ private fun HomeResults(
     LaunchedEffect(shouldAutoLoadMore, state.nextPage, state.paginationMode) {
         if (shouldAutoLoadMore) onLoadNextPage()
     }
+    val loadingIndicators = state.loadingIndicatorVisibility()
+    val pullToRefreshState = rememberPullToRefreshState()
     PullToRefreshBox(
-        isRefreshing = (state.isInitialLoading || state.isPageLoading) && !state.isSteamIpPrewarming,
+        isRefreshing = loadingIndicators.showPullToRefresh,
         onRefresh = onRetry,
+        state = pullToRefreshState,
+        indicator = {
+            if (!state.isSteamIpPrewarming) {
+                PullToRefreshDefaults.Indicator(
+                    state = pullToRefreshState,
+                    isRefreshing = loadingIndicators.showPullToRefresh,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            }
+        },
         modifier = modifier
             .fillMaxWidth()
             .animateContentSize(
@@ -1670,7 +1695,7 @@ private fun HomeResults(
     ) {
         when {
         state.isInitialLoading -> {
-            if (state.isSteamIpPrewarming) {
+            if (loadingIndicators.showSteamIpPrewarm) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()

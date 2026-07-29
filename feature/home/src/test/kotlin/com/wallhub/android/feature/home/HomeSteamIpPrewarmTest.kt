@@ -79,6 +79,31 @@ class HomeSteamIpPrewarmTest {
     }
 
     @Test
+    fun `prewarm and pull-to-refresh indicators are mutually exclusive`() {
+        val prewarming = HomeUiState(
+            isInitialLoading = true,
+            isSteamIpPrewarming = true,
+        ).loadingIndicatorVisibility()
+        assertTrue(prewarming.showSteamIpPrewarm)
+        assertFalse(prewarming.showPullToRefresh)
+
+        val refreshing = HomeUiState(
+            isInitialLoading = true,
+            isSteamIpPrewarming = false,
+        ).loadingIndicatorVisibility()
+        assertFalse(refreshing.showSteamIpPrewarm)
+        assertTrue(refreshing.showPullToRefresh)
+
+        val pageLoading = HomeUiState(
+            isInitialLoading = false,
+            isPageLoading = true,
+            isSteamIpPrewarming = false,
+        ).loadingIndicatorVisibility()
+        assertFalse(pageLoading.showSteamIpPrewarm)
+        assertTrue(pageLoading.showPullToRefresh)
+    }
+
+    @Test
     fun `prewarm gate blocks the following request until completion`() = runBlocking {
         val prewarm = CompletableDeferred<Boolean>()
         val steamAccess = FakeSteamAccessRepository { prewarm.await() }
