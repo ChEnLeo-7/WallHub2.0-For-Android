@@ -1,10 +1,10 @@
 package com.wallhub.android.data.downloads
 
 import android.util.Log
+import com.wallhub.android.core.model.SteamContentCredential
 import `in`.dragonbra.javasteam.enums.EDepotFileFlag
 import `in`.dragonbra.javasteam.enums.EOSType
 import `in`.dragonbra.javasteam.enums.EResult
-import `in`.dragonbra.javasteam.steam.cdn.Client as SteamCdnClient
 import `in`.dragonbra.javasteam.steam.cdn.DepotChunk
 import `in`.dragonbra.javasteam.steam.cdn.Server
 import `in`.dragonbra.javasteam.steam.handlers.steamapps.SteamApps
@@ -22,20 +22,8 @@ import `in`.dragonbra.javasteam.steam.steamclient.configuration.SteamConfigurati
 import `in`.dragonbra.javasteam.types.ChunkData
 import `in`.dragonbra.javasteam.types.DepotManifest
 import `in`.dragonbra.javasteam.types.FileData
-import `in`.dragonbra.javasteam.util.Adler32 as SteamAdler32
-import com.wallhub.android.core.model.SteamContentCredential
-import java.io.Closeable
-import java.io.File
-import java.io.FileInputStream
-import java.io.RandomAccessFile
-import java.security.MessageDigest
-import java.util.ArrayDeque
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -57,11 +45,23 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import okhttp3.Dispatcher
 import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
+import java.io.Closeable
+import java.io.File
+import java.io.FileInputStream
+import java.io.RandomAccessFile
+import java.security.MessageDigest
+import java.util.ArrayDeque
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 import kotlin.math.min
+import `in`.dragonbra.javasteam.steam.cdn.Client as SteamCdnClient
+import `in`.dragonbra.javasteam.util.Adler32 as SteamAdler32
 
 internal enum class SteamDownloadPhase {
     CONNECTING,
@@ -95,7 +95,10 @@ internal data class SteamContentDownloadResult(
     val usedAuthenticatedSession: Boolean,
 )
 
-internal fun resolveCdnRequestHost(virtualHost: String?, host: String?): String? =
+internal fun resolveCdnRequestHost(
+    virtualHost: String?,
+    host: String?,
+): String? =
     virtualHost?.trim()?.takeIf(String::isNotBlank)
         ?: host?.trim()?.takeIf(String::isNotBlank)
 
@@ -136,50 +139,57 @@ internal class ForegroundFirstPermitPool(
     }
 
     private suspend fun acquire(priority: SteamStreamChunkPriority) {
-        val waiter = mutex.withLock {
-            val canAcquire = when (priority) {
-                SteamStreamChunkPriority.FOREGROUND -> availablePermits > 0
-                SteamStreamChunkPriority.PREFETCH ->
-                    foregroundWaiters.isEmpty() && availablePermits > reservedForegroundPermits
-            }
-            if (canAcquire) {
-                availablePermits -= 1
-                null
-            } else {
-                CompletableDeferred<Unit>().also { deferred ->
+        val waiter =
+            mutex.withLock {
+                val canAcquire =
                     when (priority) {
-                        SteamStreamChunkPriority.FOREGROUND -> foregroundWaiters.addLast(deferred)
-                        SteamStreamChunkPriority.PREFETCH -> prefetchWaiters.addLast(deferred)
+                        SteamStreamChunkPriority.FOREGROUND -> availablePermits > 0
+                        SteamStreamChunkPriority.PREFETCH ->
+                            foregroundWaiters.isEmpty() && availablePermits > reservedForegroundPermits
+                    }
+                if (canAcquire) {
+                    availablePermits -= 1
+                    null
+                } else {
+                    CompletableDeferred<Unit>().also { deferred ->
+                        when (priority) {
+                            SteamStreamChunkPriority.FOREGROUND -> foregroundWaiters.addLast(deferred)
+                            SteamStreamChunkPriority.PREFETCH -> prefetchWaiters.addLast(deferred)
+                        }
                     }
                 }
             }
-        }
         if (waiter == null) return
         try {
             waiter.await()
         } catch (error: CancellationException) {
-            val removedFromQueue = mutex.withLock {
-                foregroundWaiters.remove(waiter) || prefetchWaiters.remove(waiter)
-            }
+            val removedFromQueue =
+                mutex.withLock {
+                    foregroundWaiters.remove(waiter) || prefetchWaiters.remove(waiter)
+                }
             if (!removedFromQueue) release()
             throw error
         }
     }
 
     private suspend fun release() {
-        val waiter = mutex.withLock {
-            foregroundWaiters.pollFirst()
-                ?: prefetchWaiters.pollFirst()
-                ?: run {
-                    availablePermits = min(maxPermits, availablePermits + 1)
-                    null
-                }
-        }
+        val waiter =
+            mutex.withLock {
+                foregroundWaiters.pollFirst()
+                    ?: prefetchWaiters.pollFirst()
+                    ?: run {
+                        availablePermits = min(maxPermits, availablePermits + 1)
+                        null
+                    }
+            }
         waiter?.complete(Unit)
     }
 }
 
-internal fun findVerifiedChunkOffsets(file: File, chunks: List<ChunkData>): Set<Long> {
+internal fun findVerifiedChunkOffsets(
+    file: File,
+    chunks: List<ChunkData>,
+): Set<Long> {
     if (!file.isFile) return emptySet()
     val verifiedOffsets = mutableSetOf<Long>()
     var buffer = ByteArray(0)
@@ -187,9 +197,10 @@ internal fun findVerifiedChunkOffsets(file: File, chunks: List<ChunkData>): Set<
         val fileLength = input.length()
         chunks.forEach { chunk ->
             val length = chunk.uncompressedLength
-            val fits = chunk.offset >= 0L &&
-                length >= 0 &&
-                chunk.offset <= fileLength - length.toLong()
+            val fits =
+                chunk.offset >= 0L &&
+                    length >= 0 &&
+                    chunk.offset <= fileLength - length.toLong()
             if (!fits) return@forEach
             if (buffer.size != length) buffer = ByteArray(length)
             input.seek(chunk.offset)
@@ -216,103 +227,109 @@ internal class SteamContentDownloader {
         options: SteamContentDownloadOptions = SteamContentDownloadOptions(),
         control: suspend () -> SteamDownloadControl = { SteamDownloadControl.CONTINUE },
         onProgress: suspend (SteamDownloadProgress) -> Unit,
-    ): SteamContentDownloadResult = withContext(Dispatchers.IO) {
-        require(target.appId > 0) { "无效的 Steam App ID" }
-        require(target.contentManifestId > 0L) { "无效的 Steam manifest ID" }
-        checkDownloadControl(control)
-
-        onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.CONNECTING))
-        val session = openContentSession(credential) {
-            onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.AUTHENTICATING))
-        }
-        val normalizedOptions = options.normalized()
-        val cdnClient = createCdnClient(normalizedOptions)
-        try {
+    ): SteamContentDownloadResult =
+        withContext(Dispatchers.IO) {
+            require(target.appId > 0) { "无效的 Steam App ID" }
+            require(target.contentManifestId > 0L) { "无效的 Steam manifest ID" }
             checkDownloadControl(control)
-            onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
-            val access = resolveContentAccess(session, target)
-            val selector = CdnServerSelector()
-            Log.i(
-                DOWNLOAD_LOG_TAG,
-                "Steam CDN chunkConcurrency=${normalizedOptions.chunkConcurrency}, " +
-                    "pool=${access.servers.take(CDN_PARALLEL_SERVER_COUNT).joinToString { server ->
-                        resolveCdnRequestHost(server.vHost, server.host) ?: "unknown"
-                    }}",
-            )
-            val manifest = downloadManifest(
-                cdnClient = cdnClient,
-                servers = access.servers,
-                depotId = target.depotId,
-                manifestId = target.contentManifestId,
-                requestCode = access.manifestRequestCode,
-                depotKey = access.depotKey,
-                authTokens = access.authTokens,
-                control = control,
-            )
-            check(!manifest.filenamesEncrypted || manifest.decryptFilenames(access.depotKey)) {
-                "无法解密 Steam manifest 中的文件名"
-            }
 
-            destinationDirectory.mkdirs()
-            check(destinationDirectory.isDirectory) { "无法创建下载暂存目录" }
-            val files = manifest.files.filterNot { it.flags.contains(EDepotFileFlag.Directory) }
-            val totalBytes = manifest.totalUncompressedSize.takeIf { it > 0L }
-                ?: files.sumOf { it.totalSize.coerceAtLeast(0L) }
-            val progressReporter = DownloadProgressReporter(
-                totalBytes = totalBytes,
-                totalFiles = files.size,
-                onProgress = onProgress,
-            )
-            val filePlans = manifest.files.mapNotNull { manifestFile ->
-                currentCoroutineContext().ensureActive()
+            onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.CONNECTING))
+            val session =
+                openContentSession(credential) {
+                    onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.AUTHENTICATING))
+                }
+            val normalizedOptions = options.normalized()
+            val cdnClient = createCdnClient(normalizedOptions)
+            try {
                 checkDownloadControl(control)
-                if (
-                    manifestFile.flags.contains(EDepotFileFlag.Directory) &&
-                        (manifestFile.fileName.isBlank() || manifestFile.fileName == ".")
-                ) {
-                    return@mapNotNull null
-                }
-                val destination = WorkshopStagingPath.resolve(destinationDirectory, manifestFile.fileName)
-                if (manifestFile.flags.contains(EDepotFileFlag.Directory)) {
-                    destination.mkdirs()
-                    check(destination.isDirectory) { "无法创建目录：${manifestFile.fileName}" }
-                    return@mapNotNull null
-                }
-                check(!manifestFile.flags.contains(EDepotFileFlag.Symlink)) {
-                    "当前不处理 Steam manifest 符号链接：${manifestFile.fileName}"
-                }
-                ManifestFilePlan(
-                    file = manifestFile,
-                    chunks = orderChunksByOffset(manifestFile.chunks),
+                onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
+                val access = resolveContentAccess(session, target)
+                val selector = CdnServerSelector()
+                Log.i(
+                    DOWNLOAD_LOG_TAG,
+                    "Steam CDN chunkConcurrency=${normalizedOptions.chunkConcurrency}, " +
+                        "pool=${access.servers.take(CDN_PARALLEL_SERVER_COUNT).joinToString { server ->
+                            resolveCdnRequestHost(server.vHost, server.host) ?: "unknown"
+                        }}",
                 )
-            }
-            downloadFilePlans(
-                plans = filePlans,
-                destinationDirectory = destinationDirectory,
-                cdnClient = cdnClient,
-                servers = access.servers,
-                depotId = target.depotId,
-                depotKey = access.depotKey,
-                authTokens = access.authTokens,
-                selector = selector,
-                chunkConcurrency = normalizedOptions.chunkConcurrency,
-                control = control,
-                progressReporter = progressReporter,
-            )
-            val finalProgress = progressReporter.snapshot()
+                val manifest =
+                    downloadManifest(
+                        cdnClient = cdnClient,
+                        servers = access.servers,
+                        depotId = target.depotId,
+                        manifestId = target.contentManifestId,
+                        requestCode = access.manifestRequestCode,
+                        depotKey = access.depotKey,
+                        authTokens = access.authTokens,
+                        control = control,
+                    )
+                check(!manifest.filenamesEncrypted || manifest.decryptFilenames(access.depotKey)) {
+                    "无法解密 Steam manifest 中的文件名"
+                }
 
-            SteamContentDownloadResult(
-                rootDirectory = destinationDirectory,
-                downloadedBytes = finalProgress.downloadedBytes,
-                totalBytes = totalBytes,
-                fileCount = finalProgress.completedFiles,
-                usedAuthenticatedSession = credential != null,
-            )
-        } finally {
-            runCatching { cdnClient.close() }
-            session.close()
+                destinationDirectory.mkdirs()
+                check(destinationDirectory.isDirectory) { "无法创建下载暂存目录" }
+                val files = manifest.files.filterNot { it.flags.contains(EDepotFileFlag.Directory) }
+                val totalBytes =
+                    manifest.totalUncompressedSize.takeIf { it > 0L }
+                        ?: files.sumOf { it.totalSize.coerceAtLeast(0L) }
+                val progressReporter =
+                    DownloadProgressReporter(
+                        totalBytes = totalBytes,
+                        totalFiles = files.size,
+                        onProgress = onProgress,
+                    )
+                val filePlans =
+                    manifest.files.mapNotNull { manifestFile ->
+                        currentCoroutineContext().ensureActive()
+                        checkDownloadControl(control)
+                        if (
+                            manifestFile.flags.contains(EDepotFileFlag.Directory) &&
+                            (manifestFile.fileName.isBlank() || manifestFile.fileName == ".")
+                        ) {
+                            return@mapNotNull null
+                        }
+                        val destination = WorkshopStagingPath.resolve(destinationDirectory, manifestFile.fileName)
+                        if (manifestFile.flags.contains(EDepotFileFlag.Directory)) {
+                            destination.mkdirs()
+                            check(destination.isDirectory) { "无法创建目录：${manifestFile.fileName}" }
+                            return@mapNotNull null
+                        }
+                        check(!manifestFile.flags.contains(EDepotFileFlag.Symlink)) {
+                            "当前不处理 Steam manifest 符号链接：${manifestFile.fileName}"
+                        }
+                        ManifestFilePlan(
+                            file = manifestFile,
+                            chunks = orderChunksByOffset(manifestFile.chunks),
+                        )
+                    }
+                downloadFilePlans(
+                    plans = filePlans,
+                    destinationDirectory = destinationDirectory,
+                    cdnClient = cdnClient,
+                    servers = access.servers,
+                    depotId = target.depotId,
+                    depotKey = access.depotKey,
+                    authTokens = access.authTokens,
+                    selector = selector,
+                    chunkConcurrency = normalizedOptions.chunkConcurrency,
+                    control = control,
+                    progressReporter = progressReporter,
+                )
+                val finalProgress = progressReporter.snapshot()
+
+                SteamContentDownloadResult(
+                    rootDirectory = destinationDirectory,
+                    downloadedBytes = finalProgress.downloadedBytes,
+                    totalBytes = totalBytes,
+                    fileCount = finalProgress.completedFiles,
+                    usedAuthenticatedSession = credential != null,
+                )
+            } finally {
+                runCatching { cdnClient.close() }
+                session.close()
+            }
         }
-    }
 
     suspend fun openVideoStream(
         target: WorkshopContentTarget,
@@ -320,55 +337,58 @@ internal class SteamContentDownloader {
         options: SteamContentDownloadOptions,
         cacheDirectory: File,
         cacheLimitBytes: Long,
-    ): SteamContentVideoStream = withContext(Dispatchers.IO) {
-        require(target.appId > 0) { "无效的 Steam App ID" }
-        require(target.contentManifestId > 0L) { "无效的 Steam manifest ID" }
-        val normalizedOptions = options.normalized()
-        val session = openContentSession(credential) {}
-        val cdnClient = createCdnClient(normalizedOptions)
-        try {
-            val access = resolveContentAccess(session, target)
-            val manifest = downloadManifest(
-                cdnClient = cdnClient,
-                servers = access.servers,
-                depotId = target.depotId,
-                manifestId = target.contentManifestId,
-                requestCode = access.manifestRequestCode,
-                depotKey = access.depotKey,
-                authTokens = access.authTokens,
-                control = { SteamDownloadControl.CONTINUE },
-            )
-            check(!manifest.filenamesEncrypted || manifest.decryptFilenames(access.depotKey)) {
-                "无法解密 Steam manifest 中的视频文件名"
+    ): SteamContentVideoStream =
+        withContext(Dispatchers.IO) {
+            require(target.appId > 0) { "无效的 Steam App ID" }
+            require(target.contentManifestId > 0L) { "无效的 Steam manifest ID" }
+            val normalizedOptions = options.normalized()
+            val session = openContentSession(credential) {}
+            val cdnClient = createCdnClient(normalizedOptions)
+            try {
+                val access = resolveContentAccess(session, target)
+                val manifest =
+                    downloadManifest(
+                        cdnClient = cdnClient,
+                        servers = access.servers,
+                        depotId = target.depotId,
+                        manifestId = target.contentManifestId,
+                        requestCode = access.manifestRequestCode,
+                        depotKey = access.depotKey,
+                        authTokens = access.authTokens,
+                        control = { SteamDownloadControl.CONTINUE },
+                    )
+                check(!manifest.filenamesEncrypted || manifest.decryptFilenames(access.depotKey)) {
+                    "无法解密 Steam manifest 中的视频文件名"
+                }
+                val videoFile =
+                    manifest.files
+                        .asSequence()
+                        .filterNot { it.flags.contains(EDepotFileFlag.Directory) }
+                        .filterNot { it.flags.contains(EDepotFileFlag.Symlink) }
+                        .filter { it.fileName.videoFileExtension() in VIDEO_FILE_EXTENSIONS }
+                        .maxByOrNull(FileData::totalSize)
+                        ?: error("未在 Steam Depot 中找到可在线播放的视频文件")
+                cacheDirectory.mkdirs()
+                check(cacheDirectory.isDirectory) { "无法创建在线播放缓存目录" }
+                SteamContentVideoStream(
+                    title = target.title,
+                    fileName = videoFile.fileName,
+                    contentLength = videoFile.totalSize,
+                    chunks = orderChunksByOffset(videoFile.chunks),
+                    cacheDirectory = cacheDirectory,
+                    cacheLimitBytes = cacheLimitBytes.coerceAtLeast(STREAM_MIN_CACHE_LIMIT_BYTES),
+                    prefetchConcurrency = steamStreamPrefetchConcurrency(normalizedOptions.chunkConcurrency),
+                    cdnClient = cdnClient,
+                    session = session,
+                    access = access,
+                    depotId = target.depotId,
+                )
+            } catch (error: Throwable) {
+                runCatching { cdnClient.close() }
+                session.close()
+                throw error
             }
-            val videoFile = manifest.files
-                .asSequence()
-                .filterNot { it.flags.contains(EDepotFileFlag.Directory) }
-                .filterNot { it.flags.contains(EDepotFileFlag.Symlink) }
-                .filter { it.fileName.videoFileExtension() in VIDEO_FILE_EXTENSIONS }
-                .maxByOrNull(FileData::totalSize)
-                ?: error("未在 Steam Depot 中找到可在线播放的视频文件")
-            cacheDirectory.mkdirs()
-            check(cacheDirectory.isDirectory) { "无法创建在线播放缓存目录" }
-            SteamContentVideoStream(
-                title = target.title,
-                fileName = videoFile.fileName,
-                contentLength = videoFile.totalSize,
-                chunks = orderChunksByOffset(videoFile.chunks),
-                cacheDirectory = cacheDirectory,
-                cacheLimitBytes = cacheLimitBytes.coerceAtLeast(STREAM_MIN_CACHE_LIMIT_BYTES),
-                prefetchConcurrency = steamStreamPrefetchConcurrency(normalizedOptions.chunkConcurrency),
-                cdnClient = cdnClient,
-                session = session,
-                access = access,
-                depotId = target.depotId,
-            )
-        } catch (error: Throwable) {
-            runCatching { cdnClient.close() }
-            session.close()
-            throw error
         }
-    }
 
     private suspend fun resolveContentAccess(
         session: SteamContentSession,
@@ -376,33 +396,35 @@ internal class SteamContentDownloader {
     ): SteamContentAccess {
         val depotKey = session.apps.getDepotDecryptionKey(target.depotId, target.appId).await()
         check(depotKey.result == EResult.OK) { "Steam 未提供 depot key：${depotKey.result}" }
-        val servers = session.content
-            .getServersForSteamPipe(null, CDN_SERVER_LIMIT, session.callbackScope)
-            .await()
-            .filter { resolveCdnRequestHost(it.vHost, it.host) != null }
-            .let(::prioritizeCdnServers)
+        val servers =
+            session.content
+                .getServersForSteamPipe(null, CDN_SERVER_LIMIT, session.callbackScope)
+                .await()
+                .filter { resolveCdnRequestHost(it.vHost, it.host) != null }
+                .let(::prioritizeCdnServers)
         check(servers.isNotEmpty()) { "Steam 未返回可用的 CDN 服务器" }
-        val requestCode = session.content
-            .getManifestRequestCode(
-                target.depotId,
-                target.appId,
-                target.contentManifestId,
-                "public",
-                null,
-                session.callbackScope,
-            )
-            .await()
+        val requestCode =
+            session.content
+                .getManifestRequestCode(
+                    target.depotId,
+                    target.appId,
+                    target.contentManifestId,
+                    "public",
+                    null,
+                    session.callbackScope,
+                ).await()
         return SteamContentAccess(
             depotKey = depotKey.depotKey,
             manifestRequestCode = requestCode,
             servers = servers,
-            authTokens = CdnAuthTokenProvider(
-                content = session.content,
-                appId = target.appId,
-                depotId = target.depotId,
-                callbackScope = session.callbackScope,
-                enabled = session.isAuthenticated,
-            ),
+            authTokens =
+                CdnAuthTokenProvider(
+                    content = session.content,
+                    appId = target.appId,
+                    depotId = target.depotId,
+                    callbackScope = session.callbackScope,
+                    enabled = session.isAuthenticated,
+                ),
         )
     }
 
@@ -437,9 +459,10 @@ internal class SteamContentDownloader {
         private val lastReadEnd = AtomicLong(-1L)
 
         @Volatile
-        private var latestCdnHost: String? = access.servers.firstNotNullOfOrNull { server ->
-            resolveCdnRequestHost(server.vHost, server.host)
-        }
+        private var latestCdnHost: String? =
+            access.servers.firstNotNullOfOrNull { server ->
+                resolveCdnRequestHost(server.vHost, server.host)
+            }
 
         override val currentCdnHost: String?
             get() = latestCdnHost
@@ -460,38 +483,42 @@ internal class SteamContentDownloader {
             scheduleStartupPrefetch(0L)
         }
 
-        override suspend fun readAt(position: Long, length: Int): ByteArray = withContext(Dispatchers.IO) {
-            check(!closed) { "SteamKit 在线播放会话已关闭" }
-            require(position >= 0L) { "在线播放读取位置无效" }
-            require(length >= 0) { "在线播放读取长度无效" }
-            if (length == 0 || position >= contentLength) return@withContext ByteArray(0)
+        override suspend fun readAt(
+            position: Long,
+            length: Int,
+        ): ByteArray =
+            withContext(Dispatchers.IO) {
+                check(!closed) { "SteamKit 在线播放会话已关闭" }
+                require(position >= 0L) { "在线播放读取位置无效" }
+                require(length >= 0) { "在线播放读取长度无效" }
+                if (length == 0 || position >= contentLength) return@withContext ByteArray(0)
 
-            val requestedLength = min(length.toLong(), contentLength - position).toInt()
-            val endExclusive = position + requestedLength
-            resetPrefetchForSeekIfNeeded(position)
-            val result = ByteArray(requestedLength)
-            var destinationOffset = 0
-            chunks.forEach { chunk ->
-                val chunkStart = chunk.offset
-                val chunkEnd = chunkStart + chunk.uncompressedLength
-                if (chunkEnd <= position || chunkStart >= endExclusive) return@forEach
-                val data = loadChunk(chunk, SteamStreamChunkPriority.FOREGROUND)
-                val sourceStart = max(position, chunkStart) - chunkStart
-                val sourceEnd = min(endExclusive, chunkEnd) - chunkStart
-                val copiedLength = (sourceEnd - sourceStart).toInt()
-                data.copyInto(
-                    destination = result,
-                    destinationOffset = destinationOffset,
-                    startIndex = sourceStart.toInt(),
-                    endIndex = sourceEnd.toInt(),
-                )
-                destinationOffset += copiedLength
+                val requestedLength = min(length.toLong(), contentLength - position).toInt()
+                val endExclusive = position + requestedLength
+                resetPrefetchForSeekIfNeeded(position)
+                val result = ByteArray(requestedLength)
+                var destinationOffset = 0
+                chunks.forEach { chunk ->
+                    val chunkStart = chunk.offset
+                    val chunkEnd = chunkStart + chunk.uncompressedLength
+                    if (chunkEnd <= position || chunkStart >= endExclusive) return@forEach
+                    val data = loadChunk(chunk, SteamStreamChunkPriority.FOREGROUND)
+                    val sourceStart = max(position, chunkStart) - chunkStart
+                    val sourceEnd = min(endExclusive, chunkEnd) - chunkStart
+                    val copiedLength = (sourceEnd - sourceStart).toInt()
+                    data.copyInto(
+                        destination = result,
+                        destinationOffset = destinationOffset,
+                        startIndex = sourceStart.toInt(),
+                        endIndex = sourceEnd.toInt(),
+                    )
+                    destinationOffset += copiedLength
+                }
+                check(destinationOffset == requestedLength) { "Steam 视频分块存在缺失数据" }
+                lastReadEnd.set(endExclusive - 1L)
+                scheduleAheadPrefetch(endExclusive)
+                result
             }
-            check(destinationOffset == requestedLength) { "Steam 视频分块存在缺失数据" }
-            lastReadEnd.set(endExclusive - 1L)
-            scheduleAheadPrefetch(endExclusive)
-            result
-        }
 
         override fun close() {
             if (closed) return
@@ -519,57 +546,63 @@ internal class SteamContentDownloader {
         private fun requestChunk(
             chunk: ChunkData,
             priority: SteamStreamChunkPriority,
-        ): Deferred<ByteArray> = synchronized(inFlightLock) {
-            val existing = inFlightChunks[chunk.offset]
-            if (existing != null &&
-                (priority == SteamStreamChunkPriority.PREFETCH ||
-                    existing.priority == SteamStreamChunkPriority.FOREGROUND)
-            ) {
-                return@synchronized existing.deferred
-            }
-            existing?.deferred?.cancel()
-            val requestId = nextChunkRequestId.incrementAndGet()
-            val request = fetchScope.async(start = CoroutineStart.LAZY) {
-                try {
-                    val cacheFile = File(cacheDirectory, "${chunk.offset}.chunk")
-                    readCachedChunk(cacheFile, chunk)?.let { return@async it }
-                    val downloaded = networkScheduler.withPermit(priority) {
-                        downloadChunk(
-                            cdnClient = cdnClient,
-                            servers = access.servers,
-                            depotId = depotId,
-                            chunk = chunk,
-                            depotKey = access.depotKey,
-                            authTokens = access.authTokens,
-                            selector = selector,
-                            control = { SteamDownloadControl.CONTINUE },
-                            onSuccess = { server ->
-                                latestCdnHost = resolveCdnRequestHost(server.vHost, server.host)
-                            },
-                        )
-                    }
-                    cacheMutex.withLock {
-                        readCachedChunk(cacheFile, chunk) ?: downloaded.also {
-                            writeCachedChunk(cacheFile, it)
-                            evictCachedChunksIfNeeded()
-                        }
-                    }
-                } finally {
-                    synchronized(inFlightLock) {
-                        if (inFlightChunks[chunk.offset]?.id == requestId) {
-                            inFlightChunks.remove(chunk.offset)
-                        }
-                    }
+        ): Deferred<ByteArray> =
+            synchronized(inFlightLock) {
+                val existing = inFlightChunks[chunk.offset]
+                if (existing != null &&
+                    (
+                        priority == SteamStreamChunkPriority.PREFETCH ||
+                            existing.priority == SteamStreamChunkPriority.FOREGROUND
+                    )
+                ) {
+                    return@synchronized existing.deferred
                 }
+                existing?.deferred?.cancel()
+                val requestId = nextChunkRequestId.incrementAndGet()
+                val request =
+                    fetchScope.async(start = CoroutineStart.LAZY) {
+                        try {
+                            val cacheFile = File(cacheDirectory, "${chunk.offset}.chunk")
+                            readCachedChunk(cacheFile, chunk)?.let { return@async it }
+                            val downloaded =
+                                networkScheduler.withPermit(priority) {
+                                    downloadChunk(
+                                        cdnClient = cdnClient,
+                                        servers = access.servers,
+                                        depotId = depotId,
+                                        chunk = chunk,
+                                        depotKey = access.depotKey,
+                                        authTokens = access.authTokens,
+                                        selector = selector,
+                                        control = { SteamDownloadControl.CONTINUE },
+                                        onSuccess = { server ->
+                                            latestCdnHost = resolveCdnRequestHost(server.vHost, server.host)
+                                        },
+                                    )
+                                }
+                            cacheMutex.withLock {
+                                readCachedChunk(cacheFile, chunk) ?: downloaded.also {
+                                    writeCachedChunk(cacheFile, it)
+                                    evictCachedChunksIfNeeded()
+                                }
+                            }
+                        } finally {
+                            synchronized(inFlightLock) {
+                                if (inFlightChunks[chunk.offset]?.id == requestId) {
+                                    inFlightChunks.remove(chunk.offset)
+                                }
+                            }
+                        }
+                    }
+                inFlightChunks[chunk.offset] =
+                    StreamChunkRequest(
+                        id = requestId,
+                        priority = priority,
+                        deferred = request,
+                    )
+                request.start()
+                request
             }
-            inFlightChunks[chunk.offset] = StreamChunkRequest(
-                id = requestId,
-                priority = priority,
-                deferred = request,
-            )
-            request.start()
-            request
-        }
 
         private fun scheduleStartupPrefetch(position: Long) {
             if (closed || contentLength <= 0L) return
@@ -577,32 +610,36 @@ internal class SteamContentDownloader {
             val startupRanges = steamStreamStartupPrefetchRanges(contentLength, position)
             synchronized(prefetchLock) {
                 startupPrefetchJob?.cancel()
-                furthestContiguousPrefetchEnd = maxOf(
-                    furthestContiguousPrefetchEnd,
-                    steamStreamContiguousPrefetchEnd(position, startupRanges),
-                )
-                startupPrefetchJob = fetchScope.launch {
-                    startupRanges.forEach { range ->
-                        if (closed || generation != prefetchGeneration.get()) return@launch
-                        prefetchRange(range, generation)
+                furthestContiguousPrefetchEnd =
+                    maxOf(
+                        furthestContiguousPrefetchEnd,
+                        steamStreamContiguousPrefetchEnd(position, startupRanges),
+                    )
+                startupPrefetchJob =
+                    fetchScope.launch {
+                        startupRanges.forEach { range ->
+                            if (closed || generation != prefetchGeneration.get()) return@launch
+                            prefetchRange(range, generation)
+                        }
                     }
-                }
             }
         }
 
         private fun scheduleAheadPrefetch(afterExclusive: Long) {
             if (closed || afterExclusive >= contentLength) return
             val generation = prefetchGeneration.get()
-            val range = synchronized(prefetchLock) {
-                if (afterExclusive <= furthestContiguousPrefetchEnd) return
-                steamStreamAheadPrefetchRange(contentLength, afterExclusive)?.also {
-                    furthestContiguousPrefetchEnd = maxOf(furthestContiguousPrefetchEnd, it.endInclusive)
-                }
-            } ?: return
+            val range =
+                synchronized(prefetchLock) {
+                    if (afterExclusive <= furthestContiguousPrefetchEnd) return
+                    steamStreamAheadPrefetchRange(contentLength, afterExclusive)?.also {
+                        furthestContiguousPrefetchEnd = maxOf(furthestContiguousPrefetchEnd, it.endInclusive)
+                    }
+                } ?: return
             synchronized(prefetchLock) {
-                aheadPrefetchJob = fetchScope.launch {
-                    prefetchRange(range, generation)
-                }
+                aheadPrefetchJob =
+                    fetchScope.launch {
+                        prefetchRange(range, generation)
+                    }
             }
         }
 
@@ -625,11 +662,15 @@ internal class SteamContentDownloader {
             scheduleStartupPrefetch(position)
         }
 
-        private suspend fun prefetchRange(range: SteamStreamByteRange, generation: Long) = coroutineScope {
-            val selectedChunks = chunks.filter { chunk ->
-                val chunkEnd = chunk.offset + chunk.uncompressedLength - 1L
-                chunkEnd >= range.start && chunk.offset <= range.endInclusive
-            }
+        private suspend fun prefetchRange(
+            range: SteamStreamByteRange,
+            generation: Long,
+        ) = coroutineScope {
+            val selectedChunks =
+                chunks.filter { chunk ->
+                    val chunkEnd = chunk.offset + chunk.uncompressedLength - 1L
+                    chunkEnd >= range.start && chunk.offset <= range.endInclusive
+                }
             if (selectedChunks.isEmpty()) return@coroutineScope
             val queue = Channel<ChunkData>(prefetchConcurrency)
             launch {
@@ -656,16 +697,20 @@ internal class SteamContentDownloader {
         }
 
         private fun cancelPrefetchRequests() {
-            val staleRequests = synchronized(inFlightLock) {
-                inFlightChunks
-                    .filterValues { request -> request.priority == SteamStreamChunkPriority.PREFETCH }
-                    .keys
-                    .mapNotNull(inFlightChunks::remove)
-            }
+            val staleRequests =
+                synchronized(inFlightLock) {
+                    inFlightChunks
+                        .filterValues { request -> request.priority == SteamStreamChunkPriority.PREFETCH }
+                        .keys
+                        .mapNotNull(inFlightChunks::remove)
+                }
             staleRequests.forEach { request -> request.deferred.cancel() }
         }
 
-        private fun readCachedChunk(file: File, chunk: ChunkData): ByteArray? {
+        private fun readCachedChunk(
+            file: File,
+            chunk: ChunkData,
+        ): ByteArray? {
             if (!file.isFile || file.length() != chunk.uncompressedLength.toLong()) return null
             return runCatching { file.readBytes() }
                 .getOrNull()
@@ -673,7 +718,10 @@ internal class SteamContentDownloader {
                 ?.also { file.setLastModified(System.currentTimeMillis()) }
         }
 
-        private fun writeCachedChunk(file: File, data: ByteArray) {
+        private fun writeCachedChunk(
+            file: File,
+            data: ByteArray,
+        ) {
             val partial = File(file.parentFile, "${file.name}.part")
             partial.outputStream().use { output ->
                 output.write(data)
@@ -690,16 +738,19 @@ internal class SteamContentDownloader {
 
         private fun evictCachedChunksIfNeeded() {
             if (cachedBytes < 0L) {
-                cachedBytes = cacheDirectory.listFiles()
+                cachedBytes = cacheDirectory
+                    .listFiles()
                     ?.filter { file -> file.isFile && file.name.endsWith(".chunk") }
                     ?.sumOf(File::length)
                     ?: 0L
             }
             if (cachedBytes <= cacheLimitBytes) return
-            val files = cacheDirectory.listFiles()
-                ?.filter { it.isFile && it.name.endsWith(".chunk") }
-                ?.sortedBy(File::lastModified)
-                .orEmpty()
+            val files =
+                cacheDirectory
+                    .listFiles()
+                    ?.filter { it.isFile && it.name.endsWith(".chunk") }
+                    ?.sortedBy(File::lastModified)
+                    .orEmpty()
             var total = cachedBytes
             files.forEach { file ->
                 if (total <= cacheLimitBytes) return
@@ -729,15 +780,16 @@ internal class SteamContentDownloader {
             try {
                 val token = authTokens.get(server)
                 hasToken = token != null
-                return cdnClient.downloadManifestFuture(
-                    depotId,
-                    manifestId,
-                    requestCode,
-                    server,
-                    depotKey,
-                    null,
-                    token,
-                ).await()
+                return cdnClient
+                    .downloadManifestFuture(
+                        depotId,
+                        manifestId,
+                        requestCode,
+                        server,
+                        depotKey,
+                        null,
+                        token,
+                    ).await()
             } catch (error: Throwable) {
                 lastError = error
                 failures += describeServer(server, hasToken) + "：" +
@@ -769,15 +821,16 @@ internal class SteamContentDownloader {
                 val decoded = ByteArray(chunk.uncompressedLength)
                 val token = authTokens.get(server)
                 hasToken = token != null
-                cdnClient.downloadDepotChunkFuture(
-                    depotId,
-                    chunk,
-                    server,
-                    encrypted,
-                    null,
-                    null,
-                    token,
-                ).await()
+                cdnClient
+                    .downloadDepotChunkFuture(
+                        depotId,
+                        chunk,
+                        server,
+                        encrypted,
+                        null,
+                        null,
+                        token,
+                    ).await()
                 val written = DepotChunk.process(chunk, encrypted, decoded, depotKey)
                 check(written == decoded.size) { "Steam chunk 解压长度不匹配" }
                 onSuccess?.invoke(server)
@@ -829,33 +882,35 @@ internal class SteamContentDownloader {
                 continue
             }
 
-            val batch = buildList {
-                while (
-                    nextPlanIndex < plans.size &&
+            val batch =
+                buildList {
+                    while (
+                        nextPlanIndex < plans.size &&
                         size < smallFileBatchSize &&
                         plans[nextPlanIndex].isSmallFilePipelineCandidate()
-                ) {
-                    add(plans[nextPlanIndex])
-                    nextPlanIndex += 1
+                    ) {
+                        add(plans[nextPlanIndex])
+                        nextPlanIndex += 1
+                    }
                 }
-            }
-            batch.map { plan ->
-                async {
-                    downloadFilePlan(
-                        plan = plan,
-                        destinationDirectory = destinationDirectory,
-                        cdnClient = cdnClient,
-                        servers = servers,
-                        depotId = depotId,
-                        depotKey = depotKey,
-                        authTokens = authTokens,
-                        selector = selector,
-                        chunkConcurrency = 1,
-                        control = control,
-                        progressReporter = progressReporter,
-                    )
-                }
-            }.awaitAll()
+            batch
+                .map { plan ->
+                    async {
+                        downloadFilePlan(
+                            plan = plan,
+                            destinationDirectory = destinationDirectory,
+                            cdnClient = cdnClient,
+                            servers = servers,
+                            depotId = depotId,
+                            depotKey = depotKey,
+                            authTokens = authTokens,
+                            selector = selector,
+                            chunkConcurrency = 1,
+                            control = control,
+                            progressReporter = progressReporter,
+                        )
+                    }
+                }.awaitAll()
         }
     }
 
@@ -898,9 +953,10 @@ internal class SteamContentDownloader {
         }
 
         val verifiedOffsets = findVerifiedChunkOffsets(partial, plan.chunks)
-        val recoveredBytes = plan.chunks
-            .filter { it.offset in verifiedOffsets }
-            .sumOf { it.uncompressedLength.toLong() }
+        val recoveredBytes =
+            plan.chunks
+                .filter { it.offset in verifiedOffsets }
+                .sumOf { it.uncompressedLength.toLong() }
         if (recoveredBytes > 0L) {
             progressReporter.addDownloadedBytes(manifestFile.fileName, recoveredBytes)
         }
@@ -969,16 +1025,17 @@ internal class SteamContentDownloader {
                 for (chunk in queue) {
                     currentCoroutineContext().ensureActive()
                     checkDownloadControl(control)
-                    val data = downloadChunk(
-                        cdnClient = cdnClient,
-                        servers = servers,
-                        depotId = depotId,
-                        chunk = chunk,
-                        depotKey = depotKey,
-                        authTokens = authTokens,
-                        selector = selector,
-                        control = control,
-                    )
+                    val data =
+                        downloadChunk(
+                            cdnClient = cdnClient,
+                            servers = servers,
+                            depotId = depotId,
+                            chunk = chunk,
+                            depotKey = depotKey,
+                            authTokens = authTokens,
+                            selector = selector,
+                            control = control,
+                        )
                     completed.send(DownloadedChunk(chunk.offset, data))
                 }
             }
@@ -991,7 +1048,10 @@ internal class SteamContentDownloader {
         }
     }
 
-    private fun verifyFileHash(file: FileData, calculatedHash: ByteArray) {
+    private fun verifyFileHash(
+        file: FileData,
+        calculatedHash: ByteArray,
+    ) {
         if (file.fileHash.isNotEmpty()) {
             check(file.fileHash.contentEquals(calculatedHash)) {
                 "文件哈希校验失败：${file.fileName}"
@@ -1034,23 +1094,25 @@ internal class SteamContentDownloader {
     }
 
     private fun createCdnClient(options: SteamContentDownloadOptions): SteamCdnClient {
-        val dispatcher = Dispatcher().apply {
-            maxRequests = options.chunkConcurrency * 2
-            maxRequestsPerHost = options.chunkConcurrency
-        }
-        val httpClientBuilder = OkHttpClient.Builder()
-            .dispatcher(dispatcher)
-            .connectionPool(
-                ConnectionPool(
-                    options.chunkConcurrency,
-                    CDN_KEEP_ALIVE_MINUTES,
-                    TimeUnit.MINUTES,
-                ),
-            )
-            .connectTimeout(CDN_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .readTimeout(CDN_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .writeTimeout(CDN_WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .retryOnConnectionFailure(true)
+        val dispatcher =
+            Dispatcher().apply {
+                maxRequests = options.chunkConcurrency * 2
+                maxRequestsPerHost = options.chunkConcurrency
+            }
+        val httpClientBuilder =
+            OkHttpClient
+                .Builder()
+                .dispatcher(dispatcher)
+                .connectionPool(
+                    ConnectionPool(
+                        options.chunkConcurrency,
+                        CDN_KEEP_ALIVE_MINUTES,
+                        TimeUnit.MINUTES,
+                    ),
+                ).connectTimeout(CDN_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .readTimeout(CDN_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .writeTimeout(CDN_WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .retryOnConnectionFailure(true)
         httpClientBuilder.applyDownloadProxy(options.proxyUrl)
         val httpClient = httpClientBuilder.build()
         return SteamCdnClient(
@@ -1063,14 +1125,18 @@ internal class SteamContentDownloader {
         )
     }
 
-    private fun describeServer(server: Server, hasToken: Boolean): String {
+    private fun describeServer(
+        server: Server,
+        hasToken: Boolean,
+    ): String {
         val requestHost = resolveCdnRequestHost(server.vHost, server.host) ?: "未知 CDN"
         val endpointHost = server.host?.trim()?.takeIf(String::isNotBlank)
-        val endpoint = if (endpointHost != null && !endpointHost.equals(requestHost, ignoreCase = true)) {
-            "，节点：$endpointHost"
-        } else {
-            ""
-        }
+        val endpoint =
+            if (endpointHost != null && !endpointHost.equals(requestHost, ignoreCase = true)) {
+                "，节点：$endpointHost"
+            } else {
+                ""
+            }
         return "$requestHost（CDN 令牌：${if (hasToken) "已附加" else "未附加"}$endpoint）"
     }
 
@@ -1078,20 +1144,23 @@ internal class SteamContentDownloader {
         kind: String,
         failures: List<String>,
         lastError: Throwable?,
-    ): String = if (failures.isEmpty()) {
-        "Steam CDN $kind 下载失败：${lastError?.message ?: "无可用 CDN 路由"}"
-    } else {
-        failures.take(MAX_CDN_ERROR_DETAILS)
-            .joinToString(prefix = "Steam CDN $kind 下载失败：", separator = "；")
-    }
+    ): String =
+        if (failures.isEmpty()) {
+            "Steam CDN $kind 下载失败：${lastError?.message ?: "无可用 CDN 路由"}"
+        } else {
+            failures
+                .take(MAX_CDN_ERROR_DETAILS)
+                .joinToString(prefix = "Steam CDN $kind 下载失败：", separator = "；")
+        }
 
     private suspend fun openContentSession(
         credential: SteamContentCredential?,
         onAuthenticating: suspend () -> Unit,
     ): SteamContentSession {
-        val configuration = SteamConfiguration.create { config ->
-            config.withConnectionTimeout(CONNECT_TIMEOUT_MS)
-        }
+        val configuration =
+            SteamConfiguration.create { config ->
+                config.withConnectionTimeout(CONNECT_TIMEOUT_MS)
+            }
         val client = SteamClient(configuration)
         val callbackManager = CallbackManager(client)
         val user = client.getHandler(SteamUser::class.java) ?: error("SteamUser handler unavailable")
@@ -1102,29 +1171,33 @@ internal class SteamContentDownloader {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val subscriptions = mutableListOf<Closeable>()
         val sessionLabel = if (credential == null) "匿名 Steam 内容会话" else "已登录 Steam 内容会话"
-        subscriptions += callbackManager.subscribe(ConnectedCallback::class.java) {
-            connected.complete(Unit)
-        }
-        subscriptions += callbackManager.subscribe(DisconnectedCallback::class.java) {
-            val failure = IllegalStateException("${sessionLabel}已断开")
-            if (!connected.isCompleted) connected.completeExceptionally(failure)
-            if (!loggedOn.isCompleted) loggedOn.completeExceptionally(failure)
-        }
-        subscriptions += callbackManager.subscribe(LoggedOnCallback::class.java) { callback ->
-            if (callback.result == EResult.OK) {
-                loggedOn.complete(Unit)
-            } else {
-                loggedOn.completeExceptionally(
-                    IllegalStateException("${sessionLabel}登录失败：${callback.result}"),
-                )
+        subscriptions +=
+            callbackManager.subscribe(ConnectedCallback::class.java) {
+                connected.complete(Unit)
             }
-        }
-        val callbackJob = scope.launch {
-            while (isActive) {
-                runCatching { callbackManager.runWaitCallbacks(1_000L) }
-                delay(1)
+        subscriptions +=
+            callbackManager.subscribe(DisconnectedCallback::class.java) {
+                val failure = IllegalStateException("${sessionLabel}已断开")
+                if (!connected.isCompleted) connected.completeExceptionally(failure)
+                if (!loggedOn.isCompleted) loggedOn.completeExceptionally(failure)
             }
-        }
+        subscriptions +=
+            callbackManager.subscribe(LoggedOnCallback::class.java) { callback ->
+                if (callback.result == EResult.OK) {
+                    loggedOn.complete(Unit)
+                } else {
+                    loggedOn.completeExceptionally(
+                        IllegalStateException("${sessionLabel}登录失败：${callback.result}"),
+                    )
+                }
+            }
+        val callbackJob =
+            scope.launch {
+                while (isActive) {
+                    runCatching { callbackManager.runWaitCallbacks(1_000L) }
+                    delay(1)
+                }
+            }
         try {
             client.connect()
             withTimeout(CONNECT_TIMEOUT_MS) { connected.await() }
@@ -1180,8 +1253,7 @@ internal class SteamContentDownloader {
         val file: FileData,
         val chunks: List<ChunkData>,
     ) {
-        fun isSmallFilePipelineCandidate(): Boolean =
-            isSmallFilePipelineCandidate(file.totalSize, chunks.size)
+        fun isSmallFilePipelineCandidate(): Boolean = isSmallFilePipelineCandidate(file.totalSize, chunks.size)
     }
 
     private class CdnServerSelector {
@@ -1203,8 +1275,7 @@ internal class SteamContentDownloader {
             failedHosts += server.selectorKey()
         }
 
-        private fun Server.selectorKey(): String =
-            (resolveCdnRequestHost(vHost, host) ?: host.orEmpty()).lowercase()
+        private fun Server.selectorKey(): String = (resolveCdnRequestHost(vHost, host) ?: host.orEmpty()).lowercase()
     }
 
     internal class CdnAuthTokenProvider(
@@ -1223,26 +1294,30 @@ internal class SteamContentDownloader {
             val requestHost = resolveCdnRequestHost(server.vHost, server.host) ?: return null
             val cacheKey = requestHost.lowercase()
             var cachedToken: String? = null
-            val pending = mutex.withLock {
-                val now = System.currentTimeMillis()
-                cachedTokens[cacheKey]
-                    ?.takeIf { it.expiresAtMs > now + TOKEN_MIN_VALIDITY_MS }
-                    ?.let { token ->
-                        cachedToken = token.token
-                        return@withLock null
-                    }
-                pendingTokens[cacheKey] ?: callbackScope.async {
-                    val response = content
-                        .getCDNAuthToken(appId, depotId, requestHost, callbackScope)
-                        .await()
-                    check(response.result == EResult.OK) { "Steam CDN 授权失败：${response.result}" }
-                    CachedCdnAuthToken(
-                        token = normalizeCdnAuthToken(response.token).takeIf(String::isNotBlank)
-                            ?: error("Steam 未返回 CDN 授权 token"),
-                        expiresAtMs = response.expiration?.time ?: Long.MAX_VALUE,
-                    )
-                }.also { request -> pendingTokens[cacheKey] = request }
-            }
+            val pending =
+                mutex.withLock {
+                    val now = System.currentTimeMillis()
+                    cachedTokens[cacheKey]
+                        ?.takeIf { it.expiresAtMs > now + TOKEN_MIN_VALIDITY_MS }
+                        ?.let { token ->
+                            cachedToken = token.token
+                            return@withLock null
+                        }
+                    pendingTokens[cacheKey] ?: callbackScope
+                        .async {
+                            val response =
+                                content
+                                    .getCDNAuthToken(appId, depotId, requestHost, callbackScope)
+                                    .await()
+                            check(response.result == EResult.OK) { "Steam CDN 授权失败：${response.result}" }
+                            CachedCdnAuthToken(
+                                token =
+                                    normalizeCdnAuthToken(response.token).takeIf(String::isNotBlank)
+                                        ?: error("Steam 未返回 CDN 授权 token"),
+                                expiresAtMs = response.expiration?.time ?: Long.MAX_VALUE,
+                            )
+                        }.also { request -> pendingTokens[cacheKey] = request }
+                }
             cachedToken?.let { return it }
             val request = checkNotNull(pending)
             return try {
@@ -1352,11 +1427,12 @@ internal fun steamStreamStartupPrefetchRanges(
 internal fun steamStreamAheadPrefetchRange(
     contentLength: Long,
     afterExclusive: Long,
-): SteamStreamByteRange? = steamStreamRange(
-    contentLength = contentLength,
-    start = afterExclusive,
-    length = STEAM_STREAM_AHEAD_BYTES,
-)
+): SteamStreamByteRange? =
+    steamStreamRange(
+        contentLength = contentLength,
+        start = afterExclusive,
+        length = STEAM_STREAM_AHEAD_BYTES,
+    )
 
 internal fun steamStreamContiguousPrefetchEnd(
     startPosition: Long,
@@ -1390,7 +1466,10 @@ private const val STEAM_STREAM_AHEAD_BYTES = 64L * STEAM_STREAM_MEBIBYTE
 private const val STEAM_STREAM_MAX_PARALLEL_CHUNKS = 32
 private const val STREAM_SEEK_RESET_BYTES = 2L * STEAM_STREAM_MEBIBYTE
 
-internal fun isSmallFilePipelineCandidate(fileSize: Long, chunkCount: Int): Boolean =
+internal fun isSmallFilePipelineCandidate(
+    fileSize: Long,
+    chunkCount: Int,
+): Boolean =
     fileSize in 0..SMALL_FILE_PIPELINE_MAX_BYTES &&
         chunkCount in 0..SMALL_FILE_PIPELINE_MAX_CHUNKS
 
@@ -1406,7 +1485,10 @@ internal class DownloadProgressReporter(
     private var downloadedBytes = 0L
     private var completedFiles = 0
 
-    suspend fun addDownloadedBytes(fileName: String, bytes: Long) {
+    suspend fun addDownloadedBytes(
+        fileName: String,
+        bytes: Long,
+    ) {
         publish(
             fileName = fileName,
             addedBytes = bytes,
@@ -1414,7 +1496,10 @@ internal class DownloadProgressReporter(
         )
     }
 
-    suspend fun markExistingFileCompleted(fileName: String, bytes: Long) {
+    suspend fun markExistingFileCompleted(
+        fileName: String,
+        bytes: Long,
+    ) {
         publish(
             fileName = fileName,
             addedBytes = bytes,
@@ -1430,12 +1515,13 @@ internal class DownloadProgressReporter(
         )
     }
 
-    suspend fun snapshot(): DownloadProgressSnapshot = mutex.withLock {
-        DownloadProgressSnapshot(
-            downloadedBytes = downloadedBytes,
-            completedFiles = completedFiles,
-        )
-    }
+    suspend fun snapshot(): DownloadProgressSnapshot =
+        mutex.withLock {
+            DownloadProgressSnapshot(
+                downloadedBytes = downloadedBytes,
+                completedFiles = completedFiles,
+            )
+        }
 
     private suspend fun publish(
         fileName: String,
@@ -1471,14 +1557,18 @@ internal data class SteamContentDownloadOptions(
     val chunkConcurrency: Int = 24,
     val proxyUrl: String = "",
 ) {
-    fun normalized(): SteamContentDownloadOptions = copy(
-        chunkConcurrency = chunkConcurrency.coerceIn(12, 48),
-        proxyUrl = proxyUrl.trim(),
-    )
+    fun normalized(): SteamContentDownloadOptions =
+        copy(
+            chunkConcurrency = chunkConcurrency.coerceIn(12, 48),
+            proxyUrl = proxyUrl.trim(),
+        )
 }
 
 internal object WorkshopStagingPath {
-    fun resolve(rootDirectory: File, relativePath: String): File {
+    fun resolve(
+        rootDirectory: File,
+        relativePath: String,
+    ): File {
         val normalized = relativePath.replace('\\', '/')
         val segments = normalized.split('/')
         require(normalized.isNotBlank()) { "Steam manifest 包含空文件路径" }

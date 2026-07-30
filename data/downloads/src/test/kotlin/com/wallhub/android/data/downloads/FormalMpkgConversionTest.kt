@@ -11,17 +11,17 @@ import com.wallhub.prototype.mpkg.ShaderCompatibility
 import com.wallhub.prototype.mpkg.TexMobileConverter
 import com.wallhub.prototype.mpkg.VIDEO_MPKG_MAGIC
 import com.wallhub.prototype.mpkg.WorkshopConverter
+import kotlinx.coroutines.CancellationException
+import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.file.Files
 import java.util.Random
-import kotlinx.coroutines.CancellationException
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import org.junit.Test
 
 class FormalMpkgConversionTest {
     @Test
@@ -73,7 +73,8 @@ class FormalMpkgConversionTest {
 
     @Test
     fun `shader compatibility ports Web numeric and blur fixes`() {
-        val source = """
+        val source =
+            """
             uniform sampler2D g_Texture0; // {"hidden":true}
             #include "common_blur.h"
             const int sampleCount = 3;
@@ -84,7 +85,7 @@ class FormalMpkgConversionTest {
                 vec3 normal = sample.rgb * 2 - 1;
                 for (int i = 0; i < sampleCount; ++i) {}
             }
-        """.trimIndent()
+            """.trimIndent()
 
         val rewritten = ShaderCompatibility.rewrite(source)
 
@@ -100,31 +101,46 @@ class FormalMpkgConversionTest {
 
     @Test
     fun `shader compatibility preserves integer semantics`() {
-        val source = """
+        val source =
+            """
             int layer = 1;
             ivec2 offset = ivec2(1, 0);
             float exponent = 1e+0;
             vec4 chooseLayer(int index) { return index == 1 ? vec4(1) : vec4(0); }
-        """.trimIndent()
+            """.trimIndent()
 
         assertEquals(source, ShaderCompatibility.rewrite(source))
     }
 
     @Test
     fun `mobile TEX writer emits complete LZ4 payload metadata`() {
-        val rgba = byteArrayOf(
-            1, 2, 3, -1,
-            4, 5, 6, -1,
-            7, 8, 9, -1,
-            10, 11, 12, -1,
-        )
+        val rgba =
+            byteArrayOf(
+                1,
+                2,
+                3,
+                -1,
+                4,
+                5,
+                6,
+                -1,
+                7,
+                8,
+                9,
+                -1,
+                10,
+                11,
+                12,
+                -1,
+            )
 
-        val tex = TexMobileConverter.writeMobileRgba(
-            flags = 0,
-            width = 2,
-            height = 2,
-            rgba = rgba,
-        )
+        val tex =
+            TexMobileConverter.writeMobileRgba(
+                flags = 0,
+                width = 2,
+                height = 2,
+                rgba = rgba,
+            )
 
         StrictMobileTexReader(tex).assertRgba(width = 2, height = 2, expected = rgba)
     }
@@ -132,13 +148,16 @@ class FormalMpkgConversionTest {
     @Test
     fun `mobile TEX writer uses LZ4 HC3`() {
         val rgba = hc3Fixture()
-        val tex = TexMobileConverter.writeMobileRgba(
-            flags = 0,
-            width = 128,
-            height = 128,
-            rgba = rgba,
-        )
-        val factory = net.jpountz.lz4.LZ4Factory.fastestJavaInstance()
+        val tex =
+            TexMobileConverter.writeMobileRgba(
+                flags = 0,
+                width = 128,
+                height = 128,
+                rgba = rgba,
+            )
+        val factory =
+            net.jpountz.lz4.LZ4Factory
+                .fastestJavaInstance()
         val compressor = factory.highCompressor(3)
         val expected = ByteArray(compressor.maxCompressedLength(rgba.size))
         val expectedLength = compressor.compress(rgba, 0, rgba.size, expected, 0, expected.size)
@@ -194,9 +213,10 @@ class FormalMpkgConversionTest {
                 listOf(PkgEntry("materials/unsupported.tex", byteArrayOf(1, 2, 3))),
             )
 
-            val error = assertFailsWith<IllegalStateException> {
-                WorkshopConverter.convert(root, File(root, "output.mpkg"), "scene")
-            }
+            val error =
+                assertFailsWith<IllegalStateException> {
+                    WorkshopConverter.convert(root, File(root, "output.mpkg"), "scene")
+                }
 
             assertTrue(error.message.orEmpty().contains("materials/unsupported.tex"))
             assertFalse(File(root, "output.mpkg").exists())
@@ -229,40 +249,54 @@ class FormalMpkgConversionTest {
         }
     }
 
-    private fun multiMipmapRgbaTex(): ByteArray = ByteArrayOutputStream().use { output ->
-        output.writeCString("TEXV0005")
-        output.writeCString("TEXI0001")
-        output.writeIntLe(0)
-        output.writeIntLe(0)
-        output.writeIntLe(2)
-        output.writeIntLe(2)
-        output.writeIntLe(2)
-        output.writeIntLe(2)
-        output.writeIntLe(0)
-        output.writeCString("TEXB0004")
-        output.writeIntLe(1)
-        output.writeIntLe(-1)
-        output.writeIntLe(0)
-        output.writeIntLe(2)
-        writeUncompressedMipmap(
-            output = output,
-            width = 2,
-            height = 2,
-            bytes = byteArrayOf(
-                1, 2, 3, -1,
-                4, 5, 6, -1,
-                7, 8, 9, -1,
-                10, 11, 12, -1,
-            ),
-        )
-        writeUncompressedMipmap(
-            output = output,
-            width = 1,
-            height = 1,
-            bytes = byteArrayOf(13, 14, 15, -1),
-        )
-        output.toByteArray()
-    }
+    private fun multiMipmapRgbaTex(): ByteArray =
+        ByteArrayOutputStream().use { output ->
+            output.writeCString("TEXV0005")
+            output.writeCString("TEXI0001")
+            output.writeIntLe(0)
+            output.writeIntLe(0)
+            output.writeIntLe(2)
+            output.writeIntLe(2)
+            output.writeIntLe(2)
+            output.writeIntLe(2)
+            output.writeIntLe(0)
+            output.writeCString("TEXB0004")
+            output.writeIntLe(1)
+            output.writeIntLe(-1)
+            output.writeIntLe(0)
+            output.writeIntLe(2)
+            writeUncompressedMipmap(
+                output = output,
+                width = 2,
+                height = 2,
+                bytes =
+                    byteArrayOf(
+                        1,
+                        2,
+                        3,
+                        -1,
+                        4,
+                        5,
+                        6,
+                        -1,
+                        7,
+                        8,
+                        9,
+                        -1,
+                        10,
+                        11,
+                        12,
+                        -1,
+                    ),
+            )
+            writeUncompressedMipmap(
+                output = output,
+                width = 1,
+                height = 1,
+                bytes = byteArrayOf(13, 14, 15, -1),
+            )
+            output.toByteArray()
+        }
 
     private fun hc3Fixture(): ByteArray {
         val random = Random(0)
@@ -314,10 +348,16 @@ class FormalMpkgConversionTest {
         write(value ushr 24 and 0xff)
     }
 
-    private class StrictMobileTexReader(private val source: ByteArray) {
+    private class StrictMobileTexReader(
+        private val source: ByteArray,
+    ) {
         private var offset = 0
 
-        fun assertRgba(width: Int, height: Int, expected: ByteArray) {
+        fun assertRgba(
+            width: Int,
+            height: Int,
+            expected: ByteArray,
+        ) {
             assertEquals("TEXV0005", readCString())
             assertEquals("TEXI0001", readCString())
             assertEquals(0, readIntLe())
@@ -340,8 +380,11 @@ class FormalMpkgConversionTest {
             val compressed = source.copyOfRange(offset, offset + compressedSize)
             offset += compressedSize
             val decoded = ByteArray(expected.size)
-            val decodedSize = net.jpountz.lz4.LZ4Factory.fastestJavaInstance().safeDecompressor()
-                .decompress(compressed, 0, compressed.size, decoded, 0, decoded.size)
+            val decodedSize =
+                net.jpountz.lz4.LZ4Factory
+                    .fastestJavaInstance()
+                    .safeDecompressor()
+                    .decompress(compressed, 0, compressed.size, decoded, 0, decoded.size)
             assertEquals(decoded.size, decodedSize)
             assertTrue(expected.contentEquals(decoded))
             assertEquals(source.size, offset)
@@ -358,10 +401,12 @@ class FormalMpkgConversionTest {
 
         private fun readIntLe(): Int {
             require(offset + 4 <= source.size)
-            return ((source[offset].toInt() and 0xff) or
-                ((source[offset + 1].toInt() and 0xff) shl 8) or
-                ((source[offset + 2].toInt() and 0xff) shl 16) or
-                ((source[offset + 3].toInt() and 0xff) shl 24)).also {
+            return (
+                (source[offset].toInt() and 0xff) or
+                    ((source[offset + 1].toInt() and 0xff) shl 8) or
+                    ((source[offset + 2].toInt() and 0xff) shl 16) or
+                    ((source[offset + 3].toInt() and 0xff) shl 24)
+            ).also {
                 offset += 4
             }
         }

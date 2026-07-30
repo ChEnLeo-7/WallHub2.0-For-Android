@@ -34,11 +34,17 @@ internal class SteamRouteSnapshotCache(
         )
     }
 
-    fun publish(key: String, route: SteamCachedRoute) {
+    fun publish(
+        key: String,
+        route: SteamCachedRoute,
+    ) {
         routes[key] = route
     }
 
-    fun publishKeepingUsable(key: String, route: SteamCachedRoute): SteamCachedRoute {
+    fun publishKeepingUsable(
+        key: String,
+        route: SteamCachedRoute,
+    ): SteamCachedRoute {
         var selected = route
         routes.compute(key) { _, current ->
             selected = if (route.available || current == null || !current.available) route else current
@@ -55,7 +61,10 @@ internal class SteamRouteSnapshotCache(
         routes.remove(key)
     }
 
-    fun removeAddress(key: String, address: InetAddress): Boolean {
+    fun removeAddress(
+        key: String,
+        address: InetAddress,
+    ): Boolean {
         var becameEmpty = false
         routes.computeIfPresent(key) { _, route ->
             val remaining = route.addresses.filterNot { candidate -> candidate.hostAddress == address.hostAddress }

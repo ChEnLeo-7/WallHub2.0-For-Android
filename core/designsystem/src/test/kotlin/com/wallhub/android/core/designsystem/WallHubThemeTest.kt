@@ -20,10 +20,11 @@ class WallHubThemeTest {
 
     @Test
     fun staticLightAccentRetainsTheMaterialSurfaceHierarchy() {
-        val scheme = staticAccentColorScheme(
-            seedColor = Color(0xFF2F855A),
-            dark = false,
-        )
+        val scheme =
+            staticAccentColorScheme(
+                seedColor = Color(0xFF2F855A),
+                dark = false,
+            )
 
         assertNotEquals(scheme.background, scheme.surfaceContainerLow)
         assertNotEquals(scheme.surfaceContainerLow, scheme.surfaceContainer)
@@ -62,10 +63,11 @@ class WallHubThemeTest {
 
     @Test
     fun darkMonetSurfaceContainersKeepTheirExistingDepthProfile() {
-        val source = staticAccentColorScheme(
-            seedColor = Color(0xFF2F855A),
-            dark = true,
-        )
+        val source =
+            staticAccentColorScheme(
+                seedColor = Color(0xFF2F855A),
+                dark = true,
+            )
         val deepened = source.withDeeperMonetSurfaceContainers(dark = true)
 
         assertEquals(lerp(source.surfaceContainerLowest, source.surfaceDim, 0.07f), deepened.surfaceContainerLowest)
@@ -109,6 +111,8 @@ class WallHubThemeTest {
         assertNotEquals(green.primaryContainer, rose.primaryContainer)
     }
 
-    private fun colorDistance(first: Color, second: Color): Float =
-        abs(first.red - second.red) + abs(first.green - second.green) + abs(first.blue - second.blue)
+    private fun colorDistance(
+        first: Color,
+        second: Color,
+    ): Float = abs(first.red - second.red) + abs(first.green - second.green) + abs(first.blue - second.blue)
 }

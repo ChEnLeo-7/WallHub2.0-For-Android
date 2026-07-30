@@ -11,28 +11,31 @@ import kotlin.test.assertTrue
 class LocalWallpaperUiStateTest {
     @Test
     fun `filters resources by format favorite tag and search`() {
-        val state = LocalWallpaperUiState(
-            scan = LocalWallpaperScanSnapshot(
-                resources = listOf(
-                    resource(
-                        id = "mpkg",
-                        title = "Rainy Room",
-                        format = LocalWallpaperFormat.MPKG,
-                        favorite = true,
-                        tags = setOf("calm"),
+        val state =
+            LocalWallpaperUiState(
+                scan =
+                    LocalWallpaperScanSnapshot(
+                        resources =
+                            listOf(
+                                resource(
+                                    id = "mpkg",
+                                    title = "Rainy Room",
+                                    format = LocalWallpaperFormat.MPKG,
+                                    favorite = true,
+                                    tags = setOf("calm"),
+                                ),
+                                resource(
+                                    id = "html",
+                                    title = "Portfolio",
+                                    format = LocalWallpaperFormat.HTML,
+                                ),
+                            ),
                     ),
-                    resource(
-                        id = "html",
-                        title = "Portfolio",
-                        format = LocalWallpaperFormat.HTML,
-                    ),
-                ),
-            ),
-            formatFilter = LocalWallpaperFormatFilter.MPKG,
-            favoriteOnly = true,
-            selectedTag = "calm",
-            searchQuery = "rain",
-        )
+                formatFilter = LocalWallpaperFormatFilter.MPKG,
+                favoriteOnly = true,
+                selectedTag = "calm",
+                searchQuery = "rain",
+            )
 
         assertEquals(listOf("mpkg"), state.resources.map(LocalWallpaperResource::id))
         assertEquals(3, state.activeFilterCount)
@@ -40,17 +43,19 @@ class LocalWallpaperUiStateTest {
 
     @Test
     fun `import filter distinguishes requested resources`() {
-        val requested = resource(
-            id = "requested",
-            title = "Requested",
-            importRequestedAt = 42L,
-        )
+        val requested =
+            resource(
+                id = "requested",
+                title = "Requested",
+                importRequestedAt = 42L,
+            )
         val notImported = resource(id = "new", title = "New")
 
-        val state = LocalWallpaperUiState(
-            scan = LocalWallpaperScanSnapshot(resources = listOf(requested, notImported)),
-            importFilter = LocalWallpaperImportFilter.IMPORT_REQUESTED,
-        )
+        val state =
+            LocalWallpaperUiState(
+                scan = LocalWallpaperScanSnapshot(resources = listOf(requested, notImported)),
+                importFilter = LocalWallpaperImportFilter.IMPORT_REQUESTED,
+            )
 
         assertEquals(LocalWallpaperImportState.IMPORT_REQUESTED, requested.importState)
         assertEquals(listOf("requested"), state.resources.map(LocalWallpaperResource::id))
@@ -58,10 +63,11 @@ class LocalWallpaperUiStateTest {
 
     @Test
     fun `empty filtered result reports no matching resources`() {
-        val state = LocalWallpaperUiState(
-            scan = LocalWallpaperScanSnapshot(resources = listOf(resource(id = "one", title = "One"))),
-            searchQuery = "missing",
-        )
+        val state =
+            LocalWallpaperUiState(
+                scan = LocalWallpaperScanSnapshot(resources = listOf(resource(id = "one", title = "One"))),
+                searchQuery = "missing",
+            )
 
         assertTrue(state.resources.isEmpty())
         assertEquals("没有符合条件的本地资源", state.summary)

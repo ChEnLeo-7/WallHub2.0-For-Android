@@ -9,14 +9,16 @@ class SteamAccessRouteStoreTest {
     @Test
     fun `real successes outrank repeated failures`() {
         val now = 1_000_000L
-        val healthy = JSONObject()
-            .put("success", 2)
-            .put("lastSuccessAt", now)
-            .put("consecutiveFailure", 0)
-        val failing = JSONObject()
-            .put("success", 4)
-            .put("lastSuccessAt", 0L)
-            .put("consecutiveFailure", 3)
+        val healthy =
+            JSONObject()
+                .put("success", 2)
+                .put("lastSuccessAt", now)
+                .put("consecutiveFailure", 0)
+        val failing =
+            JSONObject()
+                .put("success", 4)
+                .put("lastSuccessAt", 0L)
+                .put("consecutiveFailure", 3)
 
         assertTrue(SteamAccessRouteStore.score(healthy, now) > SteamAccessRouteStore.score(failing, now))
     }
@@ -24,16 +26,18 @@ class SteamAccessRouteStoreTest {
     @Test
     fun `lower handshake latency wins when health history is otherwise equal`() {
         val now = 1_000_000L
-        val fast = JSONObject()
-            .put("success", 2)
-            .put("lastSuccessAt", now)
-            .put("consecutiveFailure", 0)
-            .put("latencyEwmaMs", 120L)
-        val slow = JSONObject()
-            .put("success", 2)
-            .put("lastSuccessAt", now)
-            .put("consecutiveFailure", 0)
-            .put("latencyEwmaMs", 2_500L)
+        val fast =
+            JSONObject()
+                .put("success", 2)
+                .put("lastSuccessAt", now)
+                .put("consecutiveFailure", 0)
+                .put("latencyEwmaMs", 120L)
+        val slow =
+            JSONObject()
+                .put("success", 2)
+                .put("lastSuccessAt", now)
+                .put("consecutiveFailure", 0)
+                .put("latencyEwmaMs", 2_500L)
 
         assertTrue(SteamAccessRouteStore.score(fast, now) > SteamAccessRouteStore.score(slow, now))
     }

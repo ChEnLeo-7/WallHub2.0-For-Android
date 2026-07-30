@@ -20,12 +20,13 @@ internal class ManagementEdgeSwipeAccumulator(
         atLastPage: Boolean,
         horizontalDominant: Boolean,
     ): ManagementBoundaryDirection? {
-        val direction = when {
-            !horizontalDominant -> null
-            atFirstPage && deltaX > 0f -> ManagementBoundaryDirection.PREVIOUS
-            atLastPage && deltaX < 0f -> ManagementBoundaryDirection.NEXT
-            else -> null
-        }
+        val direction =
+            when {
+                !horizontalDominant -> null
+                atFirstPage && deltaX > 0f -> ManagementBoundaryDirection.PREVIOUS
+                atLastPage && deltaX < 0f -> ManagementBoundaryDirection.NEXT
+                else -> null
+            }
         if (direction == null) {
             reset()
             return null

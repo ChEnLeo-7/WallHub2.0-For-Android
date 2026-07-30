@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<baseline version="1.0">
+    <file name="src/main/kotlin/com/wallhub/android/feature/downloads/DownloadsScreen.kt">
+        <error line="335" column="5" source="standard:function-naming" />
+        <error line="351" column="5" source="standard:function-naming" />
+        <error line="396" column="5" source="standard:function-naming" />
+        <error line="413" column="5" source="standard:function-naming" />
+        <error line="467" column="13" source="standard:function-naming" />
+        <error line="593" column="13" source="standard:function-naming" />
+        <error line="711" column="13" source="standard:function-naming" />
+    </file>
+</baseline>

@@ -1,6 +1,5 @@
 package com.wallhub.android.core.designsystem
 
-import androidx.compose.material.icons.Icons as MaterialIcons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -18,6 +17,7 @@ import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DarkMode
@@ -51,7 +51,6 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.VerticalAlignTop
 import androidx.compose.material.icons.outlined.Visibility
@@ -62,6 +61,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons as MaterialIcons
 
 /** Official Material Design 3 icon aliases used throughout WallHub. */
 object WallHubIcons {
@@ -185,37 +185,38 @@ object WallHubIcons {
 
 // Material Symbols "folder_open", FILL=1, from fonts.google.com/icons.
 private val MaterialSymbolFolderOpenFilled: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "MaterialSymbolFolderOpenFilled",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f,
-    ).apply {
-        path(
-            fill = SolidColor(Color.Black),
-            pathFillType = PathFillType.NonZero,
-        ) {
-            moveTo(4f, 20f)
-            quadToRelative(-0.825f, 0f, -1.4125f, -0.5875f)
-            quadTo(2f, 18.825f, 2f, 18f)
-            verticalLineTo(6f)
-            quadToRelative(0f, -0.825f, 0.5875f, -1.4125f)
-            quadTo(3.175f, 4f, 4f, 4f)
-            horizontalLineToRelative(6f)
-            lineToRelative(2f, 2f)
-            horizontalLineToRelative(8f)
-            quadToRelative(0.825f, 0f, 1.4125f, 0.5875f)
-            quadTo(22f, 7.175f, 22f, 8f)
-            horizontalLineTo(4f)
-            verticalLineToRelative(10f)
-            lineToRelative(2.4f, -8f)
-            horizontalLineToRelative(17.1f)
-            lineTo(20.925f, 18.575f)
-            quadToRelative(-0.2f, 0.65f, -0.7375f, 1.0375f)
-            quadTo(19.65f, 20f, 19f, 20f)
-            horizontalLineTo(4f)
-            close()
-        }
-    }.build()
+    ImageVector
+        .Builder(
+            name = "MaterialSymbolFolderOpenFilled",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero,
+            ) {
+                moveTo(4f, 20f)
+                quadToRelative(-0.825f, 0f, -1.4125f, -0.5875f)
+                quadTo(2f, 18.825f, 2f, 18f)
+                verticalLineTo(6f)
+                quadToRelative(0f, -0.825f, 0.5875f, -1.4125f)
+                quadTo(3.175f, 4f, 4f, 4f)
+                horizontalLineToRelative(6f)
+                lineToRelative(2f, 2f)
+                horizontalLineToRelative(8f)
+                quadToRelative(0.825f, 0f, 1.4125f, 0.5875f)
+                quadTo(22f, 7.175f, 22f, 8f)
+                horizontalLineTo(4f)
+                verticalLineToRelative(10f)
+                lineToRelative(2.4f, -8f)
+                horizontalLineToRelative(17.1f)
+                lineTo(20.925f, 18.575f)
+                quadToRelative(-0.2f, 0.65f, -0.7375f, 1.0375f)
+                quadTo(19.65f, 20f, 19f, 20f)
+                horizontalLineTo(4f)
+                close()
+            }
+        }.build()
 }

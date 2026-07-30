@@ -2,15 +2,14 @@
 
 package com.wallhub.android.feature.detail
 
-import android.graphics.Color as AndroidColor
 import android.graphics.drawable.ColorDrawable
 import android.view.GestureDetector
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageButton
 import android.widget.GridLayout
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.SeekBar
@@ -18,11 +17,12 @@ import android.widget.TextView
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.Player
 import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import android.graphics.Color as AndroidColor
 
 /**
  * Hosts Media3's standard PlayerView and PlayerControlView inside the Compose hierarchy.
@@ -37,7 +37,8 @@ internal fun ComposeMedia3Player(
 ) {
     AndroidView(
         factory = { viewContext ->
-            LayoutInflater.from(viewContext)
+            LayoutInflater
+                .from(viewContext)
                 .inflate(R.layout.wallhub_media3_player_view, null, false)
                 .let { it as PlayerView }
                 .apply {
@@ -71,7 +72,8 @@ internal fun ComposeMedia3Player(
 
 private class WallHubPlayerControlsBinder(
     private val playerView: PlayerView,
-) : Player.Listener, SeekBar.OnSeekBarChangeListener {
+) : Player.Listener,
+    SeekBar.OnSeekBarChangeListener {
     private val speedButton = playerView.findViewById<TextView>(R.id.wallhub_playback_speed)
     private val muteButton = playerView.findViewById<ImageButton>(R.id.wallhub_mute)
     private val volumeBar = playerView.findViewById<SeekBar>(R.id.wallhub_volume)
@@ -121,7 +123,11 @@ private class WallHubPlayerControlsBinder(
         boundPlayer?.let(::updateCommandAvailability)
     }
 
-    override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+    override fun onProgressChanged(
+        seekBar: SeekBar,
+        progress: Int,
+        fromUser: Boolean,
+    ) {
         if (!fromUser) return
         val player = boundPlayer ?: return
         if (player.isCommandAvailable(Player.COMMAND_SET_VOLUME)) {
@@ -138,35 +144,38 @@ private class WallHubPlayerControlsBinder(
         if (!player.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH)) return
         speedPopup?.dismiss()
         val inflater = LayoutInflater.from(anchor.context)
-        val menuContainer = inflater.inflate(
-            R.layout.wallhub_player_speed_popup,
-            null,
-            false,
-        ) as LinearLayout
-        val optionsGrid = menuContainer.findViewById<GridLayout>(R.id.wallhub_speed_options)
-        val popup = PopupWindow(
-            menuContainer,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            true,
-        ).apply {
-            setBackgroundDrawable(ColorDrawable(AndroidColor.TRANSPARENT))
-            isOutsideTouchable = true
-            isClippingEnabled = true
-            inputMethodMode = PopupWindow.INPUT_METHOD_NOT_NEEDED
-            elevation = SPEED_POPUP_ELEVATION_DP * anchor.resources.displayMetrics.density
-            animationStyle = R.style.WallHubPlayerSpeedPopupAnimation
-            setOnDismissListener {
-                speedPopup = null
-                restoreControllerTimeout()
-            }
-        }
-        PLAYBACK_SPEEDS.forEach { speed ->
-            val option = inflater.inflate(
-                R.layout.wallhub_player_speed_option,
-                menuContainer,
+        val menuContainer =
+            inflater.inflate(
+                R.layout.wallhub_player_speed_popup,
+                null,
                 false,
-            ) as TextView
+            ) as LinearLayout
+        val optionsGrid = menuContainer.findViewById<GridLayout>(R.id.wallhub_speed_options)
+        val popup =
+            PopupWindow(
+                menuContainer,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                true,
+            ).apply {
+                setBackgroundDrawable(ColorDrawable(AndroidColor.TRANSPARENT))
+                isOutsideTouchable = true
+                isClippingEnabled = true
+                inputMethodMode = PopupWindow.INPUT_METHOD_NOT_NEEDED
+                elevation = SPEED_POPUP_ELEVATION_DP * anchor.resources.displayMetrics.density
+                animationStyle = R.style.WallHubPlayerSpeedPopupAnimation
+                setOnDismissListener {
+                    speedPopup = null
+                    restoreControllerTimeout()
+                }
+            }
+        PLAYBACK_SPEEDS.forEach { speed ->
+            val option =
+                inflater.inflate(
+                    R.layout.wallhub_player_speed_option,
+                    menuContainer,
+                    false,
+                ) as TextView
             option.text = speed.toSpeedLabel()
             option.isSelected = abs(player.playbackParameters.speed - speed) < SPEED_EPSILON
             option.contentDescription = "${anchor.context.getString(R.string.wallhub_player_playback_speed)} ${option.text}"
@@ -211,12 +220,13 @@ private class WallHubPlayerControlsBinder(
     private fun toggleMute() {
         val player = boundPlayer ?: return
         if (!player.isCommandAvailable(Player.COMMAND_SET_VOLUME)) return
-        player.volume = if (player.volume > MUTED_VOLUME_THRESHOLD) {
-            lastAudibleVolume = player.volume
-            0f
-        } else {
-            lastAudibleVolume.coerceAtLeast(DEFAULT_UNMUTE_VOLUME)
-        }
+        player.volume =
+            if (player.volume > MUTED_VOLUME_THRESHOLD) {
+                lastAudibleVolume = player.volume
+                0f
+            } else {
+                lastAudibleVolume.coerceAtLeast(DEFAULT_UNMUTE_VOLUME)
+            }
     }
 
     private fun updateSpeed(speed: Float) {
@@ -229,12 +239,16 @@ private class WallHubPlayerControlsBinder(
         val isMuted = volume <= MUTED_VOLUME_THRESHOLD
         muteButton?.apply {
             setImageResource(
-                if (isMuted) R.drawable.wallhub_player_volume_off
-                else R.drawable.wallhub_player_volume_up,
+                if (isMuted) {
+                    R.drawable.wallhub_player_volume_off
+                } else {
+                    R.drawable.wallhub_player_volume_up
+                },
             )
-            contentDescription = context.getString(
-                if (isMuted) R.string.wallhub_player_unmute else R.string.wallhub_player_mute,
-            )
+            contentDescription =
+                context.getString(
+                    if (isMuted) R.string.wallhub_player_unmute else R.string.wallhub_player_mute,
+                )
         }
     }
 
@@ -269,18 +283,22 @@ private class HoldToDoubleSpeedController(
 ) : View.OnTouchListener {
     private var acceleratedPlayer: Player? = null
     private var restorePlaybackParameters: PlaybackParameters? = null
-    private val gestureDetector = GestureDetector(
-        playerView.context,
-        object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(event: MotionEvent): Boolean = true
+    private val gestureDetector =
+        GestureDetector(
+            playerView.context,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDown(event: MotionEvent): Boolean = true
 
-            override fun onLongPress(event: MotionEvent) {
-                startDoubleSpeed()
-            }
-        },
-    )
+                override fun onLongPress(event: MotionEvent) {
+                    startDoubleSpeed()
+                }
+            },
+        )
 
-    override fun onTouch(view: View, event: MotionEvent): Boolean {
+    override fun onTouch(
+        view: View,
+        event: MotionEvent,
+    ): Boolean {
         gestureDetector.onTouchEvent(event)
         if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
             restoreSpeed()

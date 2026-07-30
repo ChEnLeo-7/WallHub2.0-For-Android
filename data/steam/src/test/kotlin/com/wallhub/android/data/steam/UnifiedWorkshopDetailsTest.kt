@@ -1,8 +1,8 @@
 package com.wallhub.android.data.steam
 
+import com.wallhub.android.data.steam.protobuf.CommunityMessages
 import `in`.dragonbra.javasteam.enums.EResult
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesPublishedfileSteamclient
-import com.wallhub.android.data.steam.protobuf.CommunityMessages
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -23,28 +23,31 @@ class UnifiedWorkshopDetailsTest {
 
     @Test
     fun `detail response maps creator profile and metadata`() {
-        val detail = SteammessagesPublishedfileSteamclient.PublishedFileDetails.newBuilder()
-            .setResult(EResult.OK.code())
-            .setPublishedfileid(123L)
-            .setCreator(76561198000000001L)
-            .setTitle("Example")
-            .setFileDescription("Description")
-            .setPreviewUrl("https://images.example/preview.jpg")
-            .setFileSize(4096L)
-            .setTimeCreated(100)
-            .setTimeUpdated(200)
-            .setSubscriptions(300)
-            .addTags(
-                SteammessagesPublishedfileSteamclient.PublishedFileDetails.Tag.newBuilder()
-                    .setTag("Scene")
-                    .build(),
-            )
-            .build()
+        val detail =
+            SteammessagesPublishedfileSteamclient.PublishedFileDetails
+                .newBuilder()
+                .setResult(EResult.OK.code())
+                .setPublishedfileid(123L)
+                .setCreator(76561198000000001L)
+                .setTitle("Example")
+                .setFileDescription("Description")
+                .setPreviewUrl("https://images.example/preview.jpg")
+                .setFileSize(4096L)
+                .setTimeCreated(100)
+                .setTimeUpdated(200)
+                .setSubscriptions(300)
+                .addTags(
+                    SteammessagesPublishedfileSteamclient.PublishedFileDetails.Tag
+                        .newBuilder()
+                        .setTag("Scene")
+                        .build(),
+                ).build()
 
-        val mapped = mapUnifiedWorkshopDetail(
-            detail = detail,
-            creatorProfile = SteamProfile("Creator", "https://images.example/avatar.jpg"),
-        )
+        val mapped =
+            mapUnifiedWorkshopDetail(
+                detail = detail,
+                creatorProfile = SteamProfile("Creator", "https://images.example/avatar.jpg"),
+            )
 
         assertEquals(123L, mapped.summary.id)
         assertEquals("Creator", mapped.summary.author)
@@ -56,12 +59,13 @@ class UnifiedWorkshopDetailsTest {
 
     @Test
     fun `comment request uses public published file thread`() {
-        val request = buildCommunityCommentRequest(
-            workshopId = 123L,
-            ownerId = "76561198000000001",
-            start = -4,
-            count = 100,
-        )
+        val request =
+            buildCommunityCommentRequest(
+                workshopId = 123L,
+                ownerId = "76561198000000001",
+                start = -4,
+                count = 100,
+            )
 
         assertEquals(76561198000000001L, request.steamid)
         assertEquals(5, request.commentThreadType)
@@ -73,37 +77,41 @@ class UnifiedWorkshopDetailsTest {
 
     @Test
     fun `comment response maps profiles creator and pagination`() {
-        val response = CommunityMessages.GetCommentThreadResponse.newBuilder()
-            .setSteamid(76561198000000001L)
-            .setStart(20)
-            .setCount(2)
-            .setTotalCount(25)
-            .addComments(
-                CommunityMessages.Comment.newBuilder()
-                    .setGidcomment(1L)
-                    .setSteamid(76561198000000001L)
-                    .setTimestamp(1_700_000_000)
-                    .setText("Creator comment"),
-            )
-            .addComments(
-                CommunityMessages.Comment.newBuilder()
-                    .setGidcomment(2L)
-                    .setSteamid(76561198000000002L)
-                    .setTimestamp(1_700_000_001)
-                    .setText("User comment"),
-            )
-            .build()
+        val response =
+            CommunityMessages.GetCommentThreadResponse
+                .newBuilder()
+                .setSteamid(76561198000000001L)
+                .setStart(20)
+                .setCount(2)
+                .setTotalCount(25)
+                .addComments(
+                    CommunityMessages.Comment
+                        .newBuilder()
+                        .setGidcomment(1L)
+                        .setSteamid(76561198000000001L)
+                        .setTimestamp(1_700_000_000)
+                        .setText("Creator comment"),
+                ).addComments(
+                    CommunityMessages.Comment
+                        .newBuilder()
+                        .setGidcomment(2L)
+                        .setSteamid(76561198000000002L)
+                        .setTimestamp(1_700_000_001)
+                        .setText("User comment"),
+                ).build()
 
-        val page = mapCommunityComments(
-            response = response,
-            requestedStart = 0,
-            requestedCount = 20,
-            creatorId = "76561198000000001",
-            profiles = mapOf(
-                76561198000000001L to SteamProfile("Creator"),
-                76561198000000002L to SteamProfile("Reader", "https://images.example/avatar.jpg"),
-            ),
-        )
+        val page =
+            mapCommunityComments(
+                response = response,
+                requestedStart = 0,
+                requestedCount = 20,
+                creatorId = "76561198000000001",
+                profiles =
+                    mapOf(
+                        76561198000000001L to SteamProfile("Creator"),
+                        76561198000000002L to SteamProfile("Reader", "https://images.example/avatar.jpg"),
+                    ),
+            )
 
         assertEquals(listOf("Creator", "Reader"), page.comments.map { it.author })
         assertEquals("76561198000000002", page.comments[1].authorId)
@@ -116,13 +124,14 @@ class UnifiedWorkshopDetailsTest {
 
     @Test
     fun `post request preserves validated text`() {
-        val request = buildCommunityPostRequest(
-            normalizeWorkshopCommentRequest(
-                workshopId = 123L,
-                ownerId = "76561198000000001",
-                text = "  hello  ",
-            ),
-        )
+        val request =
+            buildCommunityPostRequest(
+                normalizeWorkshopCommentRequest(
+                    workshopId = 123L,
+                    ownerId = "76561198000000001",
+                    text = "  hello  ",
+                ),
+            )
 
         assertEquals(76561198000000001L, request.steamid)
         assertEquals(5, request.commentThreadType)

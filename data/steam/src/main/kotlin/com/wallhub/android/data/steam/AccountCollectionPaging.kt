@@ -23,11 +23,12 @@ internal fun <T> selectAccountCollectionPage(
     val startIndex = (normalizedPage.toLong() - 1L) * normalizedPageSize.toLong()
     val endIndex = startIndex + normalizedPageSize.toLong()
     return AccountCollectionPageSelection(
-        items = if (startIndex >= matches.size.toLong()) {
-            emptyList()
-        } else {
-            matches.drop(startIndex.toInt()).take(normalizedPageSize)
-        },
+        items =
+            if (startIndex >= matches.size.toLong()) {
+                emptyList()
+            } else {
+                matches.drop(startIndex.toInt()).take(normalizedPageSize)
+            },
         hasNextPage = matches.size.toLong() > endIndex || !sourceExhausted,
     )
 }

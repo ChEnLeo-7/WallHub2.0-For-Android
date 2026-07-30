@@ -1,3 +1,5 @@
+@file:Suppress("ktlint:standard:function-naming", "ktlint:standard:property-naming")
+
 package com.wallhub.android.core.designsystem
 
 import androidx.compose.animation.core.CubicBezierEasing
@@ -70,7 +72,10 @@ object WallHubContextMenuDefaults {
 
     val Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
-    fun menuWidth(cardWidth: Dp?, language: AppLanguage): Dp {
+    fun menuWidth(
+        cardWidth: Dp?,
+        language: AppLanguage,
+    ): Dp {
         val maximum = if (language == AppLanguage.EN) MaxWidthEn else MaxWidthZh
         return cardWidth
             ?.minus(CardWidthInset)
@@ -94,10 +99,11 @@ fun WallHubContextMenuSurface(
         shadowElevation = 0.dp,
     ) {
         Column(
-            modifier = Modifier
-                .heightIn(max = WallHubContextMenuDefaults.MaxHeight)
-                .verticalScroll(rememberScrollState())
-            .padding(vertical = WallHubSpacing.xxs),
+            modifier =
+                Modifier
+                    .heightIn(max = WallHubContextMenuDefaults.MaxHeight)
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = WallHubSpacing.xxs),
             content = content,
         )
     }
@@ -111,24 +117,25 @@ fun WallHubContextMenuMetadataItem(
     onClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                shape = RoundedCornerShape(10.dp)
-                clip = true
-            }
-            .clickable(onClick = onClick)
-            .semantics { role = Role.Button }
-            .padding(horizontal = WallHubSpacing.xs, vertical = 7.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .graphicsLayer {
+                    shape = RoundedCornerShape(10.dp)
+                    clip = true
+                }.clickable(onClick = onClick)
+                .semantics { role = Role.Button }
+                .padding(horizontal = WallHubSpacing.xs, vertical = 7.dp),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = Modifier
-                .padding(top = 3.dp)
-                .size(WallHubSizeTokens.compactIcon),
+            modifier =
+                Modifier
+                    .padding(top = 3.dp)
+                    .size(WallHubSizeTokens.compactIcon),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -155,16 +162,16 @@ fun WallHubContextMenuAction(
     onClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(WallHubContextMenuDefaults.ActionHeight)
-            .graphicsLayer {
-                shape = RoundedCornerShape(10.dp)
-                clip = true
-            }
-            .clickable(onClick = onClick)
-            .semantics { role = Role.Button }
-            .padding(horizontal = WallHubSpacing.xs),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(WallHubContextMenuDefaults.ActionHeight)
+                .graphicsLayer {
+                    shape = RoundedCornerShape(10.dp)
+                    clip = true
+                }.clickable(onClick = onClick)
+                .semantics { role = Role.Button }
+                .padding(horizontal = WallHubSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
     ) {
@@ -196,34 +203,35 @@ fun WallHubContextMenuCardPreview(
     val cardWidth = with(density) { cardBounds.width.toDp() }
     val cardHeight = with(density) { cardBounds.height.toDp() }
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .clearAndSetSemantics {}
-            .drawWithContent previewClip@{
-                clipRect(
-                    left = clipBounds.left,
-                    top = clipBounds.top,
-                    right = clipBounds.right,
-                    bottom = clipBounds.bottom,
-                ) {
-                    this@previewClip.drawContent()
-                }
-            },
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .clearAndSetSemantics {}
+                .drawWithContent previewClip@{
+                    clipRect(
+                        left = clipBounds.left,
+                        top = clipBounds.top,
+                        right = clipBounds.right,
+                        bottom = clipBounds.bottom,
+                    ) {
+                        this@previewClip.drawContent()
+                    }
+                },
     ) {
         Canvas(
-            modifier = Modifier
-                .offset {
-                    IntOffset(
-                        x = cardBounds.left.roundToInt(),
-                        y = cardBounds.top.roundToInt(),
-                    )
-                }
-                .size(cardWidth, cardHeight)
-                .graphicsLayer {
-                    this.shape = shape
-                    clip = true
-                    shadowElevation = WallHubContextMenuDefaults.CardElevation.toPx() * elevationProgress
-                },
+            modifier =
+                Modifier
+                    .offset {
+                        IntOffset(
+                            x = cardBounds.left.roundToInt(),
+                            y = cardBounds.top.roundToInt(),
+                        )
+                    }.size(cardWidth, cardHeight)
+                    .graphicsLayer {
+                        this.shape = shape
+                        clip = true
+                        shadowElevation = WallHubContextMenuDefaults.CardElevation.toPx() * elevationProgress
+                    },
         ) {
             if (!graphicsLayer.isReleased) drawLayer(graphicsLayer)
         }
@@ -246,18 +254,20 @@ class WallHubContextMenuPositionProvider(
         val desiredBottomY = touchPosition.y.roundToInt() + touchOffsetPx
         val opensLeft = desiredRightX > maxX
         val opensAbove = desiredBottomY > maxY
-        val x = if (!opensLeft) {
-            desiredRightX
-        } else {
-            (touchPosition.x.roundToInt() - popupContentSize.width - touchOffsetPx)
-                .coerceIn(0, maxX)
-        }
-        val y = if (!opensAbove) {
-            desiredBottomY
-        } else {
-            (touchPosition.y.roundToInt() - popupContentSize.height - touchOffsetPx)
-                .coerceIn(0, maxY)
-        }
+        val x =
+            if (!opensLeft) {
+                desiredRightX
+            } else {
+                (touchPosition.x.roundToInt() - popupContentSize.width - touchOffsetPx)
+                    .coerceIn(0, maxX)
+            }
+        val y =
+            if (!opensAbove) {
+                desiredBottomY
+            } else {
+                (touchPosition.y.roundToInt() - popupContentSize.height - touchOffsetPx)
+                    .coerceIn(0, maxY)
+            }
         return IntOffset(x, y)
     }
 }

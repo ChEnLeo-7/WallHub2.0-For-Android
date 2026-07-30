@@ -10,28 +10,39 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
-import kotlin.test.assertEquals
 import org.junit.Test
+import kotlin.test.assertEquals
 
 class DownloadsStateSourceTest {
     @Test
-    fun `state source filters fake repository tasks without room worker or steam`() = runTest {
-        val source = DownloadsStateSource(
-            FakeDownloadTaskRepository(
-                listOf(
-                    task("running", DownloadStatus.DOWNLOADING),
-                    task("finished", DownloadStatus.COMPLETED),
-                ),
-            ),
-        )
+    fun `state source filters fake repository tasks without room worker or steam`() =
+        runTest {
+            val source =
+                DownloadsStateSource(
+                    FakeDownloadTaskRepository(
+                        listOf(
+                            task("running", DownloadStatus.DOWNLOADING),
+                            task("finished", DownloadStatus.COMPLETED),
+                        ),
+                    ),
+                )
 
-        source.setFilter(DownloadFilter.COMPLETED)
-        source.setTypeFilter(DownloadTypeFilter.VIDEO)
+            source.setFilter(DownloadFilter.COMPLETED)
+            source.setTypeFilter(DownloadTypeFilter.VIDEO)
 
-        assertEquals(listOf("finished"), source.states.first().tasks.map(DownloadTask::id))
-    }
+            assertEquals(
+                listOf("finished"),
+                source.states
+                    .first()
+                    .tasks
+                    .map(DownloadTask::id),
+            )
+        }
 
-    private fun task(id: String, status: DownloadStatus) = DownloadTask(
+    private fun task(
+        id: String,
+        status: DownloadStatus,
+    ) = DownloadTask(
         id = id,
         workshopId = 1L,
         title = id,
@@ -39,7 +50,9 @@ class DownloadsStateSourceTest {
         status = status,
     )
 
-    private class FakeDownloadTaskRepository(tasks: List<DownloadTask>) : DownloadTaskRepository {
+    private class FakeDownloadTaskRepository(
+        tasks: List<DownloadTask>,
+    ) : DownloadTaskRepository {
         private val state = MutableStateFlow(tasks)
 
         override val tasks: Flow<List<DownloadTask>> = state
@@ -50,15 +63,19 @@ class DownloadsStateSourceTest {
             state.value = state.value.filterNot { it.id == task.id } + task
         }
 
-        override suspend fun enqueue(request: DownloadRequest): DownloadTask = DownloadTask(
-            id = request.workshopId.toString(),
-            workshopId = request.workshopId,
-            title = request.title,
-            type = request.type,
-            status = DownloadStatus.QUEUED,
-        )
+        override suspend fun enqueue(request: DownloadRequest): DownloadTask =
+            DownloadTask(
+                id = request.workshopId.toString(),
+                workshopId = request.workshopId,
+                title = request.title,
+                type = request.type,
+                status = DownloadStatus.QUEUED,
+            )
 
-        override suspend fun requestAction(taskId: String, action: DownloadAction) = Unit
+        override suspend fun requestAction(
+            taskId: String,
+            action: DownloadAction,
+        ) = Unit
 
         override suspend fun reorder(taskIds: List<String>) = Unit
 

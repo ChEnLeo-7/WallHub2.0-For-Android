@@ -1,8 +1,8 @@
 package com.wallhub.android.feature.local
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.wallhub.android.core.model.LocalWallpaperFormat
 import com.wallhub.android.core.model.LocalWallpaperImportState
 import com.wallhub.android.core.model.LocalWallpaperRepository
 import com.wallhub.android.core.model.LocalWallpaperResource
@@ -10,14 +10,18 @@ import com.wallhub.android.core.model.LocalWallpaperScanSnapshot
 import com.wallhub.android.core.model.LocalWallpaperViewMode
 import com.wallhub.android.core.model.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.util.Locale
-import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import java.util.Locale
+import javax.inject.Inject
 
 enum class LocalWallpaperFormatFilter {
     ALL,
@@ -54,7 +58,6 @@ data class LocalWallpaperUiState(
     val selectedResourceId: String? = null,
     val selectionMode: Boolean = false,
     val selectedResourceIds: Set<String> = emptySet(),
-    val actionMessage: String? = null,
 ) {
     val resources: List<LocalWallpaperResource>
         get() {
@@ -64,8 +67,7 @@ data class LocalWallpaperUiState(
                 .filter { resource ->
                     formatFilter == LocalWallpaperFormatFilter.ALL ||
                         resource.format.name == formatFilter.name
-                }
-                .filter { resource ->
+                }.filter { resource ->
                     when (importFilter) {
                         LocalWallpaperImportFilter.ALL -> true
                         LocalWallpaperImportFilter.NOT_IMPORTED ->
@@ -73,381 +75,713 @@ data class LocalWallpaperUiState(
                         LocalWallpaperImportFilter.IMPORT_REQUESTED ->
                             resource.importState == LocalWallpaperImportState.IMPORT_REQUESTED
                     }
-                }
-                .filter { resource -> sourceId == null || resource.sourceId == sourceId }
+                }.filter { resource -> sourceId == null || resource.sourceId == sourceId }
                 .filter { resource -> !favoriteOnly || resource.isFavorite }
                 .filter { resource -> selectedTag == null || selectedTag in resource.tags }
                 .filter { resource ->
-                    query.isBlank() || listOf(
-                        resource.title,
-                        resource.displayName,
-                        resource.relativePath,
-                        resource.format.name,
-                        resource.tags.joinToString(" "),
-                    ).any { value -> value.lowercase(Locale.ROOT).contains(query) }
-                }
-                .let { filtered ->
+                    query.isBlank() ||
+                        listOf(
+                            resource.title,
+                            resource.displayName,
+                            resource.relativePath,
+                            resource.format.name,
+                            resource.tags.joinToString(" "),
+                        ).any { value -> value.lowercase(Locale.ROOT).contains(query) }
+                }.let { filtered ->
                     when (sort) {
-                        LocalWallpaperSort.RECENT -> filtered.sortedWith(
-                            compareByDescending<LocalWallpaperResource> { it.modifiedAt }
-                                .thenBy { it.title.lowercase(Locale.ROOT) },
-                        )
+                        LocalWallpaperSort.RECENT ->
+                            filtered.sortedWith(
+                                compareByDescending<LocalWallpaperResource> { it.modifiedAt }
+                                    .thenBy { it.title.lowercase(Locale.ROOT) },
+                            )
 
-                        LocalWallpaperSort.NAME -> filtered.sortedBy {
-                            it.title.lowercase(Locale.ROOT)
-                        }
+                        LocalWallpaperSort.NAME ->
+                            filtered.sortedBy {
+                                it.title.lowercase(Locale.ROOT)
+                            }
 
                         LocalWallpaperSort.SIZE -> filtered.sortedByDescending(LocalWallpaperResource::sizeBytes)
-                        LocalWallpaperSort.TYPE -> filtered.sortedWith(
-                            compareBy<LocalWallpaperResource> { it.format.name }
-                                .thenBy { it.title.lowercase(Locale.ROOT) },
-                        )
+                        LocalWallpaperSort.TYPE ->
+                            filtered.sortedWith(
+                                compareBy<LocalWallpaperResource> { it.format.name }
+                                    .thenBy { it.title.lowercase(Locale.ROOT) },
+                            )
                     }
-                }
-                .toList()
+                }.toList()
         }
 
     val allTags: List<String>
-        get() = scan.resources.flatMap(LocalWallpaperResource::tags).distinct().sorted()
+        get() =
+            scan.resources
+                .flatMap(LocalWallpaperResource::tags)
+                .distinct()
+                .sorted()
 
     val activeFilterCount: Int
-        get() = listOf(
-            formatFilter != LocalWallpaperFormatFilter.ALL,
-            importFilter != LocalWallpaperImportFilter.ALL,
-            sourceId != null,
-            favoriteOnly,
-            selectedTag != null,
-            sort != LocalWallpaperSort.RECENT,
-        ).count { it }
+        get() =
+            listOf(
+                formatFilter != LocalWallpaperFormatFilter.ALL,
+                importFilter != LocalWallpaperImportFilter.ALL,
+                sourceId != null,
+                favoriteOnly,
+                selectedTag != null,
+                sort != LocalWallpaperSort.RECENT,
+            ).count { it }
 
     val summary: String
-        get() = when {
-            scan.isScanning -> "正在扫描 · 已发现 ${scan.discoveredCount} 个文件"
-            resources.isEmpty() -> "没有符合条件的本地资源"
-            activeFilterCount > 0 -> "显示 ${resources.size} 个匹配资源"
-            else -> "共 ${resources.size} 个本地资源"
-        }
+        get() =
+            when {
+                scan.isScanning -> "正在扫描 · 已发现 ${scan.discoveredCount} 个文件"
+                resources.isEmpty() -> "没有符合条件的本地资源"
+                activeFilterCount > 0 -> "显示 ${resources.size} 个匹配资源"
+                else -> "共 ${resources.size} 个本地资源"
+            }
+}
+
+sealed interface LocalWallpaperAction {
+    data object EnterPage : LocalWallpaperAction
+
+    data object Refresh : LocalWallpaperAction
+
+    data object CancelScan : LocalWallpaperAction
+
+    data object ChooseDirectory : LocalWallpaperAction
+
+    data object ResetDirectory : LocalWallpaperAction
+
+    data class DirectorySelected(
+        val treeUri: String,
+        val label: String,
+    ) : LocalWallpaperAction
+
+    data class SearchQueryChanged(
+        val query: String,
+    ) : LocalWallpaperAction
+
+    data class SelectViewMode(
+        val mode: LocalWallpaperViewMode,
+    ) : LocalWallpaperAction
+
+    data class SelectFormatFilter(
+        val filter: LocalWallpaperFormatFilter,
+    ) : LocalWallpaperAction
+
+    data class SelectImportFilter(
+        val filter: LocalWallpaperImportFilter,
+    ) : LocalWallpaperAction
+
+    data class SelectSource(
+        val sourceId: String?,
+    ) : LocalWallpaperAction
+
+    data class SetFavoriteOnly(
+        val enabled: Boolean,
+    ) : LocalWallpaperAction
+
+    data class SelectTag(
+        val tag: String?,
+    ) : LocalWallpaperAction
+
+    data class SelectSort(
+        val sort: LocalWallpaperSort,
+    ) : LocalWallpaperAction
+
+    data object ResetFilters : LocalWallpaperAction
+
+    data class SelectResource(
+        val resourceId: String?,
+    ) : LocalWallpaperAction
+
+    data class StartSelection(
+        val resourceId: String,
+    ) : LocalWallpaperAction
+
+    data class ToggleSelection(
+        val resourceId: String,
+    ) : LocalWallpaperAction
+
+    data object ClearSelection : LocalWallpaperAction
+
+    data class ToggleFavorite(
+        val resourceId: String,
+    ) : LocalWallpaperAction
+
+    data class AddTagToSelection(
+        val tag: String,
+    ) : LocalWallpaperAction
+
+    data class ReplaceResourceTags(
+        val resourceId: String,
+        val tags: Set<String>,
+    ) : LocalWallpaperAction
+
+    data class RenameTag(
+        val oldTag: String,
+        val newTag: String,
+    ) : LocalWallpaperAction
+
+    data class DeleteTag(
+        val tag: String,
+    ) : LocalWallpaperAction
+
+    data class DeleteResources(
+        val resourceIds: Set<String>,
+    ) : LocalWallpaperAction
+
+    data class OpenResource(
+        val resource: LocalWallpaperResource,
+    ) : LocalWallpaperAction
+
+    data class ShareResources(
+        val resources: List<LocalWallpaperResource>,
+    ) : LocalWallpaperAction
+
+    data class CopyLocation(
+        val resource: LocalWallpaperResource,
+    ) : LocalWallpaperAction
+
+    data class ImportToWallpaperEngine(
+        val resource: LocalWallpaperResource,
+    ) : LocalWallpaperAction
+
+    data class ImportLaunched(
+        val resourceId: String,
+    ) : LocalWallpaperAction
+
+    data class SystemActionFailed(
+        val message: String,
+    ) : LocalWallpaperAction
+}
+
+sealed interface LocalWallpaperEffect {
+    data object ChooseDirectory : LocalWallpaperEffect
+
+    data class OpenResource(
+        val resource: LocalWallpaperResource,
+    ) : LocalWallpaperEffect
+
+    data class ShareResources(
+        val resources: List<LocalWallpaperResource>,
+    ) : LocalWallpaperEffect
+
+    data class CopyLocation(
+        val resource: LocalWallpaperResource,
+    ) : LocalWallpaperEffect
+
+    data class ImportToWallpaperEngine(
+        val resource: LocalWallpaperResource,
+    ) : LocalWallpaperEffect
+
+    data class ShowMessage(
+        val message: String,
+    ) : LocalWallpaperEffect
 }
 
 @HiltViewModel
-class LocalWallpaperViewModel @Inject constructor(
-    private val repository: LocalWallpaperRepository,
-    private val settingsRepository: SettingsRepository,
-) : ViewModel() {
-    private val mutableState = MutableStateFlow(LocalWallpaperUiState())
-    private var scanJob: Job? = null
-    private var browseViewMode = LocalWallpaperViewMode.LIST
+class LocalWallpaperViewModel
+    @Inject
+    constructor(
+        private val repository: LocalWallpaperRepository,
+        private val settingsRepository: SettingsRepository,
+        private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    ) : ViewModel() {
+        private val mutableState = MutableStateFlow(savedStateHandle.localWallpaperState())
+        private val effectChannel = Channel<LocalWallpaperEffect>(capacity = Channel.BUFFERED)
+        private var scanJob: Job? = null
+        private var browseViewMode = LocalWallpaperViewMode.LIST
 
-    val uiState: StateFlow<LocalWallpaperUiState> = mutableState.asStateFlow()
+        val uiState: StateFlow<LocalWallpaperUiState> = mutableState.asStateFlow()
+        val effects: Flow<LocalWallpaperEffect> = effectChannel.receiveAsFlow()
 
-    init {
-        viewModelScope.launch {
-            val preferences = settingsRepository.preferences.first()
-            browseViewMode = preferences.localWallpaperViewMode
-                .takeUnless { mode -> mode == LocalWallpaperViewMode.DETAIL }
-                ?: LocalWallpaperViewMode.LIST
-            mutableState.value = mutableState.value.copy(viewMode = browseViewMode)
+        init {
+            viewModelScope.launch {
+                mutableState.collect { state -> savedStateHandle.saveLocalWallpaperState(state) }
+            }
+            viewModelScope.launch {
+                val preferences = settingsRepository.preferences.first()
+                browseViewMode = preferences.localWallpaperViewMode
+                    .takeUnless { mode -> mode == LocalWallpaperViewMode.DETAIL }
+                    ?: LocalWallpaperViewMode.LIST
+                mutableState.value = mutableState.value.copy(viewMode = browseViewMode)
+            }
         }
-    }
 
-    fun enterPage() {
-        scan()
-    }
+        private fun enterPage() {
+            scan()
+        }
 
-    fun scan() {
-        scanJob?.cancel()
-        scanJob = viewModelScope.launch {
-            repository.scan().collect { snapshot ->
-                val state = mutableState.value
-                val existingResources = state.scan.resources.associateBy(LocalWallpaperResource::id)
-                val scannedResources = snapshot.resources.map { resource ->
-                    existingResources[resource.id]?.let { existing ->
-                        resource.copy(
-                            isFavorite = existing.isFavorite,
-                            tags = existing.tags,
-                            importRequestedAt = existing.importRequestedAt,
-                        )
-                    } ?: resource
+        private fun scan() {
+            scanJob?.cancel()
+            scanJob =
+                viewModelScope.launch {
+                    repository.scan().collect { snapshot ->
+                        val state = mutableState.value
+                        val existingResources = state.scan.resources.associateBy(LocalWallpaperResource::id)
+                        val scannedResources =
+                            snapshot.resources.map { resource ->
+                                existingResources[resource.id]?.let { existing ->
+                                    resource.copy(
+                                        isFavorite = existing.isFavorite,
+                                        tags = existing.tags,
+                                        importRequestedAt = existing.importRequestedAt,
+                                    )
+                                } ?: resource
+                            }
+                        val displayedSnapshot =
+                            if (snapshot.isScanning && existingResources.isNotEmpty()) {
+                                snapshot.copy(
+                                    resources =
+                                        (state.scan.resources + scannedResources)
+                                            .associateBy(LocalWallpaperResource::id)
+                                            .values
+                                            .toList(),
+                                )
+                            } else {
+                                snapshot.copy(resources = scannedResources)
+                            }
+                        val selectedResourceId =
+                            state.selectedResourceId
+                                ?.takeIf { id -> displayedSnapshot.resources.any { it.id == id } }
+                        val selectedResourceIds =
+                            state.selectedResourceIds
+                                .filterTo(linkedSetOf()) { id ->
+                                    displayedSnapshot.resources.any { it.id == id }
+                                }
+                        mutableState.value =
+                            state.copy(
+                                scan = displayedSnapshot,
+                                viewMode =
+                                    if (
+                                        state.viewMode == LocalWallpaperViewMode.DETAIL &&
+                                        selectedResourceId == null
+                                    ) {
+                                        browseViewMode
+                                    } else {
+                                        state.viewMode
+                                    },
+                                selectedResourceId = selectedResourceId,
+                                selectionMode = state.selectionMode && selectedResourceIds.isNotEmpty(),
+                                selectedResourceIds = selectedResourceIds,
+                            )
+                    }
                 }
-                val displayedSnapshot = if (snapshot.isScanning && existingResources.isNotEmpty()) {
-                    snapshot.copy(
-                        resources = (state.scan.resources + scannedResources)
-                            .associateBy(LocalWallpaperResource::id)
-                            .values
-                            .toList(),
+        }
+
+        private fun cancelScan() {
+            scanJob?.cancel()
+            scanJob = null
+            mutableState.value =
+                mutableState.value.copy(
+                    scan =
+                        mutableState.value.scan.copy(
+                            isScanning = false,
+                            currentSourceLabel = null,
+                        ),
+                )
+            showMessage("已取消扫描")
+        }
+
+        private fun setViewMode(mode: LocalWallpaperViewMode) {
+            if (mode == LocalWallpaperViewMode.DETAIL) return
+            browseViewMode = mode
+            mutableState.value =
+                mutableState.value.copy(
+                    viewMode = mode,
+                    selectedResourceId = null,
+                )
+            viewModelScope.launch { settingsRepository.setLocalWallpaperViewMode(mode) }
+        }
+
+        private fun setSearchQuery(query: String) {
+            mutableState.value = mutableState.value.copy(searchQuery = query.take(MAX_SEARCH_LENGTH))
+        }
+
+        private fun setFormatFilter(filter: LocalWallpaperFormatFilter) {
+            mutableState.value = mutableState.value.copy(formatFilter = filter)
+        }
+
+        private fun setImportFilter(filter: LocalWallpaperImportFilter) {
+            mutableState.value = mutableState.value.copy(importFilter = filter)
+        }
+
+        private fun setSource(sourceId: String?) {
+            mutableState.value = mutableState.value.copy(sourceId = sourceId)
+        }
+
+        private fun setFavoriteOnly(enabled: Boolean) {
+            mutableState.value = mutableState.value.copy(favoriteOnly = enabled)
+        }
+
+        private fun setSelectedTag(tag: String?) {
+            mutableState.value = mutableState.value.copy(selectedTag = tag)
+        }
+
+        private fun setSort(sort: LocalWallpaperSort) {
+            mutableState.value = mutableState.value.copy(sort = sort)
+        }
+
+        private fun resetFilters() {
+            mutableState.value =
+                mutableState.value.copy(
+                    formatFilter = LocalWallpaperFormatFilter.ALL,
+                    importFilter = LocalWallpaperImportFilter.ALL,
+                    sourceId = null,
+                    favoriteOnly = false,
+                    selectedTag = null,
+                    sort = LocalWallpaperSort.RECENT,
+                )
+        }
+
+        private fun selectResource(resourceId: String?) {
+            mutableState.value =
+                if (resourceId == null) {
+                    mutableState.value.copy(
+                        viewMode = browseViewMode,
+                        selectedResourceId = null,
                     )
                 } else {
-                    snapshot.copy(resources = scannedResources)
+                    mutableState.value.copy(
+                        viewMode = LocalWallpaperViewMode.DETAIL,
+                        selectedResourceId = resourceId,
+                    )
                 }
-                val selectedResourceId = state.selectedResourceId
-                    ?.takeIf { id -> displayedSnapshot.resources.any { it.id == id } }
-                val selectedResourceIds = state.selectedResourceIds
-                    .filterTo(linkedSetOf()) { id ->
-                        displayedSnapshot.resources.any { it.id == id }
-                    }
-                mutableState.value = state.copy(
-                    scan = displayedSnapshot,
-                    viewMode = if (
-                        state.viewMode == LocalWallpaperViewMode.DETAIL &&
-                        selectedResourceId == null
-                    ) {
-                        browseViewMode
-                    } else {
-                        state.viewMode
-                    },
-                    selectedResourceId = selectedResourceId,
-                    selectionMode = state.selectionMode && selectedResourceIds.isNotEmpty(),
-                    selectedResourceIds = selectedResourceIds,
-                    actionMessage = null,
+        }
+
+        private fun startSelection(resourceId: String) {
+            mutableState.value =
+                mutableState.value.copy(
+                    viewMode = browseViewMode,
+                    selectionMode = true,
+                    selectedResourceIds = setOf(resourceId),
+                    selectedResourceId = resourceId,
                 )
+        }
+
+        private fun toggleSelection(resourceId: String) {
+            val selected = mutableState.value.selectedResourceIds.toMutableSet()
+            if (!selected.add(resourceId)) selected.remove(resourceId)
+            mutableState.value =
+                mutableState.value.copy(
+                    viewMode = if (selected.isEmpty()) browseViewMode else mutableState.value.viewMode,
+                    selectionMode = selected.isNotEmpty(),
+                    selectedResourceIds = selected,
+                    selectedResourceId = selected.lastOrNull(),
+                )
+        }
+
+        private fun clearSelection() {
+            mutableState.value =
+                mutableState.value.copy(
+                    viewMode = browseViewMode,
+                    selectionMode = false,
+                    selectedResourceIds = emptySet(),
+                    selectedResourceId = null,
+                )
+        }
+
+        private fun setCustomDirectory(
+            treeUri: String,
+            label: String,
+        ) {
+            viewModelScope.launch {
+                runCatching { settingsRepository.setLocalManagementDirectory(treeUri, label) }
+                    .onSuccess { scan() }
+                    .onFailure { error -> showMessage(error.message ?: "无法保存目录") }
             }
         }
-    }
 
-    fun cancelScan() {
-        scanJob?.cancel()
-        scanJob = null
-        mutableState.value = mutableState.value.copy(
-            scan = mutableState.value.scan.copy(
-                isScanning = false,
-                currentSourceLabel = null,
-            ),
-            actionMessage = "已取消扫描",
-        )
-    }
-
-    fun setViewMode(mode: LocalWallpaperViewMode) {
-        if (mode == LocalWallpaperViewMode.DETAIL) return
-        browseViewMode = mode
-        mutableState.value = mutableState.value.copy(
-            viewMode = mode,
-            selectedResourceId = null,
-        )
-        viewModelScope.launch { settingsRepository.setLocalWallpaperViewMode(mode) }
-    }
-
-    fun setSearchQuery(query: String) {
-        mutableState.value = mutableState.value.copy(searchQuery = query.take(MAX_SEARCH_LENGTH))
-    }
-
-    fun setFormatFilter(filter: LocalWallpaperFormatFilter) {
-        mutableState.value = mutableState.value.copy(formatFilter = filter)
-    }
-
-    fun setImportFilter(filter: LocalWallpaperImportFilter) {
-        mutableState.value = mutableState.value.copy(importFilter = filter)
-    }
-
-    fun setSource(sourceId: String?) {
-        mutableState.value = mutableState.value.copy(sourceId = sourceId)
-    }
-
-    fun setFavoriteOnly(enabled: Boolean) {
-        mutableState.value = mutableState.value.copy(favoriteOnly = enabled)
-    }
-
-    fun setSelectedTag(tag: String?) {
-        mutableState.value = mutableState.value.copy(selectedTag = tag)
-    }
-
-    fun setSort(sort: LocalWallpaperSort) {
-        mutableState.value = mutableState.value.copy(sort = sort)
-    }
-
-    fun resetFilters() {
-        mutableState.value = mutableState.value.copy(
-            formatFilter = LocalWallpaperFormatFilter.ALL,
-            importFilter = LocalWallpaperImportFilter.ALL,
-            sourceId = null,
-            favoriteOnly = false,
-            selectedTag = null,
-            sort = LocalWallpaperSort.RECENT,
-        )
-    }
-
-    fun selectResource(resourceId: String?) {
-        mutableState.value = if (resourceId == null) {
-            mutableState.value.copy(
-                viewMode = browseViewMode,
-                selectedResourceId = null,
-            )
-        } else {
-            mutableState.value.copy(
-                viewMode = LocalWallpaperViewMode.DETAIL,
-                selectedResourceId = resourceId,
-            )
+        private fun clearCustomDirectory() {
+            viewModelScope.launch {
+                settingsRepository.clearLocalManagementDirectory()
+                scan()
+            }
         }
-    }
 
-    fun startSelection(resourceId: String) {
-        mutableState.value = mutableState.value.copy(
-            viewMode = browseViewMode,
-            selectionMode = true,
-            selectedResourceIds = setOf(resourceId),
-            selectedResourceId = resourceId,
-        )
-    }
-
-    fun toggleSelection(resourceId: String) {
-        val selected = mutableState.value.selectedResourceIds.toMutableSet()
-        if (!selected.add(resourceId)) selected.remove(resourceId)
-        mutableState.value = mutableState.value.copy(
-            viewMode = if (selected.isEmpty()) browseViewMode else mutableState.value.viewMode,
-            selectionMode = selected.isNotEmpty(),
-            selectedResourceIds = selected,
-            selectedResourceId = selected.lastOrNull(),
-        )
-    }
-
-    fun clearSelection() {
-        mutableState.value = mutableState.value.copy(
-            viewMode = browseViewMode,
-            selectionMode = false,
-            selectedResourceIds = emptySet(),
-            selectedResourceId = null,
-        )
-    }
-
-    fun setCustomDirectory(treeUri: String, label: String) {
-        viewModelScope.launch {
-            runCatching { settingsRepository.setLocalManagementDirectory(treeUri, label) }
-                .onSuccess { scan() }
-                .onFailure { error -> setActionMessage(error.message ?: "无法保存目录") }
+        private fun toggleFavorite(resourceId: String) {
+            val resource =
+                mutableState.value.scan.resources
+                    .firstOrNull { it.id == resourceId } ?: return
+            val value = !resource.isFavorite
+            updateResource(resourceId) { it.copy(isFavorite = value) }
+            viewModelScope.launch {
+                runCatching { repository.setFavorite(resourceId, value) }
+                    .onFailure { error -> showMessage(error.message ?: "收藏状态保存失败") }
+            }
         }
-    }
 
-    fun clearCustomDirectory() {
-        viewModelScope.launch {
-            settingsRepository.clearLocalManagementDirectory()
-            scan()
-        }
-    }
-
-    fun toggleFavorite(resourceId: String) {
-        val resource = mutableState.value.scan.resources.firstOrNull { it.id == resourceId } ?: return
-        val value = !resource.isFavorite
-        updateResource(resourceId) { it.copy(isFavorite = value) }
-        viewModelScope.launch {
-            runCatching { repository.setFavorite(resourceId, value) }
-                .onFailure { error -> setActionMessage(error.message ?: "收藏状态保存失败") }
-        }
-    }
-
-    fun addTagToSelection(tag: String) {
-        val normalized = tag.trim().take(MAX_TAG_LENGTH)
-        if (normalized.isBlank()) return
-        val ids = targetResourceIds()
-        ids.forEach { id ->
-            updateResource(id) { resource -> resource.copy(tags = resource.tags + normalized) }
-        }
-        viewModelScope.launch {
+        private fun addTagToSelection(tag: String) {
+            val normalized = tag.trim().take(MAX_TAG_LENGTH)
+            if (normalized.isBlank()) return
+            val ids = targetResourceIds()
             ids.forEach { id ->
-                val resource = mutableState.value.scan.resources.firstOrNull { it.id == id } ?: return@forEach
-                repository.replaceTags(id, resource.tags)
+                updateResource(id) { resource -> resource.copy(tags = resource.tags + normalized) }
             }
-            clearSelection()
-        }
-    }
-
-    fun replaceResourceTags(resourceId: String, tags: Set<String>) {
-        val normalized = tags.map { it.trim().take(MAX_TAG_LENGTH) }
-            .filter(String::isNotBlank)
-            .toSet()
-        updateResource(resourceId) { it.copy(tags = normalized) }
-        viewModelScope.launch {
-            runCatching { repository.replaceTags(resourceId, normalized) }
-                .onFailure { error -> setActionMessage(error.message ?: "标签保存失败") }
-        }
-    }
-
-    fun renameTag(oldTag: String, newTag: String) {
-        viewModelScope.launch {
-            runCatching { repository.renameTag(oldTag, newTag) }
-                .onSuccess {
-                    val normalizedNewTag = newTag.trim().take(MAX_TAG_LENGTH)
-                    mutableState.value = mutableState.value.copy(
-                        scan = mutableState.value.scan.copy(
-                            resources = mutableState.value.scan.resources.map { resource ->
-                                if (oldTag in resource.tags) {
-                                    resource.copy(tags = (resource.tags - oldTag) + normalizedNewTag)
-                                } else {
-                                    resource
-                                }
-                            },
-                        ),
-                        selectedTag = if (mutableState.value.selectedTag == oldTag) {
-                            normalizedNewTag
-                        } else {
-                            mutableState.value.selectedTag
-                        },
-                    )
+            viewModelScope.launch {
+                ids.forEach { id ->
+                    val resource =
+                        mutableState.value.scan.resources
+                            .firstOrNull { it.id == id } ?: return@forEach
+                    repository.replaceTags(id, resource.tags)
                 }
-                .onFailure { error -> setActionMessage(error.message ?: "标签重命名失败") }
-        }
-    }
-
-    fun deleteTag(tag: String) {
-        viewModelScope.launch {
-            runCatching { repository.deleteTag(tag) }
-                .onSuccess {
-                    mutableState.value = mutableState.value.copy(
-                        scan = mutableState.value.scan.copy(
-                            resources = mutableState.value.scan.resources.map { resource ->
-                                resource.copy(tags = resource.tags - tag)
-                            },
-                        ),
-                        selectedTag = mutableState.value.selectedTag.takeUnless { it == tag },
-                    )
-                }
-                .onFailure { error -> setActionMessage(error.message ?: "标签删除失败") }
-        }
-    }
-
-    fun markImportRequested(resourceId: String) {
-        val now = System.currentTimeMillis()
-        updateResource(resourceId) { it.copy(importRequestedAt = now) }
-        viewModelScope.launch {
-            runCatching { repository.markImportRequested(resourceId, now) }
-                .onFailure { error -> setActionMessage(error.message ?: "导入状态保存失败") }
-        }
-    }
-
-    fun deleteResources(resourceIds: Set<String>) {
-        val resources = mutableState.value.scan.resources.filter { it.id in resourceIds }
-        viewModelScope.launch {
-            val results = resources.map { resource -> repository.delete(resource) }
-            val failures = results.filterNot { it.deleted }
-            if (failures.isNotEmpty()) {
-                setActionMessage(failures.first().message)
+                clearSelection()
             }
-            clearSelection()
-            scan()
+        }
+
+        private fun replaceResourceTags(
+            resourceId: String,
+            tags: Set<String>,
+        ) {
+            val normalized =
+                tags
+                    .map { it.trim().take(MAX_TAG_LENGTH) }
+                    .filter(String::isNotBlank)
+                    .toSet()
+            updateResource(resourceId) { it.copy(tags = normalized) }
+            viewModelScope.launch {
+                runCatching { repository.replaceTags(resourceId, normalized) }
+                    .onFailure { error -> showMessage(error.message ?: "标签保存失败") }
+            }
+        }
+
+        private fun renameTag(
+            oldTag: String,
+            newTag: String,
+        ) {
+            viewModelScope.launch {
+                runCatching { repository.renameTag(oldTag, newTag) }
+                    .onSuccess {
+                        val normalizedNewTag = newTag.trim().take(MAX_TAG_LENGTH)
+                        mutableState.value =
+                            mutableState.value.copy(
+                                scan =
+                                    mutableState.value.scan.copy(
+                                        resources =
+                                            mutableState.value.scan.resources.map { resource ->
+                                                if (oldTag in resource.tags) {
+                                                    resource.copy(tags = (resource.tags - oldTag) + normalizedNewTag)
+                                                } else {
+                                                    resource
+                                                }
+                                            },
+                                    ),
+                                selectedTag =
+                                    if (mutableState.value.selectedTag == oldTag) {
+                                        normalizedNewTag
+                                    } else {
+                                        mutableState.value.selectedTag
+                                    },
+                            )
+                    }.onFailure { error -> showMessage(error.message ?: "标签重命名失败") }
+            }
+        }
+
+        private fun deleteTag(tag: String) {
+            viewModelScope.launch {
+                runCatching { repository.deleteTag(tag) }
+                    .onSuccess {
+                        mutableState.value =
+                            mutableState.value.copy(
+                                scan =
+                                    mutableState.value.scan.copy(
+                                        resources =
+                                            mutableState.value.scan.resources.map { resource ->
+                                                resource.copy(tags = resource.tags - tag)
+                                            },
+                                    ),
+                                selectedTag = mutableState.value.selectedTag.takeUnless { it == tag },
+                            )
+                    }.onFailure { error -> showMessage(error.message ?: "标签删除失败") }
+            }
+        }
+
+        private fun markImportRequested(resourceId: String) {
+            val now = System.currentTimeMillis()
+            updateResource(resourceId) { it.copy(importRequestedAt = now) }
+            viewModelScope.launch {
+                runCatching { repository.markImportRequested(resourceId, now) }
+                    .onFailure { error -> showMessage(error.message ?: "导入状态保存失败") }
+            }
+        }
+
+        private fun deleteResources(resourceIds: Set<String>) {
+            val resources =
+                mutableState.value.scan.resources
+                    .filter { it.id in resourceIds }
+            viewModelScope.launch {
+                val results = resources.map { resource -> repository.delete(resource) }
+                val failures = results.filterNot { it.deleted }
+                if (failures.isNotEmpty()) {
+                    showMessage(failures.first().message)
+                }
+                clearSelection()
+                scan()
+            }
+        }
+
+        fun onAction(action: LocalWallpaperAction) {
+            if (handleScanAndDirectoryAction(action)) return
+            if (handleFilterAction(action)) return
+            if (handleSelectionAndTagAction(action)) return
+            handleSystemAction(action)
+        }
+
+        private fun handleScanAndDirectoryAction(action: LocalWallpaperAction): Boolean {
+            when (action) {
+                LocalWallpaperAction.EnterPage -> enterPage()
+                LocalWallpaperAction.Refresh -> scan()
+                LocalWallpaperAction.CancelScan -> cancelScan()
+                LocalWallpaperAction.ChooseDirectory -> emitEffect(LocalWallpaperEffect.ChooseDirectory)
+                LocalWallpaperAction.ResetDirectory -> clearCustomDirectory()
+                is LocalWallpaperAction.DirectorySelected ->
+                    setCustomDirectory(
+                        action.treeUri,
+                        action.label,
+                    )
+                else -> return false
+            }
+            return true
+        }
+
+        private fun handleFilterAction(action: LocalWallpaperAction): Boolean {
+            when (action) {
+                is LocalWallpaperAction.SearchQueryChanged -> setSearchQuery(action.query)
+                is LocalWallpaperAction.SelectViewMode -> setViewMode(action.mode)
+                is LocalWallpaperAction.SelectFormatFilter -> setFormatFilter(action.filter)
+                is LocalWallpaperAction.SelectImportFilter -> setImportFilter(action.filter)
+                is LocalWallpaperAction.SelectSource -> setSource(action.sourceId)
+                is LocalWallpaperAction.SetFavoriteOnly -> setFavoriteOnly(action.enabled)
+                is LocalWallpaperAction.SelectTag -> setSelectedTag(action.tag)
+                is LocalWallpaperAction.SelectSort -> setSort(action.sort)
+                LocalWallpaperAction.ResetFilters -> resetFilters()
+                else -> return false
+            }
+            return true
+        }
+
+        private fun handleSelectionAndTagAction(action: LocalWallpaperAction): Boolean {
+            when (action) {
+                is LocalWallpaperAction.SelectResource -> selectResource(action.resourceId)
+                is LocalWallpaperAction.StartSelection -> startSelection(action.resourceId)
+                is LocalWallpaperAction.ToggleSelection -> toggleSelection(action.resourceId)
+                LocalWallpaperAction.ClearSelection -> clearSelection()
+                is LocalWallpaperAction.ToggleFavorite -> toggleFavorite(action.resourceId)
+                is LocalWallpaperAction.AddTagToSelection -> addTagToSelection(action.tag)
+                is LocalWallpaperAction.ReplaceResourceTags ->
+                    replaceResourceTags(
+                        action.resourceId,
+                        action.tags,
+                    )
+                is LocalWallpaperAction.RenameTag -> renameTag(action.oldTag, action.newTag)
+                is LocalWallpaperAction.DeleteTag -> deleteTag(action.tag)
+                is LocalWallpaperAction.DeleteResources -> deleteResources(action.resourceIds)
+                else -> return false
+            }
+            return true
+        }
+
+        private fun handleSystemAction(action: LocalWallpaperAction) {
+            when (action) {
+                is LocalWallpaperAction.OpenResource ->
+                    emitEffect(
+                        LocalWallpaperEffect.OpenResource(action.resource),
+                    )
+                is LocalWallpaperAction.ShareResources ->
+                    emitEffect(
+                        LocalWallpaperEffect.ShareResources(action.resources),
+                    )
+                is LocalWallpaperAction.CopyLocation ->
+                    emitEffect(
+                        LocalWallpaperEffect.CopyLocation(action.resource),
+                    )
+                is LocalWallpaperAction.ImportToWallpaperEngine ->
+                    emitEffect(
+                        LocalWallpaperEffect.ImportToWallpaperEngine(action.resource),
+                    )
+                is LocalWallpaperAction.ImportLaunched -> markImportRequested(action.resourceId)
+                is LocalWallpaperAction.SystemActionFailed -> showMessage(action.message)
+                else -> Unit
+            }
+        }
+
+        private fun showMessage(message: String) {
+            emitEffect(LocalWallpaperEffect.ShowMessage(message))
+        }
+
+        private fun emitEffect(effect: LocalWallpaperEffect) {
+            effectChannel.trySend(effect)
+        }
+
+        private fun targetResourceIds(): Set<String> =
+            mutableState.value.selectedResourceIds.ifEmpty {
+                mutableState.value.selectedResourceId
+                    ?.let(::setOf)
+                    .orEmpty()
+            }
+
+        private fun updateResource(
+            resourceId: String,
+            transform: (LocalWallpaperResource) -> LocalWallpaperResource,
+        ) {
+            mutableState.value =
+                mutableState.value.copy(
+                    scan =
+                        mutableState.value.scan.copy(
+                            resources =
+                                mutableState.value.scan.resources.map { resource ->
+                                    if (resource.id == resourceId) transform(resource) else resource
+                                },
+                        ),
+                )
+        }
+
+        private companion object {
+            const val MAX_SEARCH_LENGTH = 120
+            const val MAX_TAG_LENGTH = 40
         }
     }
 
-    fun setActionMessage(message: String) {
-        mutableState.value = mutableState.value.copy(actionMessage = message)
-    }
+private fun SavedStateHandle.localWallpaperState(): LocalWallpaperUiState =
+    LocalWallpaperUiState(
+        searchQuery = get<String>(LOCAL_SEARCH_QUERY_KEY).orEmpty(),
+        formatFilter = enumValueOrDefault(get(LOCAL_FORMAT_FILTER_KEY), LocalWallpaperFormatFilter.ALL),
+        importFilter = enumValueOrDefault(get(LOCAL_IMPORT_FILTER_KEY), LocalWallpaperImportFilter.ALL),
+        sourceId = get(LOCAL_SOURCE_ID_KEY),
+        favoriteOnly = get<Boolean>(LOCAL_FAVORITE_ONLY_KEY) ?: false,
+        selectedTag = get(LOCAL_SELECTED_TAG_KEY),
+        sort = enumValueOrDefault(get(LOCAL_SORT_KEY), LocalWallpaperSort.RECENT),
+        viewMode = enumValueOrDefault(get(LOCAL_VIEW_MODE_KEY), LocalWallpaperViewMode.LIST),
+        selectedResourceId = get(LOCAL_SELECTED_RESOURCE_ID_KEY),
+        selectionMode = get<Boolean>(LOCAL_SELECTION_MODE_KEY) ?: false,
+        selectedResourceIds = get<ArrayList<String>>(LOCAL_SELECTED_RESOURCE_IDS_KEY)?.toSet().orEmpty(),
+    )
 
-    private fun targetResourceIds(): Set<String> = mutableState.value.selectedResourceIds.ifEmpty {
-        mutableState.value.selectedResourceId?.let(::setOf).orEmpty()
-    }
-
-    private fun updateResource(
-        resourceId: String,
-        transform: (LocalWallpaperResource) -> LocalWallpaperResource,
-    ) {
-        mutableState.value = mutableState.value.copy(
-            scan = mutableState.value.scan.copy(
-                resources = mutableState.value.scan.resources.map { resource ->
-                    if (resource.id == resourceId) transform(resource) else resource
-                },
-            ),
-        )
-    }
-
-    private companion object {
-        const val MAX_SEARCH_LENGTH = 120
-        const val MAX_TAG_LENGTH = 40
-    }
+private fun SavedStateHandle.saveLocalWallpaperState(state: LocalWallpaperUiState) {
+    this[LOCAL_SEARCH_QUERY_KEY] = state.searchQuery
+    this[LOCAL_FORMAT_FILTER_KEY] = state.formatFilter.name
+    this[LOCAL_IMPORT_FILTER_KEY] = state.importFilter.name
+    this[LOCAL_SOURCE_ID_KEY] = state.sourceId
+    this[LOCAL_FAVORITE_ONLY_KEY] = state.favoriteOnly
+    this[LOCAL_SELECTED_TAG_KEY] = state.selectedTag
+    this[LOCAL_SORT_KEY] = state.sort.name
+    this[LOCAL_VIEW_MODE_KEY] = state.viewMode.name
+    this[LOCAL_SELECTED_RESOURCE_ID_KEY] = state.selectedResourceId
+    this[LOCAL_SELECTION_MODE_KEY] = state.selectionMode
+    this[LOCAL_SELECTED_RESOURCE_IDS_KEY] = ArrayList(state.selectedResourceIds)
 }
+
+private inline fun <reified T : Enum<T>> enumValueOrDefault(
+    value: String?,
+    default: T,
+): T = value?.let { name -> enumValues<T>().firstOrNull { it.name == name } } ?: default
+
+private const val LOCAL_SEARCH_QUERY_KEY = "local.searchQuery"
+private const val LOCAL_FORMAT_FILTER_KEY = "local.formatFilter"
+private const val LOCAL_IMPORT_FILTER_KEY = "local.importFilter"
+private const val LOCAL_SOURCE_ID_KEY = "local.sourceId"
+private const val LOCAL_FAVORITE_ONLY_KEY = "local.favoriteOnly"
+private const val LOCAL_SELECTED_TAG_KEY = "local.selectedTag"
+private const val LOCAL_SORT_KEY = "local.sort"
+private const val LOCAL_VIEW_MODE_KEY = "local.viewMode"
+private const val LOCAL_SELECTED_RESOURCE_ID_KEY = "local.selectedResourceId"
+private const val LOCAL_SELECTION_MODE_KEY = "local.selectionMode"
+private const val LOCAL_SELECTED_RESOURCE_IDS_KEY = "local.selectedResourceIds"

@@ -1,0 +1,8 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:LocalWallpaperScreen.kt$@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class) @Composable private fun LocalWallpaperScreen( state: LocalWallpaperUiState, isPageActive: Boolean, onChooseDirectory: () -&gt; Unit, onResetDirectory: () -&gt; Unit, onRefresh: () -&gt; Unit, onCancelScan: () -&gt; Unit, onSearchQueryChanged: (String) -&gt; Unit, onViewModeSelected: (LocalWallpaperViewMode) -&gt; Unit, onSelectResource: (String?) -&gt; Unit, onStartSelection: (String) -&gt; Unit, onToggleSelection: (String) -&gt; Unit, onClearSelection: () -&gt; Unit, onToggleFavorite: (String) -&gt; Unit, onAddTag: (String) -&gt; Unit, onReplaceTags: (String, Set&lt;String&gt;) -&gt; Unit, onRenameTag: (String, String) -&gt; Unit, onDeleteTag: (String) -&gt; Unit, onDeleteResources: (Set&lt;String&gt;) -&gt; Unit, onSystemAction: (LocalWallpaperAction) -&gt; Unit, onScrollChromeCollapsedChanged: (Boolean) -&gt; Unit, )</ID>
+    <ID>UnusedParameter:LocalWallpaperScreen.kt$language: AppLanguage</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -2,8 +2,8 @@ package com.wallhub.android.data.update
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class GitHubReleaseParserTest {
@@ -60,11 +60,12 @@ class GitHubReleaseParserTest {
         extraUniversalAsset: Boolean = false,
         unofficialAssetUrl: Boolean = false,
     ): String {
-        val extra = if (extraUniversalAsset) {
-            "," + assetJson("WallHub-0.9.0-copy-universal.apk")
-        } else {
-            ""
-        }
+        val extra =
+            if (extraUniversalAsset) {
+                "," + assetJson("WallHub-0.9.0-copy-universal.apk")
+            } else {
+                ""
+            }
         return """
             {
               "tag_name": "v0.9.0",
@@ -76,24 +77,28 @@ class GitHubReleaseParserTest {
               "prerelease": $prerelease,
               "assets": [${assetJson("WallHub-0.9.0-universal.apk", unofficialAssetUrl)}$extra]
             }
-        """.trimIndent()
+            """.trimIndent()
     }
 
-    private fun assetJson(name: String, unofficialUrl: Boolean = false): String {
-        val url = if (unofficialUrl) {
-            "https://github.com/example/releases/download/v0.9.0/$name"
-        } else {
-            "https://github.com/ChEnLeo-7/WallHub2.0-For-Android/releases/download/v0.9.0/$name"
-        }
+    private fun assetJson(
+        name: String,
+        unofficialUrl: Boolean = false,
+    ): String {
+        val url =
+            if (unofficialUrl) {
+                "https://github.com/example/releases/download/v0.9.0/$name"
+            } else {
+                "https://github.com/ChEnLeo-7/WallHub2.0-For-Android/releases/download/v0.9.0/$name"
+            }
         return """
-        {
-          "name": "$name",
-          "size": 30400000,
-          "content_type": "application/vnd.android.package-archive",
-          "browser_download_url": "$url",
-          "digest": "sha256:$CHECKSUM"
-        }
-    """.trimIndent()
+            {
+              "name": "$name",
+              "size": 30400000,
+              "content_type": "application/vnd.android.package-archive",
+              "browser_download_url": "$url",
+              "digest": "sha256:$CHECKSUM"
+            }
+            """.trimIndent()
     }
 
     private companion object {

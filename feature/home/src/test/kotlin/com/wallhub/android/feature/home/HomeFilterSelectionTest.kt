@@ -15,28 +15,32 @@ class HomeFilterSelectionTest {
 
     @Test
     fun `active count reports sections instead of individual tags`() {
-        val selection = HomeFilterSelection.defaults().copy(
-            sort = WorkshopSort.MOST_RECENT,
-            types = setOf(WorkshopType.SCENE, WorkshopType.VIDEO),
-            ratings = setOf(WorkshopRating.QUESTIONABLE),
-            genres = setOf("Abstract", "Nature"),
-            officialTags = setOf("Approved", "HDR"),
-            resolutions = setOf("1920 x 1080", "2560 x 1440"),
-        )
+        val selection =
+            HomeFilterSelection.defaults().copy(
+                sort = WorkshopSort.MOST_RECENT,
+                types = setOf(WorkshopType.SCENE, WorkshopType.VIDEO),
+                ratings = setOf(WorkshopRating.QUESTIONABLE),
+                genres = setOf("Abstract", "Nature"),
+                officialTags = setOf("Approved", "HDR"),
+                resolutions = setOf("1920 x 1080", "2560 x 1440"),
+            )
 
         assertEquals(6, selection.activeSectionCount())
     }
 
     @Test
     fun `normalization converts empty bounded selections to unrestricted`() {
-        val normalized = HomeFilterSelection.defaults().copy(
-            days = 900,
-            types = setOf(WorkshopType.UNKNOWN, WorkshopType.WEB),
-            ratings = setOf(WorkshopRating.MATURE),
-            genres = emptySet(),
-            officialTags = setOf("Approved", "not-a-tag"),
-            resolutions = emptySet(),
-        ).normalized(matureContentEnabled = false)
+        val normalized =
+            HomeFilterSelection
+                .defaults()
+                .copy(
+                    days = 900,
+                    types = setOf(WorkshopType.UNKNOWN, WorkshopType.WEB),
+                    ratings = setOf(WorkshopRating.MATURE),
+                    genres = emptySet(),
+                    officialTags = setOf("Approved", "not-a-tag"),
+                    resolutions = emptySet(),
+                ).normalized(matureContentEnabled = false)
 
         assertEquals(365, normalized.days)
         assertEquals(setOf(WorkshopType.WEB), normalized.types)
@@ -48,9 +52,12 @@ class HomeFilterSelectionTest {
 
     @Test
     fun `all rating excludes mature content when mature content is disabled`() {
-        val normalized = HomeFilterSelection.defaults().copy(
-            ratings = setOf(WorkshopRating.ALL),
-        ).normalized(matureContentEnabled = false)
+        val normalized =
+            HomeFilterSelection
+                .defaults()
+                .copy(
+                    ratings = setOf(WorkshopRating.ALL),
+                ).normalized(matureContentEnabled = false)
 
         assertEquals(
             setOf(WorkshopRating.EVERYONE, WorkshopRating.QUESTIONABLE),
@@ -60,9 +67,12 @@ class HomeFilterSelectionTest {
 
     @Test
     fun `all rating remains unrestricted when mature content is enabled`() {
-        val normalized = HomeFilterSelection.defaults().copy(
-            ratings = setOf(WorkshopRating.ALL, WorkshopRating.EVERYONE),
-        ).normalized(matureContentEnabled = true)
+        val normalized =
+            HomeFilterSelection
+                .defaults()
+                .copy(
+                    ratings = setOf(WorkshopRating.ALL, WorkshopRating.EVERYONE),
+                ).normalized(matureContentEnabled = true)
 
         assertEquals(setOf(WorkshopRating.ALL), normalized.ratings)
     }
@@ -81,5 +91,4 @@ class HomeFilterSelectionTest {
 
         assertEquals(allOptions, allOptions.invertBounded(allOptions))
     }
-
 }

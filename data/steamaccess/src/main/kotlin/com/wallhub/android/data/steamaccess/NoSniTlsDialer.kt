@@ -1,5 +1,6 @@
 package com.wallhub.android.data.steamaccess
 
+import okhttp3.OkHttpClient
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -18,7 +19,6 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLPeerUnverifiedException
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
-import okhttp3.OkHttpClient
 
 internal data class AuthenticatedSteamSocket(
     val address: InetAddress,
@@ -35,9 +35,12 @@ internal class NoSniTlsDialer internal constructor(
 ) {
     @Inject
     constructor() : this(
-        socketFactory = SSLContext.getInstance("TLS").apply {
-            init(null, null, SecureRandom())
-        }.socketFactory,
+        socketFactory =
+            SSLContext
+                .getInstance("TLS")
+                .apply {
+                    init(null, null, SecureRandom())
+                }.socketFactory,
         hostnameVerifier = OkHttpClient().hostnameVerifier,
         raceDelayMs = RACE_DELAY_MS,
         connectRaceBudgetMs = CONNECT_RACE_BUDGET_MS,
@@ -54,19 +57,23 @@ internal class NoSniTlsDialer internal constructor(
         if (addresses.isEmpty()) throw IOException("No no-SNI candidates for $host")
 
         val openedSockets = ConcurrentLinkedQueue<Socket>()
-        val raceExecutor = Executors.newFixedThreadPool(addresses.size) { runnable ->
-            Thread(runnable, "WallHub-NoSniDialer").apply { isDaemon = true }
-        }
+        val raceExecutor =
+            Executors.newFixedThreadPool(addresses.size) { runnable ->
+                Thread(runnable, "WallHub-NoSniDialer").apply { isDaemon = true }
+            }
         val completion = ExecutorCompletionService<DialAttempt>(raceExecutor)
-        val futures = addresses.mapIndexed { index, address ->
-            completion.submit(java.util.concurrent.Callable {
-                if (index > 0) Thread.sleep(raceDelayMs)
-                DialAttempt(
-                    address = address,
-                    result = runCatching { authenticate(host, address, port, openedSockets) },
+        val futures =
+            addresses.mapIndexed { index, address ->
+                completion.submit(
+                    java.util.concurrent.Callable {
+                        if (index > 0) Thread.sleep(raceDelayMs)
+                        DialAttempt(
+                            address = address,
+                            result = runCatching { authenticate(host, address, port, openedSockets) },
+                        )
+                    },
                 )
-            })
-        }
+            }
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(connectRaceBudgetMs)
         val completedAddresses = mutableSetOf<String>()
         var winnerSocket: SSLSocket? = null
@@ -78,17 +85,19 @@ internal class NoSniTlsDialer internal constructor(
                 val completed = completion.poll(remainingNanos, TimeUnit.NANOSECONDS) ?: return@repeat
                 val attempt = completed.get()
                 completedAddresses += attempt.address.hostAddress.orEmpty()
-                attempt.result.onSuccess { winner ->
-                    winnerSocket = winner.socket
-                    return winner
-                }.onFailure { error ->
-                    lastFailure = error
-                    runCatching { onFailure(attempt.address, error) }
-                }
+                attempt.result
+                    .onSuccess { winner ->
+                        winnerSocket = winner.socket
+                        return winner
+                    }.onFailure { error ->
+                        lastFailure = error
+                        runCatching { onFailure(attempt.address, error) }
+                    }
             }
-            val timeout = SocketTimeoutException(
-                "No no-SNI candidate connected within $connectRaceBudgetMs ms",
-            )
+            val timeout =
+                SocketTimeoutException(
+                    "No no-SNI candidate connected within $connectRaceBudgetMs ms",
+                )
             addresses.filterNot { address -> address.hostAddress.orEmpty() in completedAddresses }.forEach { address ->
                 runCatching { onFailure(address, timeout) }
             }
@@ -106,14 +115,15 @@ internal class NoSniTlsDialer internal constructor(
         port: Int = HTTPS_PORT,
     ): SteamProbeResult {
         val startedAt = System.nanoTime()
-        val successful = runCatching {
-            authenticate(
-                hostname = SteamDomainPolicy.requireSupported(hostname),
-                address = address,
-                port = port,
-                openedSockets = null,
-            ).socket.close()
-        }.isSuccess
+        val successful =
+            runCatching {
+                authenticate(
+                    hostname = SteamDomainPolicy.requireSupported(hostname),
+                    address = address,
+                    port = port,
+                    openedSockets = null,
+                ).socket.close()
+            }.isSuccess
         return SteamProbeResult(
             address = address,
             successful = successful,
@@ -134,21 +144,24 @@ internal class NoSniTlsDialer internal constructor(
             rawSocket.tcpNoDelay = true
             rawSocket.soTimeout = HANDSHAKE_TIMEOUT_MS
             rawSocket.connect(InetSocketAddress(address, port), CONNECT_TIMEOUT_MS)
-            val sslSocket = socketFactory.createSocket(
-                rawSocket,
-                address.hostAddress,
-                port,
-                true,
-            ) as SSLSocket
+            val sslSocket =
+                socketFactory.createSocket(
+                    rawSocket,
+                    address.hostAddress,
+                    port,
+                    true,
+                ) as SSLSocket
             openedSockets?.add(sslSocket)
             openedSockets?.remove(rawSocket)
-            sslSocket.enabledProtocols = sslSocket.supportedProtocols
-                .filter { protocol -> protocol == "TLSv1.3" || protocol == "TLSv1.2" }
-                .toTypedArray()
-            sslSocket.sslParameters = sslSocket.sslParameters.apply {
-                endpointIdentificationAlgorithm = null
-                serverNames = Collections.emptyList()
-            }
+            sslSocket.enabledProtocols =
+                sslSocket.supportedProtocols
+                    .filter { protocol -> protocol == "TLSv1.3" || protocol == "TLSv1.2" }
+                    .toTypedArray()
+            sslSocket.sslParameters =
+                sslSocket.sslParameters.apply {
+                    endpointIdentificationAlgorithm = null
+                    serverNames = Collections.emptyList()
+                }
             sslSocket.startHandshake()
             if (!hostnameVerifier.verify(hostname, sslSocket.session)) {
                 throw SSLPeerUnverifiedException("Certificate does not match $hostname")

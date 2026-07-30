@@ -1,27 +1,30 @@
+@file:Suppress("ktlint:standard:function-naming")
+
 package com.wallhub.android.feature.home
 
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
@@ -32,7 +35,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -49,26 +51,26 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.layout.isImeVisible
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -91,19 +93,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -112,48 +111,48 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.rememberGraphicsLayer
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.invisibleToUser
@@ -161,13 +160,13 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -177,27 +176,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
-import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
+import com.wallhub.android.core.designsystem.LocalWallHubToastState
+import com.wallhub.android.core.designsystem.WallHubContextMenuDefaults
+import com.wallhub.android.core.designsystem.WallHubContextMenuSurface
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubFilterChip
-import com.wallhub.android.core.designsystem.LocalWallHubToastState
-import com.wallhub.android.core.designsystem.WallHubContextMenuAction as HomeContextMenuItem
-import com.wallhub.android.core.designsystem.WallHubContextMenuCardPreview as SharedContextMenuCardPreview
-import com.wallhub.android.core.designsystem.WallHubContextMenuDefaults
-import com.wallhub.android.core.designsystem.WallHubContextMenuMetadataItem as HomeContextMenuMetadataItem
-import com.wallhub.android.core.designsystem.WallHubContextMenuPositionProvider as HomeContextMenuPositionProvider
-import com.wallhub.android.core.designsystem.WallHubContextMenuSurface
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
-import com.wallhub.android.core.designsystem.WallHubSecondaryButton
-import com.wallhub.android.core.designsystem.WallHubToastHost
 import com.wallhub.android.core.designsystem.WallHubPaginationControl
+import com.wallhub.android.core.designsystem.WallHubShapeTokens
+import com.wallhub.android.core.designsystem.WallHubSizeTokens
+import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.formatMegabytes
+import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
 import com.wallhub.android.core.designsystem.text
 import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.DownloadRequest
@@ -208,7 +204,6 @@ import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamWorkshopDataSource
-import com.wallhub.android.core.model.requiresLegacyPublicDownloadPermission
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopFilterCatalog
 import com.wallhub.android.core.model.WorkshopPage
@@ -218,18 +213,26 @@ import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import com.wallhub.android.core.designsystem.WallHubContextMenuAction as HomeContextMenuItem
+import com.wallhub.android.core.designsystem.WallHubContextMenuCardPreview as SharedContextMenuCardPreview
+import com.wallhub.android.core.designsystem.WallHubContextMenuMetadataItem as HomeContextMenuMetadataItem
+import com.wallhub.android.core.designsystem.WallHubContextMenuPositionProvider as HomeContextMenuPositionProvider
+import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 enum class HomeViewMode {
     GRID,
@@ -244,10 +247,14 @@ internal data class HomeCardLayoutKey(
         get() = viewMode == HomeViewMode.LIST
 
     companion object {
-        fun resolve(viewMode: HomeViewMode, columns: Int): HomeCardLayoutKey = HomeCardLayoutKey(
-            viewMode = viewMode,
-            effectiveColumns = if (viewMode == HomeViewMode.LIST) 1 else columns.coerceAtLeast(1),
-        )
+        fun resolve(
+            viewMode: HomeViewMode,
+            columns: Int,
+        ): HomeCardLayoutKey =
+            HomeCardLayoutKey(
+                viewMode = viewMode,
+                effectiveColumns = if (viewMode == HomeViewMode.LIST) 1 else columns.coerceAtLeast(1),
+            )
     }
 }
 
@@ -261,10 +268,11 @@ private enum class HomeFilterPage {
 private val DEFAULT_HOME_GENRE_SELECTION = WorkshopFilterCatalog.genres.toSet()
 private val DEFAULT_HOME_RESOLUTION_SELECTION = WorkshopFilterCatalog.resolutions.toSet()
 private val DEFAULT_HOME_RATING_SELECTION = setOf(WorkshopRating.EVERYONE)
-private val SAFE_HOME_RATING_SELECTION = setOf(
-    WorkshopRating.EVERYONE,
-    WorkshopRating.QUESTIONABLE,
-)
+private val SAFE_HOME_RATING_SELECTION =
+    setOf(
+        WorkshopRating.EVERYONE,
+        WorkshopRating.QUESTIONABLE,
+    )
 
 @Immutable
 data class HomeFilterSelection(
@@ -276,20 +284,21 @@ data class HomeFilterSelection(
     val officialTags: Set<String>,
     val resolutions: Set<String>,
 ) {
-    fun normalized(matureContentEnabled: Boolean): HomeFilterSelection {
-        return copy(
+    fun normalized(matureContentEnabled: Boolean): HomeFilterSelection =
+        copy(
             days = days.coerceIn(0, 365),
             types = types.filter { it != WorkshopType.UNKNOWN }.toSet(),
             ratings = ratings.normalizedRatings(matureContentEnabled),
-            genres = genres
-                .intersect(DEFAULT_HOME_GENRE_SELECTION)
-                .ifEmpty { DEFAULT_HOME_GENRE_SELECTION },
+            genres =
+                genres
+                    .intersect(DEFAULT_HOME_GENRE_SELECTION)
+                    .ifEmpty { DEFAULT_HOME_GENRE_SELECTION },
             officialTags = officialTags.intersect(WorkshopFilterCatalog.officialTags.toSet()),
-            resolutions = resolutions
-                .intersect(DEFAULT_HOME_RESOLUTION_SELECTION)
-                .ifEmpty { DEFAULT_HOME_RESOLUTION_SELECTION },
+            resolutions =
+                resolutions
+                    .intersect(DEFAULT_HOME_RESOLUTION_SELECTION)
+                    .ifEmpty { DEFAULT_HOME_RESOLUTION_SELECTION },
         )
-    }
 
     fun activeSectionCount(): Int =
         (if (sort != WorkshopSort.TRENDING) 1 else 0) +
@@ -301,15 +310,16 @@ data class HomeFilterSelection(
             (if (resolutions != DEFAULT_HOME_RESOLUTION_SELECTION) 1 else 0)
 
     companion object {
-        fun defaults(): HomeFilterSelection = HomeFilterSelection(
-            sort = WorkshopSort.TRENDING,
-            days = 30,
-            types = emptySet(),
-            ratings = DEFAULT_HOME_RATING_SELECTION,
-            genres = DEFAULT_HOME_GENRE_SELECTION,
-            officialTags = emptySet(),
-            resolutions = DEFAULT_HOME_RESOLUTION_SELECTION,
-        )
+        fun defaults(): HomeFilterSelection =
+            HomeFilterSelection(
+                sort = WorkshopSort.TRENDING,
+                days = 30,
+                types = emptySet(),
+                ratings = DEFAULT_HOME_RATING_SELECTION,
+                genres = DEFAULT_HOME_GENRE_SELECTION,
+                officialTags = emptySet(),
+                resolutions = DEFAULT_HOME_RESOLUTION_SELECTION,
+            )
     }
 }
 
@@ -320,48 +330,49 @@ private data class HomeFilterUiConfig(
     val matureContentEnabled: Boolean,
 )
 
-private val homeFilterSelectionSaver = listSaver<HomeFilterSelection, String>(
-    save = { selection ->
-        listOf(
-            selection.sort.name,
-            selection.days.toString(),
-            selection.types.joinToString(FILTER_SAVER_SEPARATOR) { it.name },
-            selection.ratings.joinToString(FILTER_SAVER_SEPARATOR) { it.name },
-            selection.genres.joinToString(FILTER_SAVER_SEPARATOR),
-            selection.officialTags.joinToString(FILTER_SAVER_SEPARATOR),
-            selection.resolutions.joinToString(FILTER_SAVER_SEPARATOR),
-        )
-    },
-    restore = { values ->
-        runCatching {
-            HomeFilterSelection(
-                sort = WorkshopSort.valueOf(values[0]),
-                days = values[1].toInt(),
-                types = values[2].enumSet<WorkshopType>(),
-                ratings = values[3].enumSet<WorkshopRating>(),
-                genres = values[4].savedStringSet(),
-                officialTags = values[5].savedStringSet(),
-                resolutions = values[6].savedStringSet(),
+private val homeFilterSelectionSaver =
+    listSaver<HomeFilterSelection, String>(
+        save = { selection ->
+            listOf(
+                selection.sort.name,
+                selection.days.toString(),
+                selection.types.joinToString(FILTER_SAVER_SEPARATOR) { it.name },
+                selection.ratings.joinToString(FILTER_SAVER_SEPARATOR) { it.name },
+                selection.genres.joinToString(FILTER_SAVER_SEPARATOR),
+                selection.officialTags.joinToString(FILTER_SAVER_SEPARATOR),
+                selection.resolutions.joinToString(FILTER_SAVER_SEPARATOR),
             )
-        }.getOrElse { HomeFilterSelection.defaults() }
-    },
-)
+        },
+        restore = { values ->
+            runCatching {
+                HomeFilterSelection(
+                    sort = WorkshopSort.valueOf(values[0]),
+                    days = values[1].toInt(),
+                    types = values[2].enumSet<WorkshopType>(),
+                    ratings = values[3].enumSet<WorkshopRating>(),
+                    genres = values[4].savedStringSet(),
+                    officialTags = values[5].savedStringSet(),
+                    resolutions = values[6].savedStringSet(),
+                )
+            }.getOrElse { HomeFilterSelection.defaults() }
+        },
+    )
 
 private inline fun <reified T : Enum<T>> String.enumSet(): Set<T> =
     savedStringSet().mapNotNull { name -> enumValues<T>().firstOrNull { it.name == name } }.toSet()
 
-private fun String.savedStringSet(): Set<String> =
-    takeIf(String::isNotEmpty)?.split(FILTER_SAVER_SEPARATOR)?.toSet().orEmpty()
+private fun String.savedStringSet(): Set<String> = takeIf(String::isNotEmpty)?.split(FILTER_SAVER_SEPARATOR)?.toSet().orEmpty()
 
-private fun HomeUiState.filterSelection(): HomeFilterSelection = HomeFilterSelection(
-    sort = sort,
-    days = days,
-    types = selectedTypes,
-    ratings = selectedRatings,
-    genres = selectedGenres,
-    officialTags = selectedOfficialTags,
-    resolutions = selectedResolutions,
-).normalized(matureContentEnabled)
+private fun HomeUiState.filterSelection(): HomeFilterSelection =
+    HomeFilterSelection(
+        sort = sort,
+        days = days,
+        types = selectedTypes,
+        ratings = selectedRatings,
+        genres = selectedGenres,
+        officialTags = selectedOfficialTags,
+        resolutions = selectedResolutions,
+    ).normalized(matureContentEnabled)
 
 const val HOME_AUTHOR_SEARCH_CREATOR_ARGUMENT = "authorSearchCreator"
 
@@ -400,11 +411,97 @@ data class HomeUiState(
     val isLoadingMore: Boolean = false,
     val isPageLoading: Boolean = false,
     val error: String? = null,
-    val actionMessage: String? = null,
     val successfulSearchToken: Long = 0L,
 ) {
     val activeFilterCount: Int
         get() = filterSelection().activeSectionCount()
+}
+
+sealed interface HomeAction {
+    data class QueryChanged(
+        val query: String,
+    ) : HomeAction
+
+    data object SubmitSearch : HomeAction
+
+    data object RestoreUnsubmittedQuery : HomeAction
+
+    data object ToggleExactPhrase : HomeAction
+
+    data class ApplyFilters(
+        val selection: HomeFilterSelection,
+    ) : HomeAction
+
+    data class SelectViewMode(
+        val viewMode: HomeViewMode,
+    ) : HomeAction
+
+    data object ResetAndRefresh : HomeAction
+
+    data object Refresh : HomeAction
+
+    data object LoadNextPage : HomeAction
+
+    data class SelectPage(
+        val page: Int,
+    ) : HomeAction
+
+    data class RequestAuthorDisplayName(
+        val item: WorkshopSummary,
+    ) : HomeAction
+
+    data class RequestDownload(
+        val item: WorkshopSummary,
+    ) : HomeAction
+
+    data class LegacyStoragePermissionResult(
+        val item: WorkshopSummary,
+        val granted: Boolean,
+    ) : HomeAction
+
+    data class OpenDetail(
+        val workshopId: Long,
+    ) : HomeAction
+
+    data class SearchAuthor(
+        val creator: String,
+    ) : HomeAction
+
+    data class CopyText(
+        val text: String,
+        val message: String,
+    ) : HomeAction
+
+    data class OpenSteam(
+        val workshopId: Long,
+    ) : HomeAction
+}
+
+sealed interface HomeEffect {
+    data class ResolveLegacyStoragePermission(
+        val item: WorkshopSummary,
+    ) : HomeEffect
+
+    data class ShowMessage(
+        val message: String,
+    ) : HomeEffect
+
+    data class OpenDetail(
+        val workshopId: Long,
+    ) : HomeEffect
+
+    data class SearchAuthor(
+        val creator: String,
+    ) : HomeEffect
+
+    data class CopyText(
+        val text: String,
+        val message: String,
+    ) : HomeEffect
+
+    data class OpenSteam(
+        val workshopId: Long,
+    ) : HomeEffect
 }
 
 internal data class HomeLoadingIndicatorVisibility(
@@ -424,33 +521,34 @@ private fun String.creatorIdOrNull(): String? {
     return query.substringAfter(':').filter(Char::isDigit).takeIf(String::isNotBlank)
 }
 
-private fun String.isSteamAuthorPlaceholder(): Boolean =
-    this == "Steam 创作者" || startsWith("Steam 用户 ")
+private fun String.isSteamAuthorPlaceholder(): Boolean = this == "Steam 创作者" || startsWith("Steam 用户 ")
 
-private fun HomeUiState.asAuthorSearchState(creatorId: String): HomeUiState = copy(
-    query = "author:$creatorId",
-    creatorId = creatorId,
-    exactPhrase = false,
-    selectedTypes = emptySet(),
-    selectedRatings = if (matureContentEnabled) {
-        setOf(WorkshopRating.ALL)
-    } else {
-        DEFAULT_HOME_RATING_SELECTION
-    },
-    selectedGenres = DEFAULT_HOME_GENRE_SELECTION,
-    selectedOfficialTags = emptySet(),
-    selectedResolutions = DEFAULT_HOME_RESOLUTION_SELECTION,
-    sort = WorkshopSort.MOST_RECENT,
-    days = 0,
-    error = null,
-    actionMessage = null,
-)
+private fun HomeUiState.asAuthorSearchState(creatorId: String): HomeUiState =
+    copy(
+        query = "author:$creatorId",
+        creatorId = creatorId,
+        exactPhrase = false,
+        selectedTypes = emptySet(),
+        selectedRatings =
+            if (matureContentEnabled) {
+                setOf(WorkshopRating.ALL)
+            } else {
+                DEFAULT_HOME_RATING_SELECTION
+            },
+        selectedGenres = DEFAULT_HOME_GENRE_SELECTION,
+        selectedOfficialTags = emptySet(),
+        selectedResolutions = DEFAULT_HOME_RESOLUTION_SELECTION,
+        sort = WorkshopSort.MOST_RECENT,
+        days = 0,
+        error = null,
+    )
 
 internal fun initialHomeUiState(authorSearchCreator: String?): HomeUiState {
-    val normalizedCreatorId = authorSearchCreator
-        ?.filter(Char::isDigit)
-        ?.takeIf(String::isNotBlank)
-        ?: return HomeUiState()
+    val normalizedCreatorId =
+        authorSearchCreator
+            ?.filter(Char::isDigit)
+            ?.takeIf(String::isNotBlank)
+            ?: return HomeUiState()
     return HomeUiState().asAuthorSearchState(normalizedCreatorId)
 }
 
@@ -459,10 +557,11 @@ internal fun shouldPrewarmSteamIp(
     dataSource: SteamWorkshopDataSource,
     append: Boolean,
     hasItems: Boolean,
-): Boolean = steamAccessEnabled &&
-    !append &&
-    !hasItems &&
-    dataSource != SteamWorkshopDataSource.CM_WEBSOCKET
+): Boolean =
+    steamAccessEnabled &&
+        !append &&
+        !hasItems &&
+        dataSource != SteamWorkshopDataSource.CM_WEBSOCKET
 
 internal suspend fun requireSteamIpPrewarm(
     shouldPrewarm: Boolean,
@@ -476,356 +575,433 @@ internal suspend fun requireSteamIpPrewarm(
 }
 
 @HiltViewModel
-class HomeViewModel @Inject constructor(
-    private val workshopRepository: WorkshopRepository,
-    private val settingsRepository: SettingsRepository,
-    private val steamAccessRepository: SteamAccessRepository,
-    private val downloadTaskRepository: DownloadTaskRepository,
-    savedStateHandle: SavedStateHandle,
-) : ViewModel() {
-    private val mutableState = MutableStateFlow(
-        initialHomeUiState(savedStateHandle.get(HOME_AUTHOR_SEARCH_CREATOR_ARGUMENT)),
-    )
-    private var loadJob: Job? = null
-    private var requestVersion = 0L
-    private var preferencesInitialized = false
-    private var unsubmittedQuery: String? = null
-    private val authorNameRequests = mutableSetOf<Long>()
-
-    val uiState: StateFlow<HomeUiState> = mutableState.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            settingsRepository.preferences.collect { preferences ->
-                val previous = mutableState.value
-                val firstPreferences = !preferencesInitialized
-                val sanitizedRatings = if (
-                    firstPreferences && previous.creatorId != null && preferences.matureContentEnabled
-                ) {
-                    setOf(WorkshopRating.ALL)
-                } else {
-                    previous.selectedRatings.normalizedRatings(preferences.matureContentEnabled)
-                }
-                val requiresReload = previous.pageSize != preferences.homePageSize ||
-                    previous.matureContentEnabled != preferences.matureContentEnabled ||
-                    previous.paginationMode != preferences.homePaginationMode ||
-                    previous.steamApiKey != preferences.steamApiKey ||
-                    previous.steamAccessEnabled != preferences.steamAccessEnabled ||
-                    previous.steamWorkshopDataSource != preferences.steamWorkshopDataSource
-                mutableState.value = previous.copy(
-                    language = preferences.language,
-                    pageSize = preferences.homePageSize,
-                    columns = preferences.homeColumns,
-                    multiSelect = preferences.homeFilterMultiSelect,
-                    steamApiKey = preferences.steamApiKey,
-                    steamAccessEnabled = preferences.steamAccessEnabled,
-                    steamWorkshopDataSource = preferences.steamWorkshopDataSource,
-                    cardAction = preferences.homeCardAction,
-                    paginationMode = preferences.homePaginationMode,
-                    matureContentEnabled = preferences.matureContentEnabled,
-                    outputTreeUri = preferences.outputTreeUri,
-                    selectedRatings = sanitizedRatings,
-                )
-                preferencesInitialized = true
-                if (firstPreferences || requiresReload) refresh()
-            }
-        }
-    }
-
-    fun updateQuery(query: String) {
-        val current = mutableState.value
-        if (unsubmittedQuery == null) unsubmittedQuery = current.query
-        mutableState.value = current.copy(
-            query = query,
-            creatorId = null,
-            error = null,
-            actionMessage = null,
-        )
-    }
-
-    fun submitSearch() {
-        val current = mutableState.value
-        unsubmittedQuery = null
-        mutableState.value = current.copy(creatorId = current.query.creatorIdOrNull())
-        refreshAfterSearch()
-    }
-
-    fun restoreUnsubmittedQuery() {
-        val restoredQuery = unsubmittedQuery ?: return
-        unsubmittedQuery = null
-        mutableState.value = mutableState.value.copy(
-            query = restoredQuery,
-            creatorId = restoredQuery.creatorIdOrNull(),
-            error = null,
-            actionMessage = null,
-        )
-    }
-
-    fun searchAuthor(creator: String) {
-        val normalized = creator.filter(Char::isDigit)
-        if (normalized.isEmpty()) return
-        mutableState.value = mutableState.value.asAuthorSearchState(normalized)
-        refreshAfterSearch()
-    }
-
-    fun requestAuthorDisplayName(item: WorkshopSummary) {
-        if (!item.author.isSteamAuthorPlaceholder() || item.id in authorNameRequests) return
-        authorNameRequests += item.id
-        viewModelScope.launch {
-            val authorName = runCatching {
-                workshopRepository.getDetail(item.id).summary.author
-            }.getOrNull()?.takeUnless(String::isSteamAuthorPlaceholder)
-            if (!authorName.isNullOrBlank()) {
-                mutableState.value = mutableState.value.let { state ->
-                    state.copy(authorDisplayNames = state.authorDisplayNames + (item.id to authorName))
-                }
-            } else {
-                authorNameRequests -= item.id
-            }
-        }
-    }
-
-    fun toggleExactPhrase() {
-        mutableState.value = mutableState.value.copy(exactPhrase = !mutableState.value.exactPhrase)
-        refresh()
-    }
-
-    fun applyFilters(selection: HomeFilterSelection) {
-        val current = mutableState.value
-        val normalized = selection.normalized(current.matureContentEnabled)
-        if (normalized == current.filterSelection()) return
-        mutableState.value = current.copy(
-            sort = normalized.sort,
-            days = normalized.days,
-            selectedTypes = normalized.types,
-            selectedRatings = normalized.ratings,
-            selectedGenres = normalized.genres,
-            selectedOfficialTags = normalized.officialTags,
-            selectedResolutions = normalized.resolutions,
-        )
-        refresh()
-    }
-
-    fun setViewMode(viewMode: HomeViewMode) {
-        val current = mutableState.value
-        if (current.viewMode == viewMode) return
-        mutableState.value = current.copy(viewMode = viewMode)
-    }
-
-    fun refresh() {
-        reloadFirstPage(scrollToTopOnSuccess = false)
-    }
-
-    private fun refreshAfterSearch() {
-        reloadFirstPage(scrollToTopOnSuccess = true)
-    }
-
-    private fun reloadFirstPage(scrollToTopOnSuccess: Boolean) {
-        loadJob?.cancel()
-        requestVersion += 1
-        loadPage(
-            page = 1,
-            append = false,
-            version = requestVersion,
-            scrollToTopOnSuccess = scrollToTopOnSuccess,
-        )
-    }
-
-    fun resetAndRefresh() {
-        unsubmittedQuery = null
-        val current = mutableState.value
-        mutableState.value = current.copy(
-            query = "",
-            creatorId = null,
-            exactPhrase = false,
-            selectedTypes = emptySet(),
-            selectedRatings = setOf(WorkshopRating.EVERYONE),
-            selectedGenres = DEFAULT_HOME_GENRE_SELECTION,
-            selectedOfficialTags = emptySet(),
-            selectedResolutions = DEFAULT_HOME_RESOLUTION_SELECTION,
-            sort = WorkshopSort.TRENDING,
-            days = 30,
-            actionMessage = null,
-            error = null,
-        )
-        refresh()
-    }
-
-    fun loadNextPage() {
-        val state = mutableState.value
-        if (
-            state.paginationMode != HomePaginationMode.INFINITE_SCROLL ||
-            state.isInitialLoading ||
-            state.isLoadingMore ||
-            !state.hasNextPage
-        ) return
-        loadPage(page = state.nextPage, append = true, version = requestVersion)
-    }
-
-    fun selectPage(page: Int) {
-        val state = mutableState.value
-        if (state.paginationMode != HomePaginationMode.PAGED || state.isInitialLoading || state.isPageLoading) return
-        val targetPage = page.coerceAtLeast(1)
-        if (targetPage == state.currentPage) return
-        loadJob?.cancel()
-        requestVersion += 1
-        loadPage(page = targetPage, append = false, version = requestVersion)
-    }
-
-    fun enqueueCardDownload(item: WorkshopSummary) {
-        viewModelScope.launch {
-            runCatching {
-                downloadTaskRepository.enqueue(
-                    DownloadRequest(
-                        workshopId = item.id,
-                        title = item.title,
-                        type = item.type,
-                        previewUrl = item.previewUrl,
-                        expectedTotalBytes = item.fileSizeBytes ?: 0L,
-                        outputTreeUri = mutableState.value.outputTreeUri,
-                        exportFormat = ExportFormat.AUTO,
-                    ),
-                )
-            }.onSuccess {
-                mutableState.value = mutableState.value.copy(
-                    actionMessage = "已加入下载队列：${it.title}",
-                )
-            }.onFailure { error ->
-                mutableState.value = mutableState.value.copy(
-                    actionMessage = error.message ?: "无法加入下载队列",
-                )
-            }
-        }
-    }
-
-    fun reportLegacyStoragePermissionDenied() {
-        mutableState.value = mutableState.value.copy(
-            actionMessage = "未授予存储权限，无法导出到 Download/WallHub",
-        )
-    }
-
-    fun dismissActionMessage() {
-        if (mutableState.value.actionMessage != null) {
-            mutableState.value = mutableState.value.copy(actionMessage = null)
-        }
-    }
-
-    private fun loadPage(
-        page: Int,
-        append: Boolean,
-        version: Long,
-        scrollToTopOnSuccess: Boolean = false,
-    ) {
-        val requestState = mutableState.value
-        val shouldPrewarm = shouldPrewarmSteamIp(
-            steamAccessEnabled = requestState.steamAccessEnabled,
-            dataSource = requestState.steamWorkshopDataSource,
-            append = append,
-            hasItems = requestState.items.isNotEmpty(),
-        )
-        loadJob = viewModelScope.launch {
-            mutableState.value = requestState.copy(
-                isInitialLoading = !append && requestState.items.isEmpty(),
-                isSteamIpPrewarming = shouldPrewarm,
-                isLoadingMore = append,
-                isPageLoading = !append && requestState.items.isNotEmpty(),
-                error = null,
+class HomeViewModel
+    @Inject
+    constructor(
+        private val workshopRepository: WorkshopRepository,
+        private val settingsRepository: SettingsRepository,
+        private val steamAccessRepository: SteamAccessRepository,
+        private val downloadTaskRepository: DownloadTaskRepository,
+        savedStateHandle: SavedStateHandle,
+    ) : ViewModel() {
+        private val mutableState =
+            MutableStateFlow(
+                initialHomeUiState(savedStateHandle.get(HOME_AUTHOR_SEARCH_CREATOR_ARGUMENT)),
             )
-            try {
-                if (shouldPrewarm) {
-                    requireSteamIpPrewarm(
-                        shouldPrewarm = true,
-                        dataSource = requestState.steamWorkshopDataSource,
-                        steamAccessRepository = steamAccessRepository,
-                        failureMessage = requestState.text(
-                            "Steam IP预热失败，请检查网络后重试",
-                            "Steam IP prewarm failed. Check your network and retry.",
+        private var loadJob: Job? = null
+        private var requestVersion = 0L
+        private var preferencesInitialized = false
+        private var unsubmittedQuery: String? = null
+        private val authorNameRequests = mutableSetOf<Long>()
+        private val effectChannel = Channel<HomeEffect>(capacity = Channel.BUFFERED)
+
+        val uiState: StateFlow<HomeUiState> = mutableState.asStateFlow()
+        val effects: Flow<HomeEffect> = effectChannel.receiveAsFlow()
+
+        init {
+            viewModelScope.launch {
+                settingsRepository.preferences.collect { preferences ->
+                    val previous = mutableState.value
+                    val firstPreferences = !preferencesInitialized
+                    val sanitizedRatings =
+                        if (
+                            firstPreferences && previous.creatorId != null && preferences.matureContentEnabled
+                        ) {
+                            setOf(WorkshopRating.ALL)
+                        } else {
+                            previous.selectedRatings.normalizedRatings(preferences.matureContentEnabled)
+                        }
+                    val requiresReload =
+                        previous.pageSize != preferences.homePageSize ||
+                            previous.matureContentEnabled != preferences.matureContentEnabled ||
+                            previous.paginationMode != preferences.homePaginationMode ||
+                            previous.steamApiKey != preferences.steamApiKey ||
+                            previous.steamAccessEnabled != preferences.steamAccessEnabled ||
+                            previous.steamWorkshopDataSource != preferences.steamWorkshopDataSource
+                    mutableState.value =
+                        previous.copy(
+                            language = preferences.language,
+                            pageSize = preferences.homePageSize,
+                            columns = preferences.homeColumns,
+                            multiSelect = preferences.homeFilterMultiSelect,
+                            steamApiKey = preferences.steamApiKey,
+                            steamAccessEnabled = preferences.steamAccessEnabled,
+                            steamWorkshopDataSource = preferences.steamWorkshopDataSource,
+                            cardAction = preferences.homeCardAction,
+                            paginationMode = preferences.homePaginationMode,
+                            matureContentEnabled = preferences.matureContentEnabled,
+                            outputTreeUri = preferences.outputTreeUri,
+                            selectedRatings = sanitizedRatings,
+                        )
+                    preferencesInitialized = true
+                    if (firstPreferences || requiresReload) refresh()
+                }
+            }
+        }
+
+        fun onAction(action: HomeAction) {
+            action.immediateEffect()?.let(::emitEffect) ?: handleStateAction(action)
+        }
+
+        private fun handleStateAction(action: HomeAction) {
+            if (handleSearchAndFilterAction(action) || handlePaginationAction(action)) return
+            when (action) {
+                is HomeAction.LegacyStoragePermissionResult -> {
+                    if (action.granted) {
+                        enqueueCardDownload(action.item)
+                    } else {
+                        emitEffect(
+                            HomeEffect.ShowMessage(
+                                "未授予存储权限，无法导出到 Download/WallHub",
+                            ),
+                        )
+                    }
+                }
+                is HomeAction.RequestAuthorDisplayName -> requestAuthorDisplayName(action.item)
+                else -> Unit
+            }
+        }
+
+        private fun handleSearchAndFilterAction(action: HomeAction): Boolean {
+            when (action) {
+                is HomeAction.QueryChanged -> updateQuery(action.query)
+                HomeAction.SubmitSearch -> submitSearch()
+                HomeAction.RestoreUnsubmittedQuery -> restoreUnsubmittedQuery()
+                HomeAction.ToggleExactPhrase -> toggleExactPhrase()
+                is HomeAction.ApplyFilters -> applyFilters(action.selection)
+                is HomeAction.SelectViewMode -> setViewMode(action.viewMode)
+                HomeAction.ResetAndRefresh -> resetAndRefresh()
+                else -> return false
+            }
+            return true
+        }
+
+        private fun handlePaginationAction(action: HomeAction): Boolean {
+            when (action) {
+                HomeAction.Refresh -> refresh()
+                HomeAction.LoadNextPage -> loadNextPage()
+                is HomeAction.SelectPage -> selectPage(action.page)
+                else -> return false
+            }
+            return true
+        }
+
+        private fun emitEffect(effect: HomeEffect) {
+            effectChannel.trySend(effect)
+        }
+
+        private fun updateQuery(query: String) {
+            val current = mutableState.value
+            if (unsubmittedQuery == null) unsubmittedQuery = current.query
+            mutableState.value =
+                current.copy(
+                    query = query,
+                    creatorId = null,
+                    error = null,
+                )
+        }
+
+        private fun submitSearch() {
+            val current = mutableState.value
+            unsubmittedQuery = null
+            mutableState.value = current.copy(creatorId = current.query.creatorIdOrNull())
+            refreshAfterSearch()
+        }
+
+        private fun restoreUnsubmittedQuery() {
+            val restoredQuery = unsubmittedQuery ?: return
+            unsubmittedQuery = null
+            mutableState.value =
+                mutableState.value.copy(
+                    query = restoredQuery,
+                    creatorId = restoredQuery.creatorIdOrNull(),
+                    error = null,
+                )
+        }
+
+        private fun requestAuthorDisplayName(item: WorkshopSummary) {
+            if (!item.author.isSteamAuthorPlaceholder() || item.id in authorNameRequests) return
+            authorNameRequests += item.id
+            viewModelScope.launch {
+                val authorName =
+                    runCatching {
+                        workshopRepository.getDetail(item.id).summary.author
+                    }.getOrNull()?.takeUnless(String::isSteamAuthorPlaceholder)
+                if (!authorName.isNullOrBlank()) {
+                    mutableState.value =
+                        mutableState.value.let { state ->
+                            state.copy(authorDisplayNames = state.authorDisplayNames + (item.id to authorName))
+                        }
+                } else {
+                    authorNameRequests -= item.id
+                }
+            }
+        }
+
+        private fun toggleExactPhrase() {
+            mutableState.value = mutableState.value.copy(exactPhrase = !mutableState.value.exactPhrase)
+            refresh()
+        }
+
+        private fun applyFilters(selection: HomeFilterSelection) {
+            val current = mutableState.value
+            val normalized = selection.normalized(current.matureContentEnabled)
+            if (normalized == current.filterSelection()) return
+            mutableState.value =
+                current.copy(
+                    sort = normalized.sort,
+                    days = normalized.days,
+                    selectedTypes = normalized.types,
+                    selectedRatings = normalized.ratings,
+                    selectedGenres = normalized.genres,
+                    selectedOfficialTags = normalized.officialTags,
+                    selectedResolutions = normalized.resolutions,
+                )
+            refresh()
+        }
+
+        private fun setViewMode(viewMode: HomeViewMode) {
+            val current = mutableState.value
+            if (current.viewMode == viewMode) return
+            mutableState.value = current.copy(viewMode = viewMode)
+        }
+
+        private fun refresh() {
+            reloadFirstPage(scrollToTopOnSuccess = false)
+        }
+
+        private fun refreshAfterSearch() {
+            reloadFirstPage(scrollToTopOnSuccess = true)
+        }
+
+        private fun reloadFirstPage(scrollToTopOnSuccess: Boolean) {
+            loadJob?.cancel()
+            requestVersion += 1
+            loadPage(
+                page = 1,
+                append = false,
+                version = requestVersion,
+                scrollToTopOnSuccess = scrollToTopOnSuccess,
+            )
+        }
+
+        private fun resetAndRefresh() {
+            unsubmittedQuery = null
+            val current = mutableState.value
+            mutableState.value =
+                current.copy(
+                    query = "",
+                    creatorId = null,
+                    exactPhrase = false,
+                    selectedTypes = emptySet(),
+                    selectedRatings = setOf(WorkshopRating.EVERYONE),
+                    selectedGenres = DEFAULT_HOME_GENRE_SELECTION,
+                    selectedOfficialTags = emptySet(),
+                    selectedResolutions = DEFAULT_HOME_RESOLUTION_SELECTION,
+                    sort = WorkshopSort.TRENDING,
+                    days = 30,
+                    error = null,
+                )
+            refresh()
+        }
+
+        private fun loadNextPage() {
+            val state = mutableState.value
+            if (
+                state.paginationMode != HomePaginationMode.INFINITE_SCROLL ||
+                state.isInitialLoading ||
+                state.isLoadingMore ||
+                !state.hasNextPage
+            ) {
+                return
+            }
+            loadPage(page = state.nextPage, append = true, version = requestVersion)
+        }
+
+        private fun selectPage(page: Int) {
+            val state = mutableState.value
+            if (state.paginationMode != HomePaginationMode.PAGED || state.isInitialLoading || state.isPageLoading) return
+            val targetPage = page.coerceAtLeast(1)
+            if (targetPage == state.currentPage) return
+            loadJob?.cancel()
+            requestVersion += 1
+            loadPage(page = targetPage, append = false, version = requestVersion)
+        }
+
+        private fun enqueueCardDownload(item: WorkshopSummary) {
+            viewModelScope.launch {
+                runCatching {
+                    downloadTaskRepository.enqueue(
+                        DownloadRequest(
+                            workshopId = item.id,
+                            title = item.title,
+                            type = item.type,
+                            previewUrl = item.previewUrl,
+                            expectedTotalBytes = item.fileSizeBytes ?: 0L,
+                            outputTreeUri = mutableState.value.outputTreeUri,
+                            exportFormat = ExportFormat.AUTO,
                         ),
                     )
-                    mutableState.value = mutableState.value.copy(isSteamIpPrewarming = false)
-                }
-                val response = workshopRepository.browse(
-                    WorkshopBrowseQuery(
-                        page = page,
-                        pageSize = requestState.pageSize,
-                        searchText = requestState.query,
-                        creatorId = requestState.creatorId,
-                        types = requestState.selectedTypes,
-                        genres = requestState.selectedGenres.asEffectiveFilter(DEFAULT_HOME_GENRE_SELECTION),
-                        officialTags = requestState.selectedOfficialTags,
-                        resolutions = requestState.selectedResolutions.asEffectiveFilter(DEFAULT_HOME_RESOLUTION_SELECTION),
-                        ratings = requestState.selectedRatings,
-                        days = requestState.days,
-                        exactPhrase = requestState.exactPhrase,
-                        sort = requestState.sort,
-                    ),
-                )
-                if (version != requestVersion) return@launch
-                val mergedState = withContext(Dispatchers.Default) {
-                    response.mergeInto(
-                        previous = requestState,
-                        append = append,
+                }.onSuccess {
+                    effectChannel.send(
+                        HomeEffect.ShowMessage("已加入下载队列：${it.title}"),
+                    )
+                }.onFailure { error ->
+                    effectChannel.send(
+                        HomeEffect.ShowMessage(error.message ?: "无法加入下载队列"),
                     )
                 }
-                if (version != requestVersion) return@launch
-                mutableState.value = if (scrollToTopOnSuccess) {
-                    mergedState.copy(successfulSearchToken = requestState.successfulSearchToken + 1L)
-                } else {
-                    mergedState
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                if (version != requestVersion) return@launch
-                mutableState.value = requestState.copy(
-                    isInitialLoading = false,
-                    isSteamIpPrewarming = false,
-                    isLoadingMore = false,
-                    isPageLoading = false,
-                    error = error.message ?: "无法加载 Steam 创意工坊，请稍后重试",
-                )
             }
         }
-    }
 
-    private fun WorkshopPage.mergeInto(
-        previous: HomeUiState,
-        append: Boolean,
-    ): HomeUiState {
-        val resolvedTotalCount = resolveHomeTotalCount(
-            reportedTotalCount = totalCount,
-            previousTotalCount = previous.totalCount,
-            append = append,
-        )
-        val mergedItems = if (append) {
-            (previous.items + items).distinctBy(WorkshopSummary::id)
-        } else {
-            items
+        private fun loadPage(
+            page: Int,
+            append: Boolean,
+            version: Long,
+            scrollToTopOnSuccess: Boolean = false,
+        ) {
+            val requestState = mutableState.value
+            val shouldPrewarm =
+                shouldPrewarmSteamIp(
+                    steamAccessEnabled = requestState.steamAccessEnabled,
+                    dataSource = requestState.steamWorkshopDataSource,
+                    append = append,
+                    hasItems = requestState.items.isNotEmpty(),
+                )
+            loadJob =
+                viewModelScope.launch {
+                    mutableState.value =
+                        requestState.copy(
+                            isInitialLoading = !append && requestState.items.isEmpty(),
+                            isSteamIpPrewarming = shouldPrewarm,
+                            isLoadingMore = append,
+                            isPageLoading = !append && requestState.items.isNotEmpty(),
+                            error = null,
+                        )
+                    try {
+                        if (shouldPrewarm) {
+                            requireSteamIpPrewarm(
+                                shouldPrewarm = true,
+                                dataSource = requestState.steamWorkshopDataSource,
+                                steamAccessRepository = steamAccessRepository,
+                                failureMessage =
+                                    requestState.text(
+                                        "Steam IP预热失败，请检查网络后重试",
+                                        "Steam IP prewarm failed. Check your network and retry.",
+                                    ),
+                            )
+                            mutableState.value = mutableState.value.copy(isSteamIpPrewarming = false)
+                        }
+                        val response =
+                            workshopRepository.browse(
+                                WorkshopBrowseQuery(
+                                    page = page,
+                                    pageSize = requestState.pageSize,
+                                    searchText = requestState.query,
+                                    creatorId = requestState.creatorId,
+                                    types = requestState.selectedTypes,
+                                    genres = requestState.selectedGenres.asEffectiveFilter(DEFAULT_HOME_GENRE_SELECTION),
+                                    officialTags = requestState.selectedOfficialTags,
+                                    resolutions = requestState.selectedResolutions.asEffectiveFilter(DEFAULT_HOME_RESOLUTION_SELECTION),
+                                    ratings = requestState.selectedRatings,
+                                    days = requestState.days,
+                                    exactPhrase = requestState.exactPhrase,
+                                    sort = requestState.sort,
+                                ),
+                            )
+                        if (version != requestVersion) return@launch
+                        val mergedState =
+                            withContext(Dispatchers.Default) {
+                                response.mergeInto(
+                                    previous = requestState,
+                                    append = append,
+                                )
+                            }
+                        if (version != requestVersion) return@launch
+                        mutableState.value =
+                            if (scrollToTopOnSuccess) {
+                                mergedState.copy(successfulSearchToken = requestState.successfulSearchToken + 1L)
+                            } else {
+                                mergedState
+                            }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        if (version != requestVersion) return@launch
+                        mutableState.value =
+                            requestState.copy(
+                                isInitialLoading = false,
+                                isSteamIpPrewarming = false,
+                                isLoadingMore = false,
+                                isPageLoading = false,
+                                error = error.message ?: "无法加载 Steam 创意工坊，请稍后重试",
+                            )
+                    }
+                }
         }
-        return previous.copy(
-            items = mergedItems,
-            nextPage = page.nextPageOrLast(),
-            currentPage = page,
-            totalPages = resolveHomeTotalPages(
-                reportedTotalPages = this.totalPages,
-                totalCount = resolvedTotalCount,
-                pageSize = previous.pageSize,
-                page = page,
-                hasNextPage = hasNextPage,
-            ),
-            hasNextPage = hasNextPage,
-            totalCount = resolvedTotalCount,
-            isInitialLoading = false,
-            isSteamIpPrewarming = false,
-            isLoadingMore = false,
-            isPageLoading = false,
-            error = null,
-        )
-    }
-}
 
-private fun Set<String>.asEffectiveFilter(allOptions: Set<String>): Set<String> =
-    takeUnless { it == allOptions }.orEmpty()
+        private fun WorkshopPage.mergeInto(
+            previous: HomeUiState,
+            append: Boolean,
+        ): HomeUiState {
+            val resolvedTotalCount =
+                resolveHomeTotalCount(
+                    reportedTotalCount = totalCount,
+                    previousTotalCount = previous.totalCount,
+                    append = append,
+                )
+            val mergedItems =
+                if (append) {
+                    (previous.items + items).distinctBy(WorkshopSummary::id)
+                } else {
+                    items
+                }
+            return previous.copy(
+                items = mergedItems,
+                nextPage = page.nextPageOrLast(),
+                currentPage = page,
+                totalPages =
+                    resolveHomeTotalPages(
+                        reportedTotalPages = this.totalPages,
+                        totalCount = resolvedTotalCount,
+                        pageSize = previous.pageSize,
+                        page = page,
+                        hasNextPage = hasNextPage,
+                    ),
+                hasNextPage = hasNextPage,
+                totalCount = resolvedTotalCount,
+                isInitialLoading = false,
+                isSteamIpPrewarming = false,
+                isLoadingMore = false,
+                isPageLoading = false,
+                error = null,
+            )
+        }
+    }
+
+internal fun HomeAction.immediateEffect(): HomeEffect? =
+    when (this) {
+        is HomeAction.RequestDownload -> HomeEffect.ResolveLegacyStoragePermission(item)
+        is HomeAction.OpenDetail -> HomeEffect.OpenDetail(workshopId)
+        is HomeAction.SearchAuthor -> HomeEffect.SearchAuthor(creator)
+        is HomeAction.CopyText -> HomeEffect.CopyText(text, message)
+        is HomeAction.OpenSteam -> HomeEffect.OpenSteam(workshopId)
+        is HomeAction.LegacyStoragePermissionResult -> null
+        is HomeAction.QueryChanged,
+        HomeAction.SubmitSearch,
+        HomeAction.RestoreUnsubmittedQuery,
+        HomeAction.ToggleExactPhrase,
+        is HomeAction.ApplyFilters,
+        is HomeAction.SelectViewMode,
+        HomeAction.ResetAndRefresh,
+        HomeAction.Refresh,
+        HomeAction.LoadNextPage,
+        is HomeAction.SelectPage,
+        is HomeAction.RequestAuthorDisplayName,
+        -> null
+    }
+
+private fun Set<String>.asEffectiveFilter(allOptions: Set<String>): Set<String> = takeUnless { it == allOptions }.orEmpty()
 
 internal fun resolveHomeTotalCount(
     reportedTotalCount: Int?,
@@ -861,52 +1037,28 @@ fun HomeRoute(
     onContextMenuActiveChanged: (Boolean) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
-    var pendingLegacyStorageDownload by remember { mutableStateOf<WorkshopSummary?>(null) }
-    val legacyStoragePermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        val pendingItem = pendingLegacyStorageDownload
-        pendingLegacyStorageDownload = null
-        if (granted && pendingItem != null) {
-            viewModel.enqueueCardDownload(pendingItem)
-        } else if (!granted) {
-            viewModel.reportLegacyStoragePermissionDenied()
-        }
-    }
-    val requestDownload: (WorkshopSummary) -> Unit = { item ->
-        if (context.requiresLegacyPublicDownloadPermission()) {
-            pendingLegacyStorageDownload = item
-            legacyStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        } else {
-            viewModel.enqueueCardDownload(item)
-        }
-    }
-    HomeScreen(
-        state = state,
-        onQueryChanged = viewModel::updateQuery,
-        onSubmitSearch = {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val onHomeAction: (HomeAction) -> Unit = { action ->
+        if (action == HomeAction.SubmitSearch) {
             val requestedCreatorId = state.query.creatorIdOrNull()
             if (requestedCreatorId != null && (onBack == null || state.creatorId != requestedCreatorId)) {
-                viewModel.restoreUnsubmittedQuery()
-                onSearchAuthor(requestedCreatorId)
+                viewModel.onAction(HomeAction.RestoreUnsubmittedQuery)
+                viewModel.onAction(HomeAction.SearchAuthor(requestedCreatorId))
             } else {
-                viewModel.submitSearch()
+                viewModel.onAction(action)
             }
-        },
-        onToggleExactPhrase = viewModel::toggleExactPhrase,
-        onApplyFilters = viewModel::applyFilters,
-        onViewModeSelected = viewModel::setViewMode,
-        onResetAndRefresh = viewModel::resetAndRefresh,
-        onRetry = viewModel::refresh,
-        onLoadNextPage = viewModel::loadNextPage,
-        onPageSelected = viewModel::selectPage,
-        onDownload = requestDownload,
-        onActionMessageDismissed = viewModel::dismissActionMessage,
+        } else {
+            viewModel.onAction(action)
+        }
+    }
+    HomeEffectHandler(
+        viewModel = viewModel,
         onOpenDetail = onOpenDetail,
         onSearchAuthor = onSearchAuthor,
-        onAuthorNameRequested = viewModel::requestAuthorDisplayName,
+    )
+    HomeScreen(
+        state = state,
+        onAction = onHomeAction,
         onBack = onBack,
         scrollToTopRequest = scrollToTopRequest,
         onContextMenuActiveChanged = onContextMenuActiveChanged,
@@ -914,31 +1066,75 @@ fun HomeRoute(
 }
 
 @Composable
-fun HomeScreen(
-    state: HomeUiState,
-    onQueryChanged: (String) -> Unit,
-    onSubmitSearch: () -> Unit,
-    onToggleExactPhrase: () -> Unit,
-    onApplyFilters: (HomeFilterSelection) -> Unit,
-    onViewModeSelected: (HomeViewMode) -> Unit,
-    onResetAndRefresh: () -> Unit,
-    onRetry: () -> Unit,
-    onLoadNextPage: () -> Unit,
-    onPageSelected: (Int) -> Unit,
-    onDownload: (WorkshopSummary) -> Unit,
-    onActionMessageDismissed: () -> Unit,
+fun HomeEffectHandler(
+    viewModel: HomeViewModel,
     onOpenDetail: (Long) -> Unit,
     onSearchAuthor: (String) -> Unit = {},
-    onAuthorNameRequested: (WorkshopSummary) -> Unit = {},
+) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val toast = LocalWallHubToastState.current
+    val currentOnOpenDetail by rememberUpdatedState(onOpenDetail)
+    val currentOnSearchAuthor by rememberUpdatedState(onSearchAuthor)
+    var pendingLegacyStorageDownload by remember { mutableStateOf<WorkshopSummary?>(null) }
+    val legacyStoragePermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { granted ->
+            val pendingItem = pendingLegacyStorageDownload ?: return@rememberLauncherForActivityResult
+            pendingLegacyStorageDownload = null
+            viewModel.onAction(HomeAction.LegacyStoragePermissionResult(pendingItem, granted))
+        }
+    LaunchedEffect(viewModel, context) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                is HomeEffect.ResolveLegacyStoragePermission -> {
+                    if (context.requiresLegacyPublicDownloadPermission()) {
+                        pendingLegacyStorageDownload = effect.item
+                        legacyStoragePermissionLauncher.launch(
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                        )
+                    } else {
+                        viewModel.onAction(
+                            HomeAction.LegacyStoragePermissionResult(
+                                item = effect.item,
+                                granted = true,
+                            ),
+                        )
+                    }
+                }
+                is HomeEffect.ShowMessage -> toast.show(effect.message)
+                is HomeEffect.OpenDetail -> currentOnOpenDetail(effect.workshopId)
+                is HomeEffect.SearchAuthor -> currentOnSearchAuthor(effect.creator)
+                is HomeEffect.CopyText -> {
+                    clipboard.setText(AnnotatedString(effect.text))
+                    toast.show(effect.message)
+                }
+                is HomeEffect.OpenSteam -> {
+                    val intent =
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://steamcommunity.com/sharedfiles/filedetails/?id=${effect.workshopId}"),
+                        )
+                    runCatching { context.startActivity(intent) }
+                        .onFailure { currentOnOpenDetail(effect.workshopId) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HomeScreen(
+    state: HomeUiState,
+    onAction: (HomeAction) -> Unit,
     onBack: (() -> Unit)? = null,
     scrollToTopRequest: Int = 0,
     onContextMenuActiveChanged: (Boolean) -> Unit = {},
 ) {
     var filterSheetInitialPage by rememberSaveable { mutableStateOf<HomeFilterPage?>(null) }
-    val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val gridState = rememberLazyGridState()
-    val coroutineScope = rememberCoroutineScope()
     var handledScrollToTopRequest by rememberSaveable { mutableIntStateOf(scrollToTopRequest) }
     var handledSearchToken by remember { mutableLongStateOf(state.successfulSearchToken) }
     var searchBoundsInRoot by remember { mutableStateOf<IntRect?>(null) }
@@ -948,14 +1144,16 @@ fun HomeScreen(
     val contextMenuActive = activeContextMenuTarget != null
     val contextMenuBackdropProgress by animateFloatAsState(
         targetValue = if (contextMenuActive) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = if (contextMenuActive) {
-                WallHubContextMenuDefaults.EnterDurationMillis
-            } else {
-                WallHubContextMenuDefaults.ExitDurationMillis
-            },
-            easing = WallHubContextMenuDefaults.Easing,
-        ),
+        animationSpec =
+            tween(
+                durationMillis =
+                    if (contextMenuActive) {
+                        WallHubContextMenuDefaults.EnterDurationMillis
+                    } else {
+                        WallHubContextMenuDefaults.ExitDurationMillis
+                    },
+                easing = WallHubContextMenuDefaults.Easing,
+            ),
         label = "HomeContextMenuBackdrop",
         finishedListener = { completedProgress ->
             if (completedProgress == 0f && activeContextMenuTarget == null) {
@@ -977,18 +1175,13 @@ fun HomeScreen(
     DisposableEffect(Unit) {
         onDispose { onContextMenuActiveChanged(false) }
     }
-    LaunchedEffect(state.actionMessage) {
-        if (state.actionMessage != null) {
-            delay(HOME_TOP_TOAST_DURATION_MS)
-            onActionMessageDismissed()
-        }
-    }
     LaunchedEffect(scrollToTopRequest) {
         if (scrollToTopRequest > handledScrollToTopRequest) {
-            val isAtTop = gridState.firstVisibleItemIndex == 0 &&
-                gridState.firstVisibleItemScrollOffset == 0
+            val isAtTop =
+                gridState.firstVisibleItemIndex == 0 &&
+                    gridState.firstVisibleItemScrollOffset == 0
             if (isAtTop && !state.isInitialLoading && !state.isLoadingMore) {
-                onRetry()
+                onAction(HomeAction.Refresh)
             } else {
                 gridState.animateScrollToItem(0)
             }
@@ -1007,159 +1200,229 @@ fun HomeScreen(
                 gridState.firstVisibleItemScrollOffset > FILTER_COLLAPSE_OFFSET_PX
         }
     }
+    HomeScreenFrame(
+        state = state,
+        onAction = onAction,
+        onBack = onBack,
+        gridState = gridState,
+        filtersCollapsed = filtersCollapsed,
+        searchBoundsInRoot = searchBoundsInRoot,
+        onSearchBoundsChanged = { searchBoundsInRoot = it },
+        focusManager = focusManager,
+        contextMenuGeometry = contextMenuGeometry,
+        backdropProgress = contextMenuBackdropProgress,
+        renderedContextMenuTarget = renderedContextMenuTarget,
+        onContextMenuOpen = openContextMenu,
+        onContextMenuDismiss = dismissContextMenu,
+        onOpenFilters = { filterSheetInitialPage = it },
+    )
+
+    filterSheetInitialPage?.let { initialPage ->
+        HomeFiltersSheet(
+            applied = state.filterSelection(),
+            config =
+                HomeFilterUiConfig(
+                    language = state.language,
+                    multiSelect = state.multiSelect,
+                    matureContentEnabled = state.matureContentEnabled,
+                ),
+            initialPage = initialPage,
+            onDismiss = { filterSheetInitialPage = null },
+            onSelectionChanged = { onAction(HomeAction.ApplyFilters(it)) },
+        )
+    }
+}
+
+@Composable
+private fun HomeScreenFrame(
+    state: HomeUiState,
+    onAction: (HomeAction) -> Unit,
+    onBack: (() -> Unit)?,
+    gridState: LazyGridState,
+    filtersCollapsed: Boolean,
+    searchBoundsInRoot: IntRect?,
+    onSearchBoundsChanged: (IntRect) -> Unit,
+    focusManager: androidx.compose.ui.focus.FocusManager,
+    contextMenuGeometry: HomeContextMenuGeometry,
+    backdropProgress: Float,
+    renderedContextMenuTarget: HomeContextMenuTarget?,
+    onContextMenuOpen: (HomeContextMenuTarget) -> Unit,
+    onContextMenuDismiss: (Long) -> Unit,
+    onOpenFilters: (HomeFilterPage) -> Unit,
+) {
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .onGloballyPositioned { contextMenuGeometry.rootCoordinates = it }
-            .pointerInput(searchBoundsInRoot) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(
-                        requireUnconsumed = false,
-                        pass = PointerEventPass.Initial,
-                    )
-                    val point = IntOffset(
-                        down.position.x.roundToInt(),
-                        down.position.y.roundToInt(),
-                    )
-                    if (searchBoundsInRoot?.contains(point) != true) {
-                        focusManager.clearFocus(force = true)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { contextMenuGeometry.rootCoordinates = it }
+                .pointerInput(searchBoundsInRoot) {
+                    awaitEachGesture {
+                        val down =
+                            awaitFirstDown(
+                                requireUnconsumed = false,
+                                pass = PointerEventPass.Initial,
+                            )
+                        val point =
+                            IntOffset(
+                                down.position.x.roundToInt(),
+                                down.position.y.roundToInt(),
+                            )
+                        if (searchBoundsInRoot?.contains(point) != true) {
+                            focusManager.clearFocus(force = true)
+                        }
                     }
-                }
-            },
+                },
     ) {
-        WallHubToastHost(
-            message = state.actionMessage,
-            onDismiss = onActionMessageDismissed,
-            modifier = Modifier
+        HomeScreenBody(
+            state = state,
+            onAction = onAction,
+            onBack = onBack,
+            gridState = gridState,
+            filtersCollapsed = filtersCollapsed,
+            onSearchBoundsChanged = onSearchBoundsChanged,
+            contextMenuGeometry = contextMenuGeometry,
+            backdropProgress = backdropProgress,
+            contextMenuPreviewItemId = renderedContextMenuTarget?.itemId,
+            onContextMenuOpen = onContextMenuOpen,
+            onContextMenuDismiss = onContextMenuDismiss,
+            onOpenFilters = onOpenFilters,
+        )
+        HomeContextMenuOverlay(
+            target = renderedContextMenuTarget,
+            backdropProgress = backdropProgress,
+        )
+    }
+}
+
+@Composable
+private fun HomeScreenBody(
+    state: HomeUiState,
+    onAction: (HomeAction) -> Unit,
+    onBack: (() -> Unit)?,
+    gridState: LazyGridState,
+    filtersCollapsed: Boolean,
+    onSearchBoundsChanged: (IntRect) -> Unit,
+    contextMenuGeometry: HomeContextMenuGeometry,
+    backdropProgress: Float,
+    contextMenuPreviewItemId: Long?,
+    onContextMenuOpen: (HomeContextMenuTarget) -> Unit,
+    onContextMenuDismiss: (Long) -> Unit,
+    onOpenFilters: (HomeFilterPage) -> Unit,
+) {
+    val coroutineScope = rememberCoroutineScope()
+    Box(
+        modifier =
+            Modifier
                 .fillMaxSize()
                 .then(
-                    if (
-                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                        contextMenuBackdropProgress > 0f
-                    ) {
-                        Modifier.blur(
-                            WallHubContextMenuDefaults.BackgroundBlurRadius * contextMenuBackdropProgress,
-                        )
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && backdropProgress > 0f) {
+                        Modifier.blur(WallHubContextMenuDefaults.BackgroundBlurRadius * backdropProgress)
                     } else {
                         Modifier
                     },
-                )
-                .then(
-                    if (renderedContextMenuTarget != null) {
+                ).then(
+                    if (contextMenuPreviewItemId != null) {
                         Modifier.semantics { invisibleToUser() }
                     } else {
                         Modifier
                     },
                 ),
-        ) {
-            WallHubPageScaffold(
-                title = "WallHub",
-                topBarContent = {
-                    HomeSearchTopBar(
-                        state = state,
-                        onQueryChanged = onQueryChanged,
-                        onSubmitSearch = onSubmitSearch,
-                        onToggleExactPhrase = onToggleExactPhrase,
-                        onSearchBoundsChanged = { bounds -> searchBoundsInRoot = bounds },
-                        onBack = onBack,
-                        onResetAndRefresh = {
-                            onResetAndRefresh()
-                            coroutineScope.launch { gridState.scrollToItem(0) }
-                        },
-                    )
-                },
-            ) { padding ->
-                Column(
-                    modifier = Modifier
+    ) {
+        WallHubPageScaffold(
+            title = "WallHub",
+            topBarContent = {
+                HomeSearchTopBar(
+                    state = state,
+                    onQueryChanged = { onAction(HomeAction.QueryChanged(it)) },
+                    onSubmitSearch = { onAction(HomeAction.SubmitSearch) },
+                    onToggleExactPhrase = { onAction(HomeAction.ToggleExactPhrase) },
+                    onSearchBoundsChanged = onSearchBoundsChanged,
+                    onBack = onBack,
+                    onResetAndRefresh = {
+                        onAction(HomeAction.ResetAndRefresh)
+                        coroutineScope.launch { gridState.scrollToItem(0) }
+                    },
+                )
+            },
+        ) { padding ->
+            Column(
+                modifier =
+                    Modifier
                         .fillMaxSize()
                         .padding(padding),
+            ) {
+                AnimatedVisibility(
+                    visible = !filtersCollapsed,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut(),
                 ) {
-                    AnimatedVisibility(
-                        visible = !filtersCollapsed,
-                        enter = expandVertically() + fadeIn(),
-                        exit = shrinkVertically() + fadeOut(),
-                    ) {
-                        HomeFilterPanel(
-                            state = state,
-                            onOpenFilters = { page -> filterSheetInitialPage = page },
-                        )
-                    }
-                    HomeResultsHeader(
+                    HomeFilterPanel(
                         state = state,
-                        onViewModeSelected = onViewModeSelected,
-                    )
-                    HomeResults(
-                        state = state,
-                        onRetry = onRetry,
-                        onLoadNextPage = onLoadNextPage,
-                        onPageSelected = { page ->
-                            onPageSelected(page)
-                            coroutineScope.launch { gridState.animateScrollToItem(0) }
-                        },
-                        onOpenDetail = onOpenDetail,
-                        onPrimaryAction = { item ->
-                            when (state.cardAction) {
-                                HomeCardAction.DOWNLOAD -> onDownload(item)
-                                HomeCardAction.PLAY_VIDEO -> onOpenDetail(item.id)
-                                HomeCardAction.OPEN_STEAM -> {
-                                    val intent = Intent(
-                                        Intent.ACTION_VIEW,
-                                        Uri.parse("https://steamcommunity.com/sharedfiles/filedetails/?id=${item.id}"),
-                                    )
-                                    runCatching { context.startActivity(intent) }
-                                        .onFailure { onOpenDetail(item.id) }
-                                }
-                            }
-                        },
-                        onDownload = onDownload,
-                        onSearchAuthor = onSearchAuthor,
-                        onAuthorNameRequested = onAuthorNameRequested,
-                        gridState = gridState,
-                        contextMenuPreviewItemId = renderedContextMenuTarget?.itemId,
-                        contextMenuGeometry = contextMenuGeometry,
-                        onContextMenuOpen = openContextMenu,
-                        onContextMenuDismiss = dismissContextMenu,
-                        modifier = Modifier.weight(1f),
+                        onOpenFilters = onOpenFilters,
                     )
                 }
+                HomeResultsHeader(
+                    state = state,
+                    onViewModeSelected = { onAction(HomeAction.SelectViewMode(it)) },
+                )
+                HomeResults(
+                    state = state,
+                    onRetry = { onAction(HomeAction.Refresh) },
+                    onLoadNextPage = { onAction(HomeAction.LoadNextPage) },
+                    onPageSelected = { page ->
+                        onAction(HomeAction.SelectPage(page))
+                        coroutineScope.launch { gridState.animateScrollToItem(0) }
+                    },
+                    onOpenDetail = { onAction(HomeAction.OpenDetail(it)) },
+                    onPrimaryAction = { item ->
+                        when (state.cardAction) {
+                            HomeCardAction.DOWNLOAD -> onAction(HomeAction.RequestDownload(item))
+                            HomeCardAction.PLAY_VIDEO -> onAction(HomeAction.OpenDetail(item.id))
+                            HomeCardAction.OPEN_STEAM -> onAction(HomeAction.OpenSteam(item.id))
+                        }
+                    },
+                    onDownload = { onAction(HomeAction.RequestDownload(it)) },
+                    onSearchAuthor = { onAction(HomeAction.SearchAuthor(it)) },
+                    onCopyText = { text, message -> onAction(HomeAction.CopyText(text, message)) },
+                    onOpenSteam = { onAction(HomeAction.OpenSteam(it)) },
+                    onAuthorNameRequested = { onAction(HomeAction.RequestAuthorDisplayName(it)) },
+                    gridState = gridState,
+                    contextMenuPreviewItemId = contextMenuPreviewItemId,
+                    contextMenuGeometry = contextMenuGeometry,
+                    onContextMenuOpen = onContextMenuOpen,
+                    onContextMenuDismiss = onContextMenuDismiss,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
-        if (contextMenuBackdropProgress > 0f) {
-            val isDarkBackground = MaterialTheme.colorScheme.background.luminance() < 0.5f
-            val scrimAlpha = if (isDarkBackground) {
+    }
+}
+
+@Composable
+private fun HomeContextMenuOverlay(
+    target: HomeContextMenuTarget?,
+    backdropProgress: Float,
+) {
+    if (backdropProgress > 0f) {
+        val scrimAlpha =
+            if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
                 WallHubContextMenuDefaults.DarkScrimAlpha
             } else {
                 WallHubContextMenuDefaults.LightScrimAlpha
             }
-            Box(
-                modifier = Modifier
+        Box(
+            modifier =
+                Modifier
                     .fillMaxSize()
                     .background(
-                        MaterialTheme.colorScheme.scrim.copy(
-                            alpha = scrimAlpha * contextMenuBackdropProgress,
-                        ),
+                        MaterialTheme.colorScheme.scrim.copy(alpha = scrimAlpha * backdropProgress),
                     ),
-            )
-        }
-        renderedContextMenuTarget?.let { target ->
-            HomeContextMenuCardPreview(
-                target = target,
-                elevationProgress = contextMenuBackdropProgress,
-            )
-        }
+        )
     }
-
-    filterSheetInitialPage?.let { initialPage ->
-        HomeFiltersSheet(
-            applied = state.filterSelection(),
-            config = HomeFilterUiConfig(
-                language = state.language,
-                multiSelect = state.multiSelect,
-                matureContentEnabled = state.matureContentEnabled,
-            ),
-            initialPage = initialPage,
-            onDismiss = { filterSheetInitialPage = null },
-            onSelectionChanged = onApplyFilters,
+    target?.let {
+        HomeContextMenuCardPreview(
+            target = it,
+            elevationProgress = backdropProgress,
         )
     }
 }
@@ -1192,23 +1455,24 @@ private fun HomeSearchTopBar(
         color = MaterialTheme.colorScheme.background,
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xxs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (onBack != null) {
                 TextButton(
                     onClick = onBack,
-                    modifier = Modifier.heightIn(min = 48.dp),
-                    contentPadding = PaddingValues(horizontal = 4.dp),
+                    modifier = Modifier.heightIn(min = WallHubSpacing.xxl),
+                    contentPadding = PaddingValues(horizontal = WallHubSpacing.xxs),
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(WallHubSizeTokens.smallIcon),
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(WallHubSpacing.xxs))
                     Text(
                         text = state.text("返回", "Back"),
                         style = MaterialTheme.typography.titleMedium,
@@ -1220,29 +1484,31 @@ private fun HomeSearchTopBar(
                     text = "WallHub",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .clip(MaterialTheme.shapes.medium)
-                        .clickable(onClick = onResetAndRefresh)
-                        .padding(vertical = 10.dp, horizontal = 4.dp),
+                    modifier =
+                        Modifier
+                            .clip(MaterialTheme.shapes.medium)
+                            .clickable(onClick = onResetAndRefresh)
+                            .padding(vertical = WallHubSpacing.compact, horizontal = WallHubSpacing.xxs),
                 )
             }
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(WallHubSpacing.compact))
             Box(modifier = Modifier.weight(1f)) {
                 HomeFlatCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(HOME_SEARCH_FIELD_HEIGHT)
-                        .onGloballyPositioned { coordinates ->
-                            val topLeft = coordinates.positionInRoot()
-                            onSearchBoundsChanged(
-                                IntRect(
-                                    left = topLeft.x.roundToInt(),
-                                    top = topLeft.y.roundToInt(),
-                                    right = topLeft.x.roundToInt() + coordinates.size.width,
-                                    bottom = topLeft.y.roundToInt() + coordinates.size.height,
-                                ),
-                            )
-                        },
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(HOME_SEARCH_FIELD_HEIGHT)
+                            .onGloballyPositioned { coordinates ->
+                                val topLeft = coordinates.positionInRoot()
+                                onSearchBoundsChanged(
+                                    IntRect(
+                                        left = topLeft.x.roundToInt(),
+                                        top = topLeft.y.roundToInt(),
+                                        right = topLeft.x.roundToInt() + coordinates.size.width,
+                                        bottom = topLeft.y.roundToInt() + coordinates.size.height,
+                                    ),
+                                )
+                            },
                     shape = HOME_WALLPAPER_CARD_SHAPE,
                 ) {
                     BasicTextField(
@@ -1253,22 +1519,26 @@ private fun HomeSearchTopBar(
                             // continues typing, without recreating a focus-owning popup.
                             exactPhraseMenuExpanded = searchFieldFocused && query.isNotBlank()
                         },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .onFocusChanged { focusState ->
-                                searchFieldFocused = focusState.isFocused
-                                exactPhraseMenuExpanded = focusState.isFocused && state.query.isNotBlank()
-                            }
-                            .padding(start = 12.dp, end = 4.dp),
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurface,
-                        ),
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .onFocusChanged { focusState ->
+                                    searchFieldFocused = focusState.isFocused
+                                    exactPhraseMenuExpanded = focusState.isFocused && state.query.isNotBlank()
+                                }.padding(start = WallHubSpacing.sm, end = WallHubSpacing.xxs),
+                        textStyle =
+                            MaterialTheme.typography.bodyMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurface,
+                            ),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         singleLine = true,
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                            onSearch = { onSubmitSearch() },
-                        ),
+                        keyboardOptions =
+                            androidx.compose.foundation.text
+                                .KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions =
+                            androidx.compose.foundation.text.KeyboardActions(
+                                onSearch = { onSubmitSearch() },
+                            ),
                         decorationBox = { innerTextField ->
                             Row(
                                 modifier = Modifier.fillMaxSize(),
@@ -1290,7 +1560,7 @@ private fun HomeSearchTopBar(
                                 }
                                 IconButton(
                                     onClick = onSubmitSearch,
-                                    modifier = Modifier.size(40.dp),
+                                    modifier = Modifier.size(WallHubSizeTokens.compactActionHeight),
                                 ) {
                                     Icon(
                                         imageVector = Icons.Outlined.Search,
@@ -1304,42 +1574,44 @@ private fun HomeSearchTopBar(
                 DropdownMenu(
                     expanded = exactPhraseMenuExpanded && state.query.isNotBlank(),
                     onDismissRequest = { exactPhraseMenuExpanded = false },
-                    offset = DpOffset(0.dp, 4.dp),
+                    offset = DpOffset(WallHubSpacing.none, WallHubSpacing.xxs),
                     shape = MaterialTheme.shapes.medium,
-                    containerColor = if (state.exactPhrase) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHighest
-                    },
-                    tonalElevation = 0.dp,
-                    shadowElevation = 6.dp,
+                    containerColor =
+                        if (state.exactPhrase) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHighest
+                        },
+                    tonalElevation = WallHubSpacing.none,
+                    shadowElevation = WallHubSpacing.dense,
                     // The search field must retain IME focus while this optional
                     // checkbox is shown. A focusable dropdown steals that focus on
                     // every edit on some Android devices.
                     properties = PopupProperties(focusable = false),
                 ) {
                     Row(
-                        modifier = Modifier
-                            .clip(MaterialTheme.shapes.small)
-                            .clickable {
-                                onToggleExactPhrase()
-                                exactPhraseMenuExpanded = false
-                            }
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        modifier =
+                            Modifier
+                                .clip(MaterialTheme.shapes.small)
+                                .clickable {
+                                    onToggleExactPhrase()
+                                    exactPhraseMenuExpanded = false
+                                }.padding(horizontal = WallHubSpacing.compact, vertical = WallHubSpacing.xs),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
                     ) {
                         Box(
-                            modifier = Modifier
-                                .size(16.dp)
-                                .clip(MaterialTheme.shapes.extraSmall)
-                                .background(
-                                    if (state.exactPhrase) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceContainerLowest
-                                    },
-                                ),
+                            modifier =
+                                Modifier
+                                    .size(WallHubSpacing.md)
+                                    .clip(MaterialTheme.shapes.extraSmall)
+                                    .background(
+                                        if (state.exactPhrase) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceContainerLowest
+                                        },
+                                    ),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (state.exactPhrase) {
@@ -1347,18 +1619,19 @@ private fun HomeSearchTopBar(
                                     imageVector = Icons.Outlined.Check,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(12.dp),
+                                    modifier = Modifier.size(WallHubSpacing.sm),
                                 )
                             }
                         }
                         Text(
                             text = state.text("精确匹配短语", "Exact phrase"),
                             style = MaterialTheme.typography.labelMedium,
-                            color = if (state.exactPhrase) {
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
+                            color =
+                                if (state.exactPhrase) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                         )
                     }
                 }
@@ -1374,15 +1647,17 @@ private fun HomeFilterPanel(
 ) {
     val selection = state.filterSelection()
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = WallHubSpacing.xxs),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 20.dp, end = 12.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = WallHubSpacing.content, end = WallHubSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -1392,14 +1667,15 @@ private fun HomeFilterPanel(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = if (state.activeFilterCount == 0) {
-                        state.text("使用默认条件", "Using defaults")
-                    } else {
-                        state.text(
-                            "已启用 ${state.activeFilterCount} 项",
-                            "${state.activeFilterCount} active",
-                        )
-                    },
+                    text =
+                        if (state.activeFilterCount == 0) {
+                            state.text("使用默认条件", "Using defaults")
+                        } else {
+                            state.text(
+                                "已启用 ${state.activeFilterCount} 项",
+                                "${state.activeFilterCount} active",
+                            )
+                        },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1422,8 +1698,8 @@ private fun HomeFilterPanel(
             }
         }
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(horizontal = WallHubSpacing.md),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
         ) {
             items(HomeFilterPage.entries, key = { it }) { page ->
                 HomeConditionChip(
@@ -1446,28 +1722,30 @@ private fun HomeConditionChip(
 ) {
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
-        color = if (active) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerLow
-        },
-        contentColor = if (active) {
-            MaterialTheme.colorScheme.onSecondaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
-        tonalElevation = 0.dp,
+        color =
+            if (active) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            },
+        contentColor =
+            if (active) {
+                MaterialTheme.colorScheme.onSecondaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        tonalElevation = WallHubSpacing.none,
     ) {
         Row(
-            modifier = Modifier
-                .heightIn(min = 48.dp)
-                .clickable(
-                    role = Role.Button,
-                    onClick = onClick,
-                )
-                .padding(horizontal = 16.dp),
+            modifier =
+                Modifier
+                    .heightIn(min = WallHubSpacing.xxl)
+                    .clickable(
+                        role = Role.Button,
+                        onClick = onClick,
+                    ).padding(horizontal = WallHubSpacing.md),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
         ) {
             Text(
                 text = "$label · $value",
@@ -1477,7 +1755,7 @@ private fun HomeConditionChip(
             Icon(
                 imageVector = Icons.Outlined.KeyboardArrowDown,
                 contentDescription = null,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(WallHubSizeTokens.compactIcon),
             )
         }
     }
@@ -1493,17 +1771,19 @@ private fun HomeFlatCard(
     onClick: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val clickableModifier = if (onClick == null) {
-        Modifier
-    } else {
-        Modifier.clickable(enabled = enabled, onClick = onClick)
-    }
+    val clickableModifier =
+        if (onClick == null) {
+            Modifier
+        } else {
+            Modifier.clickable(enabled = enabled, onClick = onClick)
+        }
     CompositionLocalProvider(LocalContentColor provides contentColor) {
         Box(
-            modifier = modifier
-                .clip(shape)
-                .background(color)
-                .then(clickableModifier),
+            modifier =
+                modifier
+                    .clip(shape)
+                    .background(color)
+                    .then(clickableModifier),
             content = content,
         )
     }
@@ -1515,11 +1795,12 @@ private fun HomeResultsHeader(
     onViewModeSelected: (HomeViewMode) -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = WallHubSpacing.content, vertical = WallHubSpacing.compact),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -1528,11 +1809,12 @@ private fun HomeResultsHeader(
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = when {
-                    state.isInitialLoading -> state.text("正在加载…", "Loading…")
-                    state.totalCount != null -> state.text("约 ${state.totalCount} 个项目", "About ${state.totalCount} items")
-                    else -> state.text("${state.items.size} 个项目", "${state.items.size} items")
-                },
+                text =
+                    when {
+                        state.isInitialLoading -> state.text("正在加载…", "Loading…")
+                        state.totalCount != null -> state.text("约 ${state.totalCount} 个项目", "About ${state.totalCount} items")
+                        else -> state.text("${state.items.size} 个项目", "${state.items.size} items")
+                    },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1554,15 +1836,17 @@ private fun HomeViewModeToggle(
     listContentDescription: String,
 ) {
     val indicatorOffset by animateDpAsState(
-        targetValue = if (selected == HomeViewMode.GRID) {
-            HOME_VIEW_MODE_TOGGLE_INSET
-        } else {
-            HOME_VIEW_MODE_TOGGLE_INSET + HOME_VIEW_MODE_TOGGLE_BUTTON_SIZE
-        },
-        animationSpec = tween(
-            durationMillis = HOME_VIEW_MODE_TOGGLE_DURATION_MS,
-            easing = HOME_CONTEXT_MENU_EASING,
-        ),
+        targetValue =
+            if (selected == HomeViewMode.GRID) {
+                HOME_VIEW_MODE_TOGGLE_INSET
+            } else {
+                HOME_VIEW_MODE_TOGGLE_INSET + HOME_VIEW_MODE_TOGGLE_BUTTON_SIZE
+            },
+        animationSpec =
+            tween(
+                durationMillis = HOME_VIEW_MODE_TOGGLE_DURATION_MS,
+                easing = HOME_CONTEXT_MENU_EASING,
+            ),
         label = "HomeViewModeIndicator",
     )
     Surface(
@@ -1570,21 +1854,24 @@ private fun HomeViewModeToggle(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Box(
-            modifier = Modifier
-                .width(HOME_VIEW_MODE_TOGGLE_WIDTH)
-                .height(HOME_VIEW_MODE_TOGGLE_HEIGHT),
+            modifier =
+                Modifier
+                    .width(HOME_VIEW_MODE_TOGGLE_WIDTH)
+                    .height(HOME_VIEW_MODE_TOGGLE_HEIGHT),
         ) {
             Surface(
-                modifier = Modifier
-                    .offset(x = indicatorOffset, y = HOME_VIEW_MODE_TOGGLE_INSET)
-                    .size(HOME_VIEW_MODE_TOGGLE_BUTTON_SIZE),
+                modifier =
+                    Modifier
+                        .offset(x = indicatorOffset, y = HOME_VIEW_MODE_TOGGLE_INSET)
+                        .size(HOME_VIEW_MODE_TOGGLE_BUTTON_SIZE),
                 shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.primary,
             ) {}
             Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(HOME_VIEW_MODE_TOGGLE_INSET),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(HOME_VIEW_MODE_TOGGLE_INSET),
             ) {
                 ViewModeButton(
                     selected = selected == HomeViewMode.GRID,
@@ -1611,15 +1898,17 @@ private fun ViewModeButton(
     onClick: () -> Unit,
 ) {
     val tint by animateColorAsState(
-        targetValue = if (selected) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
-        animationSpec = tween(
-            durationMillis = HOME_VIEW_MODE_TOGGLE_DURATION_MS,
-            easing = HOME_CONTEXT_MENU_EASING,
-        ),
+        targetValue =
+            if (selected) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        animationSpec =
+            tween(
+                durationMillis = HOME_VIEW_MODE_TOGGLE_DURATION_MS,
+                easing = HOME_CONTEXT_MENU_EASING,
+            ),
         label = "HomeViewModeIcon",
     )
     IconButton(
@@ -1645,6 +1934,8 @@ private fun HomeResults(
     onPrimaryAction: (WorkshopSummary) -> Unit,
     onDownload: (WorkshopSummary) -> Unit,
     onSearchAuthor: (String) -> Unit,
+    onCopyText: (String, String) -> Unit,
+    onOpenSteam: (Long) -> Unit,
     onAuthorNameRequested: (WorkshopSummary) -> Unit,
     gridState: LazyGridState,
     contextMenuPreviewItemId: Long?,
@@ -1663,7 +1954,10 @@ private fun HomeResults(
             ) {
                 false
             } else {
-                val lastVisibleIndex = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                val lastVisibleIndex =
+                    gridState.layoutInfo.visibleItemsInfo
+                        .lastOrNull()
+                        ?.index ?: -1
                 lastVisibleIndex >= (state.items.lastIndex - HOME_AUTO_LOAD_MORE_THRESHOLD).coerceAtLeast(0)
             }
         }
@@ -1686,144 +1980,156 @@ private fun HomeResults(
                 )
             }
         },
-        modifier = modifier
-            .fillMaxWidth()
-            .animateContentSize(
-                animationSpec = tween(
-                    durationMillis = HOME_FILTER_PAGE_SIZE_DURATION_MS,
-                    easing = HOME_FILTER_PAGE_EASING,
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .animateContentSize(
+                    animationSpec =
+                        tween(
+                            durationMillis = HOME_FILTER_PAGE_SIZE_DURATION_MS,
+                            easing = HOME_FILTER_PAGE_EASING,
+                        ),
                 ),
-            ),
     ) {
         when {
-        state.isInitialLoading -> {
-            if (loadingIndicators.showSteamIpPrewarm) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
-                ) {
-                    CircularProgressIndicator()
-                    Text(
-                        text = state.text("正在预热SteamIP", "Warming up Steam IP…"),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            } else {
-                Box(modifier = Modifier.fillMaxSize())
-            }
-        }
-
-        state.error != null && state.items.isEmpty() -> {
-            WallHubEmptyState(
-                icon = Icons.Outlined.Refresh,
-                title = state.error,
-                actionLabel = state.text("重试", "Retry"),
-                onAction = onRetry,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-
-        state.items.isEmpty() -> {
-            WallHubEmptyState(
-                icon = Icons.Outlined.Search,
-                title = state.text("没有找到符合条件的壁纸", "No matching wallpapers"),
-                actionLabel = state.text("重新加载", "Reload"),
-                onAction = onRetry,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-
-        else -> {
-            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val layoutKey = HomeCardLayoutKey.resolve(state.viewMode, state.columns)
-                val edgeEntryState = remember { HomeLayoutEdgeEntryState(layoutKey) }
-                val edgeEntryRequestId = edgeEntryState.update(layoutKey)
-                val animateLayoutEdgeEntry = edgeEntryState.isActive
-                val contentWidth = (maxWidth - HOME_GRID_HORIZONTAL_PADDING * 2).coerceAtLeast(0.dp)
-                val gridCardWidth = (
-                    contentWidth -
-                        HOME_GRID_ITEM_SPACING * (state.columns - 1).toFloat()
-                    ).coerceAtLeast(0.dp) / state.columns.toFloat()
-                val gridStatisticsAvailableWidth =
-                    (gridCardWidth - GRID_CARD_COPY_HORIZONTAL_PADDING).coerceAtLeast(0.dp)
-                val listStatisticsAvailableWidth = (
-                    contentWidth -
-                        LIST_CARD_MEDIA_SIZE -
-                        LIST_CARD_ACTION_SIZE -
-                        LIST_CARD_ACTION_END_PADDING -
-                        LIST_CARD_COPY_HORIZONTAL_PADDING
-                    ).coerceAtLeast(0.dp)
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(layoutKey.effectiveColumns),
-                    state = gridState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .onGloballyPositioned { coordinates ->
-                            contextMenuGeometry.gridCoordinates = coordinates
-                            edgeEntryState.complete(edgeEntryRequestId)
-                        },
-                    contentPadding = PaddingValues(
-                        horizontal = HOME_GRID_HORIZONTAL_PADDING,
-                        vertical = 8.dp,
-                    ),
-                    horizontalArrangement = Arrangement.spacedBy(HOME_GRID_ITEM_SPACING),
-                    verticalArrangement = Arrangement.spacedBy(HOME_GRID_ITEM_SPACING),
-                ) {
-                    items(
-                        items = state.items,
-                        key = WorkshopSummary::id,
-                        contentType = { item -> item.type },
-                    ) { item ->
-                        WorkshopCard(
-                            modifier = Modifier,
-                            item = item,
-                            authorDisplayName = state.authorDisplayNames[item.id],
-                            language = state.language,
-                            layoutKey = layoutKey,
-                            animateEdgeEntry = animateLayoutEdgeEntry,
-                            gridShowFileSize = state.columns < 3,
-                            gridShowFavorites = state.columns < 4,
-                            gridStatisticsAvailableWidth = gridStatisticsAvailableWidth,
-                            listStatisticsAvailableWidth = listStatisticsAvailableWidth,
-                            isContextMenuPreviewTarget = contextMenuPreviewItemId == item.id,
-                            action = state.cardAction,
-                            onOpen = { onOpenDetail(item.id) },
-                            onPrimaryAction = { onPrimaryAction(item) },
-                            onDownload = { onDownload(item) },
-                            onSearchAuthor = { onSearchAuthor(item.creatorId ?: item.author) },
-                            onAuthorNameRequested = { onAuthorNameRequested(item) },
-                            contextMenuGeometry = contextMenuGeometry,
-                            onContextMenuOpen = onContextMenuOpen,
-                            onContextMenuDismiss = onContextMenuDismiss,
+            state.isInitialLoading -> {
+                if (loadingIndicators.showSteamIpPrewarm) {
+                    Column(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = WallHubSpacing.lg),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm, Alignment.CenterVertically),
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            text = state.text("正在预热SteamIP", "Warming up Steam IP…"),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        when {
-                            state.paginationMode == HomePaginationMode.INFINITE_SCROLL && state.isLoadingMore -> Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                contentAlignment = Alignment.Center,
-                            ) { CircularProgressIndicator() }
+                } else {
+                    Box(modifier = Modifier.fillMaxSize())
+                }
+            }
 
-                            state.paginationMode == HomePaginationMode.PAGED -> HomePagination(
-                                currentPage = state.currentPage,
-                                totalPages = state.totalPages,
-                                isLoading = state.isPageLoading,
+            state.error != null && state.items.isEmpty() -> {
+                WallHubEmptyState(
+                    icon = Icons.Outlined.Refresh,
+                    title = state.error,
+                    actionLabel = state.text("重试", "Retry"),
+                    onAction = onRetry,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
+            state.items.isEmpty() -> {
+                WallHubEmptyState(
+                    icon = Icons.Outlined.Search,
+                    title = state.text("没有找到符合条件的壁纸", "No matching wallpapers"),
+                    actionLabel = state.text("重新加载", "Reload"),
+                    onAction = onRetry,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
+            else -> {
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    val layoutKey = HomeCardLayoutKey.resolve(state.viewMode, state.columns)
+                    val edgeEntryState = remember { HomeLayoutEdgeEntryState(layoutKey) }
+                    val edgeEntryRequestId = edgeEntryState.update(layoutKey)
+                    val animateLayoutEdgeEntry = edgeEntryState.isActive
+                    val contentWidth = (maxWidth - HOME_GRID_HORIZONTAL_PADDING * 2).coerceAtLeast(WallHubSpacing.none)
+                    val gridCardWidth =
+                        (
+                            contentWidth -
+                                HOME_GRID_ITEM_SPACING * (state.columns - 1).toFloat()
+                        ).coerceAtLeast(WallHubSpacing.none) / state.columns.toFloat()
+                    val gridStatisticsAvailableWidth =
+                        (gridCardWidth - GRID_CARD_COPY_HORIZONTAL_PADDING).coerceAtLeast(WallHubSpacing.none)
+                    val listStatisticsAvailableWidth =
+                        (
+                            contentWidth -
+                                LIST_CARD_MEDIA_SIZE -
+                                LIST_CARD_ACTION_SIZE -
+                                LIST_CARD_ACTION_END_PADDING -
+                                LIST_CARD_COPY_HORIZONTAL_PADDING
+                        ).coerceAtLeast(WallHubSpacing.none)
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(layoutKey.effectiveColumns),
+                        state = gridState,
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .onGloballyPositioned { coordinates ->
+                                    contextMenuGeometry.gridCoordinates = coordinates
+                                    edgeEntryState.complete(edgeEntryRequestId)
+                                },
+                        contentPadding =
+                            PaddingValues(
+                                horizontal = HOME_GRID_HORIZONTAL_PADDING,
+                                vertical = WallHubSpacing.xs,
+                            ),
+                        horizontalArrangement = Arrangement.spacedBy(HOME_GRID_ITEM_SPACING),
+                        verticalArrangement = Arrangement.spacedBy(HOME_GRID_ITEM_SPACING),
+                    ) {
+                        items(
+                            items = state.items,
+                            key = WorkshopSummary::id,
+                            contentType = { item -> item.type },
+                        ) { item ->
+                            WorkshopCard(
+                                modifier = Modifier,
+                                item = item,
+                                authorDisplayName = state.authorDisplayNames[item.id],
                                 language = state.language,
-                                onPageSelected = onPageSelected,
+                                layoutKey = layoutKey,
+                                animateEdgeEntry = animateLayoutEdgeEntry,
+                                gridShowFileSize = state.columns < 3,
+                                gridShowFavorites = state.columns < 4,
+                                gridStatisticsAvailableWidth = gridStatisticsAvailableWidth,
+                                listStatisticsAvailableWidth = listStatisticsAvailableWidth,
+                                isContextMenuPreviewTarget = contextMenuPreviewItemId == item.id,
+                                action = state.cardAction,
+                                onOpen = { onOpenDetail(item.id) },
+                                onPrimaryAction = { onPrimaryAction(item) },
+                                onDownload = { onDownload(item) },
+                                onSearchAuthor = { onSearchAuthor(item.creatorId ?: item.author) },
+                                onCopyText = onCopyText,
+                                onOpenSteam = { onOpenSteam(item.id) },
+                                onAuthorNameRequested = { onAuthorNameRequested(item) },
+                                contextMenuGeometry = contextMenuGeometry,
+                                onContextMenuOpen = onContextMenuOpen,
+                                onContextMenuDismiss = onContextMenuDismiss,
                             )
+                        }
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            when {
+                                state.paginationMode == HomePaginationMode.INFINITE_SCROLL && state.isLoadingMore ->
+                                    Box(
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .padding(WallHubSpacing.sm),
+                                        contentAlignment = Alignment.Center,
+                                    ) { CircularProgressIndicator() }
 
-                            else -> Spacer(modifier = Modifier.height(12.dp))
+                                state.paginationMode == HomePaginationMode.PAGED ->
+                                    HomePagination(
+                                        currentPage = state.currentPage,
+                                        totalPages = state.totalPages,
+                                        isLoading = state.isPageLoading,
+                                        language = state.language,
+                                        onPageSelected = onPageSelected,
+                                    )
+
+                                else -> Spacer(modifier = Modifier.height(WallHubSpacing.sm))
+                            }
                         }
                     }
                 }
             }
-        }
         }
     }
 }
@@ -1840,12 +2146,13 @@ private fun HomePagination(
         currentPage = currentPage,
         totalPages = totalPages,
         isLoading = isLoading,
-        currentContentDescription = language.text(
-            "当前第 $currentPage 页；当前已知最大页码为 $totalPages；点击输入页码",
-            "Page $currentPage; known last page $totalPages; tap to enter a page",
-        ),
+        currentContentDescription =
+            language.text(
+                "当前第 $currentPage 页；当前已知最大页码为 $totalPages；点击输入页码",
+                "Page $currentPage; known last page $totalPages; tap to enter a page",
+            ),
         onPageSelected = onPageSelected,
-        modifier = Modifier.padding(vertical = 8.dp),
+        modifier = Modifier.padding(vertical = WallHubSpacing.xs),
     )
 }
 
@@ -1868,6 +2175,8 @@ private fun WorkshopCard(
     onPrimaryAction: () -> Unit,
     onDownload: () -> Unit,
     onSearchAuthor: () -> Unit,
+    onCopyText: (String, String) -> Unit,
+    onOpenSteam: () -> Unit,
     onAuthorNameRequested: () -> Unit,
     contextMenuGeometry: HomeContextMenuGeometry,
     onContextMenuOpen: (HomeContextMenuTarget) -> Unit,
@@ -1875,10 +2184,11 @@ private fun WorkshopCard(
 ) {
     val listMode = layoutKey.listMode
     val twoColumnGrid = !listMode && layoutKey.effectiveColumns == 2
-    val layoutMotion = rememberHomeViewCardLayoutMotion(
-        layoutKey = layoutKey,
-        animateEdgeEntry = animateEdgeEntry,
-    )
+    val layoutMotion =
+        rememberHomeViewCardLayoutMotion(
+            layoutKey = layoutKey,
+            animateEdgeEntry = animateEdgeEntry,
+        )
     val contextMenuPreviewLayer = rememberGraphicsLayer()
     val cardPosition = remember { HomeCardPositionHolder() }
     val interactionSource = remember { MutableInteractionSource() }
@@ -1889,27 +2199,27 @@ private fun WorkshopCard(
     var contextMenuEntranceRequest by remember { mutableIntStateOf(0) }
     var contextMenuTarget by remember(item.id) { mutableStateOf<HomeContextMenuTarget?>(null) }
     var contextMenuPositionInWindow by remember { mutableStateOf(Offset.Zero) }
-    val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
-    val toastState = LocalWallHubToastState.current
     val density = LocalDensity.current
     val hapticFeedback = LocalHapticFeedback.current
-    val contextMenuPositionProvider = remember(contextMenuPositionInWindow, density) {
-        HomeContextMenuPositionProvider(
-            touchPosition = contextMenuPositionInWindow,
-            touchOffsetPx = with(density) { WallHubContextMenuDefaults.TouchOffset.roundToPx() },
-        )
-    }
+    val contextMenuPositionProvider =
+        remember(contextMenuPositionInWindow, density) {
+            HomeContextMenuPositionProvider(
+                touchPosition = contextMenuPositionInWindow,
+                touchOffsetPx = with(density) { WallHubContextMenuDefaults.TouchOffset.roundToPx() },
+            )
+        }
     val contextMenuAlpha by animateFloatAsState(
         targetValue = if (contextMenuVisible) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = if (contextMenuVisible) {
-                WallHubContextMenuDefaults.EnterDurationMillis
-            } else {
-                WallHubContextMenuDefaults.ExitDurationMillis
-            },
-            easing = WallHubContextMenuDefaults.Easing,
-        ),
+        animationSpec =
+            tween(
+                durationMillis =
+                    if (contextMenuVisible) {
+                        WallHubContextMenuDefaults.EnterDurationMillis
+                    } else {
+                        WallHubContextMenuDefaults.ExitDurationMillis
+                    },
+                easing = WallHubContextMenuDefaults.Easing,
+            ),
         label = "HomeContextMenuFade",
     )
     LaunchedEffect(contextMenuVisible) {
@@ -1927,20 +2237,23 @@ private fun WorkshopCard(
     DisposableEffect(item.id) {
         onDispose { onContextMenuDismiss(item.id) }
     }
+
     fun dismissContextMenu() {
         contextMenuRequested = false
         contextMenuVisible = false
         onContextMenuDismiss(item.id)
     }
+
     fun openContextMenuAt(position: Offset) {
-        val target = contextMenuGeometry.captureTarget(
-            itemId = item.id,
-            graphicsLayer = contextMenuPreviewLayer,
-            cardCoordinates = cardPosition.cardCoordinates,
-            touchCoordinates = cardPosition.touchCoordinates,
-            touchPosition = position,
-            shape = layoutMotion.cardShape(),
-        ) ?: return
+        val target =
+            contextMenuGeometry.captureTarget(
+                itemId = item.id,
+                graphicsLayer = contextMenuPreviewLayer,
+                cardCoordinates = cardPosition.cardCoordinates,
+                touchCoordinates = cardPosition.touchCoordinates,
+                touchPosition = position,
+                shape = layoutMotion.cardShape(),
+            ) ?: return
         contextMenuTarget = target
         contextMenuPositionInWindow = target.touchPositionInWindow
         onAuthorNameRequested()
@@ -1951,99 +2264,105 @@ private fun WorkshopCard(
         contextMenuMounted = true
         contextMenuEntranceRequest += 1
     }
-    val interactionModifier = Modifier
-        .pointerInput(item.id) {
-            detectTapGestures(
-                onPress = { position ->
-                    val press = PressInteraction.Press(position)
-                    interactionSource.emit(press)
-                    interactionSource.emit(
-                        if (tryAwaitRelease()) {
-                            PressInteraction.Release(press)
-                        } else {
-                            PressInteraction.Cancel(press)
-                        },
-                    )
-                },
-                onTap = { onOpen() },
-                onLongPress = ::openContextMenuAt,
-            )
-        }
-        .semantics {
-            role = Role.Button
-            onClick(label = language.text("查看详情", "View details")) {
-                onOpen()
-                true
-            }
-            onLongClick(label = language.text("打开操作菜单", "Open actions menu")) {
-                val size = cardPosition.touchCoordinates?.size
-                if (size == null || size.width <= 0 || size.height <= 0) {
-                    false
-                } else {
-                    openContextMenuAt(Offset(size.width / 2f, size.height / 2f))
+    val interactionModifier =
+        Modifier
+            .testTag("home-workshop-${item.id}")
+            .pointerInput(item.id) {
+                detectTapGestures(
+                    onPress = { position ->
+                        val press = PressInteraction.Press(position)
+                        interactionSource.emit(press)
+                        interactionSource.emit(
+                            if (tryAwaitRelease()) {
+                                PressInteraction.Release(press)
+                            } else {
+                                PressInteraction.Cancel(press)
+                            },
+                        )
+                    },
+                    onTap = { onOpen() },
+                    onLongPress = ::openContextMenuAt,
+                )
+            }.semantics {
+                role = Role.Button
+                onClick(label = language.text("查看详情", "View details")) {
+                    onOpen()
                     true
                 }
+                onLongClick(label = language.text("打开操作菜单", "Open actions menu")) {
+                    val size = cardPosition.touchCoordinates?.size
+                    if (size == null || size.width <= 0 || size.height <= 0) {
+                        false
+                    } else {
+                        openContextMenuAt(Offset(size.width / 2f, size.height / 2f))
+                        true
+                    }
+                }
             }
-        }
     val pressActive = isPressed && !isContextMenuPreviewTarget
     val recordContextMenuPreview = isPressed || contextMenuMounted || isContextMenuPreviewTarget
     val pressedScale by animateFloatAsState(
-        targetValue = when {
-            !pressActive -> 1f
-            listMode -> HOME_CONTEXT_MENU_LIST_PRESS_SCALE
-            else -> HOME_CONTEXT_MENU_GRID_PRESS_SCALE
-        },
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = HOME_CONTEXT_MENU_PRESS_STIFFNESS,
-        ),
+        targetValue =
+            when {
+                !pressActive -> 1f
+                listMode -> HOME_CONTEXT_MENU_LIST_PRESS_SCALE
+                else -> HOME_CONTEXT_MENU_GRID_PRESS_SCALE
+            },
+        animationSpec =
+            spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = HOME_CONTEXT_MENU_PRESS_STIFFNESS,
+            ),
         label = "WorkshopCardPressScale",
     )
     val pressedTranslationY by animateDpAsState(
-        targetValue = if (pressActive) HOME_CONTEXT_MENU_PRESS_TRANSLATION_Y else 0.dp,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = HOME_CONTEXT_MENU_PRESS_STIFFNESS,
-        ),
+        targetValue = if (pressActive) HOME_CONTEXT_MENU_PRESS_TRANSLATION_Y else WallHubSpacing.none,
+        animationSpec =
+            spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = HOME_CONTEXT_MENU_PRESS_STIFFNESS,
+            ),
         label = "WorkshopCardPressTranslation",
     )
     // Grid and list use different composition branches; keep the scale state
     // above them so an interrupted switch continues from its presented value.
-    val typeTagScale = animateFloatAsState(
-        targetValue = if (listMode) HOME_COMPACT_TYPE_TAG_SCALE else 1f,
-        animationSpec = tween(
-            durationMillis = HOME_VIEW_TYPE_TAG_LAYOUT_DURATION_MS,
-            easing = HOME_VIEW_LAYOUT_EASING,
-        ),
-        label = "WorkshopCoverTypeTagScale",
-    )
+    val typeTagScale =
+        animateFloatAsState(
+            targetValue = if (listMode) HOME_COMPACT_TYPE_TAG_SCALE else 1f,
+            animationSpec =
+                tween(
+                    durationMillis = HOME_VIEW_TYPE_TAG_LAYOUT_DURATION_MS,
+                    easing = HOME_VIEW_LAYOUT_EASING,
+                ),
+            label = "WorkshopCoverTypeTagScale",
+        )
     Box(
-        modifier = modifier
-            .fillMaxWidth(),
+        modifier =
+            modifier
+                .fillMaxWidth(),
     ) {
         HomeFlatCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .onGloballyPositioned { cardPosition.cardCoordinates = it }
-                .drawWithContent recordCard@{
-                    if (recordContextMenuPreview) {
-                        contextMenuPreviewLayer.record {
-                            this@recordCard.drawContent()
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { cardPosition.cardCoordinates = it }
+                    .drawWithContent recordCard@{
+                        if (recordContextMenuPreview) {
+                            contextMenuPreviewLayer.record {
+                                this@recordCard.drawContent()
+                            }
+                            if (!isContextMenuPreviewTarget) drawLayer(contextMenuPreviewLayer)
+                        } else {
+                            drawContent()
                         }
-                        if (!isContextMenuPreviewTarget) drawLayer(contextMenuPreviewLayer)
-                    } else {
-                        drawContent()
-                    }
-                }
-                .graphicsLayer {
-                    transformOrigin = TransformOrigin.Center
-                    scaleX = pressedScale
-                    scaleY = pressedScale
-                    translationY = pressedTranslationY.toPx()
-                }
-                .then(layoutMotion.cardModifier())
-                .onGloballyPositioned { cardPosition.touchCoordinates = it }
-                .then(interactionModifier),
+                    }.graphicsLayer {
+                        transformOrigin = TransformOrigin.Center
+                        scaleX = pressedScale
+                        scaleY = pressedScale
+                        translationY = pressedTranslationY.toPx()
+                    }.then(layoutMotion.cardModifier())
+                    .onGloballyPositioned { cardPosition.touchCoordinates = it }
+                    .then(interactionModifier),
             shape = layoutMotion.cardShape(),
         ) {
             if (listMode) {
@@ -2067,10 +2386,11 @@ private fun WorkshopCard(
                         typeTagScale = typeTagScale,
                         coverShape = layoutMotion.coverShape(),
                         typeTagModifier = layoutMotion.tagModifier(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .then(layoutMotion.mediaModifier()),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(1f)
+                                .then(layoutMotion.mediaModifier()),
                     )
                     WorkshopCardCopy(
                         item = item,
@@ -2080,25 +2400,26 @@ private fun WorkshopCard(
                         showFileSize = gridShowFileSize,
                         showFavorites = gridShowFavorites,
                         statisticsAvailableWidth = gridStatisticsAvailableWidth,
-                        modifier = Modifier
-                            .padding(
-                                start = 10.dp,
-                                top = if (twoColumnGrid) TWO_COLUMN_CARD_COPY_TOP_PADDING else 10.dp,
-                                end = 10.dp,
-                            )
-                            .then(layoutMotion.contentModifier()),
+                        modifier =
+                            Modifier
+                                .padding(
+                                    start = WallHubSpacing.compact,
+                                    top = if (twoColumnGrid) TWO_COLUMN_CARD_COPY_TOP_PADDING else WallHubSpacing.compact,
+                                    end = WallHubSpacing.compact,
+                                ).then(layoutMotion.contentModifier()),
                     )
                     WorkshopGridCardAction(
                         action = action,
                         language = language,
                         layoutMotion = layoutMotion,
                         onPrimaryAction = onPrimaryAction,
-                        modifier = Modifier.padding(
-                            start = 10.dp,
-                            top = if (twoColumnGrid) TWO_COLUMN_CARD_ACTION_TOP_PADDING else 7.dp,
-                            end = 10.dp,
-                            bottom = 10.dp,
-                        ),
+                        modifier =
+                            Modifier.padding(
+                                start = WallHubSpacing.compact,
+                                top = if (twoColumnGrid) TWO_COLUMN_CARD_ACTION_TOP_PADDING else LIST_CARD_ACTION_TOP_PADDING,
+                                end = WallHubSpacing.compact,
+                                bottom = WallHubSpacing.compact,
+                            ),
                     )
                 }
             }
@@ -2109,106 +2430,114 @@ private fun WorkshopCard(
                 onDismissRequest = { dismissContextMenu() },
                 properties = PopupProperties(focusable = true),
             ) {
-                val menuWidth = WallHubContextMenuDefaults.menuWidth(
-                    cardWidth = contextMenuTarget?.let { target ->
-                        with(density) { target.cardBounds.width.toDp() }
-                    },
-                    language = language,
-                )
+                val menuWidth =
+                    WallHubContextMenuDefaults.menuWidth(
+                        cardWidth =
+                            contextMenuTarget?.let { target ->
+                                with(density) { target.cardBounds.width.toDp() }
+                            },
+                        language = language,
+                    )
                 WallHubContextMenuSurface(
                     width = menuWidth,
-                    modifier = Modifier
-                        .graphicsLayer { alpha = contextMenuAlpha }
-                        .then(
-                            if (contextMenuVisible) {
-                                Modifier
-                            } else {
-                                Modifier
-                                    .pointerInput(Unit) {
-                                        awaitEachGesture {
-                                            do {
-                                                val event = awaitPointerEvent(PointerEventPass.Initial)
-                                                event.changes.forEach { it.consume() }
-                                            } while (event.changes.any { it.pressed })
-                                        }
-                                    }
-                                    .clearAndSetSemantics {}
-                            },
-                        ),
+                    modifier =
+                        Modifier
+                            .graphicsLayer { alpha = contextMenuAlpha }
+                            .then(
+                                if (contextMenuVisible) {
+                                    Modifier
+                                } else {
+                                    Modifier
+                                        .pointerInput(Unit) {
+                                            awaitEachGesture {
+                                                do {
+                                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                                    event.changes.forEach { it.consume() }
+                                                } while (event.changes.any { it.pressed })
+                                            }
+                                        }.clearAndSetSemantics {}
+                                },
+                            ),
                 ) {
-                                HomeContextMenuMetadataItem(
-                                    label = if (language == AppLanguage.EN) "Wallpaper title" else "Wallpaper 标题",
-                                    value = item.title,
-                                    icon = Icons.Outlined.ContentCopy,
-                                    onClick = {
-                                        clipboardManager.setText(AnnotatedString(item.title))
-                                        toastState.show(
-                                            if (language == AppLanguage.EN) "Wallpaper title copied" else "已复制 Wallpaper 标题",
-                                        )
-                                        dismissContextMenu()
-                                    },
-                                )
-                                HomeContextMenuMetadataItem(
-                                    label = if (language == AppLanguage.EN) "Author" else "作者",
-                                    value = authorDisplayName
-                                        ?: item.author.takeUnless(String::isSteamAuthorPlaceholder)
-                                        ?: language.text(
-                                            "正在获取 Steam 用户名",
-                                            "Loading Steam username…",
-                                        ),
-                                    icon = Icons.Outlined.PersonOutline,
-                                    onClick = {
-                                        dismissContextMenu()
-                                        onSearchAuthor()
-                                    },
-                                )
-                                HomeContextMenuMetadataItem(
-                                    label = if (language == AppLanguage.EN) "Project ID" else "项目 ID",
-                                    value = item.id.toString(),
-                                    icon = Icons.Outlined.ContentCopy,
-                                    onClick = {
-                                        clipboardManager.setText(AnnotatedString(item.id.toString()))
-                                        toastState.show(
-                                            if (language == AppLanguage.EN) "Project ID copied" else "已复制项目 ID",
-                                        )
-                                        dismissContextMenu()
-                                    },
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                HomeContextMenuItem(
-                                    text = if (language == AppLanguage.EN) "Download" else "下载",
-                                    icon = Icons.Outlined.Download,
-                                    onClick = {
-                                        dismissContextMenu()
-                                        onDownload()
-                                    },
-                                )
-                                if (item.type == WorkshopType.VIDEO) {
-                                    HomeContextMenuItem(
-                                        text = if (language == AppLanguage.EN) {
-                                            "Open video details"
-                                        } else {
-                                            "视频播放"
-                                        },
-                                        icon = Icons.Outlined.PlayArrow,
-                                        onClick = {
-                                            dismissContextMenu()
-                                            onOpen()
-                                        },
-                                    )
-                                }
-                                HomeContextMenuItem(
-                                    text = if (language == AppLanguage.EN) "Open in Steam" else "打开 Steam",
-                                    icon = Icons.Outlined.OpenInNew,
-                                    onClick = {
-                                        dismissContextMenu()
-                                        val intent = Intent(
-                                            Intent.ACTION_VIEW,
-                                            Uri.parse("https://steamcommunity.com/sharedfiles/filedetails/?id=${item.id}"),
-                                        )
-                                        runCatching { context.startActivity(intent) }.onFailure { onOpen() }
-                                    },
-                                )
+                    HomeContextMenuMetadataItem(
+                        label = if (language == AppLanguage.EN) "Wallpaper title" else "Wallpaper 标题",
+                        value = item.title,
+                        icon = Icons.Outlined.ContentCopy,
+                        onClick = {
+                            onCopyText(
+                                item.title,
+                                if (language == AppLanguage.EN) {
+                                    "Wallpaper title copied"
+                                } else {
+                                    "已复制 Wallpaper 标题"
+                                },
+                            )
+                            dismissContextMenu()
+                        },
+                    )
+                    HomeContextMenuMetadataItem(
+                        label = if (language == AppLanguage.EN) "Author" else "作者",
+                        value =
+                            authorDisplayName
+                                ?: item.author.takeUnless(String::isSteamAuthorPlaceholder)
+                                ?: language.text(
+                                    "正在获取 Steam 用户名",
+                                    "Loading Steam username…",
+                                ),
+                        icon = Icons.Outlined.PersonOutline,
+                        onClick = {
+                            dismissContextMenu()
+                            onSearchAuthor()
+                        },
+                    )
+                    HomeContextMenuMetadataItem(
+                        label = if (language == AppLanguage.EN) "Project ID" else "项目 ID",
+                        value = item.id.toString(),
+                        icon = Icons.Outlined.ContentCopy,
+                        onClick = {
+                            onCopyText(
+                                item.id.toString(),
+                                if (language == AppLanguage.EN) {
+                                    "Project ID copied"
+                                } else {
+                                    "已复制项目 ID"
+                                },
+                            )
+                            dismissContextMenu()
+                        },
+                    )
+                    Spacer(modifier = Modifier.height(WallHubSpacing.xxxs))
+                    HomeContextMenuItem(
+                        text = if (language == AppLanguage.EN) "Download" else "下载",
+                        icon = Icons.Outlined.Download,
+                        onClick = {
+                            dismissContextMenu()
+                            onDownload()
+                        },
+                    )
+                    if (item.type == WorkshopType.VIDEO) {
+                        HomeContextMenuItem(
+                            text =
+                                if (language == AppLanguage.EN) {
+                                    "Open video details"
+                                } else {
+                                    "视频播放"
+                                },
+                            icon = Icons.Outlined.PlayArrow,
+                            onClick = {
+                                dismissContextMenu()
+                                onOpen()
+                            },
+                        )
+                    }
+                    HomeContextMenuItem(
+                        text = if (language == AppLanguage.EN) "Open in Steam" else "打开 Steam",
+                        icon = Icons.Outlined.OpenInNew,
+                        onClick = {
+                            dismissContextMenu()
+                            onOpenSteam()
+                        },
+                    )
                 }
             }
         }
@@ -2297,7 +2626,9 @@ internal data class HomeLayoutTransaction(
     val targetKey: HomeCardLayoutKey,
 )
 
-internal class HomeLayoutTransactionState(initialKey: HomeCardLayoutKey) {
+internal class HomeLayoutTransactionState(
+    initialKey: HomeCardLayoutKey,
+) {
     var requestedKey: HomeCardLayoutKey = initialKey
         private set
     var measuredKey: HomeCardLayoutKey = initialKey
@@ -2315,12 +2646,13 @@ internal class HomeLayoutTransactionState(initialKey: HomeCardLayoutKey) {
     fun consumeForMeasurement(expectedRequestId: Long = requestId): HomeLayoutTransaction? {
         if (expectedRequestId != requestId) return null
         if (requestedKey == measuredKey) return null
-        val transaction = HomeLayoutTransaction(
-            epoch = epoch + 1L,
-            requestId = requestId,
-            sourceKey = measuredKey,
-            targetKey = requestedKey,
-        )
+        val transaction =
+            HomeLayoutTransaction(
+                epoch = epoch + 1L,
+                requestId = requestId,
+                sourceKey = measuredKey,
+                targetKey = requestedKey,
+            )
         epoch = transaction.epoch
         return transaction
     }
@@ -2332,7 +2664,9 @@ internal class HomeLayoutTransactionState(initialKey: HomeCardLayoutKey) {
     }
 }
 
-internal class HomeLayoutEdgeEntryState(initialKey: HomeCardLayoutKey) {
+internal class HomeLayoutEdgeEntryState(
+    initialKey: HomeCardLayoutKey,
+) {
     private var layoutKey = initialKey
     private var completedRequestId by mutableLongStateOf(0L)
 
@@ -2372,33 +2706,36 @@ internal data class HomeCardProjectionTransforms(
     val content: HomeCardLayoutTransform,
     val action: HomeCardLayoutTransform,
 ) {
-    operator fun get(participant: HomeCardProjectionParticipant): HomeCardLayoutTransform = when (participant) {
-        HomeCardProjectionParticipant.CARD -> card
-        HomeCardProjectionParticipant.MEDIA -> media
-        HomeCardProjectionParticipant.TAG -> tag
-        HomeCardProjectionParticipant.CONTENT -> content
-        HomeCardProjectionParticipant.ACTION -> action
-    }
+    operator fun get(participant: HomeCardProjectionParticipant): HomeCardLayoutTransform =
+        when (participant) {
+            HomeCardProjectionParticipant.CARD -> card
+            HomeCardProjectionParticipant.MEDIA -> media
+            HomeCardProjectionParticipant.TAG -> tag
+            HomeCardProjectionParticipant.CONTENT -> content
+            HomeCardProjectionParticipant.ACTION -> action
+        }
 
     fun with(
         participant: HomeCardProjectionParticipant,
         transform: HomeCardLayoutTransform,
-    ): HomeCardProjectionTransforms = when (participant) {
-        HomeCardProjectionParticipant.CARD -> copy(card = transform)
-        HomeCardProjectionParticipant.MEDIA -> copy(media = transform)
-        HomeCardProjectionParticipant.TAG -> copy(tag = transform)
-        HomeCardProjectionParticipant.CONTENT -> copy(content = transform)
-        HomeCardProjectionParticipant.ACTION -> copy(action = transform)
-    }
+    ): HomeCardProjectionTransforms =
+        when (participant) {
+            HomeCardProjectionParticipant.CARD -> copy(card = transform)
+            HomeCardProjectionParticipant.MEDIA -> copy(media = transform)
+            HomeCardProjectionParticipant.TAG -> copy(tag = transform)
+            HomeCardProjectionParticipant.CONTENT -> copy(content = transform)
+            HomeCardProjectionParticipant.ACTION -> copy(action = transform)
+        }
 
     companion object {
-        val Identity = HomeCardProjectionTransforms(
-            card = HomeCardLayoutTransform.Identity,
-            media = HomeCardLayoutTransform.Identity,
-            tag = HomeCardLayoutTransform.Identity,
-            content = HomeCardLayoutTransform.Identity,
-            action = HomeCardLayoutTransform.Identity,
-        )
+        val Identity =
+            HomeCardProjectionTransforms(
+                card = HomeCardLayoutTransform.Identity,
+                media = HomeCardLayoutTransform.Identity,
+                tag = HomeCardLayoutTransform.Identity,
+                content = HomeCardLayoutTransform.Identity,
+                action = HomeCardLayoutTransform.Identity,
+            )
     }
 }
 
@@ -2441,12 +2778,14 @@ internal class HomeCardProjectionGroupStage internal constructor(
 
     fun sourceBounds(participant: HomeCardProjectionParticipant): HomeCardBounds? = sourceBounds[participant]
 
-    fun hasMeasurement(participant: HomeCardProjectionParticipant): Boolean =
-        measuredBounds.containsKey(participant)
+    fun hasMeasurement(participant: HomeCardProjectionParticipant): Boolean = measuredBounds.containsKey(participant)
 
     fun targetBounds(participant: HomeCardProjectionParticipant): HomeCardBounds? = measuredBounds[participant]
 
-    fun recordMeasurement(participant: HomeCardProjectionParticipant, bounds: HomeCardBounds?) {
+    fun recordMeasurement(
+        participant: HomeCardProjectionParticipant,
+        bounds: HomeCardBounds?,
+    ) {
         if (participant !in readyParticipants) measuredBounds[participant] = bounds
     }
 
@@ -2456,10 +2795,12 @@ internal class HomeCardProjectionGroupStage internal constructor(
         }
     }
 
-    fun isParticipantReady(participant: HomeCardProjectionParticipant): Boolean =
-        participant in readyParticipants
+    fun isParticipantReady(participant: HomeCardProjectionParticipant): Boolean = participant in readyParticipants
 
-    fun stage(participant: HomeCardProjectionParticipant, transform: HomeCardLayoutTransform) {
+    fun stage(
+        participant: HomeCardProjectionParticipant,
+        transform: HomeCardLayoutTransform,
+    ) {
         if (participant in readyParticipants) return
         stagedTransforms = stagedTransforms.with(participant, transform)
         readyParticipants += participant
@@ -2477,7 +2818,9 @@ internal class HomeCardProjectionGroupStage internal constructor(
     }
 }
 
-internal class HomeCardProjectionGroupState(initialEpoch: Long = 0L) {
+internal class HomeCardProjectionGroupState(
+    initialEpoch: Long = 0L,
+) {
     private var nextRunId = 0L
     private var displayVersion by mutableIntStateOf(0)
     var activeRun by mutableStateOf(
@@ -2528,15 +2871,17 @@ internal class HomeCardProjectionGroupState(initialEpoch: Long = 0L) {
         edgeEntryEnabled: Boolean = false,
     ): HomeCardProjectionGroupStage {
         val replacedStage = pendingStage
-        val edgeEntryRequired = sourceBounds[HomeCardProjectionParticipant.CARD]?.hasArea() != true &&
-            (edgeEntryEnabled || replacedStage?.edgeEntryRequired == true)
-        val stage = HomeCardProjectionGroupStage(
-            transaction = transaction,
-            sourceTransforms = replacedStage?.sourceTransforms ?: captureCurrentTransforms(),
-            sourceCardAlpha = replacedStage?.sourceCardAlpha ?: if (edgeEntryRequired) 0f else activeCardAlpha(),
-            edgeEntryRequired = edgeEntryRequired,
-            sourceBounds = sourceBounds,
-        )
+        val edgeEntryRequired =
+            sourceBounds[HomeCardProjectionParticipant.CARD]?.hasArea() != true &&
+                (edgeEntryEnabled || replacedStage?.edgeEntryRequired == true)
+        val stage =
+            HomeCardProjectionGroupStage(
+                transaction = transaction,
+                sourceTransforms = replacedStage?.sourceTransforms ?: captureCurrentTransforms(),
+                sourceCardAlpha = replacedStage?.sourceCardAlpha ?: if (edgeEntryRequired) 0f else activeCardAlpha(),
+                edgeEntryRequired = edgeEntryRequired,
+                sourceBounds = sourceBounds,
+            )
         pendingStage = stage
         displayVersion += 1
         return stage
@@ -2584,7 +2929,10 @@ internal class HomeCardProjectionGroupState(initialEpoch: Long = 0L) {
         return true
     }
 
-    fun updateProgress(expectedRun: HomeCardProjectionGroupRun, value: Float): Boolean {
+    fun updateProgress(
+        expectedRun: HomeCardProjectionGroupRun,
+        value: Float,
+    ): Boolean {
         expectedRun.updateProgress(value)
         return activeRun === expectedRun && pendingStage == null
     }
@@ -2595,14 +2943,15 @@ internal class HomeCardProjectionGroupState(initialEpoch: Long = 0L) {
     ) {
         pendingStage = null
         nextRunId += 1L
-        activeRun = HomeCardProjectionGroupRun(
-            id = nextRunId,
-            epoch = activeRun.epoch,
-            transforms = transforms,
-            cardInitialAlpha = cardInitialAlpha,
-            shouldAnimate = true,
-            initialProgress = 0f,
-        )
+        activeRun =
+            HomeCardProjectionGroupRun(
+                id = nextRunId,
+                epoch = activeRun.epoch,
+                transforms = transforms,
+                cardInitialAlpha = cardInitialAlpha,
+                shouldAnimate = true,
+                initialProgress = 0f,
+            )
         displayVersion += 1
     }
 
@@ -2610,32 +2959,33 @@ internal class HomeCardProjectionGroupState(initialEpoch: Long = 0L) {
         if (pendingStage !== expectedStage) return false
         pendingStage = null
         nextRunId += 1L
-        activeRun = HomeCardProjectionGroupRun(
-            id = nextRunId,
-            epoch = activeRun.epoch,
-            transforms = expectedStage.sourceTransforms,
-            cardInitialAlpha = expectedStage.sourceCardAlpha,
-            shouldAnimate = true,
-            initialProgress = 0f,
-        )
+        activeRun =
+            HomeCardProjectionGroupRun(
+                id = nextRunId,
+                epoch = activeRun.epoch,
+                transforms = expectedStage.sourceTransforms,
+                cardInitialAlpha = expectedStage.sourceCardAlpha,
+                shouldAnimate = true,
+                initialProgress = 0f,
+            )
         displayVersion += 1
         return true
     }
 
-    private fun activeCardAlpha(): Float =
-        activeRun.cardInitialAlpha + (1f - activeRun.cardInitialAlpha) * activeRun.progress
+    private fun activeCardAlpha(): Float = activeRun.cardInitialAlpha + (1f - activeRun.cardInitialAlpha) * activeRun.progress
 
     private fun commit(stage: HomeCardProjectionGroupStage) {
         if (pendingStage !== stage) return
         nextRunId += 1L
-        activeRun = HomeCardProjectionGroupRun(
-            id = nextRunId,
-            epoch = stage.epoch,
-            transforms = stage.committedTransforms(),
-            cardInitialAlpha = stage.sourceCardAlpha,
-            shouldAnimate = true,
-            initialProgress = 0f,
-        )
+        activeRun =
+            HomeCardProjectionGroupRun(
+                id = nextRunId,
+                epoch = stage.epoch,
+                transforms = stage.committedTransforms(),
+                cardInitialAlpha = stage.sourceCardAlpha,
+                shouldAnimate = true,
+                initialProgress = 0f,
+            )
         pendingStage = null
         displayVersion += 1
     }
@@ -2671,7 +3021,9 @@ private fun HomeProjectionGroupEffect(motion: HomeViewCardLayoutMotion) {
     }
 }
 
-private class HomeCardProjectionSlot(initialLayoutKey: HomeCardLayoutKey) {
+private class HomeCardProjectionSlot(
+    initialLayoutKey: HomeCardLayoutKey,
+) {
     var previousBounds: HomeCardBounds? = null
     var previousLayoutKey: HomeCardLayoutKey = initialLayoutKey
     var consumedLayoutEpoch: Long = 0L
@@ -2683,9 +3035,10 @@ private class HomeViewCardLayoutMotion(
 ) {
     private val transactions = HomeLayoutTransactionState(initialLayoutKey)
     private val projectionGroup = HomeCardProjectionGroupState()
-    private val slots = HomeCardProjectionParticipant.entries.associateWith {
-        HomeCardProjectionSlot(initialLayoutKey)
-    }
+    private val slots =
+        HomeCardProjectionParticipant.entries.associateWith {
+            HomeCardProjectionSlot(initialLayoutKey)
+        }
     private val layoutKey: HomeCardLayoutKey
         get() = transactions.requestedKey
     private var animateEdgeEntry = initialAnimateEdgeEntry
@@ -2701,7 +3054,10 @@ private class HomeViewCardLayoutMotion(
     val pendingGroupStage: HomeCardProjectionGroupStage?
         get() = projectionGroup.pendingStage
 
-    fun updateLayout(value: HomeCardLayoutKey, shouldAnimateEdgeEntry: Boolean) {
+    fun updateLayout(
+        value: HomeCardLayoutKey,
+        shouldAnimateEdgeEntry: Boolean,
+    ) {
         transactions.request(value)
         animateEdgeEntry = shouldAnimateEdgeEntry
         val pendingStage = projectionGroup.pendingStage
@@ -2724,46 +3080,46 @@ private class HomeViewCardLayoutMotion(
         actionLabelTo = if (targetListMode) 0f else 1f
     }
 
-    fun cardModifier(
-        onPositioned: (Offset) -> Unit = {},
-    ): Modifier {
+    fun cardModifier(onPositioned: (Offset) -> Unit = {}): Modifier {
         val callbackKey = layoutKey
         val callbackRequestId = transactions.requestId
         val cardSlot = slot(HomeCardProjectionParticipant.CARD)
-        return Modifier.onGloballyPositioned { coordinates ->
-            val currentBounds = HomeCardBounds(
-                position = coordinates.positionInRoot(),
-                size = coordinates.size,
-            )
-            onPositioned(currentBounds.position)
-            val wasUnmeasured = cardSlot.previousBounds == null
-            recordProjectionMeasurement(
-                participant = HomeCardProjectionParticipant.CARD,
-                callbackKey = callbackKey,
-                callbackRequestId = callbackRequestId,
-                bounds = currentBounds,
-            )
-            if (
-                wasUnmeasured &&
-                animateEdgeEntry &&
-                projectionGroup.pendingStage == null &&
-                currentBounds.hasArea()
-            ) {
-                projectionGroup.startStandalone(
-                    transforms = HomeCardProjectionTransforms.Identity.with(
-                        HomeCardProjectionParticipant.CARD,
-                        HomeCardLayoutTransform(
-                            translationX = 0f,
-                            translationY = currentBounds.size.height * HOME_VIEW_EDGE_ENTRY_OFFSET_FRACTION,
-                            scaleX = 1f,
-                            scaleY = 1f,
-                        ),
-                    ),
-                    cardInitialAlpha = 0f,
+        return Modifier
+            .onGloballyPositioned { coordinates ->
+                val currentBounds =
+                    HomeCardBounds(
+                        position = coordinates.positionInRoot(),
+                        size = coordinates.size,
+                    )
+                onPositioned(currentBounds.position)
+                val wasUnmeasured = cardSlot.previousBounds == null
+                recordProjectionMeasurement(
+                    participant = HomeCardProjectionParticipant.CARD,
+                    callbackKey = callbackKey,
+                    callbackRequestId = callbackRequestId,
+                    bounds = currentBounds,
                 )
-            }
-        }
-            .then(
+                if (
+                    wasUnmeasured &&
+                    animateEdgeEntry &&
+                    projectionGroup.pendingStage == null &&
+                    currentBounds.hasArea()
+                ) {
+                    projectionGroup.startStandalone(
+                        transforms =
+                            HomeCardProjectionTransforms.Identity.with(
+                                HomeCardProjectionParticipant.CARD,
+                                HomeCardLayoutTransform(
+                                    translationX = 0f,
+                                    translationY = currentBounds.size.height * HOME_VIEW_EDGE_ENTRY_OFFSET_FRACTION,
+                                    scaleX = 1f,
+                                    scaleY = 1f,
+                                ),
+                            ),
+                        cardInitialAlpha = 0f,
+                    )
+                }
+            }.then(
                 if (
                     animateEdgeEntry ||
                     projectionGroup.requiresGraphicsLayer ||
@@ -2781,55 +3137,60 @@ private class HomeViewCardLayoutMotion(
             )
     }
 
-    fun mediaModifier(): Modifier = projectionModifier(
-        participant = HomeCardProjectionParticipant.MEDIA,
-        parentParticipant = HomeCardProjectionParticipant.CARD,
-    )
+    fun mediaModifier(): Modifier =
+        projectionModifier(
+            participant = HomeCardProjectionParticipant.MEDIA,
+            parentParticipant = HomeCardProjectionParticipant.CARD,
+        )
 
     fun tagModifier(): Modifier {
         val callbackKey = layoutKey
         val callbackRequestId = transactions.requestId
         val tagSlot = slot(HomeCardProjectionParticipant.TAG)
-        return Modifier.onGloballyPositioned { coordinates ->
-            recordProjectionMeasurement(
-                participant = HomeCardProjectionParticipant.TAG,
-                callbackKey = callbackKey,
-                callbackRequestId = callbackRequestId,
-                bounds = HomeCardBounds(
-                    position = coordinates.positionInParent(),
-                    size = coordinates.size,
-                ),
-            )
-        }.then(
-            if (
-                animateEdgeEntry ||
+        return Modifier
+            .onGloballyPositioned { coordinates ->
+                recordProjectionMeasurement(
+                    participant = HomeCardProjectionParticipant.TAG,
+                    callbackKey = callbackKey,
+                    callbackRequestId = callbackRequestId,
+                    bounds =
+                        HomeCardBounds(
+                            position = coordinates.positionInParent(),
+                            size = coordinates.size,
+                        ),
+                )
+            }.then(
+                if (
+                    animateEdgeEntry ||
                     projectionGroup.requiresGraphicsLayer ||
                     tagSlot.previousLayoutKey != layoutKey
-            ) {
-                Modifier.graphicsLayer {
-                    applyProjectionToLayer(
-                        participant = HomeCardProjectionParticipant.TAG,
-                        layerScope = this,
-                        parentTransform = projectionGroup.currentTransform(HomeCardProjectionParticipant.MEDIA),
-                    )
-                }
-            } else {
-                Modifier
-            },
-        )
+                ) {
+                    Modifier.graphicsLayer {
+                        applyProjectionToLayer(
+                            participant = HomeCardProjectionParticipant.TAG,
+                            layerScope = this,
+                            parentTransform = projectionGroup.currentTransform(HomeCardProjectionParticipant.MEDIA),
+                        )
+                    }
+                } else {
+                    Modifier
+                },
+            )
     }
 
-    fun contentModifier(): Modifier = projectionModifier(
-        participant = HomeCardProjectionParticipant.CONTENT,
-        parentParticipant = HomeCardProjectionParticipant.CARD,
-    )
+    fun contentModifier(): Modifier =
+        projectionModifier(
+            participant = HomeCardProjectionParticipant.CONTENT,
+            parentParticipant = HomeCardProjectionParticipant.CARD,
+        )
 
-    fun actionModifier(): Modifier = projectionModifier(
-        participant = HomeCardProjectionParticipant.ACTION,
-        // Grid buttons and the list action have different aspect ratios. Project
-        // both dimensions so the control changes size continuously with the card.
-        parentParticipant = HomeCardProjectionParticipant.CARD,
-    )
+    fun actionModifier(): Modifier =
+        projectionModifier(
+            participant = HomeCardProjectionParticipant.ACTION,
+            // Grid buttons and the list action have different aspect ratios. Project
+            // both dimensions so the control changes size continuously with the card.
+            parentParticipant = HomeCardProjectionParticipant.CARD,
+        )
 
     fun actionContentModifier(): Modifier {
         val actionSlot = slot(HomeCardProjectionParticipant.ACTION)
@@ -2850,26 +3211,28 @@ private class HomeViewCardLayoutMotion(
     }
 
     fun actionLabelVisibility(): Float {
-        val contentProgress = (
-            (projectionGroup.progress - HOME_VIEW_ACTION_CONTENT_FADE_START) /
-                (HOME_VIEW_ACTION_CONTENT_FADE_END - HOME_VIEW_ACTION_CONTENT_FADE_START)
+        val contentProgress =
+            (
+                (projectionGroup.progress - HOME_VIEW_ACTION_CONTENT_FADE_START) /
+                    (HOME_VIEW_ACTION_CONTENT_FADE_END - HOME_VIEW_ACTION_CONTENT_FADE_START)
             ).coerceIn(0f, 1f)
         return actionLabelFrom + (actionLabelTo - actionLabelFrom) * contentProgress
     }
 
-    fun cardShape(): Shape = HomeCoverCorners.forCard().toProjectedShape(
-        transform = projectionGroup.currentTransform(HomeCardProjectionParticipant.CARD),
-    )
+    fun cardShape(): Shape =
+        HomeCoverCorners.forCard().toProjectedShape(
+            transform = projectionGroup.currentTransform(HomeCardProjectionParticipant.CARD),
+        )
 
-    fun coverShape(): Shape = currentCoverCorners().toProjectedShape(
-        transform = projectionGroup.currentTransform(HomeCardProjectionParticipant.MEDIA),
-    )
+    fun coverShape(): Shape =
+        currentCoverCorners().toProjectedShape(
+            transform = projectionGroup.currentTransform(HomeCardProjectionParticipant.MEDIA),
+        )
 
-    fun actionShape(): Shape {
-        return currentActionCorners().toCoverCorners().toProjectedShape(
+    fun actionShape(): Shape =
+        currentActionCorners().toCoverCorners().toProjectedShape(
             transform = projectionGroup.currentTransform(HomeCardProjectionParticipant.ACTION),
         )
-    }
 
     private fun projectionModifier(
         participant: HomeCardProjectionParticipant,
@@ -2878,37 +3241,38 @@ private class HomeViewCardLayoutMotion(
         val callbackKey = layoutKey
         val callbackRequestId = transactions.requestId
         val projectionSlot = slot(participant)
-        return Modifier.onGloballyPositioned { coordinates ->
-            recordProjectionMeasurement(
-                participant = participant,
-                callbackKey = callbackKey,
-                callbackRequestId = callbackRequestId,
-                bounds = HomeCardBounds(
-                    position = coordinates.positionInRoot(),
-                    size = coordinates.size,
-                ),
-            )
-        }.then(
-            if (
-                animateEdgeEntry ||
+        return Modifier
+            .onGloballyPositioned { coordinates ->
+                recordProjectionMeasurement(
+                    participant = participant,
+                    callbackKey = callbackKey,
+                    callbackRequestId = callbackRequestId,
+                    bounds =
+                        HomeCardBounds(
+                            position = coordinates.positionInRoot(),
+                            size = coordinates.size,
+                        ),
+                )
+            }.then(
+                if (
+                    animateEdgeEntry ||
                     projectionGroup.requiresGraphicsLayer ||
                     projectionSlot.previousLayoutKey != layoutKey
-            ) {
-                Modifier.graphicsLayer {
-                    applyProjectionToLayer(
-                        participant = participant,
-                        layerScope = this,
-                        parentTransform = projectionGroup.currentTransform(parentParticipant),
-                    )
-                }
-            } else {
-                Modifier
-            },
-        )
+                ) {
+                    Modifier.graphicsLayer {
+                        applyProjectionToLayer(
+                            participant = participant,
+                            layerScope = this,
+                            parentTransform = projectionGroup.currentTransform(parentParticipant),
+                        )
+                    }
+                } else {
+                    Modifier
+                },
+            )
     }
 
-    private fun slot(participant: HomeCardProjectionParticipant): HomeCardProjectionSlot =
-        checkNotNull(slots[participant])
+    private fun slot(participant: HomeCardProjectionParticipant): HomeCardProjectionSlot = checkNotNull(slots[participant])
 
     private fun recordProjectionMeasurement(
         participant: HomeCardProjectionParticipant,
@@ -2919,24 +3283,27 @@ private class HomeViewCardLayoutMotion(
         if (callbackRequestId != transactions.requestId || callbackKey != layoutKey) return
 
         var stage = projectionGroup.pendingStage
-        val transaction = if (stage == null || stage.requestId != callbackRequestId) {
-            transactions.consumeForMeasurement(callbackRequestId)
-        } else {
-            null
-        }
+        val transaction =
+            if (stage == null || stage.requestId != callbackRequestId) {
+                transactions.consumeForMeasurement(callbackRequestId)
+            } else {
+                null
+            }
         if (transaction != null) {
             beginProjectedVisualTransition(transaction.targetKey.listMode)
-            val sourceBounds = HomeCardProjectionParticipant.entries.associateWith { sourceParticipant ->
-                val sourceSlot = slot(sourceParticipant)
-                sourceSlot.previousBounds
-                    ?.takeIf(HomeCardBounds::hasArea)
-                    ?.takeIf { sourceSlot.previousLayoutKey == transaction.sourceKey }
-            }
-            stage = projectionGroup.beginStage(
-                transaction = transaction,
-                sourceBounds = sourceBounds,
-                edgeEntryEnabled = animateEdgeEntry,
-            )
+            val sourceBounds =
+                HomeCardProjectionParticipant.entries.associateWith { sourceParticipant ->
+                    val sourceSlot = slot(sourceParticipant)
+                    sourceSlot.previousBounds
+                        ?.takeIf(HomeCardBounds::hasArea)
+                        ?.takeIf { sourceSlot.previousLayoutKey == transaction.sourceKey }
+                }
+            stage =
+                projectionGroup.beginStage(
+                    transaction = transaction,
+                    sourceBounds = sourceBounds,
+                    edgeEntryEnabled = animateEdgeEntry,
+                )
         }
 
         if (
@@ -2975,12 +3342,13 @@ private class HomeViewCardLayoutMotion(
         if (!stage.hasMeasurement(participant) || stage.isParticipantReady(participant)) return
         val sourceBounds = stage.sourceBounds(participant)
         val targetBounds = stage.targetBounds(participant)
-        val transform = calculateHomeCardInitialProjection(
-            sourceBounds = sourceBounds,
-            sourceTransform = stage.sourceTransforms[participant],
-            targetBounds = targetBounds,
-            edgeEntryRequired = stage.edgeEntryRequired,
-        )
+        val transform =
+            calculateHomeCardInitialProjection(
+                sourceBounds = sourceBounds,
+                sourceTransform = stage.sourceTransforms[participant],
+                targetBounds = targetBounds,
+                edgeEntryRequired = stage.edgeEntryRequired,
+            )
         projectionGroup.stageParticipant(stage, participant, transform)
     }
 
@@ -2998,45 +3366,51 @@ private class HomeViewCardLayoutMotion(
         }
         val sourceCardBounds = stage.sourceBounds(HomeCardProjectionParticipant.CARD)
         val targetCardBounds = stage.targetBounds(HomeCardProjectionParticipant.CARD)
-        val visibleCardBounds = sourceCardBounds?.project(
-            stage.sourceTransforms[HomeCardProjectionParticipant.CARD],
-        )
+        val visibleCardBounds =
+            sourceCardBounds?.project(
+                stage.sourceTransforms[HomeCardProjectionParticipant.CARD],
+            )
         val sourceBounds = stage.sourceBounds(participant)
         val targetBounds = stage.targetBounds(participant)
-        val transform = if (
-            sourceCardBounds != null &&
-            targetCardBounds != null &&
-            visibleCardBounds != null &&
-            sourceBounds != null &&
-            targetBounds != null
-        ) {
-            val oldVisibleBounds = sourceBounds.projectWithinCard(
-                cardBounds = sourceCardBounds,
-                visibleCardBounds = visibleCardBounds,
-                transform = stage.sourceTransforms[participant],
-            )
-            when (scaleMode) {
-                HomeChildScaleMode.NONE -> targetBounds.inversePositionProjectionWithinCard(
-                    cardBounds = targetCardBounds,
-                    visibleCardBounds = visibleCardBounds,
-                    targetVisibleBounds = oldVisibleBounds,
-                )
+        val transform =
+            if (
+                sourceCardBounds != null &&
+                targetCardBounds != null &&
+                visibleCardBounds != null &&
+                sourceBounds != null &&
+                targetBounds != null
+            ) {
+                val oldVisibleBounds =
+                    sourceBounds.projectWithinCard(
+                        cardBounds = sourceCardBounds,
+                        visibleCardBounds = visibleCardBounds,
+                        transform = stage.sourceTransforms[participant],
+                    )
+                when (scaleMode) {
+                    HomeChildScaleMode.NONE ->
+                        targetBounds.inversePositionProjectionWithinCard(
+                            cardBounds = targetCardBounds,
+                            visibleCardBounds = visibleCardBounds,
+                            targetVisibleBounds = oldVisibleBounds,
+                        )
 
-                HomeChildScaleMode.UNIFORM -> targetBounds.inverseUniformScaleProjectionWithinCard(
-                    cardBounds = targetCardBounds,
-                    visibleCardBounds = visibleCardBounds,
-                    targetVisibleBounds = oldVisibleBounds,
-                )
+                    HomeChildScaleMode.UNIFORM ->
+                        targetBounds.inverseUniformScaleProjectionWithinCard(
+                            cardBounds = targetCardBounds,
+                            visibleCardBounds = visibleCardBounds,
+                            targetVisibleBounds = oldVisibleBounds,
+                        )
 
-                HomeChildScaleMode.NON_UNIFORM -> targetBounds.inverseScaleProjectionWithinCard(
-                    cardBounds = targetCardBounds,
-                    visibleCardBounds = visibleCardBounds,
-                    targetVisibleBounds = oldVisibleBounds,
-                )
+                    HomeChildScaleMode.NON_UNIFORM ->
+                        targetBounds.inverseScaleProjectionWithinCard(
+                            cardBounds = targetCardBounds,
+                            visibleCardBounds = visibleCardBounds,
+                            targetVisibleBounds = oldVisibleBounds,
+                        )
+                }
+            } else {
+                HomeCardLayoutTransform.Identity
             }
-        } else {
-            HomeCardLayoutTransform.Identity
-        }
         projectionGroup.stageParticipant(stage, participant, transform)
     }
 
@@ -3057,25 +3431,26 @@ private class HomeViewCardLayoutMotion(
         val sourceBounds = stage.sourceBounds(participant)
         val targetBounds = stage.targetBounds(participant)
         val initialMediaTransform = stage.stagedTransform(HomeCardProjectionParticipant.MEDIA)
-        val transform = if (
-            sourceCardBounds != null &&
-            targetCardBounds != null &&
-            sourceMediaBounds != null &&
-            targetMediaBounds != null &&
-            sourceBounds != null &&
-            targetBounds != null &&
-            initialMediaTransform != null
-        ) {
-            calculateHomeTagProjection(
-                sourceBounds = sourceBounds,
-                targetBounds = targetBounds,
-                sourceTagTransform = stage.sourceTransforms[participant],
-                sourceMediaTransform = stage.sourceTransforms[HomeCardProjectionParticipant.MEDIA],
-                initialMediaTransform = initialMediaTransform,
-            )
-        } else {
-            HomeCardLayoutTransform.Identity
-        }
+        val transform =
+            if (
+                sourceCardBounds != null &&
+                targetCardBounds != null &&
+                sourceMediaBounds != null &&
+                targetMediaBounds != null &&
+                sourceBounds != null &&
+                targetBounds != null &&
+                initialMediaTransform != null
+            ) {
+                calculateHomeTagProjection(
+                    sourceBounds = sourceBounds,
+                    targetBounds = targetBounds,
+                    sourceTagTransform = stage.sourceTransforms[participant],
+                    sourceMediaTransform = stage.sourceTransforms[HomeCardProjectionParticipant.MEDIA],
+                    initialMediaTransform = initialMediaTransform,
+                )
+            } else {
+                HomeCardLayoutTransform.Identity
+            }
         projectionGroup.stageParticipant(stage, participant, transform)
     }
 
@@ -3102,20 +3477,19 @@ private class HomeViewCardLayoutMotion(
         animate(
             initialValue = run.progress,
             targetValue = 1f,
-            animationSpec = tween(
-                durationMillis = HOME_VIEW_CARD_LAYOUT_DURATION_MS,
-                easing = HOME_VIEW_LAYOUT_EASING,
-            ),
+            animationSpec =
+                tween(
+                    durationMillis = HOME_VIEW_CARD_LAYOUT_DURATION_MS,
+                    easing = HOME_VIEW_LAYOUT_EASING,
+                ),
         ) { value, _ ->
             projectionGroup.updateProgress(run, value)
         }
     }
 
-    private fun currentCoverCorners(): HomeCoverCorners =
-        coverCornerFrom.interpolateTo(coverCornerTo, projectionGroup.progress)
+    private fun currentCoverCorners(): HomeCoverCorners = coverCornerFrom.interpolateTo(coverCornerTo, projectionGroup.progress)
 
-    private fun currentActionCorners(): HomeActionCorners =
-        actionCornerFrom.interpolateTo(actionCornerTo, projectionGroup.progress)
+    private fun currentActionCorners(): HomeActionCorners = actionCornerFrom.interpolateTo(actionCornerTo, projectionGroup.progress)
 
     private fun applyProjectionToLayer(
         participant: HomeCardProjectionParticipant,
@@ -3128,11 +3502,12 @@ private class HomeViewCardLayoutMotion(
         layerScope.transformOrigin = TransformOrigin(0f, 0f)
         layerScope.translationX = visibleTransform.translationX
         layerScope.translationY = visibleTransform.translationY
-        layerScope.alpha = if (participant == HomeCardProjectionParticipant.CARD) {
-            projectionGroup.currentCardAlpha()
-        } else {
-            1f
-        }
+        layerScope.alpha =
+            if (participant == HomeCardProjectionParticipant.CARD) {
+                projectionGroup.currentCardAlpha()
+            } else {
+                1f
+            }
         layerScope.scaleX = visibleTransform.scaleX / parentScaleX.coerceAtLeast(HOME_VIEW_LAYOUT_MIN_SCALE)
         layerScope.scaleY = visibleTransform.scaleY / parentScaleY.coerceAtLeast(HOME_VIEW_LAYOUT_MIN_SCALE)
     }
@@ -3150,11 +3525,12 @@ internal data class HomeCardBounds(
 ) {
     fun hasArea(): Boolean = size.width > 0 && size.height > 0
 
-    fun project(transform: HomeCardLayoutTransform): HomeCardVisualBounds = HomeCardVisualBounds(
-        position = position + Offset(transform.translationX, transform.translationY),
-        width = size.width * transform.scaleX,
-        height = size.height * transform.scaleY,
-    )
+    fun project(transform: HomeCardLayoutTransform): HomeCardVisualBounds =
+        HomeCardVisualBounds(
+            position = position + Offset(transform.translationX, transform.translationY),
+            width = size.width * transform.scaleX,
+            height = size.height * transform.scaleY,
+        )
 
     fun projectWithinCard(
         cardBounds: HomeCardBounds,
@@ -3164,10 +3540,12 @@ internal data class HomeCardBounds(
         val cardScaleX = visibleCardBounds.width / cardBounds.size.width
         val cardScaleY = visibleCardBounds.height / cardBounds.size.height
         return HomeCardVisualBounds(
-            position = visibleCardBounds.position + Offset(
-                (position.x - cardBounds.position.x + transform.translationX) * cardScaleX,
-                (position.y - cardBounds.position.y + transform.translationY) * cardScaleY,
-            ),
+            position =
+                visibleCardBounds.position +
+                    Offset(
+                        (position.x - cardBounds.position.x + transform.translationX) * cardScaleX,
+                        (position.y - cardBounds.position.y + transform.translationY) * cardScaleY,
+                    ),
             width = size.width * transform.scaleX,
             height = size.height * transform.scaleY,
         )
@@ -3197,11 +3575,12 @@ internal data class HomeCardBounds(
         visibleCardBounds: HomeCardVisualBounds,
         targetVisibleBounds: HomeCardVisualBounds,
     ): HomeCardLayoutTransform {
-        val positionTransform = inversePositionProjectionWithinCard(
-            cardBounds = cardBounds,
-            visibleCardBounds = visibleCardBounds,
-            targetVisibleBounds = targetVisibleBounds,
-        )
+        val positionTransform =
+            inversePositionProjectionWithinCard(
+                cardBounds = cardBounds,
+                visibleCardBounds = visibleCardBounds,
+                targetVisibleBounds = targetVisibleBounds,
+            )
         // Both grid and list covers are square. One shared scale factor keeps
         // that aspect ratio locked while restoring the Web-style size motion.
         val uniformScale = targetVisibleBounds.width / size.width
@@ -3216,11 +3595,12 @@ internal data class HomeCardBounds(
         visibleCardBounds: HomeCardVisualBounds,
         targetVisibleBounds: HomeCardVisualBounds,
     ): HomeCardLayoutTransform {
-        val positionTransform = inversePositionProjectionWithinCard(
-            cardBounds = cardBounds,
-            visibleCardBounds = visibleCardBounds,
-            targetVisibleBounds = targetVisibleBounds,
-        )
+        val positionTransform =
+            inversePositionProjectionWithinCard(
+                cardBounds = cardBounds,
+                visibleCardBounds = visibleCardBounds,
+                targetVisibleBounds = targetVisibleBounds,
+            )
         return positionTransform.copy(
             scaleX = targetVisibleBounds.width / size.width,
             scaleY = targetVisibleBounds.height / size.height,
@@ -3244,16 +3624,18 @@ internal fun calculateHomeCardInitialProjection(
 ): HomeCardLayoutTransform {
     val visibleBounds = sourceBounds?.project(sourceTransform)
     return when {
-        visibleBounds != null && targetBounds != null -> HomeCardLayoutTransform(
-            translationX = visibleBounds.position.x - targetBounds.position.x,
-            translationY = visibleBounds.position.y - targetBounds.position.y,
-            scaleX = visibleBounds.width / targetBounds.size.width,
-            scaleY = visibleBounds.height / targetBounds.size.height,
-        )
+        visibleBounds != null && targetBounds != null ->
+            HomeCardLayoutTransform(
+                translationX = visibleBounds.position.x - targetBounds.position.x,
+                translationY = visibleBounds.position.y - targetBounds.position.y,
+                scaleX = visibleBounds.width / targetBounds.size.width,
+                scaleY = visibleBounds.height / targetBounds.size.height,
+            )
 
-        edgeEntryRequired && targetBounds != null -> HomeCardLayoutTransform.Identity.copy(
-            translationY = targetBounds.size.height * HOME_VIEW_EDGE_ENTRY_OFFSET_FRACTION,
-        )
+        edgeEntryRequired && targetBounds != null ->
+            HomeCardLayoutTransform.Identity.copy(
+                translationY = targetBounds.size.height * HOME_VIEW_EDGE_ENTRY_OFFSET_FRACTION,
+            )
 
         else -> HomeCardLayoutTransform.Identity
     }
@@ -3266,14 +3648,16 @@ internal fun calculateHomeTagProjection(
     sourceMediaTransform: HomeCardLayoutTransform,
     initialMediaTransform: HomeCardLayoutTransform,
 ): HomeCardLayoutTransform {
-    val sourceOffset = Offset(
-        x = (sourceBounds.position.x + sourceTagTransform.translationX) * sourceMediaTransform.scaleX,
-        y = (sourceBounds.position.y + sourceTagTransform.translationY) * sourceMediaTransform.scaleY,
-    )
+    val sourceOffset =
+        Offset(
+            x = (sourceBounds.position.x + sourceTagTransform.translationX) * sourceMediaTransform.scaleX,
+            y = (sourceBounds.position.y + sourceTagTransform.translationY) * sourceMediaTransform.scaleY,
+        )
     val initialMediaScaleX = initialMediaTransform.scaleX.coerceAtLeast(HOME_VIEW_LAYOUT_MIN_SCALE)
     val initialMediaScaleY = initialMediaTransform.scaleY.coerceAtLeast(HOME_VIEW_LAYOUT_MIN_SCALE)
-    val uniformScale = sourceBounds.size.width.toFloat() * sourceTagTransform.scaleX /
-        targetBounds.size.width.toFloat()
+    val uniformScale =
+        sourceBounds.size.width.toFloat() * sourceTagTransform.scaleX /
+            targetBounds.size.width.toFloat()
     return HomeCardLayoutTransform(
         translationX = sourceOffset.x / initialMediaScaleX - targetBounds.position.x,
         translationY = sourceOffset.y / initialMediaScaleY - targetBounds.position.y,
@@ -3288,12 +3672,16 @@ private data class HomeCoverCorners(
     val bottomEnd: Dp,
     val bottomStart: Dp,
 ) {
-    fun interpolateTo(target: HomeCoverCorners, progress: Float): HomeCoverCorners = HomeCoverCorners(
-        topStart = topStart.interpolateTo(target.topStart, progress),
-        topEnd = topEnd.interpolateTo(target.topEnd, progress),
-        bottomEnd = bottomEnd.interpolateTo(target.bottomEnd, progress),
-        bottomStart = bottomStart.interpolateTo(target.bottomStart, progress),
-    )
+    fun interpolateTo(
+        target: HomeCoverCorners,
+        progress: Float,
+    ): HomeCoverCorners =
+        HomeCoverCorners(
+            topStart = topStart.interpolateTo(target.topStart, progress),
+            topEnd = topEnd.interpolateTo(target.topEnd, progress),
+            bottomEnd = bottomEnd.interpolateTo(target.bottomEnd, progress),
+            bottomStart = bottomStart.interpolateTo(target.bottomStart, progress),
+        )
 
     fun toProjectedShape(transform: HomeCardLayoutTransform): Shape =
         HomeProjectedRoundedCornerShape(
@@ -3304,33 +3692,37 @@ private data class HomeCoverCorners(
         )
 
     companion object {
-        fun forCard(): HomeCoverCorners = HomeCoverCorners(
-            topStart = HOME_COVER_CORNER_RADIUS,
-            topEnd = HOME_COVER_CORNER_RADIUS,
-            bottomEnd = HOME_COVER_CORNER_RADIUS,
-            bottomStart = HOME_COVER_CORNER_RADIUS,
-        )
-
-        fun forListMode(listMode: Boolean): HomeCoverCorners = if (listMode) {
-            HomeCoverCorners(
-                topStart = HOME_COVER_CORNER_RADIUS,
-                topEnd = 0.dp,
-                bottomEnd = 0.dp,
-                bottomStart = HOME_COVER_CORNER_RADIUS,
-            )
-        } else {
+        fun forCard(): HomeCoverCorners =
             HomeCoverCorners(
                 topStart = HOME_COVER_CORNER_RADIUS,
                 topEnd = HOME_COVER_CORNER_RADIUS,
-                bottomEnd = 0.dp,
-                bottomStart = 0.dp,
+                bottomEnd = HOME_COVER_CORNER_RADIUS,
+                bottomStart = HOME_COVER_CORNER_RADIUS,
             )
-        }
+
+        fun forListMode(listMode: Boolean): HomeCoverCorners =
+            if (listMode) {
+                HomeCoverCorners(
+                    topStart = HOME_COVER_CORNER_RADIUS,
+                    topEnd = WallHubSpacing.none,
+                    bottomEnd = WallHubSpacing.none,
+                    bottomStart = HOME_COVER_CORNER_RADIUS,
+                )
+            } else {
+                HomeCoverCorners(
+                    topStart = HOME_COVER_CORNER_RADIUS,
+                    topEnd = HOME_COVER_CORNER_RADIUS,
+                    bottomEnd = WallHubSpacing.none,
+                    bottomStart = WallHubSpacing.none,
+                )
+            }
     }
 }
 
-private fun Dp.interpolateTo(target: Dp, progress: Float): Dp =
-    (value + (target.value - value) * progress.coerceIn(0f, 1f)).dp
+private fun Dp.interpolateTo(
+    target: Dp,
+    progress: Float,
+): Dp = (value + (target.value - value) * progress.coerceIn(0f, 1f)).dp
 
 private fun Dp.project(transform: HomeCardLayoutTransform): HomeProjectedCornerRadius =
     HomeProjectedCornerRadius(
@@ -3341,24 +3733,29 @@ private fun Dp.project(transform: HomeCardLayoutTransform): HomeProjectedCornerR
 private data class HomeActionCorners(
     val radius: Dp,
 ) {
-    fun interpolateTo(target: HomeActionCorners, progress: Float): HomeActionCorners =
-        HomeActionCorners(radius = radius.interpolateTo(target.radius, progress))
+    fun interpolateTo(
+        target: HomeActionCorners,
+        progress: Float,
+    ): HomeActionCorners = HomeActionCorners(radius = radius.interpolateTo(target.radius, progress))
 
-    fun toCoverCorners(): HomeCoverCorners = HomeCoverCorners(
-        topStart = radius,
-        topEnd = radius,
-        bottomEnd = radius,
-        bottomStart = radius,
-    )
+    fun toCoverCorners(): HomeCoverCorners =
+        HomeCoverCorners(
+            topStart = radius,
+            topEnd = radius,
+            bottomEnd = radius,
+            bottomStart = radius,
+        )
 
     companion object {
-        fun forListMode(listMode: Boolean): HomeActionCorners = HomeActionCorners(
-            radius = if (listMode) {
-                LIST_CARD_ACTION_CORNER_RADIUS
-            } else {
-                GRID_CARD_ACTION_CORNER_RADIUS
-            },
-        )
+        fun forListMode(listMode: Boolean): HomeActionCorners =
+            HomeActionCorners(
+                radius =
+                    if (listMode) {
+                        LIST_CARD_ACTION_CORNER_RADIUS
+                    } else {
+                        GRID_CARD_ACTION_CORNER_RADIUS
+                    },
+            )
     }
 }
 
@@ -3378,10 +3775,11 @@ private data class HomeProjectedRoundedCornerShape(
         layoutDirection: LayoutDirection,
         density: Density,
     ): Outline {
-        fun HomeProjectedCornerRadius.toCornerRadius(): CornerRadius = CornerRadius(
-            x = with(density) { horizontal.toPx() }.coerceIn(0f, size.width / 2f),
-            y = with(density) { vertical.toPx() }.coerceIn(0f, size.height / 2f),
-        )
+        fun HomeProjectedCornerRadius.toCornerRadius(): CornerRadius =
+            CornerRadius(
+                x = with(density) { horizontal.toPx() }.coerceIn(0f, size.width / 2f),
+                y = with(density) { vertical.toPx() }.coerceIn(0f, size.height / 2f),
+            )
         val topLeft = if (layoutDirection == LayoutDirection.Ltr) topStart else topEnd
         val topRight = if (layoutDirection == LayoutDirection.Ltr) topEnd else topStart
         val bottomRight = if (layoutDirection == LayoutDirection.Ltr) bottomEnd else bottomStart
@@ -3424,12 +3822,13 @@ internal data class HomeCardLayoutTransform(
             abs(scaleY - 1f) > HOME_VIEW_LAYOUT_SCALE_EPSILON
 
     companion object {
-        val Identity = HomeCardLayoutTransform(
-            translationX = 0f,
-            translationY = 0f,
-            scaleX = 1f,
-            scaleY = 1f,
-        )
+        val Identity =
+            HomeCardLayoutTransform(
+                translationX = 0f,
+                translationY = 0f,
+                scaleX = 1f,
+                scaleY = 1f,
+            )
     }
 }
 
@@ -3446,9 +3845,10 @@ private fun WorkshopListCardContent(
     onPrimaryAction: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = LIST_CARD_MEDIA_SIZE),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = LIST_CARD_MEDIA_SIZE),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         WorkshopCoverFrame(
@@ -3458,9 +3858,10 @@ private fun WorkshopListCardContent(
             typeTagScale = typeTagScale,
             coverShape = layoutMotion.coverShape(),
             typeTagModifier = layoutMotion.tagModifier(),
-            modifier = Modifier
-                .size(LIST_CARD_MEDIA_SIZE)
-                .then(layoutMotion.mediaModifier()),
+            modifier =
+                Modifier
+                    .size(LIST_CARD_MEDIA_SIZE)
+                    .then(layoutMotion.mediaModifier()),
         )
         WorkshopCardCopy(
             item = item,
@@ -3470,10 +3871,11 @@ private fun WorkshopListCardContent(
             showFileSize = showFileSize,
             showFavorites = showFavorites,
             statisticsAvailableWidth = statisticsAvailableWidth,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 12.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
-                .then(layoutMotion.contentModifier()),
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(start = WallHubSpacing.sm, top = WallHubSpacing.xs, end = WallHubSpacing.xs, bottom = WallHubSpacing.xs)
+                    .then(layoutMotion.contentModifier()),
         )
         WorkshopCardActionButton(
             action = action,
@@ -3482,10 +3884,11 @@ private fun WorkshopListCardContent(
             contentModifier = layoutMotion.actionContentModifier(),
             labelVisibility = layoutMotion.actionLabelVisibility(),
             onPrimaryAction = onPrimaryAction,
-            modifier = Modifier
-                .padding(end = 10.dp)
-                .size(LIST_CARD_ACTION_SIZE)
-                .then(layoutMotion.actionModifier()),
+            modifier =
+                Modifier
+                    .padding(end = WallHubSpacing.compact)
+                    .size(LIST_CARD_ACTION_SIZE)
+                    .then(layoutMotion.actionModifier()),
         )
     }
 }
@@ -3512,10 +3915,11 @@ private fun WorkshopCoverFrame(
             item = item,
             language = language,
             typeTagScale = typeTagScale,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(if (compact) 6.dp else 8.dp)
-                .then(typeTagModifier),
+            modifier =
+                Modifier
+                    .align(Alignment.TopStart)
+                    .padding(if (compact) WallHubSpacing.dense else WallHubSpacing.xs)
+                    .then(typeTagModifier),
         )
     }
 }
@@ -3527,9 +3931,10 @@ private fun WorkshopCover(
     shape: Shape,
 ) {
     Box(
-        modifier = modifier
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        modifier =
+            modifier
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
         if (item.previewUrl != null) {
             AsyncImage(
@@ -3557,22 +3962,24 @@ private fun WorkshopCoverTypeTag(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier.graphicsLayer {
-            val scale = typeTagScale.value
-            transformOrigin = TransformOrigin(0f, 0f)
-            scaleX = scale
-            scaleY = scale
-        },
+        modifier =
+            modifier.graphicsLayer {
+                val scale = typeTagScale.value
+                transformOrigin = TransformOrigin(0f, 0f)
+                scaleX = scale
+                scaleY = scale
+            },
         shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
     ) {
         Text(
             text = item.type.label(language),
             style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(
-                horizontal = HOME_TYPE_TAG_HORIZONTAL_PADDING,
-                vertical = HOME_TYPE_TAG_VERTICAL_PADDING,
-            ),
+            modifier =
+                Modifier.padding(
+                    horizontal = HOME_TYPE_TAG_HORIZONTAL_PADDING,
+                    vertical = HOME_TYPE_TAG_VERTICAL_PADDING,
+                ),
         )
     }
 }
@@ -3590,50 +3997,58 @@ private fun WorkshopCardCopy(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
-    val statisticCount = 1 +
-        (if (showFavorites) 1 else 0) +
-        (if (showFileSize) 1 else 0)
-    val statisticsMetrics = WorkshopCardStatisticsMetrics.forAvailableWidth(
-        availableWidth = statisticsAvailableWidth,
-        statisticCount = statisticCount,
-        compact = compact,
-        twoColumnGrid = twoColumnGrid,
-    )
-    val baseStatisticTextStyle = if (compact) {
-        MaterialTheme.typography.labelSmall
-    } else {
-        MaterialTheme.typography.bodySmall
-    }
-    val statisticTextStyle = if (twoColumnGrid) {
-        baseStatisticTextStyle.copy(
-            fontSize = statisticsMetrics.fontSize.sp,
-            lineHeight = TWO_COLUMN_CARD_STATISTICS_LINE_HEIGHT,
+    val statisticCount =
+        1 +
+            (if (showFavorites) 1 else 0) +
+            (if (showFileSize) 1 else 0)
+    val statisticsMetrics =
+        WorkshopCardStatisticsMetrics.forAvailableWidth(
+            availableWidth = statisticsAvailableWidth,
+            statisticCount = statisticCount,
+            compact = compact,
+            twoColumnGrid = twoColumnGrid,
         )
-    } else {
-        baseStatisticTextStyle.copy(fontSize = statisticsMetrics.fontSize.sp)
-    }
-    val minimumCopyHeight = if (!compact) {
-        with(density) {
-            CARD_TITLE_HEIGHT +
-                (if (twoColumnGrid) TWO_COLUMN_CARD_TITLE_STATISTICS_SPACING else 7.dp) +
-                (if (twoColumnGrid) {
-                    TWO_COLUMN_CARD_STATISTICS_LINE_HEIGHT.toDp()
-                } else {
-                    GRID_CARD_STATISTICS_LINE_HEIGHT.toDp()
-                })
+    val baseStatisticTextStyle =
+        if (compact) {
+            MaterialTheme.typography.labelSmall
+        } else {
+            MaterialTheme.typography.bodySmall
         }
-    } else {
-        0.dp
-    }
+    val statisticTextStyle =
+        if (twoColumnGrid) {
+            baseStatisticTextStyle.copy(
+                fontSize = statisticsMetrics.fontSize.sp,
+                lineHeight = TWO_COLUMN_CARD_STATISTICS_LINE_HEIGHT,
+            )
+        } else {
+            baseStatisticTextStyle.copy(fontSize = statisticsMetrics.fontSize.sp)
+        }
+    val minimumCopyHeight =
+        if (!compact) {
+            with(density) {
+                CARD_TITLE_HEIGHT +
+                    (if (twoColumnGrid) TWO_COLUMN_CARD_TITLE_STATISTICS_SPACING else LIST_CARD_TITLE_STATISTICS_SPACING) +
+                    (
+                        if (twoColumnGrid) {
+                            TWO_COLUMN_CARD_STATISTICS_LINE_HEIGHT.toDp()
+                        } else {
+                            GRID_CARD_STATISTICS_LINE_HEIGHT.toDp()
+                        }
+                    )
+            }
+        } else {
+            WallHubSpacing.none
+        }
     Column(
         modifier = if (compact) modifier else modifier.heightIn(min = minimumCopyHeight),
-        verticalArrangement = Arrangement.spacedBy(
-            when {
-                compact -> 4.dp
-                twoColumnGrid -> TWO_COLUMN_CARD_TITLE_STATISTICS_SPACING
-                else -> 7.dp
-            },
-        ),
+        verticalArrangement =
+            Arrangement.spacedBy(
+                when {
+                    compact -> WallHubSpacing.xxs
+                    twoColumnGrid -> TWO_COLUMN_CARD_TITLE_STATISTICS_SPACING
+                    else -> LIST_CARD_TITLE_STATISTICS_SPACING
+                },
+            ),
     ) {
         Text(
             text = item.title,
@@ -3644,10 +4059,11 @@ private fun WorkshopCardCopy(
         if (twoColumnGrid) {
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(
-                    space = statisticsMetrics.itemSpacing,
-                    alignment = Alignment.Start,
-                ),
+                horizontalArrangement =
+                    Arrangement.spacedBy(
+                        space = statisticsMetrics.itemSpacing,
+                        alignment = Alignment.Start,
+                    ),
                 verticalArrangement = Arrangement.spacedBy(TWO_COLUMN_CARD_STATISTICS_ROW_SPACING),
                 maxItemsInEachRow = 3,
             ) {
@@ -3664,10 +4080,11 @@ private fun WorkshopCardCopy(
         } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(
-                    space = statisticsMetrics.itemSpacing,
-                    alignment = Alignment.Start,
-                ),
+                horizontalArrangement =
+                    Arrangement.spacedBy(
+                        space = statisticsMetrics.itemSpacing,
+                        alignment = Alignment.Start,
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 WorkshopCardStatisticsItems(
@@ -3741,10 +4158,11 @@ private fun WorkshopGridCardAction(
         contentModifier = layoutMotion.actionContentModifier(),
         labelVisibility = layoutMotion.actionLabelVisibility(),
         onPrimaryAction = onPrimaryAction,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(CARD_ACTION_HEIGHT)
-            .then(layoutMotion.actionModifier()),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(CARD_ACTION_HEIGHT)
+                .then(layoutMotion.actionModifier()),
     )
 }
 
@@ -3763,19 +4181,23 @@ private fun WorkshopCardActionButton(
     val labelStyle = MaterialTheme.typography.labelLarge
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
-    val labelWidth = remember(label, labelStyle, density, textMeasurer) {
-        with(density) {
-            textMeasurer.measure(
-                text = AnnotatedString(label),
-                style = labelStyle,
-            ).size.width.toDp()
+    val labelWidth =
+        remember(label, labelStyle, density, textMeasurer) {
+            with(density) {
+                textMeasurer
+                    .measure(
+                        text = AnnotatedString(label),
+                        style = labelStyle,
+                    ).size.width
+                    .toDp()
+            }
         }
-    }
     val labelProgress = labelVisibility.coerceIn(0f, 1f)
-    val labelContainerWidth = 5.dp + labelWidth
-    val iconOffsetPx = with(density) {
-        labelContainerWidth.toPx() * (1f - labelProgress) / 2f
-    }
+    val labelContainerWidth = VIEW_MODE_TOGGLE_LABEL_INSET + labelWidth
+    val iconOffsetPx =
+        with(density) {
+            labelContainerWidth.toPx() * (1f - labelProgress) / 2f
+        }
     Box(
         modifier = modifier,
         contentAlignment = Alignment.Center,
@@ -3784,42 +4206,44 @@ private fun WorkshopCardActionButton(
             onClick = onPrimaryAction,
             modifier = Modifier.fillMaxSize(),
             shape = shape,
-            contentPadding = PaddingValues(0.dp),
+            contentPadding = PaddingValues(WallHubSpacing.none),
         ) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(contentModifier),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .then(contentModifier),
                 contentAlignment = Alignment.Center,
             ) {
                 Row(
-                    modifier = Modifier
-                        .wrapContentWidth(unbounded = true)
-                        .graphicsLayer { translationX = iconOffsetPx },
+                    modifier =
+                        Modifier
+                            .wrapContentWidth(unbounded = true)
+                            .graphicsLayer { translationX = iconOffsetPx },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
                         imageVector = action.icon(),
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(WallHubSpacing.md),
                         tint = actionContentColor,
                     )
                     Box(
-                        modifier = Modifier
-                            .width(labelContainerWidth)
-                            .drawWithContent drawContent@{
-                                clipRect(right = size.width * labelProgress) {
-                                    this@drawContent.drawContent()
-                                }
-                            }
-                            .graphicsLayer { alpha = labelProgress },
+                        modifier =
+                            Modifier
+                                .width(labelContainerWidth)
+                                .drawWithContent drawContent@{
+                                    clipRect(right = size.width * labelProgress) {
+                                        this@drawContent.drawContent()
+                                    }
+                                }.graphicsLayer { alpha = labelProgress },
                         contentAlignment = Alignment.CenterStart,
                     ) {
                         Text(
                             text = label,
                             style = labelStyle,
                             color = actionContentColor,
-                            modifier = Modifier.padding(start = 5.dp),
+                            modifier = Modifier.padding(start = VIEW_MODE_TOGGLE_LABEL_INSET),
                             maxLines = 1,
                         )
                     }
@@ -3878,11 +4302,12 @@ private data class WorkshopCardStatisticsMetrics(
             val slotWidth = availableWidth.value / statisticCount.coerceAtLeast(1)
             if (twoColumnGrid) {
                 return WorkshopCardStatisticsMetrics(
-                    fontSize = (slotWidth / TWO_COLUMN_CARD_STATISTICS_FONT_WIDTH_DIVISOR)
-                        .coerceIn(
-                            TWO_COLUMN_CARD_STATISTICS_MIN_FONT_SIZE,
-                            TWO_COLUMN_CARD_STATISTICS_MAX_FONT_SIZE,
-                        ),
+                    fontSize =
+                        (slotWidth / TWO_COLUMN_CARD_STATISTICS_FONT_WIDTH_DIVISOR)
+                            .coerceIn(
+                                TWO_COLUMN_CARD_STATISTICS_MIN_FONT_SIZE,
+                                TWO_COLUMN_CARD_STATISTICS_MAX_FONT_SIZE,
+                            ),
                     iconSize = TWO_COLUMN_CARD_STATISTICS_ICON_SIZE,
                     iconSpacing = TWO_COLUMN_CARD_STATISTICS_ICON_SPACING,
                     itemSpacing = TWO_COLUMN_CARD_STATISTICS_ITEM_SPACING,
@@ -3895,14 +4320,22 @@ private data class WorkshopCardStatisticsMetrics(
             val fontSize = (slotWidth / 5.5f).coerceIn(minimumFontSize, maximumFontSize)
             return WorkshopCardStatisticsMetrics(
                 fontSize = fontSize,
-                iconSize = when {
-                    fontSize <= 9.5f -> 11.dp
-                    fontSize <= 10.5f -> 12.dp
-                    compact -> 13.dp
-                    else -> 15.dp
-                },
-                iconSpacing = if (fontSize <= 9.5f) 2.dp else 3.dp,
-                itemSpacing = if (fontSize <= 9.5f) 2.dp else if (compact) 4.dp else 6.dp,
+                iconSize =
+                    when {
+                        fontSize <= 9.5f -> 11.dp
+                        fontSize <= 10.5f -> WallHubSpacing.sm
+                        compact -> 13.dp
+                        else -> 15.dp
+                    },
+                iconSpacing = if (fontSize <= 9.5f) WallHubSpacing.xxxs else 3.dp,
+                itemSpacing =
+                    if (fontSize <= 9.5f) {
+                        WallHubSpacing.xxxs
+                    } else if (compact) {
+                        WallHubSpacing.xxs
+                    } else {
+                        WallHubSpacing.dense
+                    },
             )
         }
     }
@@ -3930,19 +4363,20 @@ private fun HomeFiltersSheet(
     val contentScrollState = rememberScrollState()
     val themeScrollState = rememberScrollState()
     val displayScrollState = rememberScrollState()
-    val pageScrollStates = remember(
-        browseScrollState,
-        contentScrollState,
-        themeScrollState,
-        displayScrollState,
-    ) {
-        mapOf(
-            HomeFilterPage.BROWSE to browseScrollState,
-            HomeFilterPage.CONTENT to contentScrollState,
-            HomeFilterPage.THEME to themeScrollState,
-            HomeFilterPage.DISPLAY to displayScrollState,
-        )
-    }
+    val pageScrollStates =
+        remember(
+            browseScrollState,
+            contentScrollState,
+            themeScrollState,
+            displayScrollState,
+        ) {
+            mapOf(
+                HomeFilterPage.BROWSE to browseScrollState,
+                HomeFilterPage.CONTENT to contentScrollState,
+                HomeFilterPage.THEME to themeScrollState,
+                HomeFilterPage.DISPLAY to displayScrollState,
+            )
+        }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val updateSelection: (HomeFilterSelection) -> Unit = { selection ->
         val normalized = selection.normalized(config.matureContentEnabled)
@@ -3955,19 +4389,20 @@ private fun HomeFiltersSheet(
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         tonalElevation = 0.dp,
-        sheetMaxWidth = 920.dp,
+        sheetMaxWidth = WallHubSizeTokens.modalContentMaxWidth,
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val condensed = maxHeight < 680.dp || LocalDensity.current.fontScale > 1.3f
             val compact = maxWidth < 840.dp || condensed
-            val horizontalPadding = if (compact) 16.dp else 24.dp
+            val horizontalPadding = if (compact) WallHubSpacing.md else WallHubSpacing.lg
             val contentMaxHeight = maxHeight * if (compact) 0.92f else 0.84f
             Column(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth(if (compact) 1f else 0.92f)
-                    .widthIn(max = 920.dp)
-                    .heightIn(max = contentMaxHeight),
+                modifier =
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth(if (compact) 1f else 0.92f)
+                        .widthIn(max = WallHubSizeTokens.modalContentMaxWidth)
+                        .heightIn(max = contentMaxHeight),
             ) {
                 HomeFilterSheetHeader(
                     language = config.language,
@@ -3987,9 +4422,10 @@ private fun HomeFiltersSheet(
                     )
                     AnimatedContent(
                         targetState = selectedPage,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = contentMaxHeight),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = contentMaxHeight),
                         transitionSpec = { homeFilterPageContentTransform() },
                         label = "HomeFilterPage",
                     ) { page ->
@@ -4003,11 +4439,12 @@ private fun HomeFiltersSheet(
                     }
                 } else {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = contentMaxHeight)
-                            .padding(horizontal = horizontalPadding),
-                        horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = contentMaxHeight)
+                                .padding(horizontal = horizontalPadding),
+                        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.lg),
                     ) {
                         HomeFilterPageNavigation(
                             pages = pages,
@@ -4039,28 +4476,34 @@ private fun HomeFiltersSheet(
     }
 }
 
-private fun homeFilterPageContentTransform(): ContentTransform = ContentTransform(
-    targetContentEnter = fadeIn(
-        animationSpec = tween(
-            durationMillis = HOME_FILTER_PAGE_ENTER_DURATION_MS,
-            delayMillis = HOME_FILTER_PAGE_EXIT_DURATION_MS,
-            easing = HOME_FILTER_PAGE_EASING,
-        ),
-    ),
-    initialContentExit = fadeOut(
-        animationSpec = tween(
-            durationMillis = HOME_FILTER_PAGE_EXIT_DURATION_MS,
-            easing = HOME_FILTER_PAGE_EASING,
-        ),
-    ),
-    sizeTransform = SizeTransform(clip = true) { _, _ ->
-        tween(
-            durationMillis = HOME_FILTER_SHEET_PAGE_SIZE_DURATION_MS,
-            delayMillis = HOME_FILTER_PAGE_EXIT_DURATION_MS,
-            easing = HOME_FILTER_PAGE_EASING,
-        )
-    },
-)
+private fun homeFilterPageContentTransform(): ContentTransform =
+    ContentTransform(
+        targetContentEnter =
+            fadeIn(
+                animationSpec =
+                    tween(
+                        durationMillis = HOME_FILTER_PAGE_ENTER_DURATION_MS,
+                        delayMillis = HOME_FILTER_PAGE_EXIT_DURATION_MS,
+                        easing = HOME_FILTER_PAGE_EASING,
+                    ),
+            ),
+        initialContentExit =
+            fadeOut(
+                animationSpec =
+                    tween(
+                        durationMillis = HOME_FILTER_PAGE_EXIT_DURATION_MS,
+                        easing = HOME_FILTER_PAGE_EASING,
+                    ),
+            ),
+        sizeTransform =
+            SizeTransform(clip = true) { _, _ ->
+                tween(
+                    durationMillis = HOME_FILTER_SHEET_PAGE_SIZE_DURATION_MS,
+                    delayMillis = HOME_FILTER_PAGE_EXIT_DURATION_MS,
+                    easing = HOME_FILTER_PAGE_EASING,
+                )
+            },
+    )
 
 @Composable
 private fun HomeFilterSheetHeader(
@@ -4071,15 +4514,16 @@ private fun HomeFilterSheetHeader(
     horizontalPadding: Dp,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                start = horizontalPadding,
-                end = horizontalPadding,
-                bottom = 8.dp,
-            ),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = horizontalPadding,
+                    end = horizontalPadding,
+                    bottom = WallHubSpacing.xs,
+                ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),
     ) {
         Text(
             text = language.text("筛选与排序", "Filter and sort"),
@@ -4111,9 +4555,10 @@ private fun HomeFilterPageNavigation(
         CompositionLocalProvider(LocalRippleConfiguration provides null) {
             PrimaryTabRow(
                 selectedTabIndex = pages.indexOf(selectedPage).coerceAtLeast(0),
-                modifier = modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp),
+                modifier =
+                    modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = WallHubSpacing.xs),
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 contentColor = MaterialTheme.colorScheme.primary,
                 divider = {},
@@ -4134,7 +4579,7 @@ private fun HomeFilterPageNavigation(
                                 Icon(
                                     imageVector = page.icon(),
                                     contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
+                                    modifier = Modifier.size(WallHubSizeTokens.smallIcon),
                                 )
                             }
                         },
@@ -4152,7 +4597,7 @@ private fun HomeFilterPageNavigation(
     } else {
         Column(
             modifier = modifier.selectableGroup(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
         ) {
             pages.forEach { page ->
                 val activeCount = page.activeSectionCount(draft)
@@ -4177,16 +4622,17 @@ private fun HomeFilterPageNavigation(
                         if (activeCount > 0) Badge { Text(activeCount.toString()) }
                     },
                     shape = MaterialTheme.shapes.large,
-                    colors = NavigationDrawerItemDefaults.colors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        selectedBadgeColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        unselectedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedBadgeColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
+                    colors =
+                        NavigationDrawerItemDefaults.colors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            selectedBadgeColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            unselectedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedBadgeColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                 )
             }
         }
@@ -4204,33 +4650,37 @@ private fun HomeFilterPageContent(
 ) {
     Box(modifier = modifier.fillMaxWidth()) {
         when (page) {
-            HomeFilterPage.BROWSE -> HomeBrowseFilterPage(
-                config = config,
-                draft = draft,
-                scrollState = scrollStates.getValue(page),
-                onDraftChanged = onDraftChanged,
-            )
+            HomeFilterPage.BROWSE ->
+                HomeBrowseFilterPage(
+                    config = config,
+                    draft = draft,
+                    scrollState = scrollStates.getValue(page),
+                    onDraftChanged = onDraftChanged,
+                )
 
-            HomeFilterPage.CONTENT -> HomeContentFilterPage(
-                config = config,
-                draft = draft,
-                scrollState = scrollStates.getValue(page),
-                onDraftChanged = onDraftChanged,
-            )
+            HomeFilterPage.CONTENT ->
+                HomeContentFilterPage(
+                    config = config,
+                    draft = draft,
+                    scrollState = scrollStates.getValue(page),
+                    onDraftChanged = onDraftChanged,
+                )
 
-            HomeFilterPage.THEME -> HomeThemeFilterPage(
-                config = config,
-                draft = draft,
-                scrollState = scrollStates.getValue(page),
-                onDraftChanged = onDraftChanged,
-            )
+            HomeFilterPage.THEME ->
+                HomeThemeFilterPage(
+                    config = config,
+                    draft = draft,
+                    scrollState = scrollStates.getValue(page),
+                    onDraftChanged = onDraftChanged,
+                )
 
-            HomeFilterPage.DISPLAY -> HomeDisplayFilterPage(
-                config = config,
-                draft = draft,
-                scrollState = scrollStates.getValue(page),
-                onDraftChanged = onDraftChanged,
-            )
+            HomeFilterPage.DISPLAY ->
+                HomeDisplayFilterPage(
+                    config = config,
+                    draft = draft,
+                    scrollState = scrollStates.getValue(page),
+                    onDraftChanged = onDraftChanged,
+                )
         }
     }
 }
@@ -4244,23 +4694,25 @@ private fun HomeBrowseFilterPage(
     onDraftChanged: (HomeFilterSelection) -> Unit,
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(scrollState)
+                .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.md),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
     ) {
         HomeFilterSectionCard {
             HomeFilterSectionHeading(
                 title = config.language.text("排序依据", "Sort by"),
-                supportingText = config.language.text(
-                    "选择创意工坊结果的排列方式",
-                    "Choose how Workshop results are ordered",
-                ),
+                supportingText =
+                    config.language.text(
+                        "选择创意工坊结果的排列方式",
+                        "Choose how Workshop results are ordered",
+                    ),
             )
             Column(
                 modifier = Modifier.selectableGroup(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
                 WorkshopSort.entries.forEach { sort ->
                     HomeFilterChoiceRow(
@@ -4274,16 +4726,17 @@ private fun HomeBrowseFilterPage(
         HomeFilterSectionCard(enabled = draft.sort == WorkshopSort.TRENDING) {
             HomeFilterSectionHeading(
                 title = config.language.text("时间范围", "Time range"),
-                supportingText = config.language.text(
-                    "仅“热门”排序会使用时间范围",
-                    "Time range is available only for Popular sorting",
-                ),
+                supportingText =
+                    config.language.text(
+                        "仅“热门”排序会使用时间范围",
+                        "Time range is available only for Popular sorting",
+                    ),
                 enabled = draft.sort == WorkshopSort.TRENDING,
             )
             FlowRow(
                 modifier = Modifier.selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
                 timeRangeOptions(config.language, draft.days).forEach { (days, label) ->
                     HomeDraftFilterChip(
@@ -4296,7 +4749,7 @@ private fun HomeBrowseFilterPage(
                 }
             }
         }
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(WallHubSpacing.xxs))
     }
 }
 
@@ -4309,25 +4762,27 @@ private fun HomeContentFilterPage(
     onDraftChanged: (HomeFilterSelection) -> Unit,
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(scrollState)
+                .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.md),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
     ) {
         HomeFilterSectionCard {
             HomeFilterSectionHeading(
                 title = config.language.text("壁纸类型", "Wallpaper type"),
-                supportingText = if (config.multiSelect) {
-                    config.language.text("可以同时选择多个类型", "You can select multiple types")
-                } else {
-                    config.language.text("当前设置为单选", "Currently configured for single selection")
-                },
+                supportingText =
+                    if (config.multiSelect) {
+                        config.language.text("可以同时选择多个类型", "You can select multiple types")
+                    } else {
+                        config.language.text("当前设置为单选", "Currently configured for single selection")
+                    },
             )
             FlowRow(
                 modifier = if (config.multiSelect) Modifier else Modifier.selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
                 HomeDraftFilterChip(
                     label = config.language.text("不限", "Any"),
@@ -4354,39 +4809,43 @@ private fun HomeContentFilterPage(
         HomeFilterSectionCard {
             HomeFilterSectionHeading(
                 title = config.language.text("年龄评级", "Age rating"),
-                supportingText = if (config.matureContentEnabled) {
-                    config.language.text("已允许显示成人内容选项", "Mature content options are available")
-                } else {
-                    config.language.text("成人内容已在设置中关闭", "Mature content is disabled in Settings")
-                },
+                supportingText =
+                    if (config.matureContentEnabled) {
+                        config.language.text("已允许显示成人内容选项", "Mature content options are available")
+                    } else {
+                        config.language.text("成人内容已在设置中关闭", "Mature content is disabled in Settings")
+                    },
             )
             FlowRow(
                 modifier = if (config.multiSelect) Modifier else Modifier.selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
                 WorkshopRating.entries
                     .filter { it != WorkshopRating.MATURE || config.matureContentEnabled }
                     .forEach { rating ->
                         HomeDraftFilterChip(
-                            label = if (rating == WorkshopRating.ALL && !config.matureContentEnabled) {
-                                config.language.text("全部允许级别", "All allowed")
-                            } else {
-                                rating.label(config.language)
-                            },
-                            selected = draft.ratings.isRatingSelected(
-                                rating = rating,
-                                matureContentEnabled = config.matureContentEnabled,
-                            ),
+                            label =
+                                if (rating == WorkshopRating.ALL && !config.matureContentEnabled) {
+                                    config.language.text("全部允许级别", "All allowed")
+                                } else {
+                                    rating.label(config.language)
+                                },
+                            selected =
+                                draft.ratings.isRatingSelected(
+                                    rating = rating,
+                                    matureContentEnabled = config.matureContentEnabled,
+                                ),
                             singleChoice = !config.multiSelect,
                             onClick = {
                                 onDraftChanged(
                                     draft.copy(
-                                        ratings = draft.ratings.toggleRating(
-                                            rating = rating,
-                                            multiSelect = config.multiSelect,
-                                            matureContentEnabled = config.matureContentEnabled,
-                                        ),
+                                        ratings =
+                                            draft.ratings.toggleRating(
+                                                rating = rating,
+                                                multiSelect = config.multiSelect,
+                                                matureContentEnabled = config.matureContentEnabled,
+                                            ),
                                     ),
                                 )
                             },
@@ -4394,7 +4853,7 @@ private fun HomeContentFilterPage(
                     }
             }
         }
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(WallHubSpacing.xxs))
     }
 }
 
@@ -4410,19 +4869,21 @@ private fun HomeThemeFilterPage(
     val genresUnrestricted = draft.genres == allGenres
     val allOfficialTags = WorkshopFilterCatalog.officialTags.toSet()
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(scrollState)
+                .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.md),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
     ) {
         HomeFilterSectionCard {
             HomeFilterSectionHeading(
                 title = config.language.text("内容分类", "Genres"),
-                supportingText = config.language.text(
-                    "选择至少一个分类；全选时视为不限",
-                    "Choose one or more genres; all selected means any",
-                ),
+                supportingText =
+                    config.language.text(
+                        "选择至少一个分类；全选时视为不限",
+                        "Choose one or more genres; all selected means any",
+                    ),
                 actionLabel = config.language.text("反选", "Invert"),
                 actionEnabled = !genresUnrestricted,
                 onAction = {
@@ -4430,8 +4891,8 @@ private fun HomeThemeFilterPage(
                 },
             )
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
                 HomeDraftFilterChip(
                     label = config.language.text("不限", "Any"),
@@ -4456,10 +4917,11 @@ private fun HomeThemeFilterPage(
         HomeFilterSectionCard {
             HomeFilterSectionHeading(
                 title = config.language.text("官方特性", "Official features"),
-                supportingText = config.language.text(
-                    "所选特性需要同时匹配",
-                    "Results must match every selected feature",
-                ),
+                supportingText =
+                    config.language.text(
+                        "所选特性需要同时匹配",
+                        "Results must match every selected feature",
+                    ),
                 actionLabel = config.language.text("反选", "Invert"),
                 actionEnabled = draft.officialTags.isNotEmpty(),
                 onAction = {
@@ -4469,8 +4931,8 @@ private fun HomeThemeFilterPage(
                 },
             )
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
                 HomeDraftFilterChip(
                     label = config.language.text("不限", "Any"),
@@ -4492,7 +4954,7 @@ private fun HomeThemeFilterPage(
                 }
             }
         }
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(WallHubSpacing.xxs))
     }
 }
 
@@ -4507,19 +4969,21 @@ private fun HomeDisplayFilterPage(
     val allResolutions = DEFAULT_HOME_RESOLUTION_SELECTION
     val unrestricted = draft.resolutions == allResolutions
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(scrollState)
+                .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.md),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
     ) {
         HomeFilterSectionCard {
             HomeFilterSectionHeading(
                 title = config.language.text("分辨率", "Resolution"),
-                supportingText = config.language.text(
-                    "选择至少一个尺寸；全选时视为不限",
-                    "Choose one or more sizes; all selected means any",
-                ),
+                supportingText =
+                    config.language.text(
+                        "选择至少一个尺寸；全选时视为不限",
+                        "Choose one or more sizes; all selected means any",
+                    ),
                 actionLabel = config.language.text("反选", "Invert"),
                 actionEnabled = !unrestricted,
                 onAction = {
@@ -4534,15 +4998,15 @@ private fun HomeDisplayFilterPage(
                 onClick = { onDraftChanged(draft.copy(resolutions = allResolutions)) },
             )
             WorkshopFilterCatalog.resolutionGroups.forEach { group ->
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs)) {
                     Text(
                         text = group.id.localizedResolutionGroup(config.language),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
                     ) {
                         group.options.forEach { resolution ->
                             HomeDraftFilterChip(
@@ -4551,10 +5015,11 @@ private fun HomeDisplayFilterPage(
                                 onClick = {
                                     onDraftChanged(
                                         draft.copy(
-                                            resolutions = draft.resolutions.toggleBounded(
-                                                resolution,
-                                                allResolutions,
-                                            ),
+                                            resolutions =
+                                                draft.resolutions.toggleBounded(
+                                                    resolution,
+                                                    allResolutions,
+                                                ),
                                         ),
                                     )
                                 },
@@ -4564,7 +5029,7 @@ private fun HomeDisplayFilterPage(
                 }
             }
         }
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(WallHubSpacing.xxs))
     }
 }
 
@@ -4578,16 +5043,17 @@ private fun HomeFilterSectionCard(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        tonalElevation = 0.dp,
+        tonalElevation = WallHubSpacing.none,
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(WallHubSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
         ) {
             CompositionLocalProvider(
-                LocalContentColor provides MaterialTheme.colorScheme.onSurface.copy(
-                    alpha = if (enabled) 1f else 0.55f,
-                ),
+                LocalContentColor provides
+                    MaterialTheme.colorScheme.onSurface.copy(
+                        alpha = if (enabled) 1f else 0.55f,
+                    ),
             ) {
                 content()
             }
@@ -4606,11 +5072,11 @@ private fun HomeFilterSectionHeading(
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -4644,38 +5110,41 @@ private fun HomeFilterChoiceRow(
 ) {
     Surface(
         shape = MaterialTheme.shapes.medium,
-        color = if (selected) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
-        },
-        contentColor = if (selected) {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        },
-        tonalElevation = 0.dp,
+        color =
+            if (selected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+        contentColor =
+            if (selected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        tonalElevation = WallHubSpacing.none,
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 56.dp)
-                .selectable(
-                    selected = selected,
-                    role = Role.RadioButton,
-                    onClick = onClick,
-                )
-                .padding(horizontal = 12.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = WallHubSizeTokens.listItemMinimumHeight)
+                    .selectable(
+                        selected = selected,
+                        role = Role.RadioButton,
+                        onClick = onClick,
+                    ).padding(horizontal = WallHubSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
         ) {
             RadioButton(
                 selected = selected,
                 onClick = null,
-                colors = RadioButtonDefaults.colors(
-                    selectedColor = MaterialTheme.colorScheme.primary,
-                    unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
+                colors =
+                    RadioButtonDefaults.colors(
+                        selectedColor = MaterialTheme.colorScheme.primary,
+                        unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
             )
             Text(
                 text = label,
@@ -4700,120 +5169,141 @@ private fun HomeDraftFilterChip(
         label = label,
         enabled = enabled,
         singleChoice = singleChoice,
-        minHeight = 48.dp,
+        minHeight = WallHubSpacing.xxl,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
     )
 }
 
-private fun HomeFilterPage.label(language: AppLanguage): String = when (this) {
-    HomeFilterPage.BROWSE -> language.text("浏览", "Browse")
-    HomeFilterPage.CONTENT -> language.text("内容", "Content")
-    HomeFilterPage.THEME -> language.text("主题", "Theme")
-    HomeFilterPage.DISPLAY -> language.text("屏幕", "Display")
-}
+private fun HomeFilterPage.label(language: AppLanguage): String =
+    when (this) {
+        HomeFilterPage.BROWSE -> language.text("浏览", "Browse")
+        HomeFilterPage.CONTENT -> language.text("内容", "Content")
+        HomeFilterPage.THEME -> language.text("主题", "Theme")
+        HomeFilterPage.DISPLAY -> language.text("屏幕", "Display")
+    }
 
 private fun HomeFilterPage.summary(
     selection: HomeFilterSelection,
     state: HomeUiState,
-): String = when (this) {
-    HomeFilterPage.BROWSE -> if (selection.sort == WorkshopSort.TRENDING) {
-        "${selection.sort.label(state.language)} · ${selection.days.label(state.language)}"
-    } else {
-        selection.sort.label(state.language)
+): String =
+    when (this) {
+        HomeFilterPage.BROWSE ->
+            if (selection.sort == WorkshopSort.TRENDING) {
+                "${selection.sort.label(state.language)} · ${selection.days.label(state.language)}"
+            } else {
+                selection.sort.label(state.language)
+            }
+
+        HomeFilterPage.CONTENT ->
+            when (activeSectionCount(selection)) {
+                0 -> state.text("不限", "Any")
+                1 ->
+                    if (selection.types.isNotEmpty()) {
+                        selection.types.summary(state.language, state.text("不限", "Any"))
+                    } else {
+                        selection.ratings.summary(state.language, state.matureContentEnabled)
+                    }
+
+                else -> state.text("类型与评级", "Type and rating")
+            }
+
+        HomeFilterPage.THEME ->
+            if (activeSectionCount(selection) == 0) {
+                state.text("不限", "Any")
+            } else {
+                state.text(
+                    "${activeSectionCount(selection)} 个分区",
+                    "${activeSectionCount(selection)} sections",
+                )
+            }
+
+        HomeFilterPage.DISPLAY ->
+            if (selection.resolutions == DEFAULT_HOME_RESOLUTION_SELECTION) {
+                state.text("不限", "Any")
+            } else {
+                state.text(
+                    "${selection.resolutions.size} 项",
+                    "${selection.resolutions.size} selected",
+                )
+            }
     }
 
-    HomeFilterPage.CONTENT -> when (activeSectionCount(selection)) {
-        0 -> state.text("不限", "Any")
-        1 -> if (selection.types.isNotEmpty()) {
-            selection.types.summary(state.language, state.text("不限", "Any"))
-        } else {
-            selection.ratings.summary(state.language, state.matureContentEnabled)
-        }
-
-        else -> state.text("类型与评级", "Type and rating")
+private fun HomeFilterPage.icon(): ImageVector =
+    when (this) {
+        HomeFilterPage.BROWSE -> Icons.Outlined.Schedule
+        HomeFilterPage.CONTENT -> Icons.Outlined.GridView
+        HomeFilterPage.THEME -> Icons.Outlined.Palette
+        HomeFilterPage.DISPLAY -> Icons.Outlined.PhoneAndroid
     }
 
-    HomeFilterPage.THEME -> if (activeSectionCount(selection) == 0) {
-        state.text("不限", "Any")
-    } else {
-        state.text(
-            "${activeSectionCount(selection)} 个分区",
-            "${activeSectionCount(selection)} sections",
-        )
+private fun HomeFilterPage.activeSectionCount(selection: HomeFilterSelection): Int =
+    when (this) {
+        HomeFilterPage.BROWSE ->
+            when {
+                selection.sort != WorkshopSort.TRENDING -> 1
+                selection.days != 30 -> 1
+                else -> 0
+            }
+
+        HomeFilterPage.CONTENT ->
+            listOf(
+                selection.types.isNotEmpty(),
+                selection.ratings != DEFAULT_HOME_RATING_SELECTION,
+            ).count { it }
+
+        HomeFilterPage.THEME ->
+            listOf(
+                selection.genres != DEFAULT_HOME_GENRE_SELECTION,
+                selection.officialTags.isNotEmpty(),
+            ).count { it }
+
+        HomeFilterPage.DISPLAY -> if (selection.resolutions != DEFAULT_HOME_RESOLUTION_SELECTION) 1 else 0
     }
 
-    HomeFilterPage.DISPLAY -> if (selection.resolutions == DEFAULT_HOME_RESOLUTION_SELECTION) {
-        state.text("不限", "Any")
-    } else {
-        state.text(
-            "${selection.resolutions.size} 项",
-            "${selection.resolutions.size} selected",
-        )
-    }
-}
-
-private fun HomeFilterPage.icon(): ImageVector = when (this) {
-    HomeFilterPage.BROWSE -> Icons.Outlined.Schedule
-    HomeFilterPage.CONTENT -> Icons.Outlined.GridView
-    HomeFilterPage.THEME -> Icons.Outlined.Palette
-    HomeFilterPage.DISPLAY -> Icons.Outlined.PhoneAndroid
-}
-
-private fun HomeFilterPage.activeSectionCount(selection: HomeFilterSelection): Int = when (this) {
-    HomeFilterPage.BROWSE -> when {
-        selection.sort != WorkshopSort.TRENDING -> 1
-        selection.days != 30 -> 1
-        else -> 0
+private fun <T> Set<T>.toggleOptional(
+    value: T,
+    multiSelect: Boolean,
+): Set<T> =
+    when {
+        !multiSelect -> setOf(value)
+        value in this -> this - value
+        else -> this + value
     }
 
-    HomeFilterPage.CONTENT -> listOf(
-        selection.types.isNotEmpty(),
-        selection.ratings != DEFAULT_HOME_RATING_SELECTION,
-    ).count { it }
-
-    HomeFilterPage.THEME -> listOf(
-        selection.genres != DEFAULT_HOME_GENRE_SELECTION,
-        selection.officialTags.isNotEmpty(),
-    ).count { it }
-
-    HomeFilterPage.DISPLAY -> if (selection.resolutions != DEFAULT_HOME_RESOLUTION_SELECTION) 1 else 0
-}
-
-private fun <T> Set<T>.toggleOptional(value: T, multiSelect: Boolean): Set<T> = when {
-    !multiSelect -> setOf(value)
-    value in this -> this - value
-    else -> this + value
-}
-
-private fun <T> Set<T>.toggleBounded(value: T, allOptions: Set<T>): Set<T> {
+private fun <T> Set<T>.toggleBounded(
+    value: T,
+    allOptions: Set<T>,
+): Set<T> {
     val current = if (isEmpty() || this == allOptions) allOptions else this
     if (current == allOptions) return setOf(value)
     val next = if (value in current) current - value else current + value
     return if (next.isEmpty() || next == allOptions) allOptions else next
 }
 
-internal fun <T> Set<T>.invertBounded(allOptions: Set<T>): Set<T> =
-    (allOptions - this).ifEmpty { allOptions }
+internal fun <T> Set<T>.invertBounded(allOptions: Set<T>): Set<T> = (allOptions - this).ifEmpty { allOptions }
 
 private fun Set<WorkshopRating>.toggleRating(
     rating: WorkshopRating,
     multiSelect: Boolean,
     matureContentEnabled: Boolean,
-): Set<WorkshopRating> = when {
-    rating == WorkshopRating.ALL -> if (matureContentEnabled) {
-        setOf(WorkshopRating.ALL)
-    } else {
-        SAFE_HOME_RATING_SELECTION
+): Set<WorkshopRating> =
+    when {
+        rating == WorkshopRating.ALL ->
+            if (matureContentEnabled) {
+                setOf(WorkshopRating.ALL)
+            } else {
+                SAFE_HOME_RATING_SELECTION
+            }
+
+        !multiSelect -> setOf(rating)
+        !matureContentEnabled && normalizedRatings(false) == SAFE_HOME_RATING_SELECTION -> setOf(rating)
+        rating in normalizedRatings(matureContentEnabled) ->
+            (normalizedRatings(matureContentEnabled) - rating).ifEmpty { DEFAULT_HOME_RATING_SELECTION }
+
+        else ->
+            (normalizedRatings(matureContentEnabled) - WorkshopRating.ALL + rating)
+                .normalizedRatings(matureContentEnabled)
     }
-
-    !multiSelect -> setOf(rating)
-    !matureContentEnabled && normalizedRatings(false) == SAFE_HOME_RATING_SELECTION -> setOf(rating)
-    rating in normalizedRatings(matureContentEnabled) ->
-        (normalizedRatings(matureContentEnabled) - rating).ifEmpty { DEFAULT_HOME_RATING_SELECTION }
-
-    else -> (normalizedRatings(matureContentEnabled) - WorkshopRating.ALL + rating)
-        .normalizedRatings(matureContentEnabled)
-}
 
 private fun Set<WorkshopRating>.normalizedRatings(matureContentEnabled: Boolean): Set<WorkshopRating> {
     if (WorkshopRating.ALL in this) {
@@ -4838,51 +5328,64 @@ private fun Set<WorkshopRating>.isRatingSelected(
     }
 }
 
-private fun HomeUiState.text(zh: String, en: String): String = if (language == AppLanguage.EN) en else zh
+private fun HomeUiState.text(
+    zh: String,
+    en: String,
+): String = if (language == AppLanguage.EN) en else zh
 
-private fun WorkshopSort.label(language: AppLanguage): String = when (this) {
-    WorkshopSort.TRENDING -> if (language == AppLanguage.EN) "Popular" else "热门"
-    WorkshopSort.MOST_RECENT -> if (language == AppLanguage.EN) "Most recent" else "最新"
-    WorkshopSort.TOP_RATED -> if (language == AppLanguage.EN) "Top rated" else "最高评分"
-    WorkshopSort.MOST_VOTES -> if (language == AppLanguage.EN) "Most votes" else "最多投票"
-    WorkshopSort.MOST_SUBSCRIBERS -> if (language == AppLanguage.EN) "Most subscribers" else "最多订阅"
-}
+private fun WorkshopSort.label(language: AppLanguage): String =
+    when (this) {
+        WorkshopSort.TRENDING -> if (language == AppLanguage.EN) "Popular" else "热门"
+        WorkshopSort.MOST_RECENT -> if (language == AppLanguage.EN) "Most recent" else "最新"
+        WorkshopSort.TOP_RATED -> if (language == AppLanguage.EN) "Top rated" else "最高评分"
+        WorkshopSort.MOST_VOTES -> if (language == AppLanguage.EN) "Most votes" else "最多投票"
+        WorkshopSort.MOST_SUBSCRIBERS -> if (language == AppLanguage.EN) "Most subscribers" else "最多订阅"
+    }
 
-private fun Int.label(language: AppLanguage): String = when (this) {
-    0 -> if (language == AppLanguage.EN) "All time" else "全部时间"
-    1 -> if (language == AppLanguage.EN) "Today" else "今天"
-    7 -> if (language == AppLanguage.EN) "7 days" else "7 天"
-    30 -> if (language == AppLanguage.EN) "30 days" else "30 天"
-    90 -> if (language == AppLanguage.EN) "3 months" else "3 个月"
-    180 -> if (language == AppLanguage.EN) "6 months" else "半年"
-    365 -> if (language == AppLanguage.EN) "1 year" else "一年"
-    else -> if (language == AppLanguage.EN) "$this days" else "$this 天"
-}
+private fun Int.label(language: AppLanguage): String =
+    when (this) {
+        0 -> if (language == AppLanguage.EN) "All time" else "全部时间"
+        1 -> if (language == AppLanguage.EN) "Today" else "今天"
+        7 -> if (language == AppLanguage.EN) "7 days" else "7 天"
+        30 -> if (language == AppLanguage.EN) "30 days" else "30 天"
+        90 -> if (language == AppLanguage.EN) "3 months" else "3 个月"
+        180 -> if (language == AppLanguage.EN) "6 months" else "半年"
+        365 -> if (language == AppLanguage.EN) "1 year" else "一年"
+        else -> if (language == AppLanguage.EN) "$this days" else "$this 天"
+    }
 
-private fun timeRangeOptions(language: AppLanguage, currentDays: Int): List<Pair<Int, String>> {
-    val finiteRanges = (listOf(1, 7, 30, 90, 180, 365) + currentDays)
-        .filter { it > 0 }
-        .distinct()
-        .sorted()
+private fun timeRangeOptions(
+    language: AppLanguage,
+    currentDays: Int,
+): List<Pair<Int, String>> {
+    val finiteRanges =
+        (listOf(1, 7, 30, 90, 180, 365) + currentDays)
+            .filter { it > 0 }
+            .distinct()
+            .sorted()
     return (finiteRanges + 0).map { it to it.label(language) }
 }
 
-private fun WorkshopType.label(language: AppLanguage): String = when (this) {
-    WorkshopType.VIDEO -> if (language == AppLanguage.EN) "Video" else "视频"
-    WorkshopType.SCENE -> if (language == AppLanguage.EN) "Scene" else "场景"
-    WorkshopType.WEB -> if (language == AppLanguage.EN) "Web" else "网站"
-    WorkshopType.UNKNOWN -> if (language == AppLanguage.EN) "Wallpaper" else "壁纸"
-}
+private fun WorkshopType.label(language: AppLanguage): String =
+    when (this) {
+        WorkshopType.VIDEO -> if (language == AppLanguage.EN) "Video" else "视频"
+        WorkshopType.SCENE -> if (language == AppLanguage.EN) "Scene" else "场景"
+        WorkshopType.WEB -> if (language == AppLanguage.EN) "Web" else "网站"
+        WorkshopType.UNKNOWN -> if (language == AppLanguage.EN) "Wallpaper" else "壁纸"
+    }
 
-private fun Set<WorkshopType>.summary(language: AppLanguage, all: String): String =
-    if (isEmpty()) all else joinToString(" / ") { it.label(language) }
+private fun Set<WorkshopType>.summary(
+    language: AppLanguage,
+    all: String,
+): String = if (isEmpty()) all else joinToString(" / ") { it.label(language) }
 
-private fun WorkshopRating.label(language: AppLanguage): String = when (this) {
-    WorkshopRating.ALL -> if (language == AppLanguage.EN) "All" else "全部"
-    WorkshopRating.EVERYONE -> if (language == AppLanguage.EN) "Everyone" else "大众级"
-    WorkshopRating.QUESTIONABLE -> if (language == AppLanguage.EN) "Questionable" else "家长指导级"
-    WorkshopRating.MATURE -> if (language == AppLanguage.EN) "Mature" else "限制成人级"
-}
+private fun WorkshopRating.label(language: AppLanguage): String =
+    when (this) {
+        WorkshopRating.ALL -> if (language == AppLanguage.EN) "All" else "全部"
+        WorkshopRating.EVERYONE -> if (language == AppLanguage.EN) "Everyone" else "大众级"
+        WorkshopRating.QUESTIONABLE -> if (language == AppLanguage.EN) "Questionable" else "家长指导级"
+        WorkshopRating.MATURE -> if (language == AppLanguage.EN) "Mature" else "限制成人级"
+    }
 
 private fun Set<WorkshopRating>.summary(
     language: AppLanguage,
@@ -4898,23 +5401,36 @@ private fun Set<WorkshopRating>.summary(
     }
 }
 
-private fun HomeCardAction.label(language: AppLanguage): String = when (this) {
-    HomeCardAction.DOWNLOAD -> if (language == AppLanguage.EN) "Download" else "下载"
-    HomeCardAction.PLAY_VIDEO -> if (language == AppLanguage.EN) "Play" else "播放"
-    HomeCardAction.OPEN_STEAM -> if (language == AppLanguage.EN) "Steam" else "打开 Steam"
-}
+private fun HomeCardAction.label(language: AppLanguage): String =
+    when (this) {
+        HomeCardAction.DOWNLOAD -> if (language == AppLanguage.EN) "Download" else "下载"
+        HomeCardAction.PLAY_VIDEO -> if (language == AppLanguage.EN) "Play" else "播放"
+        HomeCardAction.OPEN_STEAM -> if (language == AppLanguage.EN) "Steam" else "打开 Steam"
+    }
 
-private fun HomeCardAction.icon() = when (this) {
-    HomeCardAction.DOWNLOAD -> Icons.Outlined.Download
-    HomeCardAction.PLAY_VIDEO -> Icons.Outlined.PlayArrow
-    HomeCardAction.OPEN_STEAM -> Icons.Outlined.OpenInNew
-}
+private fun HomeCardAction.icon() =
+    when (this) {
+        HomeCardAction.DOWNLOAD -> Icons.Outlined.Download
+        HomeCardAction.PLAY_VIDEO -> Icons.Outlined.PlayArrow
+        HomeCardAction.OPEN_STEAM -> Icons.Outlined.OpenInNew
+    }
 
-private fun AppLanguage.formatCompact(value: Long): String = when {
-    value >= 1_000_000 -> String.format(if (this == AppLanguage.EN) "%.1fM" else "%.1f 万", if (this == AppLanguage.EN) value / 1_000_000.0 else value / 10_000.0)
-    value >= 1_000 -> String.format("%.1fK", value / 1_000.0)
-    else -> value.toString()
-}
+private fun AppLanguage.formatCompact(value: Long): String =
+    when {
+        value >= 1_000_000 ->
+            String.format(
+                if (this ==
+                    AppLanguage.EN
+                ) {
+                    "%.1fM"
+                } else {
+                    "%.1f 万"
+                },
+                if (this == AppLanguage.EN) value / 1_000_000.0 else value / 10_000.0,
+            )
+        value >= 1_000 -> String.format("%.1fK", value / 1_000.0)
+        else -> value.toString()
+    }
 
 private fun String.localizedGenre(language: AppLanguage): String {
     if (language == AppLanguage.EN) return this
@@ -4926,44 +5442,76 @@ private fun String.localizedOfficialTag(language: AppLanguage): String {
     return HOME_OFFICIAL_TAG_LABELS_ZH[this] ?: this
 }
 
-private fun String.localizedResolutionGroup(language: AppLanguage): String = if (language == AppLanguage.EN) {
-    replaceFirstChar { it.uppercase() }
-} else {
-    when (this) {
-        "widescreen" -> "宽屏"
-        "ultrawide" -> "超宽屏"
-        "dual" -> "双显示器"
-        "triple" -> "三显示器"
-        "portrait" -> "纵向屏幕 / 手机"
-        else -> "其他"
+private fun String.localizedResolutionGroup(language: AppLanguage): String =
+    if (language == AppLanguage.EN) {
+        replaceFirstChar { it.uppercase() }
+    } else {
+        when (this) {
+            "widescreen" -> "宽屏"
+            "ultrawide" -> "超宽屏"
+            "dual" -> "双显示器"
+            "triple" -> "三显示器"
+            "portrait" -> "纵向屏幕 / 手机"
+            else -> "其他"
+        }
     }
-}
 
 private fun String.localizedResolution(language: AppLanguage): String {
     if (language == AppLanguage.EN) return this
     return HOME_RESOLUTION_LABELS_ZH[this] ?: this
 }
 
-private val HOME_GENRE_LABELS_ZH = mapOf(
-    "Abstract" to "抽象", "Animal" to "动物", "Anime" to "动漫", "Cartoon" to "卡通", "CGI" to "CGI",
-    "Cyberpunk" to "赛博朋克", "Fantasy" to "幻想", "Game" to "游戏", "Girls" to "女性", "Guys" to "男性",
-    "Landscape" to "风景", "Medieval" to "中世纪", "Memes" to "网络事物", "MMD" to "MMD", "Music" to "音乐",
-    "Nature" to "自然", "Pixel art" to "像素艺术", "Relaxing" to "放松", "Retro" to "复古", "Sci-Fi" to "科幻",
-    "Sports" to "运动", "Technology" to "科技", "Television" to "电视节目", "Vehicle" to "汽车",
-    "Unspecified" to "未指定样式",
-)
+private val HOME_GENRE_LABELS_ZH =
+    mapOf(
+        "Abstract" to "抽象",
+        "Animal" to "动物",
+        "Anime" to "动漫",
+        "Cartoon" to "卡通",
+        "CGI" to "CGI",
+        "Cyberpunk" to "赛博朋克",
+        "Fantasy" to "幻想",
+        "Game" to "游戏",
+        "Girls" to "女性",
+        "Guys" to "男性",
+        "Landscape" to "风景",
+        "Medieval" to "中世纪",
+        "Memes" to "网络事物",
+        "MMD" to "MMD",
+        "Music" to "音乐",
+        "Nature" to "自然",
+        "Pixel art" to "像素艺术",
+        "Relaxing" to "放松",
+        "Retro" to "复古",
+        "Sci-Fi" to "科幻",
+        "Sports" to "运动",
+        "Technology" to "科技",
+        "Television" to "电视节目",
+        "Vehicle" to "汽车",
+        "Unspecified" to "未指定样式",
+    )
 
-private val HOME_OFFICIAL_TAG_LABELS_ZH = mapOf(
-    "Approved" to "广受好评", "Audio responsive" to "音频响应", "Customizable" to "可自定义",
-    "Puppet Warp" to "骨骼变形", "Media Integration" to "媒体集成", "User Shortcut" to "用户快捷方式",
-    "Video Texture" to "视频纹理", "Asset Pack" to "资源包",
-)
+private val HOME_OFFICIAL_TAG_LABELS_ZH =
+    mapOf(
+        "Approved" to "广受好评",
+        "Audio responsive" to "音频响应",
+        "Customizable" to "可自定义",
+        "Puppet Warp" to "骨骼变形",
+        "Media Integration" to "媒体集成",
+        "User Shortcut" to "用户快捷方式",
+        "Video Texture" to "视频纹理",
+        "Asset Pack" to "资源包",
+    )
 
-private val HOME_RESOLUTION_LABELS_ZH = mapOf(
-    "Standard" to "标准", "Ultrawide" to "超宽（标准）", "Dual monitor" to "双显示器（标准）",
-    "Triple monitor" to "三显示器（标准）", "Portrait" to "纵向（标准）",
-    "Other resolution" to "其他分辨率", "Dynamic resolution" to "动态分辨率",
-)
+private val HOME_RESOLUTION_LABELS_ZH =
+    mapOf(
+        "Standard" to "标准",
+        "Ultrawide" to "超宽（标准）",
+        "Dual monitor" to "双显示器（标准）",
+        "Triple monitor" to "三显示器（标准）",
+        "Portrait" to "纵向（标准）",
+        "Other resolution" to "其他分辨率",
+        "Dynamic resolution" to "动态分辨率",
+    )
 
 private const val FILTER_COLLAPSE_OFFSET_PX = 24
 private const val HOME_FILTER_PAGE_EXIT_DURATION_MS = 90
@@ -4972,12 +5520,12 @@ private const val HOME_FILTER_SHEET_PAGE_SIZE_DURATION_MS = 220
 private const val FILTER_SAVER_SEPARATOR = "\u001F"
 private const val HOME_FILTER_PAGE_SIZE_DURATION_MS = 300
 private val HOME_FILTER_PAGE_EASING = CubicBezierEasing(0.2f, 0f, 0f, 1f)
-private const val HOME_TOP_TOAST_DURATION_MS = 3_000L
+
 // Keep the discover header compact while providing explicit no-label content
 // padding so the hint and entered text are never vertically clipped.
-private val HOME_SEARCH_FIELD_HEIGHT = 48.dp
-private val HOME_GRID_HORIZONTAL_PADDING = 16.dp
-private val HOME_GRID_ITEM_SPACING = 10.dp
+private val HOME_SEARCH_FIELD_HEIGHT = WallHubSpacing.xxl
+private val HOME_GRID_HORIZONTAL_PADDING = WallHubSpacing.md
+private val HOME_GRID_ITEM_SPACING = WallHubSpacing.compact
 private const val HOME_AUTO_LOAD_MORE_THRESHOLD = 4
 private const val HOME_VIEW_LAYOUT_ANIMATION_DURATION_MS = 400
 private const val HOME_VIEW_CARD_LAYOUT_DURATION_MS = HOME_VIEW_LAYOUT_ANIMATION_DURATION_MS
@@ -4989,39 +5537,42 @@ private const val HOME_VIEW_EDGE_ENTRY_OFFSET_FRACTION = 0.08f
 private const val HOME_VIEW_ACTION_CONTENT_FADE_START = 0.18f
 private const val HOME_VIEW_ACTION_CONTENT_FADE_END = 0.58f
 private val HOME_VIEW_LAYOUT_EASING = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
-private val HOME_COVER_CORNER_RADIUS = 12.dp
-private val HOME_WALLPAPER_CARD_SHAPE = RoundedCornerShape(HOME_COVER_CORNER_RADIUS)
+private val HOME_COVER_CORNER_RADIUS = WallHubSpacing.sm
+private val HOME_WALLPAPER_CARD_SHAPE = WallHubShapeTokens.medium
 private const val HOME_COMPACT_TYPE_TAG_SCALE = 0.84f
-private val HOME_TYPE_TAG_HORIZONTAL_PADDING = 8.dp
-private val HOME_TYPE_TAG_VERTICAL_PADDING = 4.dp
-private val HOME_CONTEXT_MENU_PRESS_TRANSLATION_Y = 1.dp
+private val HOME_TYPE_TAG_HORIZONTAL_PADDING = WallHubSpacing.xs
+private val HOME_TYPE_TAG_VERTICAL_PADDING = WallHubSpacing.xxs
+private val HOME_CONTEXT_MENU_PRESS_TRANSLATION_Y = WallHubSpacing.hairline
 private const val HOME_CONTEXT_MENU_GRID_PRESS_SCALE = 0.985f
 private const val HOME_CONTEXT_MENU_LIST_PRESS_SCALE = 0.99f
 private const val HOME_CONTEXT_MENU_PRESS_STIFFNESS = 500f
 private val HOME_CONTEXT_MENU_EASING = CubicBezierEasing(0.2f, 0f, 0f, 1f)
-private val CARD_TITLE_HEIGHT = 44.dp
-private val CARD_ACTION_HEIGHT = 40.dp
-private val TWO_COLUMN_CARD_COPY_TOP_PADDING = 8.dp
-private val TWO_COLUMN_CARD_TITLE_STATISTICS_SPACING = 4.dp
+private val CARD_TITLE_HEIGHT = WallHubSizeTokens.cardTitleHeight
+private val CARD_ACTION_HEIGHT = WallHubSizeTokens.compactActionHeight
+private val TWO_COLUMN_CARD_COPY_TOP_PADDING = WallHubSpacing.xs
+private val TWO_COLUMN_CARD_TITLE_STATISTICS_SPACING = WallHubSpacing.xxs
 private val TWO_COLUMN_CARD_STATISTICS_LINE_HEIGHT = 14.sp
 private val GRID_CARD_STATISTICS_LINE_HEIGHT = 16.sp
 private val TWO_COLUMN_CARD_STATISTICS_ICON_SIZE = 13.dp
 private val TWO_COLUMN_CARD_STATISTICS_ICON_SPACING = 2.5.dp
 private val TWO_COLUMN_CARD_STATISTICS_ITEM_SPACING = 5.dp
-private val TWO_COLUMN_CARD_STATISTICS_ROW_SPACING = 2.dp
-private val TWO_COLUMN_CARD_ACTION_TOP_PADDING = 6.dp
+private val LIST_CARD_ACTION_TOP_PADDING = 7.dp
+private val LIST_CARD_TITLE_STATISTICS_SPACING = 7.dp
+private val VIEW_MODE_TOGGLE_LABEL_INSET = 5.dp
+private val TWO_COLUMN_CARD_STATISTICS_ROW_SPACING = WallHubSpacing.xxxs
+private val TWO_COLUMN_CARD_ACTION_TOP_PADDING = WallHubSpacing.dense
 private const val TWO_COLUMN_CARD_STATISTICS_MIN_FONT_SIZE = 10.5f
 private const val TWO_COLUMN_CARD_STATISTICS_MAX_FONT_SIZE = 11.5f
 private const val TWO_COLUMN_CARD_STATISTICS_FONT_WIDTH_DIVISOR = 4.6f
 private val HOME_VIEW_MODE_TOGGLE_INSET = 3.dp
 private val HOME_VIEW_MODE_TOGGLE_BUTTON_SIZE = 34.dp
-private val HOME_VIEW_MODE_TOGGLE_HEIGHT = 40.dp
+private val HOME_VIEW_MODE_TOGGLE_HEIGHT = WallHubSizeTokens.compactActionHeight
 private val HOME_VIEW_MODE_TOGGLE_WIDTH = 74.dp
 private const val HOME_VIEW_MODE_TOGGLE_DURATION_MS = 240
-private val GRID_CARD_ACTION_CORNER_RADIUS = 12.dp
-private val LIST_CARD_ACTION_CORNER_RADIUS = 12.dp
+private val GRID_CARD_ACTION_CORNER_RADIUS = WallHubSpacing.sm
+private val LIST_CARD_ACTION_CORNER_RADIUS = WallHubSpacing.sm
 private val LIST_CARD_MEDIA_SIZE = 104.dp
-private val LIST_CARD_ACTION_SIZE = 40.dp
-private val LIST_CARD_ACTION_END_PADDING = 10.dp
+private val LIST_CARD_ACTION_SIZE = WallHubSizeTokens.compactActionHeight
+private val LIST_CARD_ACTION_END_PADDING = WallHubSpacing.compact
 private val LIST_CARD_COPY_HORIZONTAL_PADDING = 20.dp
 private val GRID_CARD_COPY_HORIZONTAL_PADDING = 20.dp

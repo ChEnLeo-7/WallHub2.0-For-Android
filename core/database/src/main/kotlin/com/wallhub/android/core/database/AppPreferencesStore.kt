@@ -2,18 +2,18 @@ package com.wallhub.android.core.database
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.wallhub.android.core.model.AccentPreference
 import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppPreferences
+import com.wallhub.android.core.model.DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.LocalWallpaperViewMode
-import com.wallhub.android.core.model.DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
 import com.wallhub.android.core.model.SteamAccessMode
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
@@ -25,7 +25,9 @@ import kotlinx.coroutines.flow.map
 private const val PREFERENCES_FILE_NAME = "wallhub_formal_preferences"
 private val Context.dataStore by preferencesDataStore(name = PREFERENCES_FILE_NAME)
 
-class AppPreferencesStore(context: Context) {
+class AppPreferencesStore(
+    context: Context,
+) {
     private val applicationContext = context.applicationContext
 
     val preferences: Flow<AppPreferences> = applicationContext.dataStore.data.map(::toAppPreferences)
@@ -42,7 +44,10 @@ class AppPreferencesStore(context: Context) {
         }
     }
 
-    suspend fun setAccent(accent: AccentPreference, customColor: String?) {
+    suspend fun setAccent(
+        accent: AccentPreference,
+        customColor: String?,
+    ) {
         applicationContext.dataStore.edit { preferences ->
             preferences[Keys.accent] = accent.name
             customColor?.trim()?.takeIf(String::isNotBlank)?.let { color ->
@@ -130,10 +135,12 @@ class AppPreferencesStore(context: Context) {
         disabledEndpoints: Set<String>,
     ) {
         applicationContext.dataStore.edit { preferences ->
-            val normalized = normalizeSteamAccessDohEndpoints(endpoints)
-                .ifEmpty { DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS }
-            val disabled = normalizeSteamAccessDohEndpoints(disabledEndpoints.toList())
-                .filterTo(linkedSetOf()) { endpoint -> endpoint in normalized }
+            val normalized =
+                normalizeSteamAccessDohEndpoints(endpoints)
+                    .ifEmpty { DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS }
+            val disabled =
+                normalizeSteamAccessDohEndpoints(disabledEndpoints.toList())
+                    .filterTo(linkedSetOf()) { endpoint -> endpoint in normalized }
             preferences[Keys.steamAccessMode] = SteamAccessMode.SMART_DOH.name
             preferences[Keys.steamAccessDohEndpoints] = normalized.joinToString("\n")
             if (disabled.isEmpty()) {
@@ -173,7 +180,10 @@ class AppPreferencesStore(context: Context) {
         }
     }
 
-    suspend fun setOutputDirectory(treeUri: String, label: String) {
+    suspend fun setOutputDirectory(
+        treeUri: String,
+        label: String,
+    ) {
         require(treeUri.isNotBlank()) { "导出目录 URI 不能为空" }
         applicationContext.dataStore.edit { preferences ->
             preferences[Keys.outputTreeUri] = treeUri
@@ -188,7 +198,10 @@ class AppPreferencesStore(context: Context) {
         }
     }
 
-    suspend fun setLocalManagementDirectory(treeUri: String, label: String) {
+    suspend fun setLocalManagementDirectory(
+        treeUri: String,
+        label: String,
+    ) {
         require(treeUri.isNotBlank()) { "本地管理目录 URI 不能为空" }
         applicationContext.dataStore.edit { preferences ->
             preferences[Keys.localManagementTreeUri] = treeUri
@@ -210,21 +223,24 @@ class AppPreferencesStore(context: Context) {
     }
 
     private fun toAppPreferences(preferences: Preferences): AppPreferences {
-        val theme = preferences[Keys.theme]
-            ?.let { value -> runCatching { ThemePreference.valueOf(value) }.getOrNull() }
-            ?: ThemePreference.SYSTEM
-        val steamAccessDohEndpoints = preferences[Keys.steamAccessDohEndpoints]
-            ?.lineSequence()
-            ?.toList()
-            ?.let(::normalizeSteamAccessDohEndpoints)
-            ?.takeIf { endpoints -> endpoints.isNotEmpty() }
-            ?: DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
-        val disabledSteamAccessDohEndpoints = preferences[Keys.steamAccessDisabledDohEndpoints]
-            ?.lineSequence()
-            ?.toList()
-            ?.let(::normalizeSteamAccessDohEndpoints)
-            ?.filterTo(linkedSetOf()) { endpoint -> endpoint in steamAccessDohEndpoints }
-            .orEmpty()
+        val theme =
+            preferences[Keys.theme]
+                ?.let { value -> runCatching { ThemePreference.valueOf(value) }.getOrNull() }
+                ?: ThemePreference.SYSTEM
+        val steamAccessDohEndpoints =
+            preferences[Keys.steamAccessDohEndpoints]
+                ?.lineSequence()
+                ?.toList()
+                ?.let(::normalizeSteamAccessDohEndpoints)
+                ?.takeIf { endpoints -> endpoints.isNotEmpty() }
+                ?: DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
+        val disabledSteamAccessDohEndpoints =
+            preferences[Keys.steamAccessDisabledDohEndpoints]
+                ?.lineSequence()
+                ?.toList()
+                ?.let(::normalizeSteamAccessDohEndpoints)
+                ?.filterTo(linkedSetOf()) { endpoint -> endpoint in steamAccessDohEndpoints }
+                .orEmpty()
         return AppPreferences(
             theme = theme,
             language = preferences.enumValue(Keys.language, AppLanguage.ZH),
@@ -236,26 +252,30 @@ class AppPreferencesStore(context: Context) {
             outputDirectoryLabel = preferences[Keys.outputDirectoryLabel],
             localManagementTreeUri = preferences[Keys.localManagementTreeUri],
             localManagementDirectoryLabel = preferences[Keys.localManagementDirectoryLabel],
-            localWallpaperViewMode = preferences.enumValue(
-                Keys.localWallpaperViewMode,
-                LocalWallpaperViewMode.LIST,
-            ),
+            localWallpaperViewMode =
+                preferences.enumValue(
+                    Keys.localWallpaperViewMode,
+                    LocalWallpaperViewMode.LIST,
+                ),
             homePageSize = (preferences[Keys.homePageSize] ?: 24).coerceIn(10, 50),
             homeColumns = (preferences[Keys.homeColumns] ?: 2).coerceIn(1, 4),
             homeFilterMultiSelect = preferences[Keys.homeFilterMultiSelect] ?: true,
             homeCardAction = preferences.enumValue(Keys.homeCardAction, HomeCardAction.DOWNLOAD),
-            homePaginationMode = preferences.enumValue(
-                Keys.homePaginationMode,
-                HomePaginationMode.INFINITE_SCROLL,
-            ),
+            homePaginationMode =
+                preferences.enumValue(
+                    Keys.homePaginationMode,
+                    HomePaginationMode.INFINITE_SCROLL,
+                ),
             matureContentEnabled = preferences[Keys.matureContentEnabled] ?: false,
             maxConcurrentDownloads = (preferences[Keys.maxConcurrentDownloads] ?: 1).coerceIn(1, 4),
-            chunkDownloadConcurrency = (preferences[Keys.chunkDownloadConcurrency] ?: 24)
-                .let { saved -> if (saved <= 12) 24 else saved.coerceIn(12, 48) },
+            chunkDownloadConcurrency =
+                (preferences[Keys.chunkDownloadConcurrency] ?: 24)
+                    .let { saved -> if (saved <= 12) 24 else saved.coerceIn(12, 48) },
             downloadProxyUrl = preferences[Keys.downloadProxyUrl].orEmpty(),
             downloadProxyEnabled = preferences[Keys.downloadProxyEnabled] ?: false,
-            downloadProxyRequiresConfirmation = preferences[Keys.downloadProxyEnabled] == null &&
-                !preferences[Keys.downloadProxyUrl].isNullOrBlank(),
+            downloadProxyRequiresConfirmation =
+                preferences[Keys.downloadProxyEnabled] == null &&
+                    !preferences[Keys.downloadProxyUrl].isNullOrBlank(),
             steamAccessEnabled = preferences[Keys.steamAccessEnabled] ?: true,
             steamAccessMode = preferences.enumValue(Keys.steamAccessMode, SteamAccessMode.SMART_DOH),
             steamAccessDohEndpoints = steamAccessDohEndpoints,
@@ -263,10 +283,11 @@ class AppPreferencesStore(context: Context) {
             steamAccessHosts = preferences[Keys.steamAccessHosts].orEmpty(),
             mediaCacheLimitMb = (preferences[Keys.mediaCacheLimitMb] ?: 512).coerceAtLeast(128),
             steamApiKey = preferences[Keys.steamApiKey].orEmpty(),
-            steamWorkshopDataSource = preferences.enumValue(
-                Keys.steamWorkshopDataSource,
-                SteamWorkshopDataSource.COMMUNITY_HTML,
-            ),
+            steamWorkshopDataSource =
+                preferences.enumValue(
+                    Keys.steamWorkshopDataSource,
+                    SteamWorkshopDataSource.COMMUNITY_HTML,
+                ),
             onlineChunkPlaybackEnabled = preferences[Keys.onlineChunkPlaybackEnabled] ?: false,
         )
     }
@@ -274,9 +295,10 @@ class AppPreferencesStore(context: Context) {
     private inline fun <reified T : Enum<T>> Preferences.enumValue(
         key: Preferences.Key<String>,
         fallback: T,
-    ): T = this[key]
-        ?.let { value -> enumValues<T>().firstOrNull { it.name == value } }
-        ?: fallback
+    ): T =
+        this[key]
+            ?.let { value -> enumValues<T>().firstOrNull { it.name == value } }
+            ?: fallback
 
     private object Keys {
         val theme = stringPreferencesKey("theme")

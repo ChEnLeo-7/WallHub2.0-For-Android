@@ -152,11 +152,12 @@ data class AppPreferences(
 
 const val STEAM_ACCESS_DOH_ENDPOINT_LIMIT = 8
 
-val DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS = listOf(
-    "https://1.12.12.12/resolve",
-    "https://doh.pub/resolve",
-    "https://dns.alidns.com/resolve",
-)
+val DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS =
+    listOf(
+        "https://1.12.12.12/resolve",
+        "https://doh.pub/resolve",
+        "https://dns.alidns.com/resolve",
+    )
 
 fun normalizeSteamAccessDohEndpoint(raw: String): String? {
     val value = raw.trim()
@@ -172,15 +173,18 @@ fun normalizeSteamAccessDohEndpoint(raw: String): String? {
     }
 }
 
-fun normalizeSteamAccessDohEndpoints(endpoints: List<String>): List<String> = endpoints.asSequence()
-    .mapNotNull(::normalizeSteamAccessDohEndpoint)
-    .distinct()
-    .take(STEAM_ACCESS_DOH_ENDPOINT_LIMIT)
-    .toList()
+fun normalizeSteamAccessDohEndpoints(endpoints: List<String>): List<String> =
+    endpoints
+        .asSequence()
+        .mapNotNull(::normalizeSteamAccessDohEndpoint)
+        .distinct()
+        .take(STEAM_ACCESS_DOH_ENDPOINT_LIMIT)
+        .toList()
 
-fun AppPreferences.enabledSteamAccessDohEndpoints(): List<String> = steamAccessDohEndpoints.filterNot(
-    steamAccessDisabledDohEndpoints::contains,
-)
+fun AppPreferences.enabledSteamAccessDohEndpoints(): List<String> =
+    steamAccessDohEndpoints.filterNot(
+        steamAccessDisabledDohEndpoints::contains,
+    )
 
 fun isSupportedDownloadProxyUrl(raw: String): Boolean {
     val uri = runCatching { URI(raw.trim()) }.getOrNull() ?: return false

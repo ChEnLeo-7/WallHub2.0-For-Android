@@ -31,10 +31,11 @@ class SteamAccessDohEndpointsTest {
         val first = "https://first.example/dns-query"
         val second = "https://second.example/dns-query"
         val third = "https://third.example/dns-query"
-        val preferences = AppPreferences(
-            steamAccessDohEndpoints = listOf(first, second, third),
-            steamAccessDisabledDohEndpoints = setOf(second),
-        )
+        val preferences =
+            AppPreferences(
+                steamAccessDohEndpoints = listOf(first, second, third),
+                steamAccessDisabledDohEndpoints = setOf(second),
+            )
 
         assertEquals(listOf(first, third), preferences.enabledSteamAccessDohEndpoints())
         assertEquals(listOf(first, second, third), preferences.steamAccessDohEndpoints)
@@ -42,13 +43,14 @@ class SteamAccessDohEndpointsTest {
 
     @Test
     fun `list normalizer preserves priority while removing duplicates and enforcing limit`() {
-        val endpoints = buildList {
-            add("https://preferred.example/dns-query")
-            add("https://preferred.example/dns-query")
-            repeat(STEAM_ACCESS_DOH_ENDPOINT_LIMIT) { index ->
-                add("https://dns$index.example/dns-query")
+        val endpoints =
+            buildList {
+                add("https://preferred.example/dns-query")
+                add("https://preferred.example/dns-query")
+                repeat(STEAM_ACCESS_DOH_ENDPOINT_LIMIT) { index ->
+                    add("https://dns$index.example/dns-query")
+                }
             }
-        }
 
         assertEquals(
             listOf("https://preferred.example/dns-query") +

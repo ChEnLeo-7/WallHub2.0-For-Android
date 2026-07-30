@@ -1,4 +1,6 @@
 pluginManagement {
+    includeBuild("build-logic")
+
     repositories {
         google()
         mavenCentral()
@@ -38,3 +40,4 @@ include(":feature:downloads")
 include(":feature:library")
 include(":feature:local")
 include(":feature:settings")
+include(":benchmark")

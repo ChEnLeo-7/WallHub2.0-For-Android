@@ -8,26 +8,28 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class AppUpdateUiStateTest {
-    private val installed = InstalledAppInfo(
-        appName = "WallHub",
-        packageName = "com.wallhub.android",
-        versionName = "0.8.25",
-        versionCode = 35L,
-        lastUpdateTimeMillis = 1_700_000_000_000L,
-    )
-    private val release = AppReleaseInfo(
-        tagName = "v0.8.26",
-        versionName = "0.8.26",
-        releaseName = "WallHub 0.8.26",
-        notes = "# Update",
-        publishedAt = "2026-07-29T00:00:00Z",
-        htmlUrl = "https://github.com/ChEnLeo-7/WallHub2.0-For-Android/releases/tag/v0.8.26",
-        assetName = "wallhub-0.8.26-universal.apk",
-        assetUrl = "https://example.com/wallhub.apk",
-        assetSizeBytes = 1_024L,
-        sha256 = "00",
-        isNewer = true,
-    )
+    private val installed =
+        InstalledAppInfo(
+            appName = "WallHub",
+            packageName = "com.wallhub.android",
+            versionName = "0.8.25",
+            versionCode = 35L,
+            lastUpdateTimeMillis = 1_700_000_000_000L,
+        )
+    private val release =
+        AppReleaseInfo(
+            tagName = "v0.8.26",
+            versionName = "0.8.26",
+            releaseName = "WallHub 0.8.26",
+            notes = "# Update",
+            publishedAt = "2026-07-29T00:00:00Z",
+            htmlUrl = "https://github.com/ChEnLeo-7/WallHub2.0-For-Android/releases/tag/v0.8.26",
+            assetName = "wallhub-0.8.26-universal.apk",
+            assetUrl = "https://example.com/wallhub.apk",
+            assetSizeBytes = 1_024L,
+            sha256 = "00",
+            isNewer = true,
+        )
 
     @Test
     fun `download action only appears for available or retryable releases`() {

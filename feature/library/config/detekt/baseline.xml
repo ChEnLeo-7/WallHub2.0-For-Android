@@ -1,0 +1,17 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:LibraryContextMenu.kt$LibraryContextMenuCoordinator$cardBounds.width &lt;= 0f || cardBounds.height &lt;= 0f || clipBounds.width &lt;= 0f || clipBounds.height &lt;= 0f || !touchPositionInWindow.x.isFinite() || !touchPositionInWindow.y.isFinite()</ID>
+    <ID>ComplexCondition:LibraryScreen.kt$LibraryViewModel$state.paginationMode != HomePaginationMode.INFINITE_SCROLL || state.searchQuery.trim() != state.appliedSearchQuery.trim() || state.isLoading || state.isLoadingMore || !state.hasNextPage</ID>
+    <ID>ComplexCondition:LibraryScreen.kt$LibraryViewModel$state.paginationMode != HomePaginationMode.PAGED || state.searchQuery.trim() != state.appliedSearchQuery.trim() || state.isLoading || state.isLoadingMore</ID>
+    <ID>ComplexCondition:LibraryScreen.kt$state.paginationMode != HomePaginationMode.INFINITE_SCROLL || state.searchQuery.trim() != state.appliedSearchQuery.trim() || state.isLoading || state.isLoadingMore || !state.hasNextPage</ID>
+    <ID>CyclomaticComplexMethod:LibraryContextMenu.kt$@OptIn(ExperimentalFoundationApi::class) @Composable internal fun LibraryContextMenuCard( item: WorkshopSummary, language: AppLanguage, coordinator: LibraryContextMenuCoordinator, onOpen: () -&gt; Unit, onSearchAuthor: () -&gt; Unit, authorDisplayName: String?, onAuthorDisplayNameRequested: () -&gt; Unit, onDownload: () -&gt; Unit, onPlayVideo: () -&gt; Unit, onCopyText: (String, String) -&gt; Unit, onOpenSteam: () -&gt; Unit, modifier: Modifier = Modifier, content: @Composable () -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:LibraryScreen.kt$@OptIn(ExperimentalFoundationApi::class) @Composable private fun LibraryResultsContent( state: LibraryUiState, onRefresh: () -&gt; Unit, onLoadNextPage: () -&gt; Unit, onPageSelected: (Int) -&gt; Unit, onOpenDetail: (Long) -&gt; Unit, onPlayVideo: (Long) -&gt; Unit, onSearchAuthor: (String) -&gt; Unit, authorDisplayNames: Map&lt;Long, String&gt;, onAuthorNameRequested: (WorkshopSummary) -&gt; Unit, onDownload: (WorkshopSummary) -&gt; Unit, onCopyText: (String, String) -&gt; Unit, onOpenSteam: (Long) -&gt; Unit, language: AppLanguage, gridState: LazyGridState, contextMenuCoordinator: LibraryContextMenuCoordinator, modifier: Modifier = Modifier, )</ID>
+    <ID>ImplicitDefaultLocale:LibraryScreen.kt$String.format("%.1fK", value / 1_000.0)</ID>
+    <ID>TooGenericExceptionCaught:LibraryScreen.kt$LibraryViewModel$error: Throwable</ID>
+    <ID>UnusedParameter:LibraryScreen.kt$onLoadNextPage: () -&gt; Unit</ID>
+    <ID>UnusedPrivateMember:LibraryScreen.kt$private fun LibraryUiState.contentKey(): LibraryContentKey</ID>
+    <ID>UseCheckOrError:LibraryScreen.kt$LibraryViewModel$throw lastFailure ?: IllegalStateException("无法读取个人资料库")</ID>
+  </CurrentIssues>
+</SmellBaseline>

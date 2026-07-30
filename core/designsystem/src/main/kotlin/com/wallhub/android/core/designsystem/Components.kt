@@ -1,11 +1,11 @@
+@file:Suppress("ktlint:standard:function-naming")
+
 package com.wallhub.android.core.designsystem
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -17,9 +17,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,11 +29,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,12 +58,12 @@ import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -70,13 +72,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -84,11 +87,8 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
-import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.foundation.layout.offset
-import java.util.Locale
 import kotlinx.coroutines.delay
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -116,11 +116,12 @@ fun WallHubPageScaffold(
                     },
                     actions = actions,
                     navigationIcon = { navigationIcon?.invoke() },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background,
-                        titleContentColor = MaterialTheme.colorScheme.onBackground,
-                        actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
+                    colors =
+                        TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background,
+                            titleContentColor = MaterialTheme.colorScheme.onBackground,
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                 )
             }
         },
@@ -169,34 +170,35 @@ fun WallHubTopToast(
     AnimatedVisibility(
         modifier = modifier,
         visible = message != null,
-        enter = fadeIn(tween(durationMillis = 160)) +
-            slideInVertically(
-                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                initialOffsetY = { height -> -height / 2 },
-            ),
-        exit = fadeOut(tween(durationMillis = 140)) +
-            slideOutVertically(
-                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-                targetOffsetY = { height -> -height / 3 },
-        ),
+        enter =
+            fadeIn(tween(durationMillis = 160)) +
+                slideInVertically(
+                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                    initialOffsetY = { height -> -height / 2 },
+                ),
+        exit =
+            fadeOut(tween(durationMillis = 140)) +
+                slideOutVertically(
+                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                    targetOffsetY = { height -> -height / 3 },
+                ),
     ) {
         Surface(
-            modifier = Modifier
-                .widthIn(max = WALLHUB_TOAST_MAX_WIDTH)
-                .padding(horizontal = WALLHUB_TOAST_HORIZONTAL_MARGIN)
-                .fillMaxWidth()
-                .clip(shape)
-                .hazeEffect(hazeState) {
-                    blurRadius = WALLHUB_TOAST_BLUR_RADIUS
-                    backgroundColor = toastSurface.copy(alpha = 0.54f)
-                    tints = listOf(HazeTint(toastSurface.copy(alpha = 0.18f)))
-                }
-                .border(
-                    width = WALLHUB_TOAST_BORDER_WIDTH,
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f),
-                    shape = shape,
-                )
-                .clickable(onClick = onDismiss),
+            modifier =
+                Modifier
+                    .widthIn(max = WALLHUB_TOAST_MAX_WIDTH)
+                    .padding(horizontal = WALLHUB_TOAST_HORIZONTAL_MARGIN)
+                    .fillMaxWidth()
+                    .clip(shape)
+                    .hazeEffect(hazeState) {
+                        blurRadius = WALLHUB_TOAST_BLUR_RADIUS
+                        backgroundColor = toastSurface.copy(alpha = 0.54f)
+                        tints = listOf(HazeTint(toastSurface.copy(alpha = 0.18f)))
+                    }.border(
+                        width = WALLHUB_TOAST_BORDER_WIDTH,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f),
+                        shape = shape,
+                    ).clickable(onClick = onDismiss),
             shape = shape,
             color = Color.Transparent,
             contentColor = MaterialTheme.colorScheme.onSurface,
@@ -204,10 +206,11 @@ fun WallHubTopToast(
             shadowElevation = 0.dp,
         ) {
             androidx.compose.foundation.layout.Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = WALLHUB_TOAST_MIN_HEIGHT)
-                    .padding(horizontal = WallHubSpacing.sm, vertical = WallHubSpacing.xs),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = WALLHUB_TOAST_MIN_HEIGHT)
+                        .padding(horizontal = WallHubSpacing.sm, vertical = WallHubSpacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
@@ -251,20 +254,22 @@ fun WallHubGlobalToastHost(
     }
     Box(modifier = modifier) {
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .hazeSource(hazeState),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .hazeSource(hazeState),
             content = content,
         )
         WallHubTopToast(
             message = toastState.message,
             onDismiss = toastState::dismiss,
             hazeState = hazeState,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
-                .padding(top = WALLHUB_TOAST_TOP_OFFSET)
-                .zIndex(WALLHUB_TOAST_Z_INDEX),
+            modifier =
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = WALLHUB_TOAST_TOP_OFFSET)
+                    .zIndex(WALLHUB_TOAST_Z_INDEX),
         )
     }
 }
@@ -305,14 +310,15 @@ fun <T> WallHubSingleChoiceSegmentedControl(
                 selected = selected == option,
                 onClick = { onSelected(option) },
                 shape = SegmentedButtonDefaults.itemShape(index, options.size),
-                colors = SegmentedButtonDefaults.colors(
-                    activeContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    activeContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    activeBorderColor = Color.Transparent,
-                    inactiveContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    inactiveBorderColor = Color.Transparent,
-                ),
+                colors =
+                    SegmentedButtonDefaults.colors(
+                        activeContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        activeContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        activeBorderColor = Color.Transparent,
+                        inactiveContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        inactiveBorderColor = Color.Transparent,
+                    ),
                 label = { label(option) },
             )
         }
@@ -329,14 +335,15 @@ fun rememberWallHubDirectionalCollapseConnection(
     val density = androidx.compose.ui.platform.LocalDensity.current
     val collapseDistancePx = with(density) { collapseDistance.toPx() }
     val expandDistancePx = with(density) { expandDistance.toPx() }
-    val connection = remember(collapseDistancePx, expandDistancePx) {
-        WallHubDirectionalCollapseConnection(
-            collapsed = collapsed,
-            collapseDistancePx = collapseDistancePx,
-            expandDistancePx = expandDistancePx,
-            onCollapsedChanged = onCollapsedChanged,
-        )
-    }
+    val connection =
+        remember(collapseDistancePx, expandDistancePx) {
+            WallHubDirectionalCollapseConnection(
+                collapsed = collapsed,
+                collapseDistancePx = collapseDistancePx,
+                expandDistancePx = expandDistancePx,
+                onCollapsedChanged = onCollapsedChanged,
+            )
+        }
     SideEffect {
         connection.update(collapsed, onCollapsedChanged)
     }
@@ -354,12 +361,18 @@ private class WallHubDirectionalCollapseConnection(
     private var collapseTravel = 0f
     private var expandTravel = 0f
 
-    fun update(collapsed: Boolean, onCollapsedChanged: (Boolean) -> Unit) {
+    fun update(
+        collapsed: Boolean,
+        onCollapsedChanged: (Boolean) -> Unit,
+    ) {
         this.collapsed = collapsed
         this.onCollapsedChanged = onCollapsedChanged
     }
 
-    override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+    override fun onPreScroll(
+        available: Offset,
+        source: NestedScrollSource,
+    ): Offset {
         when {
             available.y < 0f -> {
                 expandTravel = 0f
@@ -410,65 +423,71 @@ fun <T> WallHubSlidingSingleChoiceControl(
 ) {
     if (options.isEmpty()) return
     BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(height)
-            .clip(containerShape)
-            .background(containerColor),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(height)
+                .clip(containerShape)
+                .background(containerColor),
     ) {
         val selectedIndex = options.indexOf(selected).coerceAtLeast(0)
         val itemWidth = maxWidth / options.size
         val animatedIndicatorOffset by animateDpAsState(
             targetValue = itemWidth * selectedIndex + SLIDING_CONTROL_INSET,
-            animationSpec = tween(
-                durationMillis = 280,
-                easing = FastOutSlowInEasing,
-            ),
+            animationSpec =
+                tween(
+                    durationMillis = 280,
+                    easing = FastOutSlowInEasing,
+                ),
             label = "WallHubSlidingChoice",
         )
-        val indicatorOffset = indicatorPosition
-            ?.coerceIn(0f, options.lastIndex.toFloat())
-            ?.let { position -> itemWidth * position + SLIDING_CONTROL_INSET }
-            ?: animatedIndicatorOffset
+        val indicatorOffset =
+            indicatorPosition
+                ?.coerceIn(0f, options.lastIndex.toFloat())
+                ?.let { position -> itemWidth * position + SLIDING_CONTROL_INSET }
+                ?: animatedIndicatorOffset
         Box(
-            modifier = Modifier
-                .offset(
-                    x = indicatorOffset,
-                    y = SLIDING_CONTROL_INSET,
-                )
-                .width((itemWidth - SLIDING_CONTROL_INSET * 2).coerceAtLeast(0.dp))
-                .height((height - SLIDING_CONTROL_INSET * 2).coerceAtLeast(0.dp))
-                .clip(indicatorShape)
-                .background(indicatorColor),
+            modifier =
+                Modifier
+                    .offset(
+                        x = indicatorOffset,
+                        y = SLIDING_CONTROL_INSET,
+                    ).width((itemWidth - SLIDING_CONTROL_INSET * 2).coerceAtLeast(0.dp))
+                    .height((height - SLIDING_CONTROL_INSET * 2).coerceAtLeast(0.dp))
+                    .clip(indicatorShape)
+                    .background(indicatorColor),
         )
         androidx.compose.foundation.layout.Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .selectableGroup(),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .selectableGroup(),
         ) {
             options.forEach { option ->
                 val isSelected = option == selected
                 val interactionSource = remember(option) { MutableInteractionSource() }
                 Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxSize()
-                        .selectable(
-                            selected = isSelected,
-                            enabled = enabled,
-                            interactionSource = interactionSource,
-                            indication = if (showPressIndication) ripple() else null,
-                            role = role,
-                            onClick = { onSelected(option) },
-                        ),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .fillMaxSize()
+                            .selectable(
+                                selected = isSelected,
+                                enabled = enabled,
+                                interactionSource = interactionSource,
+                                indication = if (showPressIndication) ripple() else null,
+                                role = role,
+                                onClick = { onSelected(option) },
+                            ),
                     contentAlignment = Alignment.Center,
                 ) {
                     CompositionLocalProvider(
-                        LocalContentColor provides if (isSelected) {
-                            selectedContentColor
-                        } else {
-                            unselectedContentColor
-                        },
+                        LocalContentColor provides
+                            if (isSelected) {
+                                selectedContentColor
+                            } else {
+                                unselectedContentColor
+                            },
                     ) {
                         label(option)
                     }
@@ -486,9 +505,10 @@ fun WallHubFilterSheetHeader(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = FILTER_SHEET_HEADER_MIN_HEIGHT),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .heightIn(min = FILTER_SHEET_HEADER_MIN_HEIGHT),
         horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -502,11 +522,12 @@ fun WallHubFilterSheetHeader(
             Text(
                 text = status,
                 style = MaterialTheme.typography.labelMedium,
-                color = if (hasChanges) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                color =
+                    if (hasChanges) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 maxLines = 1,
             )
         }
@@ -551,24 +572,26 @@ fun WallHubFilterChip(
     FilterChip(
         selected = selected,
         onClick = onClick,
-        modifier = modifier
-            .heightIn(min = minHeight)
-            .then(
-                if (singleChoice) Modifier.semantics { role = Role.RadioButton } else Modifier,
-            ),
+        modifier =
+            modifier
+                .heightIn(min = minHeight)
+                .then(
+                    if (singleChoice) Modifier.semantics { role = Role.RadioButton } else Modifier,
+                ),
         enabled = enabled,
         shape = MaterialTheme.shapes.medium,
         border = null,
-        colors = FilterChipDefaults.filterChipColors(
-            containerColor = containerColor,
-            labelColor = contentColor,
-            iconColor = contentColor,
-            selectedContainerColor = selectedContainerColor,
-            selectedLabelColor = selectedContentColor,
-            selectedLeadingIconColor = selectedContentColor,
-            disabledContainerColor = containerColor.copy(alpha = 0.6f),
-            disabledLabelColor = contentColor.copy(alpha = 0.5f),
-        ),
+        colors =
+            FilterChipDefaults.filterChipColors(
+                containerColor = containerColor,
+                labelColor = contentColor,
+                iconColor = contentColor,
+                selectedContainerColor = selectedContainerColor,
+                selectedLabelColor = selectedContentColor,
+                selectedLeadingIconColor = selectedContentColor,
+                disabledContainerColor = containerColor.copy(alpha = 0.6f),
+                disabledLabelColor = contentColor.copy(alpha = 0.5f),
+            ),
         leadingIcon = {
             Box(
                 modifier = Modifier.size(FILTER_CHIP_ICON_SIZE),
@@ -576,14 +599,18 @@ fun WallHubFilterChip(
             ) {
                 AnimatedVisibility(
                     visibleState = selectionIconState,
-                    enter = fadeIn(tween(durationMillis = 160)) + scaleIn(
-                        initialScale = 0.72f,
-                        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                    ),
-                    exit = fadeOut(tween(durationMillis = 100)) + scaleOut(
-                        targetScale = 0.8f,
-                        animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
-                    ),
+                    enter =
+                        fadeIn(tween(durationMillis = 160)) +
+                            scaleIn(
+                                initialScale = 0.72f,
+                                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                            ),
+                    exit =
+                        fadeOut(tween(durationMillis = 100)) +
+                            scaleOut(
+                                targetScale = 0.8f,
+                                animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
+                            ),
                 ) {
                     Icon(
                         imageVector = WallHubIcons.Outlined.Check,
@@ -614,14 +641,18 @@ fun WallHubAnimatedSelectionCheck(
     AnimatedVisibility(
         visibleState = visibleState,
         modifier = modifier,
-        enter = fadeIn(tween(durationMillis = 160)) + scaleIn(
-            initialScale = 0.72f,
-            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-        ),
-        exit = fadeOut(tween(durationMillis = 100)) + scaleOut(
-            targetScale = 0.8f,
-            animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
-        ),
+        enter =
+            fadeIn(tween(durationMillis = 160)) +
+                scaleIn(
+                    initialScale = 0.72f,
+                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                ),
+        exit =
+            fadeOut(tween(durationMillis = 100)) +
+                scaleOut(
+                    targetScale = 0.8f,
+                    animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
+                ),
     ) {
         Icon(
             imageVector = WallHubIcons.Outlined.Check,
@@ -643,12 +674,13 @@ fun WallHubFilterSheetActions(
     secondaryEnabled: Boolean = true,
     applyEnabled: Boolean = true,
 ) {
-    val secondaryColors = ButtonDefaults.buttonColors(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.6f),
-        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-    )
+    val secondaryColors =
+        ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.6f),
+            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        )
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -659,9 +691,10 @@ fun WallHubFilterSheetActions(
         ) {
             Button(
                 onClick = onSecondary,
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = FILTER_SHEET_ACTION_MIN_HEIGHT),
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .heightIn(min = FILTER_SHEET_ACTION_MIN_HEIGHT),
                 enabled = secondaryEnabled,
                 shape = MaterialTheme.shapes.medium,
                 colors = secondaryColors,
@@ -670,9 +703,10 @@ fun WallHubFilterSheetActions(
             }
             Button(
                 onClick = onCancel,
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = FILTER_SHEET_ACTION_MIN_HEIGHT),
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .heightIn(min = FILTER_SHEET_ACTION_MIN_HEIGHT),
                 shape = MaterialTheme.shapes.medium,
                 colors = secondaryColors,
             ) {
@@ -682,9 +716,10 @@ fun WallHubFilterSheetActions(
         if (applyLabel != null && onApply != null) {
             Button(
                 onClick = onApply,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = FILTER_SHEET_ACTION_MIN_HEIGHT),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = FILTER_SHEET_ACTION_MIN_HEIGHT),
                 enabled = applyEnabled,
                 shape = MaterialTheme.shapes.medium,
             ) {
@@ -723,9 +758,10 @@ fun WallHubEmptyState(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 48.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 48.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
     ) {
@@ -781,12 +817,13 @@ fun WallHubSecondaryButton(
         modifier = modifier,
         enabled = enabled,
         shape = MaterialTheme.shapes.medium,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-        ),
+        colors =
+            ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                disabledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            ),
         content = content,
     )
 }

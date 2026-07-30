@@ -1,0 +1,15 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:CommunityWorkshopRepository.kt$CommunityWorkshopRepository$private fun WorkshopBrowseQuery.matches(summary: WorkshopSummary): Boolean</ID>
+    <ID>CyclomaticComplexMethod:CommunityWorkshopRepository.kt$CommunityWorkshopRepository$private fun loadSteamProfiles( steamIds: Set&lt;String&gt;, steamApiKey: String, ): Map&lt;String, SteamWebProfile&gt;</ID>
+    <ID>LargeClass:CommunityWorkshopRepository.kt$CommunityWorkshopRepository : WorkshopRepository</ID>
+    <ID>LoopWithTooManyJumpStatements:CommunityWorkshopRepository.kt$CommunityWorkshopParser$for</ID>
+    <ID>LoopWithTooManyJumpStatements:CommunityWorkshopRepository.kt$CommunityWorkshopRepository$for</ID>
+    <ID>LoopWithTooManyJumpStatements:CommunityWorkshopRepository.kt$for</ID>
+    <ID>NestedBlockDepth:CommunityWorkshopRepository.kt$CommunityWorkshopRepository$private fun requestCommunityCommentsPage( workshopId: Long, start: Int, count: Int, ownerId: String, ): WorkshopCommentPage</ID>
+    <ID>TooGenericExceptionCaught:CommunityWorkshopRepository.kt$CommunityWorkshopRepository$error: Throwable</ID>
+    <ID>UnusedParameter:CommunityWorkshopRepository.kt$CommunityWorkshopRepository$steamApiKey: String</ID>
+  </CurrentIssues>
+</SmellBaseline>

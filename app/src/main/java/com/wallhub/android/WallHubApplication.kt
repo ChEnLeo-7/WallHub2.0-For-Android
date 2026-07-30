@@ -12,15 +12,18 @@ import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.data.downloads.WallHubDownloadWorkerFactory
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import dagger.hilt.android.HiltAndroidApp
-import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @HiltAndroidApp
-class WallHubApplication : Application(), Configuration.Provider, ImageLoaderFactory {
+class WallHubApplication :
+    Application(),
+    Configuration.Provider,
+    ImageLoaderFactory {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     @Inject
@@ -47,18 +50,21 @@ class WallHubApplication : Application(), Configuration.Provider, ImageLoaderFac
     }
 
     override val workManagerConfiguration: Configuration
-        get() = Configuration.Builder()
-            .setWorkerFactory(workerFactory)
-            .build()
+        get() =
+            Configuration
+                .Builder()
+                .setWorkerFactory(workerFactory)
+                .build()
 
-    override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
-        .okHttpClient(steamHttpClientFactory.newBuilder().build())
-        .components {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                add(ImageDecoderDecoder.Factory())
-            } else {
-                add(GifDecoder.Factory())
-            }
-        }
-        .build()
+    override fun newImageLoader(): ImageLoader =
+        ImageLoader
+            .Builder(this)
+            .okHttpClient(steamHttpClientFactory.newBuilder().build())
+            .components {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    add(ImageDecoderDecoder.Factory())
+                } else {
+                    add(GifDecoder.Factory())
+                }
+            }.build()
 }

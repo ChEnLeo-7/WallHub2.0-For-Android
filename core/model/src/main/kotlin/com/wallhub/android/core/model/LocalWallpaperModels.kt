@@ -41,11 +41,12 @@ data class LocalWallpaperResource(
     val importRequestedAt: Long? = null,
 ) {
     val importState: LocalWallpaperImportState
-        get() = if (importRequestedAt == null) {
-            LocalWallpaperImportState.NOT_IMPORTED
-        } else {
-            LocalWallpaperImportState.IMPORT_REQUESTED
-        }
+        get() =
+            if (importRequestedAt == null) {
+                LocalWallpaperImportState.NOT_IMPORTED
+            } else {
+                LocalWallpaperImportState.IMPORT_REQUESTED
+            }
 }
 
 data class LocalWallpaperSource(

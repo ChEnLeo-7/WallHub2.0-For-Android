@@ -1,0 +1,13 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:SteamAccessManager.kt$SteamAccessManager$route == null || !route.accelerated || route.addresses.isEmpty() || routeGeneration.get() != selectedGeneration || networkType != selectedNetworkType</ID>
+    <ID>CyclomaticComplexMethod:SteamAccessManager.kt$SteamAccessManager$private fun buildRoute( hostname: String, selectedNetworkType: String, settings: AppPreferences, hostsSnapshot: Map&lt;String, List&lt;InetAddress&gt;&gt;, generation: Long, fallbackAvailable: Boolean, ): SteamCachedRoute</ID>
+    <ID>NestedBlockDepth:SteamAccessRoutes.kt$SteamHostsParser$fun parse(text: String): Map&lt;String, List&lt;InetAddress&gt;&gt;</ID>
+    <ID>ThrowsCount:SteamLoopbackTlsBridge.kt$SteamLoopbackTlsBridge$private fun readConnectRequest(socket: Socket): ConnectRequest</ID>
+    <ID>TooGenericExceptionCaught:NoSniTlsDialer.kt$NoSniTlsDialer$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamAccessManager.kt$SteamAccessManager$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamLoopbackTlsBridge.kt$SteamLoopbackTlsBridge$error: Throwable</ID>
+  </CurrentIssues>
+</SmellBaseline>

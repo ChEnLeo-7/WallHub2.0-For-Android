@@ -1,9 +1,9 @@
 package com.wallhub.android.data.steam
 
 import com.wallhub.android.core.model.WORKSHOP_COMMENT_MAX_LENGTH
+import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import org.junit.Test
 
 class SteamWorkshopCommentRequestTest {
     @Test

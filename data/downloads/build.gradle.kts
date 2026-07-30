@@ -1,23 +1,20 @@
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
+    id("wallhub.android.library")
 }
 
 android {
     namespace = "com.wallhub.android.data.downloads"
-    compileSdk = 36
 
     defaultConfig {
-        minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    packaging {
+        resources.excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
     }
 }
 
@@ -45,4 +42,11 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.work.testing)
+    testImplementation(libs.robolectric)
+
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.work.testing)
 }

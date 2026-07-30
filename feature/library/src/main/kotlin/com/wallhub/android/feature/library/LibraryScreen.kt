@@ -1,23 +1,25 @@
+@file:Suppress("ktlint:standard:function-naming")
+
 package com.wallhub.android.feature.library
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -31,22 +33,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -63,47 +61,51 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
-import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.LocalWallHubLanguage
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import com.wallhub.android.core.designsystem.LocalWallHubToastState
+import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubPaginationControl
+import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
-import com.wallhub.android.core.designsystem.WallHubSurfaceCard
-import com.wallhub.android.core.designsystem.rememberWallHubDirectionalCollapseConnection
+import com.wallhub.android.core.designsystem.WallHubSizeTokens
+import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.formatMegabytes
-import com.wallhub.android.core.designsystem.wallHubText
+import com.wallhub.android.core.designsystem.rememberWallHubDirectionalCollapseConnection
 import com.wallhub.android.core.designsystem.text
+import com.wallhub.android.core.designsystem.wallHubText
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
@@ -116,14 +118,19 @@ import com.wallhub.android.core.model.WorkshopPage
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import javax.inject.Inject
+import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 enum class LibraryCollectionTab(
     val collection: AccountWorkshopCollection,
@@ -163,6 +170,92 @@ data class LibraryUiState(
     val searchAnimationItemIds: Set<Long> = emptySet(),
 )
 
+sealed interface LibraryAction {
+    data class SelectCollection(
+        val collection: LibraryCollectionTab,
+    ) : LibraryAction
+
+    data class SelectType(
+        val type: LibraryTypeFilter,
+    ) : LibraryAction
+
+    data class UpdateSearchQuery(
+        val query: String,
+    ) : LibraryAction
+
+    data object SubmitSearch : LibraryAction
+
+    data class SelectPaginationMode(
+        val mode: HomePaginationMode,
+    ) : LibraryAction
+
+    data object ResetFilters : LibraryAction
+
+    data object Refresh : LibraryAction
+
+    data object LoadNextPage : LibraryAction
+
+    data class SelectPage(
+        val page: Int,
+    ) : LibraryAction
+
+    data class RequestAuthorDisplayName(
+        val item: WorkshopSummary,
+    ) : LibraryAction
+
+    data class OpenDetail(
+        val workshopId: Long,
+    ) : LibraryAction
+
+    data class PlayVideo(
+        val workshopId: Long,
+    ) : LibraryAction
+
+    data class SearchAuthor(
+        val author: String,
+    ) : LibraryAction
+
+    data class Download(
+        val item: WorkshopSummary,
+    ) : LibraryAction
+
+    data class CopyText(
+        val text: String,
+        val message: String,
+    ) : LibraryAction
+
+    data class OpenSteam(
+        val workshopId: Long,
+    ) : LibraryAction
+}
+
+sealed interface LibraryEffect {
+    data class OpenDetail(
+        val workshopId: Long,
+    ) : LibraryEffect
+
+    data class PlayVideo(
+        val workshopId: Long,
+    ) : LibraryEffect
+
+    data class SearchAuthor(
+        val author: String,
+    ) : LibraryEffect
+
+    data class Download(
+        val item: WorkshopSummary,
+    ) : LibraryEffect
+
+    data class CopyText(
+        val text: String,
+        val message: String,
+    ) : LibraryEffect
+
+    data class OpenSteam(
+        val workshopId: Long,
+    ) : LibraryEffect
+}
+
 private data class LibraryQueryKey(
     val collection: LibraryCollectionTab,
     val typeFilter: LibraryTypeFilter,
@@ -190,355 +283,454 @@ private data class LibraryContentKey(
 )
 
 @HiltViewModel
-class LibraryViewModel @Inject constructor(
-    private val steamSessionRepository: SteamSessionRepository,
-    private val accountWorkshopRepository: AccountWorkshopRepository,
-) : ViewModel() {
-    private val mutableState = MutableStateFlow(LibraryUiState())
-    private var loadJob: Job? = null
-    private var searchJob: Job? = null
-    private var requestVersion = 0L
-    private val cachedPages = mutableMapOf<LibraryQueryKey, LibraryCacheEntry>()
-    private val authorNameRequests = mutableSetOf<Long>()
-    private var activeAccountName: String? = null
-    private var refreshWhenSignedIn = false
+class LibraryViewModel
+    @Inject
+    constructor(
+        private val steamSessionRepository: SteamSessionRepository,
+        private val accountWorkshopRepository: AccountWorkshopRepository,
+        private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    ) : ViewModel() {
+        private val mutableState = MutableStateFlow(savedStateHandle.libraryState())
+        private val effectChannel = Channel<LibraryEffect>(capacity = Channel.BUFFERED)
+        private var loadJob: Job? = null
+        private var searchJob: Job? = null
+        private var requestVersion = 0L
+        private val cachedPages = mutableMapOf<LibraryQueryKey, LibraryCacheEntry>()
+        private val authorNameRequests = mutableSetOf<Long>()
+        private var activeAccountName: String? = null
+        private var refreshWhenSignedIn = false
 
-    val uiState: StateFlow<LibraryUiState> = mutableState.asStateFlow()
+        val uiState: StateFlow<LibraryUiState> = mutableState.asStateFlow()
+        val effects: Flow<LibraryEffect> = effectChannel.receiveAsFlow()
 
-    init {
-        viewModelScope.launch {
-            steamSessionRepository.session.collect { session ->
-                val previous = mutableState.value
-                if (session.phase != SteamSessionPhase.SIGNED_IN) {
-                    if (previous.session.phase == SteamSessionPhase.SIGNED_IN) {
-                        clearCache()
-                    } else {
-                        loadJob?.cancel()
-                        requestVersion += 1L
+        init {
+            viewModelScope.launch {
+                mutableState.collect { state -> savedStateHandle.saveLibraryState(state) }
+            }
+            viewModelScope.launch {
+                steamSessionRepository.session.collect { session ->
+                    val previous = mutableState.value
+                    if (session.phase != SteamSessionPhase.SIGNED_IN) {
+                        if (previous.session.phase == SteamSessionPhase.SIGNED_IN) {
+                            clearCache()
+                        } else {
+                            loadJob?.cancel()
+                            requestVersion += 1L
+                        }
+                        mutableState.value =
+                            previous.copy(
+                                session = session,
+                                isLoading = false,
+                                isRefreshing = false,
+                                isLoadingMore = false,
+                            )
+                        return@collect
                     }
-                    mutableState.value = previous.copy(
-                        session = session,
-                        isLoading = false,
-                        isRefreshing = false,
-                        isLoadingMore = false,
-                    )
-                    return@collect
-                }
-                val accountChanged = activeAccountName != null &&
-                    !activeAccountName.equals(session.accountName, ignoreCase = true)
-                val becameSignedIn = previous.session.phase != SteamSessionPhase.SIGNED_IN
-                if (accountChanged) clearCache()
-                activeAccountName = session.accountName
-                mutableState.value = previous.copy(session = session)
-                if (becameSignedIn || accountChanged || refreshWhenSignedIn) {
-                    refreshWhenSignedIn = false
-                    loadCurrentPage(forceRefresh = true, refreshing = false)
+                    val accountChanged =
+                        activeAccountName != null &&
+                            !activeAccountName.equals(session.accountName, ignoreCase = true)
+                    val becameSignedIn = previous.session.phase != SteamSessionPhase.SIGNED_IN
+                    if (accountChanged) clearCache()
+                    activeAccountName = session.accountName
+                    mutableState.value = previous.copy(session = session)
+                    if (becameSignedIn || accountChanged || refreshWhenSignedIn) {
+                        refreshWhenSignedIn = false
+                        loadCurrentPage(forceRefresh = true, refreshing = false)
+                    }
                 }
             }
         }
-    }
 
-    fun selectCollection(collection: LibraryCollectionTab) {
-        if (mutableState.value.collection == collection) return
-        searchJob?.cancel()
-        mutableState.value = mutableState.value.copy(collection = collection, currentPage = 1)
-        loadCurrentPage(forceRefresh = false, refreshing = false)
-    }
+        fun onAction(action: LibraryAction) {
+            action.toEffect()?.let(::emitEffect) ?: handleStateAction(action)
+        }
 
-    fun selectType(type: LibraryTypeFilter) {
-        if (mutableState.value.typeFilter == type) return
-        searchJob?.cancel()
-        mutableState.value = mutableState.value.copy(typeFilter = type, currentPage = 1)
-        loadCurrentPage(forceRefresh = false, refreshing = false)
-    }
+        private fun handleStateAction(action: LibraryAction) {
+            when (action) {
+                is LibraryAction.SelectCollection -> selectCollection(action.collection)
+                is LibraryAction.SelectType -> selectType(action.type)
+                is LibraryAction.UpdateSearchQuery -> updateSearchQuery(action.query)
+                LibraryAction.SubmitSearch -> submitSearch()
+                is LibraryAction.SelectPaginationMode -> selectPaginationMode(action.mode)
+                LibraryAction.ResetFilters -> resetManagementFilters()
+                LibraryAction.Refresh -> refresh()
+                LibraryAction.LoadNextPage -> loadNextPage()
+                is LibraryAction.SelectPage -> selectPage(action.page)
+                is LibraryAction.RequestAuthorDisplayName -> requestAuthorDisplayName(action.item)
+                else -> Unit
+            }
+        }
 
-    fun updateSearchQuery(query: String) {
-        val normalized = query.take(MAX_SEARCH_LENGTH)
-        if (mutableState.value.searchQuery == normalized) return
-        loadJob?.cancel()
-        requestVersion += 1L
-        mutableState.value = mutableState.value.copy(searchQuery = normalized, currentPage = 1)
-        searchJob?.cancel()
-        searchJob = viewModelScope.launch {
-            delay(SEARCH_DEBOUNCE_MS)
+        private fun emitEffect(effect: LibraryEffect) {
+            effectChannel.trySend(effect)
+        }
+
+        private fun selectCollection(collection: LibraryCollectionTab) {
+            if (mutableState.value.collection == collection) return
+            searchJob?.cancel()
+            mutableState.value = mutableState.value.copy(collection = collection, currentPage = 1)
             loadCurrentPage(forceRefresh = false, refreshing = false)
         }
-    }
 
-    fun submitSearch() {
-        searchJob?.cancel()
-        loadCurrentPage(forceRefresh = false, refreshing = false)
-    }
+        private fun selectType(type: LibraryTypeFilter) {
+            if (mutableState.value.typeFilter == type) return
+            searchJob?.cancel()
+            mutableState.value = mutableState.value.copy(typeFilter = type, currentPage = 1)
+            loadCurrentPage(forceRefresh = false, refreshing = false)
+        }
 
-    fun requestAuthorDisplayName(item: WorkshopSummary) {
-        if (!item.author.isSteamAuthorPlaceholder() || item.id in authorNameRequests) return
-        authorNameRequests += item.id
-        viewModelScope.launch {
-            val authorName = runCatching {
-                accountWorkshopRepository.resolveAuthorDisplayName(item.id)
-            }.getOrNull()
-            if (!authorName.isNullOrBlank()) {
-                mutableState.value = mutableState.value.let { state ->
-                    state.copy(authorDisplayNames = state.authorDisplayNames + (item.id to authorName))
+        private fun updateSearchQuery(query: String) {
+            val normalized = query.take(MAX_SEARCH_LENGTH)
+            if (mutableState.value.searchQuery == normalized) return
+            loadJob?.cancel()
+            requestVersion += 1L
+            mutableState.value = mutableState.value.copy(searchQuery = normalized, currentPage = 1)
+            searchJob?.cancel()
+            searchJob =
+                viewModelScope.launch {
+                    delay(SEARCH_DEBOUNCE_MS)
+                    loadCurrentPage(forceRefresh = false, refreshing = false)
                 }
-            } else {
-                authorNameRequests -= item.id
+        }
+
+        private fun submitSearch() {
+            searchJob?.cancel()
+            loadCurrentPage(forceRefresh = false, refreshing = false)
+        }
+
+        private fun requestAuthorDisplayName(item: WorkshopSummary) {
+            if (!item.author.isSteamAuthorPlaceholder() || item.id in authorNameRequests) return
+            authorNameRequests += item.id
+            viewModelScope.launch {
+                val authorName =
+                    runCatching {
+                        accountWorkshopRepository.resolveAuthorDisplayName(item.id)
+                    }.getOrNull()
+                if (!authorName.isNullOrBlank()) {
+                    mutableState.value =
+                        mutableState.value.let { state ->
+                            state.copy(authorDisplayNames = state.authorDisplayNames + (item.id to authorName))
+                        }
+                } else {
+                    authorNameRequests -= item.id
+                }
             }
         }
-    }
 
-    fun selectPaginationMode(mode: HomePaginationMode) {
-        if (mutableState.value.paginationMode == mode) return
-        searchJob?.cancel()
-        mutableState.value = mutableState.value.copy(paginationMode = mode, currentPage = 1)
-        loadCurrentPage(forceRefresh = false, refreshing = false)
-    }
-
-    fun resetManagementFilters() {
-        searchJob?.cancel()
-        val state = mutableState.value
-        if (
-            state.collection == LibraryCollectionTab.SUBSCRIPTIONS &&
-            state.typeFilter == LibraryTypeFilter.ALL &&
-            state.paginationMode == HomePaginationMode.INFINITE_SCROLL
-        ) {
-            return
+        private fun selectPaginationMode(mode: HomePaginationMode) {
+            if (mutableState.value.paginationMode == mode) return
+            searchJob?.cancel()
+            mutableState.value = mutableState.value.copy(paginationMode = mode, currentPage = 1)
+            loadCurrentPage(forceRefresh = false, refreshing = false)
         }
-        mutableState.value = state.copy(
-            collection = LibraryCollectionTab.SUBSCRIPTIONS,
-            typeFilter = LibraryTypeFilter.ALL,
-            paginationMode = HomePaginationMode.INFINITE_SCROLL,
-            currentPage = 1,
-        )
-        loadCurrentPage(forceRefresh = false, refreshing = false)
-    }
 
-    fun refresh() {
-        val session = mutableState.value.session
-        if (session.phase != SteamSessionPhase.SIGNED_IN) {
-            refreshWhenSignedIn = true
-            if (session.isRestoreRetryable) {
-                steamSessionRepository.restorePersistedSession()
-            }
-            return
-        }
-        val page = if (mutableState.value.paginationMode == HomePaginationMode.PAGED) {
-            mutableState.value.currentPage
-        } else {
-            1
-        }
-        loadCurrentPage(forceRefresh = true, refreshing = true, page = page)
-    }
-
-    fun loadNextPage() {
-        val state = mutableState.value
-        if (
-            state.paginationMode != HomePaginationMode.INFINITE_SCROLL ||
-            state.searchQuery.trim() != state.appliedSearchQuery.trim() ||
-            state.isLoading || state.isLoadingMore || !state.hasNextPage
-        ) return
-        loadPage(
-            page = state.nextPage,
-            append = true,
-            version = requestVersion,
-            key = state.cacheKey(),
-            refreshing = false,
-        )
-    }
-
-    fun selectPage(page: Int) {
-        val state = mutableState.value
-        if (
-            state.paginationMode != HomePaginationMode.PAGED ||
-            state.searchQuery.trim() != state.appliedSearchQuery.trim() ||
-            state.isLoading || state.isLoadingMore
-        ) return
-        val targetPage = page.coerceAtLeast(1)
-        if (targetPage == state.currentPage) return
-        loadJob?.cancel()
-        requestVersion += 1L
-        loadPage(
-            page = targetPage,
-            append = false,
-            version = requestVersion,
-            key = state.cacheKey(),
-            refreshing = false,
-        )
-    }
-
-    private fun loadCurrentPage(
-        forceRefresh: Boolean,
-        refreshing: Boolean,
-        page: Int = 1,
-    ) {
-        val state = mutableState.value
-        if (state.session.phase != SteamSessionPhase.SIGNED_IN) return
-        val key = state.cacheKey()
-        loadJob?.cancel()
-        requestVersion += 1L
-        if (!forceRefresh) {
-            cachedPages[key]?.let { cached ->
-                mutableState.value = state.copy(
-                    items = cached.items,
-                    nextPage = cached.nextPage,
-                    hasNextPage = cached.hasNextPage,
-                    currentPage = cached.currentPage,
-                    totalPages = cached.totalPages,
-                    isLoading = false,
-                    isRefreshing = false,
-                    isLoadingMore = false,
-                    error = null,
-                    appliedSearchQuery = state.searchQuery,
-                    searchResultGeneration = if (state.searchQuery.trim() != state.appliedSearchQuery.trim()) {
-                        state.searchResultGeneration + 1L
-                    } else {
-                        state.searchResultGeneration
-                    },
-                    searchAnimationItemIds = if (state.searchQuery.trim() != state.appliedSearchQuery.trim()) {
-                        cached.items.mapTo(mutableSetOf()) { item -> item.id }
-                    } else {
-                        state.searchAnimationItemIds
-                    },
-                )
+        private fun resetManagementFilters() {
+            searchJob?.cancel()
+            val state = mutableState.value
+            if (
+                state.collection == LibraryCollectionTab.SUBSCRIPTIONS &&
+                state.typeFilter == LibraryTypeFilter.ALL &&
+                state.paginationMode == HomePaginationMode.INFINITE_SCROLL
+            ) {
                 return
             }
+            mutableState.value =
+                state.copy(
+                    collection = LibraryCollectionTab.SUBSCRIPTIONS,
+                    typeFilter = LibraryTypeFilter.ALL,
+                    paginationMode = HomePaginationMode.INFINITE_SCROLL,
+                    currentPage = 1,
+                )
+            loadCurrentPage(forceRefresh = false, refreshing = false)
         }
-        loadPage(
-            page = page,
-            append = false,
-            version = requestVersion,
-            key = key,
-            refreshing = refreshing,
-        )
-    }
 
-    private fun loadPage(
-        page: Int,
-        append: Boolean,
-        version: Long,
-        key: LibraryQueryKey,
-        refreshing: Boolean,
-    ) {
-        val snapshot = mutableState.value
-        loadJob = viewModelScope.launch {
-            mutableState.value = snapshot.copy(
-                isLoading = !append,
-                isRefreshing = refreshing && !append,
-                isLoadingMore = append,
-                error = null,
-            )
-            try {
-                val query = AccountWorkshopQuery(
-                    collection = snapshot.collection.collection,
-                    page = page,
-                    pageSize = LIBRARY_PAGE_SIZE,
-                    searchText = snapshot.searchQuery,
-                    resolveTotalCount = snapshot.paginationMode == HomePaginationMode.PAGED,
-                    type = snapshot.typeFilter.type,
-                )
-                val result = browseWithInitialSessionRetry(query, retry = !append && page == 1)
-                if (version != requestVersion) return@launch
-                val merged = result.mergeInto(snapshot, append)
-                cachedPages[key] = LibraryCacheEntry(
-                    items = merged.items,
-                    nextPage = merged.nextPage,
-                    hasNextPage = merged.hasNextPage,
-                    currentPage = merged.currentPage,
-                    totalPages = merged.totalPages,
-                )
-                mutableState.value = merged
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                if (version != requestVersion) return@launch
-                mutableState.value = snapshot.copy(
-                    isLoading = false,
-                    isRefreshing = false,
-                    isLoadingMore = false,
-                    error = error.message ?: "无法读取个人资料库",
-                )
+        private fun refresh() {
+            val session = mutableState.value.session
+            if (session.phase != SteamSessionPhase.SIGNED_IN) {
+                refreshWhenSignedIn = true
+                if (session.isRestoreRetryable) {
+                    steamSessionRepository.restorePersistedSession()
+                }
+                return
             }
+            val page =
+                if (mutableState.value.paginationMode == HomePaginationMode.PAGED) {
+                    mutableState.value.currentPage
+                } else {
+                    1
+                }
+            loadCurrentPage(forceRefresh = true, refreshing = true, page = page)
         }
-    }
 
-    private suspend fun browseWithInitialSessionRetry(
-        query: AccountWorkshopQuery,
-        retry: Boolean,
-    ): WorkshopPage {
-        var lastFailure: Throwable? = null
-        repeat(if (retry) INITIAL_SESSION_LOAD_ATTEMPTS else 1) { attempt ->
-            try {
-                return accountWorkshopRepository.browseCollection(query)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                lastFailure = error
-                if (attempt + 1 < INITIAL_SESSION_LOAD_ATTEMPTS) {
-                    delay(INITIAL_SESSION_RETRY_DELAY_MS)
+        private fun loadNextPage() {
+            val state = mutableState.value
+            if (
+                state.paginationMode != HomePaginationMode.INFINITE_SCROLL ||
+                state.searchQuery.trim() != state.appliedSearchQuery.trim() ||
+                state.isLoading ||
+                state.isLoadingMore ||
+                !state.hasNextPage
+            ) {
+                return
+            }
+            loadPage(
+                page = state.nextPage,
+                append = true,
+                version = requestVersion,
+                key = state.cacheKey(),
+                refreshing = false,
+            )
+        }
+
+        private fun selectPage(page: Int) {
+            val state = mutableState.value
+            if (
+                state.paginationMode != HomePaginationMode.PAGED ||
+                state.searchQuery.trim() != state.appliedSearchQuery.trim() ||
+                state.isLoading ||
+                state.isLoadingMore
+            ) {
+                return
+            }
+            val targetPage = page.coerceAtLeast(1)
+            if (targetPage == state.currentPage) return
+            loadJob?.cancel()
+            requestVersion += 1L
+            loadPage(
+                page = targetPage,
+                append = false,
+                version = requestVersion,
+                key = state.cacheKey(),
+                refreshing = false,
+            )
+        }
+
+        private fun loadCurrentPage(
+            forceRefresh: Boolean,
+            refreshing: Boolean,
+            page: Int = 1,
+        ) {
+            val state = mutableState.value
+            if (state.session.phase != SteamSessionPhase.SIGNED_IN) return
+            val key = state.cacheKey()
+            loadJob?.cancel()
+            requestVersion += 1L
+            if (!forceRefresh) {
+                cachedPages[key]?.let { cached ->
+                    mutableState.value =
+                        state.copy(
+                            items = cached.items,
+                            nextPage = cached.nextPage,
+                            hasNextPage = cached.hasNextPage,
+                            currentPage = cached.currentPage,
+                            totalPages = cached.totalPages,
+                            isLoading = false,
+                            isRefreshing = false,
+                            isLoadingMore = false,
+                            error = null,
+                            appliedSearchQuery = state.searchQuery,
+                            searchResultGeneration =
+                                if (state.searchQuery.trim() != state.appliedSearchQuery.trim()) {
+                                    state.searchResultGeneration + 1L
+                                } else {
+                                    state.searchResultGeneration
+                                },
+                            searchAnimationItemIds =
+                                if (state.searchQuery.trim() != state.appliedSearchQuery.trim()) {
+                                    cached.items.mapTo(mutableSetOf()) { item -> item.id }
+                                } else {
+                                    state.searchAnimationItemIds
+                                },
+                        )
+                    return
                 }
             }
+            loadPage(
+                page = page,
+                append = false,
+                version = requestVersion,
+                key = key,
+                refreshing = refreshing,
+            )
         }
-        throw lastFailure ?: IllegalStateException("无法读取个人资料库")
-    }
 
-    private fun WorkshopPage.mergeInto(
-        previous: LibraryUiState,
-        append: Boolean,
-    ): LibraryUiState = previous.copy(
-        items = if (append) {
-            (previous.items + items).distinctBy(WorkshopSummary::id)
-        } else {
-            items
-        },
-        nextPage = page.nextLibraryPageOrLast(),
-        hasNextPage = hasNextPage,
-        currentPage = page,
-        totalPages = resolveLibraryTotalPages(
-            totalCount = totalCount,
-            page = page,
-            hasNextPage = hasNextPage,
-        ),
-        isLoading = false,
-        isRefreshing = false,
-        isLoadingMore = false,
-        error = null,
-        appliedSearchQuery = previous.searchQuery,
-        searchResultGeneration = if (!append && previous.searchQuery.trim() != previous.appliedSearchQuery.trim()) {
-            previous.searchResultGeneration + 1L
-        } else {
-            previous.searchResultGeneration
-        },
-        searchAnimationItemIds = when {
-            !append && previous.searchQuery.trim() != previous.appliedSearchQuery.trim() -> {
-                items.mapTo(mutableSetOf()) { item -> item.id }
+        private fun loadPage(
+            page: Int,
+            append: Boolean,
+            version: Long,
+            key: LibraryQueryKey,
+            refreshing: Boolean,
+        ) {
+            val snapshot = mutableState.value
+            loadJob =
+                viewModelScope.launch {
+                    mutableState.value =
+                        snapshot.copy(
+                            isLoading = !append,
+                            isRefreshing = refreshing && !append,
+                            isLoadingMore = append,
+                            error = null,
+                        )
+                    try {
+                        val query =
+                            AccountWorkshopQuery(
+                                collection = snapshot.collection.collection,
+                                page = page,
+                                pageSize = LIBRARY_PAGE_SIZE,
+                                searchText = snapshot.searchQuery,
+                                resolveTotalCount = snapshot.paginationMode == HomePaginationMode.PAGED,
+                                type = snapshot.typeFilter.type,
+                            )
+                        val result = browseWithInitialSessionRetry(query, retry = !append && page == 1)
+                        if (version != requestVersion) return@launch
+                        val merged = result.mergeInto(snapshot, append)
+                        cachedPages[key] =
+                            LibraryCacheEntry(
+                                items = merged.items,
+                                nextPage = merged.nextPage,
+                                hasNextPage = merged.hasNextPage,
+                                currentPage = merged.currentPage,
+                                totalPages = merged.totalPages,
+                            )
+                        mutableState.value = merged
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        if (version != requestVersion) return@launch
+                        mutableState.value =
+                            snapshot.copy(
+                                isLoading = false,
+                                isRefreshing = false,
+                                isLoadingMore = false,
+                                error = error.message ?: "无法读取个人资料库",
+                            )
+                    }
+                }
+        }
+
+        private suspend fun browseWithInitialSessionRetry(
+            query: AccountWorkshopQuery,
+            retry: Boolean,
+        ): WorkshopPage {
+            var lastFailure: Throwable? = null
+            repeat(if (retry) INITIAL_SESSION_LOAD_ATTEMPTS else 1) { attempt ->
+                try {
+                    return accountWorkshopRepository.browseCollection(query)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    lastFailure = error
+                    if (attempt + 1 < INITIAL_SESSION_LOAD_ATTEMPTS) {
+                        delay(INITIAL_SESSION_RETRY_DELAY_MS)
+                    }
+                }
             }
-            append -> previous.searchAnimationItemIds
-            else -> previous.searchAnimationItemIds
-        },
-    )
+            throw lastFailure ?: IllegalStateException("无法读取个人资料库")
+        }
 
-    private fun LibraryUiState.cacheKey(): LibraryQueryKey = LibraryQueryKey(
-        collection = collection,
-        typeFilter = typeFilter,
-        searchQuery = searchQuery.trim(),
-        paginationMode = paginationMode,
-    )
+        private fun WorkshopPage.mergeInto(
+            previous: LibraryUiState,
+            append: Boolean,
+        ): LibraryUiState =
+            previous.copy(
+                items =
+                    if (append) {
+                        (previous.items + items).distinctBy(WorkshopSummary::id)
+                    } else {
+                        items
+                    },
+                nextPage = page.nextLibraryPageOrLast(),
+                hasNextPage = hasNextPage,
+                currentPage = page,
+                totalPages =
+                    resolveLibraryTotalPages(
+                        totalCount = totalCount,
+                        page = page,
+                        hasNextPage = hasNextPage,
+                    ),
+                isLoading = false,
+                isRefreshing = false,
+                isLoadingMore = false,
+                error = null,
+                appliedSearchQuery = previous.searchQuery,
+                searchResultGeneration =
+                    if (!append && previous.searchQuery.trim() != previous.appliedSearchQuery.trim()) {
+                        previous.searchResultGeneration + 1L
+                    } else {
+                        previous.searchResultGeneration
+                    },
+                searchAnimationItemIds =
+                    when {
+                        !append && previous.searchQuery.trim() != previous.appliedSearchQuery.trim() -> {
+                            items.mapTo(mutableSetOf()) { item -> item.id }
+                        }
+                        append -> previous.searchAnimationItemIds
+                        else -> previous.searchAnimationItemIds
+                    },
+            )
 
-    private fun clearCache() {
-        loadJob?.cancel()
-        searchJob?.cancel()
-        requestVersion += 1L
-        cachedPages.clear()
-        activeAccountName = null
+        private fun LibraryUiState.cacheKey(): LibraryQueryKey =
+            LibraryQueryKey(
+                collection = collection,
+                typeFilter = typeFilter,
+                searchQuery = searchQuery.trim(),
+                paginationMode = paginationMode,
+            )
+
+        private fun clearCache() {
+            loadJob?.cancel()
+            searchJob?.cancel()
+            requestVersion += 1L
+            cachedPages.clear()
+            activeAccountName = null
+        }
+
+        private companion object {
+            const val INITIAL_SESSION_LOAD_ATTEMPTS = 2
+            const val INITIAL_SESSION_RETRY_DELAY_MS = 450L
+            const val SEARCH_DEBOUNCE_MS = 320L
+            const val MAX_SEARCH_LENGTH = 120
+        }
     }
 
-    private companion object {
-        const val INITIAL_SESSION_LOAD_ATTEMPTS = 2
-        const val INITIAL_SESSION_RETRY_DELAY_MS = 450L
-        const val SEARCH_DEBOUNCE_MS = 320L
-        const val MAX_SEARCH_LENGTH = 120
-    }
+private fun SavedStateHandle.libraryState(): LibraryUiState =
+    LibraryUiState(
+        collection = libraryEnumValueOrDefault(get(LIBRARY_COLLECTION_KEY), LibraryCollectionTab.SUBSCRIPTIONS),
+        typeFilter = libraryEnumValueOrDefault(get(LIBRARY_TYPE_FILTER_KEY), LibraryTypeFilter.ALL),
+        searchQuery = get<String>(LIBRARY_SEARCH_QUERY_KEY).orEmpty(),
+        paginationMode = libraryEnumValueOrDefault(get(LIBRARY_PAGINATION_MODE_KEY), HomePaginationMode.INFINITE_SCROLL),
+        currentPage = (get<Int>(LIBRARY_CURRENT_PAGE_KEY) ?: 1).coerceAtLeast(1),
+    )
+
+private fun SavedStateHandle.saveLibraryState(state: LibraryUiState) {
+    this[LIBRARY_COLLECTION_KEY] = state.collection.name
+    this[LIBRARY_TYPE_FILTER_KEY] = state.typeFilter.name
+    this[LIBRARY_SEARCH_QUERY_KEY] = state.searchQuery
+    this[LIBRARY_PAGINATION_MODE_KEY] = state.paginationMode.name
+    this[LIBRARY_CURRENT_PAGE_KEY] = state.currentPage
 }
+
+private inline fun <reified T : Enum<T>> libraryEnumValueOrDefault(
+    value: String?,
+    default: T,
+): T = value?.let { name -> enumValues<T>().firstOrNull { it.name == name } } ?: default
+
+private const val LIBRARY_COLLECTION_KEY = "library.collection"
+private const val LIBRARY_TYPE_FILTER_KEY = "library.typeFilter"
+private const val LIBRARY_SEARCH_QUERY_KEY = "library.searchQuery"
+private const val LIBRARY_PAGINATION_MODE_KEY = "library.paginationMode"
+private const val LIBRARY_CURRENT_PAGE_KEY = "library.currentPage"
+
+private fun LibraryAction.toEffect(): LibraryEffect? =
+    when (this) {
+        is LibraryAction.OpenDetail -> LibraryEffect.OpenDetail(workshopId)
+        is LibraryAction.PlayVideo -> LibraryEffect.PlayVideo(workshopId)
+        is LibraryAction.SearchAuthor -> LibraryEffect.SearchAuthor(author)
+        is LibraryAction.Download -> LibraryEffect.Download(item)
+        is LibraryAction.CopyText -> LibraryEffect.CopyText(text, message)
+        is LibraryAction.OpenSteam -> LibraryEffect.OpenSteam(workshopId)
+        else -> null
+    }
 
 private fun Int.nextLibraryPageOrLast(): Int = if (this < Int.MAX_VALUE) this + 1 else Int.MAX_VALUE
 
@@ -546,11 +738,12 @@ private fun resolveLibraryTotalPages(
     totalCount: Int?,
     page: Int,
     hasNextPage: Boolean,
-): Int = totalCount?.let { count ->
-    ((count.coerceAtLeast(0).toLong() + LIBRARY_PAGE_SIZE - 1L) / LIBRARY_PAGE_SIZE)
-        .coerceIn(1L, Int.MAX_VALUE.toLong())
-        .toInt()
-} ?: if (hasNextPage) page.nextLibraryPageOrLast() else page.coerceAtLeast(1)
+): Int =
+    totalCount?.let { count ->
+        ((count.coerceAtLeast(0).toLong() + LIBRARY_PAGE_SIZE - 1L) / LIBRARY_PAGE_SIZE)
+            .coerceIn(1L, Int.MAX_VALUE.toLong())
+            .toInt()
+    } ?: if (hasNextPage) page.nextLibraryPageOrLast() else page.coerceAtLeast(1)
 
 private const val LIBRARY_PAGE_SIZE = 16
 
@@ -563,55 +756,71 @@ fun LibraryRoute(
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    LibraryScreen(
-        state = state,
-        onCollectionSelected = viewModel::selectCollection,
-        onTypeSelected = viewModel::selectType,
-        onRefresh = viewModel::refresh,
-        onLoadNextPage = viewModel::loadNextPage,
-        onPageSelected = viewModel::selectPage,
-        onSearchQueryChanged = viewModel::updateSearchQuery,
-        onSubmitSearch = viewModel::submitSearch,
+    LibraryEffectHandler(
+        viewModel = viewModel,
         onOpenDetail = onOpenDetail,
         onPlayVideo = onPlayVideo,
         onSearchAuthor = onSearchAuthor,
-        onAuthorNameRequested = viewModel::requestAuthorDisplayName,
+    )
+    LibraryScreen(
+        state = state,
+        onAction = viewModel::onAction,
         onContextMenuActiveChanged = onContextMenuActiveChanged,
     )
 }
 
 @Composable
-fun LibraryScreen(
-    state: LibraryUiState,
-    onCollectionSelected: (LibraryCollectionTab) -> Unit,
-    onTypeSelected: (LibraryTypeFilter) -> Unit,
-    onRefresh: () -> Unit,
-    onLoadNextPage: () -> Unit,
-    onPageSelected: (Int) -> Unit,
-    onSearchQueryChanged: (String) -> Unit,
-    onSubmitSearch: () -> Unit,
+fun LibraryEffectHandler(
+    viewModel: LibraryViewModel,
     onOpenDetail: (Long) -> Unit,
     onPlayVideo: (Long) -> Unit = {},
     onSearchAuthor: (String) -> Unit = {},
-    onAuthorNameRequested: (WorkshopSummary) -> Unit = {},
+    onDownload: (WorkshopSummary) -> Unit = {},
+) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val toast = LocalWallHubToastState.current
+    val currentOnOpenDetail by rememberUpdatedState(onOpenDetail)
+    val currentOnPlayVideo by rememberUpdatedState(onPlayVideo)
+    val currentOnSearchAuthor by rememberUpdatedState(onSearchAuthor)
+    val currentOnDownload by rememberUpdatedState(onDownload)
+    LaunchedEffect(viewModel, context) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                is LibraryEffect.OpenDetail -> currentOnOpenDetail(effect.workshopId)
+                is LibraryEffect.PlayVideo -> currentOnPlayVideo(effect.workshopId)
+                is LibraryEffect.SearchAuthor -> currentOnSearchAuthor(effect.author)
+                is LibraryEffect.Download -> currentOnDownload(effect.item)
+                is LibraryEffect.CopyText -> {
+                    clipboard.setText(AnnotatedString(effect.text))
+                    toast.show(effect.message)
+                }
+                is LibraryEffect.OpenSteam -> {
+                    val intent =
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://steamcommunity.com/sharedfiles/filedetails/?id=${effect.workshopId}"),
+                        )
+                    runCatching { context.startActivity(intent) }
+                        .onFailure { currentOnOpenDetail(effect.workshopId) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LibraryScreen(
+    state: LibraryUiState,
+    onAction: (LibraryAction) -> Unit,
     onContextMenuActiveChanged: (Boolean) -> Unit = {},
 ) {
     WallHubPageScaffold(title = wallHubText("资料库", "Library")) { padding ->
         LibraryContent(
             state = state,
-            onRefresh = onRefresh,
-            onLoadNextPage = onLoadNextPage,
-            onPageSelected = onPageSelected,
-            onSearchQueryChanged = onSearchQueryChanged,
-            onSubmitSearch = onSubmitSearch,
-            onOpenDetail = onOpenDetail,
-            onPlayVideo = onPlayVideo,
-            onSearchAuthor = onSearchAuthor,
-            onAuthorNameRequested = onAuthorNameRequested,
+            onAction = onAction,
             onContextMenuActiveChanged = onContextMenuActiveChanged,
             showFilters = true,
-            onCollectionSelected = onCollectionSelected,
-            onTypeSelected = onTypeSelected,
             modifier = Modifier.padding(padding),
         )
     }
@@ -620,22 +829,11 @@ fun LibraryScreen(
 @Composable
 fun LibraryContent(
     state: LibraryUiState,
-    onRefresh: () -> Unit,
-    onLoadNextPage: () -> Unit,
-    onPageSelected: (Int) -> Unit,
-    onSearchQueryChanged: (String) -> Unit,
-    onSubmitSearch: () -> Unit,
-    onOpenDetail: (Long) -> Unit,
-    onPlayVideo: (Long) -> Unit = {},
-    onSearchAuthor: (String) -> Unit,
-    onAuthorNameRequested: (WorkshopSummary) -> Unit,
-    onDownload: (WorkshopSummary) -> Unit = {},
+    onAction: (LibraryAction) -> Unit,
     onContextMenuActiveChanged: (Boolean) -> Unit,
     showFilters: Boolean,
     onScrollChromeCollapsedChanged: (Boolean) -> Unit = {},
     scrollToTopRequest: Int = 0,
-    onCollectionSelected: (LibraryCollectionTab) -> Unit = {},
-    onTypeSelected: (LibraryTypeFilter) -> Unit = {},
     floatingActionButton: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -655,12 +853,13 @@ fun LibraryContent(
             onScrollChromeCollapsedChanged(collapsed)
         }
     }
-    val chromeScrollConnection = rememberWallHubDirectionalCollapseConnection(
-        collapsed = scrollChromeCollapsed,
-        onCollapsedChanged = updateScrollChromeCollapsed,
-        collapseDistance = LIBRARY_HEADER_COLLAPSE_DISTANCE,
-        expandDistance = LIBRARY_HEADER_EXPAND_DISTANCE,
-    )
+    val chromeScrollConnection =
+        rememberWallHubDirectionalCollapseConnection(
+            collapsed = scrollChromeCollapsed,
+            onCollapsedChanged = updateScrollChromeCollapsed,
+            collapseDistance = LIBRARY_HEADER_COLLAPSE_DISTANCE,
+            expandDistance = LIBRARY_HEADER_EXPAND_DISTANCE,
+        )
     LaunchedEffect(scrollToTopRequest) {
         if (scrollToTopRequest > handledScrollToTopRequest) {
             gridState.animateScrollToItem(0)
@@ -696,40 +895,43 @@ fun LibraryContent(
         modifier = modifier.fillMaxSize(),
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .nestedScroll(chromeScrollConnection)
-                .pointerInput(searchBoundsInContent) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(
-                            requireUnconsumed = false,
-                            pass = PointerEventPass.Initial,
-                        )
-                        val point = IntOffset(
-                            down.position.x.toInt(),
-                            down.position.y.toInt(),
-                        )
-                        if (searchBoundsInContent?.contains(point) != true) {
-                            focusManager.clearFocus(force = true)
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .nestedScroll(chromeScrollConnection)
+                    .pointerInput(searchBoundsInContent) {
+                        awaitEachGesture {
+                            val down =
+                                awaitFirstDown(
+                                    requireUnconsumed = false,
+                                    pass = PointerEventPass.Initial,
+                                )
+                            val point =
+                                IntOffset(
+                                    down.position.x.toInt(),
+                                    down.position.y.toInt(),
+                                )
+                            if (searchBoundsInContent?.contains(point) != true) {
+                                focusManager.clearFocus(force = true)
+                            }
                         }
-                    }
-                },
+                    },
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 if (showFilters) {
                     WallHubSingleChoiceSegmentedControl(
                         options = LibraryCollectionTab.entries,
                         selected = state.collection,
-                        onSelected = onCollectionSelected,
+                        onSelected = { onAction(LibraryAction.SelectCollection(it)) },
                         label = { tab -> Text(tab.label(language)) },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xs),
                     )
                     WallHubSingleChoiceSegmentedControl(
                         options = LibraryTypeFilter.entries,
                         selected = state.typeFilter,
-                        onSelected = onTypeSelected,
+                        onSelected = { onAction(LibraryAction.SelectType(it)) },
                         label = { filter -> Text(filter.label(language)) },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xxs),
                     )
                 }
                 AnimatedVisibility(
@@ -742,32 +944,36 @@ fun LibraryContent(
                         query = state.searchQuery,
                         language = language,
                         enabled = state.session.phase == SteamSessionPhase.SIGNED_IN,
-                        onQueryChanged = onSearchQueryChanged,
-                        onSubmit = onSubmitSearch,
-                        modifier = Modifier
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                            .onGloballyPositioned { coordinates ->
-                                val position = coordinates.positionInParent()
-                                searchBoundsInContent = IntRect(
-                                    left = position.x.toInt(),
-                                    top = position.y.toInt(),
-                                    right = (position.x + coordinates.size.width).toInt(),
-                                    bottom = (position.y + coordinates.size.height).toInt(),
-                                )
-                            },
+                        onQueryChanged = { onAction(LibraryAction.UpdateSearchQuery(it)) },
+                        onSubmit = { onAction(LibraryAction.SubmitSearch) },
+                        modifier =
+                            Modifier
+                                .padding(horizontal = WallHubSpacing.sm, vertical = WallHubSpacing.dense)
+                                .onGloballyPositioned { coordinates ->
+                                    val position = coordinates.positionInParent()
+                                    searchBoundsInContent =
+                                        IntRect(
+                                            left = position.x.toInt(),
+                                            top = position.y.toInt(),
+                                            right = (position.x + coordinates.size.width).toInt(),
+                                            bottom = (position.y + coordinates.size.height).toInt(),
+                                        )
+                                },
                     )
                 }
                 LibraryResults(
                     state = state,
-                    onRefresh = onRefresh,
-                    onLoadNextPage = onLoadNextPage,
-                    onPageSelected = onPageSelected,
-                    onOpenDetail = onOpenDetail,
-                    onPlayVideo = onPlayVideo,
-                    onSearchAuthor = onSearchAuthor,
+                    onRefresh = { onAction(LibraryAction.Refresh) },
+                    onLoadNextPage = { onAction(LibraryAction.LoadNextPage) },
+                    onPageSelected = { onAction(LibraryAction.SelectPage(it)) },
+                    onOpenDetail = { onAction(LibraryAction.OpenDetail(it)) },
+                    onPlayVideo = { onAction(LibraryAction.PlayVideo(it)) },
+                    onSearchAuthor = { onAction(LibraryAction.SearchAuthor(it)) },
                     authorDisplayNames = state.authorDisplayNames,
-                    onAuthorNameRequested = onAuthorNameRequested,
-                    onDownload = onDownload,
+                    onAuthorNameRequested = { onAction(LibraryAction.RequestAuthorDisplayName(it)) },
+                    onDownload = { onAction(LibraryAction.Download(it)) },
+                    onCopyText = { text, message -> onAction(LibraryAction.CopyText(text, message)) },
+                    onOpenSteam = { onAction(LibraryAction.OpenSteam(it)) },
                     language = language,
                     gridState = gridState,
                     contextMenuCoordinator = contextMenuCoordinator,
@@ -776,9 +982,10 @@ fun LibraryContent(
             }
             floatingActionButton?.let { fab ->
                 Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(16.dp),
+                    modifier =
+                        Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(WallHubSpacing.md),
                 ) {
                     fab()
                 }
@@ -809,31 +1016,34 @@ private fun LibrarySearchField(
         leadingIcon = {
             Icon(imageVector = Icons.Outlined.Search, contentDescription = null)
         },
-        trailingIcon = if (query.isNotEmpty()) {
-            {
-                IconButton(onClick = { onQueryChanged("") }) {
-                    Icon(
-                        imageVector = Icons.Outlined.Cancel,
-                        contentDescription = language.text("清除搜索", "Clear search"),
-                    )
+        trailingIcon =
+            if (query.isNotEmpty()) {
+                {
+                    IconButton(onClick = { onQueryChanged("") }) {
+                        Icon(
+                            imageVector = Icons.Outlined.Cancel,
+                            contentDescription = language.text("清除搜索", "Clear search"),
+                        )
+                    }
                 }
-            }
-        } else {
-            null
-        },
-        keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Text,
-            imeAction = ImeAction.Search,
-        ),
+            } else {
+                null
+            },
+        keyboardOptions =
+            KeyboardOptions(
+                keyboardType = KeyboardType.Text,
+                imeAction = ImeAction.Search,
+            ),
         keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
-        colors = TextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            focusedIndicatorColor = Color.Transparent,
-            unfocusedIndicatorColor = Color.Transparent,
-            disabledIndicatorColor = Color.Transparent,
-        ),
+        colors =
+            TextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                disabledIndicatorColor = Color.Transparent,
+            ),
     )
 }
 
@@ -843,14 +1053,15 @@ private fun LibraryLoadingOverlay(
     modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = modifier
-            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.96f))
-            .clickable(onClick = {}),
+        modifier =
+            modifier
+                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.96f))
+                .clickable(onClick = {}),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.controlInset),
         ) {
             CircularProgressIndicator()
             Text(
@@ -879,6 +1090,8 @@ private fun LibraryResults(
     authorDisplayNames: Map<Long, String>,
     onAuthorNameRequested: (WorkshopSummary) -> Unit,
     onDownload: (WorkshopSummary) -> Unit,
+    onCopyText: (String, String) -> Unit,
+    onOpenSteam: (Long) -> Unit,
     language: AppLanguage,
     gridState: LazyGridState,
     contextMenuCoordinator: LibraryContextMenuCoordinator,
@@ -889,11 +1102,16 @@ private fun LibraryResults(
             if (
                 state.paginationMode != HomePaginationMode.INFINITE_SCROLL ||
                 state.searchQuery.trim() != state.appliedSearchQuery.trim() ||
-                state.isLoading || state.isLoadingMore || !state.hasNextPage
+                state.isLoading ||
+                state.isLoadingMore ||
+                !state.hasNextPage
             ) {
                 false
             } else {
-                val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                val lastVisible =
+                    gridState.layoutInfo.visibleItemsInfo
+                        .lastOrNull()
+                        ?.index ?: -1
                 lastVisible >= (state.items.lastIndex - LIBRARY_AUTO_LOAD_MORE_THRESHOLD).coerceAtLeast(0)
             }
         }
@@ -917,14 +1135,18 @@ private fun LibraryResults(
             authorDisplayNames = authorDisplayNames,
             onAuthorNameRequested = onAuthorNameRequested,
             onDownload = onDownload,
+            onCopyText = onCopyText,
+            onOpenSteam = onOpenSteam,
             language = language,
             gridState = gridState,
             contextMenuCoordinator = contextMenuCoordinator,
             modifier = Modifier.fillMaxSize(),
         )
         AnimatedVisibility(
-            visible = state.isLoading && !state.isRefreshing &&
-                state.session.phase == SteamSessionPhase.SIGNED_IN,
+            visible =
+                state.isLoading &&
+                    !state.isRefreshing &&
+                    state.session.phase == SteamSessionPhase.SIGNED_IN,
             enter = fadeIn(tween(durationMillis = 140)) + scaleIn(initialScale = 0.96f),
             exit = fadeOut(tween(durationMillis = 180)) + scaleOut(targetScale = 0.98f),
             modifier = Modifier.fillMaxSize(),
@@ -947,6 +1169,8 @@ private fun LibraryResultsContent(
     authorDisplayNames: Map<Long, String>,
     onAuthorNameRequested: (WorkshopSummary) -> Unit,
     onDownload: (WorkshopSummary) -> Unit,
+    onCopyText: (String, String) -> Unit,
+    onOpenSteam: (Long) -> Unit,
     language: AppLanguage,
     gridState: LazyGridState,
     contextMenuCoordinator: LibraryContextMenuCoordinator,
@@ -957,11 +1181,12 @@ private fun LibraryResultsContent(
             WallHubEmptyState(
                 icon = Icons.Outlined.BookmarkBorder,
                 title = state.session.libraryMessage(language),
-                actionLabel = if (state.session.isRestoreRetryable) {
-                    language.text("重试恢复", "Retry restore")
-                } else {
-                    null
-                },
+                actionLabel =
+                    if (state.session.isRestoreRetryable) {
+                        language.text("重试恢复", "Retry restore")
+                    } else {
+                        null
+                    },
                 onAction = if (state.session.isRestoreRetryable) onRefresh else null,
                 modifier = modifier.refreshableEmptyState(),
             )
@@ -984,15 +1209,16 @@ private fun LibraryResultsContent(
         state.items.isEmpty() -> {
             WallHubEmptyState(
                 icon = if (state.searchQuery.isNotBlank()) Icons.Outlined.Search else Icons.Outlined.BookmarkBorder,
-                title = if (state.searchQuery.isNotBlank()) {
-                    language.text("资料库中没有匹配的壁纸", "No matching wallpaper in this library")
-                } else if (state.collection == LibraryCollectionTab.SUBSCRIPTIONS) {
-                    language.text("没有符合条件的个人订阅", "No matching subscriptions")
-                } else if (state.collection == LibraryCollectionTab.FAVORITES) {
-                    language.text("没有符合条件的收藏", "No matching favorites")
-                } else {
-                    language.text("没有符合条件的投票项目", "No matching voted items")
-                },
+                title =
+                    if (state.searchQuery.isNotBlank()) {
+                        language.text("资料库中没有匹配的壁纸", "No matching wallpaper in this library")
+                    } else if (state.collection == LibraryCollectionTab.SUBSCRIPTIONS) {
+                        language.text("没有符合条件的个人订阅", "No matching subscriptions")
+                    } else if (state.collection == LibraryCollectionTab.FAVORITES) {
+                        language.text("没有符合条件的收藏", "No matching favorites")
+                    } else {
+                        language.text("没有符合条件的投票项目", "No matching voted items")
+                    },
                 actionLabel = language.text("刷新", "Refresh"),
                 onAction = onRefresh,
                 modifier = modifier.refreshableEmptyState(),
@@ -1003,17 +1229,19 @@ private fun LibraryResultsContent(
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 160.dp),
                 state = gridState,
-                modifier = modifier
-                    .fillMaxSize()
-                    .onGloballyPositioned { contextMenuCoordinator.gridCoordinates = it },
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    top = 12.dp,
-                    end = 16.dp,
-                    bottom = 84.dp,
-                ),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier =
+                    modifier
+                        .fillMaxSize()
+                        .onGloballyPositioned { contextMenuCoordinator.gridCoordinates = it },
+                contentPadding =
+                    PaddingValues(
+                        start = WallHubSpacing.md,
+                        top = WallHubSpacing.sm,
+                        end = WallHubSpacing.md,
+                        bottom = 84.dp,
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
             ) {
                 itemsIndexed(
                     items = state.items,
@@ -1024,12 +1252,14 @@ private fun LibraryResultsContent(
                         shouldAnimate = item.id in state.searchAnimationItemIds,
                         animationGeneration = state.searchResultGeneration,
                         index = index,
-                        modifier = Modifier.animateItem(
-                            placementSpec = tween(
-                                durationMillis = LIBRARY_SEARCH_REORDER_DURATION_MS,
-                                easing = LIBRARY_SEARCH_REORDER_EASING,
+                        modifier =
+                            Modifier.animateItem(
+                                placementSpec =
+                                    tween(
+                                        durationMillis = LIBRARY_SEARCH_REORDER_DURATION_MS,
+                                        easing = LIBRARY_SEARCH_REORDER_EASING,
+                                    ),
                             ),
-                        ),
                     ) {
                         LibraryWorkshopCard(
                             item = item,
@@ -1040,6 +1270,8 @@ private fun LibraryResultsContent(
                             onSearchAuthor = { onSearchAuthor(item.creatorId ?: item.author) },
                             onAuthorNameRequested = { onAuthorNameRequested(item) },
                             onDownload = { onDownload(item) },
+                            onCopyText = onCopyText,
+                            onOpenSteam = { onOpenSteam(item.id) },
                             contextMenuCoordinator = contextMenuCoordinator,
                         )
                     }
@@ -1047,22 +1279,25 @@ private fun LibraryResultsContent(
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     when {
                         state.paginationMode == HomePaginationMode.INFINITE_SCROLL &&
-                            state.isLoadingMore -> Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center,
-                        ) { CircularProgressIndicator() }
+                            state.isLoadingMore ->
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(WallHubSpacing.sm),
+                                contentAlignment = Alignment.Center,
+                            ) { CircularProgressIndicator() }
 
-                        state.paginationMode == HomePaginationMode.PAGED -> LibraryPagination(
-                            currentPage = state.currentPage,
-                            totalPages = state.totalPages,
-                            isLoading = state.isLoading,
-                            language = language,
-                            onPageSelected = onPageSelected,
-                        )
+                        state.paginationMode == HomePaginationMode.PAGED ->
+                            LibraryPagination(
+                                currentPage = state.currentPage,
+                                totalPages = state.totalPages,
+                                isLoading = state.isLoading,
+                                language = language,
+                                onPageSelected = onPageSelected,
+                            )
 
-                        else -> Spacer(modifier = Modifier.height(4.dp))
+                        else -> Spacer(modifier = Modifier.height(WallHubSpacing.xxs))
                     }
                 }
             }
@@ -1071,20 +1306,22 @@ private fun LibraryResultsContent(
 }
 
 @Composable
-private fun Modifier.refreshableEmptyState(): Modifier = this
-    .fillMaxSize()
-    .verticalScroll(rememberScrollState())
+private fun Modifier.refreshableEmptyState(): Modifier =
+    this
+        .fillMaxSize()
+        .verticalScroll(rememberScrollState())
 
-private fun LibraryUiState.contentKey(): LibraryContentKey = LibraryContentKey(
-    sessionPhase = session.phase,
-    collection = collection,
-    typeFilter = typeFilter,
-    searchQuery = searchQuery,
-    paginationMode = paginationMode,
-    currentPage = currentPage,
-    itemIds = items.map(WorkshopSummary::id),
-    error = error,
-)
+private fun LibraryUiState.contentKey(): LibraryContentKey =
+    LibraryContentKey(
+        sessionPhase = session.phase,
+        collection = collection,
+        typeFilter = typeFilter,
+        searchQuery = searchQuery,
+        paginationMode = paginationMode,
+        currentPage = currentPage,
+        itemIds = items.map(WorkshopSummary::id),
+        error = error,
+    )
 
 @Composable
 private fun LibraryPagination(
@@ -1098,12 +1335,13 @@ private fun LibraryPagination(
         currentPage = currentPage,
         totalPages = totalPages,
         isLoading = isLoading,
-        currentContentDescription = language.text(
-            "当前第 $currentPage 页；当前已知最大页码为 $totalPages；点击输入页码",
-            "Page $currentPage; known last page $totalPages; tap to enter a page",
-        ),
+        currentContentDescription =
+            language.text(
+                "当前第 $currentPage 页；当前已知最大页码为 $totalPages；点击输入页码",
+                "Page $currentPage; known last page $totalPages; tap to enter a page",
+            ),
         onPageSelected = onPageSelected,
-        modifier = Modifier.padding(vertical = 8.dp),
+        modifier = Modifier.padding(vertical = WallHubSpacing.xs),
     )
 }
 
@@ -1117,6 +1355,8 @@ private fun LibraryWorkshopCard(
     onSearchAuthor: () -> Unit,
     onAuthorNameRequested: () -> Unit,
     onDownload: () -> Unit,
+    onCopyText: (String, String) -> Unit,
+    onOpenSteam: () -> Unit,
     contextMenuCoordinator: LibraryContextMenuCoordinator,
 ) {
     LibraryContextMenuCard(
@@ -1129,13 +1369,16 @@ private fun LibraryWorkshopCard(
         onAuthorDisplayNameRequested = onAuthorNameRequested,
         onDownload = onDownload,
         onPlayVideo = onPlayVideo,
+        onCopyText = onCopyText,
+        onOpenSteam = onOpenSteam,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column {
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f),
             ) {
                 if (item.previewUrl != null) {
                     AsyncImage(
@@ -1146,9 +1389,10 @@ private fun LibraryWorkshopCard(
                     )
                 } else {
                     Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
@@ -1159,26 +1403,34 @@ private fun LibraryWorkshopCard(
                     }
                 }
                 Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(8.dp),
-                    shape = RoundedCornerShape(10.dp),
+                    modifier =
+                        Modifier
+                            .align(Alignment.TopStart)
+                            .padding(WallHubSpacing.xs),
+                    shape = WallHubShapeTokens.badge,
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                 ) {
                     Text(
                         text = item.type.label(language),
                         style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = WallHubSpacing.xs, vertical = WallHubSpacing.xxs),
                     )
                 }
             }
             BoxWithConstraints(
-                modifier = Modifier.padding(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 10.dp),
+                modifier =
+                    Modifier.padding(
+                        start = WallHubSpacing.compact,
+                        top = WallHubSpacing.compact,
+                        end = WallHubSpacing.compact,
+                        bottom = WallHubSpacing.compact,
+                    ),
             ) {
                 val statisticsMetrics = LibraryCardStatisticsMetrics.forAvailableWidth(maxWidth)
-                val statisticsStyle = MaterialTheme.typography.bodySmall.copy(
-                    fontSize = statisticsMetrics.fontSize.sp,
-                )
+                val statisticsStyle =
+                    MaterialTheme.typography.bodySmall.copy(
+                        fontSize = statisticsMetrics.fontSize.sp,
+                    )
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text(
                         text = item.title,
@@ -1189,10 +1441,11 @@ private fun LibraryWorkshopCard(
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(
-                            space = statisticsMetrics.itemSpacing,
-                            alignment = Alignment.Start,
-                        ),
+                        horizontalArrangement =
+                            Arrangement.spacedBy(
+                                space = statisticsMetrics.itemSpacing,
+                                alignment = Alignment.Start,
+                            ),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         LibraryWorkshopCardStatistic(
@@ -1237,34 +1490,38 @@ private fun LibrarySearchResultMotion(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    val progress = remember(animationGeneration, shouldAnimate) {
-        Animatable(if (shouldAnimate) 0f else 1f)
-    }
-    val entryOffsetPx = with(LocalDensity.current) {
-        LIBRARY_SEARCH_ENTRY_OFFSET_DP.dp.toPx()
-    }
+    val progress =
+        remember(animationGeneration, shouldAnimate) {
+            Animatable(if (shouldAnimate) 0f else 1f)
+        }
+    val entryOffsetPx =
+        with(LocalDensity.current) {
+            LIBRARY_SEARCH_ENTRY_OFFSET_DP.dp.toPx()
+        }
     LaunchedEffect(animationGeneration, shouldAnimate) {
         if (shouldAnimate) {
             delay((index.coerceAtMost(LIBRARY_SEARCH_STAGGER_LIMIT) * LIBRARY_SEARCH_STAGGER_MS).toLong())
             progress.animateTo(
                 targetValue = 1f,
-                animationSpec = spring(
-                    dampingRatio = 0.88f,
-                    stiffness = 420f,
-                ),
+                animationSpec =
+                    spring(
+                        dampingRatio = 0.88f,
+                        stiffness = 420f,
+                    ),
             )
         } else {
             progress.snapTo(1f)
         }
     }
     Box(
-        modifier = modifier.graphicsLayer {
-            alpha = progress.value
-            val offset = (1f - progress.value) * entryOffsetPx
-            translationY = offset
-            scaleX = 0.98f + progress.value * 0.02f
-            scaleY = 0.98f + progress.value * 0.02f
-        },
+        modifier =
+            modifier.graphicsLayer {
+                alpha = progress.value
+                val offset = (1f - progress.value) * entryOffsetPx
+                translationY = offset
+                scaleX = 0.98f + progress.value * 0.02f
+                scaleY = 0.98f + progress.value * 0.02f
+            },
     ) {
         content()
     }
@@ -1314,78 +1571,87 @@ private data class LibraryCardStatisticsMetrics(
             val fontSize = (statisticSlotWidth / 5.5f).coerceIn(8.5f, 13f)
             return LibraryCardStatisticsMetrics(
                 fontSize = fontSize,
-                iconSize = when {
-                    fontSize <= 9.5f -> 11.dp
-                    fontSize <= 10.5f -> 12.dp
-                    else -> 15.dp
-                },
-                iconSpacing = if (fontSize <= 9.5f) 2.dp else 3.dp,
-                itemSpacing = if (fontSize <= 9.5f) 2.dp else 5.dp,
+                iconSize =
+                    when {
+                        fontSize <= 9.5f -> 11.dp
+                        fontSize <= 10.5f -> WallHubSpacing.sm
+                        else -> 15.dp
+                    },
+                iconSpacing = if (fontSize <= 9.5f) WallHubSpacing.xxxs else 3.dp,
+                itemSpacing = if (fontSize <= 9.5f) WallHubSpacing.xxxs else 5.dp,
             )
         }
     }
 }
 
-private fun LibraryCollectionTab.label(language: AppLanguage): String = when (this) {
-    LibraryCollectionTab.SUBSCRIPTIONS -> language.text("个人订阅", "Subscriptions")
-    LibraryCollectionTab.FAVORITES -> language.text("我的收藏", "Favorites")
-    LibraryCollectionTab.VOTED -> language.text("我的投票", "Voted")
-}
+private fun LibraryCollectionTab.label(language: AppLanguage): String =
+    when (this) {
+        LibraryCollectionTab.SUBSCRIPTIONS -> language.text("个人订阅", "Subscriptions")
+        LibraryCollectionTab.FAVORITES -> language.text("我的收藏", "Favorites")
+        LibraryCollectionTab.VOTED -> language.text("我的投票", "Voted")
+    }
 
-private fun LibraryTypeFilter.label(language: AppLanguage): String = when (this) {
-    LibraryTypeFilter.ALL -> language.text("全部", "All")
-    LibraryTypeFilter.VIDEO -> language.text("视频", "Video")
-    LibraryTypeFilter.SCENE -> language.text("场景", "Scene")
-    LibraryTypeFilter.WEB -> language.text("网站", "Web")
-}
+private fun LibraryTypeFilter.label(language: AppLanguage): String =
+    when (this) {
+        LibraryTypeFilter.ALL -> language.text("全部", "All")
+        LibraryTypeFilter.VIDEO -> language.text("视频", "Video")
+        LibraryTypeFilter.SCENE -> language.text("场景", "Scene")
+        LibraryTypeFilter.WEB -> language.text("网站", "Web")
+    }
 
-private fun SteamSessionState.libraryMessage(language: AppLanguage): String = when (phase) {
-    SteamSessionPhase.SIGNED_OUT -> language.text("登录 Steam 后可查看个人订阅和收藏", "Sign in to Steam to view subscriptions and favorites")
-    SteamSessionPhase.SIGNING_IN,
-    SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
-    SteamSessionPhase.WAITING_FOR_CODE,
-    -> message ?: language.text("正在恢复 Steam 登录状态", "Restoring Steam sign-in")
+private fun SteamSessionState.libraryMessage(language: AppLanguage): String =
+    when (phase) {
+        SteamSessionPhase.SIGNED_OUT -> language.text("登录 Steam 后可查看个人订阅和收藏", "Sign in to Steam to view subscriptions and favorites")
+        SteamSessionPhase.SIGNING_IN,
+        SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
+        SteamSessionPhase.WAITING_FOR_CODE,
+        -> message ?: language.text("正在恢复 Steam 登录状态", "Restoring Steam sign-in")
 
-    SteamSessionPhase.EXPIRED,
-    SteamSessionPhase.FAILED,
-    -> message ?: language.text("Steam 登录需要重新验证", "Steam sign-in needs verification")
+        SteamSessionPhase.EXPIRED,
+        SteamSessionPhase.FAILED,
+        -> message ?: language.text("Steam 登录需要重新验证", "Steam sign-in needs verification")
 
-    SteamSessionPhase.RESTORABLE -> message
-        ?: language.text("Steam 会话暂时不可用，请重试恢复", "Steam session is unavailable; retry restore")
-    SteamSessionPhase.SIGNED_IN -> language.text("正在读取资料库", "Loading library")
-}
+        SteamSessionPhase.RESTORABLE ->
+            message
+                ?: language.text("Steam 会话暂时不可用，请重试恢复", "Steam session is unavailable; retry restore")
+        SteamSessionPhase.SIGNED_IN -> language.text("正在读取资料库", "Loading library")
+    }
 
 private val SteamSessionState.isRestoreRetryable: Boolean
-    get() = hasStoredSession && (
-        phase == SteamSessionPhase.RESTORABLE || phase == SteamSessionPhase.FAILED
-    )
+    get() =
+        hasStoredSession &&
+            (
+                phase == SteamSessionPhase.RESTORABLE || phase == SteamSessionPhase.FAILED
+            )
 
-private fun WorkshopType.label(language: AppLanguage): String = when (this) {
-    WorkshopType.VIDEO -> language.text("视频", "Video")
-    WorkshopType.SCENE -> language.text("场景", "Scene")
-    WorkshopType.WEB -> language.text("网站", "Web")
-    WorkshopType.UNKNOWN -> language.text("壁纸", "Wallpaper")
-}
+private fun WorkshopType.label(language: AppLanguage): String =
+    when (this) {
+        WorkshopType.VIDEO -> language.text("视频", "Video")
+        WorkshopType.SCENE -> language.text("场景", "Scene")
+        WorkshopType.WEB -> language.text("网站", "Web")
+        WorkshopType.UNKNOWN -> language.text("壁纸", "Wallpaper")
+    }
 
-private fun String.isSteamAuthorPlaceholder(): Boolean =
-    this == "Steam 创作者" || startsWith("Steam 用户 ")
+private fun String.isSteamAuthorPlaceholder(): Boolean = this == "Steam 创作者" || startsWith("Steam 用户 ")
 
-private fun AppLanguage.formatCompact(value: Long): String = when {
-    value >= 1_000_000 -> String.format(
-        if (this == AppLanguage.EN) "%.1fM" else "%.1f 万",
-        if (this == AppLanguage.EN) value / 1_000_000.0 else value / 10_000.0,
-    )
+private fun AppLanguage.formatCompact(value: Long): String =
+    when {
+        value >= 1_000_000 ->
+            String.format(
+                if (this == AppLanguage.EN) "%.1fM" else "%.1f 万",
+                if (this == AppLanguage.EN) value / 1_000_000.0 else value / 10_000.0,
+            )
 
-    value >= 1_000 -> String.format("%.1fK", value / 1_000.0)
-    else -> value.toString()
-}
+        value >= 1_000 -> String.format("%.1fK", value / 1_000.0)
+        else -> value.toString()
+    }
 
-private val LIBRARY_CARD_TITLE_HEIGHT = 44.dp
+private val LIBRARY_CARD_TITLE_HEIGHT = WallHubSizeTokens.cardTitleHeight
 private const val LIBRARY_AUTO_LOAD_MORE_THRESHOLD = 2
 private const val LIBRARY_SEARCH_REORDER_DURATION_MS = 280
 private const val LIBRARY_SEARCH_STAGGER_MS = 40
 private const val LIBRARY_SEARCH_STAGGER_LIMIT = 7
 private const val LIBRARY_SEARCH_ENTRY_OFFSET_DP = 24
-private val LIBRARY_HEADER_COLLAPSE_DISTANCE = 48.dp
+private val LIBRARY_HEADER_COLLAPSE_DISTANCE = WallHubSpacing.xxl
 private val LIBRARY_HEADER_EXPAND_DISTANCE = 20.dp
 private val LIBRARY_SEARCH_REORDER_EASING = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)

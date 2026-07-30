@@ -98,7 +98,10 @@ interface FormalTaskRecordDao {
     suspend fun nextQueuePosition(): Long
 
     @Query("UPDATE formal_task_records SET queuePosition = :position WHERE taskId = :taskId")
-    suspend fun updateQueuePosition(taskId: String, position: Long)
+    suspend fun updateQueuePosition(
+        taskId: String,
+        position: Long,
+    )
 
     @Query("UPDATE formal_task_records SET stagingDirectory = NULL WHERE taskId = :taskId")
     suspend fun clearStagingDirectory(taskId: String)
@@ -147,13 +150,19 @@ interface LocalWallpaperMetadataDao {
     suspend fun deleteState(resourceId: String)
 
     @Transaction
-    suspend fun replaceTags(resourceId: String, tags: Set<String>) {
+    suspend fun replaceTags(
+        resourceId: String,
+        tags: Set<String>,
+    ) {
         deleteTagsForResource(resourceId)
         insertTags(tags.map { tag -> LocalWallpaperTagEntity(resourceId, tag) })
     }
 
     @Transaction
-    suspend fun renameTag(oldTag: String, newTag: String) {
+    suspend fun renameTag(
+        oldTag: String,
+        newTag: String,
+    ) {
         val resourceIds = resourceIdsForTag(oldTag)
         insertTags(resourceIds.map { resourceId -> LocalWallpaperTagEntity(resourceId, newTag) })
         deleteTag(oldTag)
@@ -181,112 +190,117 @@ abstract class FormalTaskDatabase : RoomDatabase() {
     abstract fun localWallpaperMetadataDao(): LocalWallpaperMetadataDao
 
     companion object {
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL(
-                    "ALTER TABLE formal_task_records " +
-                        "ADD COLUMN bytesPerSecond INTEGER NOT NULL DEFAULT 0",
-                )
-                database.execSQL(
-                    "ALTER TABLE formal_task_records ADD COLUMN accountName TEXT",
-                )
-                database.execSQL(
-                    "ALTER TABLE formal_task_records ADD COLUMN requestedAction TEXT",
-                )
-                database.execSQL(
-                    "ALTER TABLE formal_task_records " +
-                        "ADD COLUMN isResumable INTEGER NOT NULL DEFAULT 1",
-                )
+        private val MIGRATION_1_2 =
+            object : Migration(1, 2) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records " +
+                            "ADD COLUMN bytesPerSecond INTEGER NOT NULL DEFAULT 0",
+                    )
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records ADD COLUMN accountName TEXT",
+                    )
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records ADD COLUMN requestedAction TEXT",
+                    )
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records " +
+                            "ADD COLUMN isResumable INTEGER NOT NULL DEFAULT 1",
+                    )
+                }
             }
-        }
 
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL(
-                    "ALTER TABLE formal_task_records " +
-                        "ADD COLUMN contentManifestId INTEGER NOT NULL DEFAULT 0",
-                )
-                database.execSQL(
-                    "ALTER TABLE formal_task_records ADD COLUMN appId INTEGER NOT NULL DEFAULT 0",
-                )
-                database.execSQL(
-                    "ALTER TABLE formal_task_records ADD COLUMN stagingDirectory TEXT",
-                )
-                database.execSQL(
-                    "ALTER TABLE formal_task_records ADD COLUMN outputTreeUri TEXT",
-                )
+        private val MIGRATION_2_3 =
+            object : Migration(2, 3) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records " +
+                            "ADD COLUMN contentManifestId INTEGER NOT NULL DEFAULT 0",
+                    )
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records ADD COLUMN appId INTEGER NOT NULL DEFAULT 0",
+                    )
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records ADD COLUMN stagingDirectory TEXT",
+                    )
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records ADD COLUMN outputTreeUri TEXT",
+                    )
+                }
             }
-        }
 
-        private val MIGRATION_3_4 = object : Migration(3, 4) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL(
-                    "ALTER TABLE formal_task_records ADD COLUMN outputUri TEXT",
-                )
-                database.execSQL(
-                    "ALTER TABLE formal_task_records " +
-                        "ADD COLUMN exportFormat TEXT NOT NULL DEFAULT 'AUTO'",
-                )
+        private val MIGRATION_3_4 =
+            object : Migration(3, 4) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records ADD COLUMN outputUri TEXT",
+                    )
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records " +
+                            "ADD COLUMN exportFormat TEXT NOT NULL DEFAULT 'AUTO'",
+                    )
+                }
             }
-        }
 
-        private val MIGRATION_4_5 = object : Migration(4, 5) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL(
-                    "ALTER TABLE formal_task_records ADD COLUMN previewUrl TEXT",
-                )
-                database.execSQL(
-                    "ALTER TABLE formal_task_records " +
-                        "ADD COLUMN queuePosition INTEGER NOT NULL DEFAULT 0",
-                )
-                database.execSQL(
-                    "UPDATE formal_task_records SET queuePosition = createdAt",
-                )
-                database.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_formal_task_records_queuePosition " +
-                        "ON formal_task_records(queuePosition)",
-                )
+        private val MIGRATION_4_5 =
+            object : Migration(4, 5) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records ADD COLUMN previewUrl TEXT",
+                    )
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records " +
+                            "ADD COLUMN queuePosition INTEGER NOT NULL DEFAULT 0",
+                    )
+                    database.execSQL(
+                        "UPDATE formal_task_records SET queuePosition = createdAt",
+                    )
+                    database.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_formal_task_records_queuePosition " +
+                            "ON formal_task_records(queuePosition)",
+                    )
+                }
             }
-        }
 
-        private val MIGRATION_5_6 = object : Migration(5, 6) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL(
-                    "CREATE TABLE IF NOT EXISTS local_wallpaper_states (" +
-                        "resourceId TEXT NOT NULL, isFavorite INTEGER NOT NULL, " +
-                        "importRequestedAt INTEGER, updatedAt INTEGER NOT NULL, " +
-                        "PRIMARY KEY(resourceId))",
-                )
-                database.execSQL(
-                    "CREATE TABLE IF NOT EXISTS local_wallpaper_tags (" +
-                        "resourceId TEXT NOT NULL, tag TEXT NOT NULL, " +
-                        "PRIMARY KEY(resourceId, tag))",
-                )
-                database.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_local_wallpaper_tags_tag " +
-                        "ON local_wallpaper_tags(tag)",
-                )
+        private val MIGRATION_5_6 =
+            object : Migration(5, 6) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "CREATE TABLE IF NOT EXISTS local_wallpaper_states (" +
+                            "resourceId TEXT NOT NULL, isFavorite INTEGER NOT NULL, " +
+                            "importRequestedAt INTEGER, updatedAt INTEGER NOT NULL, " +
+                            "PRIMARY KEY(resourceId))",
+                    )
+                    database.execSQL(
+                        "CREATE TABLE IF NOT EXISTS local_wallpaper_tags (" +
+                            "resourceId TEXT NOT NULL, tag TEXT NOT NULL, " +
+                            "PRIMARY KEY(resourceId, tag))",
+                    )
+                    database.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_local_wallpaper_tags_tag " +
+                            "ON local_wallpaper_tags(tag)",
+                    )
+                }
             }
-        }
 
         @Volatile
         private var instance: FormalTaskDatabase? = null
 
-        fun get(context: Context): FormalTaskDatabase {
-            return instance ?: synchronized(this) {
-                instance ?: Room.databaseBuilder(
-                    context.applicationContext,
-                    FormalTaskDatabase::class.java,
-                    "wallhub-formal.db",
-                ).addMigrations(
-                    MIGRATION_1_2,
-                    MIGRATION_2_3,
-                    MIGRATION_3_4,
-                    MIGRATION_4_5,
-                    MIGRATION_5_6,
-                ).build()
+        fun get(context: Context): FormalTaskDatabase =
+            instance ?: synchronized(this) {
+                instance ?: Room
+                    .databaseBuilder(
+                        context.applicationContext,
+                        FormalTaskDatabase::class.java,
+                        "wallhub-formal.db",
+                    ).addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                    ).build()
                     .also { database -> instance = database }
             }
-        }
     }
 }

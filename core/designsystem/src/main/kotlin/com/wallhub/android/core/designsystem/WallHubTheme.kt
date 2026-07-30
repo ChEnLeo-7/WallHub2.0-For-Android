@@ -1,3 +1,5 @@
+@file:Suppress("ktlint:standard:function-naming")
+
 package com.wallhub.android.core.designsystem
 
 import android.annotation.SuppressLint
@@ -46,21 +48,23 @@ fun WallHubTheme(
     useSystemMonet: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    val useDarkTheme = when (preference) {
-        ThemePreference.SYSTEM -> isSystemInDarkTheme()
-        ThemePreference.LIGHT -> false
-        ThemePreference.DARK -> true
-    }
+    val useDarkTheme =
+        when (preference) {
+            ThemePreference.SYSTEM -> isSystemInDarkTheme()
+            ThemePreference.LIGHT -> false
+            ThemePreference.DARK -> true
+        }
     val context = LocalContext.current
-    val targetColorScheme = remember(accent, customAccentColor, useDarkTheme, useSystemMonet) {
-        resolveMonetColorScheme(
-            context = context,
-            accent = accent,
-            customAccentColor = customAccentColor,
-            dark = useDarkTheme,
-            useSystemMonet = useSystemMonet,
-        )
-    }
+    val targetColorScheme =
+        remember(accent, customAccentColor, useDarkTheme, useSystemMonet) {
+            resolveMonetColorScheme(
+                context = context,
+                accent = accent,
+                customAccentColor = customAccentColor,
+                dark = useDarkTheme,
+                useSystemMonet = useSystemMonet,
+            )
+        }
     // Apply a complete palette in one composition pass so fixed-color components and
     // system bars cannot briefly display a different theme phase from the page content.
     val colorScheme = targetColorScheme
@@ -81,8 +85,10 @@ fun WallHubTheme(
 val LocalWallHubLanguage = staticCompositionLocalOf { AppLanguage.ZH }
 
 @Composable
-fun wallHubText(zh: String, en: String): String =
-    if (LocalWallHubLanguage.current == AppLanguage.EN) en else zh
+fun wallHubText(
+    zh: String,
+    en: String,
+): String = if (LocalWallHubLanguage.current == AppLanguage.EN) en else zh
 
 /**
  * Selects the Chinese or English literal for an explicit [AppLanguage].
@@ -90,7 +96,10 @@ fun wallHubText(zh: String, en: String): String =
  * Use this outside composition, or wherever the language is already resolved.
  * Prefer [wallHubText] inside composables that can read [LocalWallHubLanguage].
  */
-fun AppLanguage.text(zh: String, en: String): String = if (this == AppLanguage.EN) en else zh
+fun AppLanguage.text(
+    zh: String,
+    en: String,
+): String = if (this == AppLanguage.EN) en else zh
 
 @Composable
 @Suppress("DEPRECATION")
@@ -122,23 +131,24 @@ private fun resolveMonetColorScheme(
     if (!useSystemScheme && accent == AccentPreference.DEFAULT) {
         return defaultStaticColorScheme(dark)
     }
-    val scheme = if (useSystemScheme && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        if (dark) {
-            dynamicDarkColorScheme(context)
+    val scheme =
+        if (useSystemScheme && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (dark) {
+                dynamicDarkColorScheme(context)
+            } else {
+                dynamicLightColorScheme(context)
+            }
         } else {
-            dynamicLightColorScheme(context)
+            staticAccentColorScheme(
+                seedColor = accent.monetSeedColor(customAccentColor),
+                dark = dark,
+            )
         }
-    } else {
-        staticAccentColorScheme(
-            seedColor = accent.monetSeedColor(customAccentColor),
-            dark = dark,
-        )
-    }
     return scheme.withDeeperMonetSurfaceContainers(dark)
 }
 
-internal fun defaultStaticColorScheme(dark: Boolean): ColorScheme {
-    return if (dark) {
+internal fun defaultStaticColorScheme(dark: Boolean): ColorScheme =
+    if (dark) {
         darkColorScheme(
             primary = Color.White,
             onPrimary = DEFAULT_DARK_ACCENT,
@@ -209,7 +219,6 @@ internal fun defaultStaticColorScheme(dark: Boolean): ColorScheme {
             surfaceContainerHighest = DEFAULT_LIGHT_SURFACE_HIGHEST,
         )
     }
-}
 
 internal fun ColorScheme.withDeeperMonetSurfaceContainers(dark: Boolean): ColorScheme {
     if (dark) {
@@ -223,57 +232,83 @@ internal fun ColorScheme.withDeeperMonetSurfaceContainers(dark: Boolean): ColorS
     }
     return copy(
         background = background.tintToward(primaryContainer, MONET_LIGHT_BACKGROUND_TINT),
-        surfaceContainerLowest = surfaceContainerLowest
-            .deepenToward(surfaceDim, MONET_LIGHT_SURFACE_LOWEST_DEPTH)
-            .tintToward(primaryContainer, MONET_LIGHT_SURFACE_LOWEST_TINT),
-        surfaceContainerLow = surfaceContainerLow
-            .deepenToward(surfaceDim, MONET_LIGHT_SURFACE_LOW_DEPTH)
-            .tintToward(primaryContainer, MONET_LIGHT_SURFACE_LOW_TINT),
-        surfaceContainer = surfaceContainer
-            .deepenToward(surfaceDim, MONET_LIGHT_SURFACE_DEPTH)
-            .tintToward(primaryContainer, MONET_LIGHT_SURFACE_TINT),
-        surfaceContainerHigh = surfaceContainerHigh
-            .deepenToward(surfaceDim, MONET_LIGHT_SURFACE_HIGH_DEPTH)
-            .tintToward(primaryContainer, MONET_LIGHT_SURFACE_HIGH_TINT),
-        surfaceContainerHighest = surfaceContainerHighest
-            .deepenToward(surfaceDim, MONET_LIGHT_SURFACE_HIGHEST_DEPTH)
-            .tintToward(primaryContainer, MONET_LIGHT_SURFACE_HIGHEST_TINT),
+        surfaceContainerLowest =
+            surfaceContainerLowest
+                .deepenToward(surfaceDim, MONET_LIGHT_SURFACE_LOWEST_DEPTH)
+                .tintToward(primaryContainer, MONET_LIGHT_SURFACE_LOWEST_TINT),
+        surfaceContainerLow =
+            surfaceContainerLow
+                .deepenToward(surfaceDim, MONET_LIGHT_SURFACE_LOW_DEPTH)
+                .tintToward(primaryContainer, MONET_LIGHT_SURFACE_LOW_TINT),
+        surfaceContainer =
+            surfaceContainer
+                .deepenToward(surfaceDim, MONET_LIGHT_SURFACE_DEPTH)
+                .tintToward(primaryContainer, MONET_LIGHT_SURFACE_TINT),
+        surfaceContainerHigh =
+            surfaceContainerHigh
+                .deepenToward(surfaceDim, MONET_LIGHT_SURFACE_HIGH_DEPTH)
+                .tintToward(primaryContainer, MONET_LIGHT_SURFACE_HIGH_TINT),
+        surfaceContainerHighest =
+            surfaceContainerHighest
+                .deepenToward(surfaceDim, MONET_LIGHT_SURFACE_HIGHEST_DEPTH)
+                .tintToward(primaryContainer, MONET_LIGHT_SURFACE_HIGHEST_TINT),
     )
 }
 
-private fun Color.deepenToward(reference: Color, amount: Float): Color =
-    lerp(start = this, stop = reference, fraction = amount)
+private fun Color.deepenToward(
+    reference: Color,
+    amount: Float,
+): Color = lerp(start = this, stop = reference, fraction = amount)
 
-private fun Color.tintToward(reference: Color, amount: Float): Color =
-    lerp(start = this, stop = reference, fraction = amount)
+private fun Color.tintToward(
+    reference: Color,
+    amount: Float,
+): Color = lerp(start = this, stop = reference, fraction = amount)
 
 internal fun shouldUseSystemMonet(
     useSystemMonet: Boolean,
     sdkInt: Int,
 ): Boolean = useSystemMonet && sdkInt >= Build.VERSION_CODES.S
 
-private fun AccentPreference.monetSeedColor(customAccentColor: String): Color = when (this) {
-    AccentPreference.DEFAULT,
-    AccentPreference.MONET,
-    -> MONET_FALLBACK_SEED
+private fun AccentPreference.monetSeedColor(customAccentColor: String): Color =
+    when (this) {
+        AccentPreference.DEFAULT,
+        AccentPreference.MONET,
+        -> MONET_FALLBACK_SEED
 
-    AccentPreference.BLUE -> MONET_BLUE_SEED
-    AccentPreference.GREEN -> MONET_GREEN_SEED
-    AccentPreference.ROSE -> MONET_RED_SEED
-    AccentPreference.VIOLET -> MONET_PURPLE_SEED
-    AccentPreference.CUSTOM -> parseColor(customAccentColor) ?: MONET_FALLBACK_SEED
-}
+        AccentPreference.BLUE -> MONET_BLUE_SEED
+        AccentPreference.GREEN -> MONET_GREEN_SEED
+        AccentPreference.ROSE -> MONET_RED_SEED
+        AccentPreference.VIOLET -> MONET_PURPLE_SEED
+        AccentPreference.CUSTOM -> parseColor(customAccentColor) ?: MONET_FALLBACK_SEED
+    }
+
+/** Returns the stable swatch color used by the settings accent picker. */
+fun AccentPreference.wallHubPreviewColor(
+    customColor: String,
+    systemMonetColor: Color,
+): Color =
+    when (this) {
+        AccentPreference.DEFAULT -> DEFAULT_LIGHT_ACCENT
+        AccentPreference.MONET -> systemMonetColor
+        AccentPreference.BLUE -> MONET_BLUE_SEED
+        AccentPreference.GREEN -> MONET_GREEN_SEED
+        AccentPreference.ROSE -> MONET_RED_SEED
+        AccentPreference.VIOLET -> MONET_PURPLE_SEED
+        AccentPreference.CUSTOM -> parseColor(customColor) ?: MONET_FALLBACK_SEED
+    }
 
 @SuppressLint("RestrictedApi")
 internal fun staticAccentColorScheme(
     seedColor: Color,
     dark: Boolean,
 ): ColorScheme {
-    val scheme = SchemeTonalSpot(
-        Hct.fromInt(seedColor.toArgb()),
-        dark,
-        MONET_CONTRAST_LEVEL,
-    )
+    val scheme =
+        SchemeTonalSpot(
+            Hct.fromInt(seedColor.toArgb()),
+            dark,
+            MONET_CONTRAST_LEVEL,
+        )
     val colors = MaterialDynamicColors()
     return (if (dark) darkColorScheme() else lightColorScheme()).copy(
         primary = colors.primary().resolve(scheme),
@@ -321,10 +356,11 @@ private fun DynamicColor.resolve(scheme: DynamicScheme): Color = Color(getArgb(s
 @Composable
 private fun animateWallHubColorScheme(target: ColorScheme): ColorScheme {
     val transition = updateTransition(targetState = target, label = "WallHubThemeColors")
-    val spec = tween<Color>(
-        durationMillis = THEME_COLOR_TRANSITION_DURATION_MS,
-        easing = FastOutSlowInEasing,
-    )
+    val spec =
+        tween<Color>(
+            durationMillis = THEME_COLOR_TRANSITION_DURATION_MS,
+            easing = FastOutSlowInEasing,
+        )
     val primary by transition.animateColor({ spec }, label = "primary") { it.primary }
     val onPrimary by transition.animateColor({ spec }, label = "onPrimary") { it.onPrimary }
     val primaryContainer by transition.animateColor({ spec }, label = "primaryContainer") { it.primaryContainer }
@@ -408,11 +444,12 @@ private fun parseColor(value: String): Color? {
     return Color((0xFF000000L or rgb).toInt())
 }
 
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}
+private tailrec fun Context.findActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
 
 private const val THEME_COLOR_TRANSITION_DURATION_MS = 360
 private const val MONET_CONTRAST_LEVEL = 0.0

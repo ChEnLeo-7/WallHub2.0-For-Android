@@ -3,9 +3,9 @@ package com.wallhub.android.data.downloads
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import org.junit.Test
 
 class SmallFilePipelineTest {
     @Test
@@ -24,29 +24,33 @@ class SmallFilePipelineTest {
     }
 
     @Test
-    fun `parallel file progress remains monotonic and complete`() = runTest {
-        val events = mutableListOf<SteamDownloadProgress>()
-        val reporter = DownloadProgressReporter(
-            totalBytes = 50L,
-            totalFiles = 2,
-            onProgress = events::add,
-        )
+    fun `parallel file progress remains monotonic and complete`() =
+        runTest {
+            val events = mutableListOf<SteamDownloadProgress>()
+            val reporter =
+                DownloadProgressReporter(
+                    totalBytes = 50L,
+                    totalFiles = 2,
+                    onProgress = events::add,
+                )
 
-        listOf(
-            async { reporter.addDownloadedBytes("audio/one.wav", 20L) },
-            async { reporter.addDownloadedBytes("audio/two.wav", 30L) },
-        ).awaitAll()
-        listOf(
-            async { reporter.markFileCompleted("audio/one.wav") },
-            async { reporter.markFileCompleted("audio/two.wav") },
-        ).awaitAll()
+            listOf(
+                async { reporter.addDownloadedBytes("audio/one.wav", 20L) },
+                async { reporter.addDownloadedBytes("audio/two.wav", 30L) },
+            ).awaitAll()
+            listOf(
+                async { reporter.markFileCompleted("audio/one.wav") },
+                async { reporter.markFileCompleted("audio/two.wav") },
+            ).awaitAll()
 
-        val snapshot = reporter.snapshot()
-        assertEquals(50L, snapshot.downloadedBytes)
-        assertEquals(2, snapshot.completedFiles)
-        assertTrue(events.zipWithNext().all { (before, after) ->
-            before.completedBytes <= after.completedBytes &&
-                before.completedFiles <= after.completedFiles
-        })
-    }
+            val snapshot = reporter.snapshot()
+            assertEquals(50L, snapshot.downloadedBytes)
+            assertEquals(2, snapshot.completedFiles)
+            assertTrue(
+                events.zipWithNext().all { (before, after) ->
+                    before.completedBytes <= after.completedBytes &&
+                        before.completedFiles <= after.completedFiles
+                },
+            )
+        }
 }

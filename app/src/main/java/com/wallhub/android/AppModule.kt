@@ -32,14 +32,10 @@ object AppModule {
     ): FormalTaskDatabase = FormalTaskDatabase.get(context)
 
     @Provides
-    fun provideFormalTaskRecordDao(
-        database: FormalTaskDatabase,
-    ): FormalTaskRecordDao = database.taskRecordDao()
+    fun provideFormalTaskRecordDao(database: FormalTaskDatabase): FormalTaskRecordDao = database.taskRecordDao()
 
     @Provides
-    fun provideLocalWallpaperMetadataDao(
-        database: FormalTaskDatabase,
-    ): LocalWallpaperMetadataDao = database.localWallpaperMetadataDao()
+    fun provideLocalWallpaperMetadataDao(database: FormalTaskDatabase): LocalWallpaperMetadataDao = database.localWallpaperMetadataDao()
 
     @Provides
     @Singleton

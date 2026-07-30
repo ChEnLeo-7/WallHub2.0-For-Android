@@ -1,20 +1,17 @@
+@file:Suppress("ktlint:standard:function-naming")
+
 package com.wallhub.android
 
-import android.Manifest
 import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -33,12 +30,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -67,15 +65,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.invisibleToUser
@@ -89,24 +86,25 @@ import com.wallhub.android.core.designsystem.LocalWallHubLanguage
 import com.wallhub.android.core.designsystem.WallHubFabActiveElevation
 import com.wallhub.android.core.designsystem.WallHubFabDefaultElevation
 import com.wallhub.android.core.designsystem.WallHubFilterChip
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 import com.wallhub.android.core.designsystem.WallHubSlidingSingleChoiceControl
 import com.wallhub.android.core.designsystem.text
 import com.wallhub.android.core.model.AppLanguage
-import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.HomePaginationMode
-import com.wallhub.android.core.model.WorkshopSummary
-import com.wallhub.android.core.model.requiresLegacyPublicDownloadPermission
 import com.wallhub.android.feature.downloads.DownloadFilter
 import com.wallhub.android.feature.downloads.DownloadTypeFilter
+import com.wallhub.android.feature.downloads.DownloadsAction
 import com.wallhub.android.feature.downloads.DownloadsContent
+import com.wallhub.android.feature.downloads.DownloadsEffectHandler
 import com.wallhub.android.feature.downloads.DownloadsUiState
 import com.wallhub.android.feature.downloads.DownloadsViewModel
+import com.wallhub.android.feature.library.LibraryAction
 import com.wallhub.android.feature.library.LibraryCollectionTab
 import com.wallhub.android.feature.library.LibraryContent
+import com.wallhub.android.feature.library.LibraryEffectHandler
 import com.wallhub.android.feature.library.LibraryTypeFilter
 import com.wallhub.android.feature.library.LibraryUiState
 import com.wallhub.android.feature.library.LibraryViewModel
+import com.wallhub.android.feature.local.LocalWallpaperAction
 import com.wallhub.android.feature.local.LocalWallpaperFormatFilter
 import com.wallhub.android.feature.local.LocalWallpaperImportFilter
 import com.wallhub.android.feature.local.LocalWallpaperRoute
@@ -116,6 +114,7 @@ import com.wallhub.android.feature.local.LocalWallpaperViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 private enum class ManagementContent {
     DOWNLOADS,
@@ -140,70 +139,25 @@ fun ManagementRoute(
     val downloadsState by downloadsViewModel.uiState.collectAsStateWithLifecycle()
     val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
     val localWallpaperState by localWallpaperViewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    var pendingLegacyStorageAction by remember { mutableStateOf<Pair<String, DownloadAction>?>(null) }
-    var pendingLibraryDownload by remember { mutableStateOf<WorkshopSummary?>(null) }
-    val legacyStoragePermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        val pendingAction = pendingLegacyStorageAction
-        val pendingDownload = pendingLibraryDownload
-        pendingLegacyStorageAction = null
-        pendingLibraryDownload = null
-        if (granted && pendingAction != null) {
-            downloadsViewModel.requestAction(pendingAction.first, pendingAction.second)
-        } else if (granted && pendingDownload != null) {
-            downloadsViewModel.enqueueWorkshop(pendingDownload)
-        } else if (!granted) {
-            downloadsViewModel.reportLegacyStoragePermissionDenied()
-        }
-    }
+    DownloadsEffectHandler(
+        viewModel = downloadsViewModel,
+        onPlayVideo = onOpenLocalVideo,
+    )
+    LibraryEffectHandler(
+        viewModel = libraryViewModel,
+        onOpenDetail = onOpenDetail,
+        onPlayVideo = onOpenOnlineVideo,
+        onSearchAuthor = onSearchAuthor,
+        onDownload = { item ->
+            downloadsViewModel.onAction(DownloadsAction.EnqueueWorkshop(item))
+        },
+    )
     ManagementScreen(
         downloadsState = downloadsState,
         libraryState = libraryState,
-        onDownloadFilterSelected = downloadsViewModel::setFilter,
-        onDownloadTypeFilterSelected = downloadsViewModel::setTypeFilter,
-        onDownloadAction = { taskId, action ->
-            val task = downloadsState.tasks.firstOrNull { it.id == taskId }
-            val requiresPermission = action == DownloadAction.EXPORT ||
-                (action == DownloadAction.RETRY && !task?.stagingDirectory.isNullOrBlank())
-            if (requiresPermission && context.requiresLegacyPublicDownloadPermission()) {
-                pendingLegacyStorageAction = taskId to action
-                legacyStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            } else {
-                downloadsViewModel.requestAction(taskId, action)
-            }
-        },
-        onDownloadReorder = downloadsViewModel::reorderTasks,
-        onOpenLocalVideo = onOpenLocalVideo,
-        onOpenOnlineVideo = onOpenOnlineVideo,
-        onLibraryCollectionSelected = libraryViewModel::selectCollection,
-        onLibraryTypeSelected = libraryViewModel::selectType,
-        onLibraryRefresh = libraryViewModel::refresh,
-        onLibraryLoadNextPage = libraryViewModel::loadNextPage,
-        onLibraryPageSelected = libraryViewModel::selectPage,
-        onLibrarySearchQueryChanged = libraryViewModel::updateSearchQuery,
-        onLibrarySubmitSearch = libraryViewModel::submitSearch,
-        onLibraryPaginationModeSelected = libraryViewModel::selectPaginationMode,
-        onLibraryResetFilters = libraryViewModel::resetManagementFilters,
-        onLibraryAuthorNameRequested = libraryViewModel::requestAuthorDisplayName,
-        onLibraryDownload = { item ->
-            if (context.requiresLegacyPublicDownloadPermission()) {
-                pendingLibraryDownload = item
-                legacyStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            } else {
-                downloadsViewModel.enqueueWorkshop(item)
-            }
-        },
-        onOpenDetail = onOpenDetail,
-        onSearchAuthor = onSearchAuthor,
-        onLocalFormatFilterSelected = localWallpaperViewModel::setFormatFilter,
-        onLocalImportFilterSelected = localWallpaperViewModel::setImportFilter,
-        onLocalSourceSelected = localWallpaperViewModel::setSource,
-        onLocalFavoriteOnlyChanged = localWallpaperViewModel::setFavoriteOnly,
-        onLocalTagSelected = localWallpaperViewModel::setSelectedTag,
-        onLocalSortSelected = localWallpaperViewModel::setSort,
-        onLocalResetFilters = localWallpaperViewModel::resetFilters,
+        onDownloadsAction = downloadsViewModel::onAction,
+        onLibraryAction = libraryViewModel::onAction,
+        onLocalAction = localWallpaperViewModel::onAction,
         libraryScrollToTopRequest = libraryScrollToTopRequest,
         localWallpaperState = localWallpaperState,
         localWallpaperViewModel = localWallpaperViewModel,
@@ -219,33 +173,10 @@ private fun ManagementScreen(
     downloadsState: DownloadsUiState,
     libraryState: LibraryUiState,
     localWallpaperState: LocalWallpaperUiState,
-    onDownloadFilterSelected: (DownloadFilter) -> Unit,
-    onDownloadTypeFilterSelected: (DownloadTypeFilter) -> Unit,
-    onDownloadAction: (String, DownloadAction) -> Unit,
-    onDownloadReorder: (List<String>) -> Unit,
-    onOpenLocalVideo: (String) -> Unit,
-    onOpenOnlineVideo: (Long) -> Unit,
-    onLibraryCollectionSelected: (LibraryCollectionTab) -> Unit,
-    onLibraryTypeSelected: (LibraryTypeFilter) -> Unit,
-    onLibraryRefresh: () -> Unit,
-    onLibraryLoadNextPage: () -> Unit,
-    onLibraryPageSelected: (Int) -> Unit,
-    onLibrarySearchQueryChanged: (String) -> Unit,
-    onLibrarySubmitSearch: () -> Unit,
-    onLibraryPaginationModeSelected: (HomePaginationMode) -> Unit,
-    onLibraryResetFilters: () -> Unit,
-    onLibraryAuthorNameRequested: (WorkshopSummary) -> Unit,
-    onLibraryDownload: (WorkshopSummary) -> Unit,
-    onLocalFormatFilterSelected: (LocalWallpaperFormatFilter) -> Unit,
-    onLocalImportFilterSelected: (LocalWallpaperImportFilter) -> Unit,
-    onLocalSourceSelected: (String?) -> Unit,
-    onLocalFavoriteOnlyChanged: (Boolean) -> Unit,
-    onLocalTagSelected: (String?) -> Unit,
-    onLocalSortSelected: (LocalWallpaperSort) -> Unit,
-    onLocalResetFilters: () -> Unit,
+    onDownloadsAction: (DownloadsAction) -> Unit,
+    onLibraryAction: (LibraryAction) -> Unit,
+    onLocalAction: (LocalWallpaperAction) -> Unit,
     libraryScrollToTopRequest: Int,
-    onOpenDetail: (Long) -> Unit,
-    onSearchAuthor: (String) -> Unit,
     onContextMenuActiveChanged: (Boolean) -> Unit,
     onNavigatePreviousTopLevel: () -> Unit,
     onNavigateNextTopLevel: () -> Unit,
@@ -262,55 +193,24 @@ private fun ManagementScreen(
     var libraryContentScrollToTopRequest by rememberSaveable { mutableIntStateOf(0) }
     var pageAnimationJob by remember { mutableStateOf<Job?>(null) }
     val pagerState = rememberPagerState(initialPage = content.ordinal) { managementContents.size }
-    val workspaceIndicatorPosition = (
-        pagerState.currentPage + pagerState.currentPageOffsetFraction
+    val workspaceIndicatorPosition =
+        (
+            pagerState.currentPage + pagerState.currentPageOffsetFraction
         ).coerceIn(0f, managementContents.lastIndex.toFloat())
     val pagerScope = rememberCoroutineScope()
     val edgeThresholdPx = with(LocalDensity.current) { MANAGEMENT_EDGE_NAVIGATION_DISTANCE.toPx() }
-    val edgeAccumulator = remember(edgeThresholdPx) {
-        ManagementEdgeSwipeAccumulator(edgeThresholdPx)
-    }
-    val edgeNavigationModifier = Modifier.pointerInput(
-        pagerState,
-        edgeAccumulator,
-        onNavigatePreviousTopLevel,
-        onNavigateNextTopLevel,
-    ) {
-        awaitEachGesture {
-            val down = awaitFirstDown(
-                requireUnconsumed = false,
-                pass = PointerEventPass.Initial,
-            )
-            val startedAtFirstPage = pagerState.currentPage == 0 &&
-                abs(pagerState.currentPageOffsetFraction) < 0.01f
-            val startedAtLastPage = pagerState.currentPage == managementContents.lastIndex &&
-                abs(pagerState.currentPageOffsetFraction) < 0.01f
-            var previousPosition = down.position
-            var totalDelta = Offset.Zero
-            edgeAccumulator.reset()
-            var pressed = true
-            while (pressed) {
-                val event = awaitPointerEvent(PointerEventPass.Final)
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                val delta = change.position - previousPosition
-                totalDelta += delta
-                previousPosition = change.position
-                val direction = edgeAccumulator.onDrag(
-                    deltaX = delta.x,
-                    atFirstPage = startedAtFirstPage,
-                    atLastPage = startedAtLastPage,
-                    horizontalDominant = abs(totalDelta.x) > abs(totalDelta.y) * 1.2f,
-                )
-                when (direction) {
-                    ManagementBoundaryDirection.PREVIOUS -> onNavigatePreviousTopLevel()
-                    ManagementBoundaryDirection.NEXT -> onNavigateNextTopLevel()
-                    null -> Unit
-                }
-                pressed = change.pressed
-            }
-            edgeAccumulator.reset()
+    val edgeAccumulator =
+        remember(edgeThresholdPx) {
+            ManagementEdgeSwipeAccumulator(edgeThresholdPx)
         }
-    }
+    val edgeNavigationModifier =
+        Modifier.managementBoundaryNavigation(
+            pagerState = pagerState,
+            lastPageIndex = managementContents.lastIndex,
+            edgeAccumulator = edgeAccumulator,
+            onNavigatePreviousTopLevel = onNavigatePreviousTopLevel,
+            onNavigateNextTopLevel = onNavigateNextTopLevel,
+        )
     val selectContent: (ManagementContent) -> Unit = { selected ->
         if (
             !libraryContextMenuActive &&
@@ -319,15 +219,17 @@ private fun ManagementScreen(
             filtersVisible = false
             content = selected
             pageAnimationJob?.cancel()
-            pageAnimationJob = pagerScope.launch {
-                pagerState.animateScrollToPage(
-                    page = selected.ordinal,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMediumLow,
-                    ),
-                )
-            }
+            pageAnimationJob =
+                pagerScope.launch {
+                    pagerState.animateScrollToPage(
+                        page = selected.ordinal,
+                        animationSpec =
+                            spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow,
+                            ),
+                    )
+                }
         }
     }
     LaunchedEffect(pagerState.settledPage, pagerState.isScrollInProgress) {
@@ -354,58 +256,12 @@ private fun ManagementScreen(
     DisposableEffect(Unit) {
         onDispose { onContextMenuActiveChanged(false) }
     }
-    val managementPager: @Composable (Modifier) -> Unit = { modifier ->
-        HorizontalPager(
-            state = pagerState,
-            modifier = modifier.then(
-                if (libraryContextMenuActive) Modifier else edgeNavigationModifier,
-            ),
-            key = { page -> managementContents[page].name },
-            userScrollEnabled = !libraryContextMenuActive,
-        ) { page ->
-            when (managementContents[page]) {
-                ManagementContent.DOWNLOADS -> DownloadsContent(
-                    state = downloadsState,
-                    onAction = onDownloadAction,
-                    showFilters = false,
-                    onReorder = onDownloadReorder,
-                    onPlayVideo = onOpenLocalVideo,
-                )
-
-                ManagementContent.LIBRARY -> LibraryContent(
-                    state = libraryState,
-                    onRefresh = onLibraryRefresh,
-                    onLoadNextPage = onLibraryLoadNextPage,
-                    onPageSelected = onLibraryPageSelected,
-                    onSearchQueryChanged = onLibrarySearchQueryChanged,
-                    onSubmitSearch = onLibrarySubmitSearch,
-                    onOpenDetail = onOpenDetail,
-                    onPlayVideo = onOpenOnlineVideo,
-                    onSearchAuthor = onSearchAuthor,
-                    onAuthorNameRequested = onLibraryAuthorNameRequested,
-                    onDownload = onLibraryDownload,
-                    onContextMenuActiveChanged = { active ->
-                        libraryContextMenuActive = active
-                        onContextMenuActiveChanged(active)
-                    },
-                    onScrollChromeCollapsedChanged = {},
-                    scrollToTopRequest = libraryContentScrollToTopRequest,
-                    showFilters = false,
-                )
-
-                ManagementContent.LOCAL -> LocalWallpaperRoute(
-                    onScrollChromeCollapsedChanged = {},
-                    isPageActive = pagerState.settledPage == ManagementContent.LOCAL.ordinal,
-                    viewModel = localWallpaperViewModel,
-                )
-            }
-        }
-    }
-    val activeFilterCount = content.activeFilterCount(
-        downloadsState,
-        libraryState,
-        localWallpaperState,
-    )
+    val activeFilterCount =
+        content.activeFilterCount(
+            downloadsState,
+            libraryState,
+            localWallpaperState,
+        )
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -421,51 +277,38 @@ private fun ManagementScreen(
         },
     ) { padding ->
         BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .statusBarsPadding()
-                .navigationBarsPadding(),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .statusBarsPadding()
+                    .navigationBarsPadding(),
         ) {
-            val expanded = maxWidth >= MANAGEMENT_EXPANDED_BREAKPOINT
-            if (expanded) {
-                Row(modifier = Modifier.fillMaxSize()) {
-                    ManagementNavigationPanel(
-                        content = content,
-                        language = language,
-                        onContentSelected = selectContent,
-                        navigationEnabled = !libraryContextMenuActive,
-                        indicatorPosition = workspaceIndicatorPosition,
-                        expanded = true,
-                        modifier = Modifier
-                            .width(MANAGEMENT_SIDE_PANEL_WIDTH)
-                            .fillMaxHeight()
-                            .managementContextMenuBackdrop(libraryContextMenuActive),
-                    )
-                    VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    managementPager(
-                        Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                    )
-                }
-            } else {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    ManagementNavigationPanel(
-                        content = content,
-                        language = language,
-                        onContentSelected = selectContent,
-                        navigationEnabled = !libraryContextMenuActive,
-                        indicatorPosition = workspaceIndicatorPosition,
-                        expanded = false,
-                        modifier = Modifier.managementContextMenuBackdrop(libraryContextMenuActive),
-                    )
-                    managementPager(
-                        Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                    )
-                }
+            ManagementWorkspaceLayout(
+                expanded = maxWidth >= MANAGEMENT_EXPANDED_BREAKPOINT,
+                content = content,
+                language = language,
+                onContentSelected = selectContent,
+                navigationEnabled = !libraryContextMenuActive,
+                indicatorPosition = workspaceIndicatorPosition,
+                contextMenuActive = libraryContextMenuActive,
+            ) { pagerModifier ->
+                ManagementWorkspacePager(
+                    pagerState = pagerState,
+                    edgeNavigationModifier = edgeNavigationModifier,
+                    contextMenuActive = libraryContextMenuActive,
+                    downloadsState = downloadsState,
+                    libraryState = libraryState,
+                    onDownloadsAction = onDownloadsAction,
+                    onLibraryAction = onLibraryAction,
+                    onLibraryContextMenuActiveChanged = { active ->
+                        libraryContextMenuActive = active
+                        onContextMenuActiveChanged(active)
+                    },
+                    libraryScrollToTopRequest = libraryContentScrollToTopRequest,
+                    localWallpaperViewModel = localWallpaperViewModel,
+                    modifier = pagerModifier,
+                )
             }
         }
     }
@@ -476,23 +319,171 @@ private fun ManagementScreen(
             libraryState = libraryState,
             localWallpaperState = localWallpaperState,
             language = language,
-            onDownloadFilterSelected = onDownloadFilterSelected,
-            onDownloadTypeFilterSelected = onDownloadTypeFilterSelected,
-            onLibraryCollectionSelected = onLibraryCollectionSelected,
-            onLibraryTypeSelected = onLibraryTypeSelected,
-            onLibraryPaginationModeSelected = onLibraryPaginationModeSelected,
-            onLibraryResetFilters = onLibraryResetFilters,
-            onLocalFormatFilterSelected = onLocalFormatFilterSelected,
-            onLocalImportFilterSelected = onLocalImportFilterSelected,
-            onLocalSourceSelected = onLocalSourceSelected,
-            onLocalFavoriteOnlyChanged = onLocalFavoriteOnlyChanged,
-            onLocalTagSelected = onLocalTagSelected,
-            onLocalSortSelected = onLocalSortSelected,
-            onLocalResetFilters = onLocalResetFilters,
+            onDownloadFilterSelected = { filter ->
+                onDownloadsAction(DownloadsAction.SelectFilter(filter))
+            },
+            onDownloadTypeFilterSelected = { filter ->
+                onDownloadsAction(DownloadsAction.SelectTypeFilter(filter))
+            },
+            onLibraryCollectionSelected = {
+                onLibraryAction(LibraryAction.SelectCollection(it))
+            },
+            onLibraryTypeSelected = { onLibraryAction(LibraryAction.SelectType(it)) },
+            onLibraryPaginationModeSelected = {
+                onLibraryAction(LibraryAction.SelectPaginationMode(it))
+            },
+            onLibraryResetFilters = { onLibraryAction(LibraryAction.ResetFilters) },
+            onLocalAction = onLocalAction,
             onDismiss = { filtersVisible = false },
         )
     }
 }
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ManagementWorkspacePager(
+    pagerState: PagerState,
+    edgeNavigationModifier: Modifier,
+    contextMenuActive: Boolean,
+    downloadsState: DownloadsUiState,
+    libraryState: LibraryUiState,
+    onDownloadsAction: (DownloadsAction) -> Unit,
+    onLibraryAction: (LibraryAction) -> Unit,
+    onLibraryContextMenuActiveChanged: (Boolean) -> Unit,
+    libraryScrollToTopRequest: Int,
+    localWallpaperViewModel: LocalWallpaperViewModel,
+    modifier: Modifier = Modifier,
+) {
+    HorizontalPager(
+        state = pagerState,
+        modifier = modifier.then(if (contextMenuActive) Modifier else edgeNavigationModifier),
+        key = { page -> ManagementContent.entries[page].name },
+        userScrollEnabled = !contextMenuActive,
+    ) { page ->
+        when (ManagementContent.entries[page]) {
+            ManagementContent.DOWNLOADS ->
+                DownloadsContent(
+                    state = downloadsState,
+                    onAction = onDownloadsAction,
+                    showFilters = false,
+                )
+
+            ManagementContent.LIBRARY ->
+                LibraryContent(
+                    state = libraryState,
+                    onAction = onLibraryAction,
+                    onContextMenuActiveChanged = onLibraryContextMenuActiveChanged,
+                    onScrollChromeCollapsedChanged = {},
+                    scrollToTopRequest = libraryScrollToTopRequest,
+                    showFilters = false,
+                )
+
+            ManagementContent.LOCAL ->
+                LocalWallpaperRoute(
+                    onScrollChromeCollapsedChanged = {},
+                    isPageActive = pagerState.settledPage == ManagementContent.LOCAL.ordinal,
+                    viewModel = localWallpaperViewModel,
+                )
+        }
+    }
+}
+
+@Composable
+private fun ManagementWorkspaceLayout(
+    expanded: Boolean,
+    content: ManagementContent,
+    language: AppLanguage,
+    onContentSelected: (ManagementContent) -> Unit,
+    navigationEnabled: Boolean,
+    indicatorPosition: Float,
+    contextMenuActive: Boolean,
+    pager: @Composable (Modifier) -> Unit,
+) {
+    if (expanded) {
+        Row(modifier = Modifier.fillMaxSize()) {
+            ManagementNavigationPanel(
+                content = content,
+                language = language,
+                onContentSelected = onContentSelected,
+                navigationEnabled = navigationEnabled,
+                indicatorPosition = indicatorPosition,
+                expanded = true,
+                modifier =
+                    Modifier
+                        .width(MANAGEMENT_SIDE_PANEL_WIDTH)
+                        .fillMaxHeight()
+                        .managementContextMenuBackdrop(contextMenuActive),
+            )
+            VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            pager(Modifier.weight(1f).fillMaxHeight())
+        }
+    } else {
+        Column(modifier = Modifier.fillMaxSize()) {
+            ManagementNavigationPanel(
+                content = content,
+                language = language,
+                onContentSelected = onContentSelected,
+                navigationEnabled = navigationEnabled,
+                indicatorPosition = indicatorPosition,
+                expanded = false,
+                modifier = Modifier.managementContextMenuBackdrop(contextMenuActive),
+            )
+            pager(Modifier.fillMaxWidth().weight(1f))
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+private fun Modifier.managementBoundaryNavigation(
+    pagerState: PagerState,
+    lastPageIndex: Int,
+    edgeAccumulator: ManagementEdgeSwipeAccumulator,
+    onNavigatePreviousTopLevel: () -> Unit,
+    onNavigateNextTopLevel: () -> Unit,
+): Modifier =
+    pointerInput(
+        pagerState,
+        edgeAccumulator,
+        onNavigatePreviousTopLevel,
+        onNavigateNextTopLevel,
+    ) {
+        awaitEachGesture {
+            val down =
+                awaitFirstDown(
+                    requireUnconsumed = false,
+                    pass = PointerEventPass.Initial,
+                )
+            val startedAtFirstPage =
+                pagerState.currentPage == 0 && abs(pagerState.currentPageOffsetFraction) < 0.01f
+            val startedAtLastPage =
+                pagerState.currentPage == lastPageIndex && abs(pagerState.currentPageOffsetFraction) < 0.01f
+            var previousPosition = down.position
+            var totalDelta = Offset.Zero
+            edgeAccumulator.reset()
+            var pressed = true
+            while (pressed) {
+                val event = awaitPointerEvent(PointerEventPass.Final)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                val delta = change.position - previousPosition
+                totalDelta += delta
+                previousPosition = change.position
+                when (
+                    edgeAccumulator.onDrag(
+                        deltaX = delta.x,
+                        atFirstPage = startedAtFirstPage,
+                        atLastPage = startedAtLastPage,
+                        horizontalDominant = abs(totalDelta.x) > abs(totalDelta.y) * 1.2f,
+                    )
+                ) {
+                    ManagementBoundaryDirection.PREVIOUS -> onNavigatePreviousTopLevel()
+                    ManagementBoundaryDirection.NEXT -> onNavigateNextTopLevel()
+                    null -> Unit
+                }
+                pressed = change.pressed
+            }
+            edgeAccumulator.reset()
+        }
+    }
 
 @Composable
 private fun ManagementNavigationPanel(
@@ -512,17 +503,19 @@ private fun ManagementNavigationPanel(
     ) {
         if (expanded) {
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 ManagementPageHeading(
                     content = content,
                     language = language,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
                 )
                 Column(
                     modifier = Modifier.selectableGroup(),
@@ -548,14 +541,16 @@ private fun ManagementNavigationPanel(
                 ManagementPageHeading(
                     content = content,
                     language = language,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
                 )
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 8.dp, top = 6.dp, end = 8.dp, bottom = 4.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 8.dp, top = 6.dp, end = 8.dp, bottom = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -645,16 +640,18 @@ private fun ManagementWorkspaceDestination(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val containerColor = if (selected) {
-        MaterialTheme.colorScheme.secondaryContainer
-    } else {
-        MaterialTheme.colorScheme.background
-    }
-    val contentColor = if (selected) {
-        MaterialTheme.colorScheme.onSecondaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
+    val containerColor =
+        if (selected) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.background
+        }
+    val contentColor =
+        if (selected) {
+            MaterialTheme.colorScheme.onSecondaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        }
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.large,
@@ -664,16 +661,16 @@ private fun ManagementWorkspaceDestination(
     ) {
         if (expanded) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 56.dp)
-                    .selectable(
-                        selected = selected,
-                        enabled = enabled,
-                        role = Role.Tab,
-                        onClick = onClick,
-                    )
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                        .selectable(
+                            selected = selected,
+                            enabled = enabled,
+                            role = Role.Tab,
+                            onClick = onClick,
+                        ).padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -690,16 +687,16 @@ private fun ManagementWorkspaceDestination(
             }
         } else {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 52.dp)
-                    .selectable(
-                        selected = selected,
-                        enabled = enabled,
-                        role = Role.Tab,
-                        onClick = onClick,
-                    )
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp)
+                        .selectable(
+                            selected = selected,
+                            enabled = enabled,
+                            role = Role.Tab,
+                            onClick = onClick,
+                        ).padding(horizontal = 4.dp, vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
@@ -729,19 +726,21 @@ private fun ManagementFilterFab(
     ) {
         FloatingActionButton(
             onClick = onClick,
-            elevation = FloatingActionButtonDefaults.elevation(
-                defaultElevation = WallHubFabDefaultElevation,
-                pressedElevation = WallHubFabActiveElevation,
-                focusedElevation = WallHubFabDefaultElevation,
-                hoveredElevation = WallHubFabActiveElevation,
-            ),
+            elevation =
+                FloatingActionButtonDefaults.elevation(
+                    defaultElevation = WallHubFabDefaultElevation,
+                    pressedElevation = WallHubFabActiveElevation,
+                    focusedElevation = WallHubFabDefaultElevation,
+                    hoveredElevation = WallHubFabActiveElevation,
+                ),
         ) {
             Icon(
                 imageVector = Icons.Outlined.Tune,
-                contentDescription = language.text(
-                    if (activeFilterCount > 0) "筛选，已启用 $activeFilterCount 项" else "筛选",
-                    if (activeFilterCount > 0) "Filters, $activeFilterCount active" else "Filters",
-                ),
+                contentDescription =
+                    language.text(
+                        if (activeFilterCount > 0) "筛选，已启用 $activeFilterCount 项" else "筛选",
+                        if (activeFilterCount > 0) "Filters, $activeFilterCount active" else "Filters",
+                    ),
             )
         }
     }
@@ -806,9 +805,7 @@ private fun ManagementFilterSectionCard(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ManagementSingleChoiceFlow(
-    content: @Composable () -> Unit,
-) {
+private fun ManagementSingleChoiceFlow(content: @Composable () -> Unit) {
     FlowRow(
         modifier = Modifier.selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -832,21 +829,16 @@ private fun ManagementFiltersSheet(
     onLibraryTypeSelected: (LibraryTypeFilter) -> Unit,
     onLibraryPaginationModeSelected: (HomePaginationMode) -> Unit,
     onLibraryResetFilters: () -> Unit,
-    onLocalFormatFilterSelected: (LocalWallpaperFormatFilter) -> Unit,
-    onLocalImportFilterSelected: (LocalWallpaperImportFilter) -> Unit,
-    onLocalSourceSelected: (String?) -> Unit,
-    onLocalFavoriteOnlyChanged: (Boolean) -> Unit,
-    onLocalTagSelected: (String?) -> Unit,
-    onLocalSortSelected: (LocalWallpaperSort) -> Unit,
-    onLocalResetFilters: () -> Unit,
+    onLocalAction: (LocalWallpaperAction) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val activeFilterCount = when (content) {
-        ManagementContent.DOWNLOADS -> downloadsState.activeFilterCount()
-        ManagementContent.LIBRARY -> libraryState.activeFilterCount()
-        ManagementContent.LOCAL -> localWallpaperState.activeFilterCount
-    }
+    val activeFilterCount =
+        when (content) {
+            ManagementContent.DOWNLOADS -> downloadsState.activeFilterCount()
+            ManagementContent.LIBRARY -> libraryState.activeFilterCount()
+            ManagementContent.LOCAL -> localWallpaperState.activeFilterCount
+        }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -858,20 +850,22 @@ private fun ManagementFiltersSheet(
             val compact = maxWidth < 600.dp
             val horizontalPadding = if (compact) 16.dp else 24.dp
             Column(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth(if (compact) 1f else 0.94f)
-                    .widthIn(max = 880.dp)
-                    .heightIn(max = maxHeight * if (compact) 0.92f else 0.84f),
+                modifier =
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth(if (compact) 1f else 0.94f)
+                        .widthIn(max = 880.dp)
+                        .heightIn(max = maxHeight * if (compact) 0.92f else 0.84f),
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            start = horizontalPadding,
-                            end = horizontalPadding,
-                            bottom = 12.dp,
-                        ),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                start = horizontalPadding,
+                                end = horizontalPadding,
+                                bottom = 12.dp,
+                            ),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -895,7 +889,7 @@ private fun ManagementFiltersSheet(
                                 }
 
                                 ManagementContent.LIBRARY -> onLibraryResetFilters()
-                                ManagementContent.LOCAL -> onLocalResetFilters()
+                                ManagementContent.LOCAL -> onLocalAction(LocalWallpaperAction.ResetFilters)
                             }
                         },
                         enabled = activeFilterCount > 0,
@@ -904,227 +898,39 @@ private fun ManagementFiltersSheet(
                     }
                 }
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                    .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState())
-                        .navigationBarsPadding()
-                        .padding(horizontal = horizontalPadding, vertical = 4.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                            .navigationBarsPadding()
+                            .padding(horizontal = horizontalPadding, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     when (content) {
-                        ManagementContent.DOWNLOADS -> {
-                            ManagementFilterSectionCard(
-                                title = language.text("下载状态", "Download status"),
-                                supportingText = language.text(
-                                    "按任务当前阶段筛选",
-                                    "Filter by the current task phase",
-                                ),
-                            ) {
-                                ManagementSingleChoiceFlow {
-                                    DownloadFilter.entries.forEach { filter ->
-                                        ManagementChoiceChip(
-                                            selected = downloadsState.filter == filter,
-                                            onClick = { onDownloadFilterSelected(filter) },
-                                            label = filter.label(language),
-                                            singleChoice = true,
-                                        )
-                                    }
-                                }
-                            }
-                            ManagementFilterSectionCard(
-                                title = language.text("壁纸类型", "Wallpaper type"),
-                                supportingText = language.text(
-                                    "仅显示指定类型的下载任务",
-                                    "Show download tasks of a specific type",
-                                ),
-                            ) {
-                                ManagementSingleChoiceFlow {
-                                    DownloadTypeFilter.entries.forEach { filter ->
-                                        ManagementChoiceChip(
-                                            selected = downloadsState.typeFilter == filter,
-                                            onClick = { onDownloadTypeFilterSelected(filter) },
-                                            label = filter.label(language),
-                                            singleChoice = true,
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        ManagementContent.DOWNLOADS ->
+                            ManagementDownloadFilterSections(
+                                state = downloadsState,
+                                language = language,
+                                onFilterSelected = onDownloadFilterSelected,
+                                onTypeFilterSelected = onDownloadTypeFilterSelected,
+                            )
 
-                        ManagementContent.LIBRARY -> {
-                            ManagementFilterSectionCard(
-                                title = language.text("资料库分类", "Collection"),
-                                supportingText = language.text(
-                                    "切换 Steam 账户资源集合",
-                                    "Switch the Steam account collection",
-                                ),
-                            ) {
-                                ManagementSingleChoiceFlow {
-                                    LibraryCollectionTab.entries.forEach { collection ->
-                                        ManagementChoiceChip(
-                                            selected = libraryState.collection == collection,
-                                            onClick = { onLibraryCollectionSelected(collection) },
-                                            label = collection.label(language),
-                                            singleChoice = true,
-                                        )
-                                    }
-                                }
-                            }
-                            ManagementFilterSectionCard(
-                                title = language.text("壁纸类型", "Wallpaper type"),
-                                supportingText = language.text(
-                                    "缩小当前集合中的内容范围",
-                                    "Narrow the content in this collection",
-                                ),
-                            ) {
-                                ManagementSingleChoiceFlow {
-                                    LibraryTypeFilter.entries.forEach { filter ->
-                                        ManagementChoiceChip(
-                                            selected = libraryState.typeFilter == filter,
-                                            onClick = { onLibraryTypeSelected(filter) },
-                                            label = filter.label(language),
-                                            singleChoice = true,
-                                        )
-                                    }
-                                }
-                            }
-                            ManagementFilterSectionCard(
-                                title = language.text("浏览方式", "Browsing mode"),
-                                supportingText = language.text(
-                                    "选择连续加载或页码导航",
-                                    "Choose continuous loading or page controls",
-                                ),
-                            ) {
-                                ManagementSingleChoiceFlow {
-                                    HomePaginationMode.entries.forEach { mode ->
-                                        ManagementChoiceChip(
-                                            selected = libraryState.paginationMode == mode,
-                                            onClick = { onLibraryPaginationModeSelected(mode) },
-                                            label = mode.libraryLabel(language),
-                                            singleChoice = true,
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        ManagementContent.LIBRARY ->
+                            ManagementLibraryFilterSections(
+                                state = libraryState,
+                                language = language,
+                                onCollectionSelected = onLibraryCollectionSelected,
+                                onTypeSelected = onLibraryTypeSelected,
+                                onPaginationModeSelected = onLibraryPaginationModeSelected,
+                            )
 
-                        ManagementContent.LOCAL -> {
-                            ManagementFilterSectionCard(
-                                title = language.text("格式", "Format"),
-                                supportingText = language.text(
-                                    "按本地资源格式筛选",
-                                    "Filter by local resource format",
-                                ),
-                            ) {
-                                ManagementSingleChoiceFlow {
-                                    LocalWallpaperFormatFilter.entries.forEach { filter ->
-                                        ManagementChoiceChip(
-                                            selected = localWallpaperState.formatFilter == filter,
-                                            onClick = { onLocalFormatFilterSelected(filter) },
-                                            label = filter.managementLabel(language),
-                                            singleChoice = true,
-                                        )
-                                    }
-                                }
-                            }
-                            ManagementFilterSectionCard(
-                                title = language.text("导入状态", "Import state"),
-                                supportingText = language.text(
-                                    "查看尚未导入或已发起导入的资源",
-                                    "View resources by requested import state",
-                                ),
-                            ) {
-                                ManagementSingleChoiceFlow {
-                                    LocalWallpaperImportFilter.entries.forEach { filter ->
-                                        ManagementChoiceChip(
-                                            selected = localWallpaperState.importFilter == filter,
-                                            onClick = { onLocalImportFilterSelected(filter) },
-                                            label = filter.managementLabel(language),
-                                            singleChoice = true,
-                                        )
-                                    }
-                                }
-                            }
-                            ManagementFilterSectionCard(
-                                title = language.text("来源", "Source"),
-                                supportingText = language.text(
-                                    "限定扫描目录来源",
-                                    "Limit results to a scanned location",
-                                ),
-                            ) {
-                                ManagementSingleChoiceFlow {
-                                    ManagementChoiceChip(
-                                        selected = localWallpaperState.sourceId == null,
-                                        onClick = { onLocalSourceSelected(null) },
-                                        label = language.text("全部目录", "All locations"),
-                                        singleChoice = true,
-                                    )
-                                    localWallpaperState.scan.sources.forEach { source ->
-                                        ManagementChoiceChip(
-                                            selected = localWallpaperState.sourceId == source.id,
-                                            onClick = { onLocalSourceSelected(source.id) },
-                                            label = source.label,
-                                            singleChoice = true,
-                                        )
-                                    }
-                                }
-                            }
-                            ManagementFilterSectionCard(
-                                title = language.text("整理", "Organization"),
-                                supportingText = language.text(
-                                    "组合收藏状态与单个标签",
-                                    "Combine favorites with one tag",
-                                ),
-                            ) {
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    ManagementChoiceChip(
-                                        selected = localWallpaperState.favoriteOnly,
-                                        onClick = {
-                                            onLocalFavoriteOnlyChanged(!localWallpaperState.favoriteOnly)
-                                        },
-                                        label = language.text("仅收藏", "Favorites only"),
-                                    )
-                                }
-                                ManagementSingleChoiceFlow {
-                                    ManagementChoiceChip(
-                                        selected = localWallpaperState.selectedTag == null,
-                                        onClick = { onLocalTagSelected(null) },
-                                        label = language.text("全部标签", "All tags"),
-                                        singleChoice = true,
-                                    )
-                                    localWallpaperState.allTags.forEach { tag ->
-                                        ManagementChoiceChip(
-                                            selected = localWallpaperState.selectedTag == tag,
-                                            onClick = { onLocalTagSelected(tag) },
-                                            label = tag,
-                                            singleChoice = true,
-                                        )
-                                    }
-                                }
-                            }
-                            ManagementFilterSectionCard(
-                                title = language.text("排序", "Sort"),
-                                supportingText = language.text(
-                                    "决定本地资源的排列顺序",
-                                    "Choose the order of local resources",
-                                ),
-                            ) {
-                                ManagementSingleChoiceFlow {
-                                    LocalWallpaperSort.entries.forEach { sort ->
-                                        ManagementChoiceChip(
-                                            selected = localWallpaperState.sort == sort,
-                                            onClick = { onLocalSortSelected(sort) },
-                                            label = sort.managementLabel(language),
-                                            singleChoice = true,
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        ManagementContent.LOCAL ->
+                            ManagementLocalFilterSections(
+                                state = localWallpaperState,
+                                language = language,
+                                onAction = onLocalAction,
+                            )
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                 }
@@ -1133,39 +939,260 @@ private fun ManagementFiltersSheet(
     }
 }
 
-private fun ManagementContent.label(language: AppLanguage): String = when (this) {
-    ManagementContent.DOWNLOADS -> language.text("下载", "Downloads")
-    ManagementContent.LIBRARY -> language.text("资料库", "Library")
-    ManagementContent.LOCAL -> language.text("本地", "Local")
+@Composable
+private fun ManagementDownloadFilterSections(
+    state: DownloadsUiState,
+    language: AppLanguage,
+    onFilterSelected: (DownloadFilter) -> Unit,
+    onTypeFilterSelected: (DownloadTypeFilter) -> Unit,
+) {
+    ManagementFilterSectionCard(
+        title = language.text("下载状态", "Download status"),
+        supportingText = language.text("按任务当前阶段筛选", "Filter by the current task phase"),
+    ) {
+        ManagementSingleChoiceFlow {
+            DownloadFilter.entries.forEach { filter ->
+                ManagementChoiceChip(
+                    selected = state.filter == filter,
+                    onClick = { onFilterSelected(filter) },
+                    label = filter.label(language),
+                    singleChoice = true,
+                )
+            }
+        }
+    }
+    ManagementFilterSectionCard(
+        title = language.text("壁纸类型", "Wallpaper type"),
+        supportingText =
+            language.text("仅显示指定类型的下载任务", "Show download tasks of a specific type"),
+    ) {
+        ManagementSingleChoiceFlow {
+            DownloadTypeFilter.entries.forEach { filter ->
+                ManagementChoiceChip(
+                    selected = state.typeFilter == filter,
+                    onClick = { onTypeFilterSelected(filter) },
+                    label = filter.label(language),
+                    singleChoice = true,
+                )
+            }
+        }
+    }
 }
 
-private fun ManagementContent.description(language: AppLanguage): String = when (this) {
-    ManagementContent.DOWNLOADS -> language.text("跟踪下载任务", "Track download tasks")
-    ManagementContent.LIBRARY -> language.text("管理云端收藏", "Manage cloud favorites")
-    ManagementContent.LOCAL -> language.text("整理本地壁纸", "Organize local wallpapers")
+@Composable
+private fun ManagementLibraryFilterSections(
+    state: LibraryUiState,
+    language: AppLanguage,
+    onCollectionSelected: (LibraryCollectionTab) -> Unit,
+    onTypeSelected: (LibraryTypeFilter) -> Unit,
+    onPaginationModeSelected: (HomePaginationMode) -> Unit,
+) {
+    ManagementFilterSectionCard(
+        title = language.text("资料库分类", "Collection"),
+        supportingText = language.text("切换 Steam 账户资源集合", "Switch the Steam account collection"),
+    ) {
+        ManagementSingleChoiceFlow {
+            LibraryCollectionTab.entries.forEach { collection ->
+                ManagementChoiceChip(
+                    selected = state.collection == collection,
+                    onClick = { onCollectionSelected(collection) },
+                    label = collection.label(language),
+                    singleChoice = true,
+                )
+            }
+        }
+    }
+    ManagementFilterSectionCard(
+        title = language.text("壁纸类型", "Wallpaper type"),
+        supportingText = language.text("缩小当前集合中的内容范围", "Narrow the content in this collection"),
+    ) {
+        ManagementSingleChoiceFlow {
+            LibraryTypeFilter.entries.forEach { filter ->
+                ManagementChoiceChip(
+                    selected = state.typeFilter == filter,
+                    onClick = { onTypeSelected(filter) },
+                    label = filter.label(language),
+                    singleChoice = true,
+                )
+            }
+        }
+    }
+    ManagementFilterSectionCard(
+        title = language.text("浏览方式", "Browsing mode"),
+        supportingText = language.text("选择连续加载或页码导航", "Choose continuous loading or page controls"),
+    ) {
+        ManagementSingleChoiceFlow {
+            HomePaginationMode.entries.forEach { mode ->
+                ManagementChoiceChip(
+                    selected = state.paginationMode == mode,
+                    onClick = { onPaginationModeSelected(mode) },
+                    label = mode.libraryLabel(language),
+                    singleChoice = true,
+                )
+            }
+        }
+    }
 }
 
-private fun ManagementContent.icon(): ImageVector = when (this) {
-    ManagementContent.DOWNLOADS -> Icons.Outlined.Download
-    ManagementContent.LIBRARY -> Icons.Outlined.Bookmarks
-    ManagementContent.LOCAL -> Icons.Outlined.FolderOpen
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ManagementLocalFilterSections(
+    state: LocalWallpaperUiState,
+    language: AppLanguage,
+    onAction: (LocalWallpaperAction) -> Unit,
+) {
+    ManagementFilterSectionCard(
+        title = language.text("格式", "Format"),
+        supportingText = language.text("按本地资源格式筛选", "Filter by local resource format"),
+    ) {
+        ManagementSingleChoiceFlow {
+            LocalWallpaperFormatFilter.entries.forEach { filter ->
+                ManagementChoiceChip(
+                    selected = state.formatFilter == filter,
+                    onClick = { onAction(LocalWallpaperAction.SelectFormatFilter(filter)) },
+                    label = filter.managementLabel(language),
+                    singleChoice = true,
+                )
+            }
+        }
+    }
+    ManagementFilterSectionCard(
+        title = language.text("导入状态", "Import state"),
+        supportingText =
+            language.text("查看尚未导入或已发起导入的资源", "View resources by requested import state"),
+    ) {
+        ManagementSingleChoiceFlow {
+            LocalWallpaperImportFilter.entries.forEach { filter ->
+                ManagementChoiceChip(
+                    selected = state.importFilter == filter,
+                    onClick = { onAction(LocalWallpaperAction.SelectImportFilter(filter)) },
+                    label = filter.managementLabel(language),
+                    singleChoice = true,
+                )
+            }
+        }
+    }
+    ManagementFilterSectionCard(
+        title = language.text("来源", "Source"),
+        supportingText = language.text("限定扫描目录来源", "Limit results to a scanned location"),
+    ) {
+        ManagementSingleChoiceFlow {
+            ManagementChoiceChip(
+                selected = state.sourceId == null,
+                onClick = { onAction(LocalWallpaperAction.SelectSource(null)) },
+                label = language.text("全部目录", "All locations"),
+                singleChoice = true,
+            )
+            state.scan.sources.forEach { source ->
+                ManagementChoiceChip(
+                    selected = state.sourceId == source.id,
+                    onClick = { onAction(LocalWallpaperAction.SelectSource(source.id)) },
+                    label = source.label,
+                    singleChoice = true,
+                )
+            }
+        }
+    }
+    ManagementLocalOrganizationFilters(
+        state = state,
+        language = language,
+        onAction = onAction,
+    )
+    ManagementFilterSectionCard(
+        title = language.text("排序", "Sort"),
+        supportingText = language.text("决定本地资源的排列顺序", "Choose the order of local resources"),
+    ) {
+        ManagementSingleChoiceFlow {
+            LocalWallpaperSort.entries.forEach { sort ->
+                ManagementChoiceChip(
+                    selected = state.sort == sort,
+                    onClick = { onAction(LocalWallpaperAction.SelectSort(sort)) },
+                    label = sort.managementLabel(language),
+                    singleChoice = true,
+                )
+            }
+        }
+    }
 }
 
-private fun ManagementContent.filterTitle(language: AppLanguage): String = when (this) {
-    ManagementContent.DOWNLOADS -> language.text("下载筛选", "Download filters")
-    ManagementContent.LIBRARY -> language.text("资料库筛选", "Library filters")
-    ManagementContent.LOCAL -> language.text("本地筛选", "Local filters")
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ManagementLocalOrganizationFilters(
+    state: LocalWallpaperUiState,
+    language: AppLanguage,
+    onAction: (LocalWallpaperAction) -> Unit,
+) {
+    ManagementFilterSectionCard(
+        title = language.text("整理", "Organization"),
+        supportingText = language.text("组合收藏状态与单个标签", "Combine favorites with one tag"),
+    ) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ManagementChoiceChip(
+                selected = state.favoriteOnly,
+                onClick = { onAction(LocalWallpaperAction.SetFavoriteOnly(!state.favoriteOnly)) },
+                label = language.text("仅收藏", "Favorites only"),
+            )
+        }
+        ManagementSingleChoiceFlow {
+            ManagementChoiceChip(
+                selected = state.selectedTag == null,
+                onClick = { onAction(LocalWallpaperAction.SelectTag(null)) },
+                label = language.text("全部标签", "All tags"),
+                singleChoice = true,
+            )
+            state.allTags.forEach { tag ->
+                ManagementChoiceChip(
+                    selected = state.selectedTag == tag,
+                    onClick = { onAction(LocalWallpaperAction.SelectTag(tag)) },
+                    label = tag,
+                    singleChoice = true,
+                )
+            }
+        }
+    }
 }
+
+private fun ManagementContent.label(language: AppLanguage): String =
+    when (this) {
+        ManagementContent.DOWNLOADS -> language.text("下载", "Downloads")
+        ManagementContent.LIBRARY -> language.text("资料库", "Library")
+        ManagementContent.LOCAL -> language.text("本地", "Local")
+    }
+
+private fun ManagementContent.description(language: AppLanguage): String =
+    when (this) {
+        ManagementContent.DOWNLOADS -> language.text("跟踪下载任务", "Track download tasks")
+        ManagementContent.LIBRARY -> language.text("管理云端收藏", "Manage cloud favorites")
+        ManagementContent.LOCAL -> language.text("整理本地壁纸", "Organize local wallpapers")
+    }
+
+private fun ManagementContent.icon(): ImageVector =
+    when (this) {
+        ManagementContent.DOWNLOADS -> Icons.Outlined.Download
+        ManagementContent.LIBRARY -> Icons.Outlined.Bookmarks
+        ManagementContent.LOCAL -> Icons.Outlined.FolderOpen
+    }
+
+private fun ManagementContent.filterTitle(language: AppLanguage): String =
+    when (this) {
+        ManagementContent.DOWNLOADS -> language.text("下载筛选", "Download filters")
+        ManagementContent.LIBRARY -> language.text("资料库筛选", "Library filters")
+        ManagementContent.LOCAL -> language.text("本地筛选", "Local filters")
+    }
 
 private fun ManagementContent.activeFilterCount(
     downloadsState: DownloadsUiState,
     libraryState: LibraryUiState,
     localWallpaperState: LocalWallpaperUiState,
-): Int = when (this) {
-    ManagementContent.DOWNLOADS -> downloadsState.activeFilterCount()
-    ManagementContent.LIBRARY -> libraryState.activeFilterCount()
-    ManagementContent.LOCAL -> localWallpaperState.activeFilterCount
-}
+): Int =
+    when (this) {
+        ManagementContent.DOWNLOADS -> downloadsState.activeFilterCount()
+        ManagementContent.LIBRARY -> libraryState.activeFilterCount()
+        ManagementContent.LOCAL -> localWallpaperState.activeFilterCount
+    }
 
 private fun DownloadsUiState.activeFilterCount(): Int =
     (if (filter != DownloadFilter.ALL) 1 else 0) +
@@ -1176,85 +1203,98 @@ private fun LibraryUiState.activeFilterCount(): Int =
         (if (typeFilter != LibraryTypeFilter.ALL) 1 else 0) +
         (if (paginationMode != HomePaginationMode.INFINITE_SCROLL) 1 else 0)
 
-private fun LocalWallpaperFormatFilter.managementLabel(language: AppLanguage): String = when (this) {
-    LocalWallpaperFormatFilter.ALL -> language.text("全部", "All")
-    LocalWallpaperFormatFilter.MPKG -> "MPKG"
-    LocalWallpaperFormatFilter.PKG -> "PKG"
-    LocalWallpaperFormatFilter.VIDEO -> language.text("视频", "Video")
-    LocalWallpaperFormatFilter.HTML -> "HTML"
-    LocalWallpaperFormatFilter.UNKNOWN -> language.text("未知", "Unknown")
-}
+private fun LocalWallpaperFormatFilter.managementLabel(language: AppLanguage): String =
+    when (this) {
+        LocalWallpaperFormatFilter.ALL -> language.text("全部", "All")
+        LocalWallpaperFormatFilter.MPKG -> "MPKG"
+        LocalWallpaperFormatFilter.PKG -> "PKG"
+        LocalWallpaperFormatFilter.VIDEO -> language.text("视频", "Video")
+        LocalWallpaperFormatFilter.HTML -> "HTML"
+        LocalWallpaperFormatFilter.UNKNOWN -> language.text("未知", "Unknown")
+    }
 
-private fun LocalWallpaperImportFilter.managementLabel(language: AppLanguage): String = when (this) {
-    LocalWallpaperImportFilter.ALL -> language.text("全部", "All")
-    LocalWallpaperImportFilter.NOT_IMPORTED -> language.text("未导入", "Not imported")
-    LocalWallpaperImportFilter.IMPORT_REQUESTED -> language.text("已发起导入", "Import requested")
-}
+private fun LocalWallpaperImportFilter.managementLabel(language: AppLanguage): String =
+    when (this) {
+        LocalWallpaperImportFilter.ALL -> language.text("全部", "All")
+        LocalWallpaperImportFilter.NOT_IMPORTED -> language.text("未导入", "Not imported")
+        LocalWallpaperImportFilter.IMPORT_REQUESTED -> language.text("已发起导入", "Import requested")
+    }
 
-private fun LocalWallpaperSort.managementLabel(
-    language: AppLanguage,
-): String = when (this) {
-    LocalWallpaperSort.RECENT -> language.text("最近修改", "Recent")
-    LocalWallpaperSort.NAME -> language.text("名称", "Name")
-    LocalWallpaperSort.SIZE -> language.text("文件大小", "Size")
-    LocalWallpaperSort.TYPE -> language.text("类型", "Type")
-}
+private fun LocalWallpaperSort.managementLabel(language: AppLanguage): String =
+    when (this) {
+        LocalWallpaperSort.RECENT -> language.text("最近修改", "Recent")
+        LocalWallpaperSort.NAME -> language.text("名称", "Name")
+        LocalWallpaperSort.SIZE -> language.text("文件大小", "Size")
+        LocalWallpaperSort.TYPE -> language.text("类型", "Type")
+    }
 
-private fun DownloadFilter.label(language: AppLanguage): String = when (this) {
-    DownloadFilter.ALL -> language.text("全部", "All")
-    DownloadFilter.COMPLETED -> language.text("已完成", "Completed")
-    DownloadFilter.DOWNLOADING -> language.text("下载中", "Active")
-    DownloadFilter.QUEUED -> language.text("待下载", "Queued")
-    DownloadFilter.FAILED -> language.text("失败", "Failed")
-}
+private fun DownloadFilter.label(language: AppLanguage): String =
+    when (this) {
+        DownloadFilter.ALL -> language.text("全部", "All")
+        DownloadFilter.COMPLETED -> language.text("已完成", "Completed")
+        DownloadFilter.DOWNLOADING -> language.text("下载中", "Active")
+        DownloadFilter.QUEUED -> language.text("待下载", "Queued")
+        DownloadFilter.FAILED -> language.text("失败", "Failed")
+    }
 
-private fun DownloadTypeFilter.label(language: AppLanguage): String = when (this) {
-    DownloadTypeFilter.ALL -> language.text("全部", "All")
-    DownloadTypeFilter.VIDEO -> language.text("视频", "Video")
-    DownloadTypeFilter.SCENE -> language.text("场景", "Scene")
-    DownloadTypeFilter.WEB -> language.text("网站", "Web")
-}
+private fun DownloadTypeFilter.label(language: AppLanguage): String =
+    when (this) {
+        DownloadTypeFilter.ALL -> language.text("全部", "All")
+        DownloadTypeFilter.VIDEO -> language.text("视频", "Video")
+        DownloadTypeFilter.SCENE -> language.text("场景", "Scene")
+        DownloadTypeFilter.WEB -> language.text("网站", "Web")
+    }
 
-private fun LibraryCollectionTab.label(language: AppLanguage): String = when (this) {
-    LibraryCollectionTab.SUBSCRIPTIONS -> language.text("个人订阅", "Subscriptions")
-    LibraryCollectionTab.FAVORITES -> language.text("我的收藏", "Favorites")
-    LibraryCollectionTab.VOTED -> language.text("我的投票", "Voted")
-}
+private fun LibraryCollectionTab.label(language: AppLanguage): String =
+    when (this) {
+        LibraryCollectionTab.SUBSCRIPTIONS -> language.text("个人订阅", "Subscriptions")
+        LibraryCollectionTab.FAVORITES -> language.text("我的收藏", "Favorites")
+        LibraryCollectionTab.VOTED -> language.text("我的投票", "Voted")
+    }
 
-private fun LibraryTypeFilter.label(language: AppLanguage): String = when (this) {
-    LibraryTypeFilter.ALL -> language.text("全部", "All")
-    LibraryTypeFilter.VIDEO -> language.text("视频", "Video")
-    LibraryTypeFilter.SCENE -> language.text("场景", "Scene")
-    LibraryTypeFilter.WEB -> language.text("网站", "Web")
-}
+private fun LibraryTypeFilter.label(language: AppLanguage): String =
+    when (this) {
+        LibraryTypeFilter.ALL -> language.text("全部", "All")
+        LibraryTypeFilter.VIDEO -> language.text("视频", "Video")
+        LibraryTypeFilter.SCENE -> language.text("场景", "Scene")
+        LibraryTypeFilter.WEB -> language.text("网站", "Web")
+    }
 
-private fun HomePaginationMode.libraryLabel(language: AppLanguage): String = when (this) {
-    HomePaginationMode.INFINITE_SCROLL -> language.text("瀑布流拼接", "Infinite scroll")
-    HomePaginationMode.PAGED -> language.text("页数组件", "Page controls")
-}
+private fun HomePaginationMode.libraryLabel(language: AppLanguage): String =
+    when (this) {
+        HomePaginationMode.INFINITE_SCROLL -> language.text("瀑布流拼接", "Infinite scroll")
+        HomePaginationMode.PAGED -> language.text("页数组件", "Page controls")
+    }
 
 @Composable
 private fun Modifier.managementContextMenuBackdrop(active: Boolean): Modifier {
     val progress by animateFloatAsState(
         targetValue = if (active) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = if (active) MANAGEMENT_CONTEXT_MENU_ENTER_DURATION_MS
-            else MANAGEMENT_CONTEXT_MENU_EXIT_DURATION_MS,
-            easing = MANAGEMENT_CONTEXT_MENU_EASING,
-        ),
+        animationSpec =
+            tween(
+                durationMillis =
+                    if (active) {
+                        MANAGEMENT_CONTEXT_MENU_ENTER_DURATION_MS
+                    } else {
+                        MANAGEMENT_CONTEXT_MENU_EXIT_DURATION_MS
+                    },
+                easing = MANAGEMENT_CONTEXT_MENU_EASING,
+            ),
         label = "ManagementContextMenuBackdrop",
     )
     if (!active && progress <= 0f) return this
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val scrim = MaterialTheme.colorScheme.scrim.copy(
-        alpha = (if (dark) MANAGEMENT_CONTEXT_MENU_DARK_SCRIM_ALPHA else MANAGEMENT_CONTEXT_MENU_LIGHT_SCRIM_ALPHA) * progress,
-    )
-    val scrimModifier = drawWithContent {
-        drawContent()
-        drawRect(scrim)
-    }.then(
-        if (active) Modifier.semantics { invisibleToUser() } else Modifier,
-    )
+    val scrim =
+        MaterialTheme.colorScheme.scrim.copy(
+            alpha = (if (dark) MANAGEMENT_CONTEXT_MENU_DARK_SCRIM_ALPHA else MANAGEMENT_CONTEXT_MENU_LIGHT_SCRIM_ALPHA) * progress,
+        )
+    val scrimModifier =
+        drawWithContent {
+            drawContent()
+            drawRect(scrim)
+        }.then(
+            if (active) Modifier.semantics { invisibleToUser() } else Modifier,
+        )
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && progress > 0f) {
         scrimModifier.blur(MANAGEMENT_CONTEXT_MENU_BLUR_RADIUS * progress)
     } else {

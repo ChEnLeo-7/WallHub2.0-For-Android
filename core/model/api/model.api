@@ -1,0 +1,1095 @@
+public final class com/wallhub/android/core/model/AccentPreference : java/lang/Enum {
+	public static final field BLUE Lcom/wallhub/android/core/model/AccentPreference;
+	public static final field CUSTOM Lcom/wallhub/android/core/model/AccentPreference;
+	public static final field DEFAULT Lcom/wallhub/android/core/model/AccentPreference;
+	public static final field GREEN Lcom/wallhub/android/core/model/AccentPreference;
+	public static final field MONET Lcom/wallhub/android/core/model/AccentPreference;
+	public static final field ROSE Lcom/wallhub/android/core/model/AccentPreference;
+	public static final field VIOLET Lcom/wallhub/android/core/model/AccentPreference;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/AccentPreference;
+	public static fun values ()[Lcom/wallhub/android/core/model/AccentPreference;
+}
+
+public final class com/wallhub/android/core/model/AccountWorkshopCollection : java/lang/Enum {
+	public static final field FAVORITES Lcom/wallhub/android/core/model/AccountWorkshopCollection;
+	public static final field SUBSCRIPTIONS Lcom/wallhub/android/core/model/AccountWorkshopCollection;
+	public static final field VOTED Lcom/wallhub/android/core/model/AccountWorkshopCollection;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/AccountWorkshopCollection;
+	public static fun values ()[Lcom/wallhub/android/core/model/AccountWorkshopCollection;
+}
+
+public final class com/wallhub/android/core/model/AccountWorkshopQuery {
+	public fun <init> (Lcom/wallhub/android/core/model/AccountWorkshopCollection;IILjava/lang/String;ZLcom/wallhub/android/core/model/WorkshopType;Ljava/util/Set;)V
+	public synthetic fun <init> (Lcom/wallhub/android/core/model/AccountWorkshopCollection;IILjava/lang/String;ZLcom/wallhub/android/core/model/WorkshopType;Ljava/util/Set;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/wallhub/android/core/model/AccountWorkshopCollection;
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Z
+	public final fun component6 ()Lcom/wallhub/android/core/model/WorkshopType;
+	public final fun component7 ()Ljava/util/Set;
+	public final fun copy (Lcom/wallhub/android/core/model/AccountWorkshopCollection;IILjava/lang/String;ZLcom/wallhub/android/core/model/WorkshopType;Ljava/util/Set;)Lcom/wallhub/android/core/model/AccountWorkshopQuery;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/AccountWorkshopQuery;Lcom/wallhub/android/core/model/AccountWorkshopCollection;IILjava/lang/String;ZLcom/wallhub/android/core/model/WorkshopType;Ljava/util/Set;ILjava/lang/Object;)Lcom/wallhub/android/core/model/AccountWorkshopQuery;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCollection ()Lcom/wallhub/android/core/model/AccountWorkshopCollection;
+	public final fun getPage ()I
+	public final fun getPageSize ()I
+	public final fun getResolveTotalCount ()Z
+	public final fun getSearchText ()Ljava/lang/String;
+	public final fun getTags ()Ljava/util/Set;
+	public final fun getType ()Lcom/wallhub/android/core/model/WorkshopType;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/wallhub/android/core/model/AccountWorkshopRepository {
+	public abstract fun browseCollection (Lcom/wallhub/android/core/model/AccountWorkshopQuery;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getInteraction (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun postComment (JLjava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun resolveAuthorDisplayName (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setFavorited (JZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setSubscribed (JZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/AppError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Z)Lcom/wallhub/android/core/model/AppError;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/AppError;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)Lcom/wallhub/android/core/model/AppError;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCanRetry ()Z
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/AppLanguage : java/lang/Enum {
+	public static final field EN Lcom/wallhub/android/core/model/AppLanguage;
+	public static final field ZH Lcom/wallhub/android/core/model/AppLanguage;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/AppLanguage;
+	public static fun values ()[Lcom/wallhub/android/core/model/AppLanguage;
+}
+
+public final class com/wallhub/android/core/model/AppModelsKt {
+	public static final field STEAM_ACCESS_DOH_ENDPOINT_LIMIT I
+	public static final fun enabledSteamAccessDohEndpoints (Lcom/wallhub/android/core/model/AppPreferences;)Ljava/util/List;
+	public static final fun getDEFAULT_STEAM_ACCESS_DOH_ENDPOINTS ()Ljava/util/List;
+	public static final fun isSupportedDownloadProxyUrl (Ljava/lang/String;)Z
+	public static final fun normalizeSteamAccessDohEndpoint (Ljava/lang/String;)Ljava/lang/String;
+	public static final fun normalizeSteamAccessDohEndpoints (Ljava/util/List;)Ljava/util/List;
+}
+
+public final class com/wallhub/android/core/model/AppPreferences {
+	public fun <init> ()V
+	public fun <init> (Lcom/wallhub/android/core/model/ThemePreference;Lcom/wallhub/android/core/model/AppLanguage;Lcom/wallhub/android/core/model/AccentPreference;Ljava/lang/String;ZZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/LocalWallpaperViewMode;IIZLcom/wallhub/android/core/model/HomeCardAction;Lcom/wallhub/android/core/model/HomePaginationMode;ZIILjava/lang/String;ZZZLcom/wallhub/android/core/model/SteamAccessMode;Ljava/util/List;Ljava/util/Set;Ljava/lang/String;ILjava/lang/String;Lcom/wallhub/android/core/model/SteamWorkshopDataSource;Z)V
+	public synthetic fun <init> (Lcom/wallhub/android/core/model/ThemePreference;Lcom/wallhub/android/core/model/AppLanguage;Lcom/wallhub/android/core/model/AccentPreference;Ljava/lang/String;ZZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/LocalWallpaperViewMode;IIZLcom/wallhub/android/core/model/HomeCardAction;Lcom/wallhub/android/core/model/HomePaginationMode;ZIILjava/lang/String;ZZZLcom/wallhub/android/core/model/SteamAccessMode;Ljava/util/List;Ljava/util/Set;Ljava/lang/String;ILjava/lang/String;Lcom/wallhub/android/core/model/SteamWorkshopDataSource;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/wallhub/android/core/model/ThemePreference;
+	public final fun component10 ()Ljava/lang/String;
+	public final fun component11 ()Lcom/wallhub/android/core/model/LocalWallpaperViewMode;
+	public final fun component12 ()I
+	public final fun component13 ()I
+	public final fun component14 ()Z
+	public final fun component15 ()Lcom/wallhub/android/core/model/HomeCardAction;
+	public final fun component16 ()Lcom/wallhub/android/core/model/HomePaginationMode;
+	public final fun component17 ()Z
+	public final fun component18 ()I
+	public final fun component19 ()I
+	public final fun component2 ()Lcom/wallhub/android/core/model/AppLanguage;
+	public final fun component20 ()Ljava/lang/String;
+	public final fun component21 ()Z
+	public final fun component22 ()Z
+	public final fun component23 ()Z
+	public final fun component24 ()Lcom/wallhub/android/core/model/SteamAccessMode;
+	public final fun component25 ()Ljava/util/List;
+	public final fun component26 ()Ljava/util/Set;
+	public final fun component27 ()Ljava/lang/String;
+	public final fun component28 ()I
+	public final fun component29 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/wallhub/android/core/model/AccentPreference;
+	public final fun component30 ()Lcom/wallhub/android/core/model/SteamWorkshopDataSource;
+	public final fun component31 ()Z
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Z
+	public final fun component6 ()Z
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Lcom/wallhub/android/core/model/ThemePreference;Lcom/wallhub/android/core/model/AppLanguage;Lcom/wallhub/android/core/model/AccentPreference;Ljava/lang/String;ZZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/LocalWallpaperViewMode;IIZLcom/wallhub/android/core/model/HomeCardAction;Lcom/wallhub/android/core/model/HomePaginationMode;ZIILjava/lang/String;ZZZLcom/wallhub/android/core/model/SteamAccessMode;Ljava/util/List;Ljava/util/Set;Ljava/lang/String;ILjava/lang/String;Lcom/wallhub/android/core/model/SteamWorkshopDataSource;Z)Lcom/wallhub/android/core/model/AppPreferences;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/AppPreferences;Lcom/wallhub/android/core/model/ThemePreference;Lcom/wallhub/android/core/model/AppLanguage;Lcom/wallhub/android/core/model/AccentPreference;Ljava/lang/String;ZZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/LocalWallpaperViewMode;IIZLcom/wallhub/android/core/model/HomeCardAction;Lcom/wallhub/android/core/model/HomePaginationMode;ZIILjava/lang/String;ZZZLcom/wallhub/android/core/model/SteamAccessMode;Ljava/util/List;Ljava/util/Set;Ljava/lang/String;ILjava/lang/String;Lcom/wallhub/android/core/model/SteamWorkshopDataSource;ZILjava/lang/Object;)Lcom/wallhub/android/core/model/AppPreferences;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAccent ()Lcom/wallhub/android/core/model/AccentPreference;
+	public final fun getChunkDownloadConcurrency ()I
+	public final fun getCustomAccentColor ()Ljava/lang/String;
+	public final fun getDownloadProxyEnabled ()Z
+	public final fun getDownloadProxyRequiresConfirmation ()Z
+	public final fun getDownloadProxyUrl ()Ljava/lang/String;
+	public final fun getHomeCardAction ()Lcom/wallhub/android/core/model/HomeCardAction;
+	public final fun getHomeColumns ()I
+	public final fun getHomeFilterMultiSelect ()Z
+	public final fun getHomePageSize ()I
+	public final fun getHomePaginationMode ()Lcom/wallhub/android/core/model/HomePaginationMode;
+	public final fun getLanguage ()Lcom/wallhub/android/core/model/AppLanguage;
+	public final fun getLocalManagementDirectoryLabel ()Ljava/lang/String;
+	public final fun getLocalManagementTreeUri ()Ljava/lang/String;
+	public final fun getLocalWallpaperViewMode ()Lcom/wallhub/android/core/model/LocalWallpaperViewMode;
+	public final fun getMatureContentEnabled ()Z
+	public final fun getMaxConcurrentDownloads ()I
+	public final fun getMediaCacheLimitMb ()I
+	public final fun getOnlineChunkPlaybackEnabled ()Z
+	public final fun getOutputDirectoryLabel ()Ljava/lang/String;
+	public final fun getOutputTreeUri ()Ljava/lang/String;
+	public final fun getSteamAccessDisabledDohEndpoints ()Ljava/util/Set;
+	public final fun getSteamAccessDohEndpoints ()Ljava/util/List;
+	public final fun getSteamAccessEnabled ()Z
+	public final fun getSteamAccessHosts ()Ljava/lang/String;
+	public final fun getSteamAccessMode ()Lcom/wallhub/android/core/model/SteamAccessMode;
+	public final fun getSteamApiKey ()Ljava/lang/String;
+	public final fun getSteamWorkshopDataSource ()Lcom/wallhub/android/core/model/SteamWorkshopDataSource;
+	public final fun getTheme ()Lcom/wallhub/android/core/model/ThemePreference;
+	public final fun getUseSystemMonet ()Z
+	public final fun getUseThemedLauncherIcon ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/AppReleaseInfo {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Z)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/String;
+	public final fun component11 ()Z
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()J
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Z)Lcom/wallhub/android/core/model/AppReleaseInfo;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/AppReleaseInfo;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;ZILjava/lang/Object;)Lcom/wallhub/android/core/model/AppReleaseInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAssetName ()Ljava/lang/String;
+	public final fun getAssetSizeBytes ()J
+	public final fun getAssetUrl ()Ljava/lang/String;
+	public final fun getHtmlUrl ()Ljava/lang/String;
+	public final fun getNotes ()Ljava/lang/String;
+	public final fun getPublishedAt ()Ljava/lang/String;
+	public final fun getReleaseName ()Ljava/lang/String;
+	public final fun getSha256 ()Ljava/lang/String;
+	public final fun getTagName ()Ljava/lang/String;
+	public final fun getVersionName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isNewer ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/wallhub/android/core/model/AppUpdateRepository {
+	public abstract fun cancelDownload ()V
+	public abstract fun downloadRelease (Lcom/wallhub/android/core/model/AppReleaseInfo;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getInstalledAppInfo ()Lcom/wallhub/android/core/model/InstalledAppInfo;
+	public abstract fun latestRelease (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/AppUpdateRepository$DefaultImpls {
+	public static fun cancelDownload (Lcom/wallhub/android/core/model/AppUpdateRepository;)V
+}
+
+public final class com/wallhub/android/core/model/ConversionTask {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/DownloadStatus;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;JJ)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/DownloadStatus;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;JJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/wallhub/android/core/model/DownloadStatus;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()J
+	public final fun component8 ()J
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/DownloadStatus;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;JJ)Lcom/wallhub/android/core/model/ConversionTask;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/ConversionTask;Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/DownloadStatus;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;JJILjava/lang/Object;)Lcom/wallhub/android/core/model/ConversionTask;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCreatedAt ()J
+	public final fun getDownloadTaskId ()Ljava/lang/String;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getOutputLabel ()Ljava/lang/String;
+	public final fun getStatus ()Lcom/wallhub/android/core/model/DownloadStatus;
+	public final fun getUpdatedAt ()J
+	public final fun getWarnings ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/wallhub/android/core/model/ConversionTaskRepository {
+	public abstract fun clearFinishedHistory (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun find (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getTasks ()Lkotlinx/coroutines/flow/Flow;
+	public abstract fun upsert (Lcom/wallhub/android/core/model/ConversionTask;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/ConversionWarning {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Lcom/wallhub/android/core/model/ConversionWarning;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/ConversionWarning;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/wallhub/android/core/model/ConversionWarning;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDetail ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/DiagnosticEvent {
+	public fun <init> (JLjava/lang/String;Lcom/wallhub/android/core/model/DiagnosticLevel;Ljava/lang/String;Ljava/util/Map;)V
+	public synthetic fun <init> (JLjava/lang/String;Lcom/wallhub/android/core/model/DiagnosticLevel;Ljava/lang/String;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/wallhub/android/core/model/DiagnosticLevel;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/util/Map;
+	public final fun copy (JLjava/lang/String;Lcom/wallhub/android/core/model/DiagnosticLevel;Ljava/lang/String;Ljava/util/Map;)Lcom/wallhub/android/core/model/DiagnosticEvent;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/DiagnosticEvent;JLjava/lang/String;Lcom/wallhub/android/core/model/DiagnosticLevel;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Lcom/wallhub/android/core/model/DiagnosticEvent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAttributes ()Ljava/util/Map;
+	public final fun getLevel ()Lcom/wallhub/android/core/model/DiagnosticLevel;
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getSource ()Ljava/lang/String;
+	public final fun getTimestamp ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/wallhub/android/core/model/DiagnosticExportRepository {
+	public abstract fun exportTo (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/DiagnosticLevel : java/lang/Enum {
+	public static final field ERROR Lcom/wallhub/android/core/model/DiagnosticLevel;
+	public static final field INFO Lcom/wallhub/android/core/model/DiagnosticLevel;
+	public static final field WARNING Lcom/wallhub/android/core/model/DiagnosticLevel;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/DiagnosticLevel;
+	public static fun values ()[Lcom/wallhub/android/core/model/DiagnosticLevel;
+}
+
+public abstract interface class com/wallhub/android/core/model/DiagnosticRepository {
+	public abstract fun clear (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun exportRedactedText (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun readRecent (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun record (Lcom/wallhub/android/core/model/DiagnosticEvent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/DiagnosticRepository$DefaultImpls {
+	public static synthetic fun readRecent$default (Lcom/wallhub/android/core/model/DiagnosticRepository;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/DownloadAction : java/lang/Enum {
+	public static final field CANCEL Lcom/wallhub/android/core/model/DownloadAction;
+	public static final field DELETE Lcom/wallhub/android/core/model/DownloadAction;
+	public static final field EXPORT Lcom/wallhub/android/core/model/DownloadAction;
+	public static final field PAUSE Lcom/wallhub/android/core/model/DownloadAction;
+	public static final field RESUME Lcom/wallhub/android/core/model/DownloadAction;
+	public static final field RETRY Lcom/wallhub/android/core/model/DownloadAction;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/DownloadAction;
+	public static fun values ()[Lcom/wallhub/android/core/model/DownloadAction;
+}
+
+public final class com/wallhub/android/core/model/DownloadRequest {
+	public fun <init> (JLjava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Ljava/lang/String;JLjava/lang/String;Lcom/wallhub/android/core/model/ExportFormat;)V
+	public synthetic fun <init> (JLjava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Ljava/lang/String;JLjava/lang/String;Lcom/wallhub/android/core/model/ExportFormat;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/wallhub/android/core/model/WorkshopType;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()J
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Lcom/wallhub/android/core/model/ExportFormat;
+	public final fun copy (JLjava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Ljava/lang/String;JLjava/lang/String;Lcom/wallhub/android/core/model/ExportFormat;)Lcom/wallhub/android/core/model/DownloadRequest;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/DownloadRequest;JLjava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Ljava/lang/String;JLjava/lang/String;Lcom/wallhub/android/core/model/ExportFormat;ILjava/lang/Object;)Lcom/wallhub/android/core/model/DownloadRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpectedTotalBytes ()J
+	public final fun getExportFormat ()Lcom/wallhub/android/core/model/ExportFormat;
+	public final fun getOutputTreeUri ()Ljava/lang/String;
+	public final fun getPreviewUrl ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public final fun getType ()Lcom/wallhub/android/core/model/WorkshopType;
+	public final fun getWorkshopId ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/DownloadStatus : java/lang/Enum {
+	public static final field CANCELLED Lcom/wallhub/android/core/model/DownloadStatus;
+	public static final field COMPLETED Lcom/wallhub/android/core/model/DownloadStatus;
+	public static final field CONVERTING Lcom/wallhub/android/core/model/DownloadStatus;
+	public static final field DOWNLOADING Lcom/wallhub/android/core/model/DownloadStatus;
+	public static final field EXPORTING Lcom/wallhub/android/core/model/DownloadStatus;
+	public static final field FAILED Lcom/wallhub/android/core/model/DownloadStatus;
+	public static final field PAUSED Lcom/wallhub/android/core/model/DownloadStatus;
+	public static final field QUEUED Lcom/wallhub/android/core/model/DownloadStatus;
+	public static final field RESOLVING Lcom/wallhub/android/core/model/DownloadStatus;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/DownloadStatus;
+	public static fun values ()[Lcom/wallhub/android/core/model/DownloadStatus;
+}
+
+public final class com/wallhub/android/core/model/DownloadTask {
+	public fun <init> (Ljava/lang/String;JLjava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Lcom/wallhub/android/core/model/DownloadStatus;Ljava/lang/String;JJJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JILjava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/ExportFormat;Lcom/wallhub/android/core/model/DownloadAction;ZJJJ)V
+	public synthetic fun <init> (Ljava/lang/String;JLjava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Lcom/wallhub/android/core/model/DownloadStatus;Ljava/lang/String;JJJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JILjava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/ExportFormat;Lcom/wallhub/android/core/model/DownloadAction;ZJJJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/String;
+	public final fun component11 ()Ljava/lang/String;
+	public final fun component12 ()Ljava/lang/String;
+	public final fun component13 ()Ljava/lang/String;
+	public final fun component14 ()J
+	public final fun component15 ()I
+	public final fun component16 ()Ljava/lang/String;
+	public final fun component17 ()Ljava/lang/String;
+	public final fun component18 ()Lcom/wallhub/android/core/model/ExportFormat;
+	public final fun component19 ()Lcom/wallhub/android/core/model/DownloadAction;
+	public final fun component2 ()J
+	public final fun component20 ()Z
+	public final fun component21 ()J
+	public final fun component22 ()J
+	public final fun component23 ()J
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Lcom/wallhub/android/core/model/WorkshopType;
+	public final fun component5 ()Lcom/wallhub/android/core/model/DownloadStatus;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()J
+	public final fun component8 ()J
+	public final fun component9 ()J
+	public final fun copy (Ljava/lang/String;JLjava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Lcom/wallhub/android/core/model/DownloadStatus;Ljava/lang/String;JJJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JILjava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/ExportFormat;Lcom/wallhub/android/core/model/DownloadAction;ZJJJ)Lcom/wallhub/android/core/model/DownloadTask;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/DownloadTask;Ljava/lang/String;JLjava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Lcom/wallhub/android/core/model/DownloadStatus;Ljava/lang/String;JJJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JILjava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/ExportFormat;Lcom/wallhub/android/core/model/DownloadAction;ZJJJILjava/lang/Object;)Lcom/wallhub/android/core/model/DownloadTask;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAccountName ()Ljava/lang/String;
+	public final fun getAppId ()I
+	public final fun getAvailableActions ()Ljava/util/Set;
+	public final fun getBytesPerSecond ()J
+	public final fun getContentManifestId ()J
+	public final fun getCreatedAt ()J
+	public final fun getDownloadedBytes ()J
+	public final fun getExportFormat ()Lcom/wallhub/android/core/model/ExportFormat;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getOutputLabel ()Ljava/lang/String;
+	public final fun getOutputTreeUri ()Ljava/lang/String;
+	public final fun getOutputUri ()Ljava/lang/String;
+	public final fun getPreviewUrl ()Ljava/lang/String;
+	public final fun getProgress ()F
+	public final fun getQueuePosition ()J
+	public final fun getRequestedAction ()Lcom/wallhub/android/core/model/DownloadAction;
+	public final fun getStagingDirectory ()Ljava/lang/String;
+	public final fun getStatus ()Lcom/wallhub/android/core/model/DownloadStatus;
+	public final fun getTitle ()Ljava/lang/String;
+	public final fun getTotalBytes ()J
+	public final fun getType ()Lcom/wallhub/android/core/model/WorkshopType;
+	public final fun getUpdatedAt ()J
+	public final fun getWorkshopId ()J
+	public fun hashCode ()I
+	public final fun isResumable ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/wallhub/android/core/model/DownloadTaskRepository {
+	public abstract fun clearFinishedHistory (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun enqueue (Lcom/wallhub/android/core/model/DownloadRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun find (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getTasks ()Lkotlinx/coroutines/flow/Flow;
+	public abstract fun reorder (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun requestAction (Ljava/lang/String;Lcom/wallhub/android/core/model/DownloadAction;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun upsert (Lcom/wallhub/android/core/model/DownloadTask;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/ExportFormat : java/lang/Enum {
+	public static final field AUTO Lcom/wallhub/android/core/model/ExportFormat;
+	public static final field MPKG Lcom/wallhub/android/core/model/ExportFormat;
+	public static final field ZIP Lcom/wallhub/android/core/model/ExportFormat;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/ExportFormat;
+	public static fun values ()[Lcom/wallhub/android/core/model/ExportFormat;
+}
+
+public final class com/wallhub/android/core/model/FavoriteState : java/lang/Enum {
+	public static final field FAVORITED Lcom/wallhub/android/core/model/FavoriteState;
+	public static final field NOT_FAVORITED Lcom/wallhub/android/core/model/FavoriteState;
+	public static final field UNKNOWN Lcom/wallhub/android/core/model/FavoriteState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/FavoriteState;
+	public static fun values ()[Lcom/wallhub/android/core/model/FavoriteState;
+}
+
+public final class com/wallhub/android/core/model/HomeCardAction : java/lang/Enum {
+	public static final field DOWNLOAD Lcom/wallhub/android/core/model/HomeCardAction;
+	public static final field OPEN_STEAM Lcom/wallhub/android/core/model/HomeCardAction;
+	public static final field PLAY_VIDEO Lcom/wallhub/android/core/model/HomeCardAction;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/HomeCardAction;
+	public static fun values ()[Lcom/wallhub/android/core/model/HomeCardAction;
+}
+
+public final class com/wallhub/android/core/model/HomePaginationMode : java/lang/Enum {
+	public static final field INFINITE_SCROLL Lcom/wallhub/android/core/model/HomePaginationMode;
+	public static final field PAGED Lcom/wallhub/android/core/model/HomePaginationMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/HomePaginationMode;
+	public static fun values ()[Lcom/wallhub/android/core/model/HomePaginationMode;
+}
+
+public final class com/wallhub/android/core/model/InstalledAppInfo {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJ)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()J
+	public final fun component5 ()J
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJ)Lcom/wallhub/android/core/model/InstalledAppInfo;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/InstalledAppInfo;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJILjava/lang/Object;)Lcom/wallhub/android/core/model/InstalledAppInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAppName ()Ljava/lang/String;
+	public final fun getLastUpdateTimeMillis ()J
+	public final fun getPackageName ()Ljava/lang/String;
+	public final fun getVersionCode ()J
+	public final fun getVersionName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/wallhub/android/core/model/LauncherIconController {
+	public abstract fun setThemedIconEnabled (Z)V
+}
+
+public final class com/wallhub/android/core/model/LocalWallpaperDeleteResult {
+	public fun <init> (ZLjava/lang/String;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (ZLjava/lang/String;)Lcom/wallhub/android/core/model/LocalWallpaperDeleteResult;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/LocalWallpaperDeleteResult;ZLjava/lang/String;ILjava/lang/Object;)Lcom/wallhub/android/core/model/LocalWallpaperDeleteResult;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDeleted ()Z
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/LocalWallpaperFormat : java/lang/Enum {
+	public static final field HTML Lcom/wallhub/android/core/model/LocalWallpaperFormat;
+	public static final field MPKG Lcom/wallhub/android/core/model/LocalWallpaperFormat;
+	public static final field PKG Lcom/wallhub/android/core/model/LocalWallpaperFormat;
+	public static final field UNKNOWN Lcom/wallhub/android/core/model/LocalWallpaperFormat;
+	public static final field VIDEO Lcom/wallhub/android/core/model/LocalWallpaperFormat;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/LocalWallpaperFormat;
+	public static fun values ()[Lcom/wallhub/android/core/model/LocalWallpaperFormat;
+}
+
+public final class com/wallhub/android/core/model/LocalWallpaperImportState : java/lang/Enum {
+	public static final field IMPORT_REQUESTED Lcom/wallhub/android/core/model/LocalWallpaperImportState;
+	public static final field NOT_IMPORTED Lcom/wallhub/android/core/model/LocalWallpaperImportState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/LocalWallpaperImportState;
+	public static fun values ()[Lcom/wallhub/android/core/model/LocalWallpaperImportState;
+}
+
+public abstract interface class com/wallhub/android/core/model/LocalWallpaperRepository {
+	public abstract fun delete (Lcom/wallhub/android/core/model/LocalWallpaperResource;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun deleteTag (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun markImportRequested (Ljava/lang/String;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun renameTag (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun replaceTags (Ljava/lang/String;Ljava/util/Set;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun scan ()Lkotlinx/coroutines/flow/Flow;
+	public abstract fun setFavorite (Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/LocalWallpaperResource {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/LocalWallpaperFormat;Lcom/wallhub/android/core/model/WorkshopType;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;ZZLjava/util/Set;Ljava/lang/Long;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/LocalWallpaperFormat;Lcom/wallhub/android/core/model/WorkshopType;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;ZZLjava/util/Set;Ljava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()J
+	public final fun component11 ()J
+	public final fun component12 ()Ljava/lang/String;
+	public final fun component13 ()Ljava/lang/String;
+	public final fun component14 ()Ljava/lang/Long;
+	public final fun component15 ()Ljava/lang/String;
+	public final fun component16 ()Z
+	public final fun component17 ()Z
+	public final fun component18 ()Ljava/util/Set;
+	public final fun component19 ()Ljava/lang/Long;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Lcom/wallhub/android/core/model/LocalWallpaperFormat;
+	public final fun component6 ()Lcom/wallhub/android/core/model/WorkshopType;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/LocalWallpaperFormat;Lcom/wallhub/android/core/model/WorkshopType;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;ZZLjava/util/Set;Ljava/lang/Long;)Lcom/wallhub/android/core/model/LocalWallpaperResource;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/LocalWallpaperResource;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/LocalWallpaperFormat;Lcom/wallhub/android/core/model/WorkshopType;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;ZZLjava/util/Set;Ljava/lang/Long;ILjava/lang/Object;)Lcom/wallhub/android/core/model/LocalWallpaperResource;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContentUri ()Ljava/lang/String;
+	public final fun getDetectionReason ()Ljava/lang/String;
+	public final fun getDisplayName ()Ljava/lang/String;
+	public final fun getFormat ()Lcom/wallhub/android/core/model/LocalWallpaperFormat;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getImportRequestedAt ()Ljava/lang/Long;
+	public final fun getImportState ()Lcom/wallhub/android/core/model/LocalWallpaperImportState;
+	public final fun getMimeType ()Ljava/lang/String;
+	public final fun getModifiedAt ()J
+	public final fun getRelativePath ()Ljava/lang/String;
+	public final fun getSizeBytes ()J
+	public final fun getSourceId ()Ljava/lang/String;
+	public final fun getSourceLabel ()Ljava/lang/String;
+	public final fun getTags ()Ljava/util/Set;
+	public final fun getThumbnailUri ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public final fun getWorkshopId ()Ljava/lang/Long;
+	public final fun getWorkshopType ()Lcom/wallhub/android/core/model/WorkshopType;
+	public fun hashCode ()I
+	public final fun isDirectoryProject ()Z
+	public final fun isFavorite ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/LocalWallpaperScanIssue {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Z)Lcom/wallhub/android/core/model/LocalWallpaperScanIssue;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/LocalWallpaperScanIssue;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)Lcom/wallhub/android/core/model/LocalWallpaperScanIssue;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getRequiresAuthorization ()Z
+	public final fun getSourceId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/LocalWallpaperScanSnapshot {
+	public fun <init> ()V
+	public fun <init> (Ljava/util/List;Ljava/util/List;ILjava/lang/String;ZLjava/util/List;)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/util/List;ILjava/lang/String;ZLjava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Z
+	public final fun component6 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;Ljava/util/List;ILjava/lang/String;ZLjava/util/List;)Lcom/wallhub/android/core/model/LocalWallpaperScanSnapshot;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/LocalWallpaperScanSnapshot;Ljava/util/List;Ljava/util/List;ILjava/lang/String;ZLjava/util/List;ILjava/lang/Object;)Lcom/wallhub/android/core/model/LocalWallpaperScanSnapshot;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCurrentSourceLabel ()Ljava/lang/String;
+	public final fun getDiscoveredCount ()I
+	public final fun getIssues ()Ljava/util/List;
+	public final fun getResources ()Ljava/util/List;
+	public final fun getSources ()Ljava/util/List;
+	public fun hashCode ()I
+	public final fun isScanning ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/LocalWallpaperSource {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)Lcom/wallhub/android/core/model/LocalWallpaperSource;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/LocalWallpaperSource;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)Lcom/wallhub/android/core/model/LocalWallpaperSource;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Ljava/lang/String;
+	public final fun getLabel ()Ljava/lang/String;
+	public final fun getRootUri ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isDownloadDirectory ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/LocalWallpaperViewMode : java/lang/Enum {
+	public static final field DETAIL Lcom/wallhub/android/core/model/LocalWallpaperViewMode;
+	public static final field GRID Lcom/wallhub/android/core/model/LocalWallpaperViewMode;
+	public static final field LIST Lcom/wallhub/android/core/model/LocalWallpaperViewMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/LocalWallpaperViewMode;
+	public static fun values ()[Lcom/wallhub/android/core/model/LocalWallpaperViewMode;
+}
+
+public abstract interface class com/wallhub/android/core/model/SettingsRepository {
+	public abstract fun clearLocalManagementDirectory (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun clearOutputDirectory (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getPreferences ()Lkotlinx/coroutines/flow/Flow;
+	public abstract fun setAccent (Lcom/wallhub/android/core/model/AccentPreference;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setDownloadPreferences (IILjava/lang/String;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setDownloadProxyEnabled (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setHomePaginationMode (Lcom/wallhub/android/core/model/HomePaginationMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setHomePreferences (IIZLcom/wallhub/android/core/model/HomeCardAction;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setLanguage (Lcom/wallhub/android/core/model/AppLanguage;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setLocalManagementDirectory (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setLocalWallpaperViewMode (Lcom/wallhub/android/core/model/LocalWallpaperViewMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setOnlineChunkPlaybackEnabled (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setOnlineStreamCacheLimitMb (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setOutputDirectory (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setSteamAccessDohEndpoints (Ljava/util/List;Ljava/util/Set;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setSteamAccessEnabled (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setSteamAccessHosts (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setSteamAccessMode (Lcom/wallhub/android/core/model/SteamAccessMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setSteamApiKey (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setSteamWorkshopDataSource (Lcom/wallhub/android/core/model/SteamWorkshopDataSource;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setSystemMonetEnabled (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setTheme (Lcom/wallhub/android/core/model/ThemePreference;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setThemedLauncherIconEnabled (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/SettingsRepository$DefaultImpls {
+	public static fun clearLocalManagementDirectory (Lcom/wallhub/android/core/model/SettingsRepository;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun setAccent$default (Lcom/wallhub/android/core/model/SettingsRepository;Lcom/wallhub/android/core/model/AccentPreference;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static fun setDownloadProxyEnabled (Lcom/wallhub/android/core/model/SettingsRepository;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun setHomePaginationMode (Lcom/wallhub/android/core/model/SettingsRepository;Lcom/wallhub/android/core/model/HomePaginationMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun setLocalManagementDirectory (Lcom/wallhub/android/core/model/SettingsRepository;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun setLocalWallpaperViewMode (Lcom/wallhub/android/core/model/SettingsRepository;Lcom/wallhub/android/core/model/LocalWallpaperViewMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun setOnlineChunkPlaybackEnabled (Lcom/wallhub/android/core/model/SettingsRepository;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun setOnlineStreamCacheLimitMb (Lcom/wallhub/android/core/model/SettingsRepository;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun setSteamAccessDohEndpoints (Lcom/wallhub/android/core/model/SettingsRepository;Ljava/util/List;Ljava/util/Set;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun setSteamAccessDohEndpoints$default (Lcom/wallhub/android/core/model/SettingsRepository;Ljava/util/List;Ljava/util/Set;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static fun setSteamAccessEnabled (Lcom/wallhub/android/core/model/SettingsRepository;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun setSteamAccessHosts (Lcom/wallhub/android/core/model/SettingsRepository;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun setSteamAccessMode (Lcom/wallhub/android/core/model/SettingsRepository;Lcom/wallhub/android/core/model/SteamAccessMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun setSteamApiKey (Lcom/wallhub/android/core/model/SettingsRepository;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun setSteamWorkshopDataSource (Lcom/wallhub/android/core/model/SettingsRepository;Lcom/wallhub/android/core/model/SteamWorkshopDataSource;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun setSystemMonetEnabled (Lcom/wallhub/android/core/model/SettingsRepository;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun setThemedLauncherIconEnabled (Lcom/wallhub/android/core/model/SettingsRepository;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/SteamAccessMode : java/lang/Enum {
+	public static final field HOSTS Lcom/wallhub/android/core/model/SteamAccessMode;
+	public static final field SMART_DOH Lcom/wallhub/android/core/model/SteamAccessMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/SteamAccessMode;
+	public static fun values ()[Lcom/wallhub/android/core/model/SteamAccessMode;
+}
+
+public final class com/wallhub/android/core/model/SteamAccessPhase : java/lang/Enum {
+	public static final field DEGRADED Lcom/wallhub/android/core/model/SteamAccessPhase;
+	public static final field DISABLED Lcom/wallhub/android/core/model/SteamAccessPhase;
+	public static final field FAILED Lcom/wallhub/android/core/model/SteamAccessPhase;
+	public static final field READY Lcom/wallhub/android/core/model/SteamAccessPhase;
+	public static final field RESOLVING Lcom/wallhub/android/core/model/SteamAccessPhase;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/SteamAccessPhase;
+	public static fun values ()[Lcom/wallhub/android/core/model/SteamAccessPhase;
+}
+
+public abstract interface class com/wallhub/android/core/model/SteamAccessRepository {
+	public abstract fun getState ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun prewarmSteamIp (Lcom/wallhub/android/core/model/SteamWorkshopDataSource;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun refresh ()V
+}
+
+public final class com/wallhub/android/core/model/SteamAccessRepository$DefaultImpls {
+	public static fun prewarmSteamIp (Lcom/wallhub/android/core/model/SteamAccessRepository;Lcom/wallhub/android/core/model/SteamWorkshopDataSource;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/SteamAccessState {
+	public fun <init> ()V
+	public fun <init> (Lcom/wallhub/android/core/model/SteamAccessPhase;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IJLjava/lang/String;J)V
+	public synthetic fun <init> (Lcom/wallhub/android/core/model/SteamAccessPhase;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IJLjava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/wallhub/android/core/model/SteamAccessPhase;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()I
+	public final fun component6 ()J
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()J
+	public final fun copy (Lcom/wallhub/android/core/model/SteamAccessPhase;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IJLjava/lang/String;J)Lcom/wallhub/android/core/model/SteamAccessState;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/SteamAccessState;Lcom/wallhub/android/core/model/SteamAccessPhase;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IJLjava/lang/String;JILjava/lang/Object;)Lcom/wallhub/android/core/model/SteamAccessState;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getActiveHost ()Ljava/lang/String;
+	public final fun getCandidateCount ()I
+	public final fun getFallbackCount ()J
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getNetworkType ()Ljava/lang/String;
+	public final fun getPhase ()Lcom/wallhub/android/core/model/SteamAccessPhase;
+	public final fun getSelectedAddress ()Ljava/lang/String;
+	public final fun getUpdatedAt ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/SteamContentCredential {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Lcom/wallhub/android/core/model/SteamContentCredential;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/SteamContentCredential;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/wallhub/android/core/model/SteamContentCredential;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAccountName ()Ljava/lang/String;
+	public final fun getRefreshToken ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/wallhub/android/core/model/SteamContentCredentialProvider {
+	public abstract fun loadContentCredential (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/SteamSessionPhase : java/lang/Enum {
+	public static final field EXPIRED Lcom/wallhub/android/core/model/SteamSessionPhase;
+	public static final field FAILED Lcom/wallhub/android/core/model/SteamSessionPhase;
+	public static final field RESTORABLE Lcom/wallhub/android/core/model/SteamSessionPhase;
+	public static final field SIGNED_IN Lcom/wallhub/android/core/model/SteamSessionPhase;
+	public static final field SIGNED_OUT Lcom/wallhub/android/core/model/SteamSessionPhase;
+	public static final field SIGNING_IN Lcom/wallhub/android/core/model/SteamSessionPhase;
+	public static final field WAITING_FOR_CODE Lcom/wallhub/android/core/model/SteamSessionPhase;
+	public static final field WAITING_FOR_DEVICE_CONFIRMATION Lcom/wallhub/android/core/model/SteamSessionPhase;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/SteamSessionPhase;
+	public static fun values ()[Lcom/wallhub/android/core/model/SteamSessionPhase;
+}
+
+public abstract interface class com/wallhub/android/core/model/SteamSessionRepository {
+	public abstract fun getSession ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun login (Ljava/lang/String;Ljava/lang/String;)V
+	public abstract fun logout ()V
+	public abstract fun restorePersistedSession ()V
+	public abstract fun submitSteamGuardCode (Ljava/lang/String;)V
+	public abstract fun useManualSteamGuardFallback ()V
+}
+
+public final class com/wallhub/android/core/model/SteamSessionState {
+	public fun <init> ()V
+	public fun <init> (Lcom/wallhub/android/core/model/SteamSessionPhase;Ljava/lang/String;Ljava/lang/String;ZZZJ)V
+	public synthetic fun <init> (Lcom/wallhub/android/core/model/SteamSessionPhase;Ljava/lang/String;Ljava/lang/String;ZZZJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/wallhub/android/core/model/SteamSessionPhase;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Z
+	public final fun component5 ()Z
+	public final fun component6 ()Z
+	public final fun component7 ()J
+	public final fun copy (Lcom/wallhub/android/core/model/SteamSessionPhase;Ljava/lang/String;Ljava/lang/String;ZZZJ)Lcom/wallhub/android/core/model/SteamSessionState;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/SteamSessionState;Lcom/wallhub/android/core/model/SteamSessionPhase;Ljava/lang/String;Ljava/lang/String;ZZZJILjava/lang/Object;)Lcom/wallhub/android/core/model/SteamSessionState;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAccountName ()Ljava/lang/String;
+	public final fun getAwaitingDeviceConfirmation ()Z
+	public final fun getHasStoredSession ()Z
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getPhase ()Lcom/wallhub/android/core/model/SteamSessionPhase;
+	public final fun getRequiresCode ()Z
+	public final fun getUpdatedAt ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/wallhub/android/core/model/SteamUnifiedWorkshopRepository {
+	public abstract fun browsePublic (Lcom/wallhub/android/core/model/WorkshopBrowseQuery;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getAuthenticatedComments (JIILjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getPublicDetail (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/SteamWorkshopDataSource : java/lang/Enum {
+	public static final field CM_WEBSOCKET Lcom/wallhub/android/core/model/SteamWorkshopDataSource;
+	public static final field COMMUNITY_HTML Lcom/wallhub/android/core/model/SteamWorkshopDataSource;
+	public static final field WEB_API Lcom/wallhub/android/core/model/SteamWorkshopDataSource;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/SteamWorkshopDataSource;
+	public static fun values ()[Lcom/wallhub/android/core/model/SteamWorkshopDataSource;
+}
+
+public final class com/wallhub/android/core/model/SubscriptionState : java/lang/Enum {
+	public static final field NOT_SUBSCRIBED Lcom/wallhub/android/core/model/SubscriptionState;
+	public static final field SUBSCRIBED Lcom/wallhub/android/core/model/SubscriptionState;
+	public static final field UNKNOWN Lcom/wallhub/android/core/model/SubscriptionState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/SubscriptionState;
+	public static fun values ()[Lcom/wallhub/android/core/model/SubscriptionState;
+}
+
+public final class com/wallhub/android/core/model/ThemePreference : java/lang/Enum {
+	public static final field DARK Lcom/wallhub/android/core/model/ThemePreference;
+	public static final field LIGHT Lcom/wallhub/android/core/model/ThemePreference;
+	public static final field SYSTEM Lcom/wallhub/android/core/model/ThemePreference;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/ThemePreference;
+	public static fun values ()[Lcom/wallhub/android/core/model/ThemePreference;
+}
+
+public final class com/wallhub/android/core/model/WorkshopBrowseQuery {
+	public fun <init> ()V
+	public fun <init> (IILjava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;IZLcom/wallhub/android/core/model/WorkshopSort;)V
+	public synthetic fun <init> (IILjava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;IZLcom/wallhub/android/core/model/WorkshopSort;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component10 ()Ljava/util/Set;
+	public final fun component11 ()Ljava/util/Set;
+	public final fun component12 ()I
+	public final fun component13 ()Z
+	public final fun component14 ()Lcom/wallhub/android/core/model/WorkshopSort;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Lcom/wallhub/android/core/model/WorkshopType;
+	public final fun component6 ()Ljava/util/Set;
+	public final fun component7 ()Ljava/util/Set;
+	public final fun component8 ()Ljava/util/Set;
+	public final fun component9 ()Ljava/util/Set;
+	public final fun copy (IILjava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;IZLcom/wallhub/android/core/model/WorkshopSort;)Lcom/wallhub/android/core/model/WorkshopBrowseQuery;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/WorkshopBrowseQuery;IILjava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;IZLcom/wallhub/android/core/model/WorkshopSort;ILjava/lang/Object;)Lcom/wallhub/android/core/model/WorkshopBrowseQuery;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCreatorId ()Ljava/lang/String;
+	public final fun getDays ()I
+	public final fun getExactPhrase ()Z
+	public final fun getGenres ()Ljava/util/Set;
+	public final fun getOfficialTags ()Ljava/util/Set;
+	public final fun getPage ()I
+	public final fun getPageSize ()I
+	public final fun getRatings ()Ljava/util/Set;
+	public final fun getResolutions ()Ljava/util/Set;
+	public final fun getSearchText ()Ljava/lang/String;
+	public final fun getSort ()Lcom/wallhub/android/core/model/WorkshopSort;
+	public final fun getTags ()Ljava/util/Set;
+	public final fun getType ()Lcom/wallhub/android/core/model/WorkshopType;
+	public final fun getTypes ()Ljava/util/Set;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/WorkshopComment {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Long;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Long;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Z
+	public final fun component6 ()Ljava/lang/Long;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Long;Ljava/lang/String;)Lcom/wallhub/android/core/model/WorkshopComment;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/WorkshopComment;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Long;Ljava/lang/String;ILjava/lang/Object;)Lcom/wallhub/android/core/model/WorkshopComment;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAuthor ()Ljava/lang/String;
+	public final fun getAuthorId ()Ljava/lang/String;
+	public final fun getAvatarUrl ()Ljava/lang/String;
+	public final fun getDateLabel ()Ljava/lang/String;
+	public final fun getText ()Ljava/lang/String;
+	public final fun getTimestamp ()Ljava/lang/Long;
+	public fun hashCode ()I
+	public final fun isCreator ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/WorkshopCommentPage {
+	public fun <init> (Ljava/util/List;IIILjava/lang/Integer;ZLjava/lang/String;)V
+	public synthetic fun <init> (Ljava/util/List;IIILjava/lang/Integer;ZLjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4 ()I
+	public final fun component5 ()Ljava/lang/Integer;
+	public final fun component6 ()Z
+	public final fun component7 ()Ljava/lang/String;
+	public final fun copy (Ljava/util/List;IIILjava/lang/Integer;ZLjava/lang/String;)Lcom/wallhub/android/core/model/WorkshopCommentPage;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/WorkshopCommentPage;Ljava/util/List;IIILjava/lang/Integer;ZLjava/lang/String;ILjava/lang/Object;)Lcom/wallhub/android/core/model/WorkshopCommentPage;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getComments ()Ljava/util/List;
+	public final fun getCount ()I
+	public final fun getHasMore ()Z
+	public final fun getNextStart ()I
+	public final fun getOwnerId ()Ljava/lang/String;
+	public final fun getStart ()I
+	public final fun getTotal ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/WorkshopDetail {
+	public fun <init> (Lcom/wallhub/android/core/model/WorkshopSummary;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;ZLjava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/String;)V
+	public synthetic fun <init> (Lcom/wallhub/android/core/model/WorkshopSummary;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;ZLjava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/wallhub/android/core/model/WorkshopSummary;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/Long;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Z
+	public final fun component6 ()Ljava/lang/Long;
+	public final fun component7 ()Ljava/lang/Long;
+	public final fun component8 ()Ljava/lang/Long;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Lcom/wallhub/android/core/model/WorkshopSummary;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;ZLjava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/String;)Lcom/wallhub/android/core/model/WorkshopDetail;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/WorkshopDetail;Lcom/wallhub/android/core/model/WorkshopSummary;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;ZLjava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/String;ILjava/lang/Object;)Lcom/wallhub/android/core/model/WorkshopDetail;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCanPlay ()Z
+	public final fun getCreatedAt ()Ljava/lang/Long;
+	public final fun getCreatorId ()Ljava/lang/String;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getFileSizeBytes ()Ljava/lang/Long;
+	public final fun getPreviewMediaUrl ()Ljava/lang/String;
+	public final fun getSubscriptions ()Ljava/lang/Long;
+	public final fun getSummary ()Lcom/wallhub/android/core/model/WorkshopSummary;
+	public final fun getUpdatedAt ()Ljava/lang/Long;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/WorkshopFilterCatalog {
+	public static final field INSTANCE Lcom/wallhub/android/core/model/WorkshopFilterCatalog;
+	public final fun getGenres ()Ljava/util/List;
+	public final fun getOfficialTags ()Ljava/util/List;
+	public final fun getResolutionGroups ()Ljava/util/List;
+	public final fun getResolutions ()Ljava/util/List;
+}
+
+public final class com/wallhub/android/core/model/WorkshopInteraction {
+	public fun <init> ()V
+	public fun <init> (Lcom/wallhub/android/core/model/SubscriptionState;Lcom/wallhub/android/core/model/FavoriteState;)V
+	public synthetic fun <init> (Lcom/wallhub/android/core/model/SubscriptionState;Lcom/wallhub/android/core/model/FavoriteState;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/wallhub/android/core/model/SubscriptionState;
+	public final fun component2 ()Lcom/wallhub/android/core/model/FavoriteState;
+	public final fun copy (Lcom/wallhub/android/core/model/SubscriptionState;Lcom/wallhub/android/core/model/FavoriteState;)Lcom/wallhub/android/core/model/WorkshopInteraction;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/WorkshopInteraction;Lcom/wallhub/android/core/model/SubscriptionState;Lcom/wallhub/android/core/model/FavoriteState;ILjava/lang/Object;)Lcom/wallhub/android/core/model/WorkshopInteraction;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFavoriteState ()Lcom/wallhub/android/core/model/FavoriteState;
+	public final fun getSubscriptionState ()Lcom/wallhub/android/core/model/SubscriptionState;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/WorkshopModelsKt {
+	public static final field WORKSHOP_COMMENT_MAX_LENGTH I
+}
+
+public final class com/wallhub/android/core/model/WorkshopPage {
+	public fun <init> (Ljava/util/List;IZLjava/lang/Integer;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ljava/util/List;IZLjava/lang/Integer;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()I
+	public final fun component3 ()Z
+	public final fun component4 ()Ljava/lang/Integer;
+	public final fun component5 ()Ljava/lang/Integer;
+	public final fun copy (Ljava/util/List;IZLjava/lang/Integer;Ljava/lang/Integer;)Lcom/wallhub/android/core/model/WorkshopPage;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/WorkshopPage;Ljava/util/List;IZLjava/lang/Integer;Ljava/lang/Integer;ILjava/lang/Object;)Lcom/wallhub/android/core/model/WorkshopPage;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getHasNextPage ()Z
+	public final fun getItems ()Ljava/util/List;
+	public final fun getPage ()I
+	public final fun getTotalCount ()Ljava/lang/Integer;
+	public final fun getTotalPages ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/WorkshopRating : java/lang/Enum {
+	public static final field ALL Lcom/wallhub/android/core/model/WorkshopRating;
+	public static final field EVERYONE Lcom/wallhub/android/core/model/WorkshopRating;
+	public static final field MATURE Lcom/wallhub/android/core/model/WorkshopRating;
+	public static final field QUESTIONABLE Lcom/wallhub/android/core/model/WorkshopRating;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getSteamTag ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/WorkshopRating;
+	public static fun values ()[Lcom/wallhub/android/core/model/WorkshopRating;
+}
+
+public abstract interface class com/wallhub/android/core/model/WorkshopRepository {
+	public abstract fun browse (Lcom/wallhub/android/core/model/WorkshopBrowseQuery;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getComments (JIILjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getDetail (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/WorkshopRepository$DefaultImpls {
+	public static synthetic fun getComments$default (Lcom/wallhub/android/core/model/WorkshopRepository;JIILjava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/WorkshopResolutionGroup {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;)Lcom/wallhub/android/core/model/WorkshopResolutionGroup;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/WorkshopResolutionGroup;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Lcom/wallhub/android/core/model/WorkshopResolutionGroup;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Ljava/lang/String;
+	public final fun getOptions ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/WorkshopSort : java/lang/Enum {
+	public static final field MOST_RECENT Lcom/wallhub/android/core/model/WorkshopSort;
+	public static final field MOST_SUBSCRIBERS Lcom/wallhub/android/core/model/WorkshopSort;
+	public static final field MOST_VOTES Lcom/wallhub/android/core/model/WorkshopSort;
+	public static final field TOP_RATED Lcom/wallhub/android/core/model/WorkshopSort;
+	public static final field TRENDING Lcom/wallhub/android/core/model/WorkshopSort;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/WorkshopSort;
+	public static fun values ()[Lcom/wallhub/android/core/model/WorkshopSort;
+}
+
+public final class com/wallhub/android/core/model/WorkshopSummary {
+	public fun <init> (JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Lcom/wallhub/android/core/model/SubscriptionState;Lcom/wallhub/android/core/model/FavoriteState;)V
+	public synthetic fun <init> (JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Lcom/wallhub/android/core/model/SubscriptionState;Lcom/wallhub/android/core/model/FavoriteState;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()J
+	public final fun component10 ()Ljava/lang/Long;
+	public final fun component11 ()Ljava/lang/Long;
+	public final fun component12 ()Lcom/wallhub/android/core/model/SubscriptionState;
+	public final fun component13 ()Lcom/wallhub/android/core/model/FavoriteState;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Lcom/wallhub/android/core/model/WorkshopType;
+	public final fun component7 ()Ljava/util/List;
+	public final fun component8 ()Ljava/lang/Long;
+	public final fun component9 ()Ljava/lang/Long;
+	public final fun copy (JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Lcom/wallhub/android/core/model/SubscriptionState;Lcom/wallhub/android/core/model/FavoriteState;)Lcom/wallhub/android/core/model/WorkshopSummary;
+	public static synthetic fun copy$default (Lcom/wallhub/android/core/model/WorkshopSummary;JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/wallhub/android/core/model/WorkshopType;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Lcom/wallhub/android/core/model/SubscriptionState;Lcom/wallhub/android/core/model/FavoriteState;ILjava/lang/Object;)Lcom/wallhub/android/core/model/WorkshopSummary;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAuthor ()Ljava/lang/String;
+	public final fun getCreatorId ()Ljava/lang/String;
+	public final fun getFavoriteState ()Lcom/wallhub/android/core/model/FavoriteState;
+	public final fun getFavorites ()Ljava/lang/Long;
+	public final fun getFileSizeBytes ()Ljava/lang/Long;
+	public final fun getId ()J
+	public final fun getPreviewUrl ()Ljava/lang/String;
+	public final fun getSubscriptionState ()Lcom/wallhub/android/core/model/SubscriptionState;
+	public final fun getSubscriptions ()Ljava/lang/Long;
+	public final fun getTags ()Ljava/util/List;
+	public final fun getTitle ()Ljava/lang/String;
+	public final fun getType ()Lcom/wallhub/android/core/model/WorkshopType;
+	public final fun getViews ()Ljava/lang/Long;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/wallhub/android/core/model/WorkshopType : java/lang/Enum {
+	public static final field SCENE Lcom/wallhub/android/core/model/WorkshopType;
+	public static final field UNKNOWN Lcom/wallhub/android/core/model/WorkshopType;
+	public static final field VIDEO Lcom/wallhub/android/core/model/WorkshopType;
+	public static final field WEB Lcom/wallhub/android/core/model/WorkshopType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/wallhub/android/core/model/WorkshopType;
+	public static fun values ()[Lcom/wallhub/android/core/model/WorkshopType;
+}
+
+public abstract interface class com/wallhub/android/core/model/WorkshopVideoStreamRepository {
+	public abstract fun open (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class com/wallhub/android/core/model/WorkshopVideoStreamSession : java/io/Closeable {
+	public abstract fun getContentLength ()J
+	public abstract fun getCurrentCdnHost ()Ljava/lang/String;
+	public abstract fun getFileName ()Ljava/lang/String;
+	public abstract fun getTitle ()Ljava/lang/String;
+	public abstract fun readAt (JILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/wallhub/android/core/model/WorkshopVideoStreamSession$DefaultImpls {
+	public static fun getCurrentCdnHost (Lcom/wallhub/android/core/model/WorkshopVideoStreamSession;)Ljava/lang/String;
+}

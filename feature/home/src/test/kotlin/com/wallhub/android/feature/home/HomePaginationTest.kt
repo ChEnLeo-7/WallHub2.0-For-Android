@@ -1,7 +1,7 @@
 package com.wallhub.android.feature.home
 
-import kotlin.test.assertEquals
 import org.junit.Test
+import kotlin.test.assertEquals
 
 class HomePaginationTest {
     @Test

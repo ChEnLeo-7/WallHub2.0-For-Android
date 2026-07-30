@@ -1,8 +1,8 @@
 package com.wallhub.android.data.steamaccess
 
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import java.util.concurrent.ConcurrentHashMap
 
 internal data class SteamRoutePrewarmKey(
     val networkType: String,
@@ -17,12 +17,13 @@ internal class SteamRoutePrewarmTracker(
     private val changeVersion = MutableStateFlow(0L)
     private var currentGeneration = initialGeneration
 
-    fun result(key: SteamRoutePrewarmKey): Boolean? = synchronized(this) {
-        if (key.generation != currentGeneration) return@synchronized null
-        completed[key]?.also { available ->
-            if (!available) completed.remove(key)
+    fun result(key: SteamRoutePrewarmKey): Boolean? =
+        synchronized(this) {
+            if (key.generation != currentGeneration) return@synchronized null
+            completed[key]?.also { available ->
+                if (!available) completed.remove(key)
+            }
         }
-    }
 
     suspend fun awaitCompletionOrInvalidation(
         key: SteamRoutePrewarmKey,
@@ -37,7 +38,10 @@ internal class SteamRoutePrewarmTracker(
     }
 
     @Synchronized
-    fun complete(key: SteamRoutePrewarmKey, available: Boolean) {
+    fun complete(
+        key: SteamRoutePrewarmKey,
+        available: Boolean,
+    ) {
         if (key.generation != currentGeneration) return
         completed[key] = available
         changeVersion.value += 1L

@@ -12,6 +12,7 @@ datastore = "1.1.2"
 documentfile = "1.0.1"
 hilt-navigation-compose = "1.2.0"
 lifecycle = "2.8.7"
+material3-adaptive = "1.1.0"
 media3 = "1.10.1"
 navigation-compose = "2.8.9"
 room = "2.8.4"
@@ -19,6 +20,7 @@ work = "2.10.0"
 
 # Kotlin ecosystem
 coroutines = "1.10.1"
+serialization = "1.8.1"
 
 # Third party
 coil = "2.7.0"
@@ -38,14 +40,28 @@ zstd = "1.5.7-3"
 
 # Test
 junit = "4.13.2"
+detekt = "1.23.8"
+ktlint-gradle = "12.1.2"
+versions-plugin = "0.52.0"
+binary-compatibility-validator = "0.17.0"
+paparazzi = "2.0.0-alpha02"
+benchmark = "1.4.1"
+test-ext-junit = "1.3.0"
+test-runner = "1.7.0"
+uiautomator = "2.3.0"
+robolectric = "4.14.1"
 
 [libraries]
 # Compose — versions come from the BOM
 androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
 androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+androidx-compose-material3-adaptive = { module = "androidx.compose.material3.adaptive:adaptive", version.ref = "material3-adaptive" }
+androidx-compose-material3-adaptive-navigation = { module = "androidx.compose.material3.adaptive:adaptive-navigation", version.ref = "material3-adaptive" }
 androidx-compose-runtime-saveable = { module = "androidx.compose.runtime:runtime-saveable" }
 androidx-compose-ui = { module = "androidx.compose.ui:ui" }
+androidx-compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 
@@ -67,6 +83,8 @@ androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref =
 androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
+androidx-work-testing = { module = "androidx.work:work-testing", version.ref = "work" }
+androidx-test-core = { module = "androidx.test:core", version.ref = "test-runner" }
 
 # Dependency injection
 hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
@@ -77,6 +95,7 @@ javax-inject = { module = "javax.inject:javax.inject", version.ref = "javax-inje
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-jdk8 = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-jdk8", version.ref = "coroutines" }
+kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "serialization" }
 
 # Third party
 coil = { module = "io.coil-kt:coil", version.ref = "coil" }
@@ -95,15 +114,27 @@ xz = { module = "org.tukaani:xz", version.ref = "xz" }
 
 # Test
 junit = { module = "junit:junit", version.ref = "junit" }
+androidx-benchmark-macro-junit4 = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "benchmark" }
+androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "test-ext-junit" }
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "test-runner" }
+androidx-test-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
+android-test = { id = "com.android.test", version.ref = "agp" }
 hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 protobuf = { id = "com.google.protobuf", version.ref = "protobuf-plugin" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint-gradle" }
+versions = { id = "com.github.ben-manes.versions", version.ref = "versions-plugin" }
+binary-compatibility-validator = { id = "org.jetbrains.kotlinx.binary-compatibility-validator", version.ref = "binary-compatibility-validator" }
+paparazzi = { id = "app.cash.paparazzi", version.ref = "paparazzi" }

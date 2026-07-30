@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<baseline version="1.0">
+    <file name="src/main/kotlin/com/wallhub/android/data/update/GitHubAppUpdateRepository.kt">
+        <error line="3" column="1" source="standard:import-ordering" />
+        <error line="36" column="32" source="standard:annotation" />
+        <error line="36" column="40" source="standard:annotation" />
+        <error line="39" column="26" source="standard:multiline-expression-wrapping" />
+        <error line="39" column="38" source="standard:chain-method-continuation" />
+        <error line="60" column="23" source="standard:multiline-expression-wrapping" />
+        <error line="60" column="30" source="standard:chain-method-continuation" />
+        <error line="79" column="17" source="standard:multiline-expression-wrapping" />
+        <error line="79" column="17" source="standard:function-signature" />
+        <error line="90" column="23" source="standard:multiline-expression-wrapping" />
+        <error line="90" column="30" source="standard:chain-method-continuation" />
+        <error line="170" column="48" source="standard:function-signature" />
+        <error line="170" column="59" source="standard:function-signature" />
+        <error line="170" column="86" source="standard:function-signature" />
+        <error line="172" column="21" source="standard:multiline-expression-wrapping" />
+        <error line="177" column="23" source="standard:multiline-expression-wrapping" />
+        <error line="198" column="27" source="standard:multiline-expression-wrapping" />
+        <error line="224" column="33" source="standard:function-signature" />
+        <error line="224" column="47" source="standard:function-signature" />
+        <error line="224" column="75" source="standard:function-signature" />
+        <error line="234" column="27" source="standard:multiline-expression-wrapping" />
+        <error line="250" column="20" source="standard:multiline-expression-wrapping" />
+        <error line="250" column="25" source="standard:chain-method-continuation" />
+        <error line="254" column="18" source="standard:multiline-expression-wrapping" />
+        <error line="285" column="38" source="standard:function-signature" />
+        <error line="285" column="52" source="standard:function-signature" />
+        <error line="285" column="65" source="standard:function-signature" />
+        <error line="297" column="27" source="standard:chain-method-continuation" />
+        <error line="297" column="34" source="standard:chain-method-continuation" />
+        <error line="297" column="52" source="standard:chain-method-continuation" />
+        <error line="297" column="70" source="standard:chain-method-continuation" />
+        <error line="312" column="44" source="standard:function-signature" />
+        <error line="312" column="61" source="standard:function-signature" />
+        <error line="312" column="78" source="standard:function-signature" />
+        <error line="320" column="45" source="standard:function-signature" />
+        <error line="320" column="67" source="standard:function-signature" />
+        <error line="320" column="86" source="standard:function-signature" />
+        <error line="329" column="37" source="standard:trailing-comma-on-call-site" />
+        <error line="335" column="46" source="standard:function-signature" />
+        <error line="342" column="54" source="standard:multiline-expression-wrapping" />
+        <error line="342" column="54" source="standard:function-signature" />
+        <error line="346" column="36" source="standard:function-signature" />
+        <error line="346" column="48" source="standard:function-signature" />
+        <error line="346" column="66" source="standard:function-signature" />
+        <error line="350" column="37" source="standard:function-signature" />
+        <error line="350" column="49" source="standard:function-signature" />
+        <error line="350" column="67" source="standard:function-signature" />
+    </file>
+    <file name="src/test/kotlin/com/wallhub/android/data/update/GitHubReleaseParserTest.kt">
+        <error line="3" column="1" source="standard:import-ordering" />
+        <error line="63" column="21" source="standard:multiline-expression-wrapping" />
+        <error line="79" column="1" source="standard:indent" />
+        <error line="79" column="9" source="standard:string-template-indent" />
+        <error line="82" column="27" source="standard:function-signature" />
+        <error line="82" column="41" source="standard:function-signature" />
+        <error line="82" column="71" source="standard:function-signature" />
+        <error line="83" column="19" source="standard:multiline-expression-wrapping" />
+        <error line="89" column="9" source="standard:string-template-indent" />
+        <error line="90" column="9" source="standard:string-template-indent" />
+        <error line="91" column="9" source="standard:string-template-indent" />
+        <error line="92" column="9" source="standard:string-template-indent" />
+        <error line="93" column="9" source="standard:string-template-indent" />
+        <error line="94" column="9" source="standard:string-template-indent" />
+        <error line="95" column="9" source="standard:string-template-indent" />
+        <error line="96" column="1" source="standard:indent" />
+        <error line="96" column="5" source="standard:string-template-indent" />
+    </file>
+</baseline>

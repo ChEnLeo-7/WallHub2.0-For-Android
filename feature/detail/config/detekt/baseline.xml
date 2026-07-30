@@ -1,0 +1,16 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:OnlineVideoPlayerScreen.kt$activity != null &amp;&amp; window != null &amp;&amp; latestFullscreenEnabled &amp;&amp; !activity.isChangingConfigurations</ID>
+    <ID>CyclomaticComplexMethod:WorkshopDetailScreen.kt$@OptIn(ExperimentalLayoutApi::class) @Composable private fun DetailOverviewPage( detail: WorkshopDetail, language: AppLanguage, )</ID>
+    <ID>CyclomaticComplexMethod:WorkshopDetailScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun WorkshopDetailScreen( state: WorkshopDetailUiState, onBack: () -&gt; Unit, onRetry: () -&gt; Unit, onToggleSubscription: () -&gt; Unit, onToggleFavorite: () -&gt; Unit, onStartInlineVideo: () -&gt; Unit, onExportFormatSelected: (ExportFormat) -&gt; Unit, onDownload: () -&gt; Unit, onConvertExisting: (ExportFormat) -&gt; Unit, onRetryComments: () -&gt; Unit, onLoadMoreComments: () -&gt; Unit, onCommentDraftChanged: (String) -&gt; Unit, onSubmitComment: () -&gt; Unit, onInlineFullscreenChange: (Boolean) -&gt; Unit, onSearchAuthor: (String) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:WorkshopDetailScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun DetailCommentsPage( comments: List&lt;WorkshopComment&gt;, commentsHasMore: Boolean, isLoading: Boolean, isLoadingMore: Boolean, error: String?, canPostComment: Boolean, commentDraft: String, isPostingComment: Boolean, commentPostError: String?, language: AppLanguage, onRetry: () -&gt; Unit, onLoadMore: () -&gt; Unit, onCommentDraftChanged: (String) -&gt; Unit, onSubmitComment: () -&gt; Unit, isWallpaperHeaderCollapsed: Boolean, onReturnToWallpaperTop: () -&gt; Unit, )</ID>
+    <ID>TooGenericExceptionCaught:OnlineVideoPlayerScreen.kt$OnlineVideoPlayerViewModel$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:WorkshopDetailScreen.kt$WorkshopDetailViewModel$error: Throwable</ID>
+    <ID>UnusedParameter:WorkshopDetailScreen.kt$exportFormat: ExportFormat</ID>
+    <ID>UnusedParameter:WorkshopDetailScreen.kt$onConvertExisting: (ExportFormat) -&gt; Unit</ID>
+    <ID>UnusedParameter:WorkshopDetailScreen.kt$onOpenOnlineVideo: (Long) -&gt; Unit = {}</ID>
+    <ID>UnusedParameter:WorkshopDetailScreen.kt$stagedTaskId: String?</ID>
+  </CurrentIssues>
+</SmellBaseline>

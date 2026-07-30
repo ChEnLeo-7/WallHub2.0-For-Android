@@ -1,27 +1,26 @@
+@file:Suppress("ktlint:standard:function-naming")
+
 package com.wallhub.android.feature.settings
 
 import android.Manifest
-import android.content.ContentResolver
 import android.content.Intent
-import android.graphics.Color as AndroidColor
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.selection.toggleable
-import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
@@ -29,10 +28,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -45,12 +44,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -80,22 +79,22 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -114,49 +113,57 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.wallhub.android.core.designsystem.LocalWallHubToastState
+import com.wallhub.android.core.designsystem.WallHubAnimatedSelectionCheck
+import com.wallhub.android.core.designsystem.WallHubColorTokens
+import com.wallhub.android.core.designsystem.WallHubPageScaffold
+import com.wallhub.android.core.designsystem.WallHubSizeTokens
+import com.wallhub.android.core.designsystem.WallHubSpacing
+import com.wallhub.android.core.designsystem.WallHubSurfaceCard
+import com.wallhub.android.core.designsystem.text
+import com.wallhub.android.core.designsystem.wallHubPreviewColor
+import com.wallhub.android.core.model.AccentPreference
+import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.AppReleaseInfo
 import com.wallhub.android.core.model.AppUpdateRepository
-import com.wallhub.android.core.model.InstalledAppInfo
-import com.wallhub.android.core.model.AccentPreference
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
-import com.wallhub.android.core.model.DiagnosticRepository
+import com.wallhub.android.core.model.DiagnosticExportRepository
+import com.wallhub.android.core.model.HomeCardAction
+import com.wallhub.android.core.model.HomePaginationMode
+import com.wallhub.android.core.model.InstalledAppInfo
 import com.wallhub.android.core.model.LauncherIconController
-import com.wallhub.android.core.model.SettingsRepository
-import com.wallhub.android.core.model.SteamSessionPhase
-import com.wallhub.android.core.model.SteamSessionRepository
-import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.STEAM_ACCESS_DOH_ENDPOINT_LIMIT
+import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamAccessPhase
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamAccessState
+import com.wallhub.android.core.model.SteamSessionPhase
+import com.wallhub.android.core.model.SteamSessionRepository
+import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
 import com.wallhub.android.core.model.normalizeSteamAccessDohEndpoint
-import com.wallhub.android.core.model.HomeCardAction
-import com.wallhub.android.core.model.HomePaginationMode
-import com.wallhub.android.core.designsystem.WallHubPageScaffold
-import com.wallhub.android.core.designsystem.WallHubAnimatedSelectionCheck
-import com.wallhub.android.core.designsystem.WallHubSurfaceCard
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
-import com.wallhub.android.core.designsystem.text
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
+import javax.inject.Inject
+import android.graphics.Color as AndroidColor
+import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 data class DiagnosticExportUiState(
     val isExporting: Boolean = false,
@@ -184,17 +191,170 @@ data class AppUpdateUiState(
     val message: String? = null,
 ) {
     val canDownloadRelease: Boolean
-        get() = release?.isNewer == true &&
-            downloadedApkPath == null &&
-            (phase == AppUpdatePhase.AVAILABLE || phase == AppUpdatePhase.FAILED)
+        get() =
+            release?.isNewer == true &&
+                downloadedApkPath == null &&
+                (phase == AppUpdatePhase.AVAILABLE || phase == AppUpdatePhase.FAILED)
 
     val progress: Float
-        get() = if (totalBytes > 0L) {
-            (downloadedBytes.toDouble() / totalBytes.toDouble()).coerceIn(0.0, 1.0).toFloat()
-        } else {
-            0f
-        }
+        get() =
+            if (totalBytes > 0L) {
+                (downloadedBytes.toDouble() / totalBytes.toDouble()).coerceIn(0.0, 1.0).toFloat()
+            } else {
+                0f
+            }
 }
+
+sealed interface SettingsAction {
+    data class ThemeChanged(
+        val theme: ThemePreference,
+    ) : SettingsAction
+
+    data class LanguageChanged(
+        val language: AppLanguage,
+    ) : SettingsAction
+
+    data class AccentChanged(
+        val accent: AccentPreference,
+        val customColor: String? = null,
+    ) : SettingsAction
+
+    data class SystemMonetEnabledChanged(
+        val enabled: Boolean,
+    ) : SettingsAction
+
+    data class ThemedLauncherIconEnabledChanged(
+        val enabled: Boolean,
+    ) : SettingsAction
+
+    data class HomePreferencesChanged(
+        val pageSize: Int,
+        val columns: Int,
+        val multiSelect: Boolean,
+        val cardAction: HomeCardAction,
+        val matureContentEnabled: Boolean,
+    ) : SettingsAction
+
+    data class HomePaginationModeChanged(
+        val mode: HomePaginationMode,
+    ) : SettingsAction
+
+    data class DownloadPreferencesChanged(
+        val maxConcurrentDownloads: Int,
+        val chunkDownloadConcurrency: Int,
+        val proxyUrl: String,
+        val mediaCacheLimitMb: Int,
+    ) : SettingsAction
+
+    data class DownloadProxyEnabledChanged(
+        val enabled: Boolean,
+    ) : SettingsAction
+
+    data class OnlineStreamCacheLimitChanged(
+        val limitMb: Int,
+    ) : SettingsAction
+
+    data class SteamApiKeyChanged(
+        val apiKey: String,
+    ) : SettingsAction
+
+    data class SteamWorkshopDataSourceChanged(
+        val source: SteamWorkshopDataSource,
+    ) : SettingsAction
+
+    data class OnlineChunkPlaybackEnabledChanged(
+        val enabled: Boolean,
+    ) : SettingsAction
+
+    data class SteamAccessEnabledChanged(
+        val enabled: Boolean,
+    ) : SettingsAction
+
+    data class SteamAccessDohEndpointsChanged(
+        val endpoints: List<String>,
+        val disabledEndpoints: Set<String>,
+    ) : SettingsAction
+
+    data object RefreshSteamAccess : SettingsAction
+
+    data object LogoutSteam : SettingsAction
+
+    data object SelectOutputDirectory : SettingsAction
+
+    data class OutputDirectorySelected(
+        val treeUri: String,
+        val label: String,
+    ) : SettingsAction
+
+    data object ClearOutputDirectory : SettingsAction
+
+    data object CheckForAppUpdate : SettingsAction
+
+    data object DownloadLatestRelease : SettingsAction
+
+    data object CancelAppUpdateDownload : SettingsAction
+
+    data object ExportDiagnostics : SettingsAction
+
+    data class DiagnosticDocumentSelected(
+        val destinationUri: String,
+    ) : SettingsAction
+
+    data object RequestNotifications : SettingsAction
+
+    data object OpenSteamLogin : SettingsAction
+
+    data class InstallDownloadedRelease(
+        val path: String,
+    ) : SettingsAction
+
+    data class OpenExternalUri(
+        val uri: String,
+        val failureMessage: String,
+    ) : SettingsAction
+
+    data class SystemActionFailed(
+        val message: String,
+    ) : SettingsAction
+
+    data class InstallerFailed(
+        val message: String,
+    ) : SettingsAction
+}
+
+sealed interface SettingsEffect {
+    data object SelectOutputDirectory : SettingsEffect
+
+    data object ExportDiagnostics : SettingsEffect
+
+    data object RequestNotifications : SettingsEffect
+
+    data object OpenSteamLogin : SettingsEffect
+
+    data class InstallDownloadedRelease(
+        val path: String,
+    ) : SettingsEffect
+
+    data class OpenExternalUri(
+        val uri: String,
+        val failureMessage: String,
+    ) : SettingsEffect
+
+    data class ShowMessage(
+        val message: String,
+    ) : SettingsEffect
+}
+
+internal fun SettingsAction.toEffect(): SettingsEffect? =
+    when (this) {
+        SettingsAction.SelectOutputDirectory -> SettingsEffect.SelectOutputDirectory
+        SettingsAction.ExportDiagnostics -> SettingsEffect.ExportDiagnostics
+        SettingsAction.RequestNotifications -> SettingsEffect.RequestNotifications
+        SettingsAction.OpenSteamLogin -> SettingsEffect.OpenSteamLogin
+        is SettingsAction.InstallDownloadedRelease -> SettingsEffect.InstallDownloadedRelease(path)
+        is SettingsAction.OpenExternalUri -> SettingsEffect.OpenExternalUri(uri, failureMessage)
+        else -> null
+    }
 
 private enum class SettingsCategory(
     val labelZh: String,
@@ -242,11 +402,12 @@ private enum class SettingsCategory(
 
     fun label(language: AppLanguage): String = if (language == AppLanguage.EN) labelEn else labelZh
 
-    fun description(language: AppLanguage): String =
-        if (language == AppLanguage.EN) descriptionEn else descriptionZh
+    fun description(language: AppLanguage): String = if (language == AppLanguage.EN) descriptionEn else descriptionZh
 }
 
-private enum class SteamStreamCachePreset(val limitMb: Int?) {
+private enum class SteamStreamCachePreset(
+    val limitMb: Int?,
+) {
     MB_512(512),
     GB_1(1024),
     GB_2(2048),
@@ -256,284 +417,384 @@ private enum class SteamStreamCachePreset(val limitMb: Int?) {
 }
 
 @HiltViewModel
-class SettingsViewModel @Inject constructor(
-    private val settingsRepository: SettingsRepository,
-    private val launcherIconController: LauncherIconController,
-    private val steamSessionRepository: SteamSessionRepository,
-    private val diagnosticRepository: DiagnosticRepository,
-    private val steamAccessRepository: SteamAccessRepository,
-    private val appUpdateRepository: AppUpdateRepository,
-) : ViewModel() {
-    private val mutableDiagnosticExportState = MutableStateFlow(DiagnosticExportUiState())
-    private val mutableAppUpdateState = MutableStateFlow(
-        AppUpdateUiState(installed = appUpdateRepository.installedAppInfo),
-    )
-    private var appUpdateJob: Job? = null
+class SettingsViewModel
+    @Inject
+    constructor(
+        private val settingsRepository: SettingsRepository,
+        private val launcherIconController: LauncherIconController,
+        private val steamSessionRepository: SteamSessionRepository,
+        private val diagnosticExportRepository: DiagnosticExportRepository,
+        private val steamAccessRepository: SteamAccessRepository,
+        private val appUpdateRepository: AppUpdateRepository,
+    ) : ViewModel() {
+        private val mutableDiagnosticExportState = MutableStateFlow(DiagnosticExportUiState())
+        private val mutableAppUpdateState =
+            MutableStateFlow(
+                AppUpdateUiState(installed = appUpdateRepository.installedAppInfo),
+            )
+        private var appUpdateJob: Job? = null
+        private val effectChannel = Channel<SettingsEffect>(capacity = Channel.BUFFERED)
 
-    val preferences: StateFlow<AppPreferences> = settingsRepository.preferences.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = AppPreferences(),
-    )
+        val preferences: StateFlow<AppPreferences> =
+            settingsRepository.preferences.stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = AppPreferences(),
+            )
 
-    val session: StateFlow<SteamSessionState> = steamSessionRepository.session.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = SteamSessionState(),
-    )
+        val session: StateFlow<SteamSessionState> =
+            steamSessionRepository.session.stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = SteamSessionState(),
+            )
 
-    val diagnosticExportState: StateFlow<DiagnosticExportUiState> =
-        mutableDiagnosticExportState.asStateFlow()
+        val diagnosticExportState: StateFlow<DiagnosticExportUiState> =
+            mutableDiagnosticExportState.asStateFlow()
 
-    val appUpdateState: StateFlow<AppUpdateUiState> = mutableAppUpdateState.asStateFlow()
+        val appUpdateState: StateFlow<AppUpdateUiState> = mutableAppUpdateState.asStateFlow()
 
-    val steamAccessState: StateFlow<SteamAccessState> = steamAccessRepository.state
+        val steamAccessState: StateFlow<SteamAccessState> = steamAccessRepository.state
+        val effects: Flow<SettingsEffect> = effectChannel.receiveAsFlow()
 
-    fun setTheme(theme: ThemePreference) {
-        viewModelScope.launch { settingsRepository.setTheme(theme) }
-    }
-
-    fun setLanguage(language: AppLanguage) {
-        viewModelScope.launch { settingsRepository.setLanguage(language) }
-    }
-
-    fun setAccent(accent: AccentPreference, customColor: String? = null) {
-        viewModelScope.launch {
-            settingsRepository.setSystemMonetEnabled(false)
-            settingsRepository.setAccent(accent, customColor)
+        fun onAction(action: SettingsAction) {
+            action.toEffect()?.let(effectChannel::trySend) ?: handleStateAction(action)
         }
-    }
 
-    fun setSystemMonetEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            if (!enabled && preferences.value.accent == AccentPreference.MONET) {
-                settingsRepository.setAccent(AccentPreference.DEFAULT)
+        private fun handleStateAction(action: SettingsAction) {
+            if (handleAppearanceAndHomeAction(action)) return
+            if (handleDownloadAction(action)) return
+            if (handleSteamAction(action)) return
+            handleMaintenanceAction(action)
+        }
+
+        private fun handleAppearanceAndHomeAction(action: SettingsAction): Boolean {
+            when (action) {
+                is SettingsAction.ThemeChanged -> setTheme(action.theme)
+                is SettingsAction.LanguageChanged -> setLanguage(action.language)
+                is SettingsAction.AccentChanged -> setAccent(action.accent, action.customColor)
+                is SettingsAction.SystemMonetEnabledChanged -> setSystemMonetEnabled(action.enabled)
+                is SettingsAction.ThemedLauncherIconEnabledChanged -> setThemedLauncherIconEnabled(action.enabled)
+                is SettingsAction.HomePreferencesChanged ->
+                    setHomePreferences(
+                        pageSize = action.pageSize,
+                        columns = action.columns,
+                        multiSelect = action.multiSelect,
+                        cardAction = action.cardAction,
+                        matureContentEnabled = action.matureContentEnabled,
+                    )
+                is SettingsAction.HomePaginationModeChanged -> setHomePaginationMode(action.mode)
+                else -> return false
             }
-            settingsRepository.setSystemMonetEnabled(enabled)
+            return true
         }
-    }
 
-    fun setThemedLauncherIconEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            settingsRepository.setThemedLauncherIconEnabled(enabled)
-            runCatching { launcherIconController.setThemedIconEnabled(enabled) }
+        private fun handleDownloadAction(action: SettingsAction): Boolean {
+            when (action) {
+                is SettingsAction.DownloadPreferencesChanged ->
+                    setDownloadPreferences(
+                        maxConcurrentDownloads = action.maxConcurrentDownloads,
+                        chunkDownloadConcurrency = action.chunkDownloadConcurrency,
+                        proxyUrl = action.proxyUrl,
+                        mediaCacheLimitMb = action.mediaCacheLimitMb,
+                    )
+                is SettingsAction.DownloadProxyEnabledChanged -> setDownloadProxyEnabled(action.enabled)
+                is SettingsAction.OnlineStreamCacheLimitChanged -> setOnlineStreamCacheLimitMb(action.limitMb)
+                is SettingsAction.OutputDirectorySelected -> setOutputDirectory(action.treeUri, action.label)
+                SettingsAction.ClearOutputDirectory -> clearOutputDirectory()
+                else -> return false
+            }
+            return true
         }
-    }
 
-    fun setHomePreferences(
-        pageSize: Int,
-        columns: Int,
-        multiSelect: Boolean,
-        cardAction: HomeCardAction,
-        matureContentEnabled: Boolean,
-    ) {
-        viewModelScope.launch {
-            settingsRepository.setHomePreferences(
-                pageSize = pageSize,
-                columns = columns,
-                multiSelect = multiSelect,
-                cardAction = cardAction,
-                matureContentEnabled = matureContentEnabled,
-            )
+        private fun handleSteamAction(action: SettingsAction): Boolean {
+            when (action) {
+                is SettingsAction.SteamApiKeyChanged -> setSteamApiKey(action.apiKey)
+                is SettingsAction.SteamWorkshopDataSourceChanged -> setSteamWorkshopDataSource(action.source)
+                is SettingsAction.OnlineChunkPlaybackEnabledChanged -> setOnlineChunkPlaybackEnabled(action.enabled)
+                is SettingsAction.SteamAccessEnabledChanged -> setSteamAccessEnabled(action.enabled)
+                is SettingsAction.SteamAccessDohEndpointsChanged ->
+                    setSteamAccessDohEndpoints(action.endpoints, action.disabledEndpoints)
+                SettingsAction.RefreshSteamAccess -> refreshSteamAccess()
+                SettingsAction.LogoutSteam -> logoutSteam()
+                else -> return false
+            }
+            return true
         }
-    }
 
-    fun setHomePaginationMode(mode: HomePaginationMode) {
-        viewModelScope.launch { settingsRepository.setHomePaginationMode(mode) }
-    }
-
-    fun setDownloadPreferences(
-        maxConcurrentDownloads: Int,
-        chunkDownloadConcurrency: Int,
-        proxyUrl: String,
-        mediaCacheLimitMb: Int,
-    ) {
-        viewModelScope.launch {
-            settingsRepository.setDownloadPreferences(
-                maxConcurrentDownloads = maxConcurrentDownloads,
-                chunkDownloadConcurrency = chunkDownloadConcurrency,
-                proxyUrl = proxyUrl,
-                mediaCacheLimitMb = mediaCacheLimitMb,
-            )
+        private fun handleMaintenanceAction(action: SettingsAction) {
+            when (action) {
+                SettingsAction.CheckForAppUpdate -> checkForAppUpdate()
+                SettingsAction.DownloadLatestRelease -> downloadLatestRelease()
+                SettingsAction.CancelAppUpdateDownload -> cancelAppUpdateDownload()
+                is SettingsAction.DiagnosticDocumentSelected -> exportDiagnostics(action.destinationUri)
+                is SettingsAction.SystemActionFailed -> reportSystemActionFailure(action.message)
+                is SettingsAction.InstallerFailed -> reportInstallerError(action.message)
+                else -> Unit
+            }
         }
-    }
 
-    fun setOnlineStreamCacheLimitMb(limitMb: Int) {
-        viewModelScope.launch { settingsRepository.setOnlineStreamCacheLimitMb(limitMb) }
-    }
-
-    fun setDownloadProxyEnabled(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.setDownloadProxyEnabled(enabled) }
-    }
-
-    fun setSteamAccessEnabled(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.setSteamAccessEnabled(enabled) }
-    }
-
-    fun setSteamAccessDohEndpoints(
-        endpoints: List<String>,
-        disabledEndpoints: Set<String>,
-    ) {
-        viewModelScope.launch {
-            settingsRepository.setSteamAccessDohEndpoints(endpoints, disabledEndpoints)
+        private fun reportSystemActionFailure(message: String) {
+            effectChannel.trySend(SettingsEffect.ShowMessage(message))
         }
-    }
 
-    fun refreshSteamAccess() {
-        steamAccessRepository.refresh()
-    }
+        private fun setTheme(theme: ThemePreference) {
+            viewModelScope.launch { settingsRepository.setTheme(theme) }
+        }
 
-    fun setSteamApiKey(apiKey: String) {
-        viewModelScope.launch { settingsRepository.setSteamApiKey(apiKey) }
-    }
+        private fun setLanguage(language: AppLanguage) {
+            viewModelScope.launch { settingsRepository.setLanguage(language) }
+        }
 
-    fun setSteamWorkshopDataSource(source: SteamWorkshopDataSource) {
-        viewModelScope.launch { settingsRepository.setSteamWorkshopDataSource(source) }
-    }
+        private fun setAccent(
+            accent: AccentPreference,
+            customColor: String? = null,
+        ) {
+            viewModelScope.launch {
+                settingsRepository.setSystemMonetEnabled(false)
+                settingsRepository.setAccent(accent, customColor)
+            }
+        }
 
-    fun setOnlineChunkPlaybackEnabled(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.setOnlineChunkPlaybackEnabled(enabled) }
-    }
+        private fun setSystemMonetEnabled(enabled: Boolean) {
+            viewModelScope.launch {
+                if (!enabled && preferences.value.accent == AccentPreference.MONET) {
+                    settingsRepository.setAccent(AccentPreference.DEFAULT)
+                }
+                settingsRepository.setSystemMonetEnabled(enabled)
+            }
+        }
 
-    fun setOutputDirectory(treeUri: String, label: String) {
-        viewModelScope.launch { settingsRepository.setOutputDirectory(treeUri, label) }
-    }
+        private fun setThemedLauncherIconEnabled(enabled: Boolean) {
+            viewModelScope.launch {
+                settingsRepository.setThemedLauncherIconEnabled(enabled)
+                runCatching { launcherIconController.setThemedIconEnabled(enabled) }
+            }
+        }
 
-    fun clearOutputDirectory() {
-        viewModelScope.launch { settingsRepository.clearOutputDirectory() }
-    }
+        private fun setHomePreferences(
+            pageSize: Int,
+            columns: Int,
+            multiSelect: Boolean,
+            cardAction: HomeCardAction,
+            matureContentEnabled: Boolean,
+        ) {
+            viewModelScope.launch {
+                settingsRepository.setHomePreferences(
+                    pageSize = pageSize,
+                    columns = columns,
+                    multiSelect = multiSelect,
+                    cardAction = cardAction,
+                    matureContentEnabled = matureContentEnabled,
+                )
+            }
+        }
 
-    fun logoutSteam() {
-        steamSessionRepository.logout()
-    }
+        private fun setHomePaginationMode(mode: HomePaginationMode) {
+            viewModelScope.launch { settingsRepository.setHomePaginationMode(mode) }
+        }
 
-    fun checkForAppUpdate() {
-        if (appUpdateJob != null) return
-        mutableAppUpdateState.value = mutableAppUpdateState.value.copy(
-            phase = AppUpdatePhase.CHECKING,
-            release = null,
-            downloadedApkPath = null,
-            downloadedBytes = 0L,
-            totalBytes = 0L,
-            message = null,
-        )
-        appUpdateJob = viewModelScope.launch {
-            try {
-                val release = appUpdateRepository.latestRelease()
-                mutableAppUpdateState.value = mutableAppUpdateState.value.copy(
-                    phase = if (release.isNewer) AppUpdatePhase.AVAILABLE else AppUpdatePhase.UP_TO_DATE,
-                    release = release,
+        private fun setDownloadPreferences(
+            maxConcurrentDownloads: Int,
+            chunkDownloadConcurrency: Int,
+            proxyUrl: String,
+            mediaCacheLimitMb: Int,
+        ) {
+            viewModelScope.launch {
+                settingsRepository.setDownloadPreferences(
+                    maxConcurrentDownloads = maxConcurrentDownloads,
+                    chunkDownloadConcurrency = chunkDownloadConcurrency,
+                    proxyUrl = proxyUrl,
+                    mediaCacheLimitMb = mediaCacheLimitMb,
+                )
+            }
+        }
+
+        private fun setOnlineStreamCacheLimitMb(limitMb: Int) {
+            viewModelScope.launch { settingsRepository.setOnlineStreamCacheLimitMb(limitMb) }
+        }
+
+        private fun setDownloadProxyEnabled(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setDownloadProxyEnabled(enabled) }
+        }
+
+        private fun setSteamAccessEnabled(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setSteamAccessEnabled(enabled) }
+        }
+
+        private fun setSteamAccessDohEndpoints(
+            endpoints: List<String>,
+            disabledEndpoints: Set<String>,
+        ) {
+            viewModelScope.launch {
+                settingsRepository.setSteamAccessDohEndpoints(endpoints, disabledEndpoints)
+            }
+        }
+
+        private fun refreshSteamAccess() {
+            steamAccessRepository.refresh()
+        }
+
+        private fun setSteamApiKey(apiKey: String) {
+            viewModelScope.launch { settingsRepository.setSteamApiKey(apiKey) }
+        }
+
+        private fun setSteamWorkshopDataSource(source: SteamWorkshopDataSource) {
+            viewModelScope.launch { settingsRepository.setSteamWorkshopDataSource(source) }
+        }
+
+        private fun setOnlineChunkPlaybackEnabled(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setOnlineChunkPlaybackEnabled(enabled) }
+        }
+
+        private fun setOutputDirectory(
+            treeUri: String,
+            label: String,
+        ) {
+            viewModelScope.launch { settingsRepository.setOutputDirectory(treeUri, label) }
+        }
+
+        private fun clearOutputDirectory() {
+            viewModelScope.launch { settingsRepository.clearOutputDirectory() }
+        }
+
+        private fun logoutSteam() {
+            steamSessionRepository.logout()
+        }
+
+        private fun checkForAppUpdate() {
+            if (appUpdateJob != null) return
+            mutableAppUpdateState.value =
+                mutableAppUpdateState.value.copy(
+                    phase = AppUpdatePhase.CHECKING,
+                    release = null,
+                    downloadedApkPath = null,
+                    downloadedBytes = 0L,
+                    totalBytes = 0L,
+                    message = null,
+                )
+            appUpdateJob =
+                viewModelScope.launch {
+                    try {
+                        val release = appUpdateRepository.latestRelease()
+                        mutableAppUpdateState.value =
+                            mutableAppUpdateState.value.copy(
+                                phase = if (release.isNewer) AppUpdatePhase.AVAILABLE else AppUpdatePhase.UP_TO_DATE,
+                                release = release,
+                                downloadedBytes = 0L,
+                                totalBytes = release.assetSizeBytes,
+                                message = null,
+                            )
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        mutableAppUpdateState.value =
+                            mutableAppUpdateState.value.copy(
+                                phase = AppUpdatePhase.FAILED,
+                                message = error.message ?: "无法检查 GitHub Release",
+                            )
+                    } finally {
+                        appUpdateJob = null
+                    }
+                }
+        }
+
+        private fun downloadLatestRelease() {
+            val release = mutableAppUpdateState.value.release ?: return
+            if (appUpdateJob != null) return
+            mutableAppUpdateState.value =
+                mutableAppUpdateState.value.copy(
+                    phase = AppUpdatePhase.DOWNLOADING,
+                    downloadedApkPath = null,
                     downloadedBytes = 0L,
                     totalBytes = release.assetSizeBytes,
                     message = null,
                 )
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                mutableAppUpdateState.value = mutableAppUpdateState.value.copy(
-                    phase = AppUpdatePhase.FAILED,
-                    message = error.message ?: "无法检查 GitHub Release",
-                )
-            } finally {
-                appUpdateJob = null
-            }
-        }
-    }
-
-    fun downloadLatestRelease() {
-        val release = mutableAppUpdateState.value.release ?: return
-        if (appUpdateJob != null) return
-        mutableAppUpdateState.value = mutableAppUpdateState.value.copy(
-            phase = AppUpdatePhase.DOWNLOADING,
-            downloadedApkPath = null,
-            downloadedBytes = 0L,
-            totalBytes = release.assetSizeBytes,
-            message = null,
-        )
-        appUpdateJob = viewModelScope.launch {
-            try {
-                val path = appUpdateRepository.downloadRelease(release) { downloaded, total ->
-                    if (mutableAppUpdateState.value.phase == AppUpdatePhase.DOWNLOADING) {
-                        mutableAppUpdateState.value = mutableAppUpdateState.value.copy(
-                            downloadedBytes = downloaded,
-                            totalBytes = total,
-                        )
+            appUpdateJob =
+                viewModelScope.launch {
+                    try {
+                        val path =
+                            appUpdateRepository.downloadRelease(release) { downloaded, total ->
+                                if (mutableAppUpdateState.value.phase == AppUpdatePhase.DOWNLOADING) {
+                                    mutableAppUpdateState.value =
+                                        mutableAppUpdateState.value.copy(
+                                            downloadedBytes = downloaded,
+                                            totalBytes = total,
+                                        )
+                                }
+                            }
+                        mutableAppUpdateState.value =
+                            mutableAppUpdateState.value.copy(
+                                phase = AppUpdatePhase.DOWNLOADED,
+                                downloadedApkPath = path,
+                                downloadedBytes = release.assetSizeBytes,
+                                totalBytes = release.assetSizeBytes,
+                                message = null,
+                            )
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        mutableAppUpdateState.value =
+                            mutableAppUpdateState.value.copy(
+                                phase = AppUpdatePhase.FAILED,
+                                downloadedApkPath = null,
+                                message = error.message ?: "Release APK 下载或校验失败",
+                            )
+                    } finally {
+                        appUpdateJob = null
                     }
                 }
-                mutableAppUpdateState.value = mutableAppUpdateState.value.copy(
-                    phase = AppUpdatePhase.DOWNLOADED,
-                    downloadedApkPath = path,
-                    downloadedBytes = release.assetSizeBytes,
+        }
+
+        private fun cancelAppUpdateDownload() {
+            val current = mutableAppUpdateState.value
+            val release = current.release ?: return
+            if (current.phase != AppUpdatePhase.DOWNLOADING) return
+            appUpdateRepository.cancelDownload()
+            appUpdateJob?.cancel()
+            mutableAppUpdateState.value =
+                current.copy(
+                    phase = if (release.isNewer) AppUpdatePhase.AVAILABLE else AppUpdatePhase.UP_TO_DATE,
+                    downloadedApkPath = null,
+                    downloadedBytes = 0L,
                     totalBytes = release.assetSizeBytes,
                     message = null,
                 )
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                mutableAppUpdateState.value = mutableAppUpdateState.value.copy(
+        }
+
+        override fun onCleared() {
+            appUpdateRepository.cancelDownload()
+            super.onCleared()
+        }
+
+        private fun reportInstallerError(message: String) {
+            mutableAppUpdateState.value =
+                mutableAppUpdateState.value.copy(
                     phase = AppUpdatePhase.FAILED,
-                    downloadedApkPath = null,
-                    message = error.message ?: "Release APK 下载或校验失败",
+                    message = message,
                 )
-            } finally {
-                appUpdateJob = null
-            }
         }
-    }
 
-    fun cancelAppUpdateDownload() {
-        val current = mutableAppUpdateState.value
-        val release = current.release ?: return
-        if (current.phase != AppUpdatePhase.DOWNLOADING) return
-        appUpdateRepository.cancelDownload()
-        appUpdateJob?.cancel()
-        mutableAppUpdateState.value = current.copy(
-            phase = if (release.isNewer) AppUpdatePhase.AVAILABLE else AppUpdatePhase.UP_TO_DATE,
-            downloadedApkPath = null,
-            downloadedBytes = 0L,
-            totalBytes = release.assetSizeBytes,
-            message = null,
-        )
-    }
-
-    override fun onCleared() {
-        appUpdateRepository.cancelDownload()
-        super.onCleared()
-    }
-
-    fun reportInstallerError(message: String) {
-        mutableAppUpdateState.value = mutableAppUpdateState.value.copy(
-            phase = AppUpdatePhase.FAILED,
-            message = message,
-        )
-    }
-
-    fun exportDiagnostics(
-        contentResolver: ContentResolver,
-        destination: Uri,
-    ) {
-        mutableDiagnosticExportState.value = DiagnosticExportUiState(isExporting = true)
-        viewModelScope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val content = diagnosticRepository.exportRedactedText()
-                    val output = contentResolver.openOutputStream(destination, "wt")
-                        ?: error("无法创建诊断日志文件")
-                    output.bufferedWriter(Charsets.UTF_8).use { writer -> writer.write(content) }
+        private fun exportDiagnostics(destinationUri: String) {
+            mutableDiagnosticExportState.value = DiagnosticExportUiState(isExporting = true)
+            viewModelScope.launch {
+                runCatching {
+                    diagnosticExportRepository.exportTo(destinationUri)
+                }.onSuccess {
+                    mutableDiagnosticExportState.value =
+                        DiagnosticExportUiState(
+                            message = "诊断日志已导出",
+                        )
+                }.onFailure { error ->
+                    mutableDiagnosticExportState.value =
+                        DiagnosticExportUiState(
+                            message = "导出失败：${error.javaClass.simpleName}",
+                            isFailure = true,
+                        )
                 }
-            }.onSuccess {
-                mutableDiagnosticExportState.value = DiagnosticExportUiState(
-                    message = "诊断日志已导出",
-                )
-            }.onFailure { error ->
-                mutableDiagnosticExportState.value = DiagnosticExportUiState(
-                    message = "导出失败：${error.javaClass.simpleName}",
-                    isFailure = true,
-                )
             }
         }
     }
-}
 
 @Composable
 fun SettingsRoute(
@@ -541,129 +802,155 @@ fun SettingsRoute(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
-    val preferences by viewModel.preferences.collectAsState()
-    val session by viewModel.session.collectAsState()
-    val diagnosticExportState by viewModel.diagnosticExportState.collectAsState()
-    val appUpdateState by viewModel.appUpdateState.collectAsState()
-    val steamAccessState by viewModel.steamAccessState.collectAsState()
-    val outputDirectoryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree(),
-    ) { treeUri ->
-        if (treeUri != null) {
-            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            runCatching { context.contentResolver.takePersistableUriPermission(treeUri, flags) }
-                .onSuccess {
-                    viewModel.setOutputDirectory(
-                        treeUri = treeUri.toString(),
-                        label = treeUri.lastPathSegment
-                            ?.substringAfterLast(':')
-                            ?.ifBlank { null }
-                            ?: "已选择导出目录",
-                    )
-                }
+    val preferences by viewModel.preferences.collectAsStateWithLifecycle()
+    val session by viewModel.session.collectAsStateWithLifecycle()
+    val diagnosticExportState by viewModel.diagnosticExportState.collectAsStateWithLifecycle()
+    val appUpdateState by viewModel.appUpdateState.collectAsStateWithLifecycle()
+    val steamAccessState by viewModel.steamAccessState.collectAsStateWithLifecycle()
+    val toastState = LocalWallHubToastState.current
+    val currentOnOpenSteamLogin by rememberUpdatedState(onOpenSteamLogin)
+    val outputDirectoryLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocumentTree(),
+        ) { treeUri ->
+            if (treeUri != null) {
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                runCatching { context.contentResolver.takePersistableUriPermission(treeUri, flags) }
+                    .onSuccess {
+                        viewModel.onAction(
+                            SettingsAction.OutputDirectorySelected(
+                                treeUri = treeUri.toString(),
+                                label =
+                                    treeUri.lastPathSegment
+                                        ?.substringAfterLast(':')
+                                        ?.ifBlank { null }
+                                        ?: "已选择导出目录",
+                            ),
+                        )
+                    }.onFailure { error ->
+                        viewModel.onAction(
+                            SettingsAction.SystemActionFailed(
+                                error.message ?: "无法授权导出目录",
+                            ),
+                        )
+                    }
+            }
         }
-    }
-    val notificationLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { }
-    val diagnosticExportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/plain"),
-    ) { documentUri ->
-        if (documentUri != null) {
-            viewModel.exportDiagnostics(context.contentResolver, documentUri)
+    val notificationLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { }
+    val diagnosticExportLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("text/plain"),
+        ) { documentUri ->
+            if (documentUri != null) {
+                viewModel.onAction(SettingsAction.DiagnosticDocumentSelected(documentUri.toString()))
+            }
         }
-    }
     var pendingUpdateApkPath by rememberSaveable { mutableStateOf<String?>(null) }
     val launchSystemInstaller: (String) -> Unit = { path ->
         runCatching {
             val apk = File(path)
             check(apk.isFile) { "已验证的安装包不存在" }
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, APK_MIME_TYPE)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
+            val intent =
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, APK_MIME_TYPE)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
             context.startActivity(intent)
         }.onFailure { error ->
-            viewModel.reportInstallerError(error.message ?: "无法打开 Android 系统安装器")
+            viewModel.onAction(
+                SettingsAction.InstallerFailed(error.message ?: "无法打开 Android 系统安装器"),
+            )
         }
     }
-    val unknownSourcesLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult(),
-    ) {
-        val path = pendingUpdateApkPath
-        pendingUpdateApkPath = null
-        if (
-            path != null &&
-            (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls())
+    val unknownSourcesLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.StartActivityForResult(),
         ) {
-            launchSystemInstaller(path)
-        } else if (path != null) {
-            viewModel.reportInstallerError("需要允许 WallHub 安装未知应用后才能继续")
+            val path = pendingUpdateApkPath
+            pendingUpdateApkPath = null
+            if (
+                path != null &&
+                (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls())
+            ) {
+                launchSystemInstaller(path)
+            } else if (path != null) {
+                viewModel.onAction(SettingsAction.InstallerFailed("需要允许 WallHub 安装未知应用后才能继续"))
+            }
         }
-    }
     val requestReleaseInstall: (String) -> Unit = { path ->
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !context.packageManager.canRequestPackageInstalls()
         ) {
             pendingUpdateApkPath = path
-            val intent = Intent(
-                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                Uri.parse("package:${context.packageName}"),
-            )
+            val intent =
+                Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${context.packageName}"),
+                )
             runCatching { unknownSourcesLauncher.launch(intent) }
                 .onFailure { error ->
                     pendingUpdateApkPath = null
-                    viewModel.reportInstallerError(error.message ?: "无法打开安装未知应用设置")
+                    viewModel.onAction(
+                        SettingsAction.InstallerFailed(error.message ?: "无法打开安装未知应用设置"),
+                    )
                 }
         } else {
             launchSystemInstaller(path)
         }
     }
+    val currentRequestReleaseInstall by rememberUpdatedState(requestReleaseInstall)
+    LaunchedEffect(viewModel, context) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                SettingsEffect.SelectOutputDirectory -> outputDirectoryLauncher.launch(null)
+                SettingsEffect.ExportDiagnostics -> {
+                    diagnosticExportLauncher.launch(
+                        "wallhub-diagnostics-${System.currentTimeMillis()}.txt",
+                    )
+                }
+                SettingsEffect.RequestNotifications -> {
+                    if (
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS,
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+                SettingsEffect.OpenSteamLogin -> currentOnOpenSteamLogin()
+                is SettingsEffect.InstallDownloadedRelease -> {
+                    currentRequestReleaseInstall(effect.path)
+                }
+                is SettingsEffect.OpenExternalUri -> {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(effect.uri)).apply {
+                                addCategory(Intent.CATEGORY_BROWSABLE)
+                            },
+                        )
+                    }.onFailure {
+                        viewModel.onAction(SettingsAction.SystemActionFailed(effect.failureMessage))
+                    }
+                }
+                is SettingsEffect.ShowMessage -> toastState.show(effect.message)
+            }
+        }
+    }
     SettingsScreen(
         preferences = preferences,
-        onThemePreferenceChange = viewModel::setTheme,
-        onLanguageChange = viewModel::setLanguage,
-        onAccentChange = viewModel::setAccent,
-        onSystemMonetEnabledChange = viewModel::setSystemMonetEnabled,
-        onThemedLauncherIconEnabledChange = viewModel::setThemedLauncherIconEnabled,
-        onHomePreferencesChange = viewModel::setHomePreferences,
-        onHomePaginationModeChange = viewModel::setHomePaginationMode,
-        onDownloadPreferencesChange = viewModel::setDownloadPreferences,
-        onDownloadProxyEnabledChange = viewModel::setDownloadProxyEnabled,
-        onOnlineStreamCacheLimitChange = viewModel::setOnlineStreamCacheLimitMb,
-        onSteamApiKeyChange = viewModel::setSteamApiKey,
-        onSteamWorkshopDataSourceChange = viewModel::setSteamWorkshopDataSource,
-        onOnlineChunkPlaybackEnabledChange = viewModel::setOnlineChunkPlaybackEnabled,
         steamAccessState = steamAccessState,
-        onSteamAccessEnabledChange = viewModel::setSteamAccessEnabled,
-        onSteamAccessDohEndpointsChange = viewModel::setSteamAccessDohEndpoints,
-        onRefreshSteamAccess = viewModel::refreshSteamAccess,
         session = session,
-        onOpenSteamLogin = onOpenSteamLogin,
-        onLogoutSteam = viewModel::logoutSteam,
-        onSelectOutputDirectory = { outputDirectoryLauncher.launch(null) },
-        onClearOutputDirectory = viewModel::clearOutputDirectory,
         diagnosticExportState = diagnosticExportState,
         appUpdateState = appUpdateState,
-        onCheckForAppUpdate = viewModel::checkForAppUpdate,
-        onDownloadLatestRelease = viewModel::downloadLatestRelease,
-        onCancelAppUpdateDownload = viewModel::cancelAppUpdateDownload,
-        onInstallDownloadedRelease = requestReleaseInstall,
-        onExportDiagnostics = {
-            diagnosticExportLauncher.launch("wallhub-diagnostics-${System.currentTimeMillis()}.txt")
-        },
-        onRequestNotifications = {
-            if (
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        },
+        onAction = viewModel::onAction,
     )
 }
 
@@ -671,45 +958,96 @@ fun SettingsRoute(
 @Composable
 fun SettingsScreen(
     preferences: AppPreferences,
-    onThemePreferenceChange: (ThemePreference) -> Unit,
-    onLanguageChange: (AppLanguage) -> Unit,
-    onAccentChange: (AccentPreference, String?) -> Unit,
-    onSystemMonetEnabledChange: (Boolean) -> Unit,
-    onThemedLauncherIconEnabledChange: (Boolean) -> Unit,
-    onHomePreferencesChange: (Int, Int, Boolean, HomeCardAction, Boolean) -> Unit,
-    onHomePaginationModeChange: (HomePaginationMode) -> Unit,
-    onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit,
-    onDownloadProxyEnabledChange: (Boolean) -> Unit,
-    onOnlineStreamCacheLimitChange: (Int) -> Unit,
-    onSteamApiKeyChange: (String) -> Unit,
-    onSteamWorkshopDataSourceChange: (SteamWorkshopDataSource) -> Unit,
-    onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
     steamAccessState: SteamAccessState,
-    onSteamAccessEnabledChange: (Boolean) -> Unit,
-    onSteamAccessDohEndpointsChange: (List<String>, Set<String>) -> Unit,
-    onRefreshSteamAccess: () -> Unit,
     session: SteamSessionState,
-    onOpenSteamLogin: () -> Unit,
-    onLogoutSteam: () -> Unit,
-    onSelectOutputDirectory: () -> Unit,
-    onClearOutputDirectory: () -> Unit,
     diagnosticExportState: DiagnosticExportUiState,
     appUpdateState: AppUpdateUiState,
-    onCheckForAppUpdate: () -> Unit,
-    onDownloadLatestRelease: () -> Unit,
-    onCancelAppUpdateDownload: () -> Unit,
-    onInstallDownloadedRelease: (String) -> Unit,
-    onExportDiagnostics: () -> Unit,
-    onRequestNotifications: () -> Unit,
+    onAction: (SettingsAction) -> Unit,
 ) {
-    fun text(zh: String, en: String): String = if (preferences.language == AppLanguage.EN) en else zh
-    val context = LocalContext.current
-    var selectedCategoryName by rememberSaveable { mutableStateOf<String?>(null) }
-    val selectedCategory = selectedCategoryName
-        ?.let { categoryName -> SettingsCategory.entries.firstOrNull { it.name == categoryName } }
-    val availableAccents = AccentPreference.entries.filter { accent ->
-        accent != AccentPreference.MONET
+    fun text(
+        zh: String,
+        en: String,
+    ): String = if (preferences.language == AppLanguage.EN) en else zh
+    val onThemePreferenceChange: (ThemePreference) -> Unit = { onAction(SettingsAction.ThemeChanged(it)) }
+    val onLanguageChange: (AppLanguage) -> Unit = { onAction(SettingsAction.LanguageChanged(it)) }
+    val onAccentChange: (AccentPreference, String?) -> Unit = { accent, customColor ->
+        onAction(SettingsAction.AccentChanged(accent, customColor))
     }
+    val onSystemMonetEnabledChange: (Boolean) -> Unit = {
+        onAction(SettingsAction.SystemMonetEnabledChanged(it))
+    }
+    val onThemedLauncherIconEnabledChange: (Boolean) -> Unit = {
+        onAction(SettingsAction.ThemedLauncherIconEnabledChanged(it))
+    }
+    val onHomePreferencesChange: (Int, Int, Boolean, HomeCardAction, Boolean) -> Unit =
+        { pageSize, columns, multiSelect, cardAction, matureContentEnabled ->
+            onAction(
+                SettingsAction.HomePreferencesChanged(
+                    pageSize,
+                    columns,
+                    multiSelect,
+                    cardAction,
+                    matureContentEnabled,
+                ),
+            )
+        }
+    val onHomePaginationModeChange: (HomePaginationMode) -> Unit = {
+        onAction(SettingsAction.HomePaginationModeChanged(it))
+    }
+    val onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit =
+        { maxConcurrentDownloads, chunkDownloadConcurrency, proxyUrl, mediaCacheLimitMb ->
+            onAction(
+                SettingsAction.DownloadPreferencesChanged(
+                    maxConcurrentDownloads,
+                    chunkDownloadConcurrency,
+                    proxyUrl,
+                    mediaCacheLimitMb,
+                ),
+            )
+        }
+    val onDownloadProxyEnabledChange: (Boolean) -> Unit = {
+        onAction(SettingsAction.DownloadProxyEnabledChanged(it))
+    }
+    val onOnlineStreamCacheLimitChange: (Int) -> Unit = {
+        onAction(SettingsAction.OnlineStreamCacheLimitChanged(it))
+    }
+    val onSteamApiKeyChange: (String) -> Unit = { onAction(SettingsAction.SteamApiKeyChanged(it)) }
+    val onSteamWorkshopDataSourceChange: (SteamWorkshopDataSource) -> Unit = {
+        onAction(SettingsAction.SteamWorkshopDataSourceChanged(it))
+    }
+    val onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit = {
+        onAction(SettingsAction.OnlineChunkPlaybackEnabledChanged(it))
+    }
+    val onSteamAccessEnabledChange: (Boolean) -> Unit = {
+        onAction(SettingsAction.SteamAccessEnabledChanged(it))
+    }
+    val onSteamAccessDohEndpointsChange: (List<String>, Set<String>) -> Unit = { endpoints, disabledEndpoints ->
+        onAction(SettingsAction.SteamAccessDohEndpointsChanged(endpoints, disabledEndpoints))
+    }
+    val onRefreshSteamAccess: () -> Unit = { onAction(SettingsAction.RefreshSteamAccess) }
+    val onOpenSteamLogin: () -> Unit = { onAction(SettingsAction.OpenSteamLogin) }
+    val onLogoutSteam: () -> Unit = { onAction(SettingsAction.LogoutSteam) }
+    val onSelectOutputDirectory: () -> Unit = { onAction(SettingsAction.SelectOutputDirectory) }
+    val onClearOutputDirectory: () -> Unit = { onAction(SettingsAction.ClearOutputDirectory) }
+    val onCheckForAppUpdate: () -> Unit = { onAction(SettingsAction.CheckForAppUpdate) }
+    val onDownloadLatestRelease: () -> Unit = { onAction(SettingsAction.DownloadLatestRelease) }
+    val onCancelAppUpdateDownload: () -> Unit = { onAction(SettingsAction.CancelAppUpdateDownload) }
+    val onInstallDownloadedRelease: (String) -> Unit = {
+        onAction(SettingsAction.InstallDownloadedRelease(it))
+    }
+    val onExportDiagnostics: () -> Unit = { onAction(SettingsAction.ExportDiagnostics) }
+    val onRequestNotifications: () -> Unit = { onAction(SettingsAction.RequestNotifications) }
+    val onOpenExternalUri: (String, String) -> Unit = { uri, failureMessage ->
+        onAction(SettingsAction.OpenExternalUri(uri, failureMessage))
+    }
+    var selectedCategoryName by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedCategory =
+        selectedCategoryName
+            ?.let { categoryName -> SettingsCategory.entries.firstOrNull { it.name == categoryName } }
+    val availableAccents =
+        AccentPreference.entries.filter { accent ->
+            accent != AccentPreference.MONET
+        }
     var customAccentColor by remember(preferences.customAccentColor) {
         mutableStateOf(preferences.customAccentColor)
     }
@@ -719,6 +1057,7 @@ fun SettingsScreen(
     var steamApiKey by remember(preferences.steamApiKey) {
         mutableStateOf(preferences.steamApiKey)
     }
+
     fun saveHomePreferences(
         pageSize: Int = preferences.homePageSize,
         columns: Int = preferences.homeColumns,
@@ -736,181 +1075,290 @@ fun SettingsScreen(
         modifier = Modifier.fillMaxSize(),
         transitionSpec = {
             val direction = if (targetState == null) -1 else 1
-            val enterOffsetDivisor = if (targetState == null) {
-                SETTINGS_PAGE_EXIT_OFFSET_DIVISOR
-            } else {
-                SETTINGS_PAGE_ENTER_OFFSET_DIVISOR
-            }
-            val exitOffsetDivisor = if (targetState == null) {
-                SETTINGS_PAGE_ENTER_OFFSET_DIVISOR
-            } else {
-                SETTINGS_PAGE_EXIT_OFFSET_DIVISOR
-            }
-            (fadeIn(
-                animationSpec = tween(
-                    durationMillis = SETTINGS_PAGE_ENTER_DURATION_MS,
-                    easing = SETTINGS_PAGE_EASING,
-                ),
-            ) + slideInHorizontally(
-                initialOffsetX = { width -> direction * width / enterOffsetDivisor },
-                animationSpec = tween(
-                    durationMillis = SETTINGS_PAGE_ENTER_DURATION_MS,
-                    easing = SETTINGS_PAGE_EASING,
-                ),
-            )) togetherWith (fadeOut(
-                animationSpec = tween(
-                    durationMillis = SETTINGS_PAGE_EXIT_DURATION_MS,
-                    easing = SETTINGS_PAGE_EASING,
-                ),
-            ) + slideOutHorizontally(
-                targetOffsetX = { width -> -direction * width / exitOffsetDivisor },
-                animationSpec = tween(
-                    durationMillis = SETTINGS_PAGE_EXIT_DURATION_MS,
-                    easing = SETTINGS_PAGE_EASING,
-                ),
-            ))
+            val enterOffsetDivisor =
+                if (targetState == null) {
+                    SETTINGS_PAGE_EXIT_OFFSET_DIVISOR
+                } else {
+                    SETTINGS_PAGE_ENTER_OFFSET_DIVISOR
+                }
+            val exitOffsetDivisor =
+                if (targetState == null) {
+                    SETTINGS_PAGE_ENTER_OFFSET_DIVISOR
+                } else {
+                    SETTINGS_PAGE_EXIT_OFFSET_DIVISOR
+                }
+            (
+                fadeIn(
+                    animationSpec =
+                        tween(
+                            durationMillis = SETTINGS_PAGE_ENTER_DURATION_MS,
+                            easing = SETTINGS_PAGE_EASING,
+                        ),
+                ) +
+                    slideInHorizontally(
+                        initialOffsetX = { width -> direction * width / enterOffsetDivisor },
+                        animationSpec =
+                            tween(
+                                durationMillis = SETTINGS_PAGE_ENTER_DURATION_MS,
+                                easing = SETTINGS_PAGE_EASING,
+                            ),
+                    )
+            ) togetherWith (
+                fadeOut(
+                    animationSpec =
+                        tween(
+                            durationMillis = SETTINGS_PAGE_EXIT_DURATION_MS,
+                            easing = SETTINGS_PAGE_EASING,
+                        ),
+                ) +
+                    slideOutHorizontally(
+                        targetOffsetX = { width -> -direction * width / exitOffsetDivisor },
+                        animationSpec =
+                            tween(
+                                durationMillis = SETTINGS_PAGE_EXIT_DURATION_MS,
+                                easing = SETTINGS_PAGE_EASING,
+                            ),
+                    )
+            )
         },
         contentKey = { category -> category?.name ?: SETTINGS_CATEGORY_INDEX_KEY },
         label = "SettingsCategoryPage",
     ) { displayedCategory ->
         WallHubPageScaffold(
             title = text("设置", "Settings"),
-            topBarContent = displayedCategory?.let { category ->
-                {
-                    TopAppBar(
-                        title = {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                                Icon(
-                                    imageVector = category.icon,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
-                                Text(category.label(preferences.language))
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.background,
-                        ),
-                        navigationIcon = {
-                    IconButton(onClick = { selectedCategoryName = null }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = text("返回设置", "Back to Settings"),
+            topBarContent =
+                displayedCategory?.let { category ->
+                    {
+                        TopAppBar(
+                            title = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
+                                ) {
+                                    Icon(
+                                        imageVector = category.icon,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Text(category.label(preferences.language))
+                                }
+                            },
+                            colors =
+                                TopAppBarDefaults.topAppBarColors(
+                                    containerColor = MaterialTheme.colorScheme.background,
+                                ),
+                            navigationIcon = {
+                                IconButton(onClick = { selectedCategoryName = null }) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                        contentDescription = text("返回设置", "Back to Settings"),
+                                    )
+                                }
+                            },
                         )
                     }
-                        },
-                    )
-                }
-            },
+                },
         ) { padding ->
             BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(padding),
             ) {
-                val horizontalPadding = if (maxWidth >= SETTINGS_MEDIUM_WIDTH) 24.dp else 16.dp
+                val horizontalPadding = if (maxWidth >= SETTINGS_MEDIUM_WIDTH) WallHubSpacing.lg else WallHubSpacing.md
                 Column(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .widthIn(max = SETTINGS_CONTENT_MAX_WIDTH)
-                        .fillMaxWidth()
-                        .fillMaxHeight()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = horizontalPadding, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                    modifier =
+                        Modifier
+                            .align(Alignment.TopCenter)
+                            .widthIn(max = SETTINGS_CONTENT_MAX_WIDTH)
+                            .fillMaxWidth()
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = horizontalPadding, vertical = WallHubSpacing.md),
+                    verticalArrangement = Arrangement.spacedBy(WallHubSpacing.lg),
                 ) {
-            if (displayedCategory == null) {
-                SettingsCategoryIndex(
-                    language = preferences.language,
-                    onOpenCategory = { category -> selectedCategoryName = category.name },
-                )
-            } else {
-                if (displayedCategory == SettingsCategory.STEAM) {
-                    SteamSettingsContent(
-                        language = preferences.language,
-                        session = session,
-                        steamAccessEnabled = preferences.steamAccessEnabled,
+                    SettingsCategoryContent(
+                        category = displayedCategory,
+                        preferences = preferences,
                         steamAccessState = steamAccessState,
-                        steamAccessDohEndpoints = preferences.steamAccessDohEndpoints,
-                        steamAccessDisabledDohEndpoints = preferences.steamAccessDisabledDohEndpoints,
-                        steamWorkshopDataSource = preferences.steamWorkshopDataSource,
-                        onSteamAccessEnabledChange = onSteamAccessEnabledChange,
-                        onSteamAccessDohEndpointsChange = onSteamAccessDohEndpointsChange,
-                        onSteamWorkshopDataSourceChange = onSteamWorkshopDataSourceChange,
-                        onRefreshSteamAccess = onRefreshSteamAccess,
-                        savedApiKey = preferences.steamApiKey,
-                        apiKey = steamApiKey,
-                        onApiKeyChanged = { steamApiKey = it },
-                        onSaveApiKey = { onSteamApiKeyChange(steamApiKey) },
-                        onOpenApiKeyPage = {
-                            val intent = Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse(STEAM_API_KEY_URL),
-                            )
-                            runCatching { context.startActivity(intent) }
-                        },
-                        onOpenSteamLogin = onOpenSteamLogin,
-                        onLogoutSteam = onLogoutSteam,
-                    )
-                }
-                if (displayedCategory == SettingsCategory.BASIC) {
-                    BasicSettingsContent(
-                        language = preferences.language,
-                        matureContentEnabled = preferences.matureContentEnabled,
+                        session = session,
                         diagnosticExportState = diagnosticExportState,
                         appUpdateState = appUpdateState,
-                        onMatureContentEnabledChange = { enabled ->
-                            saveHomePreferences(matureContentEnabled = enabled)
-                        },
-                        onCheckForAppUpdate = onCheckForAppUpdate,
-                        onDownloadLatestRelease = onDownloadLatestRelease,
-                        onCancelAppUpdateDownload = onCancelAppUpdateDownload,
-                        onInstallDownloadedRelease = onInstallDownloadedRelease,
-                        onExportDiagnostics = onExportDiagnostics,
-                    )
-                }
-                if (displayedCategory == SettingsCategory.DOWNLOAD) {
-                    DownloadSettingsContent(
-                        preferences = preferences,
-                        proxyUrl = proxyUrl,
-                        onProxyUrlChanged = { proxyUrl = it },
-                        onSelectOutputDirectory = onSelectOutputDirectory,
-                        onClearOutputDirectory = onClearOutputDirectory,
-                        onDownloadPreferencesChange = onDownloadPreferencesChange,
-                        onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
-                    )
-                }
-                if (displayedCategory == SettingsCategory.APPEARANCE) {
-                    AppearanceSettingsContent(
-                        preferences = preferences,
                         availableAccents = availableAccents,
                         customAccentColor = customAccentColor,
                         onCustomAccentColorChanged = { customAccentColor = it },
-                        onLanguageChange = onLanguageChange,
+                        proxyUrl = proxyUrl,
+                        onProxyUrlChanged = { proxyUrl = it },
+                        steamApiKey = steamApiKey,
+                        onSteamApiKeyChanged = { steamApiKey = it },
+                        onOpenCategory = { selectedCategoryName = it.name },
+                        onMatureContentEnabledChange = { enabled ->
+                            saveHomePreferences(matureContentEnabled = enabled)
+                        },
                         onThemePreferenceChange = onThemePreferenceChange,
+                        onLanguageChange = onLanguageChange,
                         onAccentChange = onAccentChange,
                         onSystemMonetEnabledChange = onSystemMonetEnabledChange,
                         onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
                         onHomePreferencesChange = onHomePreferencesChange,
                         onHomePaginationModeChange = onHomePaginationModeChange,
-                    )
-                }
-                if (displayedCategory == SettingsCategory.EXPERIMENTAL) {
-                    ExperimentalSettingsContent(
-                        preferences = preferences,
-                        onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
+                        onDownloadPreferencesChange = onDownloadPreferencesChange,
+                        onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
                         onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
+                        onSteamAccessEnabledChange = onSteamAccessEnabledChange,
+                        onSteamAccessDohEndpointsChange = onSteamAccessDohEndpointsChange,
+                        onSteamWorkshopDataSourceChange = onSteamWorkshopDataSourceChange,
+                        onRefreshSteamAccess = onRefreshSteamAccess,
+                        onSaveSteamApiKey = { onSteamApiKeyChange(steamApiKey) },
+                        onOpenExternalUri = onOpenExternalUri,
+                        onOpenSteamLogin = onOpenSteamLogin,
+                        onLogoutSteam = onLogoutSteam,
+                        onSelectOutputDirectory = onSelectOutputDirectory,
+                        onClearOutputDirectory = onClearOutputDirectory,
+                        onCheckForAppUpdate = onCheckForAppUpdate,
+                        onDownloadLatestRelease = onDownloadLatestRelease,
+                        onCancelAppUpdateDownload = onCancelAppUpdateDownload,
+                        onInstallDownloadedRelease = onInstallDownloadedRelease,
+                        onExportDiagnostics = onExportDiagnostics,
+                        onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
                         onRequestNotifications = onRequestNotifications,
+                        text = ::text,
                     )
                 }
             }
         }
     }
 }
-}
+
+@Composable
+private fun SettingsCategoryContent(
+    category: SettingsCategory?,
+    preferences: AppPreferences,
+    steamAccessState: SteamAccessState,
+    session: SteamSessionState,
+    diagnosticExportState: DiagnosticExportUiState,
+    appUpdateState: AppUpdateUiState,
+    availableAccents: List<AccentPreference>,
+    customAccentColor: String,
+    onCustomAccentColorChanged: (String) -> Unit,
+    proxyUrl: String,
+    onProxyUrlChanged: (String) -> Unit,
+    steamApiKey: String,
+    onSteamApiKeyChanged: (String) -> Unit,
+    onOpenCategory: (SettingsCategory) -> Unit,
+    onMatureContentEnabledChange: (Boolean) -> Unit,
+    onThemePreferenceChange: (ThemePreference) -> Unit,
+    onLanguageChange: (AppLanguage) -> Unit,
+    onAccentChange: (AccentPreference, String?) -> Unit,
+    onSystemMonetEnabledChange: (Boolean) -> Unit,
+    onThemedLauncherIconEnabledChange: (Boolean) -> Unit,
+    onHomePreferencesChange: (Int, Int, Boolean, HomeCardAction, Boolean) -> Unit,
+    onHomePaginationModeChange: (HomePaginationMode) -> Unit,
+    onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit,
+    onDownloadProxyEnabledChange: (Boolean) -> Unit,
+    onOnlineStreamCacheLimitChange: (Int) -> Unit,
+    onSteamAccessEnabledChange: (Boolean) -> Unit,
+    onSteamAccessDohEndpointsChange: (List<String>, Set<String>) -> Unit,
+    onSteamWorkshopDataSourceChange: (SteamWorkshopDataSource) -> Unit,
+    onRefreshSteamAccess: () -> Unit,
+    onSaveSteamApiKey: () -> Unit,
+    onOpenExternalUri: (String, String) -> Unit,
+    onOpenSteamLogin: () -> Unit,
+    onLogoutSteam: () -> Unit,
+    onSelectOutputDirectory: () -> Unit,
+    onClearOutputDirectory: () -> Unit,
+    onCheckForAppUpdate: () -> Unit,
+    onDownloadLatestRelease: () -> Unit,
+    onCancelAppUpdateDownload: () -> Unit,
+    onInstallDownloadedRelease: (String) -> Unit,
+    onExportDiagnostics: () -> Unit,
+    onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
+    onRequestNotifications: () -> Unit,
+    text: (String, String) -> String,
+) {
+    when (category) {
+        null ->
+            SettingsCategoryIndex(
+                language = preferences.language,
+                onOpenCategory = onOpenCategory,
+            )
+
+        SettingsCategory.BASIC ->
+            BasicSettingsContent(
+                language = preferences.language,
+                matureContentEnabled = preferences.matureContentEnabled,
+                diagnosticExportState = diagnosticExportState,
+                appUpdateState = appUpdateState,
+                onMatureContentEnabledChange = onMatureContentEnabledChange,
+                onCheckForAppUpdate = onCheckForAppUpdate,
+                onDownloadLatestRelease = onDownloadLatestRelease,
+                onCancelAppUpdateDownload = onCancelAppUpdateDownload,
+                onInstallDownloadedRelease = onInstallDownloadedRelease,
+                onExportDiagnostics = onExportDiagnostics,
+                onOpenExternalUri = onOpenExternalUri,
+            )
+
+        SettingsCategory.DOWNLOAD ->
+            DownloadSettingsContent(
+                preferences = preferences,
+                proxyUrl = proxyUrl,
+                onProxyUrlChanged = onProxyUrlChanged,
+                onSelectOutputDirectory = onSelectOutputDirectory,
+                onClearOutputDirectory = onClearOutputDirectory,
+                onDownloadPreferencesChange = onDownloadPreferencesChange,
+                onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
+            )
+
+        SettingsCategory.STEAM ->
+            SteamSettingsContent(
+                language = preferences.language,
+                session = session,
+                steamAccessEnabled = preferences.steamAccessEnabled,
+                steamAccessState = steamAccessState,
+                steamAccessDohEndpoints = preferences.steamAccessDohEndpoints,
+                steamAccessDisabledDohEndpoints = preferences.steamAccessDisabledDohEndpoints,
+                steamWorkshopDataSource = preferences.steamWorkshopDataSource,
+                onSteamAccessEnabledChange = onSteamAccessEnabledChange,
+                onSteamAccessDohEndpointsChange = onSteamAccessDohEndpointsChange,
+                onSteamWorkshopDataSourceChange = onSteamWorkshopDataSourceChange,
+                onRefreshSteamAccess = onRefreshSteamAccess,
+                savedApiKey = preferences.steamApiKey,
+                apiKey = steamApiKey,
+                onApiKeyChanged = onSteamApiKeyChanged,
+                onSaveApiKey = onSaveSteamApiKey,
+                onOpenApiKeyPage = {
+                    onOpenExternalUri(
+                        STEAM_API_KEY_URL,
+                        text("无法打开 Steam API Key 页面", "Unable to open the Steam API key page"),
+                    )
+                },
+                onOpenSteamLogin = onOpenSteamLogin,
+                onLogoutSteam = onLogoutSteam,
+            )
+
+        SettingsCategory.APPEARANCE ->
+            AppearanceSettingsContent(
+                preferences = preferences,
+                availableAccents = availableAccents,
+                customAccentColor = customAccentColor,
+                onCustomAccentColorChanged = onCustomAccentColorChanged,
+                onLanguageChange = onLanguageChange,
+                onThemePreferenceChange = onThemePreferenceChange,
+                onAccentChange = onAccentChange,
+                onSystemMonetEnabledChange = onSystemMonetEnabledChange,
+                onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
+                onHomePreferencesChange = onHomePreferencesChange,
+                onHomePaginationModeChange = onHomePaginationModeChange,
+            )
+
+        SettingsCategory.EXPERIMENTAL ->
+            ExperimentalSettingsContent(
+                preferences = preferences,
+                onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
+                onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
+                onRequestNotifications = onRequestNotifications,
+            )
+    }
 }
 
 @Composable
@@ -927,13 +1375,14 @@ private fun SettingsListItem(
         supportingContent = supportingContent,
         leadingContent = leadingContent,
         trailingContent = trailingContent,
-        colors = ListItemDefaults.colors(
-            containerColor = Color.Transparent,
-            headlineColor = MaterialTheme.colorScheme.onSurface,
-            supportingColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            leadingIconColor = MaterialTheme.colorScheme.primary,
-            trailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
+        colors =
+            ListItemDefaults.colors(
+                containerColor = Color.Transparent,
+                headlineColor = MaterialTheme.colorScheme.onSurface,
+                supportingColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                leadingIconColor = MaterialTheme.colorScheme.primary,
+                trailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
     )
 }
 
@@ -983,16 +1432,17 @@ internal fun SettingsFilledTextField(
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
         shape = MaterialTheme.shapes.large,
-        colors = TextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            errorContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            focusedIndicatorColor = Color.Transparent,
-            unfocusedIndicatorColor = Color.Transparent,
-            disabledIndicatorColor = Color.Transparent,
-            errorIndicatorColor = Color.Transparent,
-        ),
+        colors =
+            TextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                errorContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                disabledIndicatorColor = Color.Transparent,
+                errorIndicatorColor = Color.Transparent,
+            ),
     )
 }
 
@@ -1006,24 +1456,24 @@ private fun SettingsSection(
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 4.dp),
+            modifier = Modifier.padding(horizontal = WallHubSpacing.xxs),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
         ) {
             if (icon != null) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(WallHubSizeTokens.smallIcon),
                 )
             }
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxxs),
             ) {
                 Text(
                     text = title,
@@ -1057,6 +1507,7 @@ private fun BasicSettingsContent(
     onCancelAppUpdateDownload: () -> Unit,
     onInstallDownloadedRelease: (String) -> Unit,
     onExportDiagnostics: () -> Unit,
+    onOpenExternalUri: (String, String) -> Unit,
 ) {
     val installed = appUpdateState.installed
 
@@ -1072,15 +1523,17 @@ private fun BasicSettingsContent(
             onDownloadLatestRelease = onDownloadLatestRelease,
             onCancelAppUpdateDownload = onCancelAppUpdateDownload,
             onInstallDownloadedRelease = onInstallDownloadedRelease,
+            onOpenExternalUri = onOpenExternalUri,
         )
     }
 
     SettingsSection(
         title = language.text("诊断与支持", "Diagnostics & support"),
-        supportingText = language.text(
-            "导出经过脱敏处理的运行信息",
-            "Export redacted runtime information",
-        ),
+        supportingText =
+            language.text(
+                "导出经过脱敏处理的运行信息",
+                "Export redacted runtime information",
+            ),
         icon = Icons.Outlined.FolderOpen,
     ) {
         SettingsListItem(
@@ -1102,12 +1555,13 @@ private fun BasicSettingsContent(
             ) {
                 Icon(imageVector = Icons.Outlined.FileUpload, contentDescription = null)
                 Text(
-                    text = if (diagnosticExportState.isExporting) {
-                        language.text("正在导出…", "Exporting…")
-                    } else {
-                        language.text("导出诊断日志", "Export diagnostic log")
-                    },
-                    modifier = Modifier.padding(start = 8.dp),
+                    text =
+                        if (diagnosticExportState.isExporting) {
+                            language.text("正在导出…", "Exporting…")
+                        } else {
+                            language.text("导出诊断日志", "Export diagnostic log")
+                        },
+                    modifier = Modifier.padding(start = WallHubSpacing.xs),
                 )
             }
             diagnosticExportState.message?.let { message ->
@@ -1125,10 +1579,11 @@ private fun BasicSettingsContent(
     ) {
         SettingsSwitchRow(
             title = language.text("NSFW 内容", "NSFW content"),
-            supportingText = language.text(
-                "控制发现页是否显示成人内容",
-                "Control whether mature content appears in Discover",
-            ),
+            supportingText =
+                language.text(
+                    "控制发现页是否显示成人内容",
+                    "Control whether mature content appears in Discover",
+                ),
             checked = matureContentEnabled,
             onCheckedChange = onMatureContentEnabledChange,
         )
@@ -1145,7 +1600,11 @@ private fun DownloadSettingsContent(
     onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit,
     onDownloadProxyEnabledChange: (Boolean) -> Unit,
 ) {
-    fun text(zh: String, en: String): String = if (preferences.language == AppLanguage.EN) en else zh
+    fun text(
+        zh: String,
+        en: String,
+    ): String = if (preferences.language == AppLanguage.EN) en else zh
+
     fun saveDownloadPreferences(
         maxDownloads: Int = preferences.maxConcurrentDownloads,
         chunkConcurrency: Int = preferences.chunkDownloadConcurrency,
@@ -1161,10 +1620,11 @@ private fun DownloadSettingsContent(
 
     SettingsSection(
         title = text("存储位置", "Storage location"),
-        supportingText = text(
-            "选择转换完成后的文件导出位置",
-            "Choose where converted files are exported",
-        ),
+        supportingText =
+            text(
+                "选择转换完成后的文件导出位置",
+                "Choose where converted files are exported",
+            ),
         icon = Icons.Outlined.FolderOpen,
     ) {
         SettingsListItem(
@@ -1188,12 +1648,13 @@ private fun DownloadSettingsContent(
                     contentDescription = null,
                 )
                 Text(
-                    text = if (preferences.outputTreeUri == null) {
-                        text("选择自定义目录", "Choose custom directory")
-                    } else {
-                        text("更改自定义目录", "Change custom directory")
-                    },
-                    modifier = Modifier.padding(start = 8.dp),
+                    text =
+                        if (preferences.outputTreeUri == null) {
+                            text("选择自定义目录", "Choose custom directory")
+                        } else {
+                            text("更改自定义目录", "Change custom directory")
+                        },
+                    modifier = Modifier.padding(start = WallHubSpacing.xs),
                 )
             }
             if (preferences.outputTreeUri != null) {
@@ -1209,10 +1670,11 @@ private fun DownloadSettingsContent(
 
     SettingsSection(
         title = text("下载性能", "Download performance"),
-        supportingText = text(
-            "调整任务数量与单任务分块并发",
-            "Adjust task count and per-download chunk concurrency",
-        ),
+        supportingText =
+            text(
+                "调整任务数量与单任务分块并发",
+                "Adjust task count and per-download chunk concurrency",
+            ),
         icon = Icons.Outlined.Download,
     ) {
         SettingChoiceRow(
@@ -1234,35 +1696,38 @@ private fun DownloadSettingsContent(
 
     SettingsSection(
         title = text("网络代理", "Network proxy"),
-        supportingText = text(
-            "仅用于下载和在线播放，不影响 Steam 社区内置访问线路",
-            "Used only by downloads and online playback; independent from built-in Steam service access",
-        ),
+        supportingText =
+            text(
+                "仅用于下载和在线播放，不影响 Steam 社区内置访问线路",
+                "Used only by downloads and online playback; independent from built-in Steam service access",
+            ),
         icon = Icons.Outlined.Tune,
     ) {
         if (preferences.downloadProxyRequiresConfirmation) {
             SettingsNotice(
                 title = text("旧版代理需要确认", "Legacy proxy needs confirmation"),
-                message = text(
-                    "已保留旧版代理地址，但不会自动启用。请确认地址后再开启代理。",
-                    "The saved legacy address was kept but is not enabled automatically. Confirm it before enabling the proxy.",
-                ),
+                message =
+                    text(
+                        "已保留旧版代理地址，但不会自动启用。请确认地址后再开启代理。",
+                        "The saved legacy address was kept but is not enabled automatically. Confirm it before enabling the proxy.",
+                    ),
             )
         }
         SettingsSwitchRow(
             title = text("使用网络代理", "Use network proxy"),
-            supportingText = text(
-                "仅下载客户端使用此地址；失败时不会切换其他代理",
-                "Only download clients use this address; failures do not switch to another proxy",
-            ),
+            supportingText =
+                text(
+                    "仅下载客户端使用此地址；失败时不会切换其他代理",
+                    "Only download clients use this address; failures do not switch to another proxy",
+                ),
             checked = preferences.downloadProxyEnabled,
             enabled = isSupportedDownloadProxyUrl(preferences.downloadProxyUrl),
             onCheckedChange = onDownloadProxyEnabledChange,
         )
         SettingsItemDivider()
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(WallHubSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
         ) {
             SettingsFilledTextField(
                 value = proxyUrl,
@@ -1309,10 +1774,11 @@ private fun SteamSettingsContent(
 
     SettingsSection(
         title = language.text("Steam 账户", "Steam account"),
-        supportingText = language.text(
-            "管理资料库使用的登录会话",
-            "Manage the sign-in session used by Library",
-        ),
+        supportingText =
+            language.text(
+                "管理资料库使用的登录会话",
+                "Manage the sign-in session used by Library",
+            ),
         icon = Icons.Outlined.PersonOutline,
     ) {
         SettingsListItem(
@@ -1341,7 +1807,7 @@ private fun SteamSettingsContent(
                     )
                     Text(
                         text = language.text("退出 Steam", "Sign out of Steam"),
-                        modifier = Modifier.padding(start = 8.dp),
+                        modifier = Modifier.padding(start = WallHubSpacing.xs),
                     )
                 }
             } else {
@@ -1354,20 +1820,22 @@ private fun SteamSettingsContent(
                         contentDescription = null,
                     )
                     Text(
-                        text = when (session.phase) {
-                            SteamSessionPhase.RESTORABLE -> language.text(
-                                "恢复 Steam 登录",
-                                "Restore Steam sign-in",
-                            )
+                        text =
+                            when (session.phase) {
+                                SteamSessionPhase.RESTORABLE ->
+                                    language.text(
+                                        "恢复 Steam 登录",
+                                        "Restore Steam sign-in",
+                                    )
 
-                            SteamSessionPhase.SIGNING_IN,
-                            SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
-                            SteamSessionPhase.WAITING_FOR_CODE,
-                            -> language.text("查看登录进度", "View sign-in progress")
+                                SteamSessionPhase.SIGNING_IN,
+                                SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
+                                SteamSessionPhase.WAITING_FOR_CODE,
+                                -> language.text("查看登录进度", "View sign-in progress")
 
-                            else -> language.text("登录 Steam", "Sign in to Steam")
-                        },
-                        modifier = Modifier.padding(start = 8.dp),
+                                else -> language.text("登录 Steam", "Sign in to Steam")
+                            },
+                        modifier = Modifier.padding(start = WallHubSpacing.xs),
                     )
                 }
             }
@@ -1376,10 +1844,11 @@ private fun SteamSettingsContent(
 
     SettingsSection(
         title = language.text("Steam 服务访问", "Steam service access"),
-        supportingText = language.text(
-            "仅在社区与 API 直连异常时启用内置无 SNI 线路",
-            "Uses the built-in no-SNI route only when Community or API direct access fails",
-        ),
+        supportingText =
+            language.text(
+                "仅在社区与 API 直连异常时启用内置无 SNI 线路",
+                "Uses the built-in no-SNI route only when Community or API direct access fails",
+            ),
         icon = Icons.Outlined.Language,
     ) {
         SettingsSwitchRow(
@@ -1407,7 +1876,7 @@ private fun SteamSettingsContent(
                 )
                 Text(
                     text = language.text("重新检测线路", "Check routes again"),
-                    modifier = Modifier.padding(start = 8.dp),
+                    modifier = Modifier.padding(start = WallHubSpacing.xs),
                 )
             }
         }
@@ -1415,10 +1884,11 @@ private fun SteamSettingsContent(
 
     SettingsSection(
         title = language.text("创意工坊数据源", "Workshop data source"),
-        supportingText = language.text(
-            "为发现、详情与评论选择严格的数据通道",
-            "Choose the strict data channel used by discovery, details, and comments",
-        ),
+        supportingText =
+            language.text(
+                "为发现、详情与评论选择严格的数据通道",
+                "Choose the strict data channel used by discovery, details, and comments",
+            ),
         icon = Icons.Outlined.Language,
     ) {
         SettingChoiceRow(
@@ -1432,37 +1902,42 @@ private fun SteamSettingsContent(
                     SteamWorkshopDataSource.CM_WEBSOCKET -> "Steam CM WebSocket"
                 }
             },
-            supportingText = when (steamWorkshopDataSource) {
-                SteamWorkshopDataSource.COMMUNITY_HTML -> language.text(
-                    "使用 Steam Community 页面获取公开数据",
-                    "Use Steam Community pages for public data",
-                )
+            supportingText =
+                when (steamWorkshopDataSource) {
+                    SteamWorkshopDataSource.COMMUNITY_HTML ->
+                        language.text(
+                            "使用 Steam Community 页面获取公开数据",
+                            "Use Steam Community pages for public data",
+                        )
 
-                SteamWorkshopDataSource.WEB_API -> language.text(
-                    "发现页需要有效的 Steam API Key",
-                    "Discovery requires a valid Steam API key",
-                )
+                    SteamWorkshopDataSource.WEB_API ->
+                        language.text(
+                            "发现页需要有效的 Steam API Key",
+                            "Discovery requires a valid Steam API key",
+                        )
 
-                SteamWorkshopDataSource.CM_WEBSOCKET -> language.text(
-                    "公开发现与详情支持匿名 CM；评论需要登录",
-                    "Public discovery and details support anonymous CM; comments require sign-in",
-                )
-            },
+                    SteamWorkshopDataSource.CM_WEBSOCKET ->
+                        language.text(
+                            "公开发现与详情支持匿名 CM；评论需要登录",
+                            "Public discovery and details support anonymous CM; comments require sign-in",
+                        )
+                },
             onSelected = onSteamWorkshopDataSourceChange,
         )
     }
 
     SettingsSection(
         title = "Steam Web API",
-        supportingText = language.text(
-            "供 Web API 数据源与匿名昵称补全使用",
-            "Used by the Web API source and anonymous profile enrichment",
-        ),
+        supportingText =
+            language.text(
+                "供 Web API 数据源与匿名昵称补全使用",
+                "Used by the Web API source and anonymous profile enrichment",
+            ),
         icon = Icons.Outlined.Tune,
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(WallHubSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
         ) {
             SettingsFilledTextField(
                 value = apiKey,
@@ -1470,24 +1945,27 @@ private fun SteamSettingsContent(
                 label = { Text("Steam API Key") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
-                visualTransformation = if (apiKeyVisible) {
-                    VisualTransformation.None
-                } else {
-                    PasswordVisualTransformation()
-                },
+                visualTransformation =
+                    if (apiKeyVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
                 trailingIcon = {
                     IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
                         Icon(
-                            imageVector = if (apiKeyVisible) {
-                                Icons.Outlined.VisibilityOff
-                            } else {
-                                Icons.Outlined.Visibility
-                            },
-                            contentDescription = if (apiKeyVisible) {
-                                language.text("隐藏 API Key", "Hide API key")
-                            } else {
-                                language.text("显示 API Key", "Show API key")
-                            },
+                            imageVector =
+                                if (apiKeyVisible) {
+                                    Icons.Outlined.VisibilityOff
+                                } else {
+                                    Icons.Outlined.Visibility
+                                },
+                            contentDescription =
+                                if (apiKeyVisible) {
+                                    language.text("隐藏 API Key", "Hide API key")
+                                } else {
+                                    language.text("显示 API Key", "Show API key")
+                                },
                         )
                     }
                 },
@@ -1503,7 +1981,7 @@ private fun SteamSettingsContent(
                 )
                 Text(
                     text = language.text("获取 Steam API Key", "Get Steam API Key"),
-                    modifier = Modifier.padding(start = 8.dp),
+                    modifier = Modifier.padding(start = WallHubSpacing.xs),
                 )
             }
             Button(
@@ -1562,24 +2040,28 @@ private fun SteamAccessDohEndpointsSetting(
 
     fun addEndpoint() {
         val normalized = normalizeSteamAccessDohEndpoint(endpointText)
-        endpointError = when {
-            normalized == null -> language.text(
-                "请输入有效的 HTTPS DoH 地址",
-                "Enter a valid HTTPS DoH URL",
-            )
+        endpointError =
+            when {
+                normalized == null ->
+                    language.text(
+                        "请输入有效的 HTTPS DoH 地址",
+                        "Enter a valid HTTPS DoH URL",
+                    )
 
-            normalized in draftEndpoints -> language.text(
-                "此 DoH 地址已在列表中",
-                "This DoH URL is already in the list",
-            )
+                normalized in draftEndpoints ->
+                    language.text(
+                        "此 DoH 地址已在列表中",
+                        "This DoH URL is already in the list",
+                    )
 
-            draftEndpoints.size >= STEAM_ACCESS_DOH_ENDPOINT_LIMIT -> language.text(
-                "最多可配置 $STEAM_ACCESS_DOH_ENDPOINT_LIMIT 个 DoH 地址",
-                "Up to $STEAM_ACCESS_DOH_ENDPOINT_LIMIT DoH URLs are supported",
-            )
+                draftEndpoints.size >= STEAM_ACCESS_DOH_ENDPOINT_LIMIT ->
+                    language.text(
+                        "最多可配置 $STEAM_ACCESS_DOH_ENDPOINT_LIMIT 个 DoH 地址",
+                        "Up to $STEAM_ACCESS_DOH_ENDPOINT_LIMIT DoH URLs are supported",
+                    )
 
-            else -> null
-        }
+                else -> null
+            }
         if (endpointError == null && normalized != null) {
             draftEndpoints = draftEndpoints + normalized
             draftDisabledEndpoints = draftDisabledEndpoints - normalized
@@ -1589,10 +2071,11 @@ private fun SteamAccessDohEndpointsSetting(
     }
 
     SettingsListItem(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = ::openEditor),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
+                .clickable(onClick = ::openEditor),
         headlineContent = {
             Text(language.text("DoH 地址", "DoH URLs"))
         },
@@ -1620,18 +2103,19 @@ private fun SteamAccessDohEndpointsSetting(
             onDismissRequest = ::requestClose,
             sheetState = sheetState,
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            tonalElevation = 0.dp,
-            sheetMaxWidth = 920.dp,
+            tonalElevation = WallHubSpacing.none,
+            sheetMaxWidth = WallHubSizeTokens.modalContentMaxWidth,
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .widthIn(max = 760.dp)
-                        .heightIn(max = maxHeight * 0.92f)
-                        .imePadding()
-                        .navigationBarsPadding(),
+                    modifier =
+                        Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .widthIn(max = 760.dp)
+                            .heightIn(max = maxHeight * 0.92f)
+                            .imePadding()
+                            .navigationBarsPadding(),
                 ) {
                     SteamAccessDohEditor(
                         modifier = Modifier.fillMaxSize(),
@@ -1648,11 +2132,12 @@ private fun SteamAccessDohEndpointsSetting(
                         onAddEndpoint = ::addEndpoint,
                         onReorder = { reordered -> draftEndpoints = reordered },
                         onEnabledChange = { endpoint, enabled ->
-                            draftDisabledEndpoints = if (enabled) {
-                                draftDisabledEndpoints - endpoint
-                            } else {
-                                draftDisabledEndpoints + endpoint
-                            }
+                            draftDisabledEndpoints =
+                                if (enabled) {
+                                    draftDisabledEndpoints - endpoint
+                                } else {
+                                    draftDisabledEndpoints + endpoint
+                                }
                         },
                         onDelete = { endpoint ->
                             draftEndpoints = draftEndpoints - endpoint
@@ -1737,20 +2222,21 @@ private fun SteamAccessDohEditor(
     var dragOrder by remember { mutableStateOf(endpoints) }
     val itemExtentPx = with(density) { (STEAM_DOH_ITEM_HEIGHT + STEAM_DOH_ITEM_SPACING).toPx() }
     val enabledCount = endpoints.count { endpoint -> endpoint !in disabledEndpoints }
-    val secondaryButtonColors = ButtonDefaults.buttonColors(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
-        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-    )
+    val secondaryButtonColors =
+        ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
+            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        )
     LaunchedEffect(endpoints, draggedEndpoint) {
         if (draggedEndpoint == null) dragOrder = endpoints
     }
 
     Column(modifier = modifier) {
         Column(
-            modifier = Modifier.padding(start = 16.dp, end = 12.dp, bottom = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier.padding(start = WallHubSpacing.md, end = WallHubSpacing.sm, bottom = WallHubSpacing.xs),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxxs),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -1761,18 +2247,20 @@ private fun SteamAccessDohEditor(
                 Text(
                     text = language.text("已启用 $enabledCount/${endpoints.size}", "$enabledCount/${endpoints.size} enabled"),
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (hasChanges) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    color =
+                        if (hasChanges) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                 )
             }
             Text(
-                text = language.text(
-                    "长按手柄并拖动调整优先级，顶部地址优先使用。",
-                    "Long-press a handle and drag to change priority; top URLs are preferred.",
-                ),
+                text =
+                    language.text(
+                        "长按手柄并拖动调整优先级，顶部地址优先使用。",
+                        "Long-press a handle and drag to change priority; top URLs are preferred.",
+                    ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1780,7 +2268,7 @@ private fun SteamAccessDohEditor(
         LazyColumn(
             state = listState,
             modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            contentPadding = PaddingValues(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xs),
             verticalArrangement = Arrangement.spacedBy(STEAM_DOH_ITEM_SPACING),
         ) {
             itemsIndexed(
@@ -1788,76 +2276,82 @@ private fun SteamAccessDohEditor(
                 key = { _, endpoint -> endpoint },
             ) { _, endpoint ->
                 val isDragging = draggedEndpoint == endpoint
-                val itemModifier = Modifier
-                    .then(if (isDragging) Modifier else Modifier.animateItem())
-                    .zIndex(if (isDragging) 1f else 0f)
-                    .graphicsLayer {
-                        if (isDragging) {
-                            translationY = dragOffsetPx
-                            scaleX = 1.02f
-                            scaleY = 1.02f
-                            shadowElevation = 8.dp.toPx()
+                val itemModifier =
+                    Modifier
+                        .then(if (isDragging) Modifier else Modifier.animateItem())
+                        .zIndex(if (isDragging) 1f else 0f)
+                        .graphicsLayer {
+                            if (isDragging) {
+                                translationY = dragOffsetPx
+                                scaleX = 1.02f
+                                scaleY = 1.02f
+                                shadowElevation = WallHubSpacing.xs.toPx()
+                            }
                         }
+                val dragHandleModifier =
+                    Modifier.pointerInput(endpoint) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = {
+                                draggedEndpoint = endpoint
+                                dragOrder = endpoints
+                                dragOffsetPx = 0f
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            },
+                            onDragCancel = {
+                                draggedEndpoint = null
+                                dragOffsetPx = 0f
+                            },
+                            onDragEnd = {
+                                draggedEndpoint = null
+                                dragOffsetPx = 0f
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                dragOffsetPx += dragAmount.y
+                                var currentIndex = dragOrder.indexOf(endpoint)
+                                while (dragOffsetPx > itemExtentPx / 2f && currentIndex < dragOrder.lastIndex) {
+                                    val nextIndex = currentIndex + 1
+                                    dragOrder =
+                                        dragOrder.toMutableList().apply {
+                                            this[currentIndex] = this[nextIndex]
+                                            this[nextIndex] = endpoint
+                                        }
+                                    dragOffsetPx -= itemExtentPx
+                                    currentIndex = nextIndex
+                                    onReorder(dragOrder)
+                                }
+                                while (dragOffsetPx < -itemExtentPx / 2f && currentIndex > 0) {
+                                    val previousIndex = currentIndex - 1
+                                    dragOrder =
+                                        dragOrder.toMutableList().apply {
+                                            this[currentIndex] = this[previousIndex]
+                                            this[previousIndex] = endpoint
+                                        }
+                                    dragOffsetPx += itemExtentPx
+                                    currentIndex = previousIndex
+                                    onReorder(dragOrder)
+                                }
+                                val itemInfo =
+                                    listState.layoutInfo.visibleItemsInfo
+                                        .firstOrNull { item -> item.key == endpoint }
+                                if (itemInfo != null) {
+                                    val translatedTop = itemInfo.offset + dragOffsetPx
+                                    val translatedBottom = translatedTop + itemInfo.size
+                                    val viewportStart = listState.layoutInfo.viewportStartOffset + 48f
+                                    val viewportEnd = listState.layoutInfo.viewportEndOffset - 48f
+                                    val scrollDelta =
+                                        when {
+                                            translatedTop < viewportStart -> -18f
+                                            translatedBottom > viewportEnd -> 18f
+                                            else -> 0f
+                                        }
+                                    if (scrollDelta != 0f) {
+                                        coroutineScope.launch { listState.scrollBy(scrollDelta) }
+                                    }
+                                }
+                            },
+                        )
                     }
-                val dragHandleModifier = Modifier.pointerInput(endpoint) {
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = {
-                            draggedEndpoint = endpoint
-                            dragOrder = endpoints
-                            dragOffsetPx = 0f
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        },
-                        onDragCancel = {
-                            draggedEndpoint = null
-                            dragOffsetPx = 0f
-                        },
-                        onDragEnd = {
-                            draggedEndpoint = null
-                            dragOffsetPx = 0f
-                        },
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            dragOffsetPx += dragAmount.y
-                            var currentIndex = dragOrder.indexOf(endpoint)
-                            while (dragOffsetPx > itemExtentPx / 2f && currentIndex < dragOrder.lastIndex) {
-                                val nextIndex = currentIndex + 1
-                                dragOrder = dragOrder.toMutableList().apply {
-                                    this[currentIndex] = this[nextIndex]
-                                    this[nextIndex] = endpoint
-                                }
-                                dragOffsetPx -= itemExtentPx
-                                currentIndex = nextIndex
-                                onReorder(dragOrder)
-                            }
-                            while (dragOffsetPx < -itemExtentPx / 2f && currentIndex > 0) {
-                                val previousIndex = currentIndex - 1
-                                dragOrder = dragOrder.toMutableList().apply {
-                                    this[currentIndex] = this[previousIndex]
-                                    this[previousIndex] = endpoint
-                                }
-                                dragOffsetPx += itemExtentPx
-                                currentIndex = previousIndex
-                                onReorder(dragOrder)
-                            }
-                            val itemInfo = listState.layoutInfo.visibleItemsInfo
-                                .firstOrNull { item -> item.key == endpoint }
-                            if (itemInfo != null) {
-                                val translatedTop = itemInfo.offset + dragOffsetPx
-                                val translatedBottom = translatedTop + itemInfo.size
-                                val viewportStart = listState.layoutInfo.viewportStartOffset + 48f
-                                val viewportEnd = listState.layoutInfo.viewportEndOffset - 48f
-                                val scrollDelta = when {
-                                    translatedTop < viewportStart -> -18f
-                                    translatedBottom > viewportEnd -> 18f
-                                    else -> 0f
-                                }
-                                if (scrollDelta != 0f) {
-                                    coroutineScope.launch { listState.scrollBy(scrollDelta) }
-                                }
-                            }
-                        },
-                    )
-                }
                 SteamAccessDohEndpointItem(
                     endpoint = endpoint,
                     enabled = endpoint !in disabledEndpoints,
@@ -1876,8 +2370,8 @@ private fun SteamAccessDohEditor(
                     shape = MaterialTheme.shapes.large,
                 ) {
                     Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.padding(WallHubSpacing.sm),
+                        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
                     ) {
                         Text(
                             text = language.text("添加地址", "Add URL"),
@@ -1898,13 +2392,15 @@ private fun SteamAccessDohEditor(
                             },
                             isError = endpointError != null,
                             singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Uri,
-                                imeAction = ImeAction.Done,
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onDone = { if (endpointText.isNotBlank()) onAddEndpoint() },
-                            ),
+                            keyboardOptions =
+                                KeyboardOptions(
+                                    keyboardType = KeyboardType.Uri,
+                                    imeAction = ImeAction.Done,
+                                ),
+                            keyboardActions =
+                                KeyboardActions(
+                                    onDone = { if (endpointText.isNotBlank()) onAddEndpoint() },
+                                ),
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Button(
@@ -1916,7 +2412,7 @@ private fun SteamAccessDohEditor(
                             Icon(imageVector = Icons.Outlined.Add, contentDescription = null)
                             Text(
                                 text = language.text("添加", "Add"),
-                                modifier = Modifier.padding(start = 8.dp),
+                                modifier = Modifier.padding(start = WallHubSpacing.xs),
                             )
                         }
                     }
@@ -1924,12 +2420,12 @@ private fun SteamAccessDohEditor(
             }
         }
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xs),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
             ) {
                 Button(
                     onClick = onRestoreDefaults,
@@ -1973,58 +2469,64 @@ private fun SteamAccessDohEndpointItem(
     modifier: Modifier = Modifier,
 ) {
     WallHubSurfaceCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(STEAM_DOH_ITEM_HEIGHT),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(STEAM_DOH_ITEM_HEIGHT),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = MaterialTheme.shapes.large,
     ) {
         Row(
-            modifier = Modifier.padding(start = 4.dp, end = 8.dp),
+            modifier = Modifier.padding(start = WallHubSpacing.xxs, end = WallHubSpacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .then(dragHandleModifier),
+                modifier =
+                    Modifier
+                        .size(WallHubSpacing.xxl)
+                        .then(dragHandleModifier),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Outlined.DragIndicator,
-                    contentDescription = language.text(
-                        "拖动 $endpoint 调整优先级",
-                        "Drag $endpoint to change priority",
-                    ),
+                    contentDescription =
+                        language.text(
+                            "拖动 $endpoint 调整优先级",
+                            "Drag $endpoint to change priority",
+                        ),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxxs),
             ) {
                 Text(
                     text = endpoint,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (enabled) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    color =
+                        if (enabled) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = if (enabled) {
-                        language.text("已开启", "Enabled")
-                    } else {
-                        language.text("已关闭", "Disabled")
-                    },
+                    text =
+                        if (enabled) {
+                            language.text("已开启", "Enabled")
+                        } else {
+                            language.text("已关闭", "Disabled")
+                        },
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (enabled) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    color =
+                        if (enabled) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                 )
             }
             Switch(
@@ -2051,30 +2553,36 @@ private fun ExperimentalSettingsContent(
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
     onRequestNotifications: () -> Unit,
 ) {
-    fun text(zh: String, en: String): String = if (preferences.language == AppLanguage.EN) en else zh
+    fun text(
+        zh: String,
+        en: String,
+    ): String = if (preferences.language == AppLanguage.EN) en else zh
 
     SettingsNotice(
         title = text("实验功能可能改变网络与播放行为", "Experimental features may change networking and playback"),
-        message = text(
-            "遇到稳定性问题时，可关闭相关开关恢复默认流程。",
-            "Turn off the related option to return to the default flow if stability issues occur.",
-        ),
+        message =
+            text(
+                "遇到稳定性问题时，可关闭相关开关恢复默认流程。",
+                "Turn off the related option to return to the default flow if stability issues occur.",
+            ),
     )
 
     SettingsSection(
         title = text("在线播放", "Online playback"),
-        supportingText = text(
-            "控制 Steam 分块播放及本地缓存",
-            "Control Steam chunk streaming and local cache",
-        ),
+        supportingText =
+            text(
+                "控制 Steam 分块播放及本地缓存",
+                "Control Steam chunk streaming and local cache",
+            ),
         icon = Icons.Outlined.PlayArrow,
     ) {
         SettingsSwitchRow(
             title = text("SteamKit 在线分块播放", "SteamKit chunk streaming"),
-            supportingText = text(
-                "开启后直接从 Steam 分块播放；关闭后先下载再播放",
-                "Stream directly from Steam when on; download before playback when off",
-            ),
+            supportingText =
+                text(
+                    "开启后直接从 Steam 分块播放；关闭后先下载再播放",
+                    "Stream directly from Steam when on; download before playback when off",
+                ),
             checked = preferences.onlineChunkPlaybackEnabled,
             onCheckedChange = onOnlineChunkPlaybackEnabledChange,
         )
@@ -2088,10 +2596,11 @@ private fun ExperimentalSettingsContent(
 
     SettingsSection(
         title = text("系统权限", "System permissions"),
-        supportingText = text(
-            "管理后台任务需要的 Android 权限",
-            "Manage Android permissions used by background work",
-        ),
+        supportingText =
+            text(
+                "管理后台任务需要的 Android 权限",
+                "Manage Android permissions used by background work",
+            ),
         icon = Icons.Outlined.Notifications,
     ) {
         SettingsListItem(
@@ -2116,7 +2625,7 @@ private fun ExperimentalSettingsContent(
                 )
                 Text(
                     text = text("允许后台通知", "Allow background notifications"),
-                    modifier = Modifier.padding(start = 8.dp),
+                    modifier = Modifier.padding(start = WallHubSpacing.xs),
                 )
             }
         }
@@ -2124,12 +2633,10 @@ private fun ExperimentalSettingsContent(
 }
 
 @Composable
-private fun SettingsActionArea(
-    content: @Composable ColumnScope.() -> Unit,
-) {
+private fun SettingsActionArea(content: @Composable ColumnScope.() -> Unit) {
     Column(
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(start = WallHubSpacing.md, end = WallHubSpacing.md, bottom = WallHubSpacing.md),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
         content = content,
     )
 }
@@ -2139,16 +2646,18 @@ private fun SettingsStatusMessage(
     message: String,
     isFailure: Boolean,
 ) {
-    val containerColor = if (isFailure) {
-        MaterialTheme.colorScheme.errorContainer
-    } else {
-        MaterialTheme.colorScheme.secondaryContainer
-    }
-    val contentColor = if (isFailure) {
-        MaterialTheme.colorScheme.onErrorContainer
-    } else {
-        MaterialTheme.colorScheme.onSecondaryContainer
-    }
+    val containerColor =
+        if (isFailure) {
+            MaterialTheme.colorScheme.errorContainer
+        } else {
+            MaterialTheme.colorScheme.secondaryContainer
+        }
+    val contentColor =
+        if (isFailure) {
+            MaterialTheme.colorScheme.onErrorContainer
+        } else {
+            MaterialTheme.colorScheme.onSecondaryContainer
+        }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -2156,9 +2665,9 @@ private fun SettingsStatusMessage(
         contentColor = contentColor,
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(WallHubSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
         ) {
             Icon(
                 imageVector = Icons.Outlined.Info,
@@ -2185,9 +2694,9 @@ private fun SettingsNotice(
         contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(WallHubSpacing.md),
             verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
         ) {
             Icon(
                 imageVector = Icons.Outlined.Info,
@@ -2196,7 +2705,7 @@ private fun SettingsNotice(
             )
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),
             ) {
                 Text(
                     text = title,
@@ -2225,7 +2734,11 @@ private fun AppearanceSettingsContent(
     onHomePreferencesChange: (Int, Int, Boolean, HomeCardAction, Boolean) -> Unit,
     onHomePaginationModeChange: (HomePaginationMode) -> Unit,
 ) {
-    fun text(zh: String, en: String): String = if (preferences.language == AppLanguage.EN) en else zh
+    fun text(
+        zh: String,
+        en: String,
+    ): String = if (preferences.language == AppLanguage.EN) en else zh
+
     fun saveHomePreferences(
         pageSize: Int = preferences.homePageSize,
         columns: Int = preferences.homeColumns,
@@ -2247,10 +2760,11 @@ private fun AppearanceSettingsContent(
     ) {
         SettingChoiceRow(
             title = text("显示语言", "Display language"),
-            supportingText = text(
-                "用于发现页与原生界面的显示语言",
-                "Language used by Discover and native screens",
-            ),
+            supportingText =
+                text(
+                    "用于发现页与原生界面的显示语言",
+                    "Language used by Discover and native screens",
+                ),
             selectedValue = preferences.language,
             values = listOf(AppLanguage.ZH, AppLanguage.EN),
             label = { language -> if (language == AppLanguage.ZH) "中文" else "English" },
@@ -2259,10 +2773,11 @@ private fun AppearanceSettingsContent(
         SettingsItemDivider()
         SettingChoiceRow(
             title = text("主题模式", "Theme mode"),
-            supportingText = text(
-                "选择浅色、深色或跟随系统",
-                "Use light, dark, or the system setting",
-            ),
+            supportingText =
+                text(
+                    "选择浅色、深色或跟随系统",
+                    "Use light, dark, or the system setting",
+                ),
             selectedValue = preferences.theme,
             values = ThemePreference.entries,
             label = { theme -> theme.label(preferences.language) },
@@ -2272,10 +2787,11 @@ private fun AppearanceSettingsContent(
 
     SettingsSection(
         title = text("个性化配色", "Personalized color"),
-        supportingText = text(
-            "使用壁纸取色或选择完整的静态 Material 色板",
-            "Use wallpaper colors or a complete static Material palette",
-        ),
+        supportingText =
+            text(
+                "使用壁纸取色或选择完整的静态 Material 色板",
+                "Use wallpaper colors or a complete static Material palette",
+            ),
         icon = Icons.Outlined.Palette,
     ) {
         MomentThemeCard(
@@ -2287,17 +2803,18 @@ private fun AppearanceSettingsContent(
         val themedIconsSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
         SettingsSwitchRow(
             title = text("图标跟随系统取色", "Themed app icon"),
-            supportingText = if (themedIconsSupported) {
-                text(
-                    "允许系统启动器按壁纸莫奈色显示应用图标",
-                    "Let the system launcher tint the app icon from wallpaper colors",
-                )
-            } else {
-                text(
-                    "需要 Android 13 或更高版本",
-                    "Requires Android 13 or newer",
-                )
-            },
+            supportingText =
+                if (themedIconsSupported) {
+                    text(
+                        "允许系统启动器按壁纸莫奈色显示应用图标",
+                        "Let the system launcher tint the app icon from wallpaper colors",
+                    )
+                } else {
+                    text(
+                        "需要 Android 13 或更高版本",
+                        "Requires Android 13 or newer",
+                    )
+                },
             checked = themedIconsSupported && preferences.useThemedLauncherIcon,
             enabled = themedIconsSupported,
             onCheckedChange = onThemedLauncherIconEnabledChange,
@@ -2305,13 +2822,15 @@ private fun AppearanceSettingsContent(
         SettingsItemDivider()
         AccentPreferenceChoiceRow(
             title = text("静态色板", "Static palette"),
-            supportingText = text(
-                "关闭系统动态取色时使用",
-                "Used when system dynamic color is off",
-            ),
-            selectedValue = preferences.accent.takeUnless {
-                it == AccentPreference.MONET
-            } ?: AccentPreference.DEFAULT,
+            supportingText =
+                text(
+                    "关闭系统动态取色时使用",
+                    "Used when system dynamic color is off",
+                ),
+            selectedValue =
+                preferences.accent.takeUnless {
+                    it == AccentPreference.MONET
+                } ?: AccentPreference.DEFAULT,
             values = availableAccents,
             customColor = customAccentColor,
             language = preferences.language,
@@ -2331,10 +2850,11 @@ private fun AppearanceSettingsContent(
 
     SettingsSection(
         title = text("发现页", "Discover"),
-        supportingText = text(
-            "控制内容密度、筛选方式与卡片默认操作",
-            "Control content density, filters, and the default card action",
-        ),
+        supportingText =
+            text(
+                "控制内容密度、筛选方式与卡片默认操作",
+                "Control content density, filters, and the default card action",
+            ),
         icon = Icons.Outlined.Tune,
     ) {
         SettingChoiceRow(
@@ -2363,10 +2883,11 @@ private fun AppearanceSettingsContent(
         SettingsItemDivider()
         SettingsSwitchRow(
             title = text("类型和评级多选", "Multi-select types and ratings"),
-            supportingText = text(
-                "关闭后，类型和年龄评级使用互斥选择",
-                "When off, type and age rating filters are exclusive",
-            ),
+            supportingText =
+                text(
+                    "关闭后，类型和年龄评级使用互斥选择",
+                    "When off, type and age rating filters are exclusive",
+                ),
             checked = preferences.homeFilterMultiSelect,
             onCheckedChange = { enabled -> saveHomePreferences(multiSelect = enabled) },
         )
@@ -2387,35 +2908,41 @@ private fun MomentThemeCard(
     language: AppLanguage,
     onEnabledChange: (Boolean) -> Unit,
 ) {
-    val containerColor = if (enabled) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        Color.Transparent
-    }
-    val headlineColor = if (enabled) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    val supportingColor = if (enabled) {
-        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f)
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
+    val containerColor =
+        if (enabled) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            Color.Transparent
+        }
+    val headlineColor =
+        if (enabled) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        }
+    val supportingColor =
+        if (enabled) {
+            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f)
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        }
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(6.dp)
-            .clip(MaterialTheme.shapes.medium)
-            .background(containerColor)
-            .toggleable(
-                value = enabled,
-                role = Role.Switch,
-                onValueChange = onEnabledChange,
-            )
-            .padding(horizontal = 14.dp, vertical = 14.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(WallHubSpacing.dense)
+                .clip(MaterialTheme.shapes.medium)
+                .background(containerColor)
+                .toggleable(
+                    value = enabled,
+                    role = Role.Switch,
+                    onValueChange = onEnabledChange,
+                ).padding(
+                    horizontal = WallHubSpacing.controlInset,
+                    vertical = WallHubSpacing.controlInset,
+                ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.controlInset),
     ) {
         SettingsLeadingIcon(
             icon = Icons.Outlined.Palette,
@@ -2423,7 +2950,7 @@ private fun MomentThemeCard(
         )
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),
         ) {
             Text(
                 text = language.text("系统动态取色", "System dynamic color"),
@@ -2431,33 +2958,37 @@ private fun MomentThemeCard(
                 color = headlineColor,
             )
             Text(
-                text = when {
-                    enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> language.text(
-                        "色板跟随当前系统壁纸",
-                        "Palette follows the current system wallpaper",
-                    )
+                text =
+                    when {
+                        enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+                            language.text(
+                                "色板跟随当前系统壁纸",
+                                "Palette follows the current system wallpaper",
+                            )
 
-                    enabled -> language.text(
-                        "当前系统不支持壁纸取色，使用兼容色板",
-                        "Wallpaper colors are unavailable; using a compatible palette",
-                    )
+                        enabled ->
+                            language.text(
+                                "当前系统不支持壁纸取色，使用兼容色板",
+                                "Wallpaper colors are unavailable; using a compatible palette",
+                            )
 
-                    else -> language.text(
-                        "当前使用下方选择的静态色板",
-                        "Using the static palette selected below",
-                    )
-                },
+                        else ->
+                            language.text(
+                                "当前使用下方选择的静态色板",
+                                "Using the static palette selected below",
+                            )
+                    },
                 style = MaterialTheme.typography.bodyMedium,
                 color = supportingColor,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.dense)) {
                 listOf(
                     MaterialTheme.colorScheme.primary,
                     MaterialTheme.colorScheme.secondary,
                     MaterialTheme.colorScheme.tertiary,
                 ).forEach { color ->
                     Surface(
-                        modifier = Modifier.size(width = 24.dp, height = 8.dp),
+                        modifier = Modifier.size(width = WallHubSpacing.lg, height = WallHubSpacing.xs),
                         shape = CircleShape,
                         color = color,
                         content = {},
@@ -2481,15 +3012,16 @@ private fun SettingsSwitchRow(
     onCheckedChange: (Boolean) -> Unit,
 ) {
     SettingsListItem(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .toggleable(
-                value = checked,
-                enabled = enabled,
-                role = Role.Switch,
-                onValueChange = onCheckedChange,
-            ),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
+                .toggleable(
+                    value = checked,
+                    enabled = enabled,
+                    role = Role.Switch,
+                    onValueChange = onCheckedChange,
+                ),
         headlineContent = { Text(title) },
         supportingContent = { Text(supportingText) },
         trailingContent = {
@@ -2504,7 +3036,7 @@ private fun SettingsSwitchRow(
 
 @Composable
 private fun SettingsItemDivider() {
-    Spacer(modifier = Modifier.height(2.dp))
+    Spacer(modifier = Modifier.height(WallHubSpacing.xxxs))
 }
 
 @Composable
@@ -2512,16 +3044,18 @@ private fun SettingsLeadingIcon(
     icon: ImageVector,
     prominent: Boolean = false,
 ) {
-    val containerColor = if (prominent) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.secondaryContainer
-    }
-    val contentColor = if (prominent) {
-        MaterialTheme.colorScheme.onPrimary
-    } else {
-        MaterialTheme.colorScheme.onSecondaryContainer
-    }
+    val containerColor =
+        if (prominent) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.secondaryContainer
+        }
+    val contentColor =
+        if (prominent) {
+            MaterialTheme.colorScheme.onPrimary
+        } else {
+            MaterialTheme.colorScheme.onSecondaryContainer
+        }
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = containerColor,
@@ -2530,7 +3064,7 @@ private fun SettingsLeadingIcon(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = Modifier.padding(10.dp).size(20.dp),
+            modifier = Modifier.padding(WallHubSpacing.compact).size(WallHubSizeTokens.smallIcon),
         )
     }
 }
@@ -2540,13 +3074,14 @@ private fun SettingsCategoryIndex(
     language: AppLanguage,
     onOpenCategory: (SettingsCategory) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm)) {
         SettingsCategory.entries.forEach { category ->
             SettingsSectionSurface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(MaterialTheme.shapes.large)
-                    .clickable { onOpenCategory(category) },
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.large)
+                        .clickable { onOpenCategory(category) },
             ) {
                 SettingsListItem(
                     modifier = Modifier.fillMaxWidth(),
@@ -2567,29 +3102,31 @@ private fun SettingsCategoryIndex(
     }
 }
 
-private fun SteamSessionState.settingsSummary(language: AppLanguage): String = when (phase) {
-    SteamSessionPhase.SIGNED_IN -> language.text("已登录：${accountName.orEmpty()}", "Signed in: ${accountName.orEmpty()}")
-    SteamSessionPhase.RESTORABLE -> language.text("已保存登录状态", "Saved sign-in available")
-    SteamSessionPhase.SIGNING_IN,
-    SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
-    SteamSessionPhase.WAITING_FOR_CODE,
-    -> message ?: language.text("正在登录 Steam", "Signing in to Steam")
+private fun SteamSessionState.settingsSummary(language: AppLanguage): String =
+    when (phase) {
+        SteamSessionPhase.SIGNED_IN -> language.text("已登录：${accountName.orEmpty()}", "Signed in: ${accountName.orEmpty()}")
+        SteamSessionPhase.RESTORABLE -> language.text("已保存登录状态", "Saved sign-in available")
+        SteamSessionPhase.SIGNING_IN,
+        SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
+        SteamSessionPhase.WAITING_FOR_CODE,
+        -> message ?: language.text("正在登录 Steam", "Signing in to Steam")
 
-    SteamSessionPhase.EXPIRED,
-    SteamSessionPhase.FAILED,
-    -> message ?: language.text("Steam 登录需要重新验证", "Steam sign-in needs verification")
+        SteamSessionPhase.EXPIRED,
+        SteamSessionPhase.FAILED,
+        -> message ?: language.text("Steam 登录需要重新验证", "Steam sign-in needs verification")
 
-    SteamSessionPhase.SIGNED_OUT -> language.text("未登录", "Not signed in")
-}
+        SteamSessionPhase.SIGNED_OUT -> language.text("未登录", "Not signed in")
+    }
 
 private fun SteamAccessState.summary(language: AppLanguage): String {
-    val phaseLabel = when (phase) {
-        SteamAccessPhase.DISABLED -> language.text("已关闭", "Disabled")
-        SteamAccessPhase.RESOLVING -> language.text("正在检测直连与内置线路", "Checking direct and built-in routes")
-        SteamAccessPhase.READY -> language.text("线路可用", "Route available")
-        SteamAccessPhase.DEGRADED -> language.text("线路不稳定，等待重新检测", "Route unstable; waiting to check again")
-        SteamAccessPhase.FAILED -> language.text("当前没有可用线路", "No route is currently available")
-    }
+    val phaseLabel =
+        when (phase) {
+            SteamAccessPhase.DISABLED -> language.text("已关闭", "Disabled")
+            SteamAccessPhase.RESOLVING -> language.text("正在检测直连与内置线路", "Checking direct and built-in routes")
+            SteamAccessPhase.READY -> language.text("线路可用", "Route available")
+            SteamAccessPhase.DEGRADED -> language.text("线路不稳定，等待重新检测", "Route unstable; waiting to check again")
+            SteamAccessPhase.FAILED -> language.text("当前没有可用线路", "No route is currently available")
+        }
     return phaseLabel + message?.let { "\n$it" }.orEmpty()
 }
 
@@ -2605,18 +3142,20 @@ private fun <T> SettingChoiceRow(
 ) {
     var sheetVisible by rememberSaveable { mutableStateOf(false) }
     SettingsListItem(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .clickable { sheetVisible = true },
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
+                .clickable { sheetVisible = true },
         headlineContent = { Text(title) },
-        supportingContent = supportingText?.let { description ->
-            { Text(description) }
-        },
+        supportingContent =
+            supportingText?.let { description ->
+                { Text(description) }
+            },
         trailingContent = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.dense),
             ) {
                 Text(
                     text = label(selectedValue),
@@ -2657,13 +3196,17 @@ private fun SteamStreamCacheSetting(
     language: AppLanguage,
     onCacheLimitChange: (Int) -> Unit,
 ) {
-    fun text(zh: String, en: String): String = if (language == AppLanguage.EN) en else zh
+    fun text(
+        zh: String,
+        en: String,
+    ): String = if (language == AppLanguage.EN) en else zh
     var customSheetVisible by rememberSaveable { mutableStateOf(false) }
     var customLimitText by remember(cacheLimitMb) { mutableStateOf(cacheLimitMb.toString()) }
     var customLimitError by rememberSaveable { mutableStateOf<String?>(null) }
-    val selectedPreset = SteamStreamCachePreset.entries.firstOrNull { preset ->
-        preset.limitMb == cacheLimitMb
-    } ?: SteamStreamCachePreset.CUSTOM
+    val selectedPreset =
+        SteamStreamCachePreset.entries.firstOrNull { preset ->
+            preset.limitMb == cacheLimitMb
+        } ?: SteamStreamCachePreset.CUSTOM
 
     SettingChoiceRow(
         title = text("SteamKit 在线播放缓存", "SteamKit streaming cache"),
@@ -2675,10 +3218,11 @@ private fun SteamStreamCacheSetting(
                 "Custom: ${formatSteamStreamCacheLimit(cacheLimitMb)}",
             )
         },
-        supportingText = text(
-            "限制在线播放的已解密 Steam 分块缓存；默认 512 MB。",
-            "Limits cached decrypted Steam chunks for streaming. Default: 512 MB.",
-        ),
+        supportingText =
+            text(
+                "限制在线播放的已解密 Steam 分块缓存；默认 512 MB。",
+                "Limits cached decrypted Steam chunks for streaming. Default: 512 MB.",
+            ),
         onSelected = { preset ->
             preset.limitMb?.let(onCacheLimitChange) ?: run {
                 customLimitText = cacheLimitMb.toString()
@@ -2696,10 +3240,11 @@ private fun SteamStreamCacheSetting(
                     style = MaterialTheme.typography.titleLarge,
                 )
                 Text(
-                    text = text(
-                        "输入不低于 128 MB 的缓存大小。",
-                        "Enter a cache size of at least 128 MB.",
-                    ),
+                    text =
+                        text(
+                            "输入不低于 128 MB 的缓存大小。",
+                            "Enter a cache size of at least 128 MB.",
+                        ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 SettingsFilledTextField(
@@ -2718,10 +3263,11 @@ private fun SteamStreamCacheSetting(
                     onClick = {
                         val limitMb = customLimitText.toIntOrNull()
                         if (limitMb == null || limitMb < 128) {
-                            customLimitError = text(
-                                "请输入不低于 128 的有效数值",
-                                "Enter a valid value of at least 128",
-                            )
+                            customLimitError =
+                                text(
+                                    "请输入不低于 128 的有效数值",
+                                    "Enter a valid value of at least 128",
+                                )
                         } else {
                             onCacheLimitChange(limitMb)
                             customSheetVisible = false
@@ -2731,7 +3277,7 @@ private fun SteamStreamCacheSetting(
                 ) {
                     Text(text("应用", "Apply"))
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(WallHubSpacing.xs))
             }
         }
     }
@@ -2757,21 +3303,20 @@ private fun <T> SettingChoiceSheet(
                 onClick = { onSelected(value) },
             )
         }
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(WallHubSpacing.sm))
     }
 }
 
 @Composable
-private fun SettingsSheetContent(
-    content: @Composable ColumnScope.() -> Unit,
-) {
+private fun SettingsSheetContent(content: @Composable ColumnScope.() -> Unit) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = SETTINGS_SHEET_CONTENT_MAX_HEIGHT)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = SETTINGS_SHEET_CONTENT_MAX_HEIGHT)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = WallHubSpacing.content, vertical = WallHubSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
         content = content,
     )
 }
@@ -2784,28 +3329,32 @@ private fun SettingChoiceSheetOption(
     leadingContent: @Composable (() -> Unit)? = null,
 ) {
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
+                .clickable(onClick = onClick),
         shape = MaterialTheme.shapes.medium,
-        color = if (selected) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            Color.Transparent
-        },
-        contentColor = if (selected) {
-            MaterialTheme.colorScheme.onSecondaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        },
+        color =
+            if (selected) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                Color.Transparent
+            },
+        contentColor =
+            if (selected) {
+                MaterialTheme.colorScheme.onSecondaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
     ) {
         Row(
-            modifier = Modifier
-                .heightIn(min = SETTINGS_CHOICE_OPTION_MIN_HEIGHT)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier =
+                Modifier
+                    .heightIn(min = SETTINGS_CHOICE_OPTION_MIN_HEIGHT)
+                    .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
         ) {
             leadingContent?.invoke()
             Text(text = label, modifier = Modifier.weight(1f))
@@ -2830,24 +3379,26 @@ private fun AccentPreferenceChoiceRow(
 ) {
     var sheetVisible by rememberSaveable { mutableStateOf(false) }
     var draftAccent by remember { mutableStateOf(selectedValue) }
-    val selectedColor = selectedValue.previewColor(
-        customColor = customColor,
-        systemMonetColor = systemMonetColor,
-    )
+    val selectedColor =
+        selectedValue.wallHubPreviewColor(
+            customColor = customColor,
+            systemMonetColor = systemMonetColor,
+        )
     SettingsListItem(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .clickable {
-                draftAccent = selectedValue
-                sheetVisible = true
-            },
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
+                .clickable {
+                    draftAccent = selectedValue
+                    sheetVisible = true
+                },
         headlineContent = { Text(title) },
         supportingContent = { Text(supportingText) },
         trailingContent = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
                 Text(
                     text = selectedValue.label(language),
@@ -2884,10 +3435,11 @@ private fun AccentPreferenceChoiceRow(
                         },
                         leadingContent = {
                             AccentColorDot(
-                                color = accent.previewColor(
-                                    customColor = customColor,
-                                    systemMonetColor = systemMonetColor,
-                                ),
+                                color =
+                                    accent.wallHubPreviewColor(
+                                        customColor = customColor,
+                                        systemMonetColor = systemMonetColor,
+                                    ),
                             )
                         },
                     )
@@ -2908,7 +3460,7 @@ private fun AccentPreferenceChoiceRow(
                         Text(language.text("应用此莫奈色", "Apply this Monet color"))
                     }
                 }
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(WallHubSpacing.sm))
             }
         }
     }
@@ -2917,15 +3469,16 @@ private fun AccentPreferenceChoiceRow(
 @Composable
 private fun AccentColorDot(color: Color) {
     Box(
-        modifier = Modifier
-            .size(16.dp)
-            .clip(CircleShape)
-            .background(color)
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant,
-                shape = CircleShape,
-            ),
+        modifier =
+            Modifier
+                .size(WallHubSpacing.md)
+                .clip(CircleShape)
+                .background(color)
+                .border(
+                    width = WallHubSpacing.hairline,
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    shape = CircleShape,
+                ),
     )
 }
 
@@ -2938,28 +3491,31 @@ private fun MonetColorPicker(
 ) {
     val hsv = colorHex.toMonetHsv()
     val previewColor = hsv.toComposeColor()
-    val previewContentColor = if (previewColor.luminance() > 0.45f) {
-        Color(0xFF171C19)
-    } else {
-        Color.White
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val previewContentColor =
+        if (previewColor.luminance() > 0.45f) {
+            WallHubColorTokens.customAccentPreviewOnLight
+        } else {
+            WallHubColorTokens.customAccentPreviewOnDark
+        }
+    Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.compact)) {
         Text(
             text = language.text("自定义莫奈种子色", "Custom Monet seed color"),
             style = MaterialTheme.typography.labelLarge,
         )
         Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
-            shape = RoundedCornerShape(12.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(WallHubSpacing.xxl),
+            shape = MaterialTheme.shapes.medium,
             color = previewColor,
             contentColor = previewContentColor,
         ) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 14.dp),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = WallHubSpacing.controlInset),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Text(
@@ -2969,32 +3525,34 @@ private fun MonetColorPicker(
             }
         }
         FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
         ) {
             MONET_HUE_PRESETS.forEach { hue ->
                 val swatchColor = MonetHsv(hue, 0.82f, 0.82f).toComposeColor()
                 val selected = circularHueDistance(hsv.hue, hue) < 10f
                 Box(
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .background(swatchColor)
-                        .clickable {
-                            onColorChanged(hsv.copy(hue = hue).toHex())
-                        },
+                    modifier =
+                        Modifier
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(swatchColor)
+                            .clickable {
+                                onColorChanged(hsv.copy(hue = hue).toHex())
+                            },
                     contentAlignment = Alignment.Center,
                 ) {
                     CompositionLocalProvider(
-                        LocalContentColor provides if (swatchColor.luminance() > 0.45f) {
-                            Color(0xFF171C19)
-                        } else {
-                            Color.White
-                        },
+                        LocalContentColor provides
+                            if (swatchColor.luminance() > 0.45f) {
+                                WallHubColorTokens.customAccentPreviewOnLight
+                            } else {
+                                WallHubColorTokens.customAccentPreviewOnDark
+                            },
                     ) {
                         WallHubAnimatedSelectionCheck(
                             selected = selected,
-                            size = 18.dp,
+                            size = WallHubSizeTokens.compactIcon,
                         )
                     }
                 }
@@ -3032,7 +3590,7 @@ private fun MonetColorSlider(
     color: Color,
     onValueChange: (Float) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxxs)) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
@@ -3042,10 +3600,11 @@ private fun MonetColorSlider(
             value = value,
             onValueChange = onValueChange,
             valueRange = valueRange,
-            colors = SliderDefaults.colors(
-                thumbColor = color,
-                activeTrackColor = color,
-            ),
+            colors =
+                SliderDefaults.colors(
+                    thumbColor = color,
+                    activeTrackColor = color,
+                ),
         )
     }
 }
@@ -3055,21 +3614,24 @@ private data class MonetHsv(
     val saturation: Float,
     val brightness: Float,
 ) {
-    fun toComposeColor(): Color = Color(
-        AndroidColor.HSVToColor(floatArrayOf(hue, saturation, brightness)),
-    )
+    fun toComposeColor(): Color =
+        Color(
+            AndroidColor.HSVToColor(floatArrayOf(hue, saturation, brightness)),
+        )
 
-    fun toHex(): String = String.format(
-        Locale.US,
-        "#%06X",
-        AndroidColor.HSVToColor(floatArrayOf(hue, saturation, brightness)) and 0x00FFFFFF,
-    )
+    fun toHex(): String =
+        String.format(
+            Locale.US,
+            "#%06X",
+            AndroidColor.HSVToColor(floatArrayOf(hue, saturation, brightness)) and 0x00FFFFFF,
+        )
 }
 
 private fun String.toMonetHsv(): MonetHsv {
-    val parsed = runCatching {
-        AndroidColor.parseColor(if (startsWith("#")) this else "#$this")
-    }.getOrElse { AndroidColor.parseColor(DEFAULT_CUSTOM_MONET_HEX) }
+    val parsed =
+        runCatching {
+            AndroidColor.parseColor(if (startsWith("#")) this else "#$this")
+        }.getOrElse { AndroidColor.parseColor(DEFAULT_CUSTOM_MONET_HEX) }
     val values = FloatArray(3)
     AndroidColor.colorToHSV(parsed, values)
     return MonetHsv(
@@ -3079,51 +3641,44 @@ private fun String.toMonetHsv(): MonetHsv {
     )
 }
 
-private fun AccentPreference.previewColor(
-    customColor: String,
-    systemMonetColor: Color,
-): Color = when (this) {
-    AccentPreference.DEFAULT -> Color(0xFF242424)
-    AccentPreference.MONET -> systemMonetColor
-
-    AccentPreference.BLUE -> Color(0xFF2B6CB0)
-    AccentPreference.GREEN -> Color(0xFF2F855A)
-    AccentPreference.ROSE -> Color(0xFFC53030)
-    AccentPreference.VIOLET -> Color(0xFF805AD5)
-    AccentPreference.CUSTOM -> customColor.toMonetHsv().toComposeColor()
-}
-
-private fun circularHueDistance(first: Float, second: Float): Float {
+private fun circularHueDistance(
+    first: Float,
+    second: Float,
+): Float {
     val difference = kotlin.math.abs(first - second) % 360f
     return minOf(difference, 360f - difference)
 }
 
-private fun ThemePreference.label(language: AppLanguage): String = when (this) {
-    ThemePreference.SYSTEM -> language.text("跟随系统", "System")
-    ThemePreference.LIGHT -> language.text("浅色", "Light")
-    ThemePreference.DARK -> language.text("深色", "Dark")
-}
+private fun ThemePreference.label(language: AppLanguage): String =
+    when (this) {
+        ThemePreference.SYSTEM -> language.text("跟随系统", "System")
+        ThemePreference.LIGHT -> language.text("浅色", "Light")
+        ThemePreference.DARK -> language.text("深色", "Dark")
+    }
 
-private fun AccentPreference.label(language: AppLanguage): String = when (this) {
-    AccentPreference.DEFAULT -> language.text("默认", "Default")
-    AccentPreference.MONET -> language.text("系统莫奈", "System Monet")
-    AccentPreference.BLUE -> language.text("蓝色", "Blue")
-    AccentPreference.GREEN -> language.text("绿色", "Green")
-    AccentPreference.ROSE -> language.text("红色", "Red")
-    AccentPreference.VIOLET -> language.text("紫色", "Purple")
-    AccentPreference.CUSTOM -> language.text("自定义", "Custom")
-}
+private fun AccentPreference.label(language: AppLanguage): String =
+    when (this) {
+        AccentPreference.DEFAULT -> language.text("默认", "Default")
+        AccentPreference.MONET -> language.text("系统莫奈", "System Monet")
+        AccentPreference.BLUE -> language.text("蓝色", "Blue")
+        AccentPreference.GREEN -> language.text("绿色", "Green")
+        AccentPreference.ROSE -> language.text("红色", "Red")
+        AccentPreference.VIOLET -> language.text("紫色", "Purple")
+        AccentPreference.CUSTOM -> language.text("自定义", "Custom")
+    }
 
-private fun HomeCardAction.label(language: AppLanguage): String = when (this) {
-    HomeCardAction.DOWNLOAD -> language.text("下载", "Download")
-    HomeCardAction.PLAY_VIDEO -> language.text("播放", "Play")
-    HomeCardAction.OPEN_STEAM -> "Steam"
-}
+private fun HomeCardAction.label(language: AppLanguage): String =
+    when (this) {
+        HomeCardAction.DOWNLOAD -> language.text("下载", "Download")
+        HomeCardAction.PLAY_VIDEO -> language.text("播放", "Play")
+        HomeCardAction.OPEN_STEAM -> "Steam"
+    }
 
-private fun HomePaginationMode.label(language: AppLanguage): String = when (this) {
-    HomePaginationMode.INFINITE_SCROLL -> language.text("瀑布流拼接", "Infinite scroll")
-    HomePaginationMode.PAGED -> language.text("Web 页码模式", "Web-style pages")
-}
+private fun HomePaginationMode.label(language: AppLanguage): String =
+    when (this) {
+        HomePaginationMode.INFINITE_SCROLL -> language.text("瀑布流拼接", "Infinite scroll")
+        HomePaginationMode.PAGED -> language.text("Web 页码模式", "Web-style pages")
+    }
 
 private const val DEFAULT_CUSTOM_MONET_HEX = "#5B7AA0"
 private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
@@ -3137,23 +3692,24 @@ private val SETTINGS_MEDIUM_WIDTH = 600.dp
 private val SETTINGS_CONTENT_MAX_WIDTH = 760.dp
 private val SETTINGS_SHEET_CONTENT_MAX_HEIGHT = 560.dp
 private val SETTINGS_ITEM_MIN_HEIGHT = 64.dp
-private val SETTINGS_CHOICE_OPTION_MIN_HEIGHT = 56.dp
+private val SETTINGS_CHOICE_OPTION_MIN_HEIGHT = WallHubSizeTokens.listItemMinimumHeight
 private val SETTINGS_TRAILING_VALUE_MAX_WIDTH = 136.dp
 private val SETTINGS_ACCENT_LABEL_MAX_WIDTH = 72.dp
 private val STEAM_DOH_ITEM_HEIGHT = 84.dp
-private val STEAM_DOH_ITEM_SPACING = 8.dp
+private val STEAM_DOH_ITEM_SPACING = WallHubSpacing.xs
 private val SETTINGS_PAGE_EASING = CubicBezierEasing(0.2f, 0f, 0f, 1f)
-private val MONET_HUE_PRESETS = listOf(
-    0f,
-    24f,
-    48f,
-    78f,
-    120f,
-    158f,
-    194f,
-    220f,
-    254f,
-    286f,
-    318f,
-    342f,
-)
+private val MONET_HUE_PRESETS =
+    listOf(
+        0f,
+        24f,
+        48f,
+        78f,
+        120f,
+        158f,
+        194f,
+        220f,
+        254f,
+        286f,
+        318f,
+        342f,
+    )

@@ -139,7 +139,7 @@ jobs:
       - name: Verify Android application
         run: |
           chmod +x gradlew
-          ./gradlew testDebugUnitTest lintDebug
+          ./gradlew testDebugUnitTest verifyPaparazziDebug lintDebug detekt ktlintCheck apiCheck dependencyUpdates :benchmark:assembleBenchmark
       - name: Require Release signing secrets
         env:
           WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}

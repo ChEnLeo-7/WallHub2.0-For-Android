@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<baseline version="1.0">
+    <file name="src/main/kotlin/com/wallhub/android/core/database/AppPreferencesStore.kt">
+        <error line="3" column="1" source="standard:import-ordering" />
+        <error line="28" column="27" source="standard:class-signature" />
+        <error line="28" column="43" source="standard:class-signature" />
+        <error line="45" column="27" source="standard:function-signature" />
+        <error line="45" column="53" source="standard:function-signature" />
+        <error line="45" column="73" source="standard:function-signature" />
+        <error line="133" column="30" source="standard:multiline-expression-wrapping" />
+        <error line="135" column="28" source="standard:multiline-expression-wrapping" />
+        <error line="176" column="36" source="standard:function-signature" />
+        <error line="176" column="53" source="standard:function-signature" />
+        <error line="176" column="66" source="standard:function-signature" />
+        <error line="191" column="45" source="standard:function-signature" />
+        <error line="191" column="62" source="standard:function-signature" />
+        <error line="191" column="75" source="standard:function-signature" />
+        <error line="213" column="21" source="standard:multiline-expression-wrapping" />
+        <error line="216" column="39" source="standard:multiline-expression-wrapping" />
+        <error line="222" column="47" source="standard:multiline-expression-wrapping" />
+        <error line="239" column="38" source="standard:multiline-expression-wrapping" />
+        <error line="247" column="34" source="standard:multiline-expression-wrapping" />
+        <error line="253" column="40" source="standard:multiline-expression-wrapping" />
+        <error line="257" column="49" source="standard:multiline-expression-wrapping" />
+        <error line="266" column="39" source="standard:multiline-expression-wrapping" />
+        <error line="277" column="12" source="standard:multiline-expression-wrapping" />
+        <error line="277" column="12" source="standard:function-signature" />
+    </file>
+    <file name="src/main/kotlin/com/wallhub/android/core/database/FormalTaskDatabase.kt">
+        <error line="101" column="37" source="standard:function-signature" />
+        <error line="101" column="53" source="standard:function-signature" />
+        <error line="101" column="67" source="standard:function-signature" />
+        <error line="150" column="29" source="standard:function-signature" />
+        <error line="150" column="49" source="standard:function-signature" />
+        <error line="150" column="66" source="standard:function-signature" />
+        <error line="156" column="27" source="standard:function-signature" />
+        <error line="156" column="43" source="standard:function-signature" />
+        <error line="156" column="57" source="standard:function-signature" />
+        <error line="184" column="37" source="standard:multiline-expression-wrapping" />
+        <error line="203" column="37" source="standard:multiline-expression-wrapping" />
+        <error line="221" column="37" source="standard:multiline-expression-wrapping" />
+        <error line="233" column="37" source="standard:multiline-expression-wrapping" />
+        <error line="252" column="37" source="standard:multiline-expression-wrapping" />
+        <error line="275" column="55" source="standard:function-expression-body" />
+        <error line="277" column="33" source="standard:chain-method-continuation" />
+    </file>
+</baseline>

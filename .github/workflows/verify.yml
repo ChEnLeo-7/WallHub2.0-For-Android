@@ -30,7 +30,7 @@ jobs:
       - name: Verify Android application
         run: |
           chmod +x gradlew
-          ./gradlew testDebugUnitTest lintDebug
+          ./gradlew testDebugUnitTest verifyPaparazziDebug lintDebug detekt ktlintCheck apiCheck dependencyUpdates :app:assembleDebug :benchmark:assembleBenchmark
       - name: Require Release signing secrets
         if: github.event_name != 'pull_request'
         env:

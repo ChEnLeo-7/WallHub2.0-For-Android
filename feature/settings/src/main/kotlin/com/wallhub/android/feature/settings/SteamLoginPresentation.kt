@@ -14,11 +14,13 @@ internal data class SteamLoginUiState(
 )
 
 internal fun SteamSessionState.toSteamLoginUiState(): SteamLoginUiState {
-    val isBusy = phase in setOf(
-        SteamSessionPhase.SIGNING_IN,
-        SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
-        SteamSessionPhase.WAITING_FOR_CODE,
-    )
+    val isBusy =
+        phase in
+            setOf(
+                SteamSessionPhase.SIGNING_IN,
+                SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
+                SteamSessionPhase.WAITING_FOR_CODE,
+            )
     val isWaitingForDeviceConfirmation =
         phase == SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION && awaitingDeviceConfirmation
     val isWaitingForCode = phase == SteamSessionPhase.WAITING_FOR_CODE && requiresCode
@@ -30,8 +32,9 @@ internal fun SteamSessionState.toSteamLoginUiState(): SteamLoginUiState {
         showManualCodeFallback = isWaitingForDeviceConfirmation,
         showCodeInput = isWaitingForCode,
         showRestoreRetry = phase == SteamSessionPhase.RESTORABLE && hasStoredSession,
-        isFailure = phase == SteamSessionPhase.FAILED ||
-            phase == SteamSessionPhase.EXPIRED ||
-            phase == SteamSessionPhase.RESTORABLE,
+        isFailure =
+            phase == SteamSessionPhase.FAILED ||
+                phase == SteamSessionPhase.EXPIRED ||
+                phase == SteamSessionPhase.RESTORABLE,
     )
 }

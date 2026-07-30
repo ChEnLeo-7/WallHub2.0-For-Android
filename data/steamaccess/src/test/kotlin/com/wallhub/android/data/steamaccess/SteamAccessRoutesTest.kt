@@ -20,13 +20,14 @@ class SteamAccessRoutesTest {
 
     @Test
     fun `hosts parser accepts valid steam ipv4 and ipv6 entries only`() {
-        val result = SteamHostsParser.parse(
-            """
-            23.44.248.222 steamcommunity.com unrelated.example
-            2600:1406:3a00::17d5:2a65 api.steampowered.com
-            invalid community.steam-api.com
-            """.trimIndent(),
-        )
+        val result =
+            SteamHostsParser.parse(
+                """
+                23.44.248.222 steamcommunity.com unrelated.example
+                2600:1406:3a00::17d5:2a65 api.steampowered.com
+                invalid community.steam-api.com
+                """.trimIndent(),
+            )
 
         assertEquals(listOf("23.44.248.222"), result.getValue("steamcommunity.com").map { it.hostAddress })
         assertEquals(1, result.getValue("api.steampowered.com").size)

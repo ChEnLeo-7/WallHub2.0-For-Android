@@ -10,34 +10,39 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SteamRoutePrewarmTrackerTest {
-    private val key = SteamRoutePrewarmKey(
-        networkType = "wifi",
-        generation = 0L,
-        hostname = "steamcommunity.com",
-    )
+    private val key =
+        SteamRoutePrewarmKey(
+            networkType = "wifi",
+            generation = 0L,
+            hostname = "steamcommunity.com",
+        )
 
     @Test
-    fun `synchronous completion after refresh request is not missed`() = runBlocking {
-        val tracker = SteamRoutePrewarmTracker()
+    fun `synchronous completion after refresh request is not missed`() =
+        runBlocking {
+            val tracker = SteamRoutePrewarmTracker()
 
-        val result = tracker.awaitCompletionOrInvalidation(key) {
-            tracker.complete(key, available = true)
+            val result =
+                tracker.awaitCompletionOrInvalidation(key) {
+                    tracker.complete(key, available = true)
+                }
+
+            assertTrue(result == true)
         }
-
-        assertTrue(result == true)
-    }
 
     @Test
-    fun `invalidation wakes waiter without completing stale generation`() = runBlocking {
-        val tracker = SteamRoutePrewarmTracker()
-        val waiting = async(start = CoroutineStart.UNDISPATCHED) {
-            tracker.awaitCompletionOrInvalidation(key) {}
+    fun `invalidation wakes waiter without completing stale generation`() =
+        runBlocking {
+            val tracker = SteamRoutePrewarmTracker()
+            val waiting =
+                async(start = CoroutineStart.UNDISPATCHED) {
+                    tracker.awaitCompletionOrInvalidation(key) {}
+                }
+
+            tracker.invalidate(key.generation + 1L)
+
+            assertNull(waiting.await())
         }
-
-        tracker.invalidate(key.generation + 1L)
-
-        assertNull(waiting.await())
-    }
 
     @Test
     fun `failed completion is consumed so retry can request again`() {

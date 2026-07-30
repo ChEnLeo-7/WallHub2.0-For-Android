@@ -1,11 +1,11 @@
 package com.wallhub.android.data.steam
 
+import com.wallhub.android.data.steam.protobuf.CommunityMessages
 import `in`.dragonbra.javasteam.base.PacketClientMsgProtobuf
 import `in`.dragonbra.javasteam.steam.handlers.steamunifiedmessages.SteamUnifiedMessages
 import `in`.dragonbra.javasteam.steam.handlers.steamunifiedmessages.UnifiedService
 import `in`.dragonbra.javasteam.steam.handlers.steamunifiedmessages.callback.ServiceMethodResponse
 import `in`.dragonbra.javasteam.types.AsyncJobSingle
-import com.wallhub.android.data.steam.protobuf.CommunityMessages
 
 internal class CommunityUnifiedService(
     unifiedMessages: SteamUnifiedMessages,
@@ -17,15 +17,17 @@ internal class CommunityUnifiedService(
         packetMsg: PacketClientMsgProtobuf,
     ) {
         when (methodName) {
-            GET_COMMENT_THREAD -> postResponseMsg<CommunityMessages.GetCommentThreadResponse.Builder>(
-                CommunityMessages.GetCommentThreadResponse::class.java,
-                packetMsg,
-            )
+            GET_COMMENT_THREAD ->
+                postResponseMsg<CommunityMessages.GetCommentThreadResponse.Builder>(
+                    CommunityMessages.GetCommentThreadResponse::class.java,
+                    packetMsg,
+                )
 
-            POST_COMMENT_TO_THREAD -> postResponseMsg<CommunityMessages.PostCommentToThreadResponse.Builder>(
-                CommunityMessages.PostCommentToThreadResponse::class.java,
-                packetMsg,
-            )
+            POST_COMMENT_TO_THREAD ->
+                postResponseMsg<CommunityMessages.PostCommentToThreadResponse.Builder>(
+                    CommunityMessages.PostCommentToThreadResponse::class.java,
+                    packetMsg,
+                )
         }
     }
 

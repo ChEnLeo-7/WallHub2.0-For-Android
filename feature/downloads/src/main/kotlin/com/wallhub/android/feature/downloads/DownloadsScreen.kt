@@ -1,8 +1,13 @@
+@file:Suppress("ktlint:standard:function-naming")
+
 package com.wallhub.android.feature.downloads
 
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,13 +20,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -29,39 +30,46 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import com.wallhub.android.core.designsystem.WallHubEmptyState
+import coil.compose.AsyncImage
 import com.wallhub.android.core.designsystem.LocalWallHubLanguage
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import com.wallhub.android.core.designsystem.LocalWallHubToastState
+import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
+import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
+import com.wallhub.android.core.designsystem.WallHubSizeTokens
+import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
 import com.wallhub.android.core.designsystem.formatMegabytes
-import com.wallhub.android.core.designsystem.wallHubText
+import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
 import com.wallhub.android.core.designsystem.text
+import com.wallhub.android.core.designsystem.wallHubText
 import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadRequest
@@ -71,17 +79,19 @@ import com.wallhub.android.core.model.DownloadTaskRepository
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.WorkshopSummary
-import com.wallhub.android.core.model.requiresLegacyPublicDownloadPermission
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
-import coil.compose.AsyncImage
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import javax.inject.Inject
+import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 enum class DownloadFilter {
     ALL,
@@ -104,162 +114,309 @@ data class DownloadsUiState(
     val filter: DownloadFilter = DownloadFilter.ALL,
     val typeFilter: DownloadTypeFilter = DownloadTypeFilter.ALL,
     val tasks: List<DownloadTask> = emptyList(),
-    val actionMessage: String? = null,
 )
 
+sealed interface DownloadsAction {
+    data class SelectFilter(
+        val filter: DownloadFilter,
+    ) : DownloadsAction
+
+    data class SelectTypeFilter(
+        val filter: DownloadTypeFilter,
+    ) : DownloadsAction
+
+    data class RequestTaskAction(
+        val taskId: String,
+        val action: DownloadAction,
+    ) : DownloadsAction
+
+    data class ReorderTasks(
+        val taskIds: List<String>,
+    ) : DownloadsAction
+
+    data object ClearFinishedHistory : DownloadsAction
+
+    data class EnqueueWorkshop(
+        val item: WorkshopSummary,
+    ) : DownloadsAction
+
+    data class PlayVideo(
+        val taskId: String,
+    ) : DownloadsAction
+
+    data class LegacyStoragePermissionResult(
+        val operation: DownloadsPendingOperation,
+        val granted: Boolean,
+    ) : DownloadsAction
+}
+
+sealed interface DownloadsPendingOperation {
+    data class TaskAction(
+        val taskId: String,
+        val action: DownloadAction,
+    ) : DownloadsPendingOperation
+
+    data class EnqueueWorkshop(
+        val item: WorkshopSummary,
+    ) : DownloadsPendingOperation
+}
+
+sealed interface DownloadsEffect {
+    data class ResolveLegacyStoragePermission(
+        val operation: DownloadsPendingOperation,
+    ) : DownloadsEffect
+
+    data class ShowMessage(
+        val message: String,
+    ) : DownloadsEffect
+
+    data class PlayVideo(
+        val taskId: String,
+    ) : DownloadsEffect
+}
+
 @HiltViewModel
-class DownloadsViewModel @Inject constructor(
-    private val taskRepository: DownloadTaskRepository,
-    private val settingsRepository: SettingsRepository,
-) : ViewModel() {
-    private val stateSource = DownloadsStateSource(taskRepository)
+class DownloadsViewModel
+    @Inject
+    constructor(
+        private val taskRepository: DownloadTaskRepository,
+        private val settingsRepository: SettingsRepository,
+        savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    ) : ViewModel() {
+        private val stateSource = DownloadsStateSource(taskRepository, savedStateHandle)
+        private val effectChannel = Channel<DownloadsEffect>(capacity = Channel.BUFFERED)
 
-    val uiState: StateFlow<DownloadsUiState> = stateSource.states.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = DownloadsUiState(),
-    )
+        val uiState: StateFlow<DownloadsUiState> =
+            stateSource.states.stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = DownloadsUiState(),
+            )
+        val effects: Flow<DownloadsEffect> = effectChannel.receiveAsFlow()
 
-    fun setFilter(filter: DownloadFilter) {
-        stateSource.setFilter(filter)
-    }
-
-    fun setTypeFilter(filter: DownloadTypeFilter) {
-        stateSource.setTypeFilter(filter)
-    }
-
-    fun requestAction(taskId: String, action: DownloadAction) {
-        viewModelScope.launch { stateSource.requestAction(taskId, action) }
-    }
-
-    fun clearFinishedHistory() {
-        viewModelScope.launch { taskRepository.clearFinishedHistory() }
-    }
-
-    fun reorderTasks(taskIds: List<String>) {
-        viewModelScope.launch { taskRepository.reorder(taskIds) }
-    }
-
-    fun reportLegacyStoragePermissionDenied() {
-        stateSource.reportActionMessage("未授予存储权限，无法导出到 Download/WallHub")
-    }
-
-    fun enqueueWorkshop(item: WorkshopSummary) {
-        viewModelScope.launch {
-            runCatching {
-                val outputTreeUri = settingsRepository.preferences.first().outputTreeUri
-                taskRepository.enqueue(
-                    DownloadRequest(
-                        workshopId = item.id,
-                        title = item.title,
-                        type = item.type,
-                        previewUrl = item.previewUrl,
-                        expectedTotalBytes = item.fileSizeBytes ?: 0L,
-                        outputTreeUri = outputTreeUri,
-                        exportFormat = ExportFormat.AUTO,
-                    ),
-                )
-            }.onSuccess { task ->
-                stateSource.reportActionMessage("已加入下载队列：${task.title}")
-            }.onFailure { error ->
-                stateSource.reportActionMessage(error.message ?: "无法加入下载队列")
+        fun onAction(action: DownloadsAction) {
+            when (action) {
+                is DownloadsAction.SelectFilter -> stateSource.setFilter(action.filter)
+                is DownloadsAction.SelectTypeFilter -> stateSource.setTypeFilter(action.filter)
+                is DownloadsAction.RequestTaskAction -> prepareTaskAction(action.taskId, action.action)
+                is DownloadsAction.ReorderTasks ->
+                    viewModelScope.launch {
+                        taskRepository.reorder(action.taskIds)
+                    }
+                DownloadsAction.ClearFinishedHistory ->
+                    viewModelScope.launch {
+                        taskRepository.clearFinishedHistory()
+                    }
+                is DownloadsAction.EnqueueWorkshop ->
+                    emitEffect(
+                        DownloadsEffect.ResolveLegacyStoragePermission(
+                            DownloadsPendingOperation.EnqueueWorkshop(action.item),
+                        ),
+                    )
+                is DownloadsAction.PlayVideo -> emitEffect(DownloadsEffect.PlayVideo(action.taskId))
+                is DownloadsAction.LegacyStoragePermissionResult -> {
+                    if (action.granted) {
+                        executePendingOperation(action.operation)
+                    } else {
+                        emitEffect(
+                            DownloadsEffect.ShowMessage(
+                                "未授予存储权限，无法导出到 Download/WallHub",
+                            ),
+                        )
+                    }
+                }
             }
         }
+
+        private fun prepareTaskAction(
+            taskId: String,
+            action: DownloadAction,
+        ) {
+            viewModelScope.launch {
+                val task = taskRepository.find(taskId)
+                val requiresPermission =
+                    action == DownloadAction.EXPORT ||
+                        (action == DownloadAction.RETRY && !task?.stagingDirectory.isNullOrBlank())
+                val operation = DownloadsPendingOperation.TaskAction(taskId, action)
+                if (requiresPermission) {
+                    effectChannel.send(DownloadsEffect.ResolveLegacyStoragePermission(operation))
+                } else {
+                    executeTaskAction(taskId, action)
+                }
+            }
+        }
+
+        private fun executePendingOperation(operation: DownloadsPendingOperation) {
+            when (operation) {
+                is DownloadsPendingOperation.TaskAction ->
+                    executeTaskAction(
+                        operation.taskId,
+                        operation.action,
+                    )
+                is DownloadsPendingOperation.EnqueueWorkshop -> enqueueWorkshop(operation.item)
+            }
+        }
+
+        private fun executeTaskAction(
+            taskId: String,
+            action: DownloadAction,
+        ) {
+            viewModelScope.launch {
+                runCatching { taskRepository.requestAction(taskId, action) }
+                    .onSuccess {
+                        if (action == DownloadAction.EXPORT) {
+                            effectChannel.send(
+                                DownloadsEffect.ShowMessage("已加入转换和导出任务"),
+                            )
+                        }
+                    }.onFailure { error ->
+                        effectChannel.send(
+                            DownloadsEffect.ShowMessage(error.message ?: "操作失败，请稍后重试"),
+                        )
+                    }
+            }
+        }
+
+        private fun enqueueWorkshop(item: WorkshopSummary) {
+            viewModelScope.launch {
+                runCatching {
+                    val outputTreeUri = settingsRepository.preferences.first().outputTreeUri
+                    taskRepository.enqueue(
+                        DownloadRequest(
+                            workshopId = item.id,
+                            title = item.title,
+                            type = item.type,
+                            previewUrl = item.previewUrl,
+                            expectedTotalBytes = item.fileSizeBytes ?: 0L,
+                            outputTreeUri = outputTreeUri,
+                            exportFormat = ExportFormat.AUTO,
+                        ),
+                    )
+                }.onSuccess { task ->
+                    effectChannel.send(
+                        DownloadsEffect.ShowMessage("已加入下载队列：${task.title}"),
+                    )
+                }.onFailure { error ->
+                    effectChannel.send(
+                        DownloadsEffect.ShowMessage(error.message ?: "无法加入下载队列"),
+                    )
+                }
+            }
+        }
+
+        private fun emitEffect(effect: DownloadsEffect) {
+            effectChannel.trySend(effect)
+        }
     }
-}
 
 internal class DownloadsStateSource(
     private val taskRepository: DownloadTaskRepository,
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
 ) {
-    private val selectedFilter = MutableStateFlow(DownloadFilter.ALL)
-    private val selectedTypeFilter = MutableStateFlow(DownloadTypeFilter.ALL)
-    private val actionMessage = MutableStateFlow<String?>(null)
-
-    val states = combine(
-        taskRepository.tasks,
-        selectedFilter,
-        selectedTypeFilter,
-        actionMessage,
-    ) { tasks, filter, typeFilter, message ->
-        DownloadsUiState(
-            filter = filter,
-            typeFilter = typeFilter,
-            tasks = filterTasks(tasks, filter, typeFilter),
-            actionMessage = message,
+    private val selectedFilter =
+        MutableStateFlow(downloadEnumValueOrDefault(savedStateHandle[DOWNLOAD_FILTER_KEY], DownloadFilter.ALL))
+    private val selectedTypeFilter =
+        MutableStateFlow(
+            downloadEnumValueOrDefault(savedStateHandle[DOWNLOAD_TYPE_FILTER_KEY], DownloadTypeFilter.ALL),
         )
-    }
+
+    val states =
+        combine(
+            taskRepository.tasks,
+            selectedFilter,
+            selectedTypeFilter,
+        ) { tasks, filter, typeFilter ->
+            DownloadsUiState(
+                filter = filter,
+                typeFilter = typeFilter,
+                tasks = filterTasks(tasks, filter, typeFilter),
+            )
+        }
 
     fun setFilter(filter: DownloadFilter) {
         selectedFilter.value = filter
+        savedStateHandle[DOWNLOAD_FILTER_KEY] = filter.name
     }
 
     fun setTypeFilter(filter: DownloadTypeFilter) {
         selectedTypeFilter.value = filter
-    }
-
-    fun reportActionMessage(message: String) {
-        actionMessage.value = message
-    }
-
-    suspend fun requestAction(taskId: String, action: DownloadAction) {
-        runCatching { taskRepository.requestAction(taskId, action) }
-            .onSuccess {
-                actionMessage.value = when (action) {
-                    DownloadAction.EXPORT -> "已加入转换和导出任务"
-                    else -> null
-                }
-            }
-            .onFailure { error ->
-                actionMessage.value = error.message ?: "操作失败，请稍后重试"
-            }
+        savedStateHandle[DOWNLOAD_TYPE_FILTER_KEY] = filter.name
     }
 }
 
+private inline fun <reified T : Enum<T>> downloadEnumValueOrDefault(
+    value: String?,
+    default: T,
+): T = value?.let { name -> enumValues<T>().firstOrNull { it.name == name } } ?: default
+
+private const val DOWNLOAD_FILTER_KEY = "downloads.filter"
+private const val DOWNLOAD_TYPE_FILTER_KEY = "downloads.typeFilter"
+
 @Composable
 fun DownloadsRoute(
+    onPlayVideo: (String) -> Unit = {},
     viewModel: DownloadsViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
-    var pendingLegacyStorageAction by remember { mutableStateOf<Pair<String, DownloadAction>?>(null) }
-    val legacyStoragePermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        val pendingAction = pendingLegacyStorageAction
-        pendingLegacyStorageAction = null
-        if (granted && pendingAction != null) {
-            viewModel.requestAction(pendingAction.first, pendingAction.second)
-        } else if (!granted) {
-            viewModel.reportLegacyStoragePermissionDenied()
-        }
-    }
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    DownloadsEffectHandler(
+        viewModel = viewModel,
+        onPlayVideo = onPlayVideo,
+    )
     DownloadsScreen(
         state = state,
-        onFilterSelected = viewModel::setFilter,
-        onTypeFilterSelected = viewModel::setTypeFilter,
-        onAction = { taskId, action ->
-            val task = state.tasks.firstOrNull { it.id == taskId }
-            val requiresPermission = action == DownloadAction.EXPORT ||
-                (action == DownloadAction.RETRY && !task?.stagingDirectory.isNullOrBlank())
-            if (requiresPermission && context.requiresLegacyPublicDownloadPermission()) {
-                pendingLegacyStorageAction = taskId to action
-                legacyStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            } else {
-                viewModel.requestAction(taskId, action)
-            }
-        },
-        onReorder = viewModel::reorderTasks,
+        onAction = viewModel::onAction,
     )
+}
+
+@Composable
+fun DownloadsEffectHandler(
+    viewModel: DownloadsViewModel,
+    onPlayVideo: (String) -> Unit = {},
+) {
+    val context = LocalContext.current
+    val toastState = LocalWallHubToastState.current
+    val currentOnPlayVideo by rememberUpdatedState(onPlayVideo)
+    var pendingOperation by remember { mutableStateOf<DownloadsPendingOperation?>(null) }
+    val legacyStoragePermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { granted ->
+            pendingOperation?.let { operation ->
+                viewModel.onAction(
+                    DownloadsAction.LegacyStoragePermissionResult(operation, granted),
+                )
+            }
+            pendingOperation = null
+        }
+    LaunchedEffect(viewModel, context) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                is DownloadsEffect.ResolveLegacyStoragePermission -> {
+                    if (context.requiresLegacyPublicDownloadPermission()) {
+                        pendingOperation = effect.operation
+                        legacyStoragePermissionLauncher.launch(
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                        )
+                    } else {
+                        viewModel.onAction(
+                            DownloadsAction.LegacyStoragePermissionResult(
+                                effect.operation,
+                                granted = true,
+                            ),
+                        )
+                    }
+                }
+                is DownloadsEffect.ShowMessage -> toastState.show(effect.message)
+                is DownloadsEffect.PlayVideo -> currentOnPlayVideo(effect.taskId)
+            }
+        }
+    }
 }
 
 @Composable
 fun DownloadsScreen(
     state: DownloadsUiState,
-    onFilterSelected: (DownloadFilter) -> Unit,
-    onTypeFilterSelected: (DownloadTypeFilter) -> Unit,
-    onAction: (String, DownloadAction) -> Unit,
-    onReorder: (List<String>) -> Unit,
-    onPlayVideo: (String) -> Unit = {},
+    onAction: (DownloadsAction) -> Unit,
 ) {
     WallHubPageScaffold(
         title = wallHubText("下载", "Downloads"),
@@ -268,10 +425,6 @@ fun DownloadsScreen(
             state = state,
             onAction = onAction,
             showFilters = true,
-            onFilterSelected = onFilterSelected,
-            onTypeFilterSelected = onTypeFilterSelected,
-            onReorder = onReorder,
-            onPlayVideo = onPlayVideo,
             modifier = Modifier.padding(padding),
         )
     }
@@ -280,12 +433,8 @@ fun DownloadsScreen(
 @Composable
 fun DownloadsContent(
     state: DownloadsUiState,
-    onAction: (String, DownloadAction) -> Unit,
+    onAction: (DownloadsAction) -> Unit,
     showFilters: Boolean,
-    onFilterSelected: (DownloadFilter) -> Unit = {},
-    onTypeFilterSelected: (DownloadTypeFilter) -> Unit = {},
-    onReorder: (List<String>) -> Unit = {},
-    onPlayVideo: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val language = LocalWallHubLanguage.current
@@ -296,29 +445,24 @@ fun DownloadsContent(
             WallHubSingleChoiceSegmentedControl(
                 options = DownloadFilter.entries,
                 selected = state.filter,
-                onSelected = onFilterSelected,
+                onSelected = { filter -> onAction(DownloadsAction.SelectFilter(filter)) },
                 label = { filter -> Text(filter.label(language)) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xs),
             )
             WallHubSingleChoiceSegmentedControl(
                 options = DownloadTypeFilter.entries,
                 selected = state.typeFilter,
-                onSelected = onTypeFilterSelected,
+                onSelected = { filter -> onAction(DownloadsAction.SelectTypeFilter(filter)) },
                 label = { filter -> Text(filter.label(language)) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 0.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.none),
             )
         }
-        state.actionMessage?.let { message ->
-            Text(
-                text = message,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-            )
-        }
-
         if (state.tasks.isEmpty()) {
             WallHubEmptyState(
                 icon = Icons.Outlined.Download,
@@ -329,9 +473,11 @@ fun DownloadsContent(
             ReorderableDownloadList(
                 tasks = state.tasks,
                 language = language,
-                onAction = onAction,
-                onPlayVideo = onPlayVideo,
-                onReorder = onReorder,
+                onAction = { taskId, action ->
+                    onAction(DownloadsAction.RequestTaskAction(taskId, action))
+                },
+                onPlayVideo = { taskId -> onAction(DownloadsAction.PlayVideo(taskId)) },
+                onReorder = { taskIds -> onAction(DownloadsAction.ReorderTasks(taskIds)) },
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -355,9 +501,10 @@ private fun ReorderableDownloadList(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
-    val itemExtentPx = with(LocalDensity.current) {
-        (DOWNLOAD_CARD_HEIGHT + DOWNLOAD_CARD_SPACING).toPx()
-    }
+    val itemExtentPx =
+        with(LocalDensity.current) {
+            (DOWNLOAD_CARD_HEIGHT + DOWNLOAD_CARD_SPACING).toPx()
+        }
     LaunchedEffect(taskIds, draggedTaskId) {
         if (draggedTaskId == null) orderedIds = taskIds
     }
@@ -366,87 +513,92 @@ private fun ReorderableDownloadList(
     LazyColumn(
         state = listState,
         modifier = modifier,
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = 16.dp,
-            top = 8.dp,
-            end = 16.dp,
-            bottom = 80.dp,
-        ),
+        contentPadding =
+            androidx.compose.foundation.layout.PaddingValues(
+                start = WallHubSpacing.md,
+                top = WallHubSpacing.xs,
+                end = WallHubSpacing.md,
+                bottom = WallHubSizeTokens.bottomNavigationClearance,
+            ),
         verticalArrangement = Arrangement.spacedBy(DOWNLOAD_CARD_SPACING),
     ) {
         items(items = visibleIds, key = { taskId -> taskId }) { taskId ->
             val task = tasksById.getValue(taskId)
             val isDragging = draggedTaskId == taskId
             val canReorder = task.status in REORDERABLE_DOWNLOAD_STATUSES
-            val dragModifier = Modifier
-                .then(if (isDragging) Modifier else Modifier.animateItem())
-                .zIndex(if (isDragging) 1f else 0f)
-                .graphicsLayer {
-                    if (isDragging) {
-                        translationY = dragOffsetPx
-                        scaleX = DOWNLOAD_DRAG_SCALE
-                        scaleY = DOWNLOAD_DRAG_SCALE
-                        shadowElevation = DOWNLOAD_DRAG_ELEVATION.toPx()
+            val dragModifier =
+                Modifier
+                    .then(if (isDragging) Modifier else Modifier.animateItem())
+                    .zIndex(if (isDragging) 1f else 0f)
+                    .graphicsLayer {
+                        if (isDragging) {
+                            translationY = dragOffsetPx
+                            scaleX = DOWNLOAD_DRAG_SCALE
+                            scaleY = DOWNLOAD_DRAG_SCALE
+                            shadowElevation = DOWNLOAD_DRAG_ELEVATION.toPx()
+                        }
+                    }.pointerInput(taskId, canReorder) {
+                        if (!canReorder) return@pointerInput
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = {
+                                draggedTaskId = taskId
+                                dragOffsetPx = 0f
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            },
+                            onDragCancel = {
+                                draggedTaskId = null
+                                dragOffsetPx = 0f
+                            },
+                            onDragEnd = {
+                                draggedTaskId = null
+                                dragOffsetPx = 0f
+                                onReorder(orderedIds)
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                dragOffsetPx += dragAmount.y
+                                var currentIndex = orderedIds.indexOf(taskId)
+                                while (dragOffsetPx > itemExtentPx / 2f && currentIndex < orderedIds.lastIndex) {
+                                    val next = currentIndex + 1
+                                    orderedIds =
+                                        orderedIds.toMutableList().apply {
+                                            this[currentIndex] = this[next]
+                                            this[next] = taskId
+                                        }
+                                    dragOffsetPx -= itemExtentPx
+                                    currentIndex = next
+                                }
+                                while (dragOffsetPx < -itemExtentPx / 2f && currentIndex > 0) {
+                                    val previous = currentIndex - 1
+                                    orderedIds =
+                                        orderedIds.toMutableList().apply {
+                                            this[currentIndex] = this[previous]
+                                            this[previous] = taskId
+                                        }
+                                    dragOffsetPx += itemExtentPx
+                                    currentIndex = previous
+                                }
+                                val itemInfo =
+                                    listState.layoutInfo.visibleItemsInfo
+                                        .firstOrNull { item -> item.key == taskId }
+                                if (itemInfo != null) {
+                                    val translatedTop = itemInfo.offset + dragOffsetPx
+                                    val translatedBottom = translatedTop + itemInfo.size
+                                    val viewportStart = listState.layoutInfo.viewportStartOffset + DOWNLOAD_AUTO_SCROLL_EDGE_PX
+                                    val viewportEnd = listState.layoutInfo.viewportEndOffset - DOWNLOAD_AUTO_SCROLL_EDGE_PX
+                                    val scrollDelta =
+                                        when {
+                                            translatedTop < viewportStart -> -DOWNLOAD_AUTO_SCROLL_STEP_PX
+                                            translatedBottom > viewportEnd -> DOWNLOAD_AUTO_SCROLL_STEP_PX
+                                            else -> 0f
+                                        }
+                                    if (scrollDelta != 0f) {
+                                        coroutineScope.launch { listState.scrollBy(scrollDelta) }
+                                    }
+                                }
+                            },
+                        )
                     }
-                }
-                .pointerInput(taskId, canReorder) {
-                    if (!canReorder) return@pointerInput
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = {
-                            draggedTaskId = taskId
-                            dragOffsetPx = 0f
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        },
-                        onDragCancel = {
-                            draggedTaskId = null
-                            dragOffsetPx = 0f
-                        },
-                        onDragEnd = {
-                            draggedTaskId = null
-                            dragOffsetPx = 0f
-                            onReorder(orderedIds)
-                        },
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            dragOffsetPx += dragAmount.y
-                            var currentIndex = orderedIds.indexOf(taskId)
-                            while (dragOffsetPx > itemExtentPx / 2f && currentIndex < orderedIds.lastIndex) {
-                                val next = currentIndex + 1
-                                orderedIds = orderedIds.toMutableList().apply {
-                                    this[currentIndex] = this[next]
-                                    this[next] = taskId
-                                }
-                                dragOffsetPx -= itemExtentPx
-                                currentIndex = next
-                            }
-                            while (dragOffsetPx < -itemExtentPx / 2f && currentIndex > 0) {
-                                val previous = currentIndex - 1
-                                orderedIds = orderedIds.toMutableList().apply {
-                                    this[currentIndex] = this[previous]
-                                    this[previous] = taskId
-                                }
-                                dragOffsetPx += itemExtentPx
-                                currentIndex = previous
-                            }
-                            val itemInfo = listState.layoutInfo.visibleItemsInfo
-                                .firstOrNull { item -> item.key == taskId }
-                            if (itemInfo != null) {
-                                val translatedTop = itemInfo.offset + dragOffsetPx
-                                val translatedBottom = translatedTop + itemInfo.size
-                                val viewportStart = listState.layoutInfo.viewportStartOffset + DOWNLOAD_AUTO_SCROLL_EDGE_PX
-                                val viewportEnd = listState.layoutInfo.viewportEndOffset - DOWNLOAD_AUTO_SCROLL_EDGE_PX
-                                val scrollDelta = when {
-                                    translatedTop < viewportStart -> -DOWNLOAD_AUTO_SCROLL_STEP_PX
-                                    translatedBottom > viewportEnd -> DOWNLOAD_AUTO_SCROLL_STEP_PX
-                                    else -> 0f
-                                }
-                                if (scrollDelta != 0f) {
-                                    coroutineScope.launch { listState.scrollBy(scrollDelta) }
-                                }
-                            }
-                        },
-                    )
-                }
             DownloadTaskCard(
                 task = task,
                 language = language,
@@ -467,22 +619,24 @@ private fun DownloadTaskCard(
     modifier: Modifier = Modifier,
 ) {
     WallHubSurfaceCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(DOWNLOAD_CARD_HEIGHT),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(DOWNLOAD_CARD_HEIGHT),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = RoundedCornerShape(8.dp),
+        shape = WallHubShapeTokens.small,
     ) {
         Row(
-            modifier = Modifier.padding(10.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(WallHubSpacing.compact),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
         ) {
             Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainer),
+                modifier =
+                    Modifier
+                        .fillMaxHeight()
+                        .aspectRatio(1f)
+                        .clip(WallHubShapeTokens.thumbnail)
+                        .background(MaterialTheme.colorScheme.surfaceContainer),
                 contentAlignment = Alignment.Center,
             ) {
                 if (!task.previewUrl.isNullOrBlank()) {
@@ -518,29 +672,32 @@ private fun DownloadTaskCard(
                 Spacer(modifier = Modifier.weight(1f))
                 LinearProgressIndicator(
                     progress = { task.progress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(WallHubSpacing.xxs),
                 )
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(DOWNLOAD_ACTION_ROW_HEIGHT),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(DOWNLOAD_ACTION_ROW_HEIGHT),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = when {
-                            task.status == DownloadStatus.DOWNLOADING && task.bytesPerSecond > 0L ->
-                                "${formatMegabytes(task.bytesPerSecond)}/s"
+                        text =
+                            when {
+                                task.status == DownloadStatus.DOWNLOADING && task.bytesPerSecond > 0L ->
+                                    "${formatMegabytes(task.bytesPerSecond)}/s"
 
-                            task.status == DownloadStatus.DOWNLOADING ->
-                                language.text("正在测速", "Measuring")
+                                task.status == DownloadStatus.DOWNLOADING ->
+                                    language.text("正在测速", "Measuring")
 
-                            task.status == DownloadStatus.FAILED && !task.message.isNullOrBlank() ->
-                                task.message.orEmpty()
+                                task.status == DownloadStatus.FAILED && !task.message.isNullOrBlank() ->
+                                    task.message.orEmpty()
 
-                            else -> task.status.label(language)
-                        },
+                                else -> task.status.label(language)
+                            },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -584,7 +741,7 @@ private fun DownloadIconButton(
         Icon(
             imageVector = icon,
             contentDescription = label,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(WallHubSizeTokens.smallIcon),
         )
     }
 }
@@ -593,95 +750,106 @@ internal fun filterTasks(
     tasks: List<DownloadTask>,
     filter: DownloadFilter,
     typeFilter: DownloadTypeFilter = DownloadTypeFilter.ALL,
-): List<DownloadTask> = tasks.asSequence()
-    .filter { task -> typeFilter.type == null || task.type == typeFilter.type }
-    .filter { task ->
-        when (filter) {
-            DownloadFilter.ALL -> true
-            DownloadFilter.DOWNLOADING -> task.status in setOf(
-            DownloadStatus.QUEUED,
-            DownloadStatus.RESOLVING,
-            DownloadStatus.DOWNLOADING,
-            DownloadStatus.PAUSED,
-            DownloadStatus.CONVERTING,
-            DownloadStatus.EXPORTING,
-            )
+): List<DownloadTask> =
+    tasks
+        .asSequence()
+        .filter { task -> typeFilter.type == null || task.type == typeFilter.type }
+        .filter { task ->
+            when (filter) {
+                DownloadFilter.ALL -> true
+                DownloadFilter.DOWNLOADING ->
+                    task.status in
+                        setOf(
+                            DownloadStatus.QUEUED,
+                            DownloadStatus.RESOLVING,
+                            DownloadStatus.DOWNLOADING,
+                            DownloadStatus.PAUSED,
+                            DownloadStatus.CONVERTING,
+                            DownloadStatus.EXPORTING,
+                        )
 
-            DownloadFilter.QUEUED -> task.status == DownloadStatus.QUEUED
-            DownloadFilter.COMPLETED -> task.status == DownloadStatus.COMPLETED
-            DownloadFilter.FAILED -> task.status == DownloadStatus.FAILED || task.status == DownloadStatus.CANCELLED
-        }
+                DownloadFilter.QUEUED -> task.status == DownloadStatus.QUEUED
+                DownloadFilter.COMPLETED -> task.status == DownloadStatus.COMPLETED
+                DownloadFilter.FAILED -> task.status == DownloadStatus.FAILED || task.status == DownloadStatus.CANCELLED
+            }
+        }.toList()
+
+private fun DownloadFilter.label(language: AppLanguage): String =
+    when (this) {
+        DownloadFilter.ALL -> language.text("全部", "All")
+        DownloadFilter.COMPLETED -> language.text("已完成", "Completed")
+        DownloadFilter.DOWNLOADING -> language.text("下载中", "Active")
+        DownloadFilter.QUEUED -> language.text("待下载", "Queued")
+        DownloadFilter.FAILED -> language.text("失败", "Failed")
     }
-    .toList()
 
-private fun DownloadFilter.label(language: AppLanguage): String = when (this) {
-    DownloadFilter.ALL -> language.text("全部", "All")
-    DownloadFilter.COMPLETED -> language.text("已完成", "Completed")
-    DownloadFilter.DOWNLOADING -> language.text("下载中", "Active")
-    DownloadFilter.QUEUED -> language.text("待下载", "Queued")
-    DownloadFilter.FAILED -> language.text("失败", "Failed")
-}
+private fun DownloadTypeFilter.label(language: AppLanguage): String =
+    when (this) {
+        DownloadTypeFilter.ALL -> language.text("全部", "All")
+        DownloadTypeFilter.VIDEO -> language.text("视频", "Video")
+        DownloadTypeFilter.SCENE -> language.text("场景", "Scene")
+        DownloadTypeFilter.WEB -> language.text("网站", "Web")
+    }
 
-private fun DownloadTypeFilter.label(language: AppLanguage): String = when (this) {
-    DownloadTypeFilter.ALL -> language.text("全部", "All")
-    DownloadTypeFilter.VIDEO -> language.text("视频", "Video")
-    DownloadTypeFilter.SCENE -> language.text("场景", "Scene")
-    DownloadTypeFilter.WEB -> language.text("网站", "Web")
-}
+private fun com.wallhub.android.core.model.WorkshopType.label(language: AppLanguage): String =
+    when (this) {
+        com.wallhub.android.core.model.WorkshopType.VIDEO -> language.text("视频", "Video")
+        com.wallhub.android.core.model.WorkshopType.SCENE -> language.text("场景", "Scene")
+        com.wallhub.android.core.model.WorkshopType.WEB -> language.text("网站", "Web")
+        com.wallhub.android.core.model.WorkshopType.UNKNOWN -> language.text("壁纸", "Wallpaper")
+    }
 
-private fun com.wallhub.android.core.model.WorkshopType.label(language: AppLanguage): String = when (this) {
-    com.wallhub.android.core.model.WorkshopType.VIDEO -> language.text("视频", "Video")
-    com.wallhub.android.core.model.WorkshopType.SCENE -> language.text("场景", "Scene")
-    com.wallhub.android.core.model.WorkshopType.WEB -> language.text("网站", "Web")
-    com.wallhub.android.core.model.WorkshopType.UNKNOWN -> language.text("壁纸", "Wallpaper")
-}
+private fun DownloadStatus.label(language: AppLanguage): String =
+    when (this) {
+        DownloadStatus.QUEUED -> language.text("等待中", "Queued")
+        DownloadStatus.RESOLVING -> language.text("解析中", "Resolving")
+        DownloadStatus.DOWNLOADING -> language.text("下载中", "Downloading")
+        DownloadStatus.PAUSED -> language.text("已暂停", "Paused")
+        DownloadStatus.CONVERTING -> language.text("转换中", "Converting")
+        DownloadStatus.EXPORTING -> language.text("导出中", "Exporting")
+        DownloadStatus.COMPLETED -> language.text("已完成", "Completed")
+        DownloadStatus.FAILED -> language.text("失败", "Failed")
+        DownloadStatus.CANCELLED -> language.text("已取消", "Cancelled")
+    }
 
-private fun DownloadStatus.label(language: AppLanguage): String = when (this) {
-    DownloadStatus.QUEUED -> language.text("等待中", "Queued")
-    DownloadStatus.RESOLVING -> language.text("解析中", "Resolving")
-    DownloadStatus.DOWNLOADING -> language.text("下载中", "Downloading")
-    DownloadStatus.PAUSED -> language.text("已暂停", "Paused")
-    DownloadStatus.CONVERTING -> language.text("转换中", "Converting")
-    DownloadStatus.EXPORTING -> language.text("导出中", "Exporting")
-    DownloadStatus.COMPLETED -> language.text("已完成", "Completed")
-    DownloadStatus.FAILED -> language.text("失败", "Failed")
-    DownloadStatus.CANCELLED -> language.text("已取消", "Cancelled")
-}
+private fun DownloadAction.label(language: AppLanguage): String =
+    when (this) {
+        DownloadAction.PAUSE -> language.text("暂停", "Pause")
+        DownloadAction.RESUME -> language.text("继续", "Resume")
+        DownloadAction.RETRY -> language.text("重试", "Retry")
+        DownloadAction.EXPORT -> language.text("导出", "Export")
+        DownloadAction.CANCEL -> language.text("取消", "Cancel")
+        DownloadAction.DELETE -> language.text("删除", "Delete")
+    }
 
-private fun DownloadAction.label(language: AppLanguage): String = when (this) {
-    DownloadAction.PAUSE -> language.text("暂停", "Pause")
-    DownloadAction.RESUME -> language.text("继续", "Resume")
-    DownloadAction.RETRY -> language.text("重试", "Retry")
-    DownloadAction.EXPORT -> language.text("导出", "Export")
-    DownloadAction.CANCEL -> language.text("取消", "Cancel")
-    DownloadAction.DELETE -> language.text("删除", "Delete")
-}
+private fun DownloadAction.icon() =
+    when (this) {
+        DownloadAction.PAUSE -> Icons.Outlined.Pause
+        DownloadAction.RESUME -> Icons.Outlined.PlayArrow
+        DownloadAction.RETRY -> Icons.Outlined.Refresh
+        DownloadAction.EXPORT -> Icons.Outlined.FileUpload
+        DownloadAction.CANCEL -> Icons.Outlined.Cancel
+        DownloadAction.DELETE -> Icons.Outlined.DeleteSweep
+    }
 
-private fun DownloadAction.icon() = when (this) {
-    DownloadAction.PAUSE -> Icons.Outlined.Pause
-    DownloadAction.RESUME -> Icons.Outlined.PlayArrow
-    DownloadAction.RETRY -> Icons.Outlined.Refresh
-    DownloadAction.EXPORT -> Icons.Outlined.FileUpload
-    DownloadAction.CANCEL -> Icons.Outlined.Cancel
-    DownloadAction.DELETE -> Icons.Outlined.DeleteSweep
-}
+private fun DownloadTask.projectSizeLabel(language: AppLanguage): String =
+    totalBytes
+        .takeIf { it > 0L }
+        ?.let(::formatMegabytes)
+        ?: language.text("正在读取大小", "Reading size")
 
-private fun DownloadTask.projectSizeLabel(language: AppLanguage): String = totalBytes
-    .takeIf { it > 0L }
-    ?.let(::formatMegabytes)
-    ?: language.text("正在读取大小", "Reading size")
-
-private val REORDERABLE_DOWNLOAD_STATUSES = setOf(
-    DownloadStatus.QUEUED,
-    DownloadStatus.RESOLVING,
-    DownloadStatus.DOWNLOADING,
-    DownloadStatus.PAUSED,
-)
+private val REORDERABLE_DOWNLOAD_STATUSES =
+    setOf(
+        DownloadStatus.QUEUED,
+        DownloadStatus.RESOLVING,
+        DownloadStatus.DOWNLOADING,
+        DownloadStatus.PAUSED,
+    )
 private val DOWNLOAD_CARD_HEIGHT = 132.dp
-private val DOWNLOAD_CARD_SPACING = 8.dp
-private val DOWNLOAD_ACTION_ROW_HEIGHT = 40.dp
-private val DOWNLOAD_ICON_BUTTON_SIZE = 36.dp
-private val DOWNLOAD_DRAG_ELEVATION = 8.dp
+private val DOWNLOAD_CARD_SPACING = WallHubSpacing.xs
+private val DOWNLOAD_ACTION_ROW_HEIGHT = WallHubSizeTokens.compactActionHeight
+private val DOWNLOAD_ICON_BUTTON_SIZE = WallHubSizeTokens.compactIconButton
+private val DOWNLOAD_DRAG_ELEVATION = WallHubSpacing.xs
 private const val DOWNLOAD_DRAG_SCALE = 1.015f
 private const val DOWNLOAD_AUTO_SCROLL_EDGE_PX = 96
 private const val DOWNLOAD_AUTO_SCROLL_STEP_PX = 24f

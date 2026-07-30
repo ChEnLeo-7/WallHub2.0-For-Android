@@ -6,28 +6,29 @@ import kotlin.test.assertEquals
 class SteamWorkshopThumbnailCacheTest {
     @Test
     fun `parses valid https preview urls by workshop id`() {
-        val previews = parsePreviewUrls(
-            """
-            {
-              "response": {
-                "publishedfiledetails": [
-                  {
-                    "publishedfileid": "123456",
-                    "preview_url": "https://steamuserimages-a.akamaihd.net/example.jpg"
-                  },
-                  {
-                    "publishedfileid": 789012,
-                    "preview_url": "http://example.invalid/insecure.jpg"
-                  },
-                  {
-                    "publishedfileid": "invalid",
-                    "preview_url": "https://example.invalid/no-id.jpg"
+        val previews =
+            parsePreviewUrls(
+                """
+                {
+                  "response": {
+                    "publishedfiledetails": [
+                      {
+                        "publishedfileid": "123456",
+                        "preview_url": "https://steamuserimages-a.akamaihd.net/example.jpg"
+                      },
+                      {
+                        "publishedfileid": 789012,
+                        "preview_url": "http://example.invalid/insecure.jpg"
+                      },
+                      {
+                        "publishedfileid": "invalid",
+                        "preview_url": "https://example.invalid/no-id.jpg"
+                      }
+                    ]
                   }
-                ]
-              }
-            }
-            """.trimIndent(),
-        )
+                }
+                """.trimIndent(),
+            )
 
         assertEquals(
             mapOf(123456L to "https://steamuserimages-a.akamaihd.net/example.jpg"),

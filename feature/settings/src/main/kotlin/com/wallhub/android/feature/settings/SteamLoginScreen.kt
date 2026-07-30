@@ -1,3 +1,5 @@
+@file:Suppress("ktlint:standard:function-naming")
+
 package com.wallhub.android.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
@@ -20,7 +22,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,65 +30,95 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 import com.wallhub.android.core.designsystem.WallHubSecondaryButton
+import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import javax.inject.Inject
+import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+
+sealed interface SteamLoginAction {
+    data class Login(
+        val accountName: String,
+        val password: String,
+    ) : SteamLoginAction
+
+    data class SubmitCode(
+        val code: String,
+    ) : SteamLoginAction
+
+    data object UseManualCodeFallback : SteamLoginAction
+
+    data object RetryRestore : SteamLoginAction
+
+    data object Logout : SteamLoginAction
+}
 
 @HiltViewModel
-class SteamLoginViewModel @Inject constructor(
-    private val steamSessionRepository: SteamSessionRepository,
-) : ViewModel() {
-    val session: StateFlow<SteamSessionState> = steamSessionRepository.session.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = SteamSessionState(),
-    )
+class SteamLoginViewModel
+    @Inject
+    constructor(
+        private val steamSessionRepository: SteamSessionRepository,
+    ) : ViewModel() {
+        val session: StateFlow<SteamSessionState> =
+            steamSessionRepository.session.stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = SteamSessionState(),
+            )
 
-    fun login(accountName: String, password: String) {
-        steamSessionRepository.login(accountName, password)
-    }
+        fun onAction(action: SteamLoginAction) {
+            when (action) {
+                is SteamLoginAction.Login -> login(action.accountName, action.password)
+                is SteamLoginAction.SubmitCode -> submitCode(action.code)
+                SteamLoginAction.UseManualCodeFallback -> useManualCodeFallback()
+                SteamLoginAction.RetryRestore -> retryRestore()
+                SteamLoginAction.Logout -> logout()
+            }
+        }
 
-    fun submitCode(code: String) {
-        steamSessionRepository.submitSteamGuardCode(code)
-    }
+        private fun login(
+            accountName: String,
+            password: String,
+        ) {
+            steamSessionRepository.login(accountName, password)
+        }
 
-    fun useManualCodeFallback() {
-        steamSessionRepository.useManualSteamGuardFallback()
-    }
+        private fun submitCode(code: String) {
+            steamSessionRepository.submitSteamGuardCode(code)
+        }
 
-    fun retryRestore() {
-        steamSessionRepository.restorePersistedSession()
-    }
+        private fun useManualCodeFallback() {
+            steamSessionRepository.useManualSteamGuardFallback()
+        }
 
-    fun logout() {
-        steamSessionRepository.logout()
+        private fun retryRestore() {
+            steamSessionRepository.restorePersistedSession()
+        }
+
+        private fun logout() {
+            steamSessionRepository.logout()
+        }
     }
-}
 
 @Composable
 fun SteamLoginRoute(
     onBack: () -> Unit,
     viewModel: SteamLoginViewModel = hiltViewModel(),
 ) {
-    val session by viewModel.session.collectAsState()
+    val session by viewModel.session.collectAsStateWithLifecycle()
     SteamLoginScreen(
         session = session,
         onBack = onBack,
-        onLogin = viewModel::login,
-        onSubmitCode = viewModel::submitCode,
-        onUseManualCodeFallback = viewModel::useManualCodeFallback,
-        onRetryRestore = viewModel::retryRestore,
-        onLogout = viewModel::logout,
+        onAction = viewModel::onAction,
     )
 }
 
@@ -96,12 +127,15 @@ fun SteamLoginRoute(
 fun SteamLoginScreen(
     session: SteamSessionState,
     onBack: () -> Unit,
-    onLogin: (String, String) -> Unit,
-    onSubmitCode: (String) -> Unit,
-    onUseManualCodeFallback: () -> Unit,
-    onRetryRestore: () -> Unit,
-    onLogout: () -> Unit,
+    onAction: (SteamLoginAction) -> Unit,
 ) {
+    val onLogin: (String, String) -> Unit = { accountName, password ->
+        onAction(SteamLoginAction.Login(accountName, password))
+    }
+    val onSubmitCode: (String) -> Unit = { onAction(SteamLoginAction.SubmitCode(it)) }
+    val onUseManualCodeFallback: () -> Unit = { onAction(SteamLoginAction.UseManualCodeFallback) }
+    val onRetryRestore: () -> Unit = { onAction(SteamLoginAction.RetryRestore) }
+    val onLogout: () -> Unit = { onAction(SteamLoginAction.Logout) }
     var accountName by rememberSaveable { mutableStateOf(session.accountName.orEmpty()) }
     // Password intentionally is not saveable, so Android does not place it in saved instance state.
     var password by remember { mutableStateOf("") }
@@ -114,7 +148,7 @@ fun SteamLoginScreen(
             TopAppBar(
                 title = {
                     androidx.compose.foundation.layout.Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                     ) {
                         Icon(
@@ -137,21 +171,23 @@ fun SteamLoginScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 20.dp, vertical = 16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = WallHubSpacing.content, vertical = WallHubSpacing.md)
+                    .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
         ) {
             session.message?.let { message ->
                 Text(
                     text = message,
-                    color = if (uiState.isFailure) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    color =
+                        if (uiState.isFailure) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                 )
             }
             if (uiState.isBusy) {
@@ -226,7 +262,7 @@ fun SteamLoginScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(imageVector = Icons.Outlined.PhoneAndroid, contentDescription = null)
-                        Text("改用 Steam Guard 验证码", modifier = Modifier.padding(start = 8.dp))
+                        Text("改用 Steam Guard 验证码", modifier = Modifier.padding(start = WallHubSpacing.xs))
                     }
                 }
             }
@@ -258,17 +294,15 @@ fun SteamLoginScreen(
 }
 
 @Composable
-private fun SteamLoginCard(
-    content: @Composable ColumnScope.() -> Unit,
-) {
+private fun SteamLoginCard(content: @Composable ColumnScope.() -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(WallHubSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
             content = content,
         )
     }

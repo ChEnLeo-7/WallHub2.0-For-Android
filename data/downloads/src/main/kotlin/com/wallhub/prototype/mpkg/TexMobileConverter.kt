@@ -1,11 +1,10 @@
 package com.wallhub.prototype.mpkg
 
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import net.jpountz.lz4.LZ4Factory
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import net.jpountz.lz4.LZ4Factory
 import kotlin.math.min
 
 private const val TEX_FORMAT_RGBA8888 = 0
@@ -71,16 +70,18 @@ object TexMobileConverter {
     fun convertOrKeep(source: ByteArray): TexConversionResult {
         return runCatching {
             val prepared = prepare(source)
-            val texture = prepared.texture
-                ?: return TexConversionResult(source, false, prepared.reason)
+            val texture =
+                prepared.texture
+                    ?: return TexConversionResult(source, false, prepared.reason)
             TexConversionResult(
-                bytes = writeMobileRgba(
-                    flags = texture.flags,
-                    width = texture.width,
-                    height = texture.height,
-                    unknown = texture.unknown,
-                    rgba = texture.rgba,
-                ),
+                bytes =
+                    writeMobileRgba(
+                        flags = texture.flags,
+                        width = texture.width,
+                        height = texture.height,
+                        unknown = texture.unknown,
+                        rgba = texture.rgba,
+                    ),
                 converted = true,
                 reason = prepared.reason,
             )
@@ -89,11 +90,15 @@ object TexMobileConverter {
         }
     }
 
-    fun convertToFile(source: ByteArray, outputFile: File): TexFileConversionResult {
+    fun convertToFile(
+        source: ByteArray,
+        outputFile: File,
+    ): TexFileConversionResult {
         return runCatching {
             val prepared = prepare(source)
-            val texture = prepared.texture
-                ?: return TexFileConversionResult(false, prepared.reason)
+            val texture =
+                prepared.texture
+                    ?: return TexFileConversionResult(false, prepared.reason)
             writeMobileRgba(
                 outputFile = outputFile,
                 flags = texture.flags,
@@ -155,41 +160,47 @@ object TexMobileConverter {
         }
         if (tex.tailData.isNotEmpty()) return PreparedTexConversion(null, "trailing texture data")
 
-        val mipmap = tex.mipmaps.singleOrNull { mipmap ->
-            mipmap.width == tex.textureWidth && mipmap.height == tex.textureHeight
-        } ?: return PreparedTexConversion(null, "base texture mipmap is missing or ambiguous")
-        val rgba = when {
-            tex.imageFormat >= 0 -> imagePayloadToRgba(mipmap.data, tex.imageWidth, tex.imageHeight)
-            tex.format == TEX_FORMAT_RGBA8888 -> cropRgba(
-                mipmap.data,
-                mipmap.width,
-                mipmap.height,
-                tex.imageWidth,
-                tex.imageHeight,
-            )
-            tex.format in setOf(TEX_FORMAT_DXT1, TEX_FORMAT_DXT3, TEX_FORMAT_DXT5) -> cropRgba(
-                decodeDxt(mipmap.width, mipmap.height, mipmap.data, tex.format),
-                mipmap.width,
-                mipmap.height,
-                tex.imageWidth,
-                tex.imageHeight,
-            )
-            tex.format == TEX_FORMAT_R8 -> convertR8(
-                mipmap.data,
-                mipmap.width,
-                mipmap.height,
-                tex.imageWidth,
-                tex.imageHeight,
-            )
-            tex.format == TEX_FORMAT_RG88 -> convertRg88(
-                mipmap.data,
-                mipmap.width,
-                mipmap.height,
-                tex.imageWidth,
-                tex.imageHeight,
-            )
-            else -> return PreparedTexConversion(null, "unsupported TEX format ${tex.format}")
-        }
+        val mipmap =
+            tex.mipmaps.singleOrNull { mipmap ->
+                mipmap.width == tex.textureWidth && mipmap.height == tex.textureHeight
+            } ?: return PreparedTexConversion(null, "base texture mipmap is missing or ambiguous")
+        val rgba =
+            when {
+                tex.imageFormat >= 0 -> imagePayloadToRgba(mipmap.data, tex.imageWidth, tex.imageHeight)
+                tex.format == TEX_FORMAT_RGBA8888 ->
+                    cropRgba(
+                        mipmap.data,
+                        mipmap.width,
+                        mipmap.height,
+                        tex.imageWidth,
+                        tex.imageHeight,
+                    )
+                tex.format in setOf(TEX_FORMAT_DXT1, TEX_FORMAT_DXT3, TEX_FORMAT_DXT5) ->
+                    cropRgba(
+                        decodeDxt(mipmap.width, mipmap.height, mipmap.data, tex.format),
+                        mipmap.width,
+                        mipmap.height,
+                        tex.imageWidth,
+                        tex.imageHeight,
+                    )
+                tex.format == TEX_FORMAT_R8 ->
+                    convertR8(
+                        mipmap.data,
+                        mipmap.width,
+                        mipmap.height,
+                        tex.imageWidth,
+                        tex.imageHeight,
+                    )
+                tex.format == TEX_FORMAT_RG88 ->
+                    convertRg88(
+                        mipmap.data,
+                        mipmap.width,
+                        mipmap.height,
+                        tex.imageWidth,
+                        tex.imageHeight,
+                    )
+                else -> return PreparedTexConversion(null, "unsupported TEX format ${tex.format}")
+            }
         return PreparedTexConversion(
             texture = MobileRgbaTexture(tex.flags, tex.imageWidth, tex.imageHeight, tex.unknown, rgba),
             reason = "RGBA8888 + LZ4 HC3",
@@ -262,62 +273,67 @@ object TexMobileConverter {
         }
         val mipmapCount = reader.readIntLe()
         require(mipmapCount in 0..64) { "Invalid TEX mipmap count" }
-        val mipmaps = List(mipmapCount) {
-            val width = reader.readIntLe()
-            val height = reader.readIntLe()
-            require(width > 0 && height > 0) { "Invalid TEX mipmap dimensions" }
-            val isBaseMipmap = width == textureWidth && height == textureHeight
-            val expectedPayloadSize = expectedPayloadSize(format, imageFormat, width, height)
-            if (container == "TEXB0001") {
-                val size = reader.readIntLe()
-                expectedPayloadSize?.let { expected ->
-                    require(size == expected) { "TEX payload size does not match mipmap dimensions" }
-                }
-                TexMipmap(
-                    width,
-                    height,
-                    if (isBaseMipmap) reader.readBytes(size) else byteArrayOf().also { reader.skip(size) },
-                )
-            } else {
-                val compressed = reader.readIntLe() == 1
-                val decompressedSize = reader.readIntLe()
-                val storedSize = reader.readIntLe()
-                require(storedSize >= 0) { "Invalid TEX payload size" }
-                if (compressed) {
-                    require(decompressedSize > 0) { "Invalid LZ4 TEX payload size" }
-                    require(decompressedSize <= MAX_DECOMPRESSED_TEX_BYTES) {
-                        "TEX payload exceeds mobile conversion memory limit"
-                    }
+        val mipmaps =
+            List(mipmapCount) {
+                val width = reader.readIntLe()
+                val height = reader.readIntLe()
+                require(width > 0 && height > 0) { "Invalid TEX mipmap dimensions" }
+                val isBaseMipmap = width == textureWidth && height == textureHeight
+                val expectedPayloadSize = expectedPayloadSize(format, imageFormat, width, height)
+                if (container == "TEXB0001") {
+                    val size = reader.readIntLe()
                     expectedPayloadSize?.let { expected ->
-                        require(decompressedSize == expected) {
-                            "TEX payload size does not match mipmap dimensions"
-                        }
+                        require(size == expected) { "TEX payload size does not match mipmap dimensions" }
                     }
+                    TexMipmap(
+                        width,
+                        height,
+                        if (isBaseMipmap) reader.readBytes(size) else byteArrayOf().also { reader.skip(size) },
+                    )
                 } else {
-                    expectedPayloadSize?.let { expected ->
-                        require(storedSize == expected) {
-                            "TEX payload size does not match mipmap dimensions"
+                    val compressed = reader.readIntLe() == 1
+                    val decompressedSize = reader.readIntLe()
+                    val storedSize = reader.readIntLe()
+                    require(storedSize >= 0) { "Invalid TEX payload size" }
+                    if (compressed) {
+                        require(decompressedSize > 0) { "Invalid LZ4 TEX payload size" }
+                        require(decompressedSize <= MAX_DECOMPRESSED_TEX_BYTES) {
+                            "TEX payload exceeds mobile conversion memory limit"
                         }
-                    }
-                }
-                if (!isBaseMipmap) {
-                    reader.skip(storedSize)
-                    TexMipmap(width, height, byteArrayOf())
-                } else {
-                    val stored = reader.readBytes(storedSize)
-                    val payload = if (compressed) {
-                        val decoded = ByteArray(decompressedSize)
-                        val read = LZ4Factory.fastestJavaInstance().safeDecompressor()
-                            .decompress(stored, 0, stored.size, decoded, 0, decoded.size)
-                        require(read == decoded.size) { "Incomplete LZ4 TEX payload" }
-                        decoded
+                        expectedPayloadSize?.let { expected ->
+                            require(decompressedSize == expected) {
+                                "TEX payload size does not match mipmap dimensions"
+                            }
+                        }
                     } else {
-                        stored
+                        expectedPayloadSize?.let { expected ->
+                            require(storedSize == expected) {
+                                "TEX payload size does not match mipmap dimensions"
+                            }
+                        }
                     }
-                    TexMipmap(width, height, payload)
+                    if (!isBaseMipmap) {
+                        reader.skip(storedSize)
+                        TexMipmap(width, height, byteArrayOf())
+                    } else {
+                        val stored = reader.readBytes(storedSize)
+                        val payload =
+                            if (compressed) {
+                                val decoded = ByteArray(decompressedSize)
+                                val read =
+                                    LZ4Factory
+                                        .fastestJavaInstance()
+                                        .safeDecompressor()
+                                        .decompress(stored, 0, stored.size, decoded, 0, decoded.size)
+                                require(read == decoded.size) { "Incomplete LZ4 TEX payload" }
+                                decoded
+                            } else {
+                                stored
+                            }
+                        TexMipmap(width, height, payload)
+                    }
                 }
             }
-        }
         return TexFile(
             format = format,
             flags = flags,
@@ -333,9 +349,14 @@ object TexMobileConverter {
         )
     }
 
-    private fun imagePayloadToRgba(payload: ByteArray, targetWidth: Int, targetHeight: Int): ByteArray {
-        val bitmap = BitmapFactory.decodeByteArray(payload, 0, payload.size)
-            ?: error("Unsupported image-backed TEX payload")
+    private fun imagePayloadToRgba(
+        payload: ByteArray,
+        targetWidth: Int,
+        targetHeight: Int,
+    ): ByteArray {
+        val bitmap =
+            BitmapFactory.decodeByteArray(payload, 0, payload.size)
+                ?: error("Unsupported image-backed TEX payload")
         require(bitmap.width == targetWidth && bitmap.height == targetHeight) {
             "Image-backed TEX dimensions do not match metadata"
         }
@@ -426,7 +447,12 @@ object TexMobileConverter {
         return cropRgba(output, sourceWidth, sourceHeight, targetWidth, targetHeight)
     }
 
-    private fun decodeDxt(width: Int, height: Int, source: ByteArray, format: Int): ByteArray {
+    private fun decodeDxt(
+        width: Int,
+        height: Int,
+        source: ByteArray,
+        format: Int,
+    ): ByteArray {
         val blockSize = if (format == TEX_FORMAT_DXT1) 8 else 16
         val expectedSize = ((width + 3L) / 4L) * ((height + 3L) / 4L) * blockSize
         require(expectedSize <= Int.MAX_VALUE && source.size == expectedSize.toInt()) {
@@ -438,11 +464,12 @@ object TexMobileConverter {
             for (blockX in 0 until width step 4) {
                 val colorOffset = if (format == TEX_FORMAT_DXT1) offset else offset + 8
                 val colors = decodeDxtColors(source, colorOffset, format == TEX_FORMAT_DXT1)
-                val alpha = when (format) {
-                    TEX_FORMAT_DXT3 -> decodeDxt3Alpha(source, offset)
-                    TEX_FORMAT_DXT5 -> decodeDxt5Alpha(source, offset)
-                    else -> IntArray(16) { index -> (colors[index] ushr 24) and 0xff }
-                }
+                val alpha =
+                    when (format) {
+                        TEX_FORMAT_DXT3 -> decodeDxt3Alpha(source, offset)
+                        TEX_FORMAT_DXT5 -> decodeDxt5Alpha(source, offset)
+                        else -> IntArray(16) { index -> (colors[index] ushr 24) and 0xff }
+                    }
                 repeat(4) { pixelY ->
                     repeat(4) { pixelX ->
                         val x = blockX + pixelX
@@ -462,13 +489,22 @@ object TexMobileConverter {
         return output
     }
 
-    private fun checkedPayloadSize(width: Int, height: Int, bytesPerPixel: Int): Int {
+    private fun checkedPayloadSize(
+        width: Int,
+        height: Int,
+        bytesPerPixel: Int,
+    ): Int {
         val size = width.toLong() * height.toLong() * bytesPerPixel
         require(size in 1..Int.MAX_VALUE.toLong()) { "TEX payload dimensions are too large" }
         return size.toInt()
     }
 
-    private fun expectedPayloadSize(format: Int, imageFormat: Int, width: Int, height: Int): Int? {
+    private fun expectedPayloadSize(
+        format: Int,
+        imageFormat: Int,
+        width: Int,
+        height: Int,
+    ): Int? {
         if (imageFormat >= 0) return null
         return when (format) {
             TEX_FORMAT_RGBA8888 -> checkedPayloadSize(width, height, 4)
@@ -480,20 +516,30 @@ object TexMobileConverter {
         }
     }
 
-    private fun checkedDxtPayloadSize(width: Int, height: Int, blockSize: Int): Int {
+    private fun checkedDxtPayloadSize(
+        width: Int,
+        height: Int,
+        blockSize: Int,
+    ): Int {
         val size = ((width + 3L) / 4L) * ((height + 3L) / 4L) * blockSize
         require(size in 1..Int.MAX_VALUE.toLong()) { "TEX payload dimensions are too large" }
         return size.toInt()
     }
 
-    private fun ByteArray.writeCString(offset: Int, value: String): Int {
+    private fun ByteArray.writeCString(
+        offset: Int,
+        value: String,
+    ): Int {
         val bytes = value.toByteArray(Charsets.US_ASCII)
         bytes.copyInto(this, destinationOffset = offset)
         this[offset + bytes.size] = 0
         return offset + bytes.size + 1
     }
 
-    private fun ByteArray.writeIntLe(offset: Int, value: Int): Int {
+    private fun ByteArray.writeIntLe(
+        offset: Int,
+        value: Int,
+    ): Int {
         this[offset] = value.toByte()
         this[offset + 1] = (value ushr 8).toByte()
         this[offset + 2] = (value ushr 16).toByte()
@@ -501,7 +547,11 @@ object TexMobileConverter {
         return offset + 4
     }
 
-    private fun decodeDxtColors(source: ByteArray, offset: Int, isDxt1: Boolean): IntArray {
+    private fun decodeDxtColors(
+        source: ByteArray,
+        offset: Int,
+        isDxt1: Boolean,
+    ): IntArray {
         val color0 = readU16Le(source, offset)
         val color1 = readU16Le(source, offset + 2)
         val palette = IntArray(4)
@@ -524,15 +574,20 @@ object TexMobileConverter {
         return IntArray(16) { index -> palette[((indices ushr (index * 2)) and 0x3).toInt()] }
     }
 
-    private fun decodeDxt3Alpha(source: ByteArray, offset: Int): IntArray {
-        return IntArray(16) { index ->
+    private fun decodeDxt3Alpha(
+        source: ByteArray,
+        offset: Int,
+    ): IntArray =
+        IntArray(16) { index ->
             val value = source[offset + index / 2].toInt() and 0xff
             val nibble = if (index % 2 == 0) value and 0x0f else value ushr 4
             (nibble shl 4) or nibble
         }
-    }
 
-    private fun decodeDxt5Alpha(source: ByteArray, offset: Int): IntArray {
+    private fun decodeDxt5Alpha(
+        source: ByteArray,
+        offset: Int,
+    ): IntArray {
         val first = source[offset].toInt() and 0xff
         val second = source[offset + 1].toInt() and 0xff
         val palette = IntArray(8)
@@ -550,27 +605,36 @@ object TexMobileConverter {
         return IntArray(16) { index -> palette[((bits ushr (index * 3)) and 0x7L).toInt()] }
     }
 
-    private fun readU16Le(source: ByteArray, offset: Int): Int {
-        return (source[offset].toInt() and 0xff) or ((source[offset + 1].toInt() and 0xff) shl 8)
-    }
+    private fun readU16Le(
+        source: ByteArray,
+        offset: Int,
+    ): Int = (source[offset].toInt() and 0xff) or ((source[offset + 1].toInt() and 0xff) shl 8)
 
-    private fun readU32Le(source: ByteArray, offset: Int): Long {
-        return (source[offset].toLong() and 0xffL) or
+    private fun readU32Le(
+        source: ByteArray,
+        offset: Int,
+    ): Long =
+        (source[offset].toLong() and 0xffL) or
             ((source[offset + 1].toLong() and 0xffL) shl 8) or
             ((source[offset + 2].toLong() and 0xffL) shl 16) or
             ((source[offset + 3].toLong() and 0xffL) shl 24)
-    }
 
-    private fun rgb565(value: Int, alpha: Int): Int {
+    private fun rgb565(
+        value: Int,
+        alpha: Int,
+    ): Int {
         val red = ((value ushr 11) and 0x1f) * 255 / 31
         val green = ((value ushr 5) and 0x3f) * 255 / 63
         val blue = (value and 0x1f) * 255 / 31
         return argb(alpha, red, green, blue)
     }
 
-    private fun argb(alpha: Int, red: Int, green: Int, blue: Int): Int {
-        return (alpha shl 24) or (red shl 16) or (green shl 8) or blue
-    }
+    private fun argb(
+        alpha: Int,
+        red: Int,
+        green: Int,
+        blue: Int,
+    ): Int = (alpha shl 24) or (red shl 16) or (green shl 8) or blue
 }
 
 private const val MOBILE_TEX_HEADER_SIZE = 91

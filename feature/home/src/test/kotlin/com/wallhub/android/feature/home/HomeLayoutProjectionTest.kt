@@ -3,6 +3,7 @@ package com.wallhub.android.feature.home
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntSize
+import org.junit.Test
 import kotlin.math.abs
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -11,7 +12,6 @@ import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
-import org.junit.Test
 
 class HomeLayoutProjectionTest {
     private val easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
@@ -81,18 +81,20 @@ class HomeLayoutProjectionTest {
     fun `layout switch card without source bounds uses edge entry projection`() {
         val grid = HomeCardLayoutKey.resolve(HomeViewMode.GRID, 2)
         val list = HomeCardLayoutKey.resolve(HomeViewMode.LIST, 2)
-        val transaction = HomeLayoutTransaction(
-            epoch = 1L,
-            requestId = 1L,
-            sourceKey = grid,
-            targetKey = list,
-        )
+        val transaction =
+            HomeLayoutTransaction(
+                epoch = 1L,
+                requestId = 1L,
+                sourceKey = grid,
+                targetKey = list,
+            )
         val sourceBounds = HomeCardProjectionParticipant.entries.associateWith { null }
-        val stage = HomeCardProjectionGroupState().beginStage(
-            transaction = transaction,
-            sourceBounds = sourceBounds,
-            edgeEntryEnabled = true,
-        )
+        val stage =
+            HomeCardProjectionGroupState().beginStage(
+                transaction = transaction,
+                sourceBounds = sourceBounds,
+                edgeEntryEnabled = true,
+            )
         val targetBounds = bounds(16f, 620f, 360, 104)
 
         assertTrue(stage.edgeEntryRequired)
@@ -123,25 +125,29 @@ class HomeLayoutProjectionTest {
         val list = HomeCardLayoutKey.resolve(HomeViewMode.LIST, 2)
         val sourceCard = bounds(16f, 420f, 180, 264)
         val targetCard = bounds(16f, 420f, 360, 104)
-        val sourceBounds = HomeCardProjectionParticipant.entries.associateWith { participant ->
-            sourceCard.takeIf { participant == HomeCardProjectionParticipant.CARD }
-        }
-        val stage = HomeCardProjectionGroupState().beginStage(
-            transaction = HomeLayoutTransaction(
-                epoch = 1L,
-                requestId = 1L,
-                sourceKey = grid,
-                targetKey = list,
-            ),
-            sourceBounds = sourceBounds,
-            edgeEntryEnabled = true,
-        )
-        val transform = calculateHomeCardInitialProjection(
-            sourceBounds = sourceCard,
-            sourceTransform = HomeCardLayoutTransform.Identity,
-            targetBounds = targetCard,
-            edgeEntryRequired = stage.edgeEntryRequired,
-        )
+        val sourceBounds =
+            HomeCardProjectionParticipant.entries.associateWith { participant ->
+                sourceCard.takeIf { participant == HomeCardProjectionParticipant.CARD }
+            }
+        val stage =
+            HomeCardProjectionGroupState().beginStage(
+                transaction =
+                    HomeLayoutTransaction(
+                        epoch = 1L,
+                        requestId = 1L,
+                        sourceKey = grid,
+                        targetKey = list,
+                    ),
+                sourceBounds = sourceBounds,
+                edgeEntryEnabled = true,
+            )
+        val transform =
+            calculateHomeCardInitialProjection(
+                sourceBounds = sourceCard,
+                sourceTransform = HomeCardLayoutTransform.Identity,
+                targetBounds = targetCard,
+                edgeEntryRequired = stage.edgeEntryRequired,
+            )
 
         assertFalse(stage.edgeEntryRequired)
         assertClose(1f, stage.sourceCardAlpha)
@@ -156,13 +162,14 @@ class HomeLayoutProjectionTest {
         val group = HomeCardProjectionGroupState()
         val originalRun = group.activeRun
         val stage = beginStage(group, epoch = 1L, requestId = 1L)
-        val order = listOf(
-            HomeCardProjectionParticipant.TAG,
-            HomeCardProjectionParticipant.ACTION,
-            HomeCardProjectionParticipant.CARD,
-            HomeCardProjectionParticipant.CONTENT,
-            HomeCardProjectionParticipant.MEDIA,
-        )
+        val order =
+            listOf(
+                HomeCardProjectionParticipant.TAG,
+                HomeCardProjectionParticipant.ACTION,
+                HomeCardProjectionParticipant.CARD,
+                HomeCardProjectionParticipant.CONTENT,
+                HomeCardProjectionParticipant.MEDIA,
+            )
         val expectedTransforms = participantTransforms(40f)
 
         order.dropLast(1).forEach { participant ->
@@ -342,11 +349,12 @@ class HomeLayoutProjectionTest {
         val key3 = HomeCardLayoutKey.resolve(HomeViewMode.GRID, 3)
         val key4 = HomeCardLayoutKey.resolve(HomeViewMode.GRID, 4)
         val state = HomeLayoutTransactionState(key2)
-        val layouts = listOf(
-            bounds(16f, 294f, 180, 264),
-            bounds(258f, 190f, 113, 202),
-            bounds(292f, 138f, 82, 174),
-        )
+        val layouts =
+            listOf(
+                bounds(16f, 294f, 180, 264),
+                bounds(258f, 190f, 113, 202),
+                bounds(292f, 138f, 82, 174),
+            )
         var activeTarget = layouts.first()
         var activeTransform = HomeCardLayoutTransform.Identity
 
@@ -368,16 +376,18 @@ class HomeLayoutProjectionTest {
 
         val sourceMedia = bounds(16f, 50f, 180, 180)
         val targetMedia = bounds(16f, 50f, 104, 104)
-        val visibleMedia = sourceMedia.projectWithinCard(
-            cardBounds = sourceCard,
-            visibleCardBounds = visibleCard,
-            transform = HomeCardLayoutTransform.Identity,
-        )
-        val mediaTransform = targetMedia.inverseUniformScaleProjectionWithinCard(
-            cardBounds = targetCard,
-            visibleCardBounds = visibleCard,
-            targetVisibleBounds = visibleMedia,
-        )
+        val visibleMedia =
+            sourceMedia.projectWithinCard(
+                cardBounds = sourceCard,
+                visibleCardBounds = visibleCard,
+                transform = HomeCardLayoutTransform.Identity,
+            )
+        val mediaTransform =
+            targetMedia.inverseUniformScaleProjectionWithinCard(
+                cardBounds = targetCard,
+                visibleCardBounds = visibleCard,
+                targetVisibleBounds = visibleMedia,
+            )
         assertVisualBoundsClose(
             visibleMedia,
             targetMedia.projectWithinCard(targetCard, visibleCard, mediaTransform),
@@ -385,31 +395,35 @@ class HomeLayoutProjectionTest {
 
         val sourceContent = bounds(26f, 240f, 160, 54)
         val targetContent = bounds(132f, 58f, 184, 54)
-        val visibleContent = sourceContent.projectWithinCard(
-            sourceCard,
-            visibleCard,
-            HomeCardLayoutTransform.Identity,
-        )
-        val contentTransform = targetContent.inversePositionProjectionWithinCard(
-            targetCard,
-            visibleCard,
-            visibleContent,
-        )
+        val visibleContent =
+            sourceContent.projectWithinCard(
+                sourceCard,
+                visibleCard,
+                HomeCardLayoutTransform.Identity,
+            )
+        val contentTransform =
+            targetContent.inversePositionProjectionWithinCard(
+                targetCard,
+                visibleCard,
+                visibleContent,
+            )
         val projectedContent = targetContent.projectWithinCard(targetCard, visibleCard, contentTransform)
         assertOffsetClose(visibleContent.position, projectedContent.position)
 
         val sourceAction = bounds(26f, 304f, 160, 40)
         val targetAction = bounds(326f, 82f, 40, 40)
-        val visibleAction = sourceAction.projectWithinCard(
-            sourceCard,
-            visibleCard,
-            HomeCardLayoutTransform.Identity,
-        )
-        val actionTransform = targetAction.inverseScaleProjectionWithinCard(
-            targetCard,
-            visibleCard,
-            visibleAction,
-        )
+        val visibleAction =
+            sourceAction.projectWithinCard(
+                sourceCard,
+                visibleCard,
+                HomeCardLayoutTransform.Identity,
+            )
+        val actionTransform =
+            targetAction.inverseScaleProjectionWithinCard(
+                targetCard,
+                visibleCard,
+                visibleAction,
+            )
         assertVisualBoundsClose(
             visibleAction,
             targetAction.projectWithinCard(targetCard, visibleCard, actionTransform),
@@ -423,22 +437,25 @@ class HomeLayoutProjectionTest {
         val sourceTagTransform = HomeCardLayoutTransform(2f, 3f, 0.9f, 0.9f)
         val sourceMediaTransform = HomeCardLayoutTransform(0f, 0f, 0.76f, 0.76f)
         val initialMediaTransform = HomeCardLayoutTransform(0f, 0f, 1.18f, 1.18f)
-        val projected = calculateHomeTagProjection(
-            sourceBounds,
-            targetBounds,
-            sourceTagTransform,
-            sourceMediaTransform,
-            initialMediaTransform,
-        )
+        val projected =
+            calculateHomeTagProjection(
+                sourceBounds,
+                targetBounds,
+                sourceTagTransform,
+                sourceMediaTransform,
+                initialMediaTransform,
+            )
 
-        val sourceOffset = Offset(
-            (sourceBounds.position.x + sourceTagTransform.translationX) * sourceMediaTransform.scaleX,
-            (sourceBounds.position.y + sourceTagTransform.translationY) * sourceMediaTransform.scaleY,
-        )
-        val targetOffset = Offset(
-            (targetBounds.position.x + projected.translationX) * initialMediaTransform.scaleX,
-            (targetBounds.position.y + projected.translationY) * initialMediaTransform.scaleY,
-        )
+        val sourceOffset =
+            Offset(
+                (sourceBounds.position.x + sourceTagTransform.translationX) * sourceMediaTransform.scaleX,
+                (sourceBounds.position.y + sourceTagTransform.translationY) * sourceMediaTransform.scaleY,
+            )
+        val targetOffset =
+            Offset(
+                (targetBounds.position.x + projected.translationX) * initialMediaTransform.scaleX,
+                (targetBounds.position.y + projected.translationY) * initialMediaTransform.scaleY,
+            )
         assertOffsetClose(sourceOffset, targetOffset)
         assertClose(
             sourceBounds.size.width * sourceTagTransform.scaleX,
@@ -461,66 +478,89 @@ class HomeLayoutProjectionTest {
         group: HomeCardProjectionGroupState,
         epoch: Long,
         requestId: Long,
-    ): HomeCardProjectionGroupStage = group.beginStage(
-        transaction = HomeLayoutTransaction(
-            epoch = epoch,
-            requestId = requestId,
-            sourceKey = HomeCardLayoutKey.resolve(HomeViewMode.GRID, 2),
-            targetKey = HomeCardLayoutKey.resolve(HomeViewMode.LIST, 2),
-        ),
-        sourceBounds = HomeCardProjectionParticipant.entries.associateWith { null },
-    )
+    ): HomeCardProjectionGroupStage =
+        group.beginStage(
+            transaction =
+                HomeLayoutTransaction(
+                    epoch = epoch,
+                    requestId = requestId,
+                    sourceKey = HomeCardLayoutKey.resolve(HomeViewMode.GRID, 2),
+                    targetKey = HomeCardLayoutKey.resolve(HomeViewMode.LIST, 2),
+                ),
+            sourceBounds = HomeCardProjectionParticipant.entries.associateWith { null },
+        )
 
     private fun participantTransforms(seed: Float): HomeCardProjectionTransforms {
         var transforms = HomeCardProjectionTransforms.Identity
         HomeCardProjectionParticipant.entries.forEachIndexed { index, participant ->
-            transforms = transforms.with(
-                participant,
-                HomeCardLayoutTransform(
-                    translationX = seed + index * 11f,
-                    translationY = -seed / 2f + index * 7f,
-                    scaleX = 0.62f + index * 0.07f,
-                    scaleY = 1.28f - index * 0.06f,
-                ),
-            )
+            transforms =
+                transforms.with(
+                    participant,
+                    HomeCardLayoutTransform(
+                        translationX = seed + index * 11f,
+                        translationY = -seed / 2f + index * 7f,
+                        scaleX = 0.62f + index * 0.07f,
+                        scaleY = 1.28f - index * 0.06f,
+                    ),
+                )
         }
         return transforms
     }
 
-    private fun bounds(x: Float, y: Float, width: Int, height: Int): HomeCardBounds = HomeCardBounds(
-        position = Offset(x, y),
-        size = IntSize(width, height),
-    )
+    private fun bounds(
+        x: Float,
+        y: Float,
+        width: Int,
+        height: Int,
+    ): HomeCardBounds =
+        HomeCardBounds(
+            position = Offset(x, y),
+            size = IntSize(width, height),
+        )
 
     private fun inverseCardProjection(
         presented: HomeCardVisualBounds,
         target: HomeCardBounds,
-    ): HomeCardLayoutTransform = HomeCardLayoutTransform(
-        translationX = presented.position.x - target.position.x,
-        translationY = presented.position.y - target.position.y,
-        scaleX = presented.width / target.size.width,
-        scaleY = presented.height / target.size.height,
-    )
+    ): HomeCardLayoutTransform =
+        HomeCardLayoutTransform(
+            translationX = presented.position.x - target.position.x,
+            translationY = presented.position.y - target.position.y,
+            scaleX = presented.width / target.size.width,
+            scaleY = presented.height / target.size.height,
+        )
 
-    private fun assertVisualBoundsClose(expected: HomeCardVisualBounds, actual: HomeCardVisualBounds) {
+    private fun assertVisualBoundsClose(
+        expected: HomeCardVisualBounds,
+        actual: HomeCardVisualBounds,
+    ) {
         assertOffsetClose(expected.position, actual.position)
         assertClose(expected.width, actual.width)
         assertClose(expected.height, actual.height)
     }
 
-    private fun assertTransformClose(expected: HomeCardLayoutTransform, actual: HomeCardLayoutTransform) {
+    private fun assertTransformClose(
+        expected: HomeCardLayoutTransform,
+        actual: HomeCardLayoutTransform,
+    ) {
         assertClose(expected.translationX, actual.translationX)
         assertClose(expected.translationY, actual.translationY)
         assertClose(expected.scaleX, actual.scaleX)
         assertClose(expected.scaleY, actual.scaleY)
     }
 
-    private fun assertOffsetClose(expected: Offset, actual: Offset) {
+    private fun assertOffsetClose(
+        expected: Offset,
+        actual: Offset,
+    ) {
         assertClose(expected.x, actual.x)
         assertClose(expected.y, actual.y)
     }
 
-    private fun assertClose(expected: Float, actual: Float, tolerance: Float = 0.001f) {
+    private fun assertClose(
+        expected: Float,
+        actual: Float,
+        tolerance: Float = 0.001f,
+    ) {
         assertTrue(
             abs(expected - actual) <= tolerance,
             "Expected $expected, actual $actual, tolerance $tolerance",

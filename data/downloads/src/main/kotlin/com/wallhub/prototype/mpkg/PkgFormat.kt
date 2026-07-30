@@ -47,12 +47,13 @@ object PkgReader {
                 relativeIndex += IndexedPkgEntry(path, offset, length)
             }
             val dataStart = input.filePointer
-            val index = relativeIndex.map { entry ->
-                require(dataStart + entry.offset + entry.length <= input.length()) {
-                    "PKG entry range exceeds file: ${entry.path}"
+            val index =
+                relativeIndex.map { entry ->
+                    require(dataStart + entry.offset + entry.length <= input.length()) {
+                        "PKG entry range exceeds file: ${entry.path}"
+                    }
+                    entry.copy(offset = dataStart + entry.offset)
                 }
-                entry.copy(offset = dataStart + entry.offset)
-            }
             return PkgArchive(file, index)
         }
     }
@@ -60,14 +61,18 @@ object PkgReader {
 
 /** Used only by the on-device and JVM conversion self-tests. */
 object PkgTestWriter {
-    fun write(file: File, entries: List<PkgEntry>) {
+    fun write(
+        file: File,
+        entries: List<PkgEntry>,
+    ) {
         var offset = 0L
-        val normalized = entries.map { entry ->
-            val path = MpkgWriter.normalizePath(entry.path)
-            val item = Triple(path, entry.bytes, offset)
-            offset += entry.bytes.size.toLong()
-            item
-        }
+        val normalized =
+            entries.map { entry ->
+                val path = MpkgWriter.normalizePath(entry.path)
+                val item = Triple(path, entry.bytes, offset)
+                offset += entry.bytes.size.toLong()
+                item
+            }
         file.parentFile?.mkdirs()
         BufferedOutputStream(FileOutputStream(file)).use { output ->
             output.writeLengthString("PKGV0001")

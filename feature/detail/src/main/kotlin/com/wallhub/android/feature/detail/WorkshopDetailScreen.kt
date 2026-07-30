@@ -1,3 +1,5 @@
+@file:Suppress("ktlint:standard:function-naming")
+
 package com.wallhub.android.feature.detail
 
 import android.Manifest
@@ -5,6 +7,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
@@ -19,51 +24,54 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.layout.AnimatedPane
+import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldRole
+import androidx.compose.material3.adaptive.layout.ThreePaneScaffoldDestinationItem
+import androidx.compose.material3.adaptive.navigation.NavigableListDetailPaneScaffold
+import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -74,9 +82,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -84,79 +89,91 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
+import com.wallhub.android.core.designsystem.LocalWallHubLanguage
+import com.wallhub.android.core.designsystem.LocalWallHubToastState
+import com.wallhub.android.core.designsystem.WallHubColorTokens
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubFabActiveElevation
 import com.wallhub.android.core.designsystem.WallHubFabDefaultElevation
-import com.wallhub.android.core.designsystem.LocalWallHubLanguage
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubPrimaryAction
 import com.wallhub.android.core.designsystem.WallHubSecondaryButton
+import com.wallhub.android.core.designsystem.WallHubShapeTokens
+import com.wallhub.android.core.designsystem.WallHubSizeTokens
+import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
 import com.wallhub.android.core.designsystem.WallHubToastHost
 import com.wallhub.android.core.designsystem.formatMegabytes
+import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
 import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.model.DownloadRequest
+import com.wallhub.android.core.model.AccountWorkshopRepository
+import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.DownloadAction
+import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTaskRepository
 import com.wallhub.android.core.model.ExportFormat
-import com.wallhub.android.core.model.SettingsRepository
-import com.wallhub.android.core.model.AccountWorkshopRepository
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.FavoriteState
-import com.wallhub.android.core.model.SubscriptionState
+import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
+import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.WORKSHOP_COMMENT_MAX_LENGTH
-import com.wallhub.android.core.model.WorkshopInteraction
 import com.wallhub.android.core.model.WorkshopComment
 import com.wallhub.android.core.model.WorkshopDetail
+import com.wallhub.android.core.model.WorkshopInteraction
 import com.wallhub.android.core.model.WorkshopRepository
+import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamSession
-import com.wallhub.android.core.model.requiresLegacyPublicDownloadPermission
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
-import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import javax.inject.Inject
 import kotlin.math.roundToInt
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
+import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 data class WorkshopDetailUiState(
     val detail: WorkshopDetail? = null,
@@ -175,7 +192,6 @@ data class WorkshopDetailUiState(
     val localVideoTaskId: String? = null,
     val activeVideoTaskId: String? = null,
     val waitingForLocalVideoPlayback: Boolean = false,
-    val pendingLocalVideoPlaybackTaskId: String? = null,
     val stagedTaskId: String? = null,
     val comments: List<WorkshopComment> = emptyList(),
     val commentsTotal: Int? = null,
@@ -196,497 +212,633 @@ data class WorkshopDetailUiState(
     val inlineVideoError: String? = null,
 )
 
+sealed interface WorkshopDetailPendingOperation {
+    data object Download : WorkshopDetailPendingOperation
+
+    data object LocalVideoPlayback : WorkshopDetailPendingOperation
+
+    data class ConvertExisting(
+        val format: ExportFormat,
+    ) : WorkshopDetailPendingOperation
+}
+
+sealed interface WorkshopDetailAction {
+    data class RequestOperation(
+        val operation: WorkshopDetailPendingOperation,
+    ) : WorkshopDetailAction
+
+    data class LegacyStoragePermissionResult(
+        val operation: WorkshopDetailPendingOperation,
+        val granted: Boolean,
+    ) : WorkshopDetailAction
+
+    data object Back : WorkshopDetailAction
+
+    data class SearchAuthor(
+        val author: String,
+    ) : WorkshopDetailAction
+
+    data class CopyText(
+        val text: String,
+        val message: String,
+    ) : WorkshopDetailAction
+
+    data class OpenSteam(
+        val workshopId: Long,
+    ) : WorkshopDetailAction
+
+    data class ShowMessage(
+        val message: String,
+    ) : WorkshopDetailAction
+}
+
+sealed interface WorkshopDetailEffect {
+    data class ResolveLegacyStoragePermission(
+        val operation: WorkshopDetailPendingOperation,
+    ) : WorkshopDetailEffect
+
+    data object Back : WorkshopDetailEffect
+
+    data class SearchAuthor(
+        val author: String,
+    ) : WorkshopDetailEffect
+
+    data class CopyText(
+        val text: String,
+        val message: String,
+    ) : WorkshopDetailEffect
+
+    data class OpenSteam(
+        val workshopId: Long,
+    ) : WorkshopDetailEffect
+
+    data class OpenLocalVideo(
+        val taskId: String,
+    ) : WorkshopDetailEffect
+
+    data class ShowMessage(
+        val message: String,
+    ) : WorkshopDetailEffect
+}
+
 @HiltViewModel
-class WorkshopDetailViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
-    @ApplicationContext private val applicationContext: Context,
-    private val workshopRepository: WorkshopRepository,
-    private val accountWorkshopRepository: AccountWorkshopRepository,
-    private val steamSessionRepository: SteamSessionRepository,
-    private val downloadTaskRepository: DownloadTaskRepository,
-    private val settingsRepository: SettingsRepository,
-    private val videoStreamRepository: WorkshopVideoStreamRepository,
-) : ViewModel() {
-    private val workshopId = checkNotNull(savedStateHandle.get<Long>("workshopId"))
-    private val mutableState = MutableStateFlow(WorkshopDetailUiState())
-    private var inlineVideoLoadJob: Job? = null
-    private var commentsLoadJob: Job? = null
+class WorkshopDetailViewModel
+    @Inject
+    constructor(
+        savedStateHandle: SavedStateHandle,
+        @ApplicationContext private val applicationContext: Context,
+        private val workshopRepository: WorkshopRepository,
+        private val accountWorkshopRepository: AccountWorkshopRepository,
+        private val steamSessionRepository: SteamSessionRepository,
+        private val downloadTaskRepository: DownloadTaskRepository,
+        private val settingsRepository: SettingsRepository,
+        private val videoStreamRepository: WorkshopVideoStreamRepository,
+    ) : ViewModel() {
+        private val workshopId = checkNotNull(savedStateHandle.get<Long>("workshopId"))
+        private val mutableState = MutableStateFlow(WorkshopDetailUiState())
+        private val effectChannel = Channel<WorkshopDetailEffect>(capacity = Channel.BUFFERED)
+        private var inlineVideoLoadJob: Job? = null
+        private var commentsLoadJob: Job? = null
 
-    val uiState: StateFlow<WorkshopDetailUiState> = mutableState.asStateFlow()
+        val uiState: StateFlow<WorkshopDetailUiState> = mutableState.asStateFlow()
+        val effects: Flow<WorkshopDetailEffect> = effectChannel.receiveAsFlow()
 
-    init {
-        viewModelScope.launch {
-            steamSessionRepository.session.collect { session ->
-                mutableState.value = mutableState.value.copy(
-                    steamSession = session,
-                    isPostingComment = if (session.phase == SteamSessionPhase.SIGNED_IN) {
-                        mutableState.value.isPostingComment
+        fun onAction(action: WorkshopDetailAction) {
+            action.immediateEffect()?.let(::emitEffect) ?: when (action) {
+                is WorkshopDetailAction.LegacyStoragePermissionResult -> {
+                    if (action.granted) {
+                        executePendingOperation(action.operation)
                     } else {
-                        false
-                    },
-                )
+                        emitEffect(
+                            WorkshopDetailEffect.ShowMessage(
+                                "未授予存储权限，无法导出到 Download/WallHub",
+                            ),
+                        )
+                    }
+                }
+                else -> Unit
             }
         }
-        viewModelScope.launch {
-            settingsRepository.preferences.collect { preferences ->
-                mutableState.value = mutableState.value.copy(
-                    outputTreeUri = preferences.outputTreeUri,
-                    outputDirectoryLabel = preferences.outputDirectoryLabel,
-                    onlineChunkPlaybackEnabled = preferences.onlineChunkPlaybackEnabled,
-                )
+
+        private fun executePendingOperation(operation: WorkshopDetailPendingOperation) {
+            when (operation) {
+                WorkshopDetailPendingOperation.Download -> enqueueDownload()
+                WorkshopDetailPendingOperation.LocalVideoPlayback -> requestLocalVideoPlayback()
+                is WorkshopDetailPendingOperation.ConvertExisting -> convertExistingDownload(operation.format)
             }
         }
-        viewModelScope.launch {
-            downloadTaskRepository.tasks.collect { tasks ->
-                val localVideoTask = tasks.firstOrNull { task ->
-                    task.workshopId == workshopId &&
-                        task.type == WorkshopType.VIDEO &&
-                        task.status == DownloadStatus.COMPLETED &&
-                        !task.stagingDirectory.isNullOrBlank()
-                }
-                val stagedTask = tasks.firstOrNull { task ->
-                    task.workshopId == workshopId &&
-                        task.status == DownloadStatus.COMPLETED &&
-                        !task.stagingDirectory.isNullOrBlank() &&
-                        task.outputUri == null
-                }
-                val activeVideoTask = tasks.firstOrNull { task ->
-                    task.workshopId == workshopId &&
-                        task.type == WorkshopType.VIDEO &&
-                        task.status !in setOf(
-                            DownloadStatus.COMPLETED,
-                            DownloadStatus.FAILED,
-                            DownloadStatus.CANCELLED,
+
+        private fun emitEffect(effect: WorkshopDetailEffect) {
+            effectChannel.trySend(effect)
+        }
+
+        init {
+            viewModelScope.launch {
+                steamSessionRepository.session.collect { session ->
+                    mutableState.value =
+                        mutableState.value.copy(
+                            steamSession = session,
+                            isPostingComment =
+                                if (session.phase == SteamSessionPhase.SIGNED_IN) {
+                                    mutableState.value.isPostingComment
+                                } else {
+                                    false
+                                },
                         )
                 }
-                val current = mutableState.value
-                val shouldOpenLocalVideo =
-                    current.waitingForLocalVideoPlayback && localVideoTask != null
-                mutableState.value = current.copy(
-                    localVideoTaskId = localVideoTask?.id,
-                    activeVideoTaskId = activeVideoTask?.id,
-                    stagedTaskId = stagedTask?.id,
-                    waitingForLocalVideoPlayback = if (shouldOpenLocalVideo) false else {
-                        current.waitingForLocalVideoPlayback
-                    },
-                    pendingLocalVideoPlaybackTaskId = if (shouldOpenLocalVideo) {
-                        localVideoTask.id
-                    } else {
-                        current.pendingLocalVideoPlaybackTaskId
-                    },
-                )
+            }
+            viewModelScope.launch {
+                settingsRepository.preferences.collect { preferences ->
+                    mutableState.value =
+                        mutableState.value.copy(
+                            outputTreeUri = preferences.outputTreeUri,
+                            outputDirectoryLabel = preferences.outputDirectoryLabel,
+                            onlineChunkPlaybackEnabled = preferences.onlineChunkPlaybackEnabled,
+                        )
+                }
+            }
+            viewModelScope.launch {
+                downloadTaskRepository.tasks.collect { tasks ->
+                    val localVideoTask =
+                        tasks.firstOrNull { task ->
+                            task.workshopId == workshopId &&
+                                task.type == WorkshopType.VIDEO &&
+                                task.status == DownloadStatus.COMPLETED &&
+                                !task.stagingDirectory.isNullOrBlank()
+                        }
+                    val stagedTask =
+                        tasks.firstOrNull { task ->
+                            task.workshopId == workshopId &&
+                                task.status == DownloadStatus.COMPLETED &&
+                                !task.stagingDirectory.isNullOrBlank() &&
+                                task.outputUri == null
+                        }
+                    val activeVideoTask =
+                        tasks.firstOrNull { task ->
+                            task.workshopId == workshopId &&
+                                task.type == WorkshopType.VIDEO &&
+                                task.status !in
+                                setOf(
+                                    DownloadStatus.COMPLETED,
+                                    DownloadStatus.FAILED,
+                                    DownloadStatus.CANCELLED,
+                                )
+                        }
+                    val current = mutableState.value
+                    val shouldOpenLocalVideo =
+                        current.waitingForLocalVideoPlayback && localVideoTask != null
+                    mutableState.value =
+                        current.copy(
+                            localVideoTaskId = localVideoTask?.id,
+                            activeVideoTaskId = activeVideoTask?.id,
+                            stagedTaskId = stagedTask?.id,
+                            waitingForLocalVideoPlayback =
+                                if (shouldOpenLocalVideo) {
+                                    false
+                                } else {
+                                    current.waitingForLocalVideoPlayback
+                                },
+                        )
+                    if (shouldOpenLocalVideo) {
+                        effectChannel.send(WorkshopDetailEffect.OpenLocalVideo(localVideoTask.id))
+                    }
+                }
+            }
+            reload()
+        }
+
+        fun reload() {
+            inlineVideoLoadJob?.cancel()
+            inlineVideoLoadJob = null
+            viewModelScope.launch {
+                mutableState.value.inlineVideoPlayer?.release()
+                mutableState.value.inlineVideoStream?.close()
+                mutableState.value =
+                    mutableState.value.copy(
+                        isLoading = true,
+                        error = null,
+                        comments = emptyList(),
+                        commentsTotal = null,
+                        commentsNextStart = 0,
+                        commentsHasMore = false,
+                        commentsOwnerId = null,
+                        commentsError = null,
+                        inlineVideoStream = null,
+                        inlineVideoPlayer = null,
+                        isInlineVideoFullscreen = false,
+                        isLoadingInlineVideo = false,
+                        inlineVideoError = null,
+                    )
+                runCatching { workshopRepository.getDetail(workshopId) }
+                    .onSuccess { detail ->
+                        val current = mutableState.value
+                        mutableState.value =
+                            current.copy(
+                                detail = detail,
+                                isLoading = false,
+                                error = null,
+                                exportFormat = detail.summary.type.defaultExportFormat(),
+                            )
+                        refreshInteraction()
+                        loadComments(refresh = true)
+                    }.onFailure { error ->
+                        mutableState.value =
+                            mutableState.value.copy(
+                                isLoading = false,
+                                error = error.message ?: "无法读取该创意工坊项目",
+                            )
+                    }
             }
         }
-        reload()
-    }
 
-    fun reload() {
-        inlineVideoLoadJob?.cancel()
-        inlineVideoLoadJob = null
-        viewModelScope.launch {
-            mutableState.value.inlineVideoPlayer?.release()
-            mutableState.value.inlineVideoStream?.close()
-            mutableState.value = mutableState.value.copy(
-                isLoading = true,
-                error = null,
-                comments = emptyList(),
-                commentsTotal = null,
-                commentsNextStart = 0,
-                commentsHasMore = false,
-                commentsOwnerId = null,
-                commentsError = null,
-                inlineVideoStream = null,
-                inlineVideoPlayer = null,
-                isInlineVideoFullscreen = false,
-                isLoadingInlineVideo = false,
-                inlineVideoError = null,
-            )
-            runCatching { workshopRepository.getDetail(workshopId) }
-                .onSuccess { detail ->
-                    val current = mutableState.value
-                    mutableState.value = current.copy(
-                        detail = detail,
-                        isLoading = false,
-                        error = null,
-                        exportFormat = detail.summary.type.defaultExportFormat(),
-                    )
-                    refreshInteraction()
-                    loadComments(refresh = true)
-                }
-                .onFailure { error ->
-                    mutableState.value = mutableState.value.copy(
-                        isLoading = false,
-                        error = error.message ?: "无法读取该创意工坊项目",
-                    )
+        fun startInlineVideoPlayback() {
+            val current = mutableState.value
+            if (
+                current.detail?.summary?.type != WorkshopType.VIDEO ||
+                current.inlineVideoStream != null ||
+                current.isLoadingInlineVideo
+            ) {
+                return
+            }
+            inlineVideoLoadJob =
+                viewModelScope.launch {
+                    var openedStream: WorkshopVideoStreamSession? = null
+                    var openedPlayer: ExoPlayer? = null
+                    mutableState.value =
+                        mutableState.value.copy(
+                            isLoadingInlineVideo = true,
+                            inlineVideoError = null,
+                        )
+                    try {
+                        openedStream = videoStreamRepository.open(workshopId)
+                        coroutineContext.ensureActive()
+                        openedPlayer =
+                            createSteamChunkPlayer(
+                                context = applicationContext,
+                                stream = openedStream,
+                            )
+                        mutableState.value =
+                            mutableState.value.copy(
+                                inlineVideoStream = openedStream,
+                                inlineVideoPlayer = openedPlayer,
+                                isInlineVideoFullscreen = false,
+                                isLoadingInlineVideo = false,
+                                inlineVideoError = null,
+                            )
+                        openedStream = null
+                        openedPlayer = null
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        openedPlayer?.release()
+                        openedPlayer = null
+                        mutableState.value =
+                            mutableState.value.copy(
+                                inlineVideoStream = null,
+                                inlineVideoPlayer = null,
+                                isInlineVideoFullscreen = false,
+                                isLoadingInlineVideo = false,
+                                inlineVideoError = error.message ?: "无法初始化视频在线播放",
+                            )
+                    } finally {
+                        openedStream?.close()
+                    }
                 }
         }
-    }
 
-    fun startInlineVideoPlayback() {
-        val current = mutableState.value
-        if (
-            current.detail?.summary?.type != WorkshopType.VIDEO ||
-            current.inlineVideoStream != null ||
-            current.isLoadingInlineVideo
-        ) {
-            return
-        }
-        inlineVideoLoadJob = viewModelScope.launch {
-            var openedStream: WorkshopVideoStreamSession? = null
-            var openedPlayer: ExoPlayer? = null
-            mutableState.value = mutableState.value.copy(
-                isLoadingInlineVideo = true,
-                inlineVideoError = null,
-            )
-            try {
-                openedStream = videoStreamRepository.open(workshopId)
-                coroutineContext.ensureActive()
-                openedPlayer = createSteamChunkPlayer(
-                    context = applicationContext,
-                    stream = openedStream,
-                )
-                mutableState.value = mutableState.value.copy(
-                    inlineVideoStream = openedStream,
-                    inlineVideoPlayer = openedPlayer,
-                    isInlineVideoFullscreen = false,
-                    isLoadingInlineVideo = false,
-                    inlineVideoError = null,
-                )
-                openedStream = null
-                openedPlayer = null
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                openedPlayer?.release()
-                openedPlayer = null
-                mutableState.value = mutableState.value.copy(
+        fun stopInlineVideoPlayback() {
+            inlineVideoLoadJob?.cancel()
+            inlineVideoLoadJob = null
+            val current = mutableState.value
+            current.inlineVideoPlayer?.release()
+            current.inlineVideoStream?.close()
+            mutableState.value =
+                current.copy(
                     inlineVideoStream = null,
                     inlineVideoPlayer = null,
                     isInlineVideoFullscreen = false,
                     isLoadingInlineVideo = false,
-                    inlineVideoError = error.message ?: "无法初始化视频在线播放",
+                    inlineVideoError = null,
                 )
-            } finally {
-                openedStream?.close()
-            }
         }
-    }
 
-    fun stopInlineVideoPlayback() {
-        inlineVideoLoadJob?.cancel()
-        inlineVideoLoadJob = null
-        val current = mutableState.value
-        current.inlineVideoPlayer?.release()
-        current.inlineVideoStream?.close()
-        mutableState.value = current.copy(
-            inlineVideoStream = null,
-            inlineVideoPlayer = null,
-            isInlineVideoFullscreen = false,
-            isLoadingInlineVideo = false,
-            inlineVideoError = null,
-        )
-    }
-
-    fun setInlineVideoFullscreen(fullscreen: Boolean) {
-        val current = mutableState.value
-        if (current.isInlineVideoFullscreen == fullscreen) return
-        if (fullscreen && (current.inlineVideoStream == null || current.inlineVideoPlayer == null)) return
-        mutableState.value = current.copy(isInlineVideoFullscreen = fullscreen)
-    }
-
-    fun retryComments() {
-        loadComments(refresh = true)
-    }
-
-    fun loadMoreComments() {
-        loadComments(refresh = false)
-    }
-
-    fun updateCommentDraft(value: String) {
-        mutableState.value = mutableState.value.copy(
-            commentDraft = value.take(WORKSHOP_COMMENT_MAX_LENGTH),
-            commentPostError = null,
-        )
-    }
-
-    fun submitComment() {
-        val current = mutableState.value
-        if (current.steamSession.phase != SteamSessionPhase.SIGNED_IN || current.isPostingComment) return
-        val detail = current.detail ?: return
-        val ownerId = current.commentsOwnerId ?: detail.creatorId ?: detail.summary.creatorId
-        if (ownerId.isNullOrBlank()) {
-            mutableState.value = current.copy(commentPostError = "无法确定该项目的作者")
-            return
+        fun setInlineVideoFullscreen(fullscreen: Boolean) {
+            val current = mutableState.value
+            if (current.isInlineVideoFullscreen == fullscreen) return
+            if (fullscreen && (current.inlineVideoStream == null || current.inlineVideoPlayer == null)) return
+            mutableState.value = current.copy(isInlineVideoFullscreen = fullscreen)
         }
-        val comment = current.commentDraft.trim()
-        if (comment.isEmpty()) return
-        viewModelScope.launch {
-            mutableState.value = mutableState.value.copy(
-                isPostingComment = true,
-                commentPostError = null,
-            )
-            runCatching {
-                accountWorkshopRepository.postComment(workshopId, ownerId, comment)
-            }.onSuccess {
-                mutableState.value = mutableState.value.copy(
-                    commentDraft = "",
-                    isPostingComment = false,
+
+        fun retryComments() {
+            loadComments(refresh = true)
+        }
+
+        fun loadMoreComments() {
+            loadComments(refresh = false)
+        }
+
+        fun updateCommentDraft(value: String) {
+            mutableState.value =
+                mutableState.value.copy(
+                    commentDraft = value.take(WORKSHOP_COMMENT_MAX_LENGTH),
                     commentPostError = null,
                 )
-                loadComments(refresh = true)
-            }.onFailure { error ->
-                mutableState.value = mutableState.value.copy(
-                    isPostingComment = false,
-                    commentPostError = error.message ?: "无法发表评论，请稍后重试",
-                )
+        }
+
+        fun submitComment() {
+            val current = mutableState.value
+            if (current.steamSession.phase != SteamSessionPhase.SIGNED_IN || current.isPostingComment) return
+            val detail = current.detail ?: return
+            val ownerId = current.commentsOwnerId ?: detail.creatorId ?: detail.summary.creatorId
+            if (ownerId.isNullOrBlank()) {
+                mutableState.value = current.copy(commentPostError = "无法确定该项目的作者")
+                return
+            }
+            val comment = current.commentDraft.trim()
+            if (comment.isEmpty()) return
+            viewModelScope.launch {
+                mutableState.value =
+                    mutableState.value.copy(
+                        isPostingComment = true,
+                        commentPostError = null,
+                    )
+                runCatching {
+                    accountWorkshopRepository.postComment(workshopId, ownerId, comment)
+                }.onSuccess {
+                    mutableState.value =
+                        mutableState.value.copy(
+                            commentDraft = "",
+                            isPostingComment = false,
+                            commentPostError = null,
+                        )
+                    loadComments(refresh = true)
+                }.onFailure { error ->
+                    mutableState.value =
+                        mutableState.value.copy(
+                            isPostingComment = false,
+                            commentPostError = error.message ?: "无法发表评论，请稍后重试",
+                        )
+                }
             }
         }
-    }
 
-    private fun loadComments(refresh: Boolean) {
-        val current = mutableState.value
-        val detail = current.detail ?: return
-        if (refresh) {
-            if (current.isLoadingComments) return
-            commentsLoadJob?.cancel()
-        } else if (
-            current.isLoadingComments || current.isLoadingMoreComments || !current.commentsHasMore
-        ) {
-            return
-        }
-        val start = if (refresh) 0 else current.commentsNextStart
-        commentsLoadJob = viewModelScope.launch {
-            mutableState.value = mutableState.value.copy(
-                isLoadingComments = refresh,
-                isLoadingMoreComments = !refresh,
-                commentsError = null,
-            )
-            runCatching {
-                workshopRepository.getComments(
-                    workshopId = workshopId,
-                    start = start,
-                    count = COMMENTS_PAGE_SIZE,
-                    ownerId = current.commentsOwnerId ?: detail.creatorId,
-                )
-            }.onSuccess { page ->
-                val latest = mutableState.value
-                val comments = if (refresh) {
-                    page.comments
-                } else {
-                    (latest.comments + page.comments).distinctBy { comment ->
-                        listOf(comment.author, comment.timestamp, comment.text).joinToString("\u001f")
+        private fun loadComments(refresh: Boolean) {
+            val current = mutableState.value
+            val detail = current.detail ?: return
+            if (refresh) {
+                if (current.isLoadingComments) return
+                commentsLoadJob?.cancel()
+            } else if (
+                current.isLoadingComments || current.isLoadingMoreComments || !current.commentsHasMore
+            ) {
+                return
+            }
+            val start = if (refresh) 0 else current.commentsNextStart
+            commentsLoadJob =
+                viewModelScope.launch {
+                    mutableState.value =
+                        mutableState.value.copy(
+                            isLoadingComments = refresh,
+                            isLoadingMoreComments = !refresh,
+                            commentsError = null,
+                        )
+                    runCatching {
+                        workshopRepository.getComments(
+                            workshopId = workshopId,
+                            start = start,
+                            count = COMMENTS_PAGE_SIZE,
+                            ownerId = current.commentsOwnerId ?: detail.creatorId,
+                        )
+                    }.onSuccess { page ->
+                        val latest = mutableState.value
+                        val comments =
+                            if (refresh) {
+                                page.comments
+                            } else {
+                                (latest.comments + page.comments).distinctBy { comment ->
+                                    listOf(comment.author, comment.timestamp, comment.text).joinToString("\u001f")
+                                }
+                            }
+                        mutableState.value =
+                            latest.copy(
+                                comments = comments,
+                                commentsTotal = page.total,
+                                commentsNextStart = page.nextStart,
+                                commentsHasMore = page.hasMore,
+                                commentsOwnerId = page.ownerId ?: latest.commentsOwnerId ?: detail.creatorId,
+                                isLoadingComments = false,
+                                isLoadingMoreComments = false,
+                                commentsError = null,
+                            )
+                    }.onFailure { error ->
+                        if (error is CancellationException) throw error
+                        mutableState.value =
+                            mutableState.value.copy(
+                                isLoadingComments = false,
+                                isLoadingMoreComments = false,
+                                commentsError = error.message ?: "无法读取 Steam 评论",
+                            )
                     }
                 }
-                mutableState.value = latest.copy(
-                    comments = comments,
-                    commentsTotal = page.total,
-                    commentsNextStart = page.nextStart,
-                    commentsHasMore = page.hasMore,
-                    commentsOwnerId = page.ownerId ?: latest.commentsOwnerId ?: detail.creatorId,
-                    isLoadingComments = false,
-                    isLoadingMoreComments = false,
-                    commentsError = null,
-                )
-            }.onFailure { error ->
-                if (error is CancellationException) throw error
-                mutableState.value = mutableState.value.copy(
-                    isLoadingComments = false,
-                    isLoadingMoreComments = false,
-                    commentsError = error.message ?: "无法读取 Steam 评论",
-                )
-            }
         }
-    }
 
-    fun toggleSubscription() {
-        val currentlySubscribed = mutableState.value.interaction.subscriptionState ==
-            SubscriptionState.SUBSCRIBED
-        updateInteraction(
-            successMessage = if (currentlySubscribed) {
-                "已向 Steam 提交取消订阅请求"
-            } else {
-                "已向 Steam 提交订阅请求"
-            },
-        ) {
-            accountWorkshopRepository.setSubscribed(workshopId, !currentlySubscribed)
-        }
-    }
-
-    fun toggleFavorite() {
-        val currentlyFavorited = mutableState.value.interaction.favoriteState == FavoriteState.FAVORITED
-        updateInteraction(
-            successMessage = if (currentlyFavorited) {
-                "已向 Steam 提交取消收藏请求"
-            } else {
-                "已向 Steam 提交收藏请求"
-            },
-        ) {
-            accountWorkshopRepository.setFavorited(workshopId, !currentlyFavorited)
-        }
-    }
-
-    fun enqueueDownload(playWhenReady: Boolean = false) {
-        val detail = mutableState.value.detail ?: return
-        viewModelScope.launch {
-            mutableState.value = mutableState.value.copy(
-                isEnqueuingDownload = true,
-                downloadMessage = null,
-            )
-            runCatching {
-                downloadTaskRepository.enqueue(
-                    DownloadRequest(
-                        workshopId = detail.summary.id,
-                        title = detail.summary.title,
-                        type = detail.summary.type,
-                        previewUrl = detail.summary.previewUrl,
-                        expectedTotalBytes = detail.summary.fileSizeBytes ?: 0L,
-                        outputTreeUri = mutableState.value.outputTreeUri,
-                        exportFormat = mutableState.value.exportFormat,
-                    ),
-                )
-            }.onSuccess { task ->
-                mutableState.value = mutableState.value.copy(
-                    isEnqueuingDownload = false,
-                    waitingForLocalVideoPlayback = playWhenReady,
-                    downloadMessage = if (playWhenReady) {
-                        "视频已加入下载队列，完成后将自动播放"
+        fun toggleSubscription() {
+            val currentlySubscribed =
+                mutableState.value.interaction.subscriptionState ==
+                    SubscriptionState.SUBSCRIBED
+            updateInteraction(
+                successMessage =
+                    if (currentlySubscribed) {
+                        "已向 Steam 提交取消订阅请求"
                     } else {
-                        "已加入下载队列：${task.title}"
+                        "已向 Steam 提交订阅请求"
                     },
-                )
-            }.onFailure { error ->
-                mutableState.value = mutableState.value.copy(
-                    isEnqueuingDownload = false,
-                    downloadMessage = error.message ?: "无法加入下载队列",
-                )
+            ) {
+                accountWorkshopRepository.setSubscribed(workshopId, !currentlySubscribed)
             }
         }
-    }
 
-    fun requestLocalVideoPlayback() {
-        val current = mutableState.value
-        val localVideoTaskId = current.localVideoTaskId
-        when {
-            localVideoTaskId != null -> {
-                mutableState.value = current.copy(
-                    pendingLocalVideoPlaybackTaskId = localVideoTaskId,
-                )
+        fun toggleFavorite() {
+            val currentlyFavorited = mutableState.value.interaction.favoriteState == FavoriteState.FAVORITED
+            updateInteraction(
+                successMessage =
+                    if (currentlyFavorited) {
+                        "已向 Steam 提交取消收藏请求"
+                    } else {
+                        "已向 Steam 提交收藏请求"
+                    },
+            ) {
+                accountWorkshopRepository.setFavorited(workshopId, !currentlyFavorited)
             }
-
-            current.activeVideoTaskId != null -> {
-                mutableState.value = current.copy(
-                    waitingForLocalVideoPlayback = true,
-                    downloadMessage = "视频正在下载，完成后将自动播放",
-                )
-            }
-
-            else -> enqueueDownload(playWhenReady = true)
         }
-    }
 
-    fun consumePendingLocalVideoPlayback(taskId: String) {
-        if (mutableState.value.pendingLocalVideoPlaybackTaskId == taskId) {
-            mutableState.value = mutableState.value.copy(pendingLocalVideoPlaybackTaskId = null)
-        }
-    }
-
-    fun reportLegacyStoragePermissionDenied() {
-        mutableState.value = mutableState.value.copy(
-            downloadMessage = "未授予存储权限，无法导出到 Download/WallHub",
-        )
-    }
-
-    fun selectExportFormat(format: ExportFormat) {
-        val detail = mutableState.value.detail ?: return
-        if (format !in detail.summary.type.availableExportFormats()) return
-        mutableState.value = mutableState.value.copy(exportFormat = format)
-    }
-
-    fun convertExistingDownload(format: ExportFormat) {
-        val taskId = mutableState.value.stagedTaskId ?: return
-        viewModelScope.launch {
-            runCatching {
-                val task = downloadTaskRepository.find(taskId) ?: error("下载任务不存在")
-                downloadTaskRepository.upsert(task.copy(exportFormat = format))
-                downloadTaskRepository.requestAction(taskId, DownloadAction.EXPORT)
-            }
-                .onSuccess {
-                    mutableState.value = mutableState.value.copy(
-                        downloadMessage = "已开始转换并导出已有暂存文件",
+        fun enqueueDownload(playWhenReady: Boolean = false) {
+            val detail = mutableState.value.detail ?: return
+            viewModelScope.launch {
+                mutableState.value =
+                    mutableState.value.copy(
+                        isEnqueuingDownload = true,
+                        downloadMessage = null,
                     )
-                }
-                .onFailure { error ->
-                    mutableState.value = mutableState.value.copy(
-                        downloadMessage = error.message ?: "无法转换已有暂存文件",
+                runCatching {
+                    downloadTaskRepository.enqueue(
+                        DownloadRequest(
+                            workshopId = detail.summary.id,
+                            title = detail.summary.title,
+                            type = detail.summary.type,
+                            previewUrl = detail.summary.previewUrl,
+                            expectedTotalBytes = detail.summary.fileSizeBytes ?: 0L,
+                            outputTreeUri = mutableState.value.outputTreeUri,
+                            exportFormat = mutableState.value.exportFormat,
+                        ),
                     )
+                }.onSuccess { task ->
+                    mutableState.value =
+                        mutableState.value.copy(
+                            isEnqueuingDownload = false,
+                            waitingForLocalVideoPlayback = playWhenReady,
+                            downloadMessage =
+                                if (playWhenReady) {
+                                    "视频已加入下载队列，完成后将自动播放"
+                                } else {
+                                    "已加入下载队列：${task.title}"
+                                },
+                        )
+                }.onFailure { error ->
+                    mutableState.value =
+                        mutableState.value.copy(
+                            isEnqueuingDownload = false,
+                            downloadMessage = error.message ?: "无法加入下载队列",
+                        )
                 }
+            }
         }
-    }
 
-    private fun refreshInteraction() {
-        viewModelScope.launch {
+        fun requestLocalVideoPlayback() {
             val current = mutableState.value
-            if (current.detail == null) return@launch
-            mutableState.value = current.copy(isLoadingInteraction = true, interactionMessage = null)
-            runCatching { accountWorkshopRepository.getInteraction(workshopId) }
-                .onSuccess { interaction ->
-                    mutableState.value = mutableState.value.copy(
-                        interaction = interaction,
-                        isLoadingInteraction = false,
+            val localVideoTaskId = current.localVideoTaskId
+            when {
+                localVideoTaskId != null -> {
+                    emitEffect(WorkshopDetailEffect.OpenLocalVideo(localVideoTaskId))
+                }
+
+                current.activeVideoTaskId != null -> {
+                    mutableState.value =
+                        current.copy(
+                            waitingForLocalVideoPlayback = true,
+                            downloadMessage = "视频正在下载，完成后将自动播放",
+                        )
+                }
+
+                else -> enqueueDownload(playWhenReady = true)
+            }
+        }
+
+        fun selectExportFormat(format: ExportFormat) {
+            val detail = mutableState.value.detail ?: return
+            if (format !in detail.summary.type.availableExportFormats()) return
+            mutableState.value = mutableState.value.copy(exportFormat = format)
+        }
+
+        fun convertExistingDownload(format: ExportFormat) {
+            val taskId = mutableState.value.stagedTaskId ?: return
+            viewModelScope.launch {
+                runCatching {
+                    val task = downloadTaskRepository.find(taskId) ?: error("下载任务不存在")
+                    downloadTaskRepository.upsert(task.copy(exportFormat = format))
+                    downloadTaskRepository.requestAction(taskId, DownloadAction.EXPORT)
+                }.onSuccess {
+                    mutableState.value =
+                        mutableState.value.copy(
+                            downloadMessage = "已开始转换并导出已有暂存文件",
+                        )
+                }.onFailure { error ->
+                    mutableState.value =
+                        mutableState.value.copy(
+                            downloadMessage = error.message ?: "无法转换已有暂存文件",
+                        )
+                }
+            }
+        }
+
+        private fun refreshInteraction() {
+            viewModelScope.launch {
+                val current = mutableState.value
+                if (current.detail == null) return@launch
+                mutableState.value = current.copy(isLoadingInteraction = true, interactionMessage = null)
+                runCatching { accountWorkshopRepository.getInteraction(workshopId) }
+                    .onSuccess { interaction ->
+                        mutableState.value =
+                            mutableState.value.copy(
+                                interaction = interaction,
+                                isLoadingInteraction = false,
+                            )
+                    }.onFailure {
+                        mutableState.value = mutableState.value.copy(isLoadingInteraction = false)
+                    }
+            }
+        }
+
+        private fun updateInteraction(
+            successMessage: String,
+            operation: suspend () -> WorkshopInteraction,
+        ) {
+            viewModelScope.launch {
+                mutableState.value =
+                    mutableState.value.copy(
+                        isUpdatingInteraction = true,
+                        interactionMessage = null,
                     )
-                }
-                .onFailure {
-                    mutableState.value = mutableState.value.copy(isLoadingInteraction = false)
-                }
+                runCatching { operation() }
+                    .onSuccess { interaction ->
+                        mutableState.value =
+                            mutableState.value.copy(
+                                interaction = interaction,
+                                isUpdatingInteraction = false,
+                                interactionMessage = successMessage,
+                            )
+                    }.onFailure { error ->
+                        mutableState.value =
+                            mutableState.value.copy(
+                                isUpdatingInteraction = false,
+                                interactionMessage = error.message ?: "Steam 请求失败，请稍后重试",
+                            )
+                    }
+            }
+        }
+
+        override fun onCleared() {
+            stopInlineVideoPlayback()
+            super.onCleared()
+        }
+
+        private companion object {
+            const val COMMENTS_PAGE_SIZE = 20
         }
     }
 
-    private fun updateInteraction(
-        successMessage: String,
-        operation: suspend () -> WorkshopInteraction,
-    ) {
-        viewModelScope.launch {
-            mutableState.value = mutableState.value.copy(
-                isUpdatingInteraction = true,
-                interactionMessage = null,
-            )
-            runCatching { operation() }
-                .onSuccess { interaction ->
-                    mutableState.value = mutableState.value.copy(
-                        interaction = interaction,
-                        isUpdatingInteraction = false,
-                        interactionMessage = successMessage,
-                    )
-                }
-                .onFailure { error ->
-                    mutableState.value = mutableState.value.copy(
-                        isUpdatingInteraction = false,
-                        interactionMessage = error.message ?: "Steam 请求失败，请稍后重试",
-                    )
-                }
-        }
+internal fun WorkshopDetailAction.immediateEffect(): WorkshopDetailEffect? =
+    when (this) {
+        is WorkshopDetailAction.RequestOperation ->
+            WorkshopDetailEffect.ResolveLegacyStoragePermission(operation)
+        WorkshopDetailAction.Back -> WorkshopDetailEffect.Back
+        is WorkshopDetailAction.SearchAuthor -> WorkshopDetailEffect.SearchAuthor(author)
+        is WorkshopDetailAction.CopyText -> WorkshopDetailEffect.CopyText(text, message)
+        is WorkshopDetailAction.OpenSteam -> WorkshopDetailEffect.OpenSteam(workshopId)
+        is WorkshopDetailAction.ShowMessage -> WorkshopDetailEffect.ShowMessage(message)
+        is WorkshopDetailAction.LegacyStoragePermissionResult -> null
     }
-
-    override fun onCleared() {
-        stopInlineVideoPlayback()
-        super.onCleared()
-    }
-
-    private companion object {
-        const val COMMENTS_PAGE_SIZE = 20
-    }
-}
 
 @Composable
 fun WorkshopDetailRoute(
     onBack: () -> Unit,
     onSearchAuthor: (String) -> Unit = {},
     onOpenLocalVideo: (String) -> Unit = {},
-    onOpenOnlineVideo: (Long) -> Unit = {},
-    viewModel: WorkshopDetailViewModel = androidx.hilt.navigation.compose.hiltViewModel(),
+    viewModel: WorkshopDetailViewModel =
+        androidx.hilt.navigation.compose
+            .hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
     var isLeavingDetail by remember { mutableStateOf(false) }
     val leaveDetail: (() -> Unit) -> Unit = { navigate ->
@@ -699,67 +851,46 @@ fun WorkshopDetailRoute(
             }
         }
     }
-    BackHandler { leaveDetail(onBack) }
-    var pendingLegacyStorageDownload by remember { mutableStateOf(false) }
-    var pendingLegacyStorageLocalPlayback by remember { mutableStateOf(false) }
-    var pendingLegacyStorageConversion by remember { mutableStateOf<ExportFormat?>(null) }
-    val legacyStoragePermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) {
-            if (pendingLegacyStorageDownload) {
-                viewModel.enqueueDownload()
-            }
-            if (pendingLegacyStorageLocalPlayback) {
-                viewModel.requestLocalVideoPlayback()
-            }
-            pendingLegacyStorageConversion?.let(viewModel::convertExistingDownload)
-        } else if (!granted) {
-            viewModel.reportLegacyStoragePermissionDenied()
-        }
-        pendingLegacyStorageDownload = false
-        pendingLegacyStorageLocalPlayback = false
-        pendingLegacyStorageConversion = null
-    }
-    LaunchedEffect(state.pendingLocalVideoPlaybackTaskId) {
-        val taskId = state.pendingLocalVideoPlaybackTaskId ?: return@LaunchedEffect
-        viewModel.consumePendingLocalVideoPlayback(taskId)
-        viewModel.stopInlineVideoPlayback()
-        onOpenLocalVideo(taskId)
+    WorkshopDetailEffectHandler(
+        viewModel = viewModel,
+        onBack = { leaveDetail(onBack) },
+        onSearchAuthor = onSearchAuthor,
+        onOpenLocalVideo = onOpenLocalVideo,
+    )
+    PredictiveBackHandler(enabled = !isLeavingDetail) {
+        it.collect()
+        viewModel.onAction(WorkshopDetailAction.Back)
     }
     WorkshopDetailScreen(
-        state = if (isLeavingDetail) {
-            state.copy(
-                inlineVideoStream = null,
-                inlineVideoPlayer = null,
-                isInlineVideoFullscreen = false,
-                isLoadingInlineVideo = false,
-                inlineVideoError = null,
-            )
-        } else {
-            state
-        },
-        onBack = { leaveDetail(onBack) },
+        state =
+            if (isLeavingDetail) {
+                state.copy(
+                    inlineVideoStream = null,
+                    inlineVideoPlayer = null,
+                    isInlineVideoFullscreen = false,
+                    isLoadingInlineVideo = false,
+                    inlineVideoError = null,
+                )
+            } else {
+                state
+            },
+        onBack = { viewModel.onAction(WorkshopDetailAction.Back) },
         onRetry = viewModel::reload,
         onToggleSubscription = viewModel::toggleSubscription,
         onToggleFavorite = viewModel::toggleFavorite,
         onStartInlineVideo = viewModel::startInlineVideoPlayback,
         onExportFormatSelected = viewModel::selectExportFormat,
         onDownload = {
-            if (context.requiresLegacyPublicDownloadPermission()) {
-                pendingLegacyStorageDownload = true
-                legacyStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            } else {
-                viewModel.enqueueDownload()
-            }
+            viewModel.onAction(
+                WorkshopDetailAction.RequestOperation(WorkshopDetailPendingOperation.Download),
+            )
         },
         onConvertExisting = { format ->
-            if (context.requiresLegacyPublicDownloadPermission()) {
-                pendingLegacyStorageConversion = format
-                legacyStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            } else {
-                viewModel.convertExistingDownload(format)
-            }
+            viewModel.onAction(
+                WorkshopDetailAction.RequestOperation(
+                    WorkshopDetailPendingOperation.ConvertExisting(format),
+                ),
+            )
         },
         onRetryComments = viewModel::retryComments,
         onLoadMoreComments = viewModel::loadMoreComments,
@@ -767,10 +898,83 @@ fun WorkshopDetailRoute(
         onSubmitComment = viewModel::submitComment,
         onInlineFullscreenChange = viewModel::setInlineVideoFullscreen,
         onSearchAuthor = { author ->
-            viewModel.stopInlineVideoPlayback()
-            onSearchAuthor(author)
+            viewModel.onAction(WorkshopDetailAction.SearchAuthor(author))
+        },
+        onCopyText = { text, message ->
+            viewModel.onAction(WorkshopDetailAction.CopyText(text, message))
+        },
+        onOpenSteam = { workshopId ->
+            viewModel.onAction(WorkshopDetailAction.OpenSteam(workshopId))
         },
     )
+}
+
+@Composable
+fun WorkshopDetailEffectHandler(
+    viewModel: WorkshopDetailViewModel,
+    onBack: () -> Unit,
+    onSearchAuthor: (String) -> Unit = {},
+    onOpenLocalVideo: (String) -> Unit = {},
+) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val toast = LocalWallHubToastState.current
+    val currentOnBack by rememberUpdatedState(onBack)
+    val currentOnSearchAuthor by rememberUpdatedState(onSearchAuthor)
+    val currentOnOpenLocalVideo by rememberUpdatedState(onOpenLocalVideo)
+    var pendingOperation by remember { mutableStateOf<WorkshopDetailPendingOperation?>(null) }
+    val permissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { granted ->
+            pendingOperation?.let { operation ->
+                viewModel.onAction(
+                    WorkshopDetailAction.LegacyStoragePermissionResult(operation, granted),
+                )
+            }
+            pendingOperation = null
+        }
+    LaunchedEffect(viewModel, context) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                is WorkshopDetailEffect.ResolveLegacyStoragePermission -> {
+                    if (context.requiresLegacyPublicDownloadPermission()) {
+                        pendingOperation = effect.operation
+                        permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    } else {
+                        viewModel.onAction(
+                            WorkshopDetailAction.LegacyStoragePermissionResult(
+                                effect.operation,
+                                granted = true,
+                            ),
+                        )
+                    }
+                }
+                WorkshopDetailEffect.Back -> currentOnBack()
+                is WorkshopDetailEffect.SearchAuthor -> {
+                    viewModel.stopInlineVideoPlayback()
+                    currentOnSearchAuthor(effect.author)
+                }
+                is WorkshopDetailEffect.CopyText -> {
+                    clipboard.setText(AnnotatedString(effect.text))
+                    toast.show(effect.message)
+                }
+                is WorkshopDetailEffect.OpenSteam -> {
+                    val intent =
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://steamcommunity.com/sharedfiles/filedetails/?id=${effect.workshopId}"),
+                        )
+                    runCatching { context.startActivity(intent) }
+                }
+                is WorkshopDetailEffect.OpenLocalVideo -> {
+                    viewModel.stopInlineVideoPlayback()
+                    currentOnOpenLocalVideo(effect.taskId)
+                }
+                is WorkshopDetailEffect.ShowMessage -> toast.show(effect.message)
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -791,29 +995,30 @@ fun WorkshopDetailScreen(
     onSubmitComment: () -> Unit,
     onInlineFullscreenChange: (Boolean) -> Unit,
     onSearchAuthor: (String) -> Unit,
+    onCopyText: (String, String) -> Unit,
+    onOpenSteam: (Long) -> Unit,
 ) {
-    val clipboardManager = LocalClipboardManager.current
-    val context = LocalContext.current
     val language = LocalWallHubLanguage.current
     val selectedSummary = state.detail?.summary
     var toastMessage by remember { mutableStateOf<String?>(null) }
     val inlineVideoStream = state.inlineVideoStream
     val inlineFullscreen = state.isInlineVideoFullscreen
     var cdnToastDelivered by remember(inlineVideoStream) { mutableStateOf(false) }
-    val inlinePlayback = inlineVideoStream?.let { stream ->
-        state.inlineVideoPlayer?.let { player ->
-            rememberRetainedSteamChunkPlayback(
-                stream = stream,
-                player = player,
-                onFirstFrameRendered = {
-                    if (!cdnToastDelivered) {
-                        cdnToastDelivered = true
-                        toastMessage = "Steam CDN: ${stream.currentCdnHost ?: "Unknown"}"
-                    }
-                },
-            )
+    val inlinePlayback =
+        inlineVideoStream?.let { stream ->
+            state.inlineVideoPlayer?.let { player ->
+                rememberRetainedSteamChunkPlayback(
+                    stream = stream,
+                    player = player,
+                    onFirstFrameRendered = {
+                        if (!cdnToastDelivered) {
+                            cdnToastDelivered = true
+                            toastMessage = "Steam CDN: ${stream.currentCdnHost ?: "Unknown"}"
+                        }
+                    },
+                )
+            }
         }
-    }
     BackHandler(enabled = inlineFullscreen) { onInlineFullscreenChange(false) }
     FullscreenSystemBarsEffect(enabled = inlineFullscreen)
     LaunchedEffect(toastMessage) {
@@ -834,143 +1039,159 @@ fun WorkshopDetailScreen(
             )
         } else {
             WallHubPageScaffold(
-            title = selectedSummary?.title ?: language.text("壁纸详情", "Wallpaper details"),
-            topBarContent = {
-                TopAppBar(
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                contentDescription = language.text("返回", "Back"),
-                            )
+                title = selectedSummary?.title ?: language.text("壁纸详情", "Wallpaper details"),
+                topBarContent = {
+                    WorkshopDetailTopBar(
+                        summary = selectedSummary,
+                        language = language,
+                        onBack = onBack,
+                        onCopyText = onCopyText,
+                        onOpenSteam = onOpenSteam,
+                    )
+                },
+            ) { padding ->
+                when {
+                    state.isLoading -> {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .padding(padding),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator()
                         }
-                    },
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = selectedSummary?.title
-                                    ?: language.text("壁纸详情", "Wallpaper details"),
-                                style = MaterialTheme.typography.headlineSmall,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false),
-                            )
-                            selectedSummary?.let { summary ->
-                                IconButton(
-                                    onClick = {
-                                        toastMessage = language.text("已复制壁纸标题", "Wallpaper title copied")
-                                        runCatching {
-                                            clipboardManager.setText(AnnotatedString(summary.title))
-                                        }
-                                    },
-                                    modifier = Modifier.size(40.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.ContentCopy,
-                                        contentDescription = language.text("复制标题", "Copy title"),
-                                    )
-                                }
-                            }
-                        }
-                    },
-                    actions = {
-                        selectedSummary?.let { summary ->
-                            IconButton(onClick = {
-                                val intent = Intent(
-                                    Intent.ACTION_VIEW,
-                                    Uri.parse("https://steamcommunity.com/sharedfiles/filedetails/?id=${summary.id}"),
+                    }
+
+                    state.error != null -> {
+                        WallHubEmptyState(
+                            icon = Icons.Outlined.Refresh,
+                            title = state.error,
+                            actionLabel = language.text("重试", "Retry"),
+                            onAction = onRetry,
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .padding(padding),
+                        )
+                    }
+
+                    state.detail != null ->
+                        WorkshopDetailPagerContent(
+                            detail = state.detail,
+                            language = language,
+                            interaction = state.interaction,
+                            isLoadingInteraction = state.isLoadingInteraction,
+                            isUpdatingInteraction = state.isUpdatingInteraction,
+                            interactionMessage = state.interactionMessage,
+                            onToggleSubscription = onToggleSubscription,
+                            onToggleFavorite = onToggleFavorite,
+                            inlineVideoPlayback = inlinePlayback,
+                            isLoadingInlineVideo = state.isLoadingInlineVideo,
+                            inlineVideoError = state.inlineVideoError,
+                            onStartInlineVideo = onStartInlineVideo,
+                            onInlineFullscreenChange = onInlineFullscreenChange,
+                            exportFormat = state.exportFormat,
+                            onExportFormatSelected = onExportFormatSelected,
+                            isEnqueuingDownload = state.isEnqueuingDownload,
+                            downloadMessage = state.downloadMessage,
+                            onDownload = onDownload,
+                            onConvertExisting = onConvertExisting,
+                            stagedTaskId = state.stagedTaskId,
+                            comments = state.comments,
+                            commentsTotal = state.commentsTotal,
+                            commentsHasMore = state.commentsHasMore,
+                            isLoadingComments = state.isLoadingComments,
+                            isLoadingMoreComments = state.isLoadingMoreComments,
+                            commentsError = state.commentsError,
+                            canPostComment = state.steamSession.phase == SteamSessionPhase.SIGNED_IN,
+                            commentDraft = state.commentDraft,
+                            isPostingComment = state.isPostingComment,
+                            commentPostError = state.commentPostError,
+                            onRetryComments = onRetryComments,
+                            onLoadMoreComments = onLoadMoreComments,
+                            onCommentDraftChanged = onCommentDraftChanged,
+                            onSubmitComment = onSubmitComment,
+                            onCopyWorkshopId = { id ->
+                                onCopyText(
+                                    id.toString(),
+                                    language.text("已复制项目 ID：$id", "Project ID copied: $id"),
                                 )
-                                runCatching { context.startActivity(intent) }
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Outlined.OpenInNew,
-                                    contentDescription = language.text("打开 Steam 页面", "Open Steam page"),
-                                )
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background,
-                        titleContentColor = MaterialTheme.colorScheme.onBackground,
-                        actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                )
-            },
-        ) { padding ->
-            when {
-            state.isLoading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    androidx.compose.material3.CircularProgressIndicator()
+                            },
+                            onSearchAuthor = onSearchAuthor,
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .padding(padding),
+                        )
                 }
             }
-
-            state.error != null -> {
-                WallHubEmptyState(
-                    icon = Icons.Outlined.Refresh,
-                    title = state.error,
-                    actionLabel = language.text("重试", "Retry"),
-                    onAction = onRetry,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                )
-            }
-
-            state.detail != null -> WorkshopDetailPagerContent(
-                detail = state.detail,
-                language = language,
-                interaction = state.interaction,
-                isLoadingInteraction = state.isLoadingInteraction,
-                isUpdatingInteraction = state.isUpdatingInteraction,
-                interactionMessage = state.interactionMessage,
-                onToggleSubscription = onToggleSubscription,
-                onToggleFavorite = onToggleFavorite,
-                inlineVideoPlayback = inlinePlayback,
-                isLoadingInlineVideo = state.isLoadingInlineVideo,
-                inlineVideoError = state.inlineVideoError,
-                onStartInlineVideo = onStartInlineVideo,
-                onInlineFullscreenChange = onInlineFullscreenChange,
-                exportFormat = state.exportFormat,
-                onExportFormatSelected = onExportFormatSelected,
-                isEnqueuingDownload = state.isEnqueuingDownload,
-                downloadMessage = state.downloadMessage,
-                onDownload = onDownload,
-                onConvertExisting = onConvertExisting,
-                stagedTaskId = state.stagedTaskId,
-                comments = state.comments,
-                commentsTotal = state.commentsTotal,
-                commentsHasMore = state.commentsHasMore,
-                isLoadingComments = state.isLoadingComments,
-                isLoadingMoreComments = state.isLoadingMoreComments,
-                commentsError = state.commentsError,
-                canPostComment = state.steamSession.phase == SteamSessionPhase.SIGNED_IN,
-                commentDraft = state.commentDraft,
-                isPostingComment = state.isPostingComment,
-                commentPostError = state.commentPostError,
-                onRetryComments = onRetryComments,
-                onLoadMoreComments = onLoadMoreComments,
-                onCommentDraftChanged = onCommentDraftChanged,
-                onSubmitComment = onSubmitComment,
-                onCopyWorkshopId = { id ->
-                    toastMessage = language.text("已复制项目 ID：$id", "Project ID copied: $id")
-                    runCatching {
-                        clipboardManager.setText(AnnotatedString(id.toString()))
-                    }
-                },
-                onSearchAuthor = onSearchAuthor,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            )
-            }
-        }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WorkshopDetailTopBar(
+    summary: WorkshopSummary?,
+    language: AppLanguage,
+    onBack: () -> Unit,
+    onCopyText: (String, String) -> Unit,
+    onOpenSteam: (Long) -> Unit,
+) {
+    TopAppBar(
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                    contentDescription = language.text("返回", "Back"),
+                )
+            }
+        },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = summary?.title ?: language.text("壁纸详情", "Wallpaper details"),
+                    style = MaterialTheme.typography.headlineSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                summary?.let { workshop ->
+                    IconButton(
+                        onClick = {
+                            onCopyText(
+                                workshop.title,
+                                language.text("已复制壁纸标题", "Wallpaper title copied"),
+                            )
+                        },
+                        modifier = Modifier.size(WallHubSizeTokens.compactActionHeight),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.ContentCopy,
+                            contentDescription = language.text("复制标题", "Copy title"),
+                        )
+                    }
+                }
+            }
+        },
+        actions = {
+            summary?.let { workshop ->
+                IconButton(onClick = { onOpenSteam(workshop.id) }) {
+                    Icon(
+                        imageVector = Icons.Outlined.OpenInNew,
+                        contentDescription = language.text("打开 Steam 页面", "Open Steam page"),
+                    )
+                }
+            }
+        },
+        colors =
+            TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.background,
+                titleContentColor = MaterialTheme.colorScheme.onBackground,
+                actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+    )
 }
 
 @Composable
@@ -979,9 +1200,10 @@ private fun FullscreenWallpaperVideoPlayer(
     onFullscreenChange: (Boolean) -> Unit,
 ) {
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(WallHubColorTokens.mediaCanvas),
     ) {
         SteamChunkVideoPlayer(
             playback = playback,
@@ -996,6 +1218,7 @@ private fun FullscreenWallpaperVideoPlayer(
     ExperimentalFoundationApi::class,
     ExperimentalLayoutApi::class,
     ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3AdaptiveApi::class,
 )
 @Composable
 private fun WorkshopDetailPagerContent(
@@ -1039,9 +1262,23 @@ private fun WorkshopDetailPagerContent(
 ) {
     val summary = detail.summary
     val exportFormats = summary.type.availableExportFormats()
-    val pagerState = rememberPagerState(initialPage = DETAIL_OVERVIEW_PAGE) {
-        DETAIL_PAGE_COUNT
-    }
+    val pagerState =
+        rememberPagerState(initialPage = DETAIL_OVERVIEW_PAGE) {
+            DETAIL_PAGE_COUNT
+        }
+    // Start on Detail for compact screens while retaining List history for wider layouts.
+    // This avoids a transient list-only frame before the navigation coroutine runs.
+    val paneNavigator =
+        rememberListDetailPaneScaffoldNavigator(
+            initialDestinationHistory =
+                listOf(
+                    ThreePaneScaffoldDestinationItem<Int>(ListDetailPaneScaffoldRole.List),
+                    ThreePaneScaffoldDestinationItem(
+                        ListDetailPaneScaffoldRole.Detail,
+                        DETAIL_OVERVIEW_PAGE,
+                    ),
+                ),
+        )
     val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
     var showDownloadChoices by remember { mutableStateOf(false) }
@@ -1049,12 +1286,34 @@ private fun WorkshopDetailPagerContent(
     var coverHeightPx by remember(summary.id) { mutableIntStateOf(0) }
     var headerOffsetPx by rememberSaveable(summary.id) { mutableStateOf(0f) }
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val inlineVideoActive = summary.type == WorkshopType.VIDEO &&
-        (inlineVideoPlayback != null || isLoadingInlineVideo)
-    val pinnedSpacingPx = with(density) { 8.dp.roundToPx() }
+    val inlineVideoActive =
+        summary.type == WorkshopType.VIDEO &&
+            (inlineVideoPlayback != null || isLoadingInlineVideo)
+    val pinnedSpacingPx = with(density) { WallHubSpacing.xs.roundToPx() }
     val pinnedHeaderHeightPx = if (inlineVideoActive) coverHeightPx + pinnedSpacingPx else 0
     val maxHeaderCollapsePx = (headerHeightPx - pinnedHeaderHeightPx).coerceAtLeast(0).toFloat()
     val maxHeaderCollapseState = rememberUpdatedState(maxHeaderCollapsePx)
+    LaunchedEffect(summary.id) {
+        if (paneNavigator.currentDestination?.contentKey != DETAIL_OVERVIEW_PAGE) {
+            paneNavigator.navigateTo(
+                ListDetailPaneScaffoldRole.Detail,
+                DETAIL_OVERVIEW_PAGE,
+            )
+        }
+    }
+    LaunchedEffect(pagerState.currentPage) {
+        paneNavigator.navigateTo(
+            ListDetailPaneScaffoldRole.Detail,
+            pagerState.currentPage,
+        )
+    }
+    LaunchedEffect(paneNavigator.currentDestination?.contentKey) {
+        paneNavigator.currentDestination?.contentKey?.let { destinationPage ->
+            if (destinationPage != pagerState.currentPage) {
+                pagerState.animateScrollToPage(destinationPage)
+            }
+        }
+    }
     LaunchedEffect(maxHeaderCollapsePx) {
         headerOffsetPx = headerOffsetPx.coerceIn(-maxHeaderCollapsePx, 0f)
     }
@@ -1063,148 +1322,92 @@ private fun WorkshopDetailPagerContent(
             focusManager.clearFocus(force = true)
         }
     }
-    val nestedScrollConnection = remember(summary.id) {
-        object : NestedScrollConnection {
-            private fun consumeHeaderDelta(deltaY: Float): Offset {
-                val previousOffset = headerOffsetPx
-                val nextOffset = (previousOffset + deltaY)
-                    .coerceIn(-maxHeaderCollapseState.value, 0f)
-                headerOffsetPx = nextOffset
-                return Offset(x = 0f, y = nextOffset - previousOffset)
-            }
+    val nestedScrollConnection =
+        remember(summary.id) {
+            object : NestedScrollConnection {
+                private fun consumeHeaderDelta(deltaY: Float): Offset {
+                    val previousOffset = headerOffsetPx
+                    val nextOffset =
+                        (previousOffset + deltaY)
+                            .coerceIn(-maxHeaderCollapseState.value, 0f)
+                    headerOffsetPx = nextOffset
+                    return Offset(x = 0f, y = nextOffset - previousOffset)
+                }
 
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                return if (available.y != 0f) consumeHeaderDelta(available.y) else Offset.Zero
-            }
+                override fun onPreScroll(
+                    available: Offset,
+                    source: NestedScrollSource,
+                ): Offset = if (available.y != 0f) consumeHeaderDelta(available.y) else Offset.Zero
 
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                return if (available.y > 0f) consumeHeaderDelta(available.y) else Offset.Zero
+                override fun onPostScroll(
+                    consumed: Offset,
+                    available: Offset,
+                    source: NestedScrollSource,
+                ): Offset = if (available.y > 0f) consumeHeaderDelta(available.y) else Offset.Zero
             }
         }
-    }
-    Column(modifier = modifier.nestedScroll(nestedScrollConnection)) {
-        CollapsibleDetailHeader(
-            offsetPx = headerOffsetPx,
-            onHeightChanged = { headerHeightPx = it },
-        ) {
-            FlowRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                DetailIdentityChip(
-                    label = language.text("项目 ID", "Project ID"),
-                    value = summary.id.toString(),
-                    icon = Icons.Outlined.ContentCopy,
-                    onClick = { onCopyWorkshopId(summary.id) },
-                )
-                DetailIdentityChip(
-                    label = language.text("作者", "Author"),
-                    value = summary.author,
-                    icon = Icons.Outlined.Search,
-                    onClick = {
-                        onSearchAuthor(detail.creatorId ?: summary.author)
+    NavigableListDetailPaneScaffold(
+        navigator = paneNavigator,
+        modifier = modifier,
+        listPane = {
+            AnimatedPane {
+                WorkshopDetailSectionList(
+                    selectedPage = pagerState.currentPage,
+                    commentsTotal = commentsTotal,
+                    language = language,
+                    onPageSelected = { page ->
+                        coroutineScope.launch {
+                            paneNavigator.navigateTo(ListDetailPaneScaffoldRole.Detail, page)
+                        }
                     },
                 )
             }
-            DetailCover(
-                title = summary.title,
-                previewUrl = summary.previewUrl,
-                type = summary.type,
-                language = language,
-                playback = inlineVideoPlayback,
-                isLoadingInlineVideo = isLoadingInlineVideo,
-                inlineVideoError = inlineVideoError,
-                onStartInlineVideo = onStartInlineVideo,
-                onFullscreenChange = onInlineFullscreenChange,
-                modifier = Modifier
-                    .padding(horizontal = 16.dp)
-                    .onSizeChanged { size -> coverHeightPx = size.height },
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-        PrimaryTabRow(
-            selectedTabIndex = pagerState.currentPage,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.primary,
-            divider = {
-                DetailDivider()
-            },
-        ) {
-            DetailTab(
-                selected = pagerState.currentPage == DETAIL_OVERVIEW_PAGE,
-                text = language.text("详情", "Details"),
-                onClick = {
-                    coroutineScope.launch {
-                        pagerState.animateScrollToPage(DETAIL_OVERVIEW_PAGE)
-                    }
-                },
-            )
-            val commentsLabel = commentsTotal?.takeIf { it > 0 }?.let { total ->
-                language.text("评论 ($total)", "Comments ($total)")
-            } ?: language.text("评论", "Comments")
-            DetailTab(
-                selected = pagerState.currentPage == DETAIL_COMMENTS_PAGE,
-                text = commentsLabel,
-                onClick = {
-                    coroutineScope.launch {
-                        pagerState.animateScrollToPage(DETAIL_COMMENTS_PAGE)
-                    }
-                },
-            )
-        }
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            verticalAlignment = Alignment.Top,
-        ) { page ->
-            when (page) {
-                DETAIL_OVERVIEW_PAGE -> DetailOverviewPage(
+        },
+        detailPane = {
+            AnimatedPane {
+                WorkshopDetailPane(
                     detail = detail,
                     language = language,
-                )
-
-                else -> DetailCommentsPage(
+                    pagerState = pagerState,
+                    nestedScrollConnection = nestedScrollConnection,
+                    headerOffsetPx = headerOffsetPx,
+                    onHeaderOffsetChange = { headerOffsetPx = it },
+                    onHeaderHeightChanged = { headerHeightPx = it },
+                    onCoverHeightChanged = { coverHeightPx = it },
+                    inlineVideoPlayback = inlineVideoPlayback,
+                    isLoadingInlineVideo = isLoadingInlineVideo,
+                    inlineVideoError = inlineVideoError,
+                    onStartInlineVideo = onStartInlineVideo,
+                    onInlineFullscreenChange = onInlineFullscreenChange,
                     comments = comments,
+                    commentsTotal = commentsTotal,
                     commentsHasMore = commentsHasMore,
-                    isLoading = isLoadingComments,
-                    isLoadingMore = isLoadingMoreComments,
-                    error = commentsError,
+                    isLoadingComments = isLoadingComments,
+                    isLoadingMoreComments = isLoadingMoreComments,
+                    commentsError = commentsError,
                     canPostComment = canPostComment,
                     commentDraft = commentDraft,
                     isPostingComment = isPostingComment,
                     commentPostError = commentPostError,
-                    language = language,
-                    onRetry = onRetryComments,
-                    onLoadMore = onLoadMoreComments,
+                    onRetryComments = onRetryComments,
+                    onLoadMoreComments = onLoadMoreComments,
                     onCommentDraftChanged = onCommentDraftChanged,
                     onSubmitComment = onSubmitComment,
-                    isWallpaperHeaderCollapsed = headerOffsetPx < -1f,
-                    onReturnToWallpaperTop = { headerOffsetPx = 0f },
+                    interaction = interaction,
+                    isLoadingInteraction = isLoadingInteraction,
+                    isUpdatingInteraction = isUpdatingInteraction,
+                    interactionMessage = interactionMessage,
+                    isEnqueuingDownload = isEnqueuingDownload,
+                    downloadMessage = downloadMessage,
+                    onToggleSubscription = onToggleSubscription,
+                    onToggleFavorite = onToggleFavorite,
+                    onShowDownloadChoices = { showDownloadChoices = true },
+                    onCopyWorkshopId = onCopyWorkshopId,
+                    onSearchAuthor = onSearchAuthor,
                 )
             }
-        }
-        DetailActionBar(
-            language = language,
-            interaction = interaction,
-            isLoadingInteraction = isLoadingInteraction,
-            isUpdatingInteraction = isUpdatingInteraction,
-            interactionMessage = interactionMessage,
-            isEnqueuingDownload = isEnqueuingDownload,
-            downloadMessage = downloadMessage,
-            onToggleSubscription = onToggleSubscription,
-            onToggleFavorite = onToggleFavorite,
-            onDownload = { showDownloadChoices = true },
-        )
-    }
+        },
+    )
     if (showDownloadChoices) {
         DownloadChoiceSheet(
             type = summary.type,
@@ -1220,6 +1423,325 @@ private fun WorkshopDetailPagerContent(
     }
 }
 
+@OptIn(
+    ExperimentalFoundationApi::class,
+    ExperimentalLayoutApi::class,
+    ExperimentalMaterial3Api::class,
+)
+@Composable
+private fun WorkshopDetailPane(
+    detail: WorkshopDetail,
+    language: AppLanguage,
+    pagerState: androidx.compose.foundation.pager.PagerState,
+    nestedScrollConnection: NestedScrollConnection,
+    headerOffsetPx: Float,
+    onHeaderOffsetChange: (Float) -> Unit,
+    onHeaderHeightChanged: (Int) -> Unit,
+    onCoverHeightChanged: (Int) -> Unit,
+    inlineVideoPlayback: SteamChunkPlayback?,
+    isLoadingInlineVideo: Boolean,
+    inlineVideoError: String?,
+    onStartInlineVideo: () -> Unit,
+    onInlineFullscreenChange: (Boolean) -> Unit,
+    comments: List<WorkshopComment>,
+    commentsTotal: Int?,
+    commentsHasMore: Boolean,
+    isLoadingComments: Boolean,
+    isLoadingMoreComments: Boolean,
+    commentsError: String?,
+    canPostComment: Boolean,
+    commentDraft: String,
+    isPostingComment: Boolean,
+    commentPostError: String?,
+    onRetryComments: () -> Unit,
+    onLoadMoreComments: () -> Unit,
+    onCommentDraftChanged: (String) -> Unit,
+    onSubmitComment: () -> Unit,
+    interaction: WorkshopInteraction,
+    isLoadingInteraction: Boolean,
+    isUpdatingInteraction: Boolean,
+    interactionMessage: String?,
+    isEnqueuingDownload: Boolean,
+    downloadMessage: String?,
+    onToggleSubscription: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onShowDownloadChoices: () -> Unit,
+    onCopyWorkshopId: (Long) -> Unit,
+    onSearchAuthor: (String) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize().nestedScroll(nestedScrollConnection)) {
+        WorkshopDetailCollapsibleHeader(
+            detail = detail,
+            language = language,
+            offsetPx = headerOffsetPx,
+            onHeaderHeightChanged = onHeaderHeightChanged,
+            onCoverHeightChanged = onCoverHeightChanged,
+            inlineVideoPlayback = inlineVideoPlayback,
+            isLoadingInlineVideo = isLoadingInlineVideo,
+            inlineVideoError = inlineVideoError,
+            onStartInlineVideo = onStartInlineVideo,
+            onInlineFullscreenChange = onInlineFullscreenChange,
+            onCopyWorkshopId = onCopyWorkshopId,
+            onSearchAuthor = onSearchAuthor,
+        )
+        WorkshopDetailTabPager(
+            detail = detail,
+            language = language,
+            pagerState = pagerState,
+            comments = comments,
+            commentsTotal = commentsTotal,
+            commentsHasMore = commentsHasMore,
+            isLoadingComments = isLoadingComments,
+            isLoadingMoreComments = isLoadingMoreComments,
+            commentsError = commentsError,
+            canPostComment = canPostComment,
+            commentDraft = commentDraft,
+            isPostingComment = isPostingComment,
+            commentPostError = commentPostError,
+            isWallpaperHeaderCollapsed = headerOffsetPx < -1f,
+            onReturnToWallpaperTop = { onHeaderOffsetChange(0f) },
+            onRetryComments = onRetryComments,
+            onLoadMoreComments = onLoadMoreComments,
+            onCommentDraftChanged = onCommentDraftChanged,
+            onSubmitComment = onSubmitComment,
+        )
+        DetailActionBar(
+            language = language,
+            interaction = interaction,
+            isLoadingInteraction = isLoadingInteraction,
+            isUpdatingInteraction = isUpdatingInteraction,
+            interactionMessage = interactionMessage,
+            isEnqueuingDownload = isEnqueuingDownload,
+            downloadMessage = downloadMessage,
+            onToggleSubscription = onToggleSubscription,
+            onToggleFavorite = onToggleFavorite,
+            onDownload = onShowDownloadChoices,
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun WorkshopDetailCollapsibleHeader(
+    detail: WorkshopDetail,
+    language: AppLanguage,
+    offsetPx: Float,
+    onHeaderHeightChanged: (Int) -> Unit,
+    onCoverHeightChanged: (Int) -> Unit,
+    inlineVideoPlayback: SteamChunkPlayback?,
+    isLoadingInlineVideo: Boolean,
+    inlineVideoError: String?,
+    onStartInlineVideo: () -> Unit,
+    onInlineFullscreenChange: (Boolean) -> Unit,
+    onCopyWorkshopId: (Long) -> Unit,
+    onSearchAuthor: (String) -> Unit,
+) {
+    val summary = detail.summary
+    CollapsibleDetailHeader(
+        offsetPx = offsetPx,
+        onHeightChanged = onHeaderHeightChanged,
+    ) {
+        FlowRow(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = WallHubSpacing.md, end = WallHubSpacing.md, bottom = WallHubSpacing.compact),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+        ) {
+            DetailIdentityChip(
+                label = language.text("项目 ID", "Project ID"),
+                value = summary.id.toString(),
+                icon = Icons.Outlined.ContentCopy,
+                onClick = { onCopyWorkshopId(summary.id) },
+            )
+            DetailIdentityChip(
+                label = language.text("作者", "Author"),
+                value = summary.author,
+                icon = Icons.Outlined.Search,
+                onClick = { onSearchAuthor(detail.creatorId ?: summary.author) },
+            )
+        }
+        DetailCover(
+            title = summary.title,
+            previewUrl = summary.previewUrl,
+            type = summary.type,
+            language = language,
+            playback = inlineVideoPlayback,
+            isLoadingInlineVideo = isLoadingInlineVideo,
+            inlineVideoError = inlineVideoError,
+            onStartInlineVideo = onStartInlineVideo,
+            onFullscreenChange = onInlineFullscreenChange,
+            modifier =
+                Modifier
+                    .padding(horizontal = WallHubSpacing.md)
+                    .onSizeChanged { size -> onCoverHeightChanged(size.height) },
+        )
+        Spacer(modifier = Modifier.height(WallHubSpacing.xs))
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun ColumnScope.WorkshopDetailTabPager(
+    detail: WorkshopDetail,
+    language: AppLanguage,
+    pagerState: androidx.compose.foundation.pager.PagerState,
+    comments: List<WorkshopComment>,
+    commentsTotal: Int?,
+    commentsHasMore: Boolean,
+    isLoadingComments: Boolean,
+    isLoadingMoreComments: Boolean,
+    commentsError: String?,
+    canPostComment: Boolean,
+    commentDraft: String,
+    isPostingComment: Boolean,
+    commentPostError: String?,
+    isWallpaperHeaderCollapsed: Boolean,
+    onReturnToWallpaperTop: () -> Unit,
+    onRetryComments: () -> Unit,
+    onLoadMoreComments: () -> Unit,
+    onCommentDraftChanged: (String) -> Unit,
+    onSubmitComment: () -> Unit,
+) {
+    val coroutineScope = rememberCoroutineScope()
+    PrimaryTabRow(
+        selectedTabIndex = pagerState.currentPage,
+        containerColor = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.primary,
+        divider = { DetailDivider() },
+    ) {
+        DetailTab(
+            selected = pagerState.currentPage == DETAIL_OVERVIEW_PAGE,
+            text = language.text("详情", "Details"),
+            onClick = {
+                coroutineScope.launch {
+                    pagerState.animateScrollToPage(DETAIL_OVERVIEW_PAGE)
+                }
+            },
+        )
+        val commentsLabel =
+            commentsTotal?.takeIf { it > 0 }?.let { total ->
+                language.text("评论 ($total)", "Comments ($total)")
+            } ?: language.text("评论", "Comments")
+        DetailTab(
+            selected = pagerState.currentPage == DETAIL_COMMENTS_PAGE,
+            text = commentsLabel,
+            onClick = {
+                coroutineScope.launch {
+                    pagerState.animateScrollToPage(DETAIL_COMMENTS_PAGE)
+                }
+            },
+        )
+    }
+    HorizontalPager(
+        state = pagerState,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        verticalAlignment = Alignment.Top,
+    ) { page ->
+        when (page) {
+            DETAIL_OVERVIEW_PAGE ->
+                DetailOverviewPage(
+                    detail = detail,
+                    language = language,
+                )
+
+            else ->
+                DetailCommentsPage(
+                    comments = comments,
+                    commentsHasMore = commentsHasMore,
+                    isLoading = isLoadingComments,
+                    isLoadingMore = isLoadingMoreComments,
+                    error = commentsError,
+                    canPostComment = canPostComment,
+                    commentDraft = commentDraft,
+                    isPostingComment = isPostingComment,
+                    commentPostError = commentPostError,
+                    language = language,
+                    onRetry = onRetryComments,
+                    onLoadMore = onLoadMoreComments,
+                    onCommentDraftChanged = onCommentDraftChanged,
+                    onSubmitComment = onSubmitComment,
+                    isWallpaperHeaderCollapsed = isWallpaperHeaderCollapsed,
+                    onReturnToWallpaperTop = onReturnToWallpaperTop,
+                )
+        }
+    }
+}
+
+@Composable
+private fun WorkshopDetailSectionList(
+    selectedPage: Int,
+    commentsTotal: Int?,
+    language: AppLanguage,
+    onPageSelected: (Int) -> Unit,
+) {
+    val commentsLabel =
+        commentsTotal?.takeIf { it > 0 }?.let { total ->
+            language.text("评论 ($total)", "Comments ($total)")
+        } ?: language.text("评论", "Comments")
+    Column(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(WallHubSpacing.md),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+    ) {
+        Text(
+            text = language.text("详情导航", "Details navigation"),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        DetailSectionListItem(
+            label = language.text("详情", "Details"),
+            selected = selectedPage == DETAIL_OVERVIEW_PAGE,
+            onClick = { onPageSelected(DETAIL_OVERVIEW_PAGE) },
+        )
+        DetailSectionListItem(
+            label = commentsLabel,
+            selected = selectedPage == DETAIL_COMMENTS_PAGE,
+            onClick = { onPageSelected(DETAIL_COMMENTS_PAGE) },
+        )
+    }
+}
+
+@Composable
+private fun DetailSectionListItem(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color =
+            if (selected) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            },
+        contentColor =
+            if (selected) {
+                MaterialTheme.colorScheme.onSecondaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleSmall,
+            modifier =
+                Modifier.padding(
+                    horizontal = WallHubSpacing.sm,
+                    vertical = WallHubSpacing.controlInset,
+                ),
+        )
+    }
+}
+
 @Composable
 private fun DetailIdentityChip(
     label: String,
@@ -1229,8 +1751,8 @@ private fun DetailIdentityChip(
 ) {
     val content: @Composable () -> Unit = {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = WallHubSpacing.compact, vertical = WallHubSpacing.dense),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.dense),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
@@ -1240,20 +1762,24 @@ private fun DetailIdentityChip(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(14.dp))
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(WallHubSpacing.controlInset),
+            )
         }
     }
     if (onClick != null) {
         Surface(
             onClick = onClick,
-            shape = RoundedCornerShape(8.dp),
+            shape = MaterialTheme.shapes.small,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             content = content,
         )
     } else {
         Surface(
-            shape = RoundedCornerShape(8.dp),
+            shape = MaterialTheme.shapes.small,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             content = content,
@@ -1269,22 +1795,24 @@ private fun CollapsibleDetailHeader(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .clipToBounds()
-            .layout { measurable, constraints ->
-                val placeable = measurable.measure(constraints.copy(minHeight = 0))
-                val offset = offsetPx.roundToInt().coerceAtMost(0)
-                val visibleHeight = (placeable.height + offset).coerceIn(0, placeable.height)
-                layout(placeable.width, visibleHeight) {
-                    placeable.placeRelative(x = 0, y = offset)
-                }
-            },
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clipToBounds()
+                .layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints.copy(minHeight = 0))
+                    val offset = offsetPx.roundToInt().coerceAtMost(0)
+                    val visibleHeight = (placeable.height + offset).coerceIn(0, placeable.height)
+                    layout(placeable.width, visibleHeight) {
+                        placeable.placeRelative(x = 0, y = offset)
+                    }
+                },
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .onSizeChanged { size -> onHeightChanged(size.height) },
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .onSizeChanged { size -> onHeightChanged(size.height) },
             content = content,
         )
     }
@@ -1304,11 +1832,12 @@ private fun DetailCover(
     modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .aspectRatio(16f / 9f)
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(MaterialTheme.shapes.large)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center,
     ) {
         if (playback != null) {
@@ -1326,14 +1855,15 @@ private fun DetailCover(
                     modifier = Modifier.matchParentSize(),
                 )
                 Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .background(Color.Black.copy(alpha = 0.38f)),
+                    modifier =
+                        Modifier
+                            .matchParentSize()
+                            .background(WallHubColorTokens.mediaControlScrim),
                     contentAlignment = Alignment.Center,
                 ) {
                     androidx.compose.material3.CircularProgressIndicator(
                         modifier = Modifier.size(42.dp),
-                        color = Color.White,
+                        color = WallHubColorTokens.mediaOverlayContent,
                         strokeWidth = 3.dp,
                     )
                 }
@@ -1350,48 +1880,49 @@ private fun DetailCover(
                 Icon(
                     imageVector = Icons.Outlined.ImageNotSupported,
                     contentDescription = null,
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(WallHubSpacing.xxl),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
         if (type == WorkshopType.VIDEO && playback == null) {
             Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(Color.Black.copy(alpha = 0.38f))
-                    .clickable(
-                        role = Role.Button,
-                        onClickLabel = language.text("播放视频", "Play video"),
-                        onClick = onStartInlineVideo,
-                    ),
+                modifier =
+                    Modifier
+                        .matchParentSize()
+                        .background(WallHubColorTokens.mediaControlScrim)
+                        .clickable(
+                            role = Role.Button,
+                            onClickLabel = language.text("播放视频", "Play video"),
+                            onClick = onStartInlineVideo,
+                        ),
                 contentAlignment = Alignment.Center,
             ) {
                 when {
                     isLoadingInlineVideo -> {
                         androidx.compose.material3.CircularProgressIndicator(
                             modifier = Modifier.size(42.dp),
-                            color = Color.White,
+                            color = WallHubColorTokens.mediaOverlayContent,
                             strokeWidth = 3.dp,
                         )
                     }
 
                     inlineVideoError != null -> {
                         Column(
-                            modifier = Modifier.padding(horizontal = 32.dp),
+                            modifier = Modifier.padding(horizontal = WallHubSpacing.xl),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Refresh,
                                 contentDescription = null,
-                                tint = Color.White,
+                                tint = WallHubColorTokens.mediaOverlayContent,
                                 modifier = Modifier.size(34.dp),
                             )
                             Text(
                                 text = inlineVideoError,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White,
+                                color = WallHubColorTokens.mediaOverlayContent,
                                 maxLines = 3,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -1400,14 +1931,14 @@ private fun DetailCover(
 
                     else -> {
                         Surface(
-                            shape = RoundedCornerShape(32.dp),
-                            color = Color.Black.copy(alpha = 0.58f),
-                            contentColor = Color.White,
+                            shape = WallHubShapeTokens.mediaControl,
+                            color = WallHubColorTokens.mediaOverlayScrim,
+                            contentColor = WallHubColorTokens.mediaOverlayContent,
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.PlayArrow,
                                 contentDescription = language.text("播放视频", "Play video"),
-                                modifier = Modifier.padding(14.dp).size(34.dp),
+                                modifier = Modifier.padding(WallHubSpacing.controlInset).size(34.dp),
                             )
                         }
                     }
@@ -1453,9 +1984,10 @@ private fun DetailOverviewPage(
     language: AppLanguage,
 ) {
     val summary = detail.summary
-    val description = detail.description.ifBlank {
-        language.text("该壁纸没有提供简介。", "No description was provided.")
-    }
+    val description =
+        detail.description.ifBlank {
+            language.text("该壁纸没有提供简介。", "No description was provided.")
+        }
     var descriptionExpanded by rememberSaveable(summary.id, description) { mutableStateOf(false) }
     var descriptionCanExpand by remember(description) { mutableStateOf(false) }
     var descriptionTogglePending by remember(summary.id, description) { mutableStateOf(false) }
@@ -1474,17 +2006,19 @@ private fun DetailOverviewPage(
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        contentPadding =
+            androidx.compose.foundation.layout
+                .PaddingValues(WallHubSpacing.md),
     ) {
         item {
             WallHubSurfaceCard(
                 modifier = Modifier.fillMaxWidth(),
                 containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.large,
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.padding(WallHubSpacing.md),
+                    verticalArrangement = Arrangement.spacedBy(WallHubSpacing.controlInset),
                 ) {
                     Text(
                         text = language.text("壁纸信息", "Wallpaper information"),
@@ -1492,43 +2026,49 @@ private fun DetailOverviewPage(
                         fontWeight = FontWeight.SemiBold,
                     )
                     DetailMetricRow(
-                        first = DetailMetricValue(
-                            Icons.Heart,
-                            language.text("订阅数", "Subscriptions"),
-                            formatCompactCount(detail.subscriptions ?: summary.subscriptions),
-                        ),
-                        second = DetailMetricValue(
-                            Icons.Star,
-                            language.text("收藏数", "Favorites"),
-                            formatCompactCount(summary.favorites),
-                        ),
+                        first =
+                            DetailMetricValue(
+                                Icons.Heart,
+                                language.text("订阅数", "Subscriptions"),
+                                formatCompactCount(detail.subscriptions ?: summary.subscriptions),
+                            ),
+                        second =
+                            DetailMetricValue(
+                                Icons.Star,
+                                language.text("收藏数", "Favorites"),
+                                formatCompactCount(summary.favorites),
+                            ),
                     )
                     DetailDivider()
                     DetailMetricRow(
-                        first = DetailMetricValue(
-                            Icons.Visibility,
-                            language.text("浏览量", "Views"),
-                            formatCompactCount(summary.views),
-                        ),
-                        second = DetailMetricValue(
-                            Icons.Download,
-                            language.text("文件大小", "File size"),
-                            detail.fileSizeBytes?.let(::formatMegabytes)
-                                ?: language.text("未知", "Unknown"),
-                        ),
+                        first =
+                            DetailMetricValue(
+                                Icons.Visibility,
+                                language.text("浏览量", "Views"),
+                                formatCompactCount(summary.views),
+                            ),
+                        second =
+                            DetailMetricValue(
+                                Icons.Download,
+                                language.text("文件大小", "File size"),
+                                detail.fileSizeBytes?.let(::formatMegabytes)
+                                    ?: language.text("未知", "Unknown"),
+                            ),
                     )
                     DetailDivider()
                     DetailMetricRow(
-                        first = DetailMetricValue(
-                            Icons.Schedule,
-                            language.text("最后更新", "Last updated"),
-                            formatWorkshopDate(detail.updatedAt, language),
-                        ),
-                        second = DetailMetricValue(
-                            Icons.Info,
-                            language.text("类型", "Type"),
-                            summary.type.label(language),
-                        ),
+                        first =
+                            DetailMetricValue(
+                                Icons.Schedule,
+                                language.text("最后更新", "Last updated"),
+                                formatWorkshopDate(detail.updatedAt, language),
+                            ),
+                        second =
+                            DetailMetricValue(
+                                Icons.Info,
+                                language.text("类型", "Type"),
+                                summary.type.label(language),
+                            ),
                     )
                     if (summary.tags.isNotEmpty()) {
                         DetailDivider()
@@ -1538,19 +2078,19 @@ private fun DetailOverviewPage(
                             fontWeight = FontWeight.SemiBold,
                         )
                         FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
                         ) {
                             summary.tags.forEach { tag ->
                                 Surface(
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = MaterialTheme.shapes.small,
                                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
                                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 ) {
                                     Text(
                                         text = tag,
                                         style = MaterialTheme.typography.labelMedium,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        modifier = Modifier.padding(horizontal = WallHubSpacing.compact, vertical = WallHubSpacing.dense),
                                     )
                                 }
                             }
@@ -1558,16 +2098,17 @@ private fun DetailOverviewPage(
                     }
                     DetailDivider()
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .animateContentSize(
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                    stiffness = Spring.StiffnessMediumLow,
-                                ),
-                            )
-                            .padding(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .animateContentSize(
+                                    animationSpec =
+                                        spring(
+                                            dampingRatio = Spring.DampingRatioNoBouncy,
+                                            stiffness = Spring.StiffnessMediumLow,
+                                        ),
+                                ).padding(WallHubSpacing.xs),
+                        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
                     ) {
                         Text(
                             text = language.text("简介", "Description"),
@@ -1578,44 +2119,48 @@ private fun DetailOverviewPage(
                             text = description,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .then(
-                                    if (!descriptionExpanded && descriptionCanExpand) {
-                                        Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .clickable(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .then(
+                                        if (!descriptionExpanded && descriptionCanExpand) {
+                                            Modifier
+                                                .clip(MaterialTheme.shapes.small)
+                                                .clickable(
+                                                    enabled = !descriptionTogglePending,
+                                                    role = Role.Button,
+                                                    onClickLabel =
+                                                        language.text(
+                                                            "展开简介",
+                                                            "Expand description",
+                                                        ),
+                                                ) {
+                                                    requestDescriptionExpansion(true)
+                                                }
+                                        } else if (descriptionExpanded) {
+                                            Modifier.clickable(
+                                                interactionSource = expandedDescriptionInteractionSource,
+                                                indication = null,
                                                 enabled = !descriptionTogglePending,
                                                 role = Role.Button,
-                                                onClickLabel = language.text(
-                                                    "展开简介",
-                                                    "Expand description",
-                                                ),
+                                                onClickLabel =
+                                                    language.text(
+                                                        "收起简介",
+                                                        "Collapse description",
+                                                    ),
                                             ) {
-                                                requestDescriptionExpansion(true)
+                                                requestDescriptionExpansion(false)
                                             }
-                                    } else if (descriptionExpanded) {
-                                        Modifier.clickable(
-                                            interactionSource = expandedDescriptionInteractionSource,
-                                            indication = null,
-                                            enabled = !descriptionTogglePending,
-                                            role = Role.Button,
-                                            onClickLabel = language.text(
-                                                "收起简介",
-                                                "Collapse description",
-                                            ),
-                                        ) {
-                                            requestDescriptionExpansion(false)
-                                        }
-                                    } else {
-                                        Modifier
-                                    },
-                                ),
-                            maxLines = if (descriptionExpanded) {
-                                Int.MAX_VALUE
-                            } else {
-                                DESCRIPTION_COLLAPSED_MAX_LINES
-                            },
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
+                            maxLines =
+                                if (descriptionExpanded) {
+                                    Int.MAX_VALUE
+                                } else {
+                                    DESCRIPTION_COLLAPSED_MAX_LINES
+                                },
                             overflow = TextOverflow.Ellipsis,
                             onTextLayout = { result ->
                                 if (!descriptionExpanded) {
@@ -1630,19 +2175,20 @@ private fun DetailOverviewPage(
                                 },
                                 enabled = !descriptionTogglePending,
                                 interactionSource = descriptionToggleInteractionSource,
-                                shape = RoundedCornerShape(10.dp),
+                                shape = WallHubShapeTokens.badge,
                                 color = Color.Transparent,
                                 contentColor = MaterialTheme.colorScheme.primary,
                             ) {
                                 Text(
-                                    text = if (descriptionExpanded) {
-                                        language.text("收起", "Show less")
-                                    } else {
-                                        language.text("展开查看更多", "Show more")
-                                    },
+                                    text =
+                                        if (descriptionExpanded) {
+                                            language.text("收起", "Show less")
+                                        } else {
+                                            language.text("展开查看更多", "Show more")
+                                        },
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                    modifier = Modifier.padding(horizontal = WallHubSpacing.xs, vertical = WallHubSpacing.dense),
                                 )
                             }
                         }
@@ -1666,7 +2212,7 @@ private fun DetailMetricRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
     ) {
         DetailMetric(first, Modifier.weight(1f))
         DetailMetric(second, Modifier.weight(1f))
@@ -1680,13 +2226,13 @@ private fun DetailMetric(
 ) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = metric.icon,
             contentDescription = null,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(WallHubSizeTokens.compactIcon),
             tint = MaterialTheme.colorScheme.primary,
         )
         Column {
@@ -1743,21 +2289,23 @@ private fun DetailCommentsPage(
         if (listState.isScrollInProgress) focusManager.clearFocus(force = true)
     }
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .onGloballyPositioned { commentsBoundsInWindow = it.boundsInWindow() }
-            .pointerInput(commentsBoundsInWindow, composerBoundsInWindow) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(
-                        requireUnconsumed = false,
-                        pass = PointerEventPass.Initial,
-                    )
-                    val positionInWindow = down.position + commentsBoundsInWindow.topLeft
-                    if (!composerBoundsInWindow.contains(positionInWindow)) {
-                        focusManager.clearFocus(force = true)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { commentsBoundsInWindow = it.boundsInWindow() }
+                .pointerInput(commentsBoundsInWindow, composerBoundsInWindow) {
+                    awaitEachGesture {
+                        val down =
+                            awaitFirstDown(
+                                requireUnconsumed = false,
+                                pass = PointerEventPass.Initial,
+                            )
+                        val positionInWindow = down.position + commentsBoundsInWindow.topLeft
+                        if (!composerBoundsInWindow.contains(positionInWindow)) {
+                            focusManager.clearFocus(force = true)
+                        }
                     }
-                }
-            },
+                },
     ) {
         PullToRefreshBox(
             isRefreshing = isLoading && comments.isNotEmpty(),
@@ -1770,108 +2318,116 @@ private fun DetailCommentsPage(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    start = 16.dp,
-                    top = 16.dp,
-                    end = 16.dp,
-                    bottom = 88.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding =
+                    androidx.compose.foundation.layout.PaddingValues(
+                        start = WallHubSpacing.md,
+                        top = WallHubSpacing.md,
+                        end = WallHubSpacing.md,
+                        bottom = 88.dp,
+                    ),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
             ) {
-            if (canPostComment) {
-                item(key = "comment-composer") {
-                    CommentComposer(
-                        value = commentDraft,
-                        isPosting = isPostingComment,
-                        error = commentPostError,
-                        language = language,
-                        onValueChange = onCommentDraftChanged,
-                        onSubmit = onSubmitComment,
-                        modifier = Modifier.onGloballyPositioned {
-                            composerBoundsInWindow = it.boundsInWindow()
-                        },
-                    )
-                }
-            }
-            when {
-                isLoading && comments.isEmpty() -> item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 56.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        androidx.compose.material3.CircularProgressIndicator()
+                if (canPostComment) {
+                    item(key = "comment-composer") {
+                        CommentComposer(
+                            value = commentDraft,
+                            isPosting = isPostingComment,
+                            error = commentPostError,
+                            language = language,
+                            onValueChange = onCommentDraftChanged,
+                            onSubmit = onSubmitComment,
+                            modifier =
+                                Modifier.onGloballyPositioned {
+                                    composerBoundsInWindow = it.boundsInWindow()
+                                },
+                        )
                     }
                 }
-
-                error != null && comments.isEmpty() -> item {
-                    WallHubEmptyState(
-                        icon = Icons.Outlined.Refresh,
-                        title = error,
-                        actionLabel = language.text("重试", "Retry"),
-                        onAction = onRetry,
-                    )
-                }
-
-                comments.isEmpty() -> item {
-                    WallHubEmptyState(
-                        icon = Icons.Outlined.ChatBubbleOutline,
-                        title = language.text("暂时没有评论", "No comments yet"),
-                    )
-                }
-
-                else -> {
-                    items(
-                        items = comments,
-                        key = { comment ->
-                            listOf(comment.author, comment.timestamp, comment.text).joinToString("|")
-                        },
-                    ) { comment ->
-                        WorkshopCommentItem(comment = comment, language = language)
-                    }
-                    if (error != null) {
+                when {
+                    isLoading && comments.isEmpty() ->
                         item {
-                            WallHubSecondaryButton(
-                                onClick = onLoadMore,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null)
-                                Text(
-                                    text = language.text("重试加载更多评论", "Retry loading more"),
-                                    modifier = Modifier.padding(start = 8.dp),
-                                )
-                            }
-                        }
-                    } else if (commentsHasMore) {
-                        item {
-                            LaunchedEffect(comments.size, commentsHasMore) {
-                                onLoadMore()
-                            }
                             Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(52.dp),
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 56.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                if (isLoadingMore) {
-                                    androidx.compose.material3.CircularProgressIndicator(
-                                        modifier = Modifier.size(24.dp),
-                                        strokeWidth = 2.dp,
+                                androidx.compose.material3.CircularProgressIndicator()
+                            }
+                        }
+
+                    error != null && comments.isEmpty() ->
+                        item {
+                            WallHubEmptyState(
+                                icon = Icons.Outlined.Refresh,
+                                title = error,
+                                actionLabel = language.text("重试", "Retry"),
+                                onAction = onRetry,
+                            )
+                        }
+
+                    comments.isEmpty() ->
+                        item {
+                            WallHubEmptyState(
+                                icon = Icons.Outlined.ChatBubbleOutline,
+                                title = language.text("暂时没有评论", "No comments yet"),
+                            )
+                        }
+
+                    else -> {
+                        items(
+                            items = comments,
+                            key = { comment ->
+                                listOf(comment.author, comment.timestamp, comment.text).joinToString("|")
+                            },
+                        ) { comment ->
+                            WorkshopCommentItem(comment = comment, language = language)
+                        }
+                        if (error != null) {
+                            item {
+                                WallHubSecondaryButton(
+                                    onClick = onLoadMore,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null)
+                                    Text(
+                                        text = language.text("重试加载更多评论", "Retry loading more"),
+                                        modifier = Modifier.padding(start = WallHubSpacing.xs),
                                     )
+                                }
+                            }
+                        } else if (commentsHasMore) {
+                            item {
+                                LaunchedEffect(comments.size, commentsHasMore) {
+                                    onLoadMore()
+                                }
+                                Box(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .height(52.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (isLoadingMore) {
+                                        androidx.compose.material3.CircularProgressIndicator(
+                                            modifier = Modifier.size(WallHubSpacing.lg),
+                                            strokeWidth = WallHubSpacing.xxxs,
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-            }
         }
         AnimatedVisibility(
             visible = showScrollToTop,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp),
+            modifier =
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(WallHubSpacing.md),
             enter = fadeIn() + scaleIn(initialScale = 0.88f),
             exit = fadeOut() + scaleOut(targetScale = 0.88f),
         ) {
@@ -1881,19 +2437,21 @@ private fun DetailCommentsPage(
                     onReturnToWallpaperTop()
                     coroutineScope.launch { listState.animateScrollToItem(0) }
                 },
-                elevation = FloatingActionButtonDefaults.elevation(
-                    defaultElevation = WallHubFabDefaultElevation,
-                    pressedElevation = WallHubFabActiveElevation,
-                    focusedElevation = WallHubFabDefaultElevation,
-                    hoveredElevation = WallHubFabActiveElevation,
-                ),
+                elevation =
+                    FloatingActionButtonDefaults.elevation(
+                        defaultElevation = WallHubFabDefaultElevation,
+                        pressedElevation = WallHubFabActiveElevation,
+                        focusedElevation = WallHubFabDefaultElevation,
+                        hoveredElevation = WallHubFabActiveElevation,
+                    ),
             ) {
                 Icon(
                     imageVector = Icons.Outlined.VerticalAlignTop,
-                    contentDescription = language.text(
-                        "回到 Wallpaper 顶部",
-                        "Back to wallpaper top",
-                    ),
+                    contentDescription =
+                        language.text(
+                            "回到 Wallpaper 顶部",
+                            "Back to wallpaper top",
+                        ),
                 )
             }
         }
@@ -1927,8 +2485,8 @@ private fun CommentComposer(
             ) {
                 if (isPosting) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(WallHubSizeTokens.smallIcon),
+                        strokeWidth = WallHubSpacing.xxxs,
                     )
                 } else {
                     Icon(
@@ -1938,9 +2496,10 @@ private fun CommentComposer(
                 }
             }
         },
-        supportingText = error?.let { message ->
-            { Text(message) }
-        },
+        supportingText =
+            error?.let { message ->
+                { Text(message) }
+            },
         isError = error != null,
         enabled = !isPosting,
         minLines = 1,
@@ -1959,13 +2518,13 @@ private fun WorkshopCommentItem(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(WallHubSpacing.controlInset),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
             verticalAlignment = Alignment.Top,
         ) {
             Surface(
-                modifier = Modifier.size(36.dp),
-                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.size(WallHubSizeTokens.compactIconButton),
+                shape = CircleShape,
                 color = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ) {
@@ -1978,10 +2537,11 @@ private fun WorkshopCommentItem(
                     comment.avatarUrl?.let { avatarUrl ->
                         AsyncImage(
                             model = avatarUrl,
-                            contentDescription = language.text(
-                                "${comment.author} 的头像",
-                                "${comment.author}'s avatar",
-                            ),
+                            contentDescription =
+                                language.text(
+                                    "${comment.author} 的头像",
+                                    "${comment.author}'s avatar",
+                                ),
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -1990,7 +2550,7 @@ private fun WorkshopCommentItem(
             }
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.dense),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1999,7 +2559,7 @@ private fun WorkshopCommentItem(
                 ) {
                     Row(
                         modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.dense),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -2012,7 +2572,7 @@ private fun WorkshopCommentItem(
                         )
                         if (comment.isCreator) {
                             Surface(
-                                shape = RoundedCornerShape(4.dp),
+                                shape = MaterialTheme.shapes.extraSmall,
                                 color = MaterialTheme.colorScheme.primaryContainer,
                                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             ) {
@@ -2020,7 +2580,7 @@ private fun WorkshopCommentItem(
                                     text = language.text("作者", "Creator"),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.padding(horizontal = WallHubSpacing.dense, vertical = WallHubSpacing.xxxs),
                                 )
                             }
                         }
@@ -2029,7 +2589,7 @@ private fun WorkshopCommentItem(
                         text = formatCommentDate(comment, language),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 8.dp),
+                        modifier = Modifier.padding(start = WallHubSpacing.xs),
                     )
                 }
                 Text(
@@ -2057,15 +2617,16 @@ private fun DetailActionBar(
 ) {
     val interactionEnabled = !isLoadingInteraction && !isUpdatingInteraction
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(start = WallHubSpacing.md, top = WallHubSpacing.compact, end = WallHubSpacing.md, bottom = WallHubSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.dense),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
         ) {
             WallHubSecondaryButton(
                 onClick = onToggleSubscription,
@@ -2074,12 +2635,13 @@ private fun DetailActionBar(
             ) {
                 Icon(imageVector = Icons.Bell, contentDescription = null)
                 Text(
-                    text = if (interaction.subscriptionState == SubscriptionState.SUBSCRIBED) {
-                        language.text("取消订阅", "Unsubscribe")
-                    } else {
-                        language.text("订阅", "Subscribe")
-                    },
-                    modifier = Modifier.padding(start = 6.dp),
+                    text =
+                        if (interaction.subscriptionState == SubscriptionState.SUBSCRIBED) {
+                            language.text("取消订阅", "Unsubscribe")
+                        } else {
+                            language.text("订阅", "Subscribe")
+                        },
+                    modifier = Modifier.padding(start = WallHubSpacing.dense),
                 )
             }
             WallHubSecondaryButton(
@@ -2089,39 +2651,42 @@ private fun DetailActionBar(
             ) {
                 Icon(imageVector = Icons.Star, contentDescription = null)
                 Text(
-                    text = if (interaction.favoriteState == FavoriteState.FAVORITED) {
-                        language.text("取消收藏", "Unfavorite")
-                    } else {
-                        language.text("收藏", "Favorite")
-                    },
-                    modifier = Modifier.padding(start = 6.dp),
+                    text =
+                        if (interaction.favoriteState == FavoriteState.FAVORITED) {
+                            language.text("取消收藏", "Unfavorite")
+                        } else {
+                            language.text("收藏", "Favorite")
+                        },
+                    modifier = Modifier.padding(start = WallHubSpacing.dense),
                 )
             }
         }
         WallHubPrimaryAction(
-            label = if (isEnqueuingDownload) {
-                language.text("正在加入下载队列…", "Adding to download queue…")
-            } else {
-                language.text("下载", "Download")
-            },
+            label =
+                if (isEnqueuingDownload) {
+                    language.text("正在加入下载队列…", "Adding to download queue…")
+                } else {
+                    language.text("下载", "Download")
+                },
             onClick = onDownload,
             icon = Icons.Download,
             enabled = !isEnqueuingDownload,
         )
-        val status = when {
-            isLoadingInteraction -> language.text("正在读取 Steam 账户状态…", "Loading Steam account state…")
-            isUpdatingInteraction -> language.text("正在向 Steam 提交请求…", "Sending request to Steam…")
-            interactionMessage != null -> interactionMessage
-            downloadMessage != null -> downloadMessage
-            else -> ""
-        }
+        val status =
+            when {
+                isLoadingInteraction -> language.text("正在读取 Steam 账户状态…", "Loading Steam account state…")
+                isUpdatingInteraction -> language.text("正在向 Steam 提交请求…", "Sending request to Steam…")
+                interactionMessage != null -> interactionMessage
+                downloadMessage != null -> downloadMessage
+                else -> ""
+            }
         Text(
             text = status,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.height(16.dp),
+            modifier = Modifier.height(WallHubSpacing.md),
         )
     }
 }
@@ -2129,19 +2694,27 @@ private fun DetailActionBar(
 private fun formatCompactCount(value: Long?): String {
     if (value == null) return "—"
     return when {
-        value >= 1_000_000L -> String.format(Locale.getDefault(), "%.1fM", value / 1_000_000.0)
-            .replace(".0M", "M")
-        value >= 1_000L -> String.format(Locale.getDefault(), "%.1fK", value / 1_000.0)
-            .replace(".0K", "K")
+        value >= 1_000_000L ->
+            String
+                .format(Locale.getDefault(), "%.1fM", value / 1_000_000.0)
+                .replace(".0M", "M")
+        value >= 1_000L ->
+            String
+                .format(Locale.getDefault(), "%.1fK", value / 1_000.0)
+                .replace(".0K", "K")
         else -> value.toString()
     }
 }
 
-private fun formatWorkshopDate(timestamp: Long?, language: AppLanguage): String {
+private fun formatWorkshopDate(
+    timestamp: Long?,
+    language: AppLanguage,
+): String {
     if (timestamp == null || timestamp <= 0L) return language.text("未知", "Unknown")
     val pattern = if (language == AppLanguage.EN) "MMM d, yyyy" else "yyyy年M月d日"
     return runCatching {
-        DateTimeFormatter.ofPattern(pattern, Locale.getDefault())
+        DateTimeFormatter
+            .ofPattern(pattern, Locale.getDefault())
             .format(Instant.ofEpochSecond(timestamp).atZone(ZoneId.systemDefault()))
     }.getOrDefault(language.text("未知", "Unknown"))
 }
@@ -2165,19 +2738,22 @@ internal fun formatCommentDate(
         return runCatching {
             val dateTime = Instant.ofEpochMilli(timestampMillis).atZone(ZoneId.systemDefault())
             val currentYear = Instant.ofEpochMilli(nowMillis).atZone(ZoneId.systemDefault()).year
-            val pattern = when (language) {
-                AppLanguage.EN -> if (dateTime.year == currentYear) {
-                    "MMM dd, hh:mm:ss a"
-                } else {
-                    "yyyy MMM dd, hh:mm:ss a"
-                }
+            val pattern =
+                when (language) {
+                    AppLanguage.EN ->
+                        if (dateTime.year == currentYear) {
+                            "MMM dd, hh:mm:ss a"
+                        } else {
+                            "yyyy MMM dd, hh:mm:ss a"
+                        }
 
-                AppLanguage.ZH -> if (dateTime.year == currentYear) {
-                    "MM 月 dd 日 a hh:mm:ss"
-                } else {
-                    "yyyy 年 MM 月 dd 日 a hh:mm:ss"
+                    AppLanguage.ZH ->
+                        if (dateTime.year == currentYear) {
+                            "MM 月 dd 日 a hh:mm:ss"
+                        } else {
+                            "yyyy 年 MM 月 dd 日 a hh:mm:ss"
+                        }
                 }
-            }
             val locale = if (language == AppLanguage.EN) Locale.ENGLISH else Locale.SIMPLIFIED_CHINESE
             DateTimeFormatter.ofPattern(pattern, locale).format(dateTime)
         }.getOrDefault(comment.dateLabel.orEmpty())
@@ -2206,10 +2782,11 @@ private fun DownloadChoiceSheet(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = WallHubSpacing.lg, vertical = WallHubSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
         ) {
             Text(language.text("下载选项", "Download options"), style = MaterialTheme.typography.titleLarge)
             Text(
@@ -2237,36 +2814,40 @@ private fun DownloadChoiceSheet(
             WallHubSecondaryButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
                 Text(language.text("关闭", "Close"))
             }
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(WallHubSpacing.sm))
         }
     }
 }
 
-private fun WorkshopType.label(language: AppLanguage): String = when (this) {
-    WorkshopType.VIDEO -> language.text("视频", "Video")
-    WorkshopType.SCENE -> language.text("场景", "Scene")
-    WorkshopType.WEB -> language.text("网站", "Web")
-    WorkshopType.UNKNOWN -> language.text("未知", "Unknown")
-}
+private fun WorkshopType.label(language: AppLanguage): String =
+    when (this) {
+        WorkshopType.VIDEO -> language.text("视频", "Video")
+        WorkshopType.SCENE -> language.text("场景", "Scene")
+        WorkshopType.WEB -> language.text("网站", "Web")
+        WorkshopType.UNKNOWN -> language.text("未知", "Unknown")
+    }
 
-private fun WorkshopType.defaultExportFormat(): ExportFormat = when (this) {
-    WorkshopType.WEB -> ExportFormat.ZIP
-    WorkshopType.VIDEO,
-    WorkshopType.SCENE,
-    WorkshopType.UNKNOWN,
-    -> ExportFormat.MPKG
-}
+private fun WorkshopType.defaultExportFormat(): ExportFormat =
+    when (this) {
+        WorkshopType.WEB -> ExportFormat.ZIP
+        WorkshopType.VIDEO,
+        WorkshopType.SCENE,
+        WorkshopType.UNKNOWN,
+        -> ExportFormat.MPKG
+    }
 
-private fun WorkshopType.availableExportFormats(): List<ExportFormat> = when (this) {
-    WorkshopType.WEB -> listOf(ExportFormat.ZIP)
-    WorkshopType.VIDEO,
-    WorkshopType.SCENE,
-    WorkshopType.UNKNOWN,
-    -> listOf(ExportFormat.MPKG, ExportFormat.ZIP)
-}
+private fun WorkshopType.availableExportFormats(): List<ExportFormat> =
+    when (this) {
+        WorkshopType.WEB -> listOf(ExportFormat.ZIP)
+        WorkshopType.VIDEO,
+        WorkshopType.SCENE,
+        WorkshopType.UNKNOWN,
+        -> listOf(ExportFormat.MPKG, ExportFormat.ZIP)
+    }
 
-private fun ExportFormat.label(language: AppLanguage): String = when (this) {
-    ExportFormat.AUTO -> language.text("自动", "Automatic")
-    ExportFormat.MPKG -> language.text("MPKG（移动端）", "MPKG (mobile)")
-    ExportFormat.ZIP -> language.text("ZIP 压缩包", "ZIP archive")
-}
+private fun ExportFormat.label(language: AppLanguage): String =
+    when (this) {
+        ExportFormat.AUTO -> language.text("自动", "Automatic")
+        ExportFormat.MPKG -> language.text("MPKG（移动端）", "MPKG (mobile)")
+        ExportFormat.ZIP -> language.text("ZIP 压缩包", "ZIP archive")
+    }

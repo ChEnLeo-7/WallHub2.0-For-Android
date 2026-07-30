@@ -1,8 +1,8 @@
 package com.wallhub.android.data.downloads
 
+import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import org.junit.Test
 
 class SteamStreamPrefetchTest {
     @Test

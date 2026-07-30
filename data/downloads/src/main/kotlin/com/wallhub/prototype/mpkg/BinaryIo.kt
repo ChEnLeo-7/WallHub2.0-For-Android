@@ -39,15 +39,18 @@ internal fun RandomAccessFile.readLengthString(maxLength: Int): String {
     return data.toString(Charsets.UTF_8)
 }
 
-internal class ByteCursor(private val data: ByteArray) {
+internal class ByteCursor(
+    private val data: ByteArray,
+) {
     private var position = 0
 
     fun readIntLe(): Int {
         ensureAvailable(4)
-        val value = (data[position].toInt() and 0xff) or
-            ((data[position + 1].toInt() and 0xff) shl 8) or
-            ((data[position + 2].toInt() and 0xff) shl 16) or
-            ((data[position + 3].toInt() and 0xff) shl 24)
+        val value =
+            (data[position].toInt() and 0xff) or
+                ((data[position + 1].toInt() and 0xff) shl 8) or
+                ((data[position + 2].toInt() and 0xff) shl 16) or
+                ((data[position + 3].toInt() and 0xff) shl 24)
         position += 4
         return value
     }
@@ -83,9 +86,8 @@ internal class ByteCursor(private val data: ByteArray) {
     }
 }
 
-internal fun byteArrayOutput(block: ByteArrayOutputStream.() -> Unit): ByteArray {
-    return ByteArrayOutputStream().use { output ->
+internal fun byteArrayOutput(block: ByteArrayOutputStream.() -> Unit): ByteArray =
+    ByteArrayOutputStream().use { output ->
         output.block()
         output.toByteArray()
     }
-}

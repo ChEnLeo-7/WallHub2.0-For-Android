@@ -3,9 +3,6 @@ package com.wallhub.android.data.downloads
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
-import java.io.File
-import java.io.IOException
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -26,6 +23,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.json.JSONObject
+import java.io.File
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
+import java.util.concurrent.TimeUnit
 
 internal class SteamWorkshopThumbnailCache(
     context: Context,
@@ -33,12 +35,13 @@ internal class SteamWorkshopThumbnailCache(
 ) {
     private val directory = File(context.cacheDir, CACHE_DIRECTORY).apply { mkdirs() }
     private val resolveMutex = Mutex()
-    private val client = clientBuilder
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(25, TimeUnit.SECONDS)
-        .callTimeout(35, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .build()
+    private val client =
+        clientBuilder
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(25, TimeUnit.SECONDS)
+            .callTimeout(35, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .build()
 
     fun cachedUri(workshopId: Long): String? {
         if (workshopId <= 0L) return null
@@ -51,146 +54,194 @@ internal class SteamWorkshopThumbnailCache(
     suspend fun resolve(
         workshopIds: Set<Long>,
         knownPreviewUrls: Map<Long, String>,
-    ): Map<Long, String> = withContext(Dispatchers.IO) {
-        resolveMutex.withLock {
-            val validIds = workshopIds.filterTo(linkedSetOf()) { it > 0L }
-            if (validIds.isEmpty()) return@withLock emptyMap()
+    ): Map<Long, String> =
+        withContext(Dispatchers.IO) {
+            resolveMutex.withLock {
+                val validIds = workshopIds.filterTo(linkedSetOf()) { it > 0L }
+                if (validIds.isEmpty()) return@withLock emptyMap()
 
-            trimCache()
-            val resolved = validIds
-                .mapNotNull { id -> cachedUri(id)?.let { id to it } }
-                .toMap()
-                .toMutableMap()
-            val missingIds = validIds - resolved.keys
-            if (missingIds.isEmpty()) return@withLock resolved
+                trimCache()
+                val resolved =
+                    validIds
+                        .mapNotNull { id -> cachedUri(id)?.let { id to it } }
+                        .toMap()
+                        .toMutableMap()
+                val missingIds = validIds - resolved.keys
+                if (missingIds.isEmpty()) return@withLock resolved
 
-            val previewUrls = knownPreviewUrls
-                .filterKeys { it in missingIds }
-                .filterValues { it.startsWith("https://") }
-                .toMutableMap()
-            val idsNeedingLookup = missingIds - previewUrls.keys
-            fetchPreviewUrls(idsNeedingLookup).forEach { (id, url) ->
-                previewUrls.putIfAbsent(id, url)
-            }
-
-            val semaphore = Semaphore(MAX_CONCURRENT_DOWNLOADS)
-            coroutineScope {
-                missingIds.mapNotNull { id ->
-                    val url = previewUrls[id] ?: return@mapNotNull null
-                    async {
-                        semaphore.withPermit {
-                            cachePreview(id, url)?.let { uri -> id to uri }
-                        }
-                    }
-                }.awaitAll().filterNotNull().forEach { (id, uri) ->
-                    resolved[id] = uri
+                val previewUrls =
+                    knownPreviewUrls
+                        .filterKeys { it in missingIds }
+                        .filterValues { it.startsWith("https://") }
+                        .toMutableMap()
+                val idsNeedingLookup = missingIds - previewUrls.keys
+                fetchPreviewUrls(idsNeedingLookup).forEach { (id, url) ->
+                    previewUrls.putIfAbsent(id, url)
                 }
+
+                val semaphore = Semaphore(MAX_CONCURRENT_DOWNLOADS)
+                coroutineScope {
+                    missingIds
+                        .mapNotNull { id ->
+                            val url = previewUrls[id] ?: return@mapNotNull null
+                            async {
+                                semaphore.withPermit {
+                                    cachePreview(id, url)?.let { uri -> id to uri }
+                                }
+                            }
+                        }.awaitAll()
+                        .filterNotNull()
+                        .forEach { (id, uri) ->
+                            resolved[id] = uri
+                        }
+                }
+                trimCache()
+                resolved
             }
-            trimCache()
-            resolved
         }
-    }
 
     private suspend fun fetchPreviewUrls(workshopIds: Set<Long>): Map<Long, String> {
         if (workshopIds.isEmpty()) return emptyMap()
         val resolved = mutableMapOf<Long, String>()
         workshopIds.chunked(MAX_DETAILS_BATCH_SIZE).forEach { batch ->
-            val form = FormBody.Builder()
-                .add("itemcount", batch.size.toString())
-                .apply {
-                    batch.forEachIndexed { index, id ->
-                        add("publishedfileids[$index]", id.toString())
+            val form =
+                FormBody
+                    .Builder()
+                    .add("itemcount", batch.size.toString())
+                    .apply {
+                        batch.forEachIndexed { index, id ->
+                            add("publishedfileids[$index]", id.toString())
+                        }
+                    }.build()
+            val request =
+                Request
+                    .Builder()
+                    .url(PUBLISHED_FILE_DETAILS_URL)
+                    .post(form)
+                    .header("Accept", "application/json")
+                    .header("User-Agent", USER_AGENT)
+                    .build()
+            val previews =
+                try {
+                    client.newCall(request).awaitResponse().use { response ->
+                        if (!response.isSuccessful) {
+                            throw IOException("Steam cover request failed: HTTP ${response.code}")
+                        }
+                        parsePreviewUrls(response.body.string())
                     }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Throwable) {
+                    emptyMap()
                 }
-                .build()
-            val request = Request.Builder()
-                .url(PUBLISHED_FILE_DETAILS_URL)
-                .post(form)
-                .header("Accept", "application/json")
-                .header("User-Agent", USER_AGENT)
-                .build()
-            val previews = try {
-                client.newCall(request).awaitResponse().use { response ->
-                    if (!response.isSuccessful) {
-                        throw IOException("Steam cover request failed: HTTP ${response.code}")
-                    }
-                    parsePreviewUrls(response.body.string())
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Throwable) {
-                emptyMap()
-            }
             previews.forEach { (id, url) -> resolved[id] = url }
         }
         return resolved
     }
 
-    private suspend fun cachePreview(workshopId: Long, previewUrl: String): String? {
+    private suspend fun cachePreview(
+        workshopId: Long,
+        previewUrl: String,
+    ): String? {
         val target = cacheFile(workshopId)
         val temporary = File(directory, "${target.name}.part")
         return try {
-            require(previewUrl.startsWith("https://")) { "Invalid Steam cover URL" }
+            if (
+                downloadPreviewToTemporaryFile(previewUrl, temporary) &&
+                isValidPreviewImage(temporary) &&
+                promoteTemporaryPreview(temporary, target)
+            ) {
+                Uri.fromFile(target).toString()
+            } else {
+                null
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
+        } finally {
             temporary.delete()
-            val request = Request.Builder()
+        }
+    }
+
+    private suspend fun downloadPreviewToTemporaryFile(
+        previewUrl: String,
+        temporary: File,
+    ): Boolean {
+        if (!previewUrl.startsWith("https://")) return false
+        temporary.delete()
+        val request =
+            Request
+                .Builder()
                 .url(previewUrl)
                 .get()
                 .header("Accept", "image/avif,image/webp,image/*")
                 .header("User-Agent", USER_AGENT)
                 .build()
-            client.newCall(request).awaitResponse().use { response ->
-                if (!response.isSuccessful) {
-                    throw IOException("Steam cover download failed: HTTP ${response.code}")
-                }
-                val body = response.body
-                val declaredSize = body.contentLength()
-                require(declaredSize in -1L..MAX_THUMBNAIL_BYTES) { "Steam cover is too large" }
-                body.byteStream().use { input ->
-                    temporary.outputStream().buffered().use { output ->
-                        val buffer = ByteArray(COPY_BUFFER_BYTES)
-                        var total = 0L
-                        while (true) {
-                            currentCoroutineContext().ensureActive()
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            total += read
-                            require(total <= MAX_THUMBNAIL_BYTES) { "Steam cover is too large" }
-                            output.write(buffer, 0, read)
-                        }
-                        require(total > 0L) { "Steam cover is empty" }
-                    }
-                }
-            }
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(temporary.absolutePath, bounds)
-            require(bounds.outWidth > 0 && bounds.outHeight > 0) {
-                "Steam cover is not a valid image"
-            }
-            if (target.exists() && !target.delete()) {
-                throw IOException("Unable to replace cover cache")
-            }
-            if (!temporary.renameTo(target)) throw IOException("Unable to write cover cache")
-            target.setLastModified(System.currentTimeMillis())
-            Uri.fromFile(target).toString()
-        } catch (error: CancellationException) {
-            temporary.delete()
-            throw error
-        } catch (_: Throwable) {
-            temporary.delete()
-            null
+        return client.newCall(request).awaitResponse().use { response ->
+            if (!response.isSuccessful) return@use false
+            val body = response.body
+            if (body.contentLength() !in -1L..MAX_THUMBNAIL_BYTES) return@use false
+            copyPreviewBody(body, temporary)
         }
     }
 
+    private suspend fun copyPreviewBody(
+        body: okhttp3.ResponseBody,
+        temporary: File,
+    ): Boolean =
+        body.byteStream().use { input ->
+            temporary.outputStream().buffered().use { output ->
+                copyPreviewStream(input, output)
+            }
+        }
+
+    private suspend fun copyPreviewStream(
+        input: InputStream,
+        output: OutputStream,
+    ): Boolean {
+        val buffer = ByteArray(COPY_BUFFER_BYTES)
+        var total = 0L
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val read = input.read(buffer)
+            if (read < 0) break
+            total += read
+            if (total > MAX_THUMBNAIL_BYTES) return false
+            output.write(buffer, 0, read)
+        }
+        return total > 0L
+    }
+
+    private fun isValidPreviewImage(file: File): Boolean {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        return bounds.outWidth > 0 && bounds.outHeight > 0
+    }
+
+    private fun promoteTemporaryPreview(
+        temporary: File,
+        target: File,
+    ): Boolean {
+        if (target.exists() && !target.delete()) return false
+        if (!temporary.renameTo(target)) return false
+        target.setLastModified(System.currentTimeMillis())
+        return true
+    }
+
     private fun trimCache() {
-        val files = directory.listFiles { file -> file.isFile && file.extension == "cover" }
-            ?.sortedByDescending(File::lastModified)
-            .orEmpty()
+        val files =
+            directory
+                .listFiles { file -> file.isFile && file.extension == "cover" }
+                ?.sortedByDescending(File::lastModified)
+                .orEmpty()
         var retainedBytes = 0L
         files.forEach { file ->
             retainedBytes += file.length().coerceAtLeast(0L)
             if (retainedBytes > MAX_CACHE_BYTES) file.delete()
         }
-        directory.listFiles { file -> file.name.endsWith(".part") }
+        directory
+            .listFiles { file -> file.name.endsWith(".part") }
             ?.filter { file -> System.currentTimeMillis() - file.lastModified() > STALE_PART_AGE_MS }
             ?.forEach(File::delete)
     }
@@ -211,38 +262,47 @@ internal class SteamWorkshopThumbnailCache(
     }
 }
 
-private suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { continuation ->
-    continuation.invokeOnCancellation { cancel() }
-    enqueue(
-        object : Callback {
-            override fun onFailure(call: Call, error: IOException) {
-                if (continuation.isActive) continuation.resumeWith(Result.failure(error))
-            }
-
-            override fun onResponse(call: Call, response: Response) {
-                if (continuation.isActive) {
-                    continuation.resumeWith(Result.success(response))
-                } else {
-                    response.close()
+private suspend fun Call.awaitResponse(): Response =
+    suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { cancel() }
+        enqueue(
+            object : Callback {
+                override fun onFailure(
+                    call: Call,
+                    error: IOException,
+                ) {
+                    if (continuation.isActive) continuation.resumeWith(Result.failure(error))
                 }
-            }
-        },
-    )
-}
+
+                override fun onResponse(
+                    call: Call,
+                    response: Response,
+                ) {
+                    if (continuation.isActive) {
+                        continuation.resumeWith(Result.success(response))
+                    } else {
+                        response.close()
+                    }
+                }
+            },
+        )
+    }
 
 internal fun parsePreviewUrls(body: String): Map<Long, String> {
-    val details = JSONObject(body)
-        .optJSONObject("response")
-        ?.optJSONArray("publishedfiledetails")
-        ?: return emptyMap()
+    val details =
+        JSONObject(body)
+            .optJSONObject("response")
+            ?.optJSONArray("publishedfiledetails")
+            ?: return emptyMap()
     return buildMap {
         for (index in 0 until details.length()) {
             val detail = details.optJSONObject(index) ?: continue
-            val id = when (val value = detail.opt("publishedfileid")) {
-                is Number -> value.toLong()
-                is String -> value.toLongOrNull()
-                else -> null
-            } ?: continue
+            val id =
+                when (val value = detail.opt("publishedfileid")) {
+                    is Number -> value.toLong()
+                    is String -> value.toLongOrNull()
+                    else -> null
+                } ?: continue
             val previewUrl = detail.optString("preview_url").trim()
             if (id > 0L && previewUrl.startsWith("https://")) put(id, previewUrl)
         }

@@ -10,7 +10,9 @@ import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-enum class WorkshopKind(val outputExtension: String) {
+enum class WorkshopKind(
+    val outputExtension: String,
+) {
     SCENE("mpkg"),
     VIDEO("mpkg"),
     WEB("zip"),
@@ -30,7 +32,10 @@ object WorkshopConverter {
     private val previewExtensions = listOf("gif", "jpg", "jpeg", "png", "webp")
     private val audioExtensions = setOf("mp3", "wav", "ogg", "flac", "aac", "m4a")
 
-    fun detect(inputDir: File, contentTypeHint: String? = null): WorkshopKind {
+    fun detect(
+        inputDir: File,
+        contentTypeHint: String? = null,
+    ): WorkshopKind {
         contentTypeHint?.trim()?.lowercase(Locale.ROOT)?.let { hint ->
             when (hint) {
                 "video" -> return WorkshopKind.VIDEO
@@ -74,11 +79,12 @@ object WorkshopConverter {
         val title = project.string("title").orEmpty().ifBlank { inputDir.name }
         val projectJson = buildVideoProjectJson(title, normalizedVideoName, preview.name)
         MpkgWriter.write(
-            entries = listOf(
-                MpkgInputEntry(normalizedVideoName, FilePayload(videoFile)),
-                MpkgInputEntry(preview.name, FilePayload(preview)),
-                MpkgInputEntry("project.json", ByteArrayPayload(projectJson)),
-            ),
+            entries =
+                listOf(
+                    MpkgInputEntry(normalizedVideoName, FilePayload(videoFile)),
+                    MpkgInputEntry(preview.name, FilePayload(preview)),
+                    MpkgInputEntry("project.json", ByteArrayPayload(projectJson)),
+                ),
             outputFile = outputFile,
             magic = VIDEO_MPKG_MAGIC,
             checkCancellation = checkCancellation,
@@ -138,10 +144,12 @@ object WorkshopConverter {
                         checkCancellation()
                         entries += MpkgInputEntry(entry.path, FilePayload(transformed))
                     }
-                    else -> entries += MpkgInputEntry(
-                        entry.path,
-                        FileSlicePayload(scenePackage, entry.offset, entry.length),
-                    )
+                    else ->
+                        entries +=
+                            MpkgInputEntry(
+                                entry.path,
+                                FileSlicePayload(scenePackage, entry.offset, entry.length),
+                            )
                 }
             }
             entries += MpkgInputEntry("project.json", FilePayload(projectFile))
@@ -167,8 +175,9 @@ object WorkshopConverter {
         checkCancellation: () -> Unit,
     ): WorkshopConversionReport {
         val outputPath = outputFile.canonicalFile.toPath()
-        val files = walkFiles(inputDir, checkCancellation)
-            .filterNot { it.canonicalFile.toPath() == outputPath }
+        val files =
+            walkFiles(inputDir, checkCancellation)
+                .filterNot { it.canonicalFile.toPath() == outputPath }
         writeAtomically(outputFile) { temporaryFile ->
             ZipOutputStream(BufferedOutputStream(FileOutputStream(temporaryFile))).use { zip ->
                 files.forEach { file ->
@@ -202,8 +211,11 @@ object WorkshopConverter {
     }
 
     private fun findPreview(inputDir: File): File? {
-        val files = inputDir.listFiles().orEmpty()
-            .filter { it.isFile && it.nameWithoutExtension.equals("preview", ignoreCase = true) }
+        val files =
+            inputDir
+                .listFiles()
+                .orEmpty()
+                .filter { it.isFile && it.nameWithoutExtension.equals("preview", ignoreCase = true) }
         return files.minWithOrNull(
             compareBy<File> {
                 previewExtensions.indexOf(it.extension.lowercase(Locale.ROOT)).let { index ->
@@ -213,7 +225,10 @@ object WorkshopConverter {
         )
     }
 
-    private fun resolveLocalProjectFile(root: File, rawPath: String): File {
+    private fun resolveLocalProjectFile(
+        root: File,
+        rawPath: String,
+    ): File {
         val normalized = normalizeRelativePath(rawPath)
         val rootPath = root.canonicalFile.toPath()
         val candidate = File(root, normalized).canonicalFile
@@ -230,20 +245,26 @@ object WorkshopConverter {
         return MpkgWriter.normalizePath(normalized)
     }
 
-    private fun relativePath(root: File, file: File): String {
+    private fun relativePath(
+        root: File,
+        file: File,
+    ): String {
         val rootPath = root.canonicalFile.toPath()
         val path = file.canonicalFile.toPath()
         require(path.startsWith(rootPath)) { "Website file escapes workshop folder" }
         return MpkgWriter.normalizePath(rootPath.relativize(path).toString())
     }
 
-    private fun walkFiles(root: File, checkCancellation: () -> Unit): List<File> {
-        return root.walkTopDown()
+    private fun walkFiles(
+        root: File,
+        checkCancellation: () -> Unit,
+    ): List<File> =
+        root
+            .walkTopDown()
             .filter { it.isFile }
             .onEach { checkCancellation() }
             .sortedBy { relativePath(root, it).lowercase(Locale.ROOT) }
             .toList()
-    }
 
     private fun readProject(inputDir: File): WorkshopProject {
         val projectFile = File(inputDir, "project.json")
@@ -251,12 +272,17 @@ object WorkshopConverter {
         return WorkshopProject(projectFile.readText(Charsets.UTF_8).removePrefix("\uFEFF"))
     }
 
-    private fun buildVideoProjectJson(title: String, videoName: String, previewName: String): ByteArray {
-        fun escape(value: String): String = value
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\r", "\\r")
-            .replace("\n", "\\n")
+    private fun buildVideoProjectJson(
+        title: String,
+        videoName: String,
+        previewName: String,
+    ): ByteArray {
+        fun escape(value: String): String =
+            value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\r", "\\r")
+                .replace("\n", "\\n")
         return buildString {
             append("{\r\n")
             append("\t\"file\" : \"").append(escape(videoName)).append("\",\r\n")
@@ -267,7 +293,9 @@ object WorkshopConverter {
         }.toByteArray(Charsets.UTF_8)
     }
 
-    private class WorkshopProject(private val source: String) {
+    private class WorkshopProject(
+        private val source: String,
+    ) {
         fun string(name: String): String? {
             val expression = Regex("\\\"${Regex.escape(name)}\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"])*)\\\"")
             val encoded = expression.find(source)?.groupValues?.getOrNull(1) ?: return null
@@ -309,16 +337,19 @@ object ShaderCompatibility {
             "30 / 8.0" to "30.0 / 8.0",
             "30 / 15.0" to "30.0 / 15.0",
         ).forEach { (old, new) -> output = output.replace(old, new) }
-        output = output.replace(
-            "#define SMOOTH_CURVE A_SMOOTH_CURVE // For compatability with old wallpapers that get ported to Android\r\n\r\n",
-            "",
-        ).replace(
-            "#define SMOOTH_CURVE A_SMOOTH_CURVE // For compatability with old wallpapers that get ported to Android\n\n",
-            "",
-        )
-        output = output.replace(sampleCountDeclaration) { match ->
-            "const float sampleCount = ${match.groupValues[1]}.0;"
-        }
+        output =
+            output
+                .replace(
+                    "#define SMOOTH_CURVE A_SMOOTH_CURVE // For compatability with old wallpapers that get ported to Android\r\n\r\n",
+                    "",
+                ).replace(
+                    "#define SMOOTH_CURVE A_SMOOTH_CURVE // For compatability with old wallpapers that get ported to Android\n\n",
+                    "",
+                )
+        output =
+            output.replace(sampleCountDeclaration) { match ->
+                "const float sampleCount = ${match.groupValues[1]}.0;"
+            }
         output = output.replace("const float sampleDrop = sampleCount - 1;", "const float sampleDrop = sampleCount - 1.0;")
         output = output.replace(sampleCountLoop, "for (float i = 0.0; i < sampleCount; ++i)")
         output = output.replace(textureCoordinateZero) { match -> "${match.groupValues[1]}0.0;" }
@@ -326,15 +357,15 @@ object ShaderCompatibility {
             val newline = if (output.contains("\r\n")) "\r\n" else "\n"
             output = output.replace(HIDDEN_TEXTURE_DECLARATION, HIDDEN_TEXTURE_MARKER)
             if (output.contains(HIDDEN_TEXTURE_MARKER) && !output.contains("uniform sampler2D g_Texture0;")) {
-                output = output.replaceFirst(
-                    COMMON_BLUR_INCLUDE,
-                    "uniform sampler2D g_Texture0;$newline$COMMON_BLUR_INCLUDE",
-                )
+                output =
+                    output.replaceFirst(
+                        COMMON_BLUR_INCLUDE,
+                        "uniform sampler2D g_Texture0;$newline$COMMON_BLUR_INCLUDE",
+                    )
             }
         }
         return output
     }
-
 }
 
 private const val MAX_DESKTOP_TEX_BYTES = 64L * 1024L * 1024L

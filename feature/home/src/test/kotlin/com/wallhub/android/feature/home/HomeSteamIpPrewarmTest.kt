@@ -3,15 +3,15 @@ package com.wallhub.android.feature.home
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamAccessState
 import com.wallhub.android.core.model.SteamWorkshopDataSource
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class HomeSteamIpPrewarmTest {
     @Test
@@ -80,60 +80,84 @@ class HomeSteamIpPrewarmTest {
 
     @Test
     fun `prewarm and pull-to-refresh indicators are mutually exclusive`() {
-        val prewarming = HomeUiState(
-            isInitialLoading = true,
-            isSteamIpPrewarming = true,
-        ).loadingIndicatorVisibility()
+        val prewarming =
+            HomeUiState(
+                isInitialLoading = true,
+                isSteamIpPrewarming = true,
+            ).loadingIndicatorVisibility()
         assertTrue(prewarming.showSteamIpPrewarm)
         assertFalse(prewarming.showPullToRefresh)
 
-        val refreshing = HomeUiState(
-            isInitialLoading = true,
-            isSteamIpPrewarming = false,
-        ).loadingIndicatorVisibility()
+        val refreshing =
+            HomeUiState(
+                isInitialLoading = true,
+                isSteamIpPrewarming = false,
+            ).loadingIndicatorVisibility()
         assertFalse(refreshing.showSteamIpPrewarm)
         assertTrue(refreshing.showPullToRefresh)
 
-        val pageLoading = HomeUiState(
-            isInitialLoading = false,
-            isPageLoading = true,
-            isSteamIpPrewarming = false,
-        ).loadingIndicatorVisibility()
+        val pageLoading =
+            HomeUiState(
+                isInitialLoading = false,
+                isPageLoading = true,
+                isSteamIpPrewarming = false,
+            ).loadingIndicatorVisibility()
         assertFalse(pageLoading.showSteamIpPrewarm)
         assertTrue(pageLoading.showPullToRefresh)
     }
 
     @Test
-    fun `prewarm gate blocks the following request until completion`() = runBlocking {
-        val prewarm = CompletableDeferred<Boolean>()
-        val steamAccess = FakeSteamAccessRepository { prewarm.await() }
-        var browseRequests = 0
-        val load = async(start = CoroutineStart.UNDISPATCHED) {
-            requireSteamIpPrewarm(
-                shouldPrewarm = true,
-                dataSource = SteamWorkshopDataSource.COMMUNITY_HTML,
-                steamAccessRepository = steamAccess,
-                failureMessage = "prewarm failed",
-            )
-            browseRequests += 1
+    fun `prewarm gate blocks the following request until completion`() =
+        runBlocking {
+            val prewarm = CompletableDeferred<Boolean>()
+            val steamAccess = FakeSteamAccessRepository { prewarm.await() }
+            var browseRequests = 0
+            val load =
+                async(start = CoroutineStart.UNDISPATCHED) {
+                    requireSteamIpPrewarm(
+                        shouldPrewarm = true,
+                        dataSource = SteamWorkshopDataSource.COMMUNITY_HTML,
+                        steamAccessRepository = steamAccess,
+                        failureMessage = "prewarm failed",
+                    )
+                    browseRequests += 1
+                }
+
+            assertEquals(1, steamAccess.prewarmRequests)
+            assertEquals(0, browseRequests)
+
+            prewarm.complete(true)
+            load.await()
+
+            assertEquals(1, browseRequests)
         }
-
-        assertEquals(1, steamAccess.prewarmRequests)
-        assertEquals(0, browseRequests)
-
-        prewarm.complete(true)
-        load.await()
-
-        assertEquals(1, browseRequests)
-    }
 
     @Test
-    fun `failed prewarm blocks the following request and retry probes again`() = runBlocking {
-        var prewarmReady = false
-        val steamAccess = FakeSteamAccessRepository { prewarmReady }
-        var browseRequests = 0
+    fun `failed prewarm blocks the following request and retry probes again`() =
+        runBlocking {
+            var prewarmReady = false
+            val steamAccess = FakeSteamAccessRepository { prewarmReady }
+            var browseRequests = 0
 
-        val firstError = try {
+            val firstError =
+                try {
+                    requireSteamIpPrewarm(
+                        shouldPrewarm = true,
+                        dataSource = SteamWorkshopDataSource.COMMUNITY_HTML,
+                        steamAccessRepository = steamAccess,
+                        failureMessage = "prewarm failed",
+                    )
+                    browseRequests += 1
+                    null
+                } catch (error: IllegalStateException) {
+                    error
+                }
+
+            assertEquals("prewarm failed", firstError?.message)
+            assertEquals(1, steamAccess.prewarmRequests)
+            assertEquals(0, browseRequests)
+
+            prewarmReady = true
             requireSteamIpPrewarm(
                 shouldPrewarm = true,
                 dataSource = SteamWorkshopDataSource.COMMUNITY_HTML,
@@ -141,27 +165,10 @@ class HomeSteamIpPrewarmTest {
                 failureMessage = "prewarm failed",
             )
             browseRequests += 1
-            null
-        } catch (error: IllegalStateException) {
-            error
+
+            assertEquals(2, steamAccess.prewarmRequests)
+            assertEquals(1, browseRequests)
         }
-
-        assertEquals("prewarm failed", firstError?.message)
-        assertEquals(1, steamAccess.prewarmRequests)
-        assertEquals(0, browseRequests)
-
-        prewarmReady = true
-        requireSteamIpPrewarm(
-            shouldPrewarm = true,
-            dataSource = SteamWorkshopDataSource.COMMUNITY_HTML,
-            steamAccessRepository = steamAccess,
-            failureMessage = "prewarm failed",
-        )
-        browseRequests += 1
-
-        assertEquals(2, steamAccess.prewarmRequests)
-        assertEquals(1, browseRequests)
-    }
 }
 
 private class FakeSteamAccessRepository(

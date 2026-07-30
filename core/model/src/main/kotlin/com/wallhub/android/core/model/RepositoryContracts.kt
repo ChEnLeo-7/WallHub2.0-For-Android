@@ -1,8 +1,8 @@
 package com.wallhub.android.core.model
 
-import java.io.Closeable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import java.io.Closeable
 
 /**
  * Product-facing ports. Feature modules depend on these contracts, not on Room,
@@ -15,7 +15,10 @@ interface SettingsRepository {
 
     suspend fun setLanguage(language: AppLanguage)
 
-    suspend fun setAccent(accent: AccentPreference, customColor: String? = null)
+    suspend fun setAccent(
+        accent: AccentPreference,
+        customColor: String? = null,
+    )
 
     suspend fun setSystemMonetEnabled(enabled: Boolean) = Unit
 
@@ -59,11 +62,17 @@ interface SettingsRepository {
 
     suspend fun setOnlineChunkPlaybackEnabled(enabled: Boolean) = Unit
 
-    suspend fun setOutputDirectory(treeUri: String, label: String)
+    suspend fun setOutputDirectory(
+        treeUri: String,
+        label: String,
+    )
 
     suspend fun clearOutputDirectory()
 
-    suspend fun setLocalManagementDirectory(treeUri: String, label: String) = Unit
+    suspend fun setLocalManagementDirectory(
+        treeUri: String,
+        label: String,
+    ) = Unit
 
     suspend fun clearLocalManagementDirectory() = Unit
 
@@ -133,7 +142,10 @@ interface WorkshopVideoStreamSession : Closeable {
     val currentCdnHost: String?
         get() = null
 
-    suspend fun readAt(position: Long, length: Int): ByteArray
+    suspend fun readAt(
+        position: Long,
+        length: Int,
+    ): ByteArray
 }
 
 interface WorkshopVideoStreamRepository {
@@ -184,11 +196,21 @@ interface AccountWorkshopRepository {
 
     suspend fun getInteraction(workshopId: Long): WorkshopInteraction
 
-    suspend fun setSubscribed(workshopId: Long, subscribed: Boolean): WorkshopInteraction
+    suspend fun setSubscribed(
+        workshopId: Long,
+        subscribed: Boolean,
+    ): WorkshopInteraction
 
-    suspend fun setFavorited(workshopId: Long, favorited: Boolean): WorkshopInteraction
+    suspend fun setFavorited(
+        workshopId: Long,
+        favorited: Boolean,
+    ): WorkshopInteraction
 
-    suspend fun postComment(workshopId: Long, ownerId: String, text: String)
+    suspend fun postComment(
+        workshopId: Long,
+        ownerId: String,
+        text: String,
+    )
 }
 
 interface DownloadTaskRepository {
@@ -200,7 +222,10 @@ interface DownloadTaskRepository {
 
     suspend fun enqueue(request: DownloadRequest): DownloadTask
 
-    suspend fun requestAction(taskId: String, action: DownloadAction)
+    suspend fun requestAction(
+        taskId: String,
+        action: DownloadAction,
+    )
 
     suspend fun reorder(taskIds: List<String>)
 
@@ -210,15 +235,27 @@ interface DownloadTaskRepository {
 interface LocalWallpaperRepository {
     fun scan(): Flow<LocalWallpaperScanSnapshot>
 
-    suspend fun setFavorite(resourceId: String, favorite: Boolean)
+    suspend fun setFavorite(
+        resourceId: String,
+        favorite: Boolean,
+    )
 
-    suspend fun replaceTags(resourceId: String, tags: Set<String>)
+    suspend fun replaceTags(
+        resourceId: String,
+        tags: Set<String>,
+    )
 
-    suspend fun renameTag(oldTag: String, newTag: String)
+    suspend fun renameTag(
+        oldTag: String,
+        newTag: String,
+    )
 
     suspend fun deleteTag(tag: String)
 
-    suspend fun markImportRequested(resourceId: String, requestedAt: Long)
+    suspend fun markImportRequested(
+        resourceId: String,
+        requestedAt: Long,
+    )
 
     suspend fun delete(resource: LocalWallpaperResource): LocalWallpaperDeleteResult
 }
@@ -241,4 +278,9 @@ interface DiagnosticRepository {
     suspend fun exportRedactedText(): String
 
     suspend fun clear()
+}
+
+/** Writes redacted diagnostic content to a user-selected document without exposing Android APIs to features. */
+interface DiagnosticExportRepository {
+    suspend fun exportTo(destinationUri: String)
 }

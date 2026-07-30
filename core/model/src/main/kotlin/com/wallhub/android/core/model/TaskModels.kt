@@ -64,29 +64,35 @@ data class DownloadTask(
     val updatedAt: Long = 0L,
 ) {
     val progress: Float
-        get() = if (totalBytes <= 0L) 0f else (downloadedBytes.toDouble() / totalBytes)
-            .toFloat()
-            .coerceIn(0f, 1f)
+        get() =
+            if (totalBytes <= 0L) {
+                0f
+            } else {
+                (downloadedBytes.toDouble() / totalBytes)
+                    .toFloat()
+                    .coerceIn(0f, 1f)
+            }
 
     val availableActions: Set<DownloadAction>
-        get() = when (status) {
-            DownloadStatus.QUEUED,
-            DownloadStatus.RESOLVING,
-            DownloadStatus.DOWNLOADING,
-            -> setOf(DownloadAction.PAUSE, DownloadAction.CANCEL)
+        get() =
+            when (status) {
+                DownloadStatus.QUEUED,
+                DownloadStatus.RESOLVING,
+                DownloadStatus.DOWNLOADING,
+                -> setOf(DownloadAction.PAUSE, DownloadAction.CANCEL)
 
-            DownloadStatus.CONVERTING -> setOf(DownloadAction.CANCEL)
-            DownloadStatus.EXPORTING -> emptySet()
-            DownloadStatus.PAUSED -> setOf(DownloadAction.RESUME, DownloadAction.CANCEL)
-            DownloadStatus.FAILED -> setOf(DownloadAction.RETRY, DownloadAction.DELETE)
-            DownloadStatus.CANCELLED -> setOf(DownloadAction.RETRY, DownloadAction.DELETE)
-            DownloadStatus.COMPLETED -> {
-                buildSet {
-                    if (stagingDirectory != null && outputUri == null) add(DownloadAction.EXPORT)
-                    add(DownloadAction.DELETE)
+                DownloadStatus.CONVERTING -> setOf(DownloadAction.CANCEL)
+                DownloadStatus.EXPORTING -> emptySet()
+                DownloadStatus.PAUSED -> setOf(DownloadAction.RESUME, DownloadAction.CANCEL)
+                DownloadStatus.FAILED -> setOf(DownloadAction.RETRY, DownloadAction.DELETE)
+                DownloadStatus.CANCELLED -> setOf(DownloadAction.RETRY, DownloadAction.DELETE)
+                DownloadStatus.COMPLETED -> {
+                    buildSet {
+                        if (stagingDirectory != null && outputUri == null) add(DownloadAction.EXPORT)
+                        add(DownloadAction.DELETE)
+                    }
                 }
             }
-        }
 }
 
 data class ConversionWarning(

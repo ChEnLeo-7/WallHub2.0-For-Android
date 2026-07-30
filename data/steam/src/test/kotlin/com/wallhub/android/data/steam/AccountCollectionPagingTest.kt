@@ -12,12 +12,13 @@ import org.junit.Test
 class AccountCollectionPagingTest {
     @Test
     fun `returns the requested page and detects the next client-filtered result`() {
-        val selection = selectAccountCollectionPage(
-            matches = (1..33).toList(),
-            page = 2,
-            pageSize = 16,
-            sourceExhausted = false,
-        )
+        val selection =
+            selectAccountCollectionPage(
+                matches = (1..33).toList(),
+                page = 2,
+                pageSize = 16,
+                sourceExhausted = false,
+            )
 
         assertEquals((17..32).toList(), selection.items)
         assertTrue(selection.hasNextPage)
@@ -25,12 +26,13 @@ class AccountCollectionPagingTest {
 
     @Test
     fun `ends after a partial final client-filtered page`() {
-        val selection = selectAccountCollectionPage(
-            matches = (1..19).toList(),
-            page = 2,
-            pageSize = 16,
-            sourceExhausted = true,
-        )
+        val selection =
+            selectAccountCollectionPage(
+                matches = (1..19).toList(),
+                page = 2,
+                pageSize = 16,
+                sourceExhausted = true,
+            )
 
         assertEquals(listOf(17, 18, 19), selection.items)
         assertFalse(selection.hasNextPage)
@@ -38,12 +40,13 @@ class AccountCollectionPagingTest {
 
     @Test
     fun `large page offsets return an empty selection without overflowing`() {
-        val selection = selectAccountCollectionPage(
-            matches = (1..33).toList(),
-            page = Int.MAX_VALUE,
-            pageSize = 30,
-            sourceExhausted = true,
-        )
+        val selection =
+            selectAccountCollectionPage(
+                matches = (1..33).toList(),
+                page = Int.MAX_VALUE,
+                pageSize = 30,
+                sourceExhausted = true,
+            )
 
         assertEquals(emptyList<Int>(), selection.items)
         assertFalse(selection.hasNextPage)
@@ -51,15 +54,20 @@ class AccountCollectionPagingTest {
 
     @Test
     fun `collection search matches title author ids and tags without breaking type filter`() {
-        val video = WorkshopSummary(
-            id = 3673655753,
-            title = "Blue city rain",
-            author = "Studio North",
-            creatorId = "76561198000000000",
-            type = WorkshopType.VIDEO,
-            tags = listOf("Cyberpunk", "Audio responsive"),
-        )
-        fun query(text: String, type: WorkshopType? = WorkshopType.VIDEO) = AccountWorkshopQuery(
+        val video =
+            WorkshopSummary(
+                id = 3673655753,
+                title = "Blue city rain",
+                author = "Studio North",
+                creatorId = "76561198000000000",
+                type = WorkshopType.VIDEO,
+                tags = listOf("Cyberpunk", "Audio responsive"),
+            )
+
+        fun query(
+            text: String,
+            type: WorkshopType? = WorkshopType.VIDEO,
+        ) = AccountWorkshopQuery(
             collection = AccountWorkshopCollection.FAVORITES,
             searchText = text,
             type = type,

@@ -51,13 +51,14 @@ class SteamRouteSnapshotCacheTest {
         val cache = SteamRouteSnapshotCache { 2_500L }
         val key = "wifi|steamcommunity.com"
         val healthy = route(freshUntil = 2_000L, staleUntil = 4_000L)
-        val failed = SteamCachedRoute(
-            available = false,
-            accelerated = false,
-            addresses = emptyList(),
-            freshUntil = 3_000L,
-            staleUntil = 3_000L,
-        )
+        val failed =
+            SteamCachedRoute(
+                available = false,
+                accelerated = false,
+                addresses = emptyList(),
+                freshUntil = 3_000L,
+                staleUntil = 3_000L,
+            )
         cache.publish(key, healthy)
 
         assertEquals(healthy, cache.publishKeepingUsable(key, failed))
@@ -79,7 +80,10 @@ class SteamRouteSnapshotCacheTest {
         assertNull(cache.lookup("wifi|steamcommunity.com").route)
     }
 
-    private fun route(freshUntil: Long, staleUntil: Long) = SteamCachedRoute(
+    private fun route(
+        freshUntil: Long,
+        staleUntil: Long,
+    ) = SteamCachedRoute(
         available = true,
         accelerated = true,
         addresses = listOf(address),

@@ -1,4 +1,5 @@
 @file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@file:Suppress("ktlint:standard:function-naming")
 
 package com.wallhub.android.feature.detail
 
@@ -27,7 +28,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,13 +39,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -58,20 +58,22 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.wallhub.android.core.designsystem.WallHubEmptyState
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
+import com.wallhub.android.core.designsystem.WallHubSizeTokens
+import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubToastHost
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamSession
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
-import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import javax.inject.Inject
+import kotlin.math.min
+import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 data class OnlineVideoPlayerUiState(
     val title: String = "",
@@ -81,53 +83,57 @@ data class OnlineVideoPlayerUiState(
 )
 
 @HiltViewModel
-class OnlineVideoPlayerViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
-    private val videoStreamRepository: WorkshopVideoStreamRepository,
-) : ViewModel() {
-    private val workshopId = checkNotNull(savedStateHandle.get<Long>("workshopId"))
-    private val mutableState = MutableStateFlow(OnlineVideoPlayerUiState())
+class OnlineVideoPlayerViewModel
+    @Inject
+    constructor(
+        savedStateHandle: SavedStateHandle,
+        private val videoStreamRepository: WorkshopVideoStreamRepository,
+    ) : ViewModel() {
+        private val workshopId = checkNotNull(savedStateHandle.get<Long>("workshopId"))
+        private val mutableState = MutableStateFlow(OnlineVideoPlayerUiState())
 
-    val uiState: StateFlow<OnlineVideoPlayerUiState> = mutableState.asStateFlow()
+        val uiState: StateFlow<OnlineVideoPlayerUiState> = mutableState.asStateFlow()
 
-    init {
-        load()
-    }
+        init {
+            load()
+        }
 
-    fun load() {
-        viewModelScope.launch {
-            mutableState.value.stream?.close()
-            mutableState.value = OnlineVideoPlayerUiState(isLoading = true)
-            try {
-                val stream = videoStreamRepository.open(workshopId)
-                mutableState.value = OnlineVideoPlayerUiState(
-                    title = stream.title,
-                    stream = stream,
-                    isLoading = false,
-                )
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                mutableState.value = OnlineVideoPlayerUiState(
-                    isLoading = false,
-                    error = error.message ?: "无法初始化 SteamKit 在线分块播放",
-                )
+        fun load() {
+            viewModelScope.launch {
+                mutableState.value.stream?.close()
+                mutableState.value = OnlineVideoPlayerUiState(isLoading = true)
+                try {
+                    val stream = videoStreamRepository.open(workshopId)
+                    mutableState.value =
+                        OnlineVideoPlayerUiState(
+                            title = stream.title,
+                            stream = stream,
+                            isLoading = false,
+                        )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    mutableState.value =
+                        OnlineVideoPlayerUiState(
+                            isLoading = false,
+                            error = error.message ?: "无法初始化 SteamKit 在线分块播放",
+                        )
+                }
             }
         }
-    }
 
-    override fun onCleared() {
-        mutableState.value.stream?.close()
-        super.onCleared()
+        override fun onCleared() {
+            mutableState.value.stream?.close()
+            super.onCleared()
+        }
     }
-}
 
 @Composable
 fun OnlineVideoPlayerRoute(
     onBack: () -> Unit,
     viewModel: OnlineVideoPlayerViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     OnlineVideoPlayerScreen(state = state, onBack = onBack, onRetry = viewModel::load)
 }
 
@@ -154,9 +160,10 @@ fun OnlineVideoPlayerScreen(
             } ?: "SteamKit streaming started"
         }
     }
-    val playback = state.stream?.let { stream ->
-        rememberSteamChunkPlayback(stream = stream, onFirstFrameRendered = onFirstFrameRendered)
-    }
+    val playback =
+        state.stream?.let { stream ->
+            rememberSteamChunkPlayback(stream = stream, onFirstFrameRendered = onFirstFrameRendered)
+        }
     BackHandler(enabled = fullscreen) { fullscreen = false }
     FullscreenSystemBarsEffect(enabled = fullscreen)
     LaunchedEffect(state.stream) {
@@ -181,42 +188,46 @@ fun OnlineVideoPlayerScreen(
                 onFullscreenChange = { fullscreen = it },
                 modifier = Modifier.fillMaxSize(),
             )
-        } else WallHubPageScaffold(
-            title = state.title.ifBlank { "SteamKit 在线播放" },
-            navigationIcon = {
-                androidx.compose.material3.IconButton(onClick = onBack) {
-                    androidx.compose.material3.Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = "返回",
-                    )
-                }
-            },
-        ) { padding ->
-            when {
-                state.isLoading -> {
-                    PlayerLoadingIndicator(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(padding),
-                    )
-                }
+        } else {
+            WallHubPageScaffold(
+                title = state.title.ifBlank { "SteamKit 在线播放" },
+                navigationIcon = {
+                    androidx.compose.material3.IconButton(onClick = onBack) {
+                        androidx.compose.material3.Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = "返回",
+                        )
+                    }
+                },
+            ) { padding ->
+                when {
+                    state.isLoading -> {
+                        PlayerLoadingIndicator(
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .padding(padding),
+                        )
+                    }
 
-                state.error != null -> {
-                    WallHubEmptyState(
-                        icon = Icons.Outlined.PlayArrow,
-                        title = state.error,
-                        actionLabel = "重试",
-                        onAction = onRetry,
-                        modifier = Modifier.fillMaxSize().then(Modifier.padding(padding)),
-                    )
-                }
+                    state.error != null -> {
+                        WallHubEmptyState(
+                            icon = Icons.Outlined.PlayArrow,
+                            title = state.error,
+                            actionLabel = "重试",
+                            onAction = onRetry,
+                            modifier = Modifier.fillMaxSize().then(Modifier.padding(padding)),
+                        )
+                    }
 
-                playback != null -> SteamChunkVideoPlayer(
-                    playback = playback,
-                    fullscreen = false,
-                    onFullscreenChange = { fullscreen = it },
-                    modifier = Modifier.fillMaxSize().then(Modifier.padding(padding)),
-                )
+                    playback != null ->
+                        SteamChunkVideoPlayer(
+                            playback = playback,
+                            fullscreen = false,
+                            onFullscreenChange = { fullscreen = it },
+                            modifier = Modifier.fillMaxSize().then(Modifier.padding(padding)),
+                        )
+                }
             }
         }
     }
@@ -226,11 +237,12 @@ fun OnlineVideoPlayerScreen(
 internal fun rememberSteamChunkPlayback(
     stream: WorkshopVideoStreamSession,
     onFirstFrameRendered: () -> Unit,
-) : SteamChunkPlayback {
+): SteamChunkPlayback {
     val context = LocalContext.current
-    val player = remember(stream) {
-        createSteamChunkPlayer(context = context, stream = stream)
-    }
+    val player =
+        remember(stream) {
+            createSteamChunkPlayer(context = context, stream = stream)
+        }
     return rememberSteamChunkPlaybackState(
         stream = stream,
         player = player,
@@ -245,36 +257,40 @@ internal fun rememberRetainedSteamChunkPlayback(
     stream: WorkshopVideoStreamSession,
     player: ExoPlayer,
     onFirstFrameRendered: () -> Unit,
-): SteamChunkPlayback = rememberSteamChunkPlaybackState(
-    stream = stream,
-    player = player,
-    onFirstFrameRendered = onFirstFrameRendered,
-    releasePlayerWhenDisposed = false,
-)
+): SteamChunkPlayback =
+    rememberSteamChunkPlaybackState(
+        stream = stream,
+        player = player,
+        onFirstFrameRendered = onFirstFrameRendered,
+        releasePlayerWhenDisposed = false,
+    )
 
 internal fun createSteamChunkPlayer(
     context: Context,
     stream: WorkshopVideoStreamSession,
-): ExoPlayer = ExoPlayer.Builder(context.applicationContext)
-    .setLoadControl(
-        DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                STREAM_MIN_BUFFER_MS,
-                STREAM_MAX_BUFFER_MS,
-                STREAM_BUFFER_FOR_PLAYBACK_MS,
-                STREAM_BUFFER_FOR_REBUFFER_MS,
-            )
-            .build(),
-    )
-    .build()
-    .also { player ->
-        val mediaItem = MediaItem.fromUri(Uri.parse("steamchunk://${stream.fileName}"))
-        val mediaSource = ProgressiveMediaSource.Factory(SteamChunkDataSourceFactory(stream))
-            .createMediaSource(mediaItem)
-        player.setMediaSource(mediaSource)
-        player.prepare()
-        player.playWhenReady = true
-    }
+): ExoPlayer =
+    ExoPlayer
+        .Builder(context.applicationContext)
+        .setLoadControl(
+            DefaultLoadControl
+                .Builder()
+                .setBufferDurationsMs(
+                    STREAM_MIN_BUFFER_MS,
+                    STREAM_MAX_BUFFER_MS,
+                    STREAM_BUFFER_FOR_PLAYBACK_MS,
+                    STREAM_BUFFER_FOR_REBUFFER_MS,
+                ).build(),
+        ).build()
+        .also { player ->
+            val mediaItem = MediaItem.fromUri(Uri.parse("steamchunk://${stream.fileName}"))
+            val mediaSource =
+                ProgressiveMediaSource
+                    .Factory(SteamChunkDataSourceFactory(stream))
+                    .createMediaSource(mediaItem)
+            player.setMediaSource(mediaSource)
+            player.prepare()
+            player.playWhenReady = true
+        }
 
 @Composable
 private fun rememberSteamChunkPlaybackState(
@@ -289,16 +305,17 @@ private fun rememberSteamChunkPlaybackState(
     var playbackError by remember(stream, player) { mutableStateOf(player.playerError?.message) }
     val onFirstFrameRenderedState by rememberUpdatedState(onFirstFrameRendered)
     DisposableEffect(player, stream) {
-        val listener = object : Player.Listener {
-            override fun onRenderedFirstFrame() {
-                renderedFirstFrame = true
-                onFirstFrameRenderedState()
-            }
+        val listener =
+            object : Player.Listener {
+                override fun onRenderedFirstFrame() {
+                    renderedFirstFrame = true
+                    onFirstFrameRenderedState()
+                }
 
-            override fun onPlayerError(error: PlaybackException) {
-                playbackError = error.message ?: "SteamKit 在线播放失败"
+                override fun onPlayerError(error: PlaybackException) {
+                    playbackError = error.message ?: "SteamKit 在线播放失败"
+                }
             }
-        }
         player.addListener(listener)
         onDispose {
             player.removeListener(listener)
@@ -334,14 +351,18 @@ internal fun SteamChunkVideoPlayer(
         )
         AnimatedVisibility(
             visible = !playback.renderedFirstFrame && playback.error == null,
-            enter = fadeIn(tween(160)) + scaleIn(
-                initialScale = 0.94f,
-                animationSpec = tween(220, easing = FastOutSlowInEasing),
-            ),
-            exit = fadeOut(tween(160)) + scaleOut(
-                targetScale = 0.98f,
-                animationSpec = tween(160, easing = FastOutSlowInEasing),
-            ),
+            enter =
+                fadeIn(tween(160)) +
+                    scaleIn(
+                        initialScale = 0.94f,
+                        animationSpec = tween(220, easing = FastOutSlowInEasing),
+                    ),
+            exit =
+                fadeOut(tween(160)) +
+                    scaleOut(
+                        targetScale = 0.98f,
+                        animationSpec = tween(160, easing = FastOutSlowInEasing),
+                    ),
             modifier = Modifier.fillMaxSize(),
         ) {
             PlayerLoadingIndicator(modifier = Modifier.fillMaxSize())
@@ -353,24 +374,22 @@ internal fun SteamChunkVideoPlayer(
                 color = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer,
             ) {
-                Text(text = error, modifier = Modifier.padding(16.dp))
+                Text(text = error, modifier = Modifier.padding(WallHubSpacing.md))
             }
         }
     }
 }
 
 @Composable
-private fun PlayerLoadingIndicator(
-    modifier: Modifier = Modifier,
-) {
+private fun PlayerLoadingIndicator(modifier: Modifier = Modifier) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(modifier = Modifier.size(36.dp))
+            CircularProgressIndicator(modifier = Modifier.size(WallHubSizeTokens.compactIconButton))
             Text(
                 text = "正在准备视频…",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 12.dp),
+                modifier = Modifier.padding(top = WallHubSpacing.sm),
             )
         }
     }
@@ -402,7 +421,9 @@ internal fun FullscreenSystemBarsEffect(enabled: Boolean) {
 
     DisposableEffect(activity) {
         onDispose {
-            if (activity != null && window != null && latestFullscreenEnabled &&
+            if (activity != null &&
+                window != null &&
+                latestFullscreenEnabled &&
                 !activity.isChangingConfigurations
             ) {
                 restoreWindowAfterFullscreen(activity, window)
@@ -416,17 +437,19 @@ private fun restoreWindowAfterFullscreen(
     activity: Activity,
     window: android.view.Window,
 ) {
-    WindowCompat.getInsetsController(window, window.decorView)
+    WindowCompat
+        .getInsetsController(window, window.decorView)
         .show(WindowInsetsCompat.Type.systemBars())
     WindowCompat.setDecorFitsSystemWindows(window, true)
     activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 }
 
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}
+private tailrec fun Context.findActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
 
 internal class SteamChunkDataSourceFactory(
     private val stream: WorkshopVideoStreamSession,
@@ -448,17 +471,22 @@ private class SteamChunkDataSource(
         currentUri = dataSpec.uri
         readPosition = dataSpec.position
         val available = stream.contentLength - readPosition
-        bytesRemaining = if (dataSpec.length == C.LENGTH_UNSET.toLong()) {
-            available
-        } else {
-            min(available, dataSpec.length)
-        }
+        bytesRemaining =
+            if (dataSpec.length == C.LENGTH_UNSET.toLong()) {
+                available
+            } else {
+                min(available, dataSpec.length)
+            }
         opened = true
         transferStarted(dataSpec)
         return bytesRemaining
     }
 
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+    override fun read(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int {
         if (length == 0) return 0
         if (bytesRemaining == 0L) return C.RESULT_END_OF_INPUT
         val requestedLength = min(length.toLong(), min(bytesRemaining, STREAM_READ_WINDOW_BYTES)).toInt()

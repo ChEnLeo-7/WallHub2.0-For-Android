@@ -1,30 +1,17 @@
 import com.google.protobuf.gradle.*
 
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
+    id("wallhub.android.library")
     alias(libs.plugins.protobuf)
 }
 
 android {
     namespace = "com.wallhub.android.data.steam"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 26
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 }
 
-val protobufVersion = libs.versions.protobuf.java.get()
+val protobufVersion =
+    libs.versions.protobuf.java
+        .get()
 
 protobuf {
     protoc {

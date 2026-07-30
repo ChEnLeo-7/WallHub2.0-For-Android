@@ -1,30 +1,15 @@
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
+    id("wallhub.android.library")
+    id("wallhub.android.compose")
     alias(libs.plugins.kotlin.kapt)
-    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt.android)
 }
 
 android {
     namespace = "com.wallhub.android.feature.library"
-    compileSdk = 36
 
-    defaultConfig {
-        minSdk = 26
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
-    buildFeatures {
-        compose = true
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -42,4 +27,9 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.robolectric)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

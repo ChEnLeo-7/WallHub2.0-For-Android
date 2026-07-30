@@ -1,3 +1,5 @@
+@file:Suppress("ktlint:standard:function-naming")
+
 package com.wallhub.android.core.designsystem
 
 import androidx.compose.animation.AnimatedContent
@@ -14,10 +16,10 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -87,14 +89,16 @@ fun WallHubPaginationControl(
 
     val dialogTitle = wallHubText("跳转页面", "Go to page")
     val inputLabel = wallHubText("页码", "Page number")
-    val pageInputHint = wallHubText(
-        "当前已知最大页码：$knownTotalPages；可输入大于 0 的页码",
-        "Known last page: $knownTotalPages; enter a page greater than 0",
-    )
-    val invalidPageLabel = wallHubText(
-        "请输入有效的正整数页码",
-        "Enter a valid positive page number",
-    )
+    val pageInputHint =
+        wallHubText(
+            "当前已知最大页码：$knownTotalPages；可输入大于 0 的页码",
+            "Known last page: $knownTotalPages; enter a page greater than 0",
+        )
+    val invalidPageLabel =
+        wallHubText(
+            "请输入有效的正整数页码",
+            "Enter a valid positive page number",
+        )
     val cancelLabel = wallHubText("取消", "Cancel")
     val confirmLabel = wallHubText("跳转", "Go")
     val targetPage = resolvePaginationPageInput(pageDraft.text)
@@ -108,10 +112,11 @@ fun WallHubPaginationControl(
 
     fun openJumpDialog() {
         val currentText = safeCurrentPage.toString()
-        pageDraft = TextFieldValue(
-            text = currentText,
-            selection = TextRange(0, currentText.length),
-        )
+        pageDraft =
+            TextFieldValue(
+                text = currentText,
+                selection = TextRange(0, currentText.length),
+            )
         showJumpDialog = true
     }
 
@@ -139,10 +144,11 @@ fun WallHubPaginationControl(
         modifier = modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center,
     ) {
-        val window = PaginationWindow(
-            currentPage = safeCurrentPage,
-            totalPages = safeTotalPages,
-        )
+        val window =
+            PaginationWindow(
+                currentPage = safeCurrentPage,
+                totalPages = safeTotalPages,
+            )
 
         AnimatedContent(
             targetState = window,
@@ -156,9 +162,10 @@ fun WallHubPaginationControl(
             label = "PaginationWindow",
         ) { displayedWindow ->
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -187,10 +194,11 @@ fun WallHubPaginationControl(
                     text = displayedWindow.totalPages.toString(),
                     enabled = !isLoading,
                     selected = false,
-                    contentDescription = wallHubText(
-                        "跳转到第 ${displayedWindow.totalPages} 页",
-                        "Go to page ${displayedWindow.totalPages}",
-                    ),
+                    contentDescription =
+                        wallHubText(
+                            "跳转到第 ${displayedWindow.totalPages} 页",
+                            "Go to page ${displayedWindow.totalPages}",
+                        ),
                     onClick = {
                         if (displayedWindow.currentPage != displayedWindow.totalPages) {
                             onPageSelected(displayedWindow.totalPages)
@@ -220,14 +228,16 @@ fun WallHubPaginationControl(
                     value = pageDraft,
                     onValueChange = { value ->
                         val sanitized = sanitizePaginationPageInput(value.text)
-                        pageDraft = TextFieldValue(
-                            text = sanitized,
-                            selection = TextRange(sanitized.length),
-                        )
+                        pageDraft =
+                            TextFieldValue(
+                                text = sanitized,
+                                selection = TextRange(sanitized.length),
+                            )
                     },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester),
                     label = { Text(inputLabel) },
                     supportingText = {
                         Text(if (inputHasError) invalidPageLabel else pageInputHint)
@@ -235,10 +245,11 @@ fun WallHubPaginationControl(
                     isError = inputHasError,
                     enabled = !isLoading,
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Go,
-                    ),
+                    keyboardOptions =
+                        KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Go,
+                        ),
                     keyboardActions = KeyboardActions(onGo = { submitPage() }),
                 )
             },
@@ -272,27 +283,30 @@ private fun PaginationTextButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isSelected = selected == true
     val usePrimaryContainer = MaterialTheme.colorScheme.primary.luminance() >= 0.95f
-    val targetContainerColor = if (isSelected) {
-        if (usePrimaryContainer) {
-            MaterialTheme.colorScheme.primaryContainer
+    val targetContainerColor =
+        if (isSelected) {
+            if (usePrimaryContainer) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.primary
+            }
         } else {
-            MaterialTheme.colorScheme.primary
+            MaterialTheme.colorScheme.surfaceContainerHigh
         }
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    }
-    val selectedContentColor = if (usePrimaryContainer) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onPrimary
-    }
+    val selectedContentColor =
+        if (usePrimaryContainer) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onPrimary
+        }
     val unselectedContentColor = MaterialTheme.colorScheme.onSurface
-    val targetContentColor = when {
-        isSelected && enabled -> selectedContentColor
-        isSelected -> selectedContentColor.copy(alpha = PAGINATION_DISABLED_SELECTED_ALPHA)
-        enabled -> unselectedContentColor
-        else -> unselectedContentColor.copy(alpha = PAGINATION_DISABLED_ALPHA)
-    }
+    val targetContentColor =
+        when {
+            isSelected && enabled -> selectedContentColor
+            isSelected -> selectedContentColor.copy(alpha = PAGINATION_DISABLED_SELECTED_ALPHA)
+            enabled -> unselectedContentColor
+            else -> unselectedContentColor.copy(alpha = PAGINATION_DISABLED_ALPHA)
+        }
     val containerColor by animateColorAsState(
         targetValue = targetContainerColor,
         animationSpec = tween(PAGINATION_SELECTION_MOTION_MS),
@@ -304,25 +318,23 @@ private fun PaginationTextButton(
         label = "PaginationContentColor",
     )
     Box(
-        modifier = modifier
-            .defaultMinSize(
-                minWidth = PAGINATION_TOUCH_TARGET_SIZE,
-                minHeight = PAGINATION_TOUCH_TARGET_SIZE,
-            )
-            .paginationPressScale(interactionSource)
-            .semantics(mergeDescendants = true) {
-                this.contentDescription = contentDescription
-                role = Role.Button
-                selected?.let { this.selected = it }
-            }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                enabled = enabled,
-                role = Role.Button,
-                onClick = onClick,
-            )
-            .padding(PAGINATION_TOUCH_INSET),
+        modifier =
+            modifier
+                .defaultMinSize(
+                    minWidth = PAGINATION_TOUCH_TARGET_SIZE,
+                    minHeight = PAGINATION_TOUCH_TARGET_SIZE,
+                ).paginationPressScale(interactionSource)
+                .semantics(mergeDescendants = true) {
+                    this.contentDescription = contentDescription
+                    role = Role.Button
+                    selected?.let { this.selected = it }
+                }.clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    enabled = enabled,
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(PAGINATION_TOUCH_INSET),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
@@ -333,10 +345,11 @@ private fun PaginationTextButton(
             shadowElevation = 0.dp,
         ) {
             Box(
-                modifier = Modifier
-                    .height(PAGINATION_VISUAL_HEIGHT)
-                    .widthIn(min = PAGINATION_VISUAL_MIN_WIDTH)
-                    .padding(horizontal = PAGINATION_PAGE_HORIZONTAL_PADDING),
+                modifier =
+                    Modifier
+                        .height(PAGINATION_VISUAL_HEIGHT)
+                        .widthIn(min = PAGINATION_VISUAL_MIN_WIDTH)
+                        .padding(horizontal = PAGINATION_PAGE_HORIZONTAL_PADDING),
                 contentAlignment = Alignment.Center,
             ) {
                 Column(
@@ -358,11 +371,12 @@ private fun PaginationTextButton(
                     } else {
                         Text(
                             text = text,
-                            style = if (text.length >= PAGINATION_SMALL_LABEL_DIGITS) {
-                                MaterialTheme.typography.labelSmall
-                            } else {
-                                MaterialTheme.typography.labelMedium
-                            },
+                            style =
+                                if (text.length >= PAGINATION_SMALL_LABEL_DIGITS) {
+                                    MaterialTheme.typography.labelSmall
+                                } else {
+                                    MaterialTheme.typography.labelMedium
+                                },
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                             maxLines = 1,
                             softWrap = false,
@@ -376,16 +390,15 @@ private fun PaginationTextButton(
 }
 
 @Composable
-private fun Modifier.paginationPressScale(
-    interactionSource: MutableInteractionSource,
-): Modifier {
+private fun Modifier.paginationPressScale(interactionSource: MutableInteractionSource): Modifier {
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (pressed) PAGINATION_PRESSED_SCALE else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
+        animationSpec =
+            spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium,
+            ),
         label = "PaginationPressScale",
     )
     return graphicsLayer {
@@ -397,27 +410,34 @@ private fun Modifier.paginationPressScale(
 private fun paginationPageChangeTransition(
     forward: Boolean,
     layoutDirection: LayoutDirection,
-) =
-    (fadeIn(tween(PAGINATION_PAGE_FADE_MS)) + slideInHorizontally(
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
-        initialOffsetX = { width ->
-            val direction = if (forward == (layoutDirection == LayoutDirection.Ltr)) 1 else -1
-            direction * width / PAGINATION_SLIDE_DIVISOR
-        },
-    )) togetherWith
-        (fadeOut(tween(PAGINATION_PAGE_FADE_MS)) + slideOutHorizontally(
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioNoBouncy,
-                stiffness = Spring.StiffnessMediumLow,
-            ),
-            targetOffsetX = { width ->
-                val direction = if (forward == (layoutDirection == LayoutDirection.Ltr)) -1 else 1
+) = (
+    fadeIn(tween(PAGINATION_PAGE_FADE_MS)) +
+        slideInHorizontally(
+            animationSpec =
+                spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                ),
+            initialOffsetX = { width ->
+                val direction = if (forward == (layoutDirection == LayoutDirection.Ltr)) 1 else -1
                 direction * width / PAGINATION_SLIDE_DIVISOR
             },
-        ))
+        )
+) togetherWith
+    (
+        fadeOut(tween(PAGINATION_PAGE_FADE_MS)) +
+            slideOutHorizontally(
+                animationSpec =
+                    spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                targetOffsetX = { width ->
+                    val direction = if (forward == (layoutDirection == LayoutDirection.Ltr)) -1 else 1
+                    direction * width / PAGINATION_SLIDE_DIVISOR
+                },
+            )
+    )
 
 internal fun buildPaginationItems(
     currentPage: Int,
@@ -434,8 +454,7 @@ internal fun sanitizePaginationPageInput(raw: String): String {
     return digits.trimStart('0').ifEmpty { "0" }
 }
 
-internal fun resolvePaginationPageInput(input: String): Int? =
-    input.toIntOrNull()?.takeIf { it > 0 }
+internal fun resolvePaginationPageInput(input: String): Int? = input.toIntOrNull()?.takeIf { it > 0 }
 
 private data class PaginationWindow(
     val currentPage: Int,

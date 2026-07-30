@@ -10,11 +10,12 @@ enum class WallHubWindowSizeClass {
     EXPANDED,
 }
 
-fun wallHubWindowSizeClass(width: Dp): WallHubWindowSizeClass = when {
-    width < WallHubWindowBreakpoints.medium -> WallHubWindowSizeClass.COMPACT
-    width < WallHubWindowBreakpoints.expanded -> WallHubWindowSizeClass.MEDIUM
-    else -> WallHubWindowSizeClass.EXPANDED
-}
+fun wallHubWindowSizeClass(width: Dp): WallHubWindowSizeClass =
+    when {
+        width < WallHubWindowBreakpoints.medium -> WallHubWindowSizeClass.COMPACT
+        width < WallHubWindowBreakpoints.expanded -> WallHubWindowSizeClass.MEDIUM
+        else -> WallHubWindowSizeClass.EXPANDED
+    }
 
 object WallHubWindowBreakpoints {
     val medium: Dp = 600.dp

@@ -1,8 +1,7 @@
+@file:Suppress("ktlint:standard:function-naming")
+
 package com.wallhub.android.feature.settings
 
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -55,13 +54,14 @@ import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import com.mikepenz.markdown.m3.Markdown
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.InstalledAppInfo
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 internal data class WallHubPerson(
     val displayName: String,
@@ -86,33 +86,35 @@ internal const val WALLHUB_REPOSITORY_LABEL = "ChEnLeo-7/WallHub2.0-For-Android"
 internal const val WALLHUB_REPOSITORY_URL =
     "https://github.com/ChEnLeo-7/WallHub2.0-For-Android"
 
-internal val WALLHUB_AUTHOR = WallHubPerson(
-    displayName = "CHENLEO_7",
-    githubAccount = "ChEnLeo-7",
-    roleZh = "作者 · 项目开发与维护",
-    roleEn = "Author · Development and maintenance",
-)
+internal val WALLHUB_AUTHOR =
+    WallHubPerson(
+        displayName = "CHENLEO_7",
+        githubAccount = "ChEnLeo-7",
+        roleZh = "作者 · 项目开发与维护",
+        roleEn = "Author · Development and maintenance",
+    )
 
-internal val WALLHUB_CONTRIBUTORS = listOf(
-    WallHubPerson(
-        displayName = "uwugl",
-        githubAccount = "uwu-gl",
-        roleZh = "LOGO 设计、技术指导",
-        roleEn = "Logo design and technical guidance",
-    ),
-    WallHubPerson(
-        displayName = "cccp114",
-        githubAccount = "cccp114",
-        roleZh = "LOGO 修改、UI 建议",
-        roleEn = "Logo refinements and UI suggestions",
-    ),
-    WallHubPerson(
-        displayName = "hf5203344",
-        githubAccount = "hf5203344",
-        roleZh = "参与了早期开发的深度内测",
-        roleEn = "In-depth testing during early development",
-    ),
-)
+internal val WALLHUB_CONTRIBUTORS =
+    listOf(
+        WallHubPerson(
+            displayName = "uwugl",
+            githubAccount = "uwu-gl",
+            roleZh = "LOGO 设计、技术指导",
+            roleEn = "Logo design and technical guidance",
+        ),
+        WallHubPerson(
+            displayName = "cccp114",
+            githubAccount = "cccp114",
+            roleZh = "LOGO 修改、UI 建议",
+            roleEn = "Logo refinements and UI suggestions",
+        ),
+        WallHubPerson(
+            displayName = "hf5203344",
+            githubAccount = "hf5203344",
+            roleZh = "参与了早期开发的深度内测",
+            roleEn = "In-depth testing during early development",
+        ),
+    )
 
 @Composable
 internal fun AboutWallHubContent(
@@ -123,32 +125,11 @@ internal fun AboutWallHubContent(
     onDownloadLatestRelease: () -> Unit,
     onCancelAppUpdateDownload: () -> Unit,
     onInstallDownloadedRelease: (String) -> Unit,
+    onOpenExternalUri: (String, String) -> Unit,
 ) {
-    val context = LocalContext.current
     val release = appUpdateState.release
     val releaseNotes = release?.notes?.trim()?.takeIf(String::isNotEmpty)
     var releaseNotesVisible by rememberSaveable(release?.tagName) { mutableStateOf(false) }
-    fun openUrl(url: String) {
-        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-    }
-    fun openQqGroup() {
-        runCatching {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(WALLHUB_QQ_GROUP_JOIN_URI)).apply {
-                    addCategory(Intent.CATEGORY_BROWSABLE)
-                },
-            )
-        }.onFailure {
-            Toast.makeText(
-                context,
-                language.aboutText(
-                    "未找到可打开 QQ 加群链接的应用",
-                    "No app can open the QQ group invitation",
-                ),
-                Toast.LENGTH_SHORT,
-            ).show()
-        }
-    }
 
     WallHubProjectHeader(
         language = language,
@@ -158,28 +139,51 @@ internal fun AboutWallHubContent(
     WallHubPersonRow(
         person = WALLHUB_AUTHOR,
         language = language,
-        onClick = { openUrl(WALLHUB_AUTHOR.githubUrl) },
+        onClick = {
+            onOpenExternalUri(
+                WALLHUB_AUTHOR.githubUrl,
+                language.aboutText("无法打开作者主页", "Unable to open the author profile"),
+            )
+        },
     )
     WALLHUB_CONTRIBUTORS.forEach { contributor ->
         AboutDivider()
         WallHubPersonRow(
             person = contributor,
             language = language,
-            onClick = { openUrl(contributor.githubUrl) },
+            onClick = {
+                onOpenExternalUri(
+                    contributor.githubUrl,
+                    language.aboutText(
+                        "无法打开贡献者主页",
+                        "Unable to open the contributor profile",
+                    ),
+                )
+            },
         )
     }
     AboutDivider()
     AboutListItem(
         headline = language.aboutText("QQ 交流群", "QQ community group"),
-        supporting = language.aboutText(
-            "$WALLHUB_QQ_GROUP_NUMBER · 点击打开加群页面",
-            "$WALLHUB_QQ_GROUP_NUMBER · Open the group invitation",
-        ),
+        supporting =
+            language.aboutText(
+                "$WALLHUB_QQ_GROUP_NUMBER · 点击打开加群页面",
+                "$WALLHUB_QQ_GROUP_NUMBER · Open the group invitation",
+            ),
         leadingContent = { AboutIcon(Icons.MessageCircle) },
         trailingContent = {
             Icon(imageVector = Icons.ExternalLink, contentDescription = null)
         },
-        modifier = Modifier.clickable { openQqGroup() },
+        modifier =
+            Modifier.clickable {
+                onOpenExternalUri(
+                    WALLHUB_QQ_GROUP_JOIN_URI,
+                    language.aboutText(
+                        "未找到可打开 QQ 加群链接的应用",
+                        "No app can open the QQ group invitation",
+                    ),
+                )
+            },
     )
     AboutDivider()
     AboutListItem(
@@ -189,25 +193,35 @@ internal fun AboutWallHubContent(
         trailingContent = {
             Icon(imageVector = Icons.ExternalLink, contentDescription = null)
         },
-        modifier = Modifier.clickable { openUrl(WALLHUB_REPOSITORY_URL) },
+        modifier =
+            Modifier.clickable {
+                onOpenExternalUri(
+                    WALLHUB_REPOSITORY_URL,
+                    language.aboutText(
+                        "无法打开 GitHub 仓库",
+                        "Unable to open the GitHub repository",
+                    ),
+                )
+            },
     )
     AboutDivider()
     AboutListItem(
         headline = appUpdateState.statusLabel(language),
-        supporting = release?.let {
-            language.aboutText(
-                "最新 ${it.versionName} · ${formatAboutUpdateSize(it.assetSizeBytes)} · ${it.publishedAt.take(10)}",
-                "Latest ${it.versionName} · ${formatAboutUpdateSize(it.assetSizeBytes)} · ${it.publishedAt.take(10)}",
-            )
-        } ?: language.aboutText(
-            "当前 ${installed.versionName} (${installed.versionCode})",
-            "Current ${installed.versionName} (${installed.versionCode})",
-        ),
+        supporting =
+            release?.let {
+                language.aboutText(
+                    "最新 ${it.versionName} · ${formatAboutUpdateSize(it.assetSizeBytes)} · ${it.publishedAt.take(10)}",
+                    "Latest ${it.versionName} · ${formatAboutUpdateSize(it.assetSizeBytes)} · ${it.publishedAt.take(10)}",
+                )
+            } ?: language.aboutText(
+                "当前 ${installed.versionName} (${installed.versionCode})",
+                "Current ${installed.versionName} (${installed.versionCode})",
+            ),
         leadingContent = { AboutIcon(Icons.Download) },
         trailingContent = {
             if (appUpdateState.phase == AppUpdatePhase.CHECKING) {
-                Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                Box(modifier = Modifier.size(WallHubSpacing.xxl), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(WallHubSpacing.lg), strokeWidth = WallHubSpacing.xxxs)
                 }
             } else {
                 IconButton(
@@ -224,16 +238,17 @@ internal fun AboutWallHubContent(
     )
     if (appUpdateState.phase == AppUpdatePhase.DOWNLOADING) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xs),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.dense),
         ) {
             LinearProgressIndicator(
                 progress = { appUpdateState.progress },
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                text = "${formatAboutUpdateSize(appUpdateState.downloadedBytes)} / " +
-                    formatAboutUpdateSize(appUpdateState.totalBytes),
+                text =
+                    "${formatAboutUpdateSize(appUpdateState.downloadedBytes)} / " +
+                        formatAboutUpdateSize(appUpdateState.totalBytes),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -259,15 +274,24 @@ internal fun AboutWallHubContent(
         onInstallDownloadedRelease = onInstallDownloadedRelease,
     )
 
-    if (releaseNotesVisible && releaseNotes != null && release != null) {
+    if (releaseNotesVisible && releaseNotes != null) {
         ReleaseNotesDialog(
-            title = language.aboutText(
-                "WallHub ${release.versionName} Release 说明",
-                "WallHub ${release.versionName} release notes",
-            ),
+            title =
+                language.aboutText(
+                    "WallHub ${release.versionName} Release 说明",
+                    "WallHub ${release.versionName} release notes",
+                ),
             markdown = releaseNotes,
             language = language,
-            onOpenGitHub = { openUrl(release.htmlUrl) },
+            onOpenGitHub = {
+                onOpenExternalUri(
+                    release.htmlUrl,
+                    language.aboutText(
+                        "无法打开 Release 页面",
+                        "Unable to open the release page",
+                    ),
+                )
+            },
             onDismiss = { releaseNotesVisible = false },
         )
     }
@@ -279,19 +303,21 @@ private fun WallHubProjectHeader(
     installed: InstalledAppInfo,
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 28.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = WallHubSpacing.lg, vertical = WallHubSpacing.section),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
     ) {
         Image(
             painter = painterResource(R.drawable.wallhub_logo),
             contentDescription = language.aboutText("WallHub 项目 LOGO", "WallHub project logo"),
             contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .size(156.dp)
-                .clip(MaterialTheme.shapes.extraLarge),
+            modifier =
+                Modifier
+                    .size(156.dp)
+                    .clip(MaterialTheme.shapes.extraLarge),
         )
         Text(
             text = WALLHUB_PROJECT_TITLE,
@@ -300,19 +326,23 @@ private fun WallHubProjectHeader(
             textAlign = TextAlign.Center,
         )
         Text(
-            text = language.aboutText(
-                "版本 ${installed.versionName} (${installed.versionCode}) · 更新日期 ${formatAppUpdateDate(installed.lastUpdateTimeMillis)}",
-                "Version ${installed.versionName} (${installed.versionCode}) · Updated ${formatAppUpdateDate(installed.lastUpdateTimeMillis)}",
-            ),
+            text =
+                language.aboutText(
+                    "版本 ${installed.versionName} (${installed.versionCode}) · 更新日期 ${formatAppUpdateDate(installed.lastUpdateTimeMillis)}",
+                    "Version ${installed.versionName} (${installed.versionCode}) · Updated ${formatAppUpdateDate(
+                        installed.lastUpdateTimeMillis,
+                    )}",
+                ),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
         Text(
-            text = language.aboutText(
-                "开源的 Wallpaper Engine 创意工坊浏览、下载与移动端壁纸管理工具。",
-                "An open-source Wallpaper Engine Workshop browser, downloader, and mobile wallpaper manager.",
-            ),
+            text =
+                language.aboutText(
+                    "开源的 Wallpaper Engine 创意工坊浏览、下载与移动端壁纸管理工具。",
+                    "An open-source Wallpaper Engine Workshop browser, downloader, and mobile wallpaper manager.",
+                ),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -344,19 +374,23 @@ private fun GitHubAvatar(
     language: AppLanguage,
 ) {
     SubcomposeAsyncImage(
-        model = ImageRequest.Builder(LocalContext.current)
-            .data(person.avatarUrl)
-            .crossfade(true)
-            .build(),
-        contentDescription = language.aboutText(
-            "${person.displayName} 的 GitHub 头像",
-            "${person.displayName} GitHub avatar",
-        ),
+        model =
+            ImageRequest
+                .Builder(LocalContext.current)
+                .data(person.avatarUrl)
+                .crossfade(true)
+                .build(),
+        contentDescription =
+            language.aboutText(
+                "${person.displayName} 的 GitHub 头像",
+                "${person.displayName} GitHub avatar",
+            ),
         contentScale = ContentScale.Crop,
-        modifier = Modifier
-            .size(52.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        modifier =
+            Modifier
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
     ) {
         if (painter.state is AsyncImagePainter.State.Success) {
             SubcomposeAsyncImageContent()
@@ -382,54 +416,60 @@ private fun AboutUpdateActions(
     onInstallDownloadedRelease: (String) -> Unit,
 ) {
     val downloadedPath = appUpdateState.downloadedApkPath
-    val hasActions = appUpdateState.phase == AppUpdatePhase.DOWNLOADING ||
-        appUpdateState.canDownloadRelease || downloadedPath != null ||
-        appUpdateState.message != null
+    val hasActions =
+        appUpdateState.phase == AppUpdatePhase.DOWNLOADING ||
+            appUpdateState.canDownloadRelease ||
+            downloadedPath != null ||
+            appUpdateState.message != null
     if (!hasActions) return
 
     Column(
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(start = WallHubSpacing.md, end = WallHubSpacing.md, bottom = WallHubSpacing.md),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
     ) {
         when {
-            appUpdateState.phase == AppUpdatePhase.DOWNLOADING -> OutlinedButton(
-                onClick = onCancelAppUpdateDownload,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(language.aboutText("取消下载", "Cancel download"))
-            }
+            appUpdateState.phase == AppUpdatePhase.DOWNLOADING ->
+                OutlinedButton(
+                    onClick = onCancelAppUpdateDownload,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(language.aboutText("取消下载", "Cancel download"))
+                }
 
-            downloadedPath != null -> Button(
-                onClick = { onInstallDownloadedRelease(downloadedPath) },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(imageVector = Icons.Download, contentDescription = null)
-                Text(
-                    text = language.aboutText("使用系统安装器安装", "Install with Android installer"),
-                    modifier = Modifier.padding(start = 8.dp),
-                )
-            }
+            downloadedPath != null ->
+                Button(
+                    onClick = { onInstallDownloadedRelease(downloadedPath) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(imageVector = Icons.Download, contentDescription = null)
+                    Text(
+                        text = language.aboutText("使用系统安装器安装", "Install with Android installer"),
+                        modifier = Modifier.padding(start = WallHubSpacing.xs),
+                    )
+                }
 
-            appUpdateState.canDownloadRelease -> FilledTonalButton(
-                onClick = onDownloadLatestRelease,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(imageVector = Icons.Download, contentDescription = null)
-                Text(
-                    text = language.aboutText(
-                        "下载最新版 universal APK",
-                        "Download latest universal APK",
-                    ),
-                    modifier = Modifier.padding(start = 8.dp),
-                )
-            }
+            appUpdateState.canDownloadRelease ->
+                FilledTonalButton(
+                    onClick = onDownloadLatestRelease,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(imageVector = Icons.Download, contentDescription = null)
+                    Text(
+                        text =
+                            language.aboutText(
+                                "下载最新版 universal APK",
+                                "Download latest universal APK",
+                            ),
+                        modifier = Modifier.padding(start = WallHubSpacing.xs),
+                    )
+                }
         }
         appUpdateState.message?.let { message ->
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                modifier = Modifier.padding(horizontal = WallHubSpacing.xxs, vertical = WallHubSpacing.xxs),
             )
         }
     }
@@ -445,23 +485,30 @@ private fun ReleaseNotesDialog(
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.88f)
-                .widthIn(max = 720.dp)
-                .navigationBarsPadding(),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.88f)
+                    .widthIn(max = 720.dp)
+                    .navigationBarsPadding(),
             shape = MaterialTheme.shapes.extraLarge,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface,
-            tonalElevation = 0.dp,
+            tonalElevation = WallHubSpacing.none,
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 24.dp, top = 12.dp, end = 8.dp, bottom = 8.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                start = WallHubSpacing.lg,
+                                top = WallHubSpacing.sm,
+                                end = WallHubSpacing.xs,
+                                bottom = WallHubSpacing.xs,
+                            ),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),
                 ) {
                     Text(
                         text = title,
@@ -472,10 +519,11 @@ private fun ReleaseNotesDialog(
                     IconButton(onClick = onOpenGitHub) {
                         Icon(
                             imageVector = Icons.ExternalLink,
-                            contentDescription = language.aboutText(
-                                "在 GitHub 打开",
-                                "Open on GitHub",
-                            ),
+                            contentDescription =
+                                language.aboutText(
+                                    "在 GitHub 打开",
+                                    "Open on GitHub",
+                                ),
                         )
                     }
                     IconButton(onClick = onDismiss) {
@@ -489,11 +537,12 @@ private fun ReleaseNotesDialog(
                 val scrollState = rememberScrollState()
                 Markdown(
                     content = markdown,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .verticalScroll(scrollState)
-                        .padding(horizontal = 24.dp, vertical = 20.dp),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(scrollState)
+                            .padding(horizontal = WallHubSpacing.lg, vertical = WallHubSpacing.content),
                 )
             }
         }
@@ -514,26 +563,27 @@ private fun AboutListItem(
         leadingContent = leadingContent,
         trailingContent = trailingContent,
         modifier = modifier.heightIn(min = 72.dp),
-        colors = ListItemDefaults.colors(
-            containerColor = Color.Transparent,
-            headlineColor = MaterialTheme.colorScheme.onSurface,
-            supportingColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            leadingIconColor = MaterialTheme.colorScheme.primary,
-            trailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
+        colors =
+            ListItemDefaults.colors(
+                containerColor = Color.Transparent,
+                headlineColor = MaterialTheme.colorScheme.onSurface,
+                supportingColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                leadingIconColor = MaterialTheme.colorScheme.primary,
+                trailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
     )
 }
 
 @Composable
 private fun AboutIcon(icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Surface(
-        modifier = Modifier.size(48.dp),
+        modifier = Modifier.size(WallHubSpacing.xxl),
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
         contentColor = MaterialTheme.colorScheme.primary,
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(24.dp))
+            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(WallHubSpacing.lg))
         }
     }
 }
@@ -541,44 +591,52 @@ private fun AboutIcon(icon: androidx.compose.ui.graphics.vector.ImageVector) {
 @Composable
 private fun AboutDivider() {
     HorizontalDivider(
-        modifier = Modifier.padding(horizontal = 16.dp),
+        modifier = Modifier.padding(horizontal = WallHubSpacing.md),
         color = MaterialTheme.colorScheme.outlineVariant,
     )
 }
 
-private fun AppUpdateUiState.statusLabel(language: AppLanguage): String = when (phase) {
-    AppUpdatePhase.IDLE -> language.aboutText("版本更新", "Version update")
-    AppUpdatePhase.CHECKING -> language.aboutText("正在检查更新…", "Checking for updates…")
-    AppUpdatePhase.AVAILABLE -> language.aboutText(
-        "发现新版本 ${release?.versionName.orEmpty()}",
-        "Version ${release?.versionName.orEmpty()} is available",
-    )
-    AppUpdatePhase.UP_TO_DATE -> language.aboutText("当前已是最新版", "WallHub is up to date")
-    AppUpdatePhase.DOWNLOADING -> language.aboutText("正在下载安装包", "Downloading APK")
-    AppUpdatePhase.DOWNLOADED -> language.aboutText(
-        "安装包已下载并通过校验",
-        "APK downloaded and verified",
-    )
-    AppUpdatePhase.FAILED -> language.aboutText("更新操作失败", "Update operation failed")
-}
+private fun AppUpdateUiState.statusLabel(language: AppLanguage): String =
+    when (phase) {
+        AppUpdatePhase.IDLE -> language.aboutText("版本更新", "Version update")
+        AppUpdatePhase.CHECKING -> language.aboutText("正在检查更新…", "Checking for updates…")
+        AppUpdatePhase.AVAILABLE ->
+            language.aboutText(
+                "发现新版本 ${release?.versionName.orEmpty()}",
+                "Version ${release?.versionName.orEmpty()} is available",
+            )
+        AppUpdatePhase.UP_TO_DATE -> language.aboutText("当前已是最新版", "WallHub is up to date")
+        AppUpdatePhase.DOWNLOADING -> language.aboutText("正在下载安装包", "Downloading APK")
+        AppUpdatePhase.DOWNLOADED ->
+            language.aboutText(
+                "安装包已下载并通过校验",
+                "APK downloaded and verified",
+            )
+        AppUpdatePhase.FAILED -> language.aboutText("更新操作失败", "Update operation failed")
+    }
 
-private fun AppLanguage.aboutText(zh: String, en: String): String =
-    if (this == AppLanguage.EN) en else zh
+private fun AppLanguage.aboutText(
+    zh: String,
+    en: String,
+): String = if (this == AppLanguage.EN) en else zh
 
 internal fun formatAppUpdateDate(
     epochMillis: Long,
     zoneId: ZoneId = ZoneId.systemDefault(),
-): String = if (epochMillis > 0L) {
-    Instant.ofEpochMilli(epochMillis)
-        .atZone(zoneId)
-        .toLocalDate()
-        .format(DateTimeFormatter.ISO_LOCAL_DATE)
-} else {
-    "—"
-}
+): String =
+    if (epochMillis > 0L) {
+        Instant
+            .ofEpochMilli(epochMillis)
+            .atZone(zoneId)
+            .toLocalDate()
+            .format(DateTimeFormatter.ISO_LOCAL_DATE)
+    } else {
+        "—"
+    }
 
-private fun formatAboutUpdateSize(bytes: Long): String = String.format(
-    Locale.getDefault(),
-    "%.1f MB",
-    bytes.coerceAtLeast(0L) / (1024.0 * 1024.0),
-)
+private fun formatAboutUpdateSize(bytes: Long): String =
+    String.format(
+        Locale.getDefault(),
+        "%.1f MB",
+        bytes.coerceAtLeast(0L) / (1024.0 * 1024.0),
+    )

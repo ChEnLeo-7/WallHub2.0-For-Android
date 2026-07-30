@@ -33,11 +33,12 @@ internal object CrashDiagnostics {
         if (file.isFile && file.length() > MAX_FILE_SIZE_BYTES) {
             file.writeText(file.readText(Charsets.UTF_8).takeLast(RETAINED_CHARACTERS), Charsets.UTF_8)
         }
-        val stackFrames = throwable.stackTrace
-            .take(MAX_STACK_FRAMES)
-            .joinToString(separator = "\n") { frame ->
-                "at ${frame.className}.${frame.methodName}(${frame.fileName}:${frame.lineNumber})"
-            }
+        val stackFrames =
+            throwable.stackTrace
+                .take(MAX_STACK_FRAMES)
+                .joinToString(separator = "\n") { frame ->
+                    "at ${frame.className}.${frame.methodName}(${frame.fileName}:${frame.lineNumber})"
+                }
         file.appendText(
             buildString {
                 append(System.currentTimeMillis())

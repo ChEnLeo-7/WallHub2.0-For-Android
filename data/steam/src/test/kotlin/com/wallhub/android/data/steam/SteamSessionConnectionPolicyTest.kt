@@ -3,19 +3,20 @@ package com.wallhub.android.data.steam
 import `in`.dragonbra.javasteam.enums.EResult
 import `in`.dragonbra.javasteam.networking.steam3.ProtocolTypes
 import `in`.dragonbra.javasteam.steam.discovery.ServerRecord
+import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import org.junit.Test
 
 class SteamSessionConnectionPolicyTest {
     @Test
     fun `production configuration only permits websocket CM transport`() {
         val directoryClient = createSteamDirectoryClient()
-        val configuration = createSteamConfiguration(
-            directoryClient = directoryClient,
-            serverListProvider = SteamWebSocketServerListProvider(),
-        )
+        val configuration =
+            createSteamConfiguration(
+                directoryClient = directoryClient,
+                serverListProvider = SteamWebSocketServerListProvider(),
+            )
 
         assertEquals(setOf(ProtocolTypes.WEB_SOCKET), configuration.protocolTypes.toSet())
         assertEquals(STEAM_DIRECTORY_CALL_TIMEOUT_MS.toInt(), directoryClient.callTimeoutMillis)
