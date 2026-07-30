@@ -98,7 +98,7 @@
 - [x] `detekt`
 - [x] `ktlintCheck`
 - [x] `:app:assembleDebug`
-- [ ] GitHub Actions 成功上传 commit 绑定的 APK artifact。
+- [x] GitHub Actions 成功上传 commit 绑定的 APK artifact。
 
 ## 当前阶段 Todo
 
@@ -120,7 +120,7 @@
 
 验证日期：2026-07-31。
 
-- 当前计划进度为 59/60（98.3%）；阶段主清单为 46/47（97.9%），其余为便于跟踪的当前 Todo。只统计已经实现并取得本地证据的项目，远端 CI 不以“已配置”代替“已验证”。
+- 当前计划进度为 60/60（100%）；阶段主清单为 47/47（100%），其余为便于跟踪的当前 Todo。只统计已经实现并取得本地证据的项目，远端 CI 不以“已配置”代替“已验证”。
 - 本地质量门禁已通过：`testDebugUnitTest`、`verifyPaparazziDebug`、`lintDebug`、`detekt`、`ktlintCheck`、`apiCheck`、`dependencyUpdates`、`:app:assembleDebug` 和 `:benchmark:assembleBenchmark`。当前源码于 2026-07-31 最终联合执行结果为 `BUILD SUCCESSFUL`，共 1102 个任务，其中 50 个执行、1052 个为最新状态。
 - 类型安全导航契约测试 3/3 通过；源码中已无字符串 `composable("...")`、`navArgument` 或手工拼接导航路径。
 - 页面边界审计已通过：六个主 Feature 的 Route 只获取 ViewModel 并消费 `UiState`/`Effect`，Screen 不直接访问 Repository；Feature 源码无 `NavController`、`navigate`、字符串路由或 `navArgument`，导航解析仅由 App 壳层的类型安全目的地承担。
@@ -148,7 +148,7 @@
 - Settings 已将导出目录选择、诊断文档创建、通知权限、APK 系统安装器、Steam 登录导航和外部 URI 打开统一为 `SettingsAction / SettingsEffect`，About 内容不再直接执行 Intent 或 Toast；新增 Action→Effect payload 映射测试并通过。诊断文件的实际写入仍通过 Route 提供的 `ContentResolver` 执行，后续应再抽象为可测试端口。
 - `apiCheck` 已通过；`dependencyUpdates` 本地执行成功并生成 `build/dependencyUpdates/report.txt`。报告包含稳定版及 alpha/RC 候选，本阶段只验证检查链路，不自动升级依赖。
 - 依赖边界审计已通过：Feature 模块不直接依赖或导入 Data/Room，`core:model` 的公共契约不导入 Android、Room、HTTP 或 Data 层类型；DAO、网络响应和 Android `Context` 不会跨该契约暴露给 Feature。
-- GitHub Actions 已配置签名 Release、40 MiB 体积门槛、SHA-256、commit SHA 文件和以 commit 命名的 artifact。只读 GitHub API 已确认 `f5348fea78168ba7b42c09c39a63a2c10db0f080` 的 Android CI run `30492504923` 成功，且存在未过期 artifact `wallhub-release-f5348fea78168ba7b42c09c39a63a2c10db0f080`；但当前工作区仍含本次未提交改造，不能将旧 commit 的 artifact 当作本次验证，故该项暂不勾选。
+- GitHub Actions 已配置签名 Release、40 MiB 体积门槛、SHA-256、commit SHA 文件和以 commit 命名的 artifact。`558a0fe7fe0438ca8a8baa325db9c422d9c365c8` 的 Android CI run `30579483452` 已成功完成全量验证、签名 Release、体积检查和 artifact 上传；未过期 artifact `wallhub-release-558a0fe7fe0438ca8a8baa325db9c422d9c365c8`（ID `8774639415`）包含 31,242,308-byte `wallhub-release.apk`、SHA-256 清单和内容同为该 commit 的 `commit-sha.txt`。此前 run `30577309421` 在 `:app:mergeExtDexDebug` 因 CI 命令行将 Gradle 堆覆盖为 1.5 GiB 而耗尽内存；修复已移除该覆盖并使用项目已验证的 3 GiB 默认堆设置。
 - `FormalWallHubApp` 已将 Compact、Medium、Expanded 的导航壳抽为独立 Composable，保留原有导航目的地和交互语义，并使根函数重新通过 Detekt 圈复杂度门槛。
 - 本次提交范围已逐项核验，只包含本计划的源码、测试、截图基线、构建约定、静态检查配置和维护文档；两份非预期 JVM 崩溃日志已删除并加入忽略规则。提交后工作区保持干净。
 
