@@ -1093,3 +1093,4 @@ public abstract interface class com/wallhub/android/core/model/WorkshopVideoStre
 public final class com/wallhub/android/core/model/WorkshopVideoStreamSession$DefaultImpls {
 	public static fun getCurrentCdnHost (Lcom/wallhub/android/core/model/WorkshopVideoStreamSession;)Ljava/lang/String;
 }
+

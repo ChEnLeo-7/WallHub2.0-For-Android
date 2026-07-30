@@ -1,0 +1,2 @@
+# Generated API baselines intentionally retain the generator's final blank line.
+core/model/api/model.api whitespace=-blank-at-eof
