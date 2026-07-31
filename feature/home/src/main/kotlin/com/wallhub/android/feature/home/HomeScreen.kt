@@ -1226,8 +1226,12 @@ fun HomeScreen(
                     matureContentEnabled = state.matureContentEnabled,
                 ),
             initialPage = initialPage,
-            onDismiss = { filterSheetInitialPage = null },
-            onSelectionChanged = { onAction(HomeAction.ApplyFilters(it)) },
+            onDismiss = { selection ->
+                filterSheetInitialPage = null
+                if (selection != state.filterSelection()) {
+                    onAction(HomeAction.ApplyFilters(selection))
+                }
+            },
         )
     }
 }
@@ -4346,16 +4350,12 @@ private fun HomeFiltersSheet(
     applied: HomeFilterSelection,
     config: HomeFilterUiConfig,
     initialPage: HomeFilterPage,
-    onDismiss: () -> Unit,
-    onSelectionChanged: (HomeFilterSelection) -> Unit,
+    onDismiss: (HomeFilterSelection) -> Unit,
 ) {
     val pages = HomeFilterPage.entries
     val defaults = HomeFilterSelection.defaults().normalized(config.matureContentEnabled)
     var draft by rememberSaveable(stateSaver = homeFilterSelectionSaver) {
         mutableStateOf(applied)
-    }
-    LaunchedEffect(applied) {
-        if (draft != applied) draft = applied
     }
     var selectedPage by rememberSaveable { mutableStateOf(initialPage) }
     val browseScrollState = rememberScrollState()
@@ -4380,11 +4380,11 @@ private fun HomeFiltersSheet(
     val updateSelection: (HomeFilterSelection) -> Unit = { selection ->
         val normalized = selection.normalized(config.matureContentEnabled)
         draft = normalized
-        onSelectionChanged(normalized)
     }
+    val currentDraft by rememberUpdatedState(draft)
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { onDismiss(currentDraft) },
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         tonalElevation = 0.dp,
@@ -4556,7 +4556,7 @@ private fun HomeFilterPageNavigation(
             modifier =
                 modifier
                     .fillMaxWidth()
-                    .padding(horizontal = WallHubSpacing.xs)
+                    .padding(horizontal = WallHubSpacing.md)
                     .clip(MaterialTheme.shapes.large),
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
             contentColor = MaterialTheme.colorScheme.primary,
@@ -5106,50 +5106,34 @@ private fun HomeFilterChoiceRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        color =
-            if (selected) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHigh
-            },
-        contentColor =
-            if (selected) {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-        tonalElevation = WallHubSpacing.none,
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = WallHubSizeTokens.listItemMinimumHeight)
+                .selectable(
+                    selected = selected,
+                    role = Role.RadioButton,
+                    onClick = onClick,
+                ).padding(horizontal = WallHubSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
     ) {
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = WallHubSizeTokens.listItemMinimumHeight)
-                    .selectable(
-                        selected = selected,
-                        role = Role.RadioButton,
-                        onClick = onClick,
-                    ).padding(horizontal = WallHubSpacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
-        ) {
-            RadioButton(
-                selected = selected,
-                onClick = null,
-                colors =
-                    RadioButtonDefaults.colors(
-                        selectedColor = MaterialTheme.colorScheme.primary,
-                        unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.weight(1f),
-            )
-        }
+        RadioButton(
+            selected = selected,
+            onClick = null,
+            colors =
+                RadioButtonDefaults.colors(
+                    selectedColor = MaterialTheme.colorScheme.primary,
+                    unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 

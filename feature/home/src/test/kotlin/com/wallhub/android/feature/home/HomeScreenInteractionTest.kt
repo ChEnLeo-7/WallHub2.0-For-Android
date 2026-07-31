@@ -93,6 +93,35 @@ class HomeScreenInteractionTest {
             .assertIsSelected()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton))
     }
+
+    @Test
+    fun filter_sheet_does_not_apply_changes_while_open() {
+        val actions = mutableListOf<HomeAction>()
+        composeRule.setContent {
+            WallHubTheme(
+                preference = ThemePreference.LIGHT,
+                language = AppLanguage.EN,
+                useSystemMonet = false,
+            ) {
+                HomeScreen(
+                    state =
+                        HomeUiState(
+                            items = listOf(homeResult),
+                            language = AppLanguage.EN,
+                            isInitialLoading = false,
+                        ),
+                    onAction = actions::add,
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Open all filters").performClick()
+        composeRule.onNodeWithText("7 days").performScrollTo().performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(0, actions.filterIsInstance<HomeAction.ApplyFilters>().size)
+        }
+    }
 }
 
 private val homeResult =
