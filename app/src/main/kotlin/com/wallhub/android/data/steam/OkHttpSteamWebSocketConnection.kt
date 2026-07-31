@@ -10,6 +10,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString.Companion.toByteString
+import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
@@ -56,11 +57,10 @@ internal class OkHttpSteamWebSocketConnection(
 
     override fun disconnect(userInitiated: Boolean) {
         val activeSocket = socket
-        socket = null
+        signalDisconnected(userInitiated)
         if (activeSocket?.close(NORMAL_CLOSURE_CODE, NORMAL_CLOSURE_REASON) == false) {
             activeSocket.cancel()
         }
-        signalDisconnected(userInitiated)
     }
 
     override fun send(data: ByteArray) {
@@ -88,6 +88,7 @@ internal class OkHttpSteamWebSocketConnection(
                 webSocket: WebSocket,
                 response: Response,
             ) {
+                socket = webSocket
                 if (connectionClosed.get()) {
                     webSocket.close(NORMAL_CLOSURE_CODE, NORMAL_CLOSURE_REASON)
                 } else {
@@ -109,6 +110,9 @@ internal class OkHttpSteamWebSocketConnection(
                 code: Int,
                 reason: String,
             ) {
+                if (!connectionClosed.get()) {
+                    onFailure(endpoint, IOException("Steam CM WebSocket closed with code $code: $reason"))
+                }
                 webSocket.close(code, reason)
             }
 
