@@ -765,8 +765,6 @@ private fun ManagementChoiceChip(
         onClick = onClick,
         label = label,
         singleChoice = singleChoice,
-        minHeight = 48.dp,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
     )
 }
 

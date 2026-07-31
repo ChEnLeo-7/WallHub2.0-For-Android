@@ -1,8 +1,18 @@
 package com.wallhub.android.feature.home
 
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.wallhub.android.core.designsystem.WallHubTheme
 import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.ThemePreference
@@ -34,6 +44,7 @@ class HomeScreenInteractionTest {
                     state =
                         HomeUiState(
                             items = listOf(homeResult),
+                            language = AppLanguage.EN,
                             isInitialLoading = false,
                         ),
                     onAction = { action ->
@@ -46,6 +57,41 @@ class HomeScreenInteractionTest {
         composeRule.onNodeWithTag("home-workshop-${homeResult.id}").performClick()
 
         composeRule.runOnIdle { assertEquals(homeResult.id, openedWorkshopId) }
+    }
+
+    @Test
+    fun filter_sheet_uses_material_filter_chips() {
+        composeRule.setContent {
+            WallHubTheme(
+                preference = ThemePreference.LIGHT,
+                language = AppLanguage.EN,
+                useSystemMonet = false,
+            ) {
+                HomeScreen(
+                    state =
+                        HomeUiState(
+                            items = listOf(homeResult),
+                            language = AppLanguage.EN,
+                            isInitialLoading = false,
+                        ),
+                    onAction = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Open all filters").performClick()
+
+        composeRule.onNodeWithText("Filter and sort").assertIsDisplayed()
+        listOf("Browse", "Content", "Theme", "Display").forEach { label ->
+            composeRule.onNodeWithText(label).assertIsDisplayed()
+        }
+        composeRule
+            .onNodeWithText("30 days")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assertIsSelected()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton))
     }
 }
 

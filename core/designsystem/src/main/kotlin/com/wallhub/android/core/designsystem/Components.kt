@@ -561,65 +561,27 @@ fun WallHubFilterChip(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     singleChoice: Boolean = false,
-    minHeight: Dp = FILTER_SHEET_CHIP_MIN_HEIGHT,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
-    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-    selectedContainerColor: Color = MaterialTheme.colorScheme.primary,
-    selectedContentColor: Color = MaterialTheme.colorScheme.onPrimary,
 ) {
-    val selectionIconState = remember { MutableTransitionState(selected) }
-    selectionIconState.targetState = selected
     FilterChip(
         selected = selected,
         onClick = onClick,
         modifier =
-            modifier
-                .heightIn(min = minHeight)
-                .then(
-                    if (singleChoice) Modifier.semantics { role = Role.RadioButton } else Modifier,
-                ),
-        enabled = enabled,
-        shape = MaterialTheme.shapes.medium,
-        border = null,
-        colors =
-            FilterChipDefaults.filterChipColors(
-                containerColor = containerColor,
-                labelColor = contentColor,
-                iconColor = contentColor,
-                selectedContainerColor = selectedContainerColor,
-                selectedLabelColor = selectedContentColor,
-                selectedLeadingIconColor = selectedContentColor,
-                disabledContainerColor = containerColor.copy(alpha = 0.6f),
-                disabledLabelColor = contentColor.copy(alpha = 0.5f),
+            modifier.then(
+                if (singleChoice) Modifier.semantics { role = Role.RadioButton } else Modifier,
             ),
-        leadingIcon = {
-            Box(
-                modifier = Modifier.size(FILTER_CHIP_ICON_SIZE),
-                contentAlignment = Alignment.Center,
-            ) {
-                AnimatedVisibility(
-                    visibleState = selectionIconState,
-                    enter =
-                        fadeIn(tween(durationMillis = 160)) +
-                            scaleIn(
-                                initialScale = 0.72f,
-                                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                            ),
-                    exit =
-                        fadeOut(tween(durationMillis = 100)) +
-                            scaleOut(
-                                targetScale = 0.8f,
-                                animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
-                            ),
-                ) {
+        enabled = enabled,
+        leadingIcon =
+            if (selected) {
+                {
                     Icon(
                         imageVector = WallHubIcons.Outlined.Check,
                         contentDescription = null,
-                        modifier = Modifier.size(FILTER_CHIP_ICON_SIZE),
+                        modifier = Modifier.size(FilterChipDefaults.IconSize),
                     )
                 }
-            }
-        },
+            } else {
+                null
+            },
         label = {
             Text(
                 text = label,
@@ -841,7 +803,6 @@ fun formatMegabytes(bytes: Long): String {
 private val SLIDING_CONTROL_HEIGHT = 44.dp
 private val SLIDING_CONTROL_INSET = 4.dp
 private val FILTER_SHEET_HEADER_MIN_HEIGHT = 48.dp
-private val FILTER_SHEET_CHIP_MIN_HEIGHT = 40.dp
 private val FILTER_CHIP_ICON_SIZE = 18.dp
 private val FILTER_SHEET_ACTION_MIN_HEIGHT = 48.dp
 val WallHubFabDefaultElevation = 3.dp
