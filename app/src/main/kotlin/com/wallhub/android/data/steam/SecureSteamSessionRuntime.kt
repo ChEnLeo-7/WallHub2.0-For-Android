@@ -719,6 +719,7 @@ internal fun SecureSteamSessionRepository.recordTransportFailure(
                         "endpointHost" to endpoint?.hostString.orEmpty(),
                         "endpointPort" to endpoint?.port?.toString().orEmpty(),
                         "error" to error.javaClass.simpleName,
+                        "detail" to error.message.orEmpty(),
                     ),
             ),
         )

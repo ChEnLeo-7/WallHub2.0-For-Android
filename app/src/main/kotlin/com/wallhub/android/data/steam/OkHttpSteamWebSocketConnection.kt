@@ -33,6 +33,7 @@ internal class OkHttpSteamWebSocketConnection(
             .pingInterval(STEAM_WEB_SOCKET_PING_INTERVAL_MS, TimeUnit.MILLISECONDS)
             .build()
     private val connectionClosed = AtomicBoolean(true)
+    private val failureReported = AtomicBoolean(false)
 
     @Volatile
     private var socket: WebSocket? = null
@@ -45,6 +46,7 @@ internal class OkHttpSteamWebSocketConnection(
         timeout: Int,
     ) {
         check(connectionClosed.compareAndSet(true, false)) { "Steam WebSocket is already active" }
+        failureReported.set(false)
         endpoint = endPoint
         val request = Request.Builder().url(steamWebSocketUrl(endPoint)).build()
         val connectionClient =
@@ -57,6 +59,9 @@ internal class OkHttpSteamWebSocketConnection(
 
     override fun disconnect(userInitiated: Boolean) {
         val activeSocket = socket
+        if (!userInitiated && activeSocket != null) {
+            reportFailure(IOException("Steam CM WebSocket disconnected by the Steam client state machine"))
+        }
         signalDisconnected(userInitiated)
         if (activeSocket?.close(NORMAL_CLOSURE_CODE, NORMAL_CLOSURE_REASON) == false) {
             activeSocket.cancel()
@@ -65,6 +70,7 @@ internal class OkHttpSteamWebSocketConnection(
 
     override fun send(data: ByteArray) {
         if (socket?.send(data.toByteString()) != true) {
+            reportFailure(IOException("Steam CM WebSocket rejected an outgoing ${data.size}-byte binary message"))
             signalDisconnected(userInitiated = false)
         }
     }
@@ -111,7 +117,7 @@ internal class OkHttpSteamWebSocketConnection(
                 reason: String,
             ) {
                 if (!connectionClosed.get()) {
-                    onFailure(endpoint, IOException("Steam CM WebSocket closed with code $code: $reason"))
+                    reportFailure(IOException("Steam CM WebSocket closed with code $code: $reason"))
                 }
                 webSocket.close(code, reason)
             }
@@ -129,10 +135,16 @@ internal class OkHttpSteamWebSocketConnection(
                 error: Throwable,
                 response: Response?,
             ) {
-                onFailure(endpoint, error)
+                reportFailure(error)
                 signalDisconnected(userInitiated = false)
             }
         }
+
+    private fun reportFailure(error: Throwable) {
+        if (failureReported.compareAndSet(false, true)) {
+            onFailure(endpoint, error)
+        }
+    }
 
     private companion object {
         const val STEAM_WEB_SOCKET_PING_INTERVAL_MS = 15_000L

@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
 
 class SteamAccessRoutesTest {
     @Test
-    fun `gateway supports exact core services and excludes subdomains and cdn hosts`() {
+    fun `gateway supports exact core services and CM subdomains only`() {
         assertTrue(SteamAccessRoutes.supports("steamcommunity.com"))
         assertTrue(SteamAccessRoutes.supports("www.steamcommunity.com"))
         assertTrue(SteamAccessRoutes.supports("api.steampowered.com"))
@@ -30,7 +30,10 @@ class SteamAccessRoutesTest {
         assertFalse(SteamAccessRoutes.supports("evil.steamcommunity.com"))
         assertFalse(SteamAccessRoutes.supports("steamuserimages-a.akamaihd.net"))
         assertFalse(SteamAccessRoutes.supports("cache1.steamcontent.com"))
-        assertFalse(SteamAccessRoutes.supports("cmp1-sea1.steamserver.net"))
+        assertTrue(SteamAccessRoutes.supports("cmp1-sea1.steamserver.net"))
+        assertFalse(SteamAccessRoutes.supports("steamserver.net"))
+        assertFalse(SteamAccessRoutes.supports(".steamserver.net"))
+        assertFalse(SteamAccessRoutes.supports("evilsteamserver.net"))
     }
 
     @Test
@@ -68,6 +71,11 @@ class SteamAccessRoutesTest {
     @Test
     fun `private route policy rejects lookalike hosts and normalizes exact hosts`() {
         assertEquals("steamcommunity.com", SteamDomainPolicy.requireSupported("STEAMCOMMUNITY.COM."))
+        assertEquals(
+            "cmp1-sea1.steamserver.net",
+            SteamDomainPolicy.requireSupported("CMP1-SEA1.STEAMSERVER.NET."),
+        )
+        assertEquals("/cmsocket/", SteamDomainPolicy.probePath("cmp1-sea1.steamserver.net"))
         assertFailsWith<IllegalArgumentException> {
             SteamDomainPolicy.requireSupported("evil.steamcommunity.com")
         }
