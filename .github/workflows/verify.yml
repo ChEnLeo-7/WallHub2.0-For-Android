@@ -76,10 +76,15 @@ jobs:
           release_certificate="$($apksigner verify --print-certs "$apk_path" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print toupper($2); exit}')"
           release_subject="$($apksigner verify --print-certs "$apk_path" | awk -F': ' '/Signer #1 certificate DN:/{print $2; exit}')"
           debug_certificate="$($apksigner verify --print-certs app/build/outputs/apk/debug/app-debug.apk | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print toupper($2); exit}')"
+          expected_release_certificate="$(tr -d '[:space:]' < config/release-signing-certificate.sha256 | tr '[:lower:]' '[:upper:]')"
           test -n "$release_certificate" -a -n "$release_subject" -a -n "$debug_certificate"
-          if grep -Eiq '(^|,[[:space:]]*)CN=Android Debug(,|$)' <<<"$release_subject"; then
-            echo "::error::Release certificate uses the Android Debug identity: $release_subject"
+          [[ "$expected_release_certificate" =~ ^[0-9A-F]{64}$ ]]
+          [[ "$release_certificate" == "$expected_release_certificate" ]] || {
+            echo "::error::Release APK does not match the pinned published signing identity"
             exit 1
+          }
+          if grep -Eiq '(^|,[[:space:]]*)CN=Android Debug(,|$)' <<<"$release_subject"; then
+            echo "::warning::Pinned legacy Release identity uses Android Debug DN; rotate only with an Android signing lineage"
           fi
           [[ "$release_certificate" != "$debug_certificate" ]] || {
             echo "::error::Release APK is signed with the Android Debug certificate"

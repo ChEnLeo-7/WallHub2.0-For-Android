@@ -1,4 +1,5 @@
 import java.security.KeyStore
+import java.security.MessageDigest
 import java.security.cert.X509Certificate
 
 plugins {
@@ -59,8 +60,29 @@ if (hasReleaseSigning) {
     val releaseCertificate = loadReleaseCertificate()
     releaseCertificate.checkValidity()
     val releaseSubject = releaseCertificate.subjectX500Principal.name
-    check(!releaseSubject.contains("CN=Android Debug", ignoreCase = true)) {
-        "Release signing certificate must not use the Android Debug identity: $releaseSubject"
+    val releaseCertificateSha256 =
+        MessageDigest
+            .getInstance("SHA-256")
+            .digest(releaseCertificate.encoded)
+            .joinToString("") { byte -> "%02X".format(byte) }
+    val expectedReleaseCertificateSha256 =
+        rootProject
+            .file("config/release-signing-certificate.sha256")
+            .readText()
+            .trim()
+            .uppercase()
+    check(expectedReleaseCertificateSha256.matches(Regex("[0-9A-F]{64}"))) {
+        "Pinned Release certificate SHA-256 is invalid."
+    }
+    check(releaseCertificateSha256 == expectedReleaseCertificateSha256) {
+        "Release signing certificate does not match the pinned published identity: " +
+            releaseCertificateSha256
+    }
+    if (releaseSubject.contains("CN=Android Debug", ignoreCase = true)) {
+        logger.warn(
+            "Using the pinned legacy Release certificate with Android Debug DN; " +
+                "rotate it only with an Android signing lineage.",
+        )
     }
 }
 

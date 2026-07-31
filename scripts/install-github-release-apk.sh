@@ -222,8 +222,11 @@ printf 'APK DEX entries: %s\n' "${dex_entries[*]}"
 artifact_certificate="$("$apksigner" verify --print-certs "$apk_path" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}')"
 artifact_certificate_subject="$("$apksigner" verify --print-certs "$apk_path" | awk -F': ' '/Signer #1 certificate DN:/{print $2; exit}')"
 [[ -n "$artifact_certificate" && -n "$artifact_certificate_subject" ]] || fail "Cannot read the artifact signing certificate"
+expected_release_certificate="$(tr -d '[:space:]' < config/release-signing-certificate.sha256 | tr '[:lower:]' '[:upper:]')"
+[[ "$expected_release_certificate" =~ ^[0-9A-F]{64}$ ]] || fail "Pinned Release certificate SHA-256 is invalid"
+[[ "${artifact_certificate^^}" == "$expected_release_certificate" ]] || fail "Artifact does not match the pinned published signing identity"
 if grep -Eiq '(^|,[[:space:]]*)CN=Android Debug(,|$)' <<<"$artifact_certificate_subject"; then
-    fail "Refusing an APK signed with the Android Debug identity: $artifact_certificate_subject"
+    printf 'WARNING: Pinned legacy Release identity uses Android Debug DN; rotate only with an Android signing lineage\n' >&2
 fi
 
 serial="$(resolve_adb_target "$serial")"

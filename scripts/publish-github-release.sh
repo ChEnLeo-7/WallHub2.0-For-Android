@@ -262,6 +262,8 @@ apksigner="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/opt/android-sdk}}/build-tools/35
 [[ -x "$apksigner" ]] || fail "apksigner is unavailable at $apksigner"
 expected_certificate=""
 expected_certificate_subject=""
+expected_release_certificate="$(tr -d '[:space:]' < config/release-signing-certificate.sha256 | tr '[:lower:]' '[:upper:]')"
+[[ "$expected_release_certificate" =~ ^[0-9A-F]{64}$ ]] || fail "Pinned Release certificate SHA-256 is invalid"
 expected_all_abis=$'arm64-v8a\narmeabi-v7a\nx86\nx86_64'
 for apk in "$work_dir"/WallHub-*.apk; do
     unzip -tq "$apk"
@@ -270,8 +272,9 @@ for apk in "$work_dir"/WallHub-*.apk; do
     certificate="$($apksigner verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print toupper($2); exit}')"
     certificate_subject="$($apksigner verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate DN:/{print $2; exit}')"
     [[ -n "$certificate" && -n "$certificate_subject" ]] || fail "Cannot read the signing certificate for $apk"
+    [[ "$certificate" == "$expected_release_certificate" ]] || fail "$apk does not match the pinned published signing identity"
     if grep -Eiq '(^|,[[:space:]]*)CN=Android Debug(,|$)' <<<"$certificate_subject"; then
-        fail "Release certificate uses the Android Debug identity: $certificate_subject"
+        printf 'WARNING: Pinned legacy Release identity uses Android Debug DN; rotate only with an Android signing lineage\n' >&2
     fi
     if [[ -z "$expected_certificate" ]]; then
         expected_certificate="$certificate"
