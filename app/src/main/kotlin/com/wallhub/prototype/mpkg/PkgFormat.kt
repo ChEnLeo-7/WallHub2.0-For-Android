@@ -1,14 +1,7 @@
 package com.wallhub.prototype.mpkg
 
-import java.io.BufferedOutputStream
 import java.io.File
-import java.io.FileOutputStream
 import java.io.RandomAccessFile
-
-data class PkgEntry(
-    val path: String,
-    val bytes: ByteArray,
-)
 
 data class IndexedPkgEntry(
     val path: String,
@@ -55,34 +48,6 @@ object PkgReader {
                     entry.copy(offset = dataStart + entry.offset)
                 }
             return PkgArchive(file, index)
-        }
-    }
-}
-
-/** Used only by the on-device and JVM conversion self-tests. */
-object PkgTestWriter {
-    fun write(
-        file: File,
-        entries: List<PkgEntry>,
-    ) {
-        var offset = 0L
-        val normalized =
-            entries.map { entry ->
-                val path = MpkgWriter.normalizePath(entry.path)
-                val item = Triple(path, entry.bytes, offset)
-                offset += entry.bytes.size.toLong()
-                item
-            }
-        file.parentFile?.mkdirs()
-        BufferedOutputStream(FileOutputStream(file)).use { output ->
-            output.writeLengthString("PKGV0001")
-            output.writeIntLe(normalized.size)
-            normalized.forEach { (path, bytes, entryOffset) ->
-                output.writeLengthString(path)
-                output.writeIntLe(entryOffset.toInt())
-                output.writeIntLe(bytes.size)
-            }
-            normalized.forEach { (_, bytes) -> output.write(bytes) }
         }
     }
 }

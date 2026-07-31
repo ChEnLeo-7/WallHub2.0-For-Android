@@ -24,4 +24,3 @@ dependencyResolutionManagement {
 rootProject.name = "WallHubAndroid"
 
 include(":app")
-include(":benchmark")

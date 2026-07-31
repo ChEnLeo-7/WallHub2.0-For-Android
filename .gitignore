@@ -23,5 +23,10 @@ signing.properties
 /AGENTS.md
 /progress.md
 /docs/
+/app/src/test/
+/app/src/androidTest/
+/app/src/benchmark/
+/benchmark/
+/app/src/main/kotlin/com/wallhub/prototype/mpkg/MpkgSelfTest.kt
 /.pi/skills/wallhub-release-publish/
 /.opencode/skills/

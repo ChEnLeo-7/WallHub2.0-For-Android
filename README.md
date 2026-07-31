@@ -53,14 +53,14 @@ WallHub for Android 是面向 Wallpaper Engine 创意工坊的独立原生客户
 克隆项目后，在 Windows 执行：
 
 ```powershell
-./gradlew.bat testDebugUnitTest lintDebug :app:assembleDebug
+./gradlew.bat lintDebug :app:assembleDebug
 ```
 
 在 Linux 或 macOS 执行：
 
 ```bash
 chmod +x gradlew
-./gradlew testDebugUnitTest lintDebug :app:assembleDebug
+./gradlew lintDebug :app:assembleDebug
 ```
 
 Debug APK 输出到：
@@ -71,11 +71,10 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ### 项目结构
 
-- `app`：唯一的生产应用模块。业务源码集中在 `app/src/main/kotlin`，并按 `core`、`data`、`feature` 包保留清晰的职责边界。
-- `benchmark`：独立的 Macrobenchmark 测试模块，用于冷启动与首页滚动性能测试。
+- `app`：唯一的应用模块。业务源码集中在 `app/src/main/kotlin`，并按 `core`、`data`、`feature` 包保留清晰的职责边界。
 - `build-logic`：应用与 Compose 的少量 Gradle Convention Plugin。
 
-项目刻意不为每个页面或数据源创建独立 Gradle 模块；只有需要单独安装和运行的性能测试保留为独立模块。
+项目刻意不为每个页面或数据源创建独立 Gradle 模块。
 
 依赖与插件版本集中维护在 `gradle/libs.versions.toml`。Release 签名材料、`local.properties`、APK/AAB、构建缓存和本地快照均不应提交到仓库。
 

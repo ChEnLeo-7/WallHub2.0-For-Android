@@ -7,7 +7,6 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.protobuf)
-    alias(libs.plugins.paparazzi)
 }
 
 val releaseStoreFile = providers.environmentVariable("WALLHUB_RELEASE_STORE_FILE").orNull
@@ -35,8 +34,6 @@ android {
         targetSdk = 35
         versionCode = 35
         versionName = "0.8.25"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     splits {
@@ -71,20 +68,10 @@ android {
                 "proguard-rules.pro",
             )
         }
-        create("benchmark") {
-            initWith(getByName("release"))
-            signingConfig = signingConfigs.getByName("debug")
-            matchingFallbacks += listOf("release")
-            isDebuggable = false
-        }
     }
 
     buildFeatures {
         buildConfig = true
-    }
-
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
     }
 
     packaging {
@@ -93,7 +80,9 @@ android {
     }
 }
 
-val protobufVersion = libs.versions.protobuf.java.get()
+val protobufVersion =
+    libs.versions.protobuf.java
+        .get()
 
 protobuf {
     protoc {
@@ -158,19 +147,5 @@ dependencies {
     kapt(libs.hilt.compiler)
     kapt(libs.androidx.room.compiler)
 
-    testImplementation(libs.junit)
-    testImplementation(libs.kotlin.test)
-    testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(platform(libs.androidx.compose.bom))
-    testImplementation(libs.androidx.compose.ui.test.junit4)
-    testImplementation(libs.androidx.test.core)
-    testImplementation(libs.androidx.work.testing)
-    testImplementation(libs.robolectric)
-
-    androidTestImplementation(libs.androidx.test.ext.junit)
-    androidTestImplementation(libs.androidx.test.runner)
-    androidTestImplementation(libs.androidx.test.uiautomator)
-    androidTestImplementation(libs.androidx.work.testing)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

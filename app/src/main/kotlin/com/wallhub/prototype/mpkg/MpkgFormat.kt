@@ -181,39 +181,6 @@ object MpkgWriter {
     }
 }
 
-object MpkgInspector {
-    fun inspect(file: File): MpkgManifest {
-        RandomAccessFile(file, "r").use { input ->
-            val magicLength = input.readUIntLe()
-            require(magicLength in 1..64) { "Invalid MPKG magic length" }
-            val magicBytes = ByteArray(magicLength.toInt())
-            input.readFully(magicBytes)
-            val magic = magicBytes.toString(Charsets.US_ASCII)
-            require(magic.startsWith("PKGM")) { "Invalid MPKG magic: $magic" }
-            val count = input.readUIntLe()
-            require(count <= 1_000_000L) { "MPKG entry count is too large" }
-            val index = ArrayList<MpkgEntryInfo>(count.toInt())
-            repeat(count.toInt()) {
-                val name = input.readLengthString(16 * 1024)
-                val offset = input.readUIntLe()
-                val length = input.readUIntLe()
-                index += MpkgEntryInfo(MpkgWriter.normalizePath(name), length, offset)
-            }
-            val dataStart = input.filePointer
-            index.forEach { entry ->
-                require(
-                    dataStart <= input.length() &&
-                        entry.offset <= input.length() - dataStart &&
-                        entry.length <= input.length() - dataStart - entry.offset,
-                ) {
-                    "MPKG entry range exceeds file: ${entry.path}"
-                }
-            }
-            return MpkgManifest(magic, index)
-        }
-    }
-}
-
 internal fun writeAtomically(
     outputFile: File,
     write: (File) -> Unit,
