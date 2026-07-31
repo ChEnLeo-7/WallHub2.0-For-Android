@@ -81,6 +81,7 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationDrawerItem
@@ -4549,45 +4550,47 @@ private fun HomeFilterPageNavigation(
     modifier: Modifier = Modifier,
 ) {
     if (compact) {
-        PrimaryTabRow(
-            selectedTabIndex = pages.indexOf(selectedPage).coerceAtLeast(0),
-            modifier =
-                modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = WallHubSpacing.md)
-                    .clip(MaterialTheme.shapes.large),
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            contentColor = MaterialTheme.colorScheme.primary,
-            divider = {},
-        ) {
-            pages.forEach { page ->
-                val activeCount = page.activeSectionCount(draft)
-                Tab(
-                    selected = selectedPage == page,
-                    onClick = { onPageSelected(page) },
-                    selectedContentColor = MaterialTheme.colorScheme.primary,
-                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    icon = {
-                        BadgedBox(
-                            badge = {
-                                if (activeCount > 0) Badge { Text(activeCount.toString()) }
-                            },
-                        ) {
-                            Icon(
-                                imageVector = page.icon(),
-                                contentDescription = null,
-                                modifier = Modifier.size(WallHubSizeTokens.smallIcon),
+        CompositionLocalProvider(LocalRippleConfiguration provides null) {
+            PrimaryTabRow(
+                selectedTabIndex = pages.indexOf(selectedPage).coerceAtLeast(0),
+                modifier =
+                    modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = WallHubSpacing.md)
+                        .clip(MaterialTheme.shapes.large),
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.primary,
+                divider = {},
+            ) {
+                pages.forEach { page ->
+                    val activeCount = page.activeSectionCount(draft)
+                    Tab(
+                        selected = selectedPage == page,
+                        onClick = { onPageSelected(page) },
+                        selectedContentColor = MaterialTheme.colorScheme.primary,
+                        unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        icon = {
+                            BadgedBox(
+                                badge = {
+                                    if (activeCount > 0) Badge { Text(activeCount.toString()) }
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = page.icon(),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(WallHubSizeTokens.smallIcon),
+                                )
+                            }
+                        },
+                        text = {
+                            Text(
+                                text = page.label(language),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
-                        }
-                    },
-                    text = {
-                        Text(
-                            text = page.label(language),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                )
+                        },
+                    )
+                }
             }
         }
     } else {
