@@ -86,8 +86,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -5106,34 +5104,57 @@ private fun HomeFilterChoiceRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = WallHubSizeTokens.listItemMinimumHeight)
-                .selectable(
-                    selected = selected,
-                    role = Role.RadioButton,
-                    onClick = onClick,
-                ).padding(horizontal = WallHubSpacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color =
+            if (selected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+        contentColor =
+            if (selected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        tonalElevation = WallHubSpacing.none,
     ) {
-        RadioButton(
-            selected = selected,
-            onClick = null,
-            colors =
-                RadioButtonDefaults.colors(
-                    selectedColor = MaterialTheme.colorScheme.primary,
-                    unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-        )
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = WallHubSizeTokens.listItemMinimumHeight)
+                    .selectable(
+                        selected = selected,
+                        role = Role.RadioButton,
+                        onClick = onClick,
+                    ).padding(horizontal = WallHubSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+        ) {
+            Icon(
+                imageVector =
+                    if (selected) {
+                        Icons.Filled.Circle
+                    } else {
+                        Icons.Outlined.RadioButtonUnchecked
+                    },
+                contentDescription = null,
+                tint =
+                    if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                modifier = Modifier.size(24.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 

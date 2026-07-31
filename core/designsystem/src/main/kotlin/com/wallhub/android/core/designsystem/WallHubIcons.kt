@@ -8,6 +8,7 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Settings
@@ -47,6 +48,7 @@ import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
@@ -101,6 +103,7 @@ object WallHubIcons {
     val Pause: ImageVector get() = MaterialIcons.Outlined.Pause
     val Play: ImageVector get() = MaterialIcons.Outlined.PlayArrow
     val RotateCw: ImageVector get() = MaterialIcons.Outlined.Refresh
+    val RadioButtonUnchecked: ImageVector get() = MaterialIcons.Outlined.RadioButtonUnchecked
     val Schedule: ImageVector get() = MaterialIcons.Outlined.Schedule
     val Send: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.Send
     val Search: ImageVector get() = MaterialIcons.Outlined.Search
@@ -153,6 +156,7 @@ object WallHubIcons {
         val PhoneAndroid: ImageVector get() = WallHubIcons.Smartphone
         val PlayArrow: ImageVector get() = WallHubIcons.Play
         val Refresh: ImageVector get() = WallHubIcons.RotateCw
+        val RadioButtonUnchecked: ImageVector get() = WallHubIcons.RadioButtonUnchecked
         val Schedule: ImageVector get() = WallHubIcons.Schedule
         val Send: ImageVector get() = WallHubIcons.Send
         val Search: ImageVector get() = WallHubIcons.Search
@@ -168,6 +172,7 @@ object WallHubIcons {
 
     object Filled {
         val Bookmarks: ImageVector get() = MaterialIcons.Filled.Bookmarks
+        val Circle: ImageVector get() = MaterialIcons.Filled.Circle
         val Download: ImageVector get() = MaterialIcons.Filled.Download
         val Explore: ImageVector get() = MaterialIcons.Filled.Explore
         val FolderOpen: ImageVector get() = MaterialSymbolFolderOpenFilled
