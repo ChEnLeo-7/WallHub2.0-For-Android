@@ -26,6 +26,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import `in`.dragonbra.javasteam.enums.EResult
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesPublishedfileSteamclient
 import `in`.dragonbra.javasteam.rpc.service.PublishedFile
+import `in`.dragonbra.javasteam.steam.CMClient
 import `in`.dragonbra.javasteam.util.log.LogListener
 import `in`.dragonbra.javasteam.util.log.LogManager
 import kotlinx.coroutines.CompletableDeferred
@@ -50,8 +51,6 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
-
-private const val JAVA_STEAM_CM_COMPONENT = "CMClient"
 
 internal data class PersistedSteamCredential(
     val accountName: String,
@@ -122,7 +121,7 @@ class SecureSteamSessionRepository
                     message: String?,
                     throwable: Throwable?,
                 ) {
-                    if (clazz.simpleName != JAVA_STEAM_CM_COMPONENT) return
+                    if (!CMClient::class.java.isAssignableFrom(clazz)) return
                     serviceScope.launch {
                         diagnostics.record(
                             DiagnosticEvent(
