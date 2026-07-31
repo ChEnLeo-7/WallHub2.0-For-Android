@@ -4,6 +4,8 @@ import android.content.Context
 import com.wallhub.android.core.database.AppPreferencesStore
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
+import com.wallhub.android.core.model.DiagnosticEvent
+import com.wallhub.android.core.model.DiagnosticLevel
 import com.wallhub.android.core.model.DiagnosticRepository
 import com.wallhub.android.core.model.FavoriteState
 import com.wallhub.android.core.model.SteamContentCredential
@@ -24,6 +26,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import `in`.dragonbra.javasteam.enums.EResult
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesPublishedfileSteamclient
 import `in`.dragonbra.javasteam.rpc.service.PublishedFile
+import `in`.dragonbra.javasteam.util.log.LogListener
+import `in`.dragonbra.javasteam.util.log.LogManager
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -46,6 +50,8 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val JAVA_STEAM_CM_COMPONENT = "CMClient"
 
 internal data class PersistedSteamCredential(
     val accountName: String,
@@ -81,6 +87,7 @@ class SecureSteamSessionRepository
         internal val credentialMutex = Mutex()
         internal val pendingCode = AtomicReference<CompletableFuture<String>?>(null)
         internal val nextSessionId = AtomicLong(0L)
+        private val javaSteamLogListener = createJavaSteamLogListener()
 
         internal var sessionGeneration = 0L
 
@@ -96,7 +103,44 @@ class SecureSteamSessionRepository
         @Volatile
         internal var pendingLogin: PendingLogin? = null
 
+        init {
+            LogManager.addListener(javaSteamLogListener)
+        }
+
         override val session: StateFlow<SteamSessionState> = mutableSession.asStateFlow()
+
+        private fun createJavaSteamLogListener(): LogListener =
+            object : LogListener {
+                override fun onLog(
+                    clazz: Class<*>,
+                    message: String?,
+                    throwable: Throwable?,
+                ) = Unit
+
+                override fun onError(
+                    clazz: Class<*>,
+                    message: String?,
+                    throwable: Throwable?,
+                ) {
+                    if (clazz.simpleName != JAVA_STEAM_CM_COMPONENT) return
+                    serviceScope.launch {
+                        diagnostics.record(
+                            DiagnosticEvent(
+                                source = "steam-session",
+                                level = DiagnosticLevel.WARNING,
+                                message = "JavaSteam CM error",
+                                attributes =
+                                    mapOf(
+                                        "component" to clazz.simpleName,
+                                        "operation" to message.orEmpty(),
+                                        "error" to throwable?.javaClass?.simpleName.orEmpty(),
+                                        "detail" to throwable?.message.orEmpty(),
+                                    ),
+                            ),
+                        )
+                    }
+                }
+            }
 
         override fun restorePersistedSession() {
             val job =
