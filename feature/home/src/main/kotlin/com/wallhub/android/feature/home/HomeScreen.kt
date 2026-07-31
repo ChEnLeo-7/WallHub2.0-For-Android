@@ -5131,24 +5131,7 @@ private fun HomeFilterChoiceRow(
                         onClick = onClick,
                     ).padding(horizontal = WallHubSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
         ) {
-            Icon(
-                imageVector =
-                    if (selected) {
-                        Icons.Filled.Circle
-                    } else {
-                        Icons.Outlined.RadioButtonUnchecked
-                    },
-                contentDescription = null,
-                tint =
-                    if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                modifier = Modifier.size(24.dp),
-            )
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyLarge,
