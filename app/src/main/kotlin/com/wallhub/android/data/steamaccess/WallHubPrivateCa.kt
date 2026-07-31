@@ -10,6 +10,7 @@ import org.spongycastle.asn1.x509.KeyPurposeId
 import org.spongycastle.asn1.x509.KeyUsage
 import org.spongycastle.asn1.x509.X509Extensions
 import org.spongycastle.x509.X509V3CertificateGenerator
+import java.io.ByteArrayInputStream
 import java.math.BigInteger
 import java.net.Socket
 import java.security.KeyPair
@@ -17,6 +18,7 @@ import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.SecureRandom
 import java.security.cert.CertificateException
+import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.spec.ECGenParameterSpec
 import java.util.Date
@@ -142,6 +144,7 @@ internal class WallHubPrivateCa
                             KeyUsage(KeyUsage.keyCertSign or KeyUsage.cRLSign),
                         )
                     }.generate(keyPair.private, random)
+                    .asPlatformCertificate()
             certificate.checkValidity()
             certificate.verify(keyPair.public)
             return Identity(keyPair, certificate)
@@ -173,8 +176,9 @@ internal class WallHubPrivateCa
                             GeneralNames(GeneralName(GeneralName.dNSName, hostname)),
                         )
                     }.generate(root.keyPair.private, random)
+                    .asPlatformCertificate()
             certificate.checkValidity()
-            certificate.verify(root.certificate.publicKey)
+            certificate.verify(root.keyPair.public)
             return Identity(keyPair, certificate)
         }
 
@@ -184,6 +188,13 @@ internal class WallHubPrivateCa
                 .apply {
                     initialize(ECGenParameterSpec("secp256r1"), random)
                 }.generateKeyPair()
+
+        private fun X509Certificate.asPlatformCertificate(): X509Certificate =
+            ByteArrayInputStream(encoded).use { encodedCertificate ->
+                CertificateFactory
+                    .getInstance("X.509")
+                    .generateCertificate(encodedCertificate) as X509Certificate
+            }
 
         private fun serialNumber(): BigInteger = BigInteger(128, random).setBit(127)
 

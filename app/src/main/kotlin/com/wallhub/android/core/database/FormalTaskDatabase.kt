@@ -182,7 +182,7 @@ interface LocalWallpaperMetadataDao {
         LocalWallpaperTagEntity::class,
     ],
     version = 6,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class FormalTaskDatabase : RoomDatabase() {
     abstract fun taskRecordDao(): FormalTaskRecordDao
@@ -283,6 +283,15 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 }
             }
 
+        internal val migrations: Array<Migration> =
+            arrayOf(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+            )
+
         @Volatile
         private var instance: FormalTaskDatabase? = null
 
@@ -293,13 +302,9 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                         context.applicationContext,
                         FormalTaskDatabase::class.java,
                         "wallhub-formal.db",
-                    ).addMigrations(
-                        MIGRATION_1_2,
-                        MIGRATION_2_3,
-                        MIGRATION_3_4,
-                        MIGRATION_4_5,
-                        MIGRATION_5_6,
-                    ).build()
+                    ).apply {
+                        migrations.forEach { migration -> addMigrations(migration) }
+                    }.build()
                     .also { database -> instance = database }
             }
     }

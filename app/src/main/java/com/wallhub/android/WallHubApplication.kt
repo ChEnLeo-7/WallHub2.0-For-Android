@@ -2,6 +2,7 @@ package com.wallhub.android
 
 import android.app.Application
 import android.os.Build
+import android.util.Log
 import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
@@ -12,6 +13,7 @@ import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.data.downloads.WallHubDownloadWorkerFactory
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,9 +44,13 @@ class WallHubApplication :
         super.onCreate()
         CrashDiagnostics.install(this)
         applicationScope.launch {
-            val preferences = settingsRepository.preferences.first()
-            runCatching {
+            try {
+                val preferences = settingsRepository.preferences.first()
                 launcherIconController.setThemedIconEnabled(preferences.useThemedLauncherIcon)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Log.e(TAG, "Unable to apply startup preferences; defaults remain active", error)
             }
         }
     }
@@ -67,4 +73,8 @@ class WallHubApplication :
                     add(GifDecoder.Factory())
                 }
             }.build()
+
+    private companion object {
+        const val TAG = "WallHubApplication"
+    }
 }

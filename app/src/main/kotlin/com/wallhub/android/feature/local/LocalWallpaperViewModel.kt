@@ -10,6 +10,7 @@ import com.wallhub.android.core.model.LocalWallpaperScanSnapshot
 import com.wallhub.android.core.model.LocalWallpaperViewMode
 import com.wallhub.android.core.model.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -317,16 +318,7 @@ class LocalWallpaperViewModel
                     repository.scan().collect { snapshot ->
                         val state = mutableState.value
                         val existingResources = state.scan.resources.associateBy(LocalWallpaperResource::id)
-                        val scannedResources =
-                            snapshot.resources.map { resource ->
-                                existingResources[resource.id]?.let { existing ->
-                                    resource.copy(
-                                        isFavorite = existing.isFavorite,
-                                        tags = existing.tags,
-                                        importRequestedAt = existing.importRequestedAt,
-                                    )
-                                } ?: resource
-                            }
+                        val scannedResources = snapshot.resources
                         val displayedSnapshot =
                             if (snapshot.isScanning && existingResources.isNotEmpty()) {
                                 snapshot.copy(
@@ -484,9 +476,14 @@ class LocalWallpaperViewModel
             label: String,
         ) {
             viewModelScope.launch {
-                runCatching { settingsRepository.setLocalManagementDirectory(treeUri, label) }
-                    .onSuccess { scan() }
-                    .onFailure { error -> showMessage(error.message ?: "无法保存目录") }
+                try {
+                    settingsRepository.setLocalManagementDirectory(treeUri, label)
+                    scan()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    showMessage(error.message ?: "无法保存目录")
+                }
             }
         }
 
@@ -502,10 +499,16 @@ class LocalWallpaperViewModel
                 mutableState.value.scan.resources
                     .firstOrNull { it.id == resourceId } ?: return
             val value = !resource.isFavorite
-            updateResource(resourceId) { it.copy(isFavorite = value) }
             viewModelScope.launch {
-                runCatching { repository.setFavorite(resourceId, value) }
-                    .onFailure { error -> showMessage(error.message ?: "收藏状态保存失败") }
+                try {
+                    repository.setFavorite(resourceId, value)
+                    updateResource(resourceId) { it.copy(isFavorite = value) }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    showMessage(error.message ?: "收藏状态保存失败")
+                    scan()
+                }
             }
         }
 
@@ -513,17 +516,25 @@ class LocalWallpaperViewModel
             val normalized = tag.trim().take(MAX_TAG_LENGTH)
             if (normalized.isBlank()) return
             val ids = targetResourceIds()
-            ids.forEach { id ->
-                updateResource(id) { resource -> resource.copy(tags = resource.tags + normalized) }
-            }
-            viewModelScope.launch {
-                ids.forEach { id ->
-                    val resource =
-                        mutableState.value.scan.resources
-                            .firstOrNull { it.id == id } ?: return@forEach
-                    repository.replaceTags(id, resource.tags)
+            val updatedTags =
+                ids.mapNotNull { id ->
+                    mutableState.value.scan.resources
+                        .firstOrNull { it.id == id }
+                        ?.let { resource -> id to (resource.tags + normalized) }
                 }
-                clearSelection()
+            viewModelScope.launch {
+                try {
+                    updatedTags.forEach { (id, tags) -> repository.replaceTags(id, tags) }
+                    updatedTags.forEach { (id, tags) ->
+                        updateResource(id) { resource -> resource.copy(tags = tags) }
+                    }
+                    clearSelection()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    showMessage(error.message ?: "标签保存失败")
+                    scan()
+                }
             }
         }
 
@@ -536,10 +547,16 @@ class LocalWallpaperViewModel
                     .map { it.trim().take(MAX_TAG_LENGTH) }
                     .filter(String::isNotBlank)
                     .toSet()
-            updateResource(resourceId) { it.copy(tags = normalized) }
             viewModelScope.launch {
-                runCatching { repository.replaceTags(resourceId, normalized) }
-                    .onFailure { error -> showMessage(error.message ?: "标签保存失败") }
+                try {
+                    repository.replaceTags(resourceId, normalized)
+                    updateResource(resourceId) { it.copy(tags = normalized) }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    showMessage(error.message ?: "标签保存失败")
+                    scan()
+                }
             }
         }
 
@@ -548,58 +565,74 @@ class LocalWallpaperViewModel
             newTag: String,
         ) {
             viewModelScope.launch {
-                runCatching { repository.renameTag(oldTag, newTag) }
-                    .onSuccess {
-                        val normalizedNewTag = newTag.trim().take(MAX_TAG_LENGTH)
-                        mutableState.value =
-                            mutableState.value.copy(
-                                scan =
-                                    mutableState.value.scan.copy(
-                                        resources =
-                                            mutableState.value.scan.resources.map { resource ->
-                                                if (oldTag in resource.tags) {
-                                                    resource.copy(tags = (resource.tags - oldTag) + normalizedNewTag)
-                                                } else {
-                                                    resource
-                                                }
-                                            },
-                                    ),
-                                selectedTag =
-                                    if (mutableState.value.selectedTag == oldTag) {
-                                        normalizedNewTag
-                                    } else {
-                                        mutableState.value.selectedTag
-                                    },
-                            )
-                    }.onFailure { error -> showMessage(error.message ?: "标签重命名失败") }
+                try {
+                    repository.renameTag(oldTag, newTag)
+                    val normalizedNewTag = newTag.trim().take(MAX_TAG_LENGTH)
+                    mutableState.value =
+                        mutableState.value.copy(
+                            scan =
+                                mutableState.value.scan.copy(
+                                    resources =
+                                        mutableState.value.scan.resources.map { resource ->
+                                            if (oldTag in resource.tags) {
+                                                resource.copy(tags = (resource.tags - oldTag) + normalizedNewTag)
+                                            } else {
+                                                resource
+                                            }
+                                        },
+                                ),
+                            selectedTag =
+                                if (mutableState.value.selectedTag == oldTag) {
+                                    normalizedNewTag
+                                } else {
+                                    mutableState.value.selectedTag
+                                },
+                        )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    showMessage(error.message ?: "标签重命名失败")
+                    scan()
+                }
             }
         }
 
         private fun deleteTag(tag: String) {
             viewModelScope.launch {
-                runCatching { repository.deleteTag(tag) }
-                    .onSuccess {
-                        mutableState.value =
-                            mutableState.value.copy(
-                                scan =
-                                    mutableState.value.scan.copy(
-                                        resources =
-                                            mutableState.value.scan.resources.map { resource ->
-                                                resource.copy(tags = resource.tags - tag)
-                                            },
-                                    ),
-                                selectedTag = mutableState.value.selectedTag.takeUnless { it == tag },
-                            )
-                    }.onFailure { error -> showMessage(error.message ?: "标签删除失败") }
+                try {
+                    repository.deleteTag(tag)
+                    mutableState.value =
+                        mutableState.value.copy(
+                            scan =
+                                mutableState.value.scan.copy(
+                                    resources =
+                                        mutableState.value.scan.resources.map { resource ->
+                                            resource.copy(tags = resource.tags - tag)
+                                        },
+                                ),
+                            selectedTag = mutableState.value.selectedTag.takeUnless { it == tag },
+                        )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    showMessage(error.message ?: "标签删除失败")
+                    scan()
+                }
             }
         }
 
         private fun markImportRequested(resourceId: String) {
             val now = System.currentTimeMillis()
-            updateResource(resourceId) { it.copy(importRequestedAt = now) }
             viewModelScope.launch {
-                runCatching { repository.markImportRequested(resourceId, now) }
-                    .onFailure { error -> showMessage(error.message ?: "导入状态保存失败") }
+                try {
+                    repository.markImportRequested(resourceId, now)
+                    updateResource(resourceId) { it.copy(importRequestedAt = now) }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    showMessage(error.message ?: "导入状态保存失败")
+                    scan()
+                }
             }
         }
 

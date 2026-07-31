@@ -129,6 +129,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import java.util.Locale
 import javax.inject.Inject
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
@@ -269,17 +270,6 @@ private data class LibraryCacheEntry(
     val hasNextPage: Boolean,
     val currentPage: Int,
     val totalPages: Int,
-)
-
-private data class LibraryContentKey(
-    val sessionPhase: SteamSessionPhase,
-    val collection: LibraryCollectionTab,
-    val typeFilter: LibraryTypeFilter,
-    val searchQuery: String,
-    val paginationMode: HomePaginationMode,
-    val currentPage: Int,
-    val itemIds: List<Long>,
-    val error: String?,
 )
 
 @HiltViewModel
@@ -1127,7 +1117,6 @@ private fun LibraryResults(
         LibraryResultsContent(
             state = state,
             onRefresh = onRefresh,
-            onLoadNextPage = onLoadNextPage,
             onPageSelected = onPageSelected,
             onOpenDetail = onOpenDetail,
             onPlayVideo = onPlayVideo,
@@ -1161,7 +1150,6 @@ private fun LibraryResults(
 private fun LibraryResultsContent(
     state: LibraryUiState,
     onRefresh: () -> Unit,
-    onLoadNextPage: () -> Unit,
     onPageSelected: (Int) -> Unit,
     onOpenDetail: (Long) -> Unit,
     onPlayVideo: (Long) -> Unit,
@@ -1310,18 +1298,6 @@ private fun Modifier.refreshableEmptyState(): Modifier =
     this
         .fillMaxSize()
         .verticalScroll(rememberScrollState())
-
-private fun LibraryUiState.contentKey(): LibraryContentKey =
-    LibraryContentKey(
-        sessionPhase = session.phase,
-        collection = collection,
-        typeFilter = typeFilter,
-        searchQuery = searchQuery,
-        paginationMode = paginationMode,
-        currentPage = currentPage,
-        itemIds = items.map(WorkshopSummary::id),
-        error = error,
-    )
 
 @Composable
 private fun LibraryPagination(
@@ -1638,11 +1614,12 @@ private fun AppLanguage.formatCompact(value: Long): String =
     when {
         value >= 1_000_000 ->
             String.format(
+                Locale.getDefault(),
                 if (this == AppLanguage.EN) "%.1fM" else "%.1f 万",
                 if (this == AppLanguage.EN) value / 1_000_000.0 else value / 10_000.0,
             )
 
-        value >= 1_000 -> String.format("%.1fK", value / 1_000.0)
+        value >= 1_000 -> String.format(Locale.getDefault(), "%.1fK", value / 1_000.0)
         else -> value.toString()
     }
 

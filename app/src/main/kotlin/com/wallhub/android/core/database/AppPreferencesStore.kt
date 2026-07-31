@@ -1,9 +1,12 @@
 package com.wallhub.android.core.database
 
 import android.content.Context
+import android.util.Log
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -20,17 +23,32 @@ import com.wallhub.android.core.model.ThemePreference
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
 import com.wallhub.android.core.model.normalizeSteamAccessDohEndpoints
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.io.IOException
 
 private const val PREFERENCES_FILE_NAME = "wallhub_formal_preferences"
-private val Context.dataStore by preferencesDataStore(name = PREFERENCES_FILE_NAME)
+private val Context.dataStore by preferencesDataStore(
+    name = PREFERENCES_FILE_NAME,
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 class AppPreferencesStore(
     context: Context,
 ) {
     private val applicationContext = context.applicationContext
 
-    val preferences: Flow<AppPreferences> = applicationContext.dataStore.data.map(::toAppPreferences)
+    val preferences: Flow<AppPreferences> =
+        applicationContext.dataStore.data
+            .catch { error ->
+                if (error is IOException) {
+                    Log.w(TAG, "Preferences could not be read; using defaults", error)
+                    emit(preferencesFallbackFor(error))
+                } else {
+                    throw error
+                }
+            }.map(::toAppPreferences)
 
     suspend fun setTheme(theme: ThemePreference) {
         applicationContext.dataStore.edit { preferences ->
@@ -157,6 +175,7 @@ class AppPreferencesStore(
         }
     }
 
+    @Deprecated("Steam API credentials are written through SteamApiCredentialRepository")
     suspend fun setSteamApiKey(apiKey: String) {
         applicationContext.dataStore.edit { preferences ->
             val normalized = apiKey.trim()
@@ -166,6 +185,15 @@ class AppPreferencesStore(
                 preferences[Keys.steamApiKey] = normalized
             }
         }
+    }
+
+    internal suspend fun readLegacySteamApiKey(): String =
+        applicationContext.dataStore.data
+            .first()[Keys.steamApiKey]
+            .orEmpty()
+
+    internal suspend fun clearLegacySteamApiKey() {
+        applicationContext.dataStore.edit { preferences -> preferences.remove(Keys.steamApiKey) }
     }
 
     suspend fun setSteamWorkshopDataSource(source: SteamWorkshopDataSource) {
@@ -282,7 +310,6 @@ class AppPreferencesStore(
             steamAccessDisabledDohEndpoints = disabledSteamAccessDohEndpoints,
             steamAccessHosts = preferences[Keys.steamAccessHosts].orEmpty(),
             mediaCacheLimitMb = (preferences[Keys.mediaCacheLimitMb] ?: 512).coerceAtLeast(128),
-            steamApiKey = preferences[Keys.steamApiKey].orEmpty(),
             steamWorkshopDataSource =
                 preferences.enumValue(
                     Keys.steamWorkshopDataSource,
@@ -332,4 +359,10 @@ class AppPreferencesStore(
         val steamWorkshopDataSource = stringPreferencesKey("steam_workshop_data_source")
         val onlineChunkPlaybackEnabled = booleanPreferencesKey("online_chunk_playback_enabled")
     }
+
+    private companion object {
+        const val TAG = "AppPreferencesStore"
+    }
 }
+
+internal fun preferencesFallbackFor(error: Throwable): Preferences = if (error is IOException) emptyPreferences() else throw error

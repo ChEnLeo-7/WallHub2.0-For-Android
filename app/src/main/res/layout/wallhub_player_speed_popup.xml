@@ -3,7 +3,6 @@
     android:layout_width="168dp"
     android:layout_height="wrap_content"
     android:background="@drawable/wallhub_player_speed_menu_background"
-    android:clipToOutline="true"
     android:orientation="vertical"
     android:padding="8dp">
 

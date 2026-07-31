@@ -148,7 +148,28 @@ data class AppPreferences(
      * completed local download is more predictable on mobile networks and after app restarts.
      */
     val onlineChunkPlaybackEnabled: Boolean = false,
-)
+) {
+    override fun toString(): String =
+        "AppPreferences(" +
+            "theme=$theme, language=$language, accent=$accent, customAccentColor=$customAccentColor, " +
+            "useSystemMonet=$useSystemMonet, useThemedLauncherIcon=$useThemedLauncherIcon, " +
+            "outputTreeUri=$outputTreeUri, outputDirectoryLabel=$outputDirectoryLabel, " +
+            "localManagementTreeUri=$localManagementTreeUri, " +
+            "localManagementDirectoryLabel=$localManagementDirectoryLabel, " +
+            "localWallpaperViewMode=$localWallpaperViewMode, homePageSize=$homePageSize, " +
+            "homeColumns=$homeColumns, homeFilterMultiSelect=$homeFilterMultiSelect, " +
+            "homeCardAction=$homeCardAction, homePaginationMode=$homePaginationMode, " +
+            "matureContentEnabled=$matureContentEnabled, maxConcurrentDownloads=$maxConcurrentDownloads, " +
+            "chunkDownloadConcurrency=$chunkDownloadConcurrency, downloadProxyUrl=$downloadProxyUrl, " +
+            "downloadProxyEnabled=$downloadProxyEnabled, " +
+            "downloadProxyRequiresConfirmation=$downloadProxyRequiresConfirmation, " +
+            "steamAccessEnabled=$steamAccessEnabled, steamAccessMode=$steamAccessMode, " +
+            "steamAccessDohEndpoints=$steamAccessDohEndpoints, " +
+            "steamAccessDisabledDohEndpoints=$steamAccessDisabledDohEndpoints, " +
+            "steamAccessHosts=$steamAccessHosts, mediaCacheLimitMb=$mediaCacheLimitMb, " +
+            "steamApiKey=<redacted>, steamWorkshopDataSource=$steamWorkshopDataSource, " +
+            "onlineChunkPlaybackEnabled=$onlineChunkPlaybackEnabled)"
+}
 
 const val STEAM_ACCESS_DOH_ENDPOINT_LIMIT = 8
 
@@ -189,7 +210,14 @@ fun AppPreferences.enabledSteamAccessDohEndpoints(): List<String> =
 fun isSupportedDownloadProxyUrl(raw: String): Boolean {
     val uri = runCatching { URI(raw.trim()) }.getOrNull() ?: return false
     val supportedScheme = uri.scheme?.lowercase() in setOf("http", "https", "socks", "socks5")
-    return supportedScheme && !uri.host.isNullOrBlank() && (uri.port == -1 || uri.port in 1..65_535)
+    val supportedPath = uri.path.isNullOrEmpty() || uri.path == "/"
+    return supportedScheme &&
+        !uri.host.isNullOrBlank() &&
+        (uri.port == -1 || uri.port in 1..65_535) &&
+        uri.userInfo == null &&
+        uri.query == null &&
+        uri.fragment == null &&
+        supportedPath
 }
 
 data class AppError(

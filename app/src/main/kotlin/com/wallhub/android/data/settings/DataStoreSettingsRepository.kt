@@ -12,14 +12,19 @@ import com.wallhub.android.core.model.SteamAccessMode
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import javax.inject.Inject
 
 class DataStoreSettingsRepository
     @Inject
     constructor(
         private val store: AppPreferencesStore,
+        private val steamApiCredentialRepository: SteamApiCredentialRepository,
     ) : SettingsRepository {
-        override val preferences: Flow<AppPreferences> = store.preferences
+        override val preferences: Flow<AppPreferences> =
+            combine(store.preferences, steamApiCredentialRepository.apiKey) { preferences, apiKey ->
+                preferences.copy(steamApiKey = apiKey)
+            }
 
         override suspend fun setTheme(theme: ThemePreference) {
             store.setTheme(theme)
@@ -95,7 +100,7 @@ class DataStoreSettingsRepository
         }
 
         override suspend fun setSteamApiKey(apiKey: String) {
-            store.setSteamApiKey(apiKey)
+            steamApiCredentialRepository.setApiKey(apiKey)
         }
 
         override suspend fun setSteamWorkshopDataSource(source: SteamWorkshopDataSource) {

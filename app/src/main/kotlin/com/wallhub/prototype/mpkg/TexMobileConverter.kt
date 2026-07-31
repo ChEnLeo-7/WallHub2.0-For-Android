@@ -9,7 +9,6 @@ import kotlin.math.min
 
 private const val TEX_FORMAT_RGBA8888 = 0
 private const val TEX_FORMAT_DXT5 = 4
-private const val TEX_FORMAT_ETC2_RGBA8 = 5
 private const val TEX_FORMAT_DXT3 = 6
 private const val TEX_FORMAT_DXT1 = 7
 private const val TEX_FORMAT_RG88 = 8

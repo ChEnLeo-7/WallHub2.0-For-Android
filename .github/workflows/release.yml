@@ -139,7 +139,7 @@ jobs:
       - name: Verify Android application
         run: |
           chmod +x gradlew
-          ./gradlew lintDebug detekt ktlintCheck dependencyUpdates
+          ./gradlew :app:testDebugUnitTest :app:verifyLintSourceWarningBudget detekt ktlintCheck dependencyUpdates :app:assembleDebug
       - name: Require Release signing secrets
         env:
           WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
@@ -173,7 +173,7 @@ jobs:
           WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
           WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
           WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease -Pwallhub.publishAbiApks=true
+        run: ./gradlew :app:assembleRelease -Pwallhub.publishAbiApks=true -Pwallhub.requireReleaseSigning=true
       - name: Package and verify Release assets
         env:
           VERSION_NAME: ${{ steps.release_meta.outputs.version_name }}
@@ -233,6 +233,13 @@ jobs:
               }
             fi
           done
+
+          debug_certificate="$($apksigner verify --print-certs app/build/outputs/apk/debug/app-debug.apk | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print toupper($2); exit}')"
+          test -n "$debug_certificate"
+          [[ "$signing_certificate" != "$debug_certificate" ]] || {
+            echo "::error::Release APK is signed with the Android Debug certificate"
+            exit 1
+          }
 
           (
             cd "$release_dir"

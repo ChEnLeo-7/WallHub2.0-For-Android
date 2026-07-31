@@ -7,10 +7,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.os.Build
-import androidx.compose.animation.animateColor
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
@@ -353,90 +349,6 @@ internal fun staticAccentColorScheme(
 @SuppressLint("RestrictedApi")
 private fun DynamicColor.resolve(scheme: DynamicScheme): Color = Color(getArgb(scheme))
 
-@Composable
-private fun animateWallHubColorScheme(target: ColorScheme): ColorScheme {
-    val transition = updateTransition(targetState = target, label = "WallHubThemeColors")
-    val spec =
-        tween<Color>(
-            durationMillis = THEME_COLOR_TRANSITION_DURATION_MS,
-            easing = FastOutSlowInEasing,
-        )
-    val primary by transition.animateColor({ spec }, label = "primary") { it.primary }
-    val onPrimary by transition.animateColor({ spec }, label = "onPrimary") { it.onPrimary }
-    val primaryContainer by transition.animateColor({ spec }, label = "primaryContainer") { it.primaryContainer }
-    val onPrimaryContainer by transition.animateColor({ spec }, label = "onPrimaryContainer") { it.onPrimaryContainer }
-    val inversePrimary by transition.animateColor({ spec }, label = "inversePrimary") { it.inversePrimary }
-    val secondary by transition.animateColor({ spec }, label = "secondary") { it.secondary }
-    val onSecondary by transition.animateColor({ spec }, label = "onSecondary") { it.onSecondary }
-    val secondaryContainer by transition.animateColor({ spec }, label = "secondaryContainer") { it.secondaryContainer }
-    val onSecondaryContainer by transition.animateColor({ spec }, label = "onSecondaryContainer") { it.onSecondaryContainer }
-    val tertiary by transition.animateColor({ spec }, label = "tertiary") { it.tertiary }
-    val onTertiary by transition.animateColor({ spec }, label = "onTertiary") { it.onTertiary }
-    val tertiaryContainer by transition.animateColor({ spec }, label = "tertiaryContainer") { it.tertiaryContainer }
-    val onTertiaryContainer by transition.animateColor({ spec }, label = "onTertiaryContainer") { it.onTertiaryContainer }
-    val background by transition.animateColor({ spec }, label = "background") { it.background }
-    val onBackground by transition.animateColor({ spec }, label = "onBackground") { it.onBackground }
-    val surface by transition.animateColor({ spec }, label = "surface") { it.surface }
-    val onSurface by transition.animateColor({ spec }, label = "onSurface") { it.onSurface }
-    val surfaceVariant by transition.animateColor({ spec }, label = "surfaceVariant") { it.surfaceVariant }
-    val onSurfaceVariant by transition.animateColor({ spec }, label = "onSurfaceVariant") { it.onSurfaceVariant }
-    val surfaceTint by transition.animateColor({ spec }, label = "surfaceTint") { it.surfaceTint }
-    val inverseSurface by transition.animateColor({ spec }, label = "inverseSurface") { it.inverseSurface }
-    val inverseOnSurface by transition.animateColor({ spec }, label = "inverseOnSurface") { it.inverseOnSurface }
-    val error by transition.animateColor({ spec }, label = "error") { it.error }
-    val onError by transition.animateColor({ spec }, label = "onError") { it.onError }
-    val errorContainer by transition.animateColor({ spec }, label = "errorContainer") { it.errorContainer }
-    val onErrorContainer by transition.animateColor({ spec }, label = "onErrorContainer") { it.onErrorContainer }
-    val outline by transition.animateColor({ spec }, label = "outline") { it.outline }
-    val outlineVariant by transition.animateColor({ spec }, label = "outlineVariant") { it.outlineVariant }
-    val scrim by transition.animateColor({ spec }, label = "scrim") { it.scrim }
-    val surfaceBright by transition.animateColor({ spec }, label = "surfaceBright") { it.surfaceBright }
-    val surfaceDim by transition.animateColor({ spec }, label = "surfaceDim") { it.surfaceDim }
-    val surfaceContainer by transition.animateColor({ spec }, label = "surfaceContainer") { it.surfaceContainer }
-    val surfaceContainerHigh by transition.animateColor({ spec }, label = "surfaceContainerHigh") { it.surfaceContainerHigh }
-    val surfaceContainerHighest by transition.animateColor({ spec }, label = "surfaceContainerHighest") { it.surfaceContainerHighest }
-    val surfaceContainerLow by transition.animateColor({ spec }, label = "surfaceContainerLow") { it.surfaceContainerLow }
-    val surfaceContainerLowest by transition.animateColor({ spec }, label = "surfaceContainerLowest") { it.surfaceContainerLowest }
-    return target.copy(
-        primary = primary,
-        onPrimary = onPrimary,
-        primaryContainer = primaryContainer,
-        onPrimaryContainer = onPrimaryContainer,
-        inversePrimary = inversePrimary,
-        secondary = secondary,
-        onSecondary = onSecondary,
-        secondaryContainer = secondaryContainer,
-        onSecondaryContainer = onSecondaryContainer,
-        tertiary = tertiary,
-        onTertiary = onTertiary,
-        tertiaryContainer = tertiaryContainer,
-        onTertiaryContainer = onTertiaryContainer,
-        background = background,
-        onBackground = onBackground,
-        surface = surface,
-        onSurface = onSurface,
-        surfaceVariant = surfaceVariant,
-        onSurfaceVariant = onSurfaceVariant,
-        surfaceTint = surfaceTint,
-        inverseSurface = inverseSurface,
-        inverseOnSurface = inverseOnSurface,
-        error = error,
-        onError = onError,
-        errorContainer = errorContainer,
-        onErrorContainer = onErrorContainer,
-        outline = outline,
-        outlineVariant = outlineVariant,
-        scrim = scrim,
-        surfaceBright = surfaceBright,
-        surfaceDim = surfaceDim,
-        surfaceContainer = surfaceContainer,
-        surfaceContainerHigh = surfaceContainerHigh,
-        surfaceContainerHighest = surfaceContainerHighest,
-        surfaceContainerLow = surfaceContainerLow,
-        surfaceContainerLowest = surfaceContainerLowest,
-    )
-}
-
 private fun parseColor(value: String): Color? {
     val hex = value.trim().removePrefix("#")
     if (hex.length != 6) return null
@@ -451,7 +363,6 @@ private tailrec fun Context.findActivity(): Activity? =
         else -> null
     }
 
-private const val THEME_COLOR_TRANSITION_DURATION_MS = 360
 private const val MONET_CONTRAST_LEVEL = 0.0
 private const val MONET_LIGHT_SURFACE_LOWEST_DEPTH = 0.20f
 private const val MONET_LIGHT_SURFACE_LOW_DEPTH = 0.30f

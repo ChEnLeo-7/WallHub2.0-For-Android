@@ -7,7 +7,6 @@ import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -382,7 +381,7 @@ private fun LocalWallpaperScreen(
                     .nestedScroll(chromeScrollConnection),
         ) {
             if (state.scan.issues.isNotEmpty()) {
-                LocalScanIssueSummary(state = state, language = language)
+                LocalScanIssueSummary(state = state)
             }
             LocalWallpaperContent(
                 state = state,
@@ -903,10 +902,7 @@ private fun LocalWorkspaceMenu(
 }
 
 @Composable
-private fun LocalScanIssueSummary(
-    state: LocalWallpaperUiState,
-    language: AppLanguage,
-) {
+private fun LocalScanIssueSummary(state: LocalWallpaperUiState) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.tertiaryContainer,
@@ -1875,7 +1871,7 @@ private fun shareableUri(
     rawUri: String,
 ): Uri? {
     val uri = runCatching { Uri.parse(rawUri) }.getOrNull() ?: return null
-    if (uri.scheme != "file" || Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return uri
+    if (uri.scheme != "file") return uri
     val file = uri.path?.let(::File) ?: return null
     return runCatching {
         androidx.core.content.FileProvider.getUriForFile(

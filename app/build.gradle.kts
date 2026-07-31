@@ -1,5 +1,3 @@
-import com.google.protobuf.gradle.*
-
 plugins {
     id("wallhub.android.application")
     id("wallhub.android.compose")
@@ -22,9 +20,13 @@ val releaseSigningValues =
     )
 val hasReleaseSigning = releaseSigningValues.all { !it.isNullOrBlank() }
 val publishAbiApks = providers.gradleProperty("wallhub.publishAbiApks").orNull == "true"
+val requireReleaseSigning = providers.gradleProperty("wallhub.requireReleaseSigning").orNull == "true"
 
 check(releaseSigningValues.all { it.isNullOrBlank() } || hasReleaseSigning) {
     "Configure all WALLHUB_RELEASE_* signing variables or none of them."
+}
+check(!requireReleaseSigning || hasReleaseSigning) {
+    "A signed Release was requested, but WALLHUB_RELEASE_* signing variables are incomplete."
 }
 
 android {
@@ -34,6 +36,14 @@ android {
         targetSdk = 35
         versionCode = 35
         versionName = "0.8.25"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments["room.schemaLocation"] = "$projectDir/schemas"
+                arguments["room.incremental"] = "true"
+            }
+        }
     }
 
     splits {
@@ -56,12 +66,13 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig =
                 if (hasReleaseSigning) {
                     signingConfigs.getByName("releaseSigning")
                 } else {
-                    signingConfigs.getByName("debug")
+                    null
                 }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -77,6 +88,25 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
         resources.excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+    }
+}
+
+kotlin {
+    sourceSets.named("test") {
+        kotlin.setSrcDirs(listOf("src/test/kotlin"))
+        kotlin.include(
+            "com/wallhub/android/testutil/MainDispatcherRule.kt",
+            "com/wallhub/android/data/settings/SteamApiCredentialRepositoryTest.kt",
+            "com/wallhub/android/data/steamaccess/SteamAccessRoutesTest.kt",
+            "com/wallhub/android/data/update/GitHubReleaseParserTest.kt",
+            "com/wallhub/android/feature/local/LocalWallpaperViewModelTest.kt",
+        )
+    }
+    sourceSets.named("androidTest") {
+        kotlin.setSrcDirs(listOf("src/androidTest/kotlin"))
+        kotlin.include(
+            "com/wallhub/android/core/database/FormalTaskDatabaseMigrationTest.kt",
+        )
     }
 }
 
@@ -147,5 +177,59 @@ dependencies {
     kapt(libs.hilt.compiler)
     kapt(libs.androidx.room.compiler)
 
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlinx.coroutines.test)
+
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+
     debugImplementation(libs.androidx.compose.ui.tooling)
+}
+
+val lintSourceWarningBudget = 43
+val dependencyUpgradeLintIssues =
+    setOf(
+        "AndroidGradlePluginVersion",
+        "GradleDependency",
+        "KaptUsageInsteadOfKsp",
+        "OldTargetApi",
+        "UseTomlInstead",
+    )
+
+tasks.register("verifyLintSourceWarningBudget") {
+    group = "verification"
+    description = "Fails when main-source Lint warnings exceed the reviewed budget."
+    dependsOn("lintDebug")
+
+    val reportFile = layout.buildDirectory.file("reports/lint-results-debug.xml")
+    inputs.file(reportFile)
+    doLast {
+        val report = reportFile.get().asFile
+        check(report.isFile) { "Missing Lint XML report: $report" }
+        val document =
+            javax.xml.parsers.DocumentBuilderFactory
+                .newInstance()
+                .newDocumentBuilder()
+                .parse(report)
+        val issues = document.getElementsByTagName("issue")
+        val warningCount =
+            (0 until issues.length).count { index ->
+                val issue = issues.item(index) as org.w3c.dom.Element
+                if (issue.getAttribute("severity") != "Warning") return@count false
+                if (issue.getAttribute("id") in dependencyUpgradeLintIssues) return@count false
+                val locations = issue.getElementsByTagName("location")
+                (0 until locations.length).any { locationIndex ->
+                    val location = locations.item(locationIndex) as org.w3c.dom.Element
+                    location
+                        .getAttribute("file")
+                        .replace('\\', '/')
+                        .contains("/src/main/")
+                }
+            }
+        check(warningCount <= lintSourceWarningBudget) {
+            "Main-source Lint warnings increased to $warningCount (budget: $lintSourceWarningBudget)."
+        }
+        logger.lifecycle("Main-source Lint warnings: $warningCount/$lintSourceWarningBudget")
+    }
 }

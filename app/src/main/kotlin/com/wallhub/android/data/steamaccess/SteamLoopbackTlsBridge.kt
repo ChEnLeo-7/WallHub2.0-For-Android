@@ -1,5 +1,6 @@
 package com.wallhub.android.data.steamaccess
 
+import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.InetAddress
@@ -110,6 +111,7 @@ internal class SteamLoopbackTlsBridge
                 tunnelEstablished = true
                 relay(securedClient, upstream.socket)
             } catch (error: Throwable) {
+                Log.e(LOG_TAG, "Loopback TLS bridge failed", error)
                 val routeIsCurrent = selectedRoute?.let(accessManager::isRouteCurrent) != false
                 if (!tunnelEstablished && routeIsCurrent) runCatching { accessManager.recordBridgeFailure(error) }
                 if (securedClientSocket == null && !clientSocket.isClosed) {
@@ -174,32 +176,7 @@ internal class SteamLoopbackTlsBridge
                     }
             }
             if (matched != HEADER_TERMINATOR.size) throw IOException("CONNECT headers exceed limit")
-            val lines = output.toString(StandardCharsets.ISO_8859_1.name()).split("\r\n")
-            val requestParts = lines.firstOrNull()?.split(' ') ?: throw IOException("Missing CONNECT request")
-            if (requestParts.size != 3 || requestParts[0] != "CONNECT" || requestParts[2] != "HTTP/1.1") {
-                throw IOException("Only HTTP/1.1 CONNECT is supported")
-            }
-            val authority = requestParts[1]
-            if (authority.count { it == ':' } != 1) throw IOException("Invalid CONNECT authority")
-            val host = authority.substringBefore(':').lowercase().trimEnd('.')
-            val port = authority.substringAfter(':').toIntOrNull() ?: throw IOException("Invalid CONNECT port")
-            val headers =
-                lines
-                    .drop(1)
-                    .mapNotNull { line ->
-                        val separator = line.indexOf(':')
-                        if (separator <= 0) {
-                            null
-                        } else {
-                            line.substring(0, separator).trim().lowercase() to
-                                line.substring(separator + 1).trim()
-                        }
-                    }.toMap()
-            return ConnectRequest(
-                host = host,
-                port = port,
-                authorization = headers["proxy-authorization"],
-            )
+            return parseSteamConnectRequest(output.toString(StandardCharsets.ISO_8859_1.name()))
         }
 
         private fun writeResponse(
@@ -223,12 +200,6 @@ internal class SteamLoopbackTlsBridge
             if (this != null) runCatching { close() }
         }
 
-        private data class ConnectRequest(
-            val host: String,
-            val port: Int,
-            val authorization: String?,
-        )
-
         private companion object {
             const val LOOPBACK_HOST = "127.0.0.1"
             const val HTTPS_PORT = 443
@@ -237,6 +208,42 @@ internal class SteamLoopbackTlsBridge
             const val MAX_HEADER_BYTES = 16 * 1024
             const val HEADER_TIMEOUT_MS = 5_000
             const val RELAY_BUFFER_BYTES = 32 * 1024
+            const val LOG_TAG = "WallHubSteamAccess"
             val HEADER_TERMINATOR = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte(), '\r'.code.toByte(), '\n'.code.toByte())
         }
     }
+
+internal data class ConnectRequest(
+    val host: String,
+    val port: Int,
+    val authorization: String?,
+)
+
+internal fun parseSteamConnectRequest(headersText: String): ConnectRequest {
+    val lines = headersText.split("\r\n")
+    val requestParts = lines.firstOrNull()?.split(' ') ?: throw IOException("Missing CONNECT request")
+    if (requestParts.size != 3 || requestParts[0] != "CONNECT" || requestParts[2] != "HTTP/1.1") {
+        throw IOException("Only HTTP/1.1 CONNECT is supported")
+    }
+    val authority = requestParts[1]
+    if (authority.count { it == ':' } != 1) throw IOException("Invalid CONNECT authority")
+    val host = authority.substringBefore(':').lowercase().trimEnd('.')
+    val port = authority.substringAfter(':').toIntOrNull() ?: throw IOException("Invalid CONNECT port")
+    val headers =
+        lines
+            .drop(1)
+            .mapNotNull { line ->
+                val separator = line.indexOf(':')
+                if (separator <= 0) {
+                    null
+                } else {
+                    line.substring(0, separator).trim().lowercase() to
+                        line.substring(separator + 1).trim()
+                }
+            }.toMap()
+    return ConnectRequest(
+        host = host,
+        port = port,
+        authorization = headers["proxy-authorization"],
+    )
+}

@@ -18,7 +18,11 @@ subprojects {
     extensions.configure<io.gitlab.arturbosch.detekt.extensions.DetektExtension> {
         buildUponDefaultConfig = true
         config.setFrom(rootProject.files("config/detekt/detekt.yml"))
-        baseline = file("config/detekt/baseline.xml")
+        baseline =
+            providers
+                .gradleProperty("wallhub.detektBaseline")
+                .map(::file)
+                .getOrElse(file("config/detekt/baseline.xml"))
         parallel = true
     }
     extensions.configure<org.jlleitschuh.gradle.ktlint.KtlintExtension> {
@@ -26,7 +30,6 @@ subprojects {
         android.set(true)
         outputToConsole.set(true)
         ignoreFailures.set(false)
-        baseline.set(file("config/ktlint/baseline.xml"))
         filter {
             exclude("**/build/**")
             exclude("**/generated/**")

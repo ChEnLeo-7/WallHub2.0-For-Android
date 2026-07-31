@@ -2,7 +2,6 @@
 
 package com.wallhub.android.feature.settings
 
-import com.wallhub.android.R
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -55,6 +54,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import com.mikepenz.markdown.m3.Markdown
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.InstalledAppInfo

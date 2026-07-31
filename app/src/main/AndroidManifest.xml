@@ -27,7 +27,7 @@
         android:roundIcon="@mipmap/ic_launcher_color"
         android:supportsRtl="true"
         android:theme="@style/Theme.WallHub"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="false">
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

@@ -2,13 +2,13 @@
 
 package com.wallhub.android.feature.detail
 
-import com.wallhub.android.R
 import android.graphics.drawable.ColorDrawable
 import android.view.GestureDetector
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -21,6 +21,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
+import com.wallhub.android.R
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import android.graphics.Color as AndroidColor
@@ -38,9 +39,10 @@ internal fun ComposeMedia3Player(
 ) {
     AndroidView(
         factory = { viewContext ->
+            val layoutParamsParent = FrameLayout(viewContext)
             LayoutInflater
                 .from(viewContext)
-                .inflate(R.layout.wallhub_media3_player_view, null, false)
+                .inflate(R.layout.wallhub_media3_player_view, layoutParamsParent, false)
                 .let { it as PlayerView }
                 .apply {
                     this.player = player
@@ -145,10 +147,11 @@ private class WallHubPlayerControlsBinder(
         if (!player.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH)) return
         speedPopup?.dismiss()
         val inflater = LayoutInflater.from(anchor.context)
+        val layoutParamsParent = FrameLayout(anchor.context)
         val menuContainer =
             inflater.inflate(
                 R.layout.wallhub_player_speed_popup,
-                null,
+                layoutParamsParent,
                 false,
             ) as LinearLayout
         val optionsGrid = menuContainer.findViewById<GridLayout>(R.id.wallhub_speed_options)
@@ -284,6 +287,7 @@ private class HoldToDoubleSpeedController(
 ) : View.OnTouchListener {
     private var acceleratedPlayer: Player? = null
     private var restorePlaybackParameters: PlaybackParameters? = null
+    private var longPressActivated = false
     private val gestureDetector =
         GestureDetector(
             playerView.context,
@@ -291,6 +295,7 @@ private class HoldToDoubleSpeedController(
                 override fun onDown(event: MotionEvent): Boolean = true
 
                 override fun onLongPress(event: MotionEvent) {
+                    longPressActivated = true
                     startDoubleSpeed()
                 }
             },
@@ -300,11 +305,16 @@ private class HoldToDoubleSpeedController(
         view: View,
         event: MotionEvent,
     ): Boolean {
-        gestureDetector.onTouchEvent(event)
-        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
-            restoreSpeed()
+        val handled = gestureDetector.onTouchEvent(event)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> longPressActivated = false
+            MotionEvent.ACTION_UP -> {
+                restoreSpeed()
+                if (!longPressActivated) view.performClick()
+            }
+            MotionEvent.ACTION_CANCEL -> restoreSpeed()
         }
-        return false
+        return handled
     }
 
     private fun startDoubleSpeed() {
