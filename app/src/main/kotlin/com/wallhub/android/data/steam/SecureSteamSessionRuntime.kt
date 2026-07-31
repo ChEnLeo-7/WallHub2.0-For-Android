@@ -11,6 +11,7 @@ import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.WORKSHOP_COMMENT_MAX_LENGTH
 import com.wallhub.android.core.model.WorkshopInteraction
+import com.wallhub.android.data.downloads.applyDownloadProxy
 import com.wallhub.android.data.security.AndroidKeystoreEncryptedStringStore
 import com.wallhub.android.data.security.EncryptedStringReadResult
 import `in`.dragonbra.javasteam.enums.EOSType
@@ -45,6 +46,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -81,7 +83,7 @@ internal suspend fun SecureSteamSessionRepository.acquirePublicSteamSession(): S
         anonymousSession?.close()
         anonymousSession = null
         val generation = synchronized(lifecycleLock) { sessionGeneration }
-        val candidate = createSteamSession(generation)
+        val candidate = createSteamSession(generation, createCurrentSteamConfiguration(generation))
         try {
             connect(candidate, generation)
             withTimeout(ANONYMOUS_LOGON_TIMEOUT_MS) {
@@ -331,7 +333,7 @@ internal suspend fun SecureSteamSessionRepository.loginInternal(
 ) {
     detachAuthenticatedSession(generation)?.close()
     pendingCode.getAndSet(null)?.cancel(true)
-    val steamSession = createSteamSession(generation)
+    val steamSession = createSteamSession(generation, createCurrentSteamConfiguration(generation))
     var promoted = false
     try {
         setStateIfCurrent(
@@ -433,11 +435,7 @@ internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInterna
     detachAuthenticatedSession(generation)?.close()
 
     recordSessionEvent(generation, "restore_start")
-    val configuration =
-        createSteamConfiguration(
-            directoryClient = steamDirectoryClient,
-            serverListProvider = steamServerListProvider,
-        )
+    val configuration = createCurrentSteamConfiguration(generation)
     try {
         val restoredSession =
             withTimeout(RESTORE_TOTAL_TIMEOUT_MS) {
@@ -682,13 +680,54 @@ internal suspend fun SecureSteamSessionRepository.connect(
     recordSessionEvent(generation, "connect_success")
 }
 
+internal suspend fun SecureSteamSessionRepository.createCurrentSteamConfiguration(generation: Long): SteamConfiguration {
+    val preferences = preferencesStore.preferences.first()
+    val proxyUrl =
+        preferences.downloadProxyUrl
+            .takeIf {
+                preferences.downloadProxyEnabled
+            }.orEmpty()
+    val directoryClient =
+        createSteamDirectoryClient(
+            clientFactory
+                .newBuilder()
+                .applyDownloadProxy(proxyUrl),
+        )
+    return createSteamConfiguration(
+        directoryClient = directoryClient,
+        serverListProvider = steamServerListProvider,
+        onWebSocketFailure = { endpoint, error ->
+            recordTransportFailure(generation, endpoint, error)
+        },
+    )
+}
+
+internal fun SecureSteamSessionRepository.recordTransportFailure(
+    generation: Long,
+    endpoint: java.net.InetSocketAddress?,
+    error: Throwable,
+) {
+    serviceScope.launch {
+        diagnostics.record(
+            DiagnosticEvent(
+                source = "steam-session",
+                level = DiagnosticLevel.WARNING,
+                message = "Steam CM WebSocket transport failed",
+                attributes =
+                    mapOf(
+                        "generation" to generation.toString(),
+                        "endpointHost" to endpoint?.hostString.orEmpty(),
+                        "endpointPort" to endpoint?.port?.toString().orEmpty(),
+                        "error" to error.javaClass.simpleName,
+                    ),
+            ),
+        )
+    }
+}
+
 internal fun SecureSteamSessionRepository.createSteamSession(
     generation: Long,
-    configuration: SteamConfiguration =
-        createSteamConfiguration(
-            directoryClient = steamDirectoryClient,
-            serverListProvider = steamServerListProvider,
-        ),
+    configuration: SteamConfiguration,
 ): SteamClientSession {
     val client = SteamClient(configuration)
     val callbackManager = CallbackManager(client)
@@ -752,23 +791,7 @@ internal fun SecureSteamSessionRepository.createSteamSession(
             steamProfiles[steamId] = profile
             pendingPersonaProfiles.remove(steamId)?.complete(profile)
         }
-    val callbackJob =
-        callbackScope.launch {
-            while (isActive) {
-                try {
-                    callbackManager.runWaitCallbacks(CALLBACK_WAIT_MS)
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Throwable) {
-                    recordSessionEvent(
-                        generation = generation,
-                        stage = "callback_failure",
-                        outcome = error.javaClass.simpleName,
-                    )
-                }
-                delay(1)
-            }
-        }
+    val callbackJob = launchCallbackPump(callbackScope, callbackManager, generation)
     return SteamClientSession(
         id = sessionId,
         generation = generation,
@@ -787,6 +810,28 @@ internal fun SecureSteamSessionRepository.createSteamSession(
         authenticated = authenticated,
     )
 }
+
+internal fun SecureSteamSessionRepository.launchCallbackPump(
+    callbackScope: CoroutineScope,
+    callbackManager: CallbackManager,
+    generation: Long,
+): Job =
+    callbackScope.launch {
+        while (isActive) {
+            try {
+                callbackManager.runWaitCallbacks(CALLBACK_WAIT_MS)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                recordSessionEvent(
+                    generation = generation,
+                    stage = "callback_failure",
+                    outcome = error.javaClass.simpleName,
+                )
+            }
+            delay(1)
+        }
+    }
 
 internal suspend fun <T> SecureSteamSessionRepository.awaitSteamRpc(
     steamSession: SteamClientSession,

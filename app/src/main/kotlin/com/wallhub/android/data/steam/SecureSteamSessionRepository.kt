@@ -1,6 +1,7 @@
 package com.wallhub.android.data.steam
 
 import android.content.Context
+import com.wallhub.android.core.database.AppPreferencesStore
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.DiagnosticRepository
@@ -61,13 +62,13 @@ class SecureSteamSessionRepository
     constructor(
         @ApplicationContext context: Context,
         internal val diagnostics: DiagnosticRepository,
-        clientFactory: SteamHttpClientFactory,
+        internal val clientFactory: SteamHttpClientFactory,
+        internal val preferencesStore: AppPreferencesStore,
     ) : SteamSessionRepository,
         SteamContentCredentialProvider,
         AccountWorkshopRepository,
         SteamUnifiedWorkshopRepository {
         internal val credentialStore = EncryptedSteamCredentialStore(context.applicationContext)
-        internal val steamDirectoryClient = createSteamDirectoryClient(clientFactory)
         internal val steamServerListProvider = SteamWebSocketServerListProvider()
         internal val authorDisplayNames = ConcurrentHashMap<Long, String>()
         internal val steamProfiles = ConcurrentHashMap<Long, SteamProfile>()

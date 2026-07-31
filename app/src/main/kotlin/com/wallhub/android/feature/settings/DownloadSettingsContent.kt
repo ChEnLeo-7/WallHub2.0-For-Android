@@ -130,8 +130,8 @@ internal fun DownloadSettingsContent(
         title = text("网络代理", "Network proxy"),
         supportingText =
             text(
-                "仅用于下载和在线播放，不影响 Steam 社区内置访问线路",
-                "Used only by downloads and online playback; independent from built-in Steam service access",
+                "用于下载、在线播放和 Steam CM 登录；社区内置访问线路仍独立管理",
+                "Used by downloads, online playback, and Steam CM login; built-in Community access remains independent",
             ),
         icon = Icons.Outlined.Tune,
     ) {
@@ -149,8 +149,8 @@ internal fun DownloadSettingsContent(
             title = text("使用网络代理", "Use network proxy"),
             supportingText =
                 text(
-                    "仅下载客户端使用此地址；失败时不会切换其他代理",
-                    "Only download clients use this address; failures do not switch to another proxy",
+                    "下载、在线播放和 Steam CM 登录使用此地址；失败时不会切换其他代理",
+                    "Downloads, online playback, and Steam CM login use this address; failures do not switch proxies",
                 ),
             checked = preferences.downloadProxyEnabled,
             enabled = isSupportedDownloadProxyUrl(preferences.downloadProxyUrl),

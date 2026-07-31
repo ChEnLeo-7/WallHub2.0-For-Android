@@ -18,15 +18,17 @@ class SteamHttpClientFactory
         private val bridge: SteamLoopbackTlsBridge,
         private val privateCa: WallHubPrivateCa,
     ) {
+        private val systemProxySelector = ProxySelector.getDefault()
+
         private val proxySelector =
             object : ProxySelector() {
                 override fun select(uri: URI?): List<Proxy> {
-                    val host = uri?.host ?: return listOf(Proxy.NO_PROXY)
+                    val host = uri?.host ?: return systemProxies(uri)
                     val useBridge =
                         uri.scheme.equals("https", ignoreCase = true) &&
                             SteamDomainPolicy.supports(host) &&
                             manager.shouldAccelerate(host)
-                    return listOf(if (useBridge) bridge.proxy else Proxy.NO_PROXY)
+                    return if (useBridge) listOf(bridge.proxy) else systemProxies(uri)
                 }
 
                 override fun connectFailed(
@@ -36,9 +38,13 @@ class SteamHttpClientFactory
                 ) {
                     if (socketAddress == bridge.proxy.address()) {
                         manager.recordBridgeFailure(error ?: IOException("Loopback proxy connection failed"))
+                    } else {
+                        systemProxySelector?.connectFailed(uri, socketAddress, error)
                     }
                 }
             }
+
+        private fun systemProxies(uri: URI?): List<Proxy> = systemProxySelector.safeSelect(uri)
 
         fun newBuilder(): OkHttpClient.Builder =
             OkHttpClient
@@ -60,3 +66,9 @@ class SteamHttpClientFactory
                     }
                 }.sslSocketFactory(privateCa.clientSocketFactory, privateCa.clientTrustManager)
     }
+
+internal fun ProxySelector?.safeSelect(uri: URI?): List<Proxy> =
+    uri
+        ?.let { target -> runCatching { this?.select(target) }.getOrNull() }
+        .orEmpty()
+        .ifEmpty { listOf(Proxy.NO_PROXY) }

@@ -2,6 +2,7 @@ package com.wallhub.android.data.steam
 
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import `in`.dragonbra.javasteam.enums.EResult
+import `in`.dragonbra.javasteam.networking.steam3.IConnectionFactory
 import `in`.dragonbra.javasteam.networking.steam3.ProtocolTypes
 import `in`.dragonbra.javasteam.steam.discovery.IServerListProvider
 import `in`.dragonbra.javasteam.steam.discovery.ServerRecord
@@ -27,11 +28,21 @@ internal fun createSteamDirectoryClient(builder: OkHttpClient.Builder = OkHttpCl
 internal fun createSteamConfiguration(
     directoryClient: OkHttpClient,
     serverListProvider: IServerListProvider,
+    onWebSocketFailure: (java.net.InetSocketAddress?, Throwable) -> Unit = { _, _ -> },
 ): SteamConfiguration =
     SteamConfiguration.create { config ->
+        val okHttpWebSocketFactory =
+            IConnectionFactory { configuration, protocols ->
+                if (protocols.contains(ProtocolTypes.WEB_SOCKET)) {
+                    OkHttpSteamWebSocketConnection(configuration.httpClient, onWebSocketFailure)
+                } else {
+                    null
+                }
+            }
         config.withProtocolTypes(ProtocolTypes.WEB_SOCKET)
         config.withHttpClient(directoryClient)
         config.withServerListProvider(serverListProvider)
+        config.withConnectionFactory(okHttpWebSocketFactory.thenResolve(IConnectionFactory.DEFAULT))
     }
 
 internal class SteamWebSocketServerListProvider : IServerListProvider {
