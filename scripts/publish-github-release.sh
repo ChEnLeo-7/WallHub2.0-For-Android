@@ -261,16 +261,24 @@ done < "$assets_file"
 apksigner="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/opt/android-sdk}}/build-tools/35.0.0/apksigner"
 [[ -x "$apksigner" ]] || fail "apksigner is unavailable at $apksigner"
 expected_certificate=""
+expected_certificate_subject=""
 expected_all_abis=$'arm64-v8a\narmeabi-v7a\nx86\nx86_64'
 for apk in "$work_dir"/WallHub-*.apk; do
     unzip -tq "$apk"
     entries="$(unzip -Z1 "$apk")"
     grep -qx 'classes.dex' <<<"$entries" || fail "$apk is missing classes.dex"
     certificate="$($apksigner verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print toupper($2); exit}')"
+    certificate_subject="$($apksigner verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate DN:/{print $2; exit}')"
+    [[ -n "$certificate" && -n "$certificate_subject" ]] || fail "Cannot read the signing certificate for $apk"
+    if grep -Eiq '(^|,[[:space:]]*)CN=Android Debug(,|$)' <<<"$certificate_subject"; then
+        fail "Release certificate uses the Android Debug identity: $certificate_subject"
+    fi
     if [[ -z "$expected_certificate" ]]; then
         expected_certificate="$certificate"
+        expected_certificate_subject="$certificate_subject"
     else
         [[ "$certificate" == "$expected_certificate" ]] || fail "Signing certificate mismatch for $apk"
+        [[ "$certificate_subject" == "$expected_certificate_subject" ]] || fail "Signing certificate subject mismatch for $apk"
     fi
 
     label="${apk##*-}"
@@ -290,6 +298,7 @@ for apk in "$work_dir"/WallHub-*.apk; do
     fi
 done
 [[ "$release_body" == *"$expected_certificate"* ]] || fail "Release body is missing the signing certificate SHA-256"
+[[ "$release_body" == *"$expected_certificate_subject"* ]] || fail "Release body is missing the signing certificate subject"
 
 printf 'Published and verified GitHub Release: %s\n' "$release_url"
 printf 'Release workflow: %s\n' "$run_url"

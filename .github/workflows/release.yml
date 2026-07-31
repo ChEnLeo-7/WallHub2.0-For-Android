@@ -204,6 +204,7 @@ jobs:
           zipalign="$ANDROID_HOME/build-tools/${BUILD_TOOLS_VERSION}/zipalign"
           expected_all_abis=$'arm64-v8a\narmeabi-v7a\nx86\nx86_64'
           signing_certificate=''
+          signing_subject=''
           for label in "${labels[@]}"; do
             apk="$release_dir/WallHub-${VERSION_NAME}-${label}.apk"
             unzip -tq "$apk"
@@ -213,11 +214,18 @@ jobs:
             "$apksigner" verify --verbose "$apk"
 
             certificate="$($apksigner verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print toupper($2); exit}')"
-            test -n "$certificate"
+            certificate_subject="$($apksigner verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate DN:/{print $2; exit}')"
+            test -n "$certificate" -a -n "$certificate_subject"
+            if grep -Eiq '(^|,[[:space:]]*)CN=Android Debug(,|$)' <<<"$certificate_subject"; then
+              echo "::error::Release certificate uses the Android Debug identity: $certificate_subject"
+              exit 1
+            fi
             if [[ -z "$signing_certificate" ]]; then
               signing_certificate="$certificate"
+              signing_subject="$certificate_subject"
             else
               [[ "$certificate" == "$signing_certificate" ]]
+              [[ "$certificate_subject" == "$signing_subject" ]]
             fi
 
             packaged_abis="$(sed -n 's#^lib/\([^/]*\)/.*#\1#p' <<<"$entries" | sort -u)"
@@ -247,6 +255,7 @@ jobs:
           )
           printf '%s\n' "$GITHUB_SHA" > "$release_dir/SOURCE-COMMIT.txt"
           printf '%s\n' "$signing_certificate" > "$release_dir/SIGNING-CERTIFICATE-SHA256.txt"
+          printf '%s\n' "$signing_subject" > "$release_dir/SIGNING-CERTIFICATE-SUBJECT.txt"
 
           cp "$RELEASE_NOTES_FILE" "$release_dir/release-notes.md"
           {
@@ -260,6 +269,7 @@ jobs:
             printf -- '- Commit: `%s`\n' "$GITHUB_SHA"
             printf -- '- Version: `%s (%s)`\n' "${{ steps.release_meta.outputs.version_name }}" "${{ steps.release_meta.outputs.version_code }}"
             printf -- '- Signing certificate SHA-256: `%s`\n' "$signing_certificate"
+            printf -- '- Signing certificate subject: `%s`\n' "$signing_subject"
           } >> "$release_dir/release-notes.md"
       - name: Upload seven-day Release bundle artifact
         uses: actions/upload-artifact@v4

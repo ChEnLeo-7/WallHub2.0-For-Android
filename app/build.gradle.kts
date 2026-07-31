@@ -1,3 +1,6 @@
+import java.security.KeyStore
+import java.security.cert.X509Certificate
+
 plugins {
     id("wallhub.android.application")
     id("wallhub.android.compose")
@@ -22,11 +25,43 @@ val hasReleaseSigning = releaseSigningValues.all { !it.isNullOrBlank() }
 val publishAbiApks = providers.gradleProperty("wallhub.publishAbiApks").orNull == "true"
 val requireReleaseSigning = providers.gradleProperty("wallhub.requireReleaseSigning").orNull == "true"
 
+fun loadReleaseCertificate(): X509Certificate {
+    val keyStoreFile = file(requireNotNull(releaseStoreFile))
+    check(keyStoreFile.isFile) { "Release keystore does not exist: $keyStoreFile" }
+    val failures = mutableListOf<Exception>()
+    listOf(KeyStore.getDefaultType(), "JKS", "PKCS12")
+        .distinct()
+        .forEach { storeType ->
+            try {
+                val keyStore = KeyStore.getInstance(storeType)
+                keyStoreFile.inputStream().use { input ->
+                    keyStore.load(input, requireNotNull(releaseStorePassword).toCharArray())
+                }
+                val certificate = keyStore.getCertificate(requireNotNull(releaseKeyAlias))
+                if (certificate is X509Certificate) return certificate
+            } catch (exception: Exception) {
+                failures += exception
+            }
+        }
+    error(
+        "Cannot read an X.509 Release certificate for alias $releaseKeyAlias: " +
+            failures.lastOrNull()?.message,
+    )
+}
+
 check(releaseSigningValues.all { it.isNullOrBlank() } || hasReleaseSigning) {
     "Configure all WALLHUB_RELEASE_* signing variables or none of them."
 }
 check(!requireReleaseSigning || hasReleaseSigning) {
     "A signed Release was requested, but WALLHUB_RELEASE_* signing variables are incomplete."
+}
+if (hasReleaseSigning) {
+    val releaseCertificate = loadReleaseCertificate()
+    releaseCertificate.checkValidity()
+    val releaseSubject = releaseCertificate.subjectX500Principal.name
+    check(!releaseSubject.contains("CN=Android Debug", ignoreCase = true)) {
+        "Release signing certificate must not use the Android Debug identity: $releaseSubject"
+    }
 }
 
 android {

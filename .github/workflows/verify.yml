@@ -74,12 +74,19 @@ jobs:
           apk_path="app/build/outputs/apk/release/app-release.apk"
           apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           release_certificate="$($apksigner verify --print-certs "$apk_path" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print toupper($2); exit}')"
+          release_subject="$($apksigner verify --print-certs "$apk_path" | awk -F': ' '/Signer #1 certificate DN:/{print $2; exit}')"
           debug_certificate="$($apksigner verify --print-certs app/build/outputs/apk/debug/app-debug.apk | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print toupper($2); exit}')"
-          test -n "$release_certificate" -a -n "$debug_certificate"
+          test -n "$release_certificate" -a -n "$release_subject" -a -n "$debug_certificate"
+          if grep -Eiq '(^|,[[:space:]]*)CN=Android Debug(,|$)' <<<"$release_subject"; then
+            echo "::error::Release certificate uses the Android Debug identity: $release_subject"
+            exit 1
+          fi
           [[ "$release_certificate" != "$debug_certificate" ]] || {
             echo "::error::Release APK is signed with the Android Debug certificate"
             exit 1
           }
+          printf 'Release certificate subject: %s\n' "$release_subject"
+          printf 'Release certificate SHA-256: %s\n' "$release_certificate"
           apk_size="$(stat --format='%s' "$apk_path")"
           max_size="$((40 * 1024 * 1024))"
           printf 'Release APK size: %s bytes (limit: %s bytes)\n' "$apk_size" "$max_size"
