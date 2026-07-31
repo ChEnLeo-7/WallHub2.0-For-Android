@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       release_notes_file:
-        description: Versioned bilingual release notes under docs/releases
+        description: Versioned bilingual release notes under .github/releases
         required: true
         type: string
       prerelease:
@@ -33,7 +33,7 @@ jobs:
     env:
       BUILD_TOOLS_VERSION: "35.0.0"
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-      RELEASE_NOTES_FILE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes_file || format('docs/releases/{0}.md', github.ref_name) }}
+      RELEASE_NOTES_FILE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes_file || format('.github/releases/{0}.md', github.ref_name) }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -73,8 +73,8 @@ jobs:
             echo "::error::Invalid release tag: $RELEASE_TAG"
             exit 1
           }
-          [[ "$RELEASE_NOTES_FILE" =~ ^docs/releases/v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?\.md$ ]] || {
-            echo "::error::Release notes must be a versioned Markdown file under docs/releases"
+          [[ "$RELEASE_NOTES_FILE" =~ ^\.github/releases/v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?\.md$ ]] || {
+            echo "::error::Release notes must be a versioned Markdown file under .github/releases"
             exit 1
           }
           test -f "$RELEASE_NOTES_FILE"
@@ -117,8 +117,8 @@ jobs:
             echo "::error::Tag $RELEASE_TAG does not match versionName $version_name"
             exit 1
           }
-          [[ "$RELEASE_NOTES_FILE" == "docs/releases/$RELEASE_TAG.md" ]] || {
-            echo "::error::Release notes filename must match tag: docs/releases/$RELEASE_TAG.md"
+          [[ "$RELEASE_NOTES_FILE" == ".github/releases/$RELEASE_TAG.md" ]] || {
+            echo "::error::Release notes filename must match tag: .github/releases/$RELEASE_TAG.md"
             exit 1
           }
 

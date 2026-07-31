@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "docs/releases/**"
+      - ".github/releases/**"
       - ".github/workflows/release-metadata.yml"
   workflow_dispatch:
     inputs:
@@ -36,7 +36,7 @@ jobs:
           version_name="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts)"
           tag="${REQUESTED_TAG:-v$version_name}"
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
-          notes_file="docs/releases/$tag.md"
+          notes_file=".github/releases/$tag.md"
           test -f "$notes_file"
           [[ "$(head -n 1 "$notes_file")" == '## 中文' ]] || {
             echo "::error::Release notes must start at ## 中文 and must not repeat the Release title"

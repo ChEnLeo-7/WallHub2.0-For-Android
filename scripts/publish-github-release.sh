@@ -9,7 +9,7 @@ readonly TIMEOUT_SECONDS=5400
 
 usage() {
     cat <<'EOF'
-Usage: scripts/publish-github-release.sh --tag <vX.Y.Z> --notes <docs/releases/vX.Y.Z.md> [--prerelease]
+Usage: scripts/publish-github-release.sh --tag <vX.Y.Z> --notes <.github/releases/vX.Y.Z.md> [--prerelease]
 
 Pushes the exact clean local main commit and version tag, waits for the tag-
 triggered release.yml run, then downloads and verifies every Release asset.
@@ -103,7 +103,7 @@ if [[ "$prerelease" == true ]]; then
 else
     [[ "$tag" != *-* ]] || fail "A suffixed tag requires --prerelease"
 fi
-[[ "$notes_file" == "docs/releases/$tag.md" ]] || fail "Notes must be docs/releases/$tag.md"
+[[ "$notes_file" == ".github/releases/$tag.md" ]] || fail "Notes must be .github/releases/$tag.md"
 [[ -f "$notes_file" ]] || fail "Release notes do not exist: $notes_file"
 [[ "$(git branch --show-current)" == "$BRANCH" ]] || fail "Run from the $BRANCH branch"
 [[ -z "$(git status --porcelain)" ]] || fail "Commit or stash all local changes before publishing"

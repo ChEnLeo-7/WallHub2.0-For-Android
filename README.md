@@ -1,10 +1,9 @@
 <div align="center">
-  <img src="docs/assets/wallhub-logo.png" width="128" height="128" alt="WallHub Logo">
+  <img src="app/src/main/res/drawable-nodpi/wallhub_logo.png" width="128" height="128" alt="WallHub Logo">
   <h1>WallHub for Android</h1>
   <p><strong>把 Wallpaper Engine 创意工坊带到 Android：原生浏览、在线播放、可靠下载与移动端壁纸管理，一站完成。</strong></p>
   <p>
     <a href="README_EN.md">English</a>
-    · <a href="docs/development-log.md">开发日志</a>
     · <a href="LICENSE">MIT License</a>
   </p>
 </div>
