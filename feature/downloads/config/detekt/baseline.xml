@@ -1,7 +1,0 @@
-<?xml version="1.0" ?>
-<SmellBaseline>
-  <ManuallySuppressedIssues/>
-  <CurrentIssues>
-    <ID>CyclomaticComplexMethod:DownloadsScreen.kt$@Composable private fun ReorderableDownloadList( tasks: List&lt;DownloadTask&gt;, language: AppLanguage, onAction: (String, DownloadAction) -&gt; Unit, onPlayVideo: (String) -&gt; Unit, onReorder: (List&lt;String&gt;) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
-  </CurrentIssues>
-</SmellBaseline>

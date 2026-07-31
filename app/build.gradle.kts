@@ -1,9 +1,13 @@
+import com.google.protobuf.gradle.*
+
 plugins {
     id("wallhub.android.application")
     id("wallhub.android.compose")
     alias(libs.plugins.kotlin.kapt)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
+    alias(libs.plugins.protobuf)
+    alias(libs.plugins.paparazzi)
 }
 
 val releaseStoreFile = providers.environmentVariable("WALLHUB_RELEASE_STORE_FILE").orNull
@@ -79,52 +83,94 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
         resources.excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
     }
 }
 
-dependencies {
-    implementation(project(":core:model"))
-    implementation(project(":core:designsystem"))
-    implementation(project(":core:database"))
-    implementation(project(":data:settings"))
-    implementation(project(":data:steamaccess"))
-    implementation(project(":data:steam"))
-    implementation(project(":data:workshop"))
-    implementation(project(":data:downloads"))
-    implementation(project(":data:diagnostics"))
-    implementation(project(":data:update"))
-    implementation(project(":feature:home"))
-    implementation(project(":feature:detail"))
-    implementation(project(":feature:downloads"))
-    implementation(project(":feature:library"))
-    implementation(project(":feature:local"))
-    implementation(project(":feature:settings"))
+val protobufVersion = libs.versions.protobuf.java.get()
 
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:$protobufVersion"
+    }
+    generateProtoTasks {
+        all().configureEach {
+            builtins {
+                create("java")
+            }
+        }
+    }
+}
+
+dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material3.adaptive)
+    implementation(libs.androidx.compose.material3.adaptive.navigation)
+    implementation(libs.androidx.compose.runtime.saveable)
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.documentfile)
+    implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.media3.datasource)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.navigation.compose)
-    implementation(libs.kotlinx.serialization.core)
-    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.work.runtime.ktx)
-    implementation(libs.material)
-    implementation(libs.hilt.android)
     implementation(libs.coil)
+    implementation(libs.coil.compose)
     implementation(libs.coil.gif)
+    implementation(libs.haze)
+    implementation(libs.hilt.android)
+    implementation(libs.javasteam) {
+        exclude(group = "com.squareup.okhttp3", module = "okhttp-jvm")
+    }
+    implementation(libs.javax.inject)
+    implementation(libs.json)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.jdk8)
+    implementation(libs.kotlinx.serialization.core)
+    implementation(libs.lz4.java)
+    implementation(libs.markdown.renderer.m3)
+    implementation(libs.material)
+    implementation(libs.okhttp.android)
+    implementation(libs.protobuf.java)
+    implementation(libs.spongycastle.prov)
+    implementation(libs.xz)
+    implementation("com.github.luben:zstd-jni:${libs.versions.zstd.get()}@aar")
 
     kapt(libs.hilt.compiler)
+    kapt(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.work.testing)
+    testImplementation(libs.robolectric)
 
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.uiautomator)
+    androidTestImplementation(libs.androidx.work.testing)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

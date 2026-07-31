@@ -14,10 +14,6 @@ gradlePlugin {
             id = "wallhub.android.application"
             implementationClass = "AndroidApplicationConventionPlugin"
         }
-        register("androidLibrary") {
-            id = "wallhub.android.library"
-            implementationClass = "AndroidLibraryConventionPlugin"
-        }
         register("androidCompose") {
             id = "wallhub.android.compose"
             implementationClass = "AndroidComposeConventionPlugin"

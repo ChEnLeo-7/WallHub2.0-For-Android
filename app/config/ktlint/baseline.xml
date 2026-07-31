@@ -1,26 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <baseline version="1.0">
     <file name="build.gradle.kts">
-        <error line="13" column="28" source="standard:multiline-expression-wrapping" />
-        <error line="58" column="29" source="standard:multiline-expression-wrapping" />
+        <error line="1" column="1" source="standard:no-wildcard-imports" />
+        <error line="96" column="50" source="standard:chain-method-continuation" />
     </file>
-    <file name="src/main/java/com/wallhub/android/FormalWallHubApp.kt">
-        <error line="111" column="5" source="standard:function-naming" />
-        <error line="188" column="13" source="standard:function-naming" />
-        <error line="401" column="13" source="standard:function-naming" />
-        <error line="419" column="13" source="standard:function-naming" />
+    <file name="src/main/kotlin/com/wallhub/android/feature/detail/ComposeMedia3Player.kt">
+        <error line="5" column="1" source="standard:import-ordering" />
+        <error line="33" column="14" source="standard:function-naming" />
     </file>
-    <file name="src/main/java/com/wallhub/android/ManagementScreen.kt">
-        <error line="122" column="5" source="standard:function-naming" />
-        <error line="174" column="13" source="standard:function-naming" />
-        <error line="450" column="13" source="standard:function-naming" />
-        <error line="558" column="13" source="standard:function-naming" />
-        <error line="595" column="13" source="standard:function-naming" />
-        <error line="680" column="13" source="standard:function-naming" />
-        <error line="711" column="13" source="standard:function-naming" />
-        <error line="718" column="13" source="standard:function-naming" />
-        <error line="735" column="13" source="standard:function-naming" />
-        <error line="769" column="13" source="standard:function-naming" />
-        <error line="781" column="13" source="standard:function-naming" />
+    <file name="src/main/kotlin/com/wallhub/android/feature/detail/LocalVideoPlayerScreen.kt">
+        <error line="100" column="5" source="standard:function-naming" />
+        <error line="109" column="5" source="standard:function-naming" />
+        <error line="180" column="13" source="standard:function-naming" />
+    </file>
+    <file name="src/main/kotlin/com/wallhub/android/feature/settings/AboutWallHubContent.kt">
+        <error line="5" column="1" source="standard:import-ordering" />
     </file>
 </baseline>

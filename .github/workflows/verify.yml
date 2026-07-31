@@ -30,7 +30,7 @@ jobs:
       - name: Verify Android application
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon --max-workers=1 testDebugUnitTest verifyPaparazziDebug lintDebug detekt ktlintCheck apiCheck dependencyUpdates :app:assembleDebug :benchmark:assembleBenchmark
+          ./gradlew --no-daemon --max-workers=1 testDebugUnitTest verifyPaparazziDebug lintDebug detekt ktlintCheck dependencyUpdates :app:assembleDebug :benchmark:assembleBenchmark
       - name: Require Release signing secrets
         if: github.event_name != 'pull_request'
         env:

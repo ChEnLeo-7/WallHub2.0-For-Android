@@ -1,7 +1,0 @@
-<?xml version="1.0" ?>
-<SmellBaseline>
-  <ManuallySuppressedIssues/>
-  <CurrentIssues>
-    <ID>CyclomaticComplexMethod:AppPreferencesStore.kt$AppPreferencesStore$private fun toAppPreferences(preferences: Preferences): AppPreferences</ID>
-  </CurrentIssues>
-</SmellBaseline>

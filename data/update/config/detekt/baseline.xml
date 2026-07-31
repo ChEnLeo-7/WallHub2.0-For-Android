@@ -1,9 +1,0 @@
-<?xml version="1.0" ?>
-<SmellBaseline>
-  <ManuallySuppressedIssues/>
-  <CurrentIssues>
-    <ID>CyclomaticComplexMethod:GitHubAppUpdateRepository.kt$GitHubAppUpdateRepository$override suspend fun downloadRelease( release: AppReleaseInfo, onProgress: (downloadedBytes: Long, totalBytes: Long) -&gt; Unit, ): String</ID>
-    <ID>ThrowsCount:GitHubAppUpdateRepository.kt$GitHubAppUpdateRepository$@Suppress("DEPRECATION") private fun verifyArchiveIdentityAndSigner(apk: File, expectedVersionName: String)</ID>
-    <ID>TooGenericExceptionCaught:GitHubAppUpdateRepository.kt$GitHubAppUpdateRepository$error: Throwable</ID>
-  </CurrentIssues>
-</SmellBaseline>

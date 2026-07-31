@@ -1,7 +1,0 @@
-<?xml version="1.0" ?>
-<SmellBaseline>
-  <ManuallySuppressedIssues/>
-  <CurrentIssues>
-    <ID>UnusedPrivateMember:WallHubTheme.kt$@Composable private fun animateWallHubColorScheme(target: ColorScheme): ColorScheme</ID>
-  </CurrentIssues>
-</SmellBaseline>

@@ -2,13 +2,13 @@
 
 ## 目标
 
-本计划以当前 Kotlin 多模块 Android 工程为基础，继续使用 Jetpack Compose 和 Material 3，不引入跨平台 UI 框架或第三方全量状态管理框架。目标是统一视觉规范、降低页面之间的重复实现、提升宽屏适配质量，并把 UI 回归和工程质量检查纳入持续集成。
+本计划以当前 Kotlin 单应用模块 Android 工程为基础，继续使用 Jetpack Compose 和 Material 3，不引入跨平台 UI 框架或第三方全量状态管理框架。目标是统一视觉规范、降低页面之间的重复实现、提升宽屏适配质量，并把 UI 回归和工程质量检查纳入持续集成。
 
 当前基线：`0.8.25 (35)`，`main` 分支，最低 Android 版本 API 26。
 
 ## 改造原则
 
-- `core:designsystem` 是颜色、Typography、形状、间距、尺寸和共享组件的唯一入口。
+- `com.wallhub.android.core.designsystem` 是颜色、Typography、形状、间距、尺寸和共享组件的唯一入口。
 - 页面层使用 Material 3 语义色和共享 Token，不直接定义业务颜色、间距或圆角。
 - 保留 Hilt、Room、DataStore、WorkManager、Media3、OkHttp、JavaSteam 和 Protobuf。
 - 采用 ViewModel + StateFlow + 单向数据流，不为了形式引入完整第三方 MVI 框架。
@@ -39,7 +39,7 @@
 
 测试检查：
 
-- [x] `:core:designsystem:testDebugUnitTest`
+- [x] `:app:testDebugUnitTest`
 - [x] 主题表面层级、形状和最小触控尺寸回归测试通过。
 
 ### 阶段 2：页面结构与状态流统一
@@ -87,7 +87,7 @@
 
 - [x] 使用 Gradle Convention Plugin 收敛模块构建脚本。
 - [x] 增加 Detekt 和 Ktlint，并在 CI 中强制执行。
-- [x] 增加依赖升级检查和公共 API 兼容性检查。
+- [x] 增加依赖升级检查；应用模块不维护对外发布的库 API。
 - [x] 保持 GitHub Actions 的测试、Lint、签名构建、APK 体积和 SHA-256 校验。
 - [x] 发布流程继续绑定源码 commit，不执行 ADB 安装作为本计划的验收条件。
 
@@ -121,7 +121,7 @@
 验证日期：2026-07-31。
 
 - 当前计划进度为 60/60（100%）；阶段主清单为 47/47（100%），其余为便于跟踪的当前 Todo。只统计已经实现并取得本地证据的项目，远端 CI 不以“已配置”代替“已验证”。
-- 本地质量门禁已通过：`testDebugUnitTest`、`verifyPaparazziDebug`、`lintDebug`、`detekt`、`ktlintCheck`、`apiCheck`、`dependencyUpdates`、`:app:assembleDebug` 和 `:benchmark:assembleBenchmark`。当前源码于 2026-07-31 最终联合执行结果为 `BUILD SUCCESSFUL`，共 1102 个任务，其中 50 个执行、1052 个为最新状态。
+- 本地质量门禁已通过：`testDebugUnitTest`、`verifyPaparazziDebug`、`lintDebug`、`detekt`、`ktlintCheck`、`dependencyUpdates`、`:app:assembleDebug`、`:app:assembleRelease` 和 `:benchmark:assembleBenchmark`。当前源码于 2026-07-31 在精简为 `app` 与 `benchmark` 两个项目后重新联合执行，结果为 `BUILD SUCCESSFUL`。
 - 类型安全导航契约测试 3/3 通过；源码中已无字符串 `composable("...")`、`navArgument` 或手工拼接导航路径。
 - 页面边界审计已通过：六个主 Feature 的 Route 只获取 ViewModel 并消费 `UiState`/`Effect`，Screen 不直接访问 Repository；Feature 源码无 `NavController`、`navigate`、字符串路由或 `navArgument`，导航解析仅由 App 壳层的类型安全目的地承担。
 - 一次性操作审计已通过：Toast、权限与文件选择 Activity Result、剪贴板、外部 URI、安装器和本地资源 Intent 都只由各 Feature 的 `effects.collect` Handler 分发；导航回调亦仅由 App 壳层执行。
@@ -146,15 +146,15 @@
 - Local 已将目录选择、打开/分享资源、复制位置、Wallpaper Engine 导入和一次性错误提示收口为 Route 消费的 Effect，并新增 3 个 ViewModel 回归测试。筛选、选择与标签操作均经 `LocalWallpaperAction` 分发。
 - 新增 Robolectric Compose 交互测试：首页瀑布流卡、资料库结果卡和本地列表项分别验证点击后发出预期的详情或选择 Action；三项测试均在本地 JVM 通过。真实设备导航 instrumentation 另已验证顶层页面切换与 Steam 设置返回栈。
 - Settings 已将导出目录选择、诊断文档创建、通知权限、APK 系统安装器、Steam 登录导航和外部 URI 打开统一为 `SettingsAction / SettingsEffect`，About 内容不再直接执行 Intent 或 Toast；新增 Action→Effect payload 映射测试并通过。诊断文件的实际写入仍通过 Route 提供的 `ContentResolver` 执行，后续应再抽象为可测试端口。
-- `apiCheck` 已通过；`dependencyUpdates` 本地执行成功并生成 `build/dependencyUpdates/report.txt`。报告包含稳定版及 alpha/RC 候选，本阶段只验证检查链路，不自动升级依赖。
-- 依赖边界审计已通过：Feature 模块不直接依赖或导入 Data/Room，`core:model` 的公共契约不导入 Android、Room、HTTP 或 Data 层类型；DAO、网络响应和 Android `Context` 不会跨该契约暴露给 Feature。
+- `dependencyUpdates` 本地执行成功并生成 `build/dependencyUpdates/report.txt`。报告包含稳定版及 alpha/RC 候选，本阶段只验证检查链路，不自动升级依赖。
+- 依赖边界审计已通过：Feature 包不直接导入 Data/Room，`core.model` 的公共契约不导入 Android、Room、HTTP 或 Data 层类型；DAO、网络响应和 Android `Context` 不会跨该契约暴露给 Feature。
 - GitHub Actions 已配置签名 Release、40 MiB 体积门槛、SHA-256、commit SHA 文件和以 commit 命名的 artifact。`558a0fe7fe0438ca8a8baa325db9c422d9c365c8` 的 Android CI run `30579483452` 已成功完成全量验证、签名 Release、体积检查和 artifact 上传；未过期 artifact `wallhub-release-558a0fe7fe0438ca8a8baa325db9c422d9c365c8`（ID `8774639415`）包含 31,242,308-byte `wallhub-release.apk`、SHA-256 清单和内容同为该 commit 的 `commit-sha.txt`。此前 run `30577309421` 在 `:app:mergeExtDexDebug` 因 CI 命令行将 Gradle 堆覆盖为 1.5 GiB 而耗尽内存；修复已移除该覆盖并使用项目已验证的 3 GiB 默认堆设置。
 - `FormalWallHubApp` 已将 Compact、Medium、Expanded 的导航壳抽为独立 Composable，保留原有导航目的地和交互语义，并使根函数重新通过 Detekt 圈复杂度门槛。
 - 本次提交范围已逐项核验，只包含本计划的源码、测试、截图基线、构建约定、静态检查配置和维护文档；两份非预期 JVM 崩溃日志已删除并加入忽略规则。提交后工作区保持干净。
 
 ## 本阶段验收标准
 
-- 共享 UI Token 位于 `core:designsystem`，业务模块无需复制基础间距、形状和触控尺寸。
+- 共享 UI Token 位于 `app/src/main/kotlin/com/wallhub/android/core/designsystem`，业务包无需复制基础间距、形状和触控尺寸。
 - 主题继续保留浅色、深色、动态配色和现有 Material 3 层级。
 - 现有页面行为、导航和业务请求不改变。
 - JVM 测试、Lint、Debug 构建和 GitHub Actions Release 构建通过。

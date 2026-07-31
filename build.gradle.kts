@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.application) apply false
-    alias(libs.plugins.android.library) apply false
     alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.kapt) apply false
     alias(libs.plugins.kotlin.jvm) apply false
@@ -11,7 +10,6 @@ plugins {
     alias(libs.plugins.detekt)
     alias(libs.plugins.ktlint)
     alias(libs.plugins.versions)
-    alias(libs.plugins.binary.compatibility.validator)
     alias(libs.plugins.paparazzi) apply false
 }
 
@@ -36,12 +34,4 @@ subprojects {
             exclude("**/generated/**")
         }
     }
-}
-
-apiValidation {
-    ignoredProjects.addAll(
-        subprojects
-            .filter { it.path != ":core:model" }
-            .map { it.name },
-    )
 }

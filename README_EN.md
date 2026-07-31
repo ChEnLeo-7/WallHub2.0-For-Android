@@ -66,6 +66,14 @@ The Debug APK is generated at:
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
+### Project Structure
+
+- `app`: the only production application module. Source lives under `app/src/main/kotlin` and retains the `core`, `data`, and `feature` package boundaries.
+- `benchmark`: the separately installed Macrobenchmark test module for startup and home-screen scrolling measurements.
+- `build-logic`: the small set of application and Compose Gradle convention plugins.
+
+The project intentionally avoids a separate Gradle module for every screen or data source. Only the performance tests remain separate because they must be installed and run independently.
+
 Dependency and plugin versions are centralized in `gradle/libs.versions.toml`. Never commit signing material, `local.properties`, APK/AAB output, build caches, or local snapshots.
 
 ## References And Acknowledgements

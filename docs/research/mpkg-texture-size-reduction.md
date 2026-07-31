@@ -31,9 +31,9 @@
 
 相关代码：
 
-- `data/downloads/src/main/kotlin/com/wallhub/prototype/mpkg/TexMobileConverter.kt`
-- `data/downloads/src/main/kotlin/com/wallhub/prototype/mpkg/WorkshopConverter.kt`
-- `data/downloads/src/main/kotlin/com/wallhub/prototype/mpkg/MpkgFormat.kt`
+- `app/src/main/kotlin/com/wallhub/prototype/mpkg/TexMobileConverter.kt`
+- `app/src/main/kotlin/com/wallhub/prototype/mpkg/WorkshopConverter.kt`
+- `app/src/main/kotlin/com/wallhub/prototype/mpkg/MpkgFormat.kt`
 
 当前纹理步骤：
 
