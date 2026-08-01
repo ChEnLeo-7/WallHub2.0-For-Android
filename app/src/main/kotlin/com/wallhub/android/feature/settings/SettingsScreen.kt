@@ -148,9 +148,10 @@ fun SettingsScreen(
     val onOpenExternalUri: (String, String) -> Unit = { uri, failureMessage ->
         onAction(SettingsAction.OpenExternalUri(uri, failureMessage))
     }
-    var selectedCategoryName by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedPageName by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedCategory =
-        selectedCategoryName
+        selectedPageName
+            ?.takeUnless { it == SETTINGS_ABOUT_PAGE_KEY }
             ?.let { categoryName -> SettingsCategory.entries.firstOrNull { it.name == categoryName } }
     val availableAccents =
         AccentPreference.entries.filter { accent ->
@@ -175,11 +176,11 @@ fun SettingsScreen(
     ) {
         onHomePreferencesChange(pageSize, columns, multiSelect, cardAction, matureContentEnabled)
     }
-    BackHandler(enabled = selectedCategory != null) {
-        selectedCategoryName = null
+    BackHandler(enabled = selectedPageName != null) {
+        selectedPageName = null
     }
     AnimatedContent(
-        targetState = selectedCategory,
+        targetState = selectedPageName,
         modifier = Modifier.fillMaxSize(),
         transitionSpec = {
             val direction = if (targetState == null) -1 else 1
@@ -229,16 +230,37 @@ fun SettingsScreen(
                     )
             )
         },
-        contentKey = { category -> category?.name ?: SETTINGS_CATEGORY_INDEX_KEY },
+        contentKey = { pageName -> pageName ?: SETTINGS_CATEGORY_INDEX_KEY },
         label = "SettingsCategoryPage",
-    ) { displayedCategory ->
-        if (displayedCategory == null) {
+    ) { displayedPageName ->
+        val displayedCategory =
+            displayedPageName
+                ?.takeUnless { it == SETTINGS_ABOUT_PAGE_KEY }
+                ?.let { categoryName -> SettingsCategory.entries.firstOrNull { it.name == categoryName } }
+        when {
+            displayedPageName == null -> {
             SettingsCategoryIndex(
                 title = stringResource(R.string.settings_title),
                 onBack = onBack,
-                onOpenCategory = { selectedCategoryName = it.name },
+                onOpenCategory = { selectedPageName = it.name },
+                onOpenAbout = { selectedPageName = SETTINGS_ABOUT_PAGE_KEY },
             )
-        } else {
+            }
+
+            displayedPageName == SETTINGS_ABOUT_PAGE_KEY -> {
+                AboutWallHubScreen(
+                    installed = appUpdateState.installed,
+                    appUpdateState = appUpdateState,
+                    onBack = { selectedPageName = null },
+                    onCheckForAppUpdate = onCheckForAppUpdate,
+                    onDownloadLatestRelease = onDownloadLatestRelease,
+                    onCancelAppUpdateDownload = onCancelAppUpdateDownload,
+                    onInstallDownloadedRelease = onInstallDownloadedRelease,
+                    onOpenExternalUri = onOpenExternalUri,
+                )
+            }
+
+            displayedCategory != null -> {
             WallHubPageScaffold(
                 title = stringResource(R.string.settings_title),
                 topBarContent =
@@ -263,7 +285,7 @@ fun SettingsScreen(
                                         containerColor = MaterialTheme.colorScheme.background,
                                     ),
                                 navigationIcon = {
-                                    IconButton(onClick = { selectedCategoryName = null }) {
+                                    IconButton(onClick = { selectedPageName = null }) {
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                                             contentDescription = stringResource(R.string.settings_action_back_to_settings),
@@ -306,7 +328,6 @@ fun SettingsScreen(
                             onProxyUrlChanged = { proxyUrl = it },
                             steamApiKey = steamApiKey,
                             onSteamApiKeyChanged = { steamApiKey = it },
-                            onOpenCategory = { selectedCategoryName = it.name },
                             onMatureContentEnabledChange = { enabled ->
                                 saveHomePreferences(matureContentEnabled = enabled)
                             },
@@ -340,13 +361,14 @@ fun SettingsScreen(
                     }
                 }
             }
+            }
         }
     }
 }
 
 @Composable
 internal fun SettingsCategoryContent(
-    category: SettingsCategory?,
+    category: SettingsCategory,
     preferences: AppPreferences,
     steamAccessState: SteamAccessState,
     session: SteamSessionState,
@@ -359,7 +381,6 @@ internal fun SettingsCategoryContent(
     onProxyUrlChanged: (String) -> Unit,
     steamApiKey: String,
     onSteamApiKeyChanged: (String) -> Unit,
-    onOpenCategory: (SettingsCategory) -> Unit,
     onMatureContentEnabledChange: (Boolean) -> Unit,
     onThemePreferenceChange: (ThemePreference) -> Unit,
     onAccentChange: (AccentPreference, String?) -> Unit,
@@ -390,25 +411,12 @@ internal fun SettingsCategoryContent(
 ) {
     val openSteamApiKeyPageFailure = stringResource(R.string.settings_error_open_steam_api_key_page)
     when (category) {
-        null ->
-            SettingsCategoryIndex(
-                title = stringResource(R.string.settings_title),
-                onBack = {},
-                onOpenCategory = onOpenCategory,
-            )
-
         SettingsCategory.BASIC ->
             BasicSettingsContent(
                 matureContentEnabled = preferences.matureContentEnabled,
                 diagnosticExportState = diagnosticExportState,
-                appUpdateState = appUpdateState,
                 onMatureContentEnabledChange = onMatureContentEnabledChange,
-                onCheckForAppUpdate = onCheckForAppUpdate,
-                onDownloadLatestRelease = onDownloadLatestRelease,
-                onCancelAppUpdateDownload = onCancelAppUpdateDownload,
-                onInstallDownloadedRelease = onInstallDownloadedRelease,
                 onExportDiagnostics = onExportDiagnostics,
-                onOpenExternalUri = onOpenExternalUri,
             )
 
         SettingsCategory.DOWNLOAD ->
@@ -471,6 +479,8 @@ internal fun SettingsCategoryContent(
             )
     }
 }
+
+private const val SETTINGS_ABOUT_PAGE_KEY = "about_wallhub"
 
 @Composable
 internal fun SettingsListItem(

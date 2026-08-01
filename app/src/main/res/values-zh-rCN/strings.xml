@@ -4,7 +4,11 @@
     <string name='settings_title'>设置</string>
     <string name='settings_wallhub_project_title'>WallHub For Android</string>
     <string name='settings_category_basic'>基本设置</string>
-    <string name='settings_category_basic_description'>内容访问、应用信息、更新与诊断</string>
+    <string name='settings_category_basic_description'>内容访问与诊断</string>
+    <string name='settings_about_wallhub_for_android'>关于 WallHub for Android</string>
+    <string name='settings_about_entry_description'>版本、更新、项目与贡献者信息</string>
+    <string name='settings_about_version'>版本</string>
+    <string name='settings_about_update_date'>更新日期</string>
     <string name='settings_category_downloads'>下载</string>
     <string name='settings_category_downloads_description'>导出目录、下载并发与代理</string>
     <string name='settings_category_steam'>Steam</string>

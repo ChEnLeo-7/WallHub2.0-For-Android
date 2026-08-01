@@ -378,6 +378,7 @@ internal fun SettingsCategoryIndex(
     title: String,
     onBack: () -> Unit,
     onOpenCategory: (SettingsCategory) -> Unit,
+    onOpenAbout: () -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     MaterialTheme(
@@ -421,6 +422,20 @@ internal fun SettingsCategoryIndex(
                     )
                     if (index != SettingsCategory.entries.lastIndex) PreferenceGroupSpacer()
                 }
+                Spacer(modifier = Modifier.height(WallHubSpacing.sm))
+                PreferenceRow(
+                    title = stringResource(R.string.settings_about_wallhub_for_android),
+                    summary = stringResource(R.string.settings_about_entry_description),
+                    position = PreferencePosition.Single,
+                    iconContent = {
+                        SettingsHomepageIcon(
+                            imageVector = Icons.Outlined.Info,
+                            backgroundColor = MaterialTheme.colorScheme.primary,
+                            foregroundColor = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    },
+                    onClick = onOpenAbout,
+                )
             }
         }
     }

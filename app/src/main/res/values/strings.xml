@@ -4,7 +4,11 @@
     <string name='settings_title'>Settings</string>
     <string name='settings_wallhub_project_title'>WallHub For Android</string>
     <string name='settings_category_basic'>Basic settings</string>
-    <string name='settings_category_basic_description'>Content access, app information, updates, and diagnostics</string>
+    <string name='settings_category_basic_description'>Content access and diagnostics</string>
+    <string name='settings_about_wallhub_for_android'>About WallHub for Android</string>
+    <string name='settings_about_entry_description'>Version, updates, project, and contributor information</string>
+    <string name='settings_about_version'>Version</string>
+    <string name='settings_about_update_date'>Updated</string>
     <string name='settings_category_downloads'>Downloads</string>
     <string name='settings_category_downloads_description'>Export directory, concurrency, and proxy</string>
     <string name='settings_category_steam'>Steam</string>

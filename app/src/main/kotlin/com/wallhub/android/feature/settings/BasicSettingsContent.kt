@@ -20,32 +20,9 @@ import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 internal fun BasicSettingsContent(
     matureContentEnabled: Boolean,
     diagnosticExportState: DiagnosticExportUiState,
-    appUpdateState: AppUpdateUiState,
     onMatureContentEnabledChange: (Boolean) -> Unit,
-    onCheckForAppUpdate: () -> Unit,
-    onDownloadLatestRelease: () -> Unit,
-    onCancelAppUpdateDownload: () -> Unit,
-    onInstallDownloadedRelease: (String) -> Unit,
     onExportDiagnostics: () -> Unit,
-    onOpenExternalUri: (String, String) -> Unit,
 ) {
-    val installed = appUpdateState.installed
-
-    SettingsSection(
-        title = stringResource(R.string.settings_wallhub_project_title),
-        icon = Icons.Outlined.Info,
-    ) {
-        AboutWallHubContent(
-            installed = installed,
-            appUpdateState = appUpdateState,
-            onCheckForAppUpdate = onCheckForAppUpdate,
-            onDownloadLatestRelease = onDownloadLatestRelease,
-            onCancelAppUpdateDownload = onCancelAppUpdateDownload,
-            onInstallDownloadedRelease = onInstallDownloadedRelease,
-            onOpenExternalUri = onOpenExternalUri,
-        )
-    }
-
     SettingsSection(
         title = stringResource(R.string.settings_diagnostics_title),
         supportingText = stringResource(R.string.settings_diagnostics_description),
