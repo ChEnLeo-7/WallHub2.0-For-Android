@@ -4,6 +4,7 @@ import android.net.Uri
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.SteamWorkshopDataSource
+import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopComment
 import com.wallhub.android.core.model.WorkshopCommentPage
@@ -50,44 +51,55 @@ class CommunityWorkshopRepository
                 when (preferences.steamWorkshopDataSource) {
                     SteamWorkshopDataSource.COMMUNITY_HTML -> browseViaCommunity(normalizedQuery)
                     SteamWorkshopDataSource.WEB_API -> {
-                        require(steamApiKey.isNotEmpty()) { "Steam Web API 数据源需要先配置 API Key" }
-                        require(normalizedQuery.creatorId == null) { "Steam Web API 数据源暂不支持按作者浏览" }
+                        require(steamApiKey.isNotEmpty()) { "The Steam Web API data source requires an API key" }
+                        require(normalizedQuery.creatorId == null) { "The Steam Web API data source does not support browsing by author" }
                         enrichPageAuthors(browseViaSteamApi(normalizedQuery, steamApiKey), steamApiKey)
                     }
 
                     SteamWorkshopDataSource.CM_WEBSOCKET -> {
-                        require(normalizedQuery.creatorId == null) { "Steam CM 数据源暂不支持按作者浏览" }
+                        require(normalizedQuery.creatorId == null) { "The Steam CM data source does not support browsing by author" }
                         unifiedWorkshopRepository.browsePublic(normalizedQuery)
-                            ?: error("暂时无法建立 Steam CM WebSocket 会话")
+                            ?: error("Failed to establish a Steam CM WebSocket session")
                     }
                 }
             }
 
         override suspend fun getDetail(workshopId: Long): WorkshopDetail =
             withContext(Dispatchers.IO) {
-                require(workshopId > 0L) { "创意工坊项目 ID 无效" }
+                require(workshopId > 0L) { "Invalid Workshop item ID" }
                 val preferences = settingsRepository.preferences.first()
                 val steamApiKey = preferences.steamApiKey.trim()
                 when (preferences.steamWorkshopDataSource) {
                     SteamWorkshopDataSource.COMMUNITY_HTML -> {
                         val detail =
                             getDetails(listOf(workshopId), steamApiKey).firstOrNull()
-                                ?: error("Steam 未返回该创意工坊项目，可能已删除或不可公开访问")
+                                ?: error("Steam did not return this Workshop item; it may be deleted or not publicly accessible")
                         val authorName = CommunityWorkshopParser.extractAuthorName(get(buildDetailUrl(workshopId)))
-                        detail.copy(summary = detail.summary.copy(author = authorName ?: detail.summary.author))
+                        detail.copy(
+                            summary =
+                                detail.summary.copy(
+                                    author = authorName ?: detail.summary.author,
+                                    authorPlaceholder =
+                                        if (authorName == null) {
+                                            detail.summary.authorPlaceholder
+                                        } else {
+                                            WorkshopAuthorPlaceholder.NONE
+                                        },
+                                ),
+                        )
                     }
 
                     SteamWorkshopDataSource.WEB_API -> {
                         val detail =
                             getDetails(listOf(workshopId), steamApiKey).firstOrNull()
-                                ?: error("Steam Web API 未返回该创意工坊项目")
+                                ?: error("Steam Web API did not return this Workshop item")
                         enrichDetailAuthor(detail, steamApiKey)
                     }
 
                     SteamWorkshopDataSource.CM_WEBSOCKET ->
                         unifiedWorkshopRepository
                             .getPublicDetail(workshopId)
-                            ?: error("Steam CM 未返回该创意工坊项目")
+                            ?: error("Steam CM did not return this Workshop item")
                 }
             }
 
@@ -98,7 +110,7 @@ class CommunityWorkshopRepository
             ownerId: String?,
         ): WorkshopCommentPage =
             withContext(Dispatchers.IO) {
-                require(workshopId > 0L) { "创意工坊项目 ID 无效" }
+                require(workshopId > 0L) { "Invalid Workshop item ID" }
                 val safeStart = start.coerceAtLeast(0)
                 val safeCount = count.coerceIn(1, MAX_COMMENT_PAGE_SIZE)
                 val preferences = settingsRepository.preferences.first()
@@ -135,7 +147,7 @@ class CommunityWorkshopRepository
                                 count = safeCount,
                                 ownerId = safeOwnerId,
                             )
-                            ?: error("Steam CM 评论需要先登录 Steam")
+                            ?: error("Steam CM comments require a Steam login")
                 }
             }
 
@@ -155,7 +167,7 @@ class CommunityWorkshopRepository
                     -> getDetails(listOf(workshopId), steamApiKey).firstOrNull()?.creatorId
                 }
             return creatorId?.filter(Char::isDigit)?.takeIf(String::isNotBlank)
-                ?: error("无法确定该创意工坊项目的作者")
+                ?: error("Failed to determine the author of this Workshop item")
         }
 
         private fun requestCommunityCommentsPage(
@@ -187,7 +199,7 @@ class CommunityWorkshopRepository
                     }
                 }
             }
-            throw lastFailure ?: IOException("Steam Community 未返回评论数据")
+            throw lastFailure ?: IOException("Steam Community returned no comment data")
         }
 
         private fun requestCommunityCommentsRoute(
@@ -238,7 +250,7 @@ class CommunityWorkshopRepository
             val payload =
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        throw IOException("Steam Community 评论请求失败：HTTP ${response.code}")
+                        throw IOException("Steam Community comment request failed: HTTP ${response.code}")
                     }
                     JSONObject(response.body.string())
                 }
@@ -297,12 +309,12 @@ class CommunityWorkshopRepository
             val payload =
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        throw IOException("Steam 公共评论请求失败：HTTP ${response.code}")
+                        throw IOException("Steam public comment request failed: HTTP ${response.code}")
                     }
                     val result = response.header("X-EResult")?.toIntOrNull()
                     val body = response.body.string()
                     if (result != null && result != RESULT_OK) {
-                        throw IOException("Steam 公共评论请求失败：EResult $result")
+                        throw IOException("Steam public comment request failed: EResult $result")
                     }
                     JSONObject(body).optJSONObject("response") ?: JSONObject()
                 }
@@ -323,7 +335,10 @@ class CommunityWorkshopRepository
                 items =
                     page.items.map { item ->
                         val profile = item.creatorId?.let(profiles::get) ?: return@map item
-                        item.copy(author = profile.displayName)
+                        item.copy(
+                            author = profile.displayName,
+                            authorPlaceholder = WorkshopAuthorPlaceholder.NONE,
+                        )
                     },
             )
         }
@@ -332,10 +347,16 @@ class CommunityWorkshopRepository
             detail: WorkshopDetail,
             steamApiKey: String,
         ): WorkshopDetail {
-            if (!detail.summary.author.isFallbackSteamName()) return detail
+            if (detail.summary.authorPlaceholder == WorkshopAuthorPlaceholder.NONE) return detail
             val creatorId = detail.creatorId ?: detail.summary.creatorId ?: return detail
             val profile = loadSteamProfiles(setOf(creatorId), steamApiKey)[creatorId] ?: return detail
-            return detail.copy(summary = detail.summary.copy(author = profile.displayName))
+            return detail.copy(
+                summary =
+                    detail.summary.copy(
+                        author = profile.displayName,
+                        authorPlaceholder = WorkshopAuthorPlaceholder.NONE,
+                    ),
+            )
         }
 
         private fun enrichCommentAuthors(
@@ -352,7 +373,11 @@ class CommunityWorkshopRepository
                 comments =
                     page.comments.map { comment ->
                         val profile = comment.authorId?.let(profiles::get) ?: return@map comment
-                        comment.copy(author = profile.displayName, avatarUrl = profile.avatarUrl)
+                        comment.copy(
+                            author = profile.displayName,
+                            avatarUrl = profile.avatarUrl,
+                            isAuthorPlaceholder = false,
+                        )
                     },
             )
         }
@@ -412,8 +437,6 @@ class CommunityWorkshopRepository
             }
             return validIds.mapNotNull { steamId -> steamProfiles[steamId]?.let { steamId to it } }.toMap()
         }
-
-        private fun String.isFallbackSteamName(): Boolean = equals("Steam 创作者", ignoreCase = true) || startsWith("Steam 用户")
 
         private fun browseViaCommunity(normalizedQuery: WorkshopBrowseQuery): WorkshopPage {
             val html = get(buildBrowseUrl(normalizedQuery))
@@ -519,7 +542,7 @@ class CommunityWorkshopRepository
             val body =
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        throw IOException("Steam 公共详情请求失败：HTTP ${response.code}")
+                        throw IOException("Steam public details request failed: HTTP ${response.code}")
                     }
                     response.body.string()
                 }
@@ -537,7 +560,7 @@ class CommunityWorkshopRepository
                     .build()
             return client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    throw IOException("Steam 创意工坊浏览请求失败：HTTP ${response.code}")
+                    throw IOException("Steam Workshop browse request failed: HTTP ${response.code}")
                 }
                 response.body.string()
             }
@@ -557,7 +580,7 @@ class CommunityWorkshopRepository
                     .build()
             return client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    throw IOException("Steam Web API 查询失败：HTTP ${response.code}")
+                    throw IOException("Steam Web API query failed: HTTP ${response.code}")
                 }
                 response.body.string()
             }

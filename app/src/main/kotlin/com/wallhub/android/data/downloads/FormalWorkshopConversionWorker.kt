@@ -18,6 +18,7 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
+import com.wallhub.android.R
 import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.database.FormalTaskRecordEntity
 import com.wallhub.android.core.model.DownloadAction
@@ -65,7 +66,7 @@ class FormalWorkshopConversionWorker(
                         taskId = taskId,
                         task = task,
                         sourceDirectory = null,
-                        message = "上次导出被系统中断，请检查输出目录后重试",
+                        message = applicationContext.getString(R.string.backend_conversion_previous_interrupted),
                     )
                 } finally {
                     FormalWorkshopConversionCancellation.clear(taskId)
@@ -77,11 +78,11 @@ class FormalWorkshopConversionWorker(
                     ?.let(::File)
                     ?.canonicalFile
                     ?.takeIf(File::isDirectory)
-                    ?: error("下载暂存文件不存在，无法转换")
+                    ?: error("Download staging files are missing; cannot convert")
                 val persistentRoot = File(applicationContext.filesDir, WORKSHOP_STAGING_DIRECTORY_NAME)
                 val legacyRoot = File(applicationContext.cacheDir, WORKSHOP_STAGING_DIRECTORY_NAME)
                 require(isManagedWorkshopStagingDirectory(persistentRoot, legacyRoot, sourceDirectory)) {
-                    "下载暂存目录无效"
+                    "Invalid download staging directory"
                 }
             } catch (error: Throwable) {
                 try {
@@ -107,10 +108,10 @@ class FormalWorkshopConversionWorker(
                         task,
                         status = DownloadStatus.CONVERTING,
                         requestedAction = null,
-                        message = "正在转换 ${task.title}…",
+                        message = applicationContext.getString(R.string.backend_conversion_progress, task.title),
                     )
                 temporaryDirectory.deleteRecursively()
-                check(temporaryDirectory.mkdirs() || temporaryDirectory.isDirectory) { "无法创建转换临时目录" }
+                check(temporaryDirectory.mkdirs() || temporaryDirectory.isDirectory) { "Failed to create conversion temporary directory" }
                 val workContext = currentCoroutineContext()
                 val checkCancellation = {
                     workContext.ensureActive()
@@ -131,9 +132,9 @@ class FormalWorkshopConversionWorker(
                             status = DownloadStatus.EXPORTING,
                             message =
                                 if (task.outputTreeUri.isNullOrBlank()) {
-                                    "正在导出到 Download/WallHub…"
+                                    applicationContext.getString(R.string.backend_conversion_exporting_downloads)
                                 } else {
-                                    "正在导出到所选目录…"
+                                    applicationContext.getString(R.string.backend_conversion_exporting_selected)
                                 },
                         )
                     val exportedFile =
@@ -149,7 +150,7 @@ class FormalWorkshopConversionWorker(
                                             outputName = conversion.outputFile.name,
                                             mimeType = conversion.mimeType,
                                         ),
-                                    label = "已导出到所选目录",
+                                    label = applicationContext.getString(R.string.backend_conversion_selected_label),
                                 )
                             }
                             ?: PublicDownloadsExportGateway.exportFile(
@@ -170,7 +171,7 @@ class FormalWorkshopConversionWorker(
                             stagingDirectory = sourceDirectory.absolutePath,
                             outputUri = exportedFile.uri,
                             outputLabel = exportedFile.label,
-                            message = conversion.message(exportedFile.uri),
+                            message = conversion.message(applicationContext, exportedFile.uri),
                             requestedAction = null,
                             clearRequestedAction = true,
                         )
@@ -231,7 +232,7 @@ class FormalWorkshopConversionWorker(
                 )
 
             ExportFormat.MPKG -> {
-                require(detected != WorkshopKind.WEB) { "网站类壁纸只能导出 ZIP 压缩包" }
+                require(detected != WorkshopKind.WEB) { "Web wallpapers can only be exported as ZIP archives" }
                 convertWithEngine(
                     sourceDirectory = sourceDirectory,
                     outputFile = File(temporaryDirectory, outputName(task, "mpkg")),
@@ -303,7 +304,7 @@ class FormalWorkshopConversionWorker(
                                 .relativize(file.toPath())
                                 .toString()
                                 .replace('\\', '/')
-                        require(path.isSafeRelativePath()) { "ZIP 文件路径无效：$path" }
+                        require(path.isSafeRelativePath()) { "Invalid ZIP file path: $path" }
                         output.putNextEntry(ZipEntry(path))
                         BufferedInputStream(FileInputStream(file)).use { input ->
                             val buffer = ByteArray(COPY_BUFFER_SIZE)
@@ -333,7 +334,7 @@ class FormalWorkshopConversionWorker(
             stagingDirectory = null,
             requestedAction = null,
             clearRequestedAction = true,
-            message = "转换任务已取消，暂存文件已清理",
+            message = applicationContext.getString(R.string.backend_conversion_cancelled_cleaned),
         )
         return Result.success()
     }
@@ -422,16 +423,16 @@ class FormalWorkshopConversionWorker(
         manager.createNotificationChannel(
             NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
-                "WallHub 转换与导出",
+                applicationContext.getString(R.string.backend_conversion_notification_channel),
                 NotificationManager.IMPORTANCE_LOW,
             ),
         )
         val notification =
             NotificationCompat
                 .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.stat_sys_download)
-                .setContentTitle("WallHub 正在转换")
-                .setContentText("正在生成 MPKG 或 ZIP 文件")
+                .setSmallIcon(R.drawable.ic_wallhub_notification)
+                .setContentTitle(applicationContext.getString(R.string.backend_conversion_notification_title))
+                .setContentText(applicationContext.getString(R.string.backend_conversion_notification_text))
                 .setOngoing(true)
                 .build()
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -449,15 +450,34 @@ class FormalWorkshopConversionWorker(
         val copiedTextures: Int = 0,
         val warnings: List<String> = emptyList(),
     ) {
-        fun message(outputUri: String): String =
-            buildString {
-                append("$kindLabel 已导出")
+        fun message(
+            context: Context,
+            outputUri: String,
+        ): String {
+            val textureSummary =
                 if (convertedTextures > 0 || copiedTextures > 0) {
-                    append("；TEX 转换 $convertedTextures，保留 $copiedTextures")
+                    context.getString(R.string.backend_conversion_texture_summary, convertedTextures, copiedTextures)
+                } else {
+                    ""
                 }
-                if (warnings.isNotEmpty()) append("；${warnings.size} 项兼容性提示")
-                append("；$outputUri")
-            }
+            val warningSummary =
+                if (warnings.isNotEmpty()) {
+                    context.resources.getQuantityString(
+                        R.plurals.backend_conversion_warning_summary,
+                        warnings.size,
+                        warnings.size,
+                    )
+                } else {
+                    ""
+                }
+            return context.getString(
+                R.string.backend_conversion_complete,
+                kindLabel,
+                textureSummary,
+                warningSummary,
+                outputUri,
+            )
+        }
     }
 
     companion object {
@@ -560,26 +580,26 @@ internal object SafExportGateway {
     ): String {
         val root =
             DocumentFile.fromTreeUri(context, outputTreeUri)
-                ?: error("无法读取所选导出目录")
+                ?: error("Failed to access the selected export directory")
         val previous = root.findFile(outputName)
         val pendingName = ".wallhub-${UUID.randomUUID()}.tmp"
         val target =
             root.createFile(mimeType, pendingName)
-                ?: error("无法在所选目录创建输出文件")
+                ?: error("Failed to create an output file in the selected directory")
         var previousRenamed = false
         try {
             context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                 BufferedInputStream(FileInputStream(source)).use { input ->
                     input.copyTo(output, bufferSize = COPY_BUFFER_SIZE)
                 }
-            } ?: error("无法写入导出文件")
+            } ?: error("Failed to write the export file")
             if (previous != null) {
                 previousRenamed = previous.renameTo(".wallhub-backup-${UUID.randomUUID()}.tmp")
-                check(previousRenamed) { "无法准备替换所选目录中的已有文件" }
+                check(previousRenamed) { "Failed to prepare the existing file for replacement in the selected directory" }
             }
             if (!target.renameTo(outputName)) {
                 if (previousRenamed) previous?.renameTo(outputName)
-                error("无法完成所选目录中的文件替换")
+                error("Failed to replace the file in the selected directory")
             }
             if (previousRenamed) previous?.delete()
             return target.uri.toString()
@@ -627,13 +647,13 @@ internal object PublicDownloadsExportGateway {
         val resolver = context.contentResolver
         val targetUri =
             resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: error("无法在 $OUTPUT_LABEL 创建导出文件")
+                ?: error("Failed to create an export file in $OUTPUT_LABEL")
         try {
             resolver.openOutputStream(targetUri, "w")?.use { output ->
                 BufferedInputStream(FileInputStream(source)).use { input ->
                     input.copyTo(output, bufferSize = COPY_BUFFER_SIZE)
                 }
-            } ?: error("无法写入 $OUTPUT_LABEL")
+            } ?: error("Failed to write to $OUTPUT_LABEL")
             resolver.update(
                 targetUri,
                 ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
@@ -657,14 +677,14 @@ internal object PublicDownloadsExportGateway {
             context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
                 PackageManager.PERMISSION_GRANTED,
         ) {
-            "请允许存储权限后重试，才能导出到 $OUTPUT_LABEL"
+            "Storage permission is required to export to $OUTPUT_LABEL; grant it and try again"
         }
         val directory =
             File(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
                 DIRECTORY_NAME,
             )
-        check(directory.exists() || directory.mkdirs()) { "无法创建 $OUTPUT_LABEL" }
+        check(directory.exists() || directory.mkdirs()) { "Failed to create $OUTPUT_LABEL" }
         val target = File(directory, outputName)
         writeAtomically(target) { temporaryFile ->
             BufferedOutputStream(FileOutputStream(temporaryFile)).use { output ->

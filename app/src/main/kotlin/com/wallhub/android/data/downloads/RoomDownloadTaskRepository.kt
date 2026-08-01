@@ -2,6 +2,7 @@ package com.wallhub.android.data.downloads
 
 import android.content.Context
 import android.util.Log
+import com.wallhub.android.R
 import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.database.FormalTaskRecordEntity
 import com.wallhub.android.core.model.DownloadAction
@@ -46,7 +47,7 @@ class RoomDownloadTaskRepository
         }
 
         override suspend fun enqueue(request: DownloadRequest): DownloadTask {
-            require(request.workshopId > 0L) { "创意工坊项目 ID 无效" }
+            require(request.workshopId > 0L) { "Invalid Workshop item ID" }
             taskDao.findActiveForWorkshop(request.workshopId)?.toModel()?.let { return it }
             val now = System.currentTimeMillis()
             val task =
@@ -61,7 +62,7 @@ class RoomDownloadTaskRepository
                     accountName = credentialProvider.loadContentCredential()?.accountName,
                     outputTreeUri = request.outputTreeUri,
                     exportFormat = request.exportFormat,
-                    message = "等待 Steam 下载队列执行",
+                    message = context.getString(R.string.backend_download_queued),
                     queuePosition = taskDao.nextQueuePosition(),
                     createdAt = now,
                     updatedAt = now,
@@ -75,7 +76,7 @@ class RoomDownloadTaskRepository
                 val failed =
                     task.copy(
                         status = DownloadStatus.FAILED,
-                        message = "无法启动下载任务：${error.javaClass.simpleName}",
+                        message = context.getString(R.string.backend_download_start_failed, error.javaClass.simpleName),
                         updatedAt = System.currentTimeMillis(),
                     )
                 upsert(failed)
@@ -93,7 +94,7 @@ class RoomDownloadTaskRepository
         ) {
             val task = find(taskId) ?: return
             require(action in task.availableActions) {
-                "${task.status} 状态不支持 ${action.name} 操作"
+                "Task status ${task.status} does not support the ${action.name} action"
             }
             val activeWorker = ActiveFormalWorkshopDownloadWorkers.isActive(taskId)
             when (action) {
@@ -111,7 +112,7 @@ class RoomDownloadTaskRepository
             upsert(
                 task.copy(
                     requestedAction = DownloadAction.PAUSE,
-                    message = "已请求暂停，下载器会保留已验证的数据",
+                    message = context.getString(R.string.backend_download_pause_requested),
                     updatedAt = System.currentTimeMillis(),
                 ),
             )
@@ -128,7 +129,7 @@ class RoomDownloadTaskRepository
                     task.copy(
                         status = DownloadStatus.CONVERTING,
                         requestedAction = null,
-                        message = "正在重试转换和导出…",
+                        message = context.getString(R.string.backend_conversion_retrying),
                         updatedAt = System.currentTimeMillis(),
                     ),
                 )
@@ -141,9 +142,9 @@ class RoomDownloadTaskRepository
                     requestedAction = null,
                     message =
                         if (activeWorker) {
-                            "正在继续当前 Steam 内容会话…"
+                            context.getString(R.string.backend_download_resuming_session)
                         } else {
-                            "正在恢复 Steam 下载队列…"
+                            context.getString(R.string.backend_download_resuming_queue)
                         },
                     updatedAt = System.currentTimeMillis(),
                 ),
@@ -153,14 +154,14 @@ class RoomDownloadTaskRepository
 
         private suspend fun requestExport(task: DownloadTask) {
             val stagingDirectory = task.stagingDirectory?.let(::File)
-            require(stagingDirectory?.isDirectory == true) { "下载暂存文件不存在，无法导出" }
+            require(stagingDirectory?.isDirectory == true) { "Download staging files are missing; cannot export" }
             upsert(
                 task.copy(
                     status = DownloadStatus.CONVERTING,
                     outputTreeUri = settingsRepository.preferences.first().outputTreeUri,
                     outputUri = null,
                     requestedAction = null,
-                    message = "正在准备转换并导出…",
+                    message = context.getString(R.string.backend_conversion_preparing),
                     updatedAt = System.currentTimeMillis(),
                 ),
             )
@@ -178,7 +179,7 @@ class RoomDownloadTaskRepository
                         upsert(
                             task.copy(
                                 requestedAction = DownloadAction.CANCEL,
-                                message = "正在取消转换并清理暂存文件",
+                                message = context.getString(R.string.backend_conversion_cancelling),
                                 updatedAt = System.currentTimeMillis(),
                             ),
                         )
@@ -194,7 +195,7 @@ class RoomDownloadTaskRepository
                 upsert(
                     task.copy(
                         requestedAction = DownloadAction.CANCEL,
-                        message = "正在取消下载并清理暂存文件",
+                        message = context.getString(R.string.backend_download_cancelling),
                         updatedAt = System.currentTimeMillis(),
                     ),
                 )
@@ -207,7 +208,7 @@ class RoomDownloadTaskRepository
                     downloadedBytes = 0L,
                     stagingDirectory = null,
                     requestedAction = null,
-                    message = "下载任务已取消，暂存文件已清理",
+                    message = context.getString(R.string.backend_download_cancelled_cleaned),
                     updatedAt = System.currentTimeMillis(),
                 ),
             )
@@ -216,7 +217,7 @@ class RoomDownloadTaskRepository
         private suspend fun requestDeletion(task: DownloadTask) {
             require(
                 task.status in setOf(DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELLED),
-            ) { "进行中的下载不能直接删除，请先取消任务" }
+            ) { "An active download cannot be deleted; cancel the task first" }
             deleteManagedStagingDirectory(context, task.stagingDirectory)
             taskDao.delete(task.id)
         }

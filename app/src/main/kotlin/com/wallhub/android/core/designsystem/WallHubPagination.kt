@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -65,6 +66,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.wallhub.android.R
 
 @Composable
 fun WallHubPaginationControl(
@@ -87,20 +89,12 @@ fun WallHubPaginationControl(
     val keyboardController = LocalSoftwareKeyboardController.current
     val layoutDirection = LocalLayoutDirection.current
 
-    val dialogTitle = wallHubText("跳转页面", "Go to page")
-    val inputLabel = wallHubText("页码", "Page number")
-    val pageInputHint =
-        wallHubText(
-            "当前已知最大页码：$knownTotalPages；可输入大于 0 的页码",
-            "Known last page: $knownTotalPages; enter a page greater than 0",
-        )
-    val invalidPageLabel =
-        wallHubText(
-            "请输入有效的正整数页码",
-            "Enter a valid positive page number",
-        )
-    val cancelLabel = wallHubText("取消", "Cancel")
-    val confirmLabel = wallHubText("跳转", "Go")
+    val dialogTitle = stringResource(R.string.pagination_go_to_page)
+    val inputLabel = stringResource(R.string.pagination_page_number)
+    val pageInputHint = stringResource(R.string.pagination_known_last_page_hint, knownTotalPages)
+    val invalidPageLabel = stringResource(R.string.pagination_invalid_page)
+    val cancelLabel = stringResource(R.string.pagination_cancel)
+    val confirmLabel = stringResource(R.string.pagination_go)
     val targetPage = resolvePaginationPageInput(pageDraft.text)
     val inputHasError = pageDraft.text.isNotBlank() && targetPage == null
 
@@ -170,18 +164,18 @@ fun WallHubPaginationControl(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PaginationTextButton(
-                    label = wallHubText("首页", "First"),
+                    label = stringResource(R.string.pagination_first),
                     text = "1",
                     enabled = !isLoading,
                     selected = false,
-                    contentDescription = wallHubText("跳转到第一页", "Go to first page"),
+                    contentDescription = stringResource(R.string.pagination_go_to_first_page),
                     onClick = {
                         if (displayedWindow.currentPage != 1) onPageSelected(1)
                     },
                     modifier = Modifier.weight(1f),
                 )
                 PaginationTextButton(
-                    label = wallHubText("当前", "Current"),
+                    label = stringResource(R.string.pagination_current),
                     text = displayedWindow.currentPage.toString(),
                     enabled = !isLoading,
                     selected = true,
@@ -190,15 +184,11 @@ fun WallHubPaginationControl(
                     modifier = Modifier.weight(1.15f),
                 )
                 PaginationTextButton(
-                    label = wallHubText("末页", "Last"),
+                    label = stringResource(R.string.pagination_last),
                     text = displayedWindow.totalPages.toString(),
                     enabled = !isLoading,
                     selected = false,
-                    contentDescription =
-                        wallHubText(
-                            "跳转到第 ${displayedWindow.totalPages} 页",
-                            "Go to page ${displayedWindow.totalPages}",
-                        ),
+                    contentDescription = stringResource(R.string.pagination_go_to_page_number, displayedWindow.totalPages),
                     onClick = {
                         if (displayedWindow.currentPage != displayedWindow.totalPages) {
                             onPageSelected(displayedWindow.totalPages)
@@ -207,11 +197,11 @@ fun WallHubPaginationControl(
                     modifier = Modifier.weight(1f),
                 )
                 PaginationTextButton(
-                    label = wallHubText("跳页", "Jump"),
+                    label = stringResource(R.string.pagination_jump),
                     text = null,
                     enabled = !isLoading,
                     selected = false,
-                    contentDescription = wallHubText("输入自定义页码", "Enter a custom page"),
+                    contentDescription = stringResource(R.string.pagination_enter_custom_page),
                     onClick = ::openJumpDialog,
                     modifier = Modifier.weight(0.9f),
                 )

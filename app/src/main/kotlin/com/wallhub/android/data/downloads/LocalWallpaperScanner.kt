@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
+import com.wallhub.android.R
 import com.wallhub.android.core.database.FormalTaskRecordEntity
 import com.wallhub.android.core.database.LocalWallpaperStateEntity
 import com.wallhub.android.core.model.AppPreferences
@@ -39,7 +40,7 @@ internal fun LocalWallpaperFileRepository.sourcePlans(preferences: AppPreference
                 source =
                     LocalWallpaperSource(
                         id = DOWNLOAD_SOURCE_ID,
-                        label = preferences.outputDirectoryLabel ?: "下载目录",
+                        label = preferences.outputDirectoryLabel ?: applicationContext.getString(R.string.backend_local_download_directory),
                         rootUri = treeUri,
                         isDownloadDirectory = true,
                     ),
@@ -64,7 +65,9 @@ internal fun LocalWallpaperFileRepository.sourcePlans(preferences: AppPreference
                     source =
                         LocalWallpaperSource(
                             id = LOCAL_SOURCE_ID,
-                            label = preferences.localManagementDirectoryLabel ?: "本地管理目录",
+                            label =
+                                preferences.localManagementDirectoryLabel
+                                    ?: applicationContext.getString(R.string.backend_local_management_directory),
                             rootUri = treeUri,
                             isDownloadDirectory = false,
                         ),
@@ -155,7 +158,7 @@ internal suspend fun LocalWallpaperFileRepository.scanLegacyDownloads(source: Lo
             issue =
                 LocalWallpaperScanIssue(
                     sourceId = source.id,
-                    message = "需要存储权限才能读取 $DEFAULT_DOWNLOAD_LABEL",
+                    message = applicationContext.getString(R.string.backend_local_storage_permission, DEFAULT_DOWNLOAD_LABEL),
                     requiresAuthorization = true,
                 ),
         )
@@ -203,7 +206,7 @@ internal suspend fun LocalWallpaperFileRepository.scanTree(
             issue =
                 LocalWallpaperScanIssue(
                     sourceId = source.id,
-                    message = "无法读取 ${source.label}，请重新授权",
+                    message = applicationContext.getString(R.string.backend_local_read_failed, source.label),
                     requiresAuthorization = true,
                 ),
         )
@@ -338,10 +341,10 @@ internal fun LocalWallpaperFileRepository.inspectProjectDirectory(
             workshopId = workshopId ?: task?.workshopId,
             detectionReason =
                 when (format) {
-                    LocalWallpaperFormat.HTML -> "目录包含 index.html 或网站 project.json"
-                    LocalWallpaperFormat.PKG -> "目录包含 scene.pkg 或场景 project.json"
-                    LocalWallpaperFormat.VIDEO -> "目录包含视频文件或视频 project.json"
-                    else -> "目录包含 project.json，但类型无法确定"
+                    LocalWallpaperFormat.HTML -> applicationContext.getString(R.string.backend_local_reason_web_project)
+                    LocalWallpaperFormat.PKG -> applicationContext.getString(R.string.backend_local_reason_scene_project)
+                    LocalWallpaperFormat.VIDEO -> applicationContext.getString(R.string.backend_local_reason_video_project)
+                    else -> applicationContext.getString(R.string.backend_local_reason_unknown_project)
                 },
             isDirectoryProject = true,
             isFavorite = state?.isFavorite ?: false,
@@ -404,11 +407,11 @@ internal fun LocalWallpaperFileRepository.inspectStandalone(
         workshopId = workshopId ?: task?.workshopId,
         detectionReason =
             packageInspection?.reason ?: when (format) {
-                LocalWallpaperFormat.MPKG -> "文件扩展名为 MPKG"
-                LocalWallpaperFormat.PKG -> "文件扩展名为 PKG"
-                LocalWallpaperFormat.VIDEO -> "视频扩展名或 MIME 类型"
-                LocalWallpaperFormat.HTML -> "HTML 文件扩展名"
-                LocalWallpaperFormat.UNKNOWN -> "本地内容与下载记录均无法确定类型"
+                LocalWallpaperFormat.MPKG -> applicationContext.getString(R.string.backend_local_reason_mpkg_extension)
+                LocalWallpaperFormat.PKG -> applicationContext.getString(R.string.backend_local_reason_pkg_extension)
+                LocalWallpaperFormat.VIDEO -> applicationContext.getString(R.string.backend_local_reason_video_type)
+                LocalWallpaperFormat.HTML -> applicationContext.getString(R.string.backend_local_reason_html_extension)
+                LocalWallpaperFormat.UNKNOWN -> applicationContext.getString(R.string.backend_local_reason_unknown_type)
             },
         isFavorite = state?.isFavorite ?: false,
         tags = tags[id].orEmpty().toSet(),
@@ -421,9 +424,9 @@ internal fun LocalWallpaperFileRepository.inspectMpkg(node: ScanNode): PackageIn
         resolver.openFileDescriptor(node.uri, "r")?.use { descriptor ->
             FileInputStream(descriptor.fileDescriptor).channel.use { channel ->
                 val magic = channel.readLengthString(MAX_MAGIC_LENGTH)
-                require(magic.startsWith("PKGM")) { "MPKG magic 无效" }
+                require(magic.startsWith("PKGM")) { "Invalid MPKG magic" }
                 val entryCount = channel.readUnsignedIntLe()
-                require(entryCount <= MAX_PACKAGE_ENTRY_COUNT) { "MPKG 索引过大" }
+                require(entryCount <= MAX_PACKAGE_ENTRY_COUNT) { "MPKG index is too large" }
                 repeat(entryCount.toInt()) {
                     channel.readLengthString(MAX_PACKAGE_PATH_LENGTH)
                     channel.readUnsignedIntLe()
@@ -438,14 +441,24 @@ internal fun LocalWallpaperFileRepository.inspectMpkg(node: ScanNode): PackageIn
                 PackageInspection(
                     format = LocalWallpaperFormat.MPKG,
                     workshopType = workshopType,
-                    reason = "MPKG magic $magic；索引 $entryCount 项",
+                    reason =
+                        applicationContext.resources.getQuantityString(
+                            R.plurals.backend_local_reason_mpkg_inspected,
+                            entryCount.toInt(),
+                            magic,
+                            entryCount,
+                        ),
                 )
             }
-        } ?: error("无法打开 MPKG")
+        } ?: error("Failed to open MPKG")
     }.getOrElse { error ->
         PackageInspection(
             format = LocalWallpaperFormat.MPKG,
-            reason = "MPKG 扩展名；内容检查失败：${error.message ?: error.javaClass.simpleName}",
+            reason =
+                applicationContext.getString(
+                    R.string.backend_local_reason_mpkg_inspection_failed,
+                    error.message ?: error.javaClass.simpleName,
+                ),
         )
     }
 
@@ -473,7 +486,7 @@ internal fun LocalWallpaperFileRepository.inspectZip(node: ScanNode): PackageIns
                     zip.closeEntry()
                 }
             }
-        } ?: error("无法打开 ZIP")
+        } ?: error("Failed to open ZIP")
         PackageInspection(
             format = if (hasHtml) LocalWallpaperFormat.HTML else LocalWallpaperFormat.UNKNOWN,
             workshopType =
@@ -485,15 +498,19 @@ internal fun LocalWallpaperFileRepository.inspectZip(node: ScanNode): PackageIns
             title = title,
             reason =
                 if (hasHtml) {
-                    "ZIP 内容包含 HTML 网站项目"
+                    applicationContext.getString(R.string.backend_local_reason_zip_web)
                 } else {
-                    "ZIP 中未发现 HTML 网站项目"
+                    applicationContext.getString(R.string.backend_local_reason_zip_not_web)
                 },
         )
     }.getOrElse { error ->
         PackageInspection(
             format = LocalWallpaperFormat.UNKNOWN,
-            reason = "ZIP 内容检查失败：${error.message ?: error.javaClass.simpleName}",
+            reason =
+                applicationContext.getString(
+                    R.string.backend_local_reason_zip_inspection_failed,
+                    error.message ?: error.javaClass.simpleName,
+                ),
         )
     }
 }
@@ -643,7 +660,6 @@ internal const val LOCAL_SOURCE_ID = "local"
 internal const val DEFAULT_DOWNLOAD_DIRECTORY = "WallHub"
 internal const val DEFAULT_DOWNLOAD_LABEL = "Download/WallHub"
 internal const val DEFAULT_DOWNLOAD_ROOT_URI = "content://media/external/downloads/Download/WallHub"
-internal const val NETWORK_COVER_LABEL = "Steam 网络封面"
 internal const val RESULT_EMIT_BATCH_SIZE = 8
 internal const val MAX_TAG_LENGTH = 40
 internal const val RESOURCE_ID_BYTES = 12
@@ -685,7 +701,7 @@ internal fun java.io.InputStream.readLimited(maxBytes: Int): ByteArray {
         if (read < 0) break
         offset += read
     }
-    require(offset <= maxBytes) { "内容超过检查上限" }
+    require(offset <= maxBytes) { "Content exceeds the inspection limit" }
     return buffer.copyOf(offset)
 }
 
@@ -700,12 +716,12 @@ internal fun FileChannel.readIntLe(): Int {
 
 internal fun FileChannel.readLengthString(maxLength: Int): String {
     val length = readIntLe()
-    require(length in 0..maxLength) { "字符串长度无效：$length" }
+    require(length in 0..maxLength) { "Invalid string length: $length" }
     return readBytes(length).toString(Charsets.UTF_8)
 }
 
 internal fun FileChannel.readBytes(length: Int): ByteArray {
-    require(length >= 0) { "读取长度无效" }
+    require(length >= 0) { "Invalid read length" }
     val buffer = ByteBuffer.allocate(length)
     readFully(buffer)
     return buffer.array()
@@ -713,6 +729,6 @@ internal fun FileChannel.readBytes(length: Int): ByteArray {
 
 internal fun FileChannel.readFully(buffer: ByteBuffer) {
     while (buffer.hasRemaining()) {
-        require(read(buffer) >= 0) { "文件内容不完整" }
+        require(read(buffer) >= 0) { "Incomplete file content" }
     }
 }

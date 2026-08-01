@@ -51,18 +51,19 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubFabActiveElevation
 import com.wallhub.android.core.designsystem.WallHubFabDefaultElevation
 import com.wallhub.android.core.designsystem.WallHubSecondaryButton
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
-import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.model.AppLanguage
+import com.wallhub.android.core.designsystem.localizedAuthor
 import com.wallhub.android.core.model.WorkshopComment
 import kotlinx.coroutines.launch
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
@@ -74,12 +75,11 @@ internal fun DetailCommentsPage(
     commentsHasMore: Boolean,
     isLoading: Boolean,
     isLoadingMore: Boolean,
-    error: String?,
+    error: DetailUiText?,
     canPostComment: Boolean,
     commentDraft: String,
     isPostingComment: Boolean,
-    commentPostError: String?,
-    language: AppLanguage,
+    commentPostError: DetailUiText?,
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
     onCommentDraftChanged: (String) -> Unit,
@@ -147,7 +147,6 @@ internal fun DetailCommentsPage(
                             value = commentDraft,
                             isPosting = isPostingComment,
                             error = commentPostError,
-                            language = language,
                             onValueChange = onCommentDraftChanged,
                             onSubmit = onSubmitComment,
                             modifier =
@@ -175,8 +174,8 @@ internal fun DetailCommentsPage(
                         item {
                             WallHubEmptyState(
                                 icon = Icons.Outlined.Refresh,
-                                title = error,
-                                actionLabel = language.text("重试", "Retry"),
+                                title = error.resolve(),
+                                actionLabel = stringResource(R.string.detail_retry),
                                 onAction = onRetry,
                             )
                         }
@@ -185,7 +184,7 @@ internal fun DetailCommentsPage(
                         item {
                             WallHubEmptyState(
                                 icon = Icons.Outlined.ChatBubbleOutline,
-                                title = language.text("暂时没有评论", "No comments yet"),
+                                title = stringResource(R.string.detail_no_comments),
                             )
                         }
 
@@ -196,7 +195,7 @@ internal fun DetailCommentsPage(
                                 listOf(comment.author, comment.timestamp, comment.text).joinToString("|")
                             },
                         ) { comment ->
-                            WorkshopCommentItem(comment = comment, language = language)
+                            WorkshopCommentItem(comment = comment)
                         }
                         if (error != null) {
                             item {
@@ -206,7 +205,7 @@ internal fun DetailCommentsPage(
                                 ) {
                                     Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null)
                                     Text(
-                                        text = language.text("重试加载更多评论", "Retry loading more"),
+                                        text = stringResource(R.string.detail_retry_loading_more_comments),
                                         modifier = Modifier.padding(start = WallHubSpacing.xs),
                                     )
                                 }
@@ -261,11 +260,7 @@ internal fun DetailCommentsPage(
             ) {
                 Icon(
                     imageVector = Icons.Outlined.VerticalAlignTop,
-                    contentDescription =
-                        language.text(
-                            "回到 Wallpaper 顶部",
-                            "Back to wallpaper top",
-                        ),
+                    contentDescription = stringResource(R.string.detail_back_to_wallpaper_top),
                 )
             }
         }
@@ -276,8 +271,7 @@ internal fun DetailCommentsPage(
 internal fun CommentComposer(
     value: String,
     isPosting: Boolean,
-    error: String?,
-    language: AppLanguage,
+    error: DetailUiText?,
     onValueChange: (String) -> Unit,
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
@@ -288,7 +282,7 @@ internal fun CommentComposer(
         onValueChange = onValueChange,
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
-        placeholder = { Text(language.text("发表评论", "Write a comment")) },
+        placeholder = { Text(stringResource(R.string.detail_write_comment)) },
         trailingIcon = {
             IconButton(
                 onClick = {
@@ -305,14 +299,14 @@ internal fun CommentComposer(
                 } else {
                     Icon(
                         imageVector = Icons.Outlined.Send,
-                        contentDescription = language.text("发表评论", "Post comment"),
+                        contentDescription = stringResource(R.string.detail_post_comment),
                     )
                 }
             }
         },
         supportingText =
             error?.let { message ->
-                { Text(message) }
+                { Text(message.resolve()) }
             },
         isError = error != null,
         enabled = !isPosting,
@@ -322,10 +316,8 @@ internal fun CommentComposer(
 }
 
 @Composable
-internal fun WorkshopCommentItem(
-    comment: WorkshopComment,
-    language: AppLanguage,
-) {
+internal fun WorkshopCommentItem(comment: WorkshopComment) {
+    val author = comment.localizedAuthor()
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -344,7 +336,7 @@ internal fun WorkshopCommentItem(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
-                        text = comment.author.firstOrNull()?.uppercase() ?: "?",
+                        text = author.firstOrNull()?.uppercase() ?: "?",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                     )
@@ -352,10 +344,7 @@ internal fun WorkshopCommentItem(
                         AsyncImage(
                             model = avatarUrl,
                             contentDescription =
-                                language.text(
-                                    "${comment.author} 的头像",
-                                    "${comment.author}'s avatar",
-                                ),
+                                stringResource(R.string.detail_author_avatar, author),
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -377,7 +366,7 @@ internal fun WorkshopCommentItem(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = comment.author,
+                            text = author,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
@@ -391,7 +380,7 @@ internal fun WorkshopCommentItem(
                                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             ) {
                                 Text(
-                                    text = language.text("作者", "Creator"),
+                                    text = stringResource(R.string.detail_creator),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.padding(horizontal = WallHubSpacing.dense, vertical = WallHubSpacing.xxxs),
@@ -400,7 +389,7 @@ internal fun WorkshopCommentItem(
                         }
                     }
                     Text(
-                        text = formatCommentDate(comment, language),
+                        text = formatCommentDate(comment),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = WallHubSpacing.xs),

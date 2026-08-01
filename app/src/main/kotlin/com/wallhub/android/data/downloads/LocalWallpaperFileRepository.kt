@@ -3,6 +3,7 @@ package com.wallhub.android.data.downloads
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import com.wallhub.android.R
 import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.database.FormalTaskRecordEntity
 import com.wallhub.android.core.database.LocalWallpaperMetadataDao
@@ -136,7 +137,7 @@ class LocalWallpaperFileRepository
                             resources = resources.values,
                             sources = sources,
                             discoveredCount = discoveredCount,
-                            currentSourceLabel = NETWORK_COVER_LABEL,
+                            currentSourceLabel = applicationContext.getString(R.string.backend_local_network_cover),
                             issues = issues,
                             isScanning = true,
                         ),
@@ -216,7 +217,7 @@ class LocalWallpaperFileRepository
 
         override suspend fun delete(resource: LocalWallpaperResource): LocalWallpaperDeleteResult {
             if (runCatching { Uri.parse(resource.contentUri) }.isFailure) {
-                return LocalWallpaperDeleteResult(false, "文件地址无效")
+                return LocalWallpaperDeleteResult(false, applicationContext.getString(R.string.backend_local_invalid_file_uri))
             }
             return runCatching {
                 val uris = (projectContentUris[resource.id].orEmpty() + resource.contentUri).distinct()
@@ -234,11 +235,19 @@ class LocalWallpaperFileRepository
                 }
                 if (deletedCount == uris.size) {
                     metadataDao.deleteMetadata(resource.id)
-                    LocalWallpaperDeleteResult(true, "已删除 ${resource.displayName}")
+                    LocalWallpaperDeleteResult(
+                        true,
+                        applicationContext.getString(R.string.backend_local_deleted, resource.displayName),
+                    )
                 } else {
                     LocalWallpaperDeleteResult(
                         false,
-                        "已删除 $deletedCount/${uris.size} 个文件，请检查目录权限",
+                        applicationContext.resources.getQuantityString(
+                            R.plurals.backend_local_delete_partial,
+                            uris.size,
+                            deletedCount,
+                            uris.size,
+                        ),
                     )
                 }
             }.getOrElse { error ->
@@ -246,16 +255,16 @@ class LocalWallpaperFileRepository
                     deleted = false,
                     message =
                         if (error is SecurityException) {
-                            "目录授权已失效，请重新授权后重试"
+                            applicationContext.getString(R.string.backend_local_authorization_expired)
                         } else {
-                            error.message ?: "删除失败"
+                            error.message ?: applicationContext.getString(R.string.backend_local_delete_failed)
                         },
                 )
             }
         }
     }
 
-private fun failedSourceScan(
+private fun LocalWallpaperFileRepository.failedSourceScan(
     plan: SourcePlan,
     error: Throwable,
     requiresAuthorization: Boolean,
@@ -265,7 +274,7 @@ private fun failedSourceScan(
         issue =
             LocalWallpaperScanIssue(
                 sourceId = plan.source.id,
-                message = error.message ?: "无法扫描目录",
+                message = error.message ?: applicationContext.getString(R.string.backend_local_scan_failed),
                 requiresAuthorization = requiresAuthorization,
             ),
     )

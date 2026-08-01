@@ -33,7 +33,7 @@ internal class SteamWorkshopContentApi(
 
     suspend fun fetchContentTarget(publishedFileId: Long): WorkshopContentTarget =
         withContext(Dispatchers.IO) {
-            require(publishedFileId > 0L) { "创意工坊项目 ID 无效" }
+            require(publishedFileId > 0L) { "Invalid Workshop item ID" }
             val form =
                 FormBody
                     .Builder()
@@ -52,7 +52,7 @@ internal class SteamWorkshopContentApi(
             val body =
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        throw IOException("Steam 公共详情请求失败：HTTP ${response.code}")
+                        throw IOException("Steam public details request failed: HTTP ${response.code}")
                     }
                     response.body.string()
                 }
@@ -67,22 +67,22 @@ internal class SteamWorkshopContentApi(
             JSONObject(body)
                 .optJSONObject("response")
                 ?.optJSONArray("publishedfiledetails")
-                ?: error("Steam 未返回创意工坊详情")
-        val detail = details.optJSONObject(0) ?: error("Steam 未返回创意工坊详情")
+                ?: error("Steam returned no Workshop details")
+        val detail = details.optJSONObject(0) ?: error("Steam returned no Workshop details")
         check(detail.jsonLong("result") == RESULT_OK) {
-            "Steam 返回条目错误：${detail.jsonLong("result")}"
+            "Steam returned an item error: ${detail.jsonLong("result")}"
         }
         val appId =
             detail
                 .jsonLong("consumer_app_id")
                 .takeIf { it in 1..Int.MAX_VALUE.toLong() }
                 ?.toInt()
-                ?: error("Steam 未返回有效的 Wallpaper Engine App ID")
+                ?: error("Steam returned no valid Wallpaper Engine App ID")
         val manifestId =
             detail
                 .jsonLong("hcontent_file")
                 .takeIf { it > 0L }
-                ?: error("该创意工坊项目没有可下载的 Steam 内容 manifest")
+                ?: error("This Workshop item has no downloadable Steam content manifest")
         return WorkshopContentTarget(
             publishedFileId = publishedFileId,
             title = detail.jsonString("title").ifBlank { "Workshop $publishedFileId" },

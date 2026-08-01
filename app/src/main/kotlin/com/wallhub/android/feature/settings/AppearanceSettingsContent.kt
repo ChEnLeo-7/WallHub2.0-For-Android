@@ -50,17 +50,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubAnimatedSelectionCheck
 import com.wallhub.android.core.designsystem.WallHubColorTokens
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
-import com.wallhub.android.core.designsystem.text
 import com.wallhub.android.core.designsystem.wallHubPreviewColor
 import com.wallhub.android.core.model.AccentPreference
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
@@ -85,7 +87,6 @@ internal fun AppearanceSettingsContent(
     availableAccents: List<AccentPreference>,
     customAccentColor: String,
     onCustomAccentColorChanged: (String) -> Unit,
-    onLanguageChange: (AppLanguage) -> Unit,
     onThemePreferenceChange: (ThemePreference) -> Unit,
     onAccentChange: (AccentPreference, String?) -> Unit,
     onSystemMonetEnabledChange: (Boolean) -> Unit,
@@ -93,11 +94,6 @@ internal fun AppearanceSettingsContent(
     onHomePreferencesChange: (Int, Int, Boolean, HomeCardAction, Boolean) -> Unit,
     onHomePaginationModeChange: (HomePaginationMode) -> Unit,
 ) {
-    fun text(
-        zh: String,
-        en: String,
-    ): String = if (preferences.language == AppLanguage.EN) en else zh
-
     fun saveHomePreferences(
         pageSize: Int = preferences.homePageSize,
         columns: Int = preferences.homeColumns,
@@ -114,65 +110,37 @@ internal fun AppearanceSettingsContent(
     }
 
     SettingsSection(
-        title = text("语言与主题", "Language & theme"),
-        icon = Icons.Outlined.Language,
+        title = stringResource(R.string.settings_theme_title),
+        icon = Icons.Outlined.Palette,
     ) {
         SettingChoiceRow(
-            title = text("显示语言", "Display language"),
-            supportingText =
-                text(
-                    "用于发现页与原生界面的显示语言",
-                    "Language used by Discover and native screens",
-                ),
-            selectedValue = preferences.language,
-            values = listOf(AppLanguage.ZH, AppLanguage.EN),
-            label = { language -> if (language == AppLanguage.ZH) "中文" else "English" },
-            onSelected = onLanguageChange,
-        )
-        SettingsItemDivider()
-        SettingChoiceRow(
-            title = text("主题模式", "Theme mode"),
-            supportingText =
-                text(
-                    "选择浅色、深色或跟随系统",
-                    "Use light, dark, or the system setting",
-                ),
+            title = stringResource(R.string.settings_theme_mode),
+            supportingText = stringResource(R.string.settings_theme_mode_description),
             selectedValue = preferences.theme,
             values = ThemePreference.entries,
-            label = { theme -> theme.label(preferences.language) },
+            label = { theme -> theme.label() },
             onSelected = onThemePreferenceChange,
         )
     }
 
     SettingsSection(
-        title = text("个性化配色", "Personalized color"),
-        supportingText =
-            text(
-                "使用壁纸取色或选择完整的静态 Material 色板",
-                "Use wallpaper colors or a complete static Material palette",
-            ),
+        title = stringResource(R.string.settings_personalized_color_title),
+        supportingText = stringResource(R.string.settings_personalized_color_description),
         icon = Icons.Outlined.Palette,
     ) {
         MomentThemeCard(
             enabled = preferences.useSystemMonet,
-            language = preferences.language,
             onEnabledChange = onSystemMonetEnabledChange,
         )
         SettingsItemDivider()
         val themedIconsSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
         SettingsSwitchRow(
-            title = text("图标跟随系统取色", "Themed app icon"),
+            title = stringResource(R.string.settings_themed_app_icon),
             supportingText =
                 if (themedIconsSupported) {
-                    text(
-                        "允许系统启动器按壁纸莫奈色显示应用图标",
-                        "Let the system launcher tint the app icon from wallpaper colors",
-                    )
+                    stringResource(R.string.settings_themed_app_icon_description)
                 } else {
-                    text(
-                        "需要 Android 13 或更高版本",
-                        "Requires Android 13 or newer",
-                    )
+                    stringResource(R.string.settings_requires_android_13)
                 },
             checked = themedIconsSupported && preferences.useThemedLauncherIcon,
             enabled = themedIconsSupported,
@@ -180,19 +148,14 @@ internal fun AppearanceSettingsContent(
         )
         SettingsItemDivider()
         AccentPreferenceChoiceRow(
-            title = text("静态色板", "Static palette"),
-            supportingText =
-                text(
-                    "关闭系统动态取色时使用",
-                    "Used when system dynamic color is off",
-                ),
+            title = stringResource(R.string.settings_static_palette),
+            supportingText = stringResource(R.string.settings_static_palette_description),
             selectedValue =
                 preferences.accent.takeUnless {
                     it == AccentPreference.MONET
                 } ?: AccentPreference.DEFAULT,
             values = availableAccents,
             customColor = customAccentColor,
-            language = preferences.language,
             systemMonetColor = MaterialTheme.colorScheme.primary,
             onSelected = { accent ->
                 onAccentChange(
@@ -208,16 +171,12 @@ internal fun AppearanceSettingsContent(
     }
 
     SettingsSection(
-        title = text("发现页", "Discover"),
-        supportingText =
-            text(
-                "控制内容密度、筛选方式与卡片默认操作",
-                "Control content density, filters, and the default card action",
-            ),
+        title = stringResource(R.string.settings_discover_title),
+        supportingText = stringResource(R.string.settings_discover_description),
         icon = Icons.Outlined.Tune,
     ) {
         SettingChoiceRow(
-            title = text("每页项目数", "Items per page"),
+            title = stringResource(R.string.settings_items_per_page),
             selectedValue = preferences.homePageSize,
             values = listOf(10, 15, 24, 30, 50),
             label = { "$it" },
@@ -225,37 +184,33 @@ internal fun AppearanceSettingsContent(
         )
         SettingsItemDivider()
         SettingChoiceRow(
-            title = text("分页方式", "Pagination"),
+            title = stringResource(R.string.settings_pagination),
             selectedValue = preferences.homePaginationMode,
             values = HomePaginationMode.entries,
-            label = { mode -> mode.label(preferences.language) },
+            label = { mode -> mode.label() },
             onSelected = onHomePaginationModeChange,
         )
         SettingsItemDivider()
         SettingChoiceRow(
-            title = text("移动端列数", "Phone columns"),
+            title = stringResource(R.string.settings_phone_columns),
             selectedValue = preferences.homeColumns,
             values = listOf(1, 2, 3, 4),
-            label = { text("$it 列", "$it columns") },
+            label = { pluralStringResource(R.plurals.settings_column_count, it, it) },
             onSelected = { value -> saveHomePreferences(columns = value) },
         )
         SettingsItemDivider()
         SettingsSwitchRow(
-            title = text("类型和评级多选", "Multi-select types and ratings"),
-            supportingText =
-                text(
-                    "关闭后，类型和年龄评级使用互斥选择",
-                    "When off, type and age rating filters are exclusive",
-                ),
+            title = stringResource(R.string.settings_multi_select_filters),
+            supportingText = stringResource(R.string.settings_multi_select_filters_description),
             checked = preferences.homeFilterMultiSelect,
             onCheckedChange = { enabled -> saveHomePreferences(multiSelect = enabled) },
         )
         SettingsItemDivider()
         SettingChoiceRow(
-            title = text("卡片默认操作", "Default card action"),
+            title = stringResource(R.string.settings_default_card_action),
             selectedValue = preferences.homeCardAction,
             values = HomeCardAction.entries,
-            label = { action -> action.label(preferences.language) },
+            label = { action -> action.label() },
             onSelected = { action -> saveHomePreferences(cardAction = action) },
         )
     }
@@ -264,7 +219,6 @@ internal fun AppearanceSettingsContent(
 @Composable
 internal fun MomentThemeCard(
     enabled: Boolean,
-    language: AppLanguage,
     onEnabledChange: (Boolean) -> Unit,
 ) {
     val containerColor =
@@ -312,7 +266,7 @@ internal fun MomentThemeCard(
             verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),
         ) {
             Text(
-                text = language.text("系统动态取色", "System dynamic color"),
+                text = stringResource(R.string.settings_system_dynamic_color),
                 style = MaterialTheme.typography.titleMedium,
                 color = headlineColor,
             )
@@ -320,22 +274,13 @@ internal fun MomentThemeCard(
                 text =
                     when {
                         enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-                            language.text(
-                                "色板跟随当前系统壁纸",
-                                "Palette follows the current system wallpaper",
-                            )
+                            stringResource(R.string.settings_dynamic_color_wallpaper)
 
                         enabled ->
-                            language.text(
-                                "当前系统不支持壁纸取色，使用兼容色板",
-                                "Wallpaper colors are unavailable; using a compatible palette",
-                            )
+                            stringResource(R.string.settings_dynamic_color_fallback)
 
                         else ->
-                            language.text(
-                                "当前使用下方选择的静态色板",
-                                "Using the static palette selected below",
-                            )
+                            stringResource(R.string.settings_dynamic_color_disabled)
                     },
                 style = MaterialTheme.typography.bodyMedium,
                 color = supportingColor,
@@ -431,7 +376,6 @@ internal fun SettingsLeadingIcon(
 @Composable
 internal fun SettingsCategoryIndex(
     title: String,
-    language: AppLanguage,
     onBack: () -> Unit,
     onOpenCategory: (SettingsCategory) -> Unit,
 ) {
@@ -458,8 +402,8 @@ internal fun SettingsCategoryIndex(
             ) {
                 SettingsCategory.entries.forEachIndexed { index, category ->
                     PreferenceRow(
-                        title = category.label(language),
-                        summary = category.description(language),
+                        title = stringResource(category.labelRes),
+                        summary = stringResource(category.descriptionRes),
                         position =
                             when (index) {
                                 0 -> PreferencePosition.Top
@@ -482,30 +426,32 @@ internal fun SettingsCategoryIndex(
     }
 }
 
-internal fun SteamSessionState.settingsSummary(language: AppLanguage): String =
+@Composable
+internal fun SteamSessionState.settingsSummary(): String =
     when (phase) {
-        SteamSessionPhase.SIGNED_IN -> language.text("已登录：${accountName.orEmpty()}", "Signed in: ${accountName.orEmpty()}")
-        SteamSessionPhase.RESTORABLE -> language.text("已保存登录状态", "Saved sign-in available")
+        SteamSessionPhase.SIGNED_IN -> stringResource(R.string.settings_steam_signed_in_as, accountName.orEmpty())
+        SteamSessionPhase.RESTORABLE -> stringResource(R.string.settings_steam_saved_sign_in)
         SteamSessionPhase.SIGNING_IN,
         SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
         SteamSessionPhase.WAITING_FOR_CODE,
-        -> message ?: language.text("正在登录 Steam", "Signing in to Steam")
+        -> message ?: stringResource(R.string.settings_steam_signing_in)
 
         SteamSessionPhase.EXPIRED,
         SteamSessionPhase.FAILED,
-        -> message ?: language.text("Steam 登录需要重新验证", "Steam sign-in needs verification")
+        -> message ?: stringResource(R.string.settings_steam_sign_in_needs_verification)
 
-        SteamSessionPhase.SIGNED_OUT -> language.text("未登录", "Not signed in")
+        SteamSessionPhase.SIGNED_OUT -> stringResource(R.string.settings_steam_not_signed_in)
     }
 
-internal fun SteamAccessState.summary(language: AppLanguage): String {
+@Composable
+internal fun SteamAccessState.summary(): String {
     val phaseLabel =
         when (phase) {
-            SteamAccessPhase.DISABLED -> language.text("已关闭", "Disabled")
-            SteamAccessPhase.RESOLVING -> language.text("正在检测直连与内置线路", "Checking direct and built-in routes")
-            SteamAccessPhase.READY -> language.text("线路可用", "Route available")
-            SteamAccessPhase.DEGRADED -> language.text("线路不稳定，等待重新检测", "Route unstable; waiting to check again")
-            SteamAccessPhase.FAILED -> language.text("当前没有可用线路", "No route is currently available")
+            SteamAccessPhase.DISABLED -> stringResource(R.string.settings_disabled)
+            SteamAccessPhase.RESOLVING -> stringResource(R.string.settings_steam_routes_checking)
+            SteamAccessPhase.READY -> stringResource(R.string.settings_steam_route_available)
+            SteamAccessPhase.DEGRADED -> stringResource(R.string.settings_steam_route_unstable)
+            SteamAccessPhase.FAILED -> stringResource(R.string.settings_steam_no_route)
         }
     return phaseLabel + message?.let { "\n$it" }.orEmpty()
 }
@@ -516,7 +462,7 @@ internal fun <T> SettingChoiceRow(
     title: String,
     selectedValue: T,
     values: List<T>,
-    label: (T) -> String,
+    label: @Composable (T) -> String,
     onSelected: (T) -> Unit,
     supportingText: String? = null,
 ) {
@@ -573,13 +519,9 @@ internal fun <T> SettingChoiceRow(
 @Composable
 internal fun SteamStreamCacheSetting(
     cacheLimitMb: Int,
-    language: AppLanguage,
     onCacheLimitChange: (Int) -> Unit,
 ) {
-    fun text(
-        zh: String,
-        en: String,
-    ): String = if (language == AppLanguage.EN) en else zh
+    val context = LocalContext.current
     var customSheetVisible by rememberSaveable { mutableStateOf(false) }
     var customLimitText by remember(cacheLimitMb) { mutableStateOf(cacheLimitMb.toString()) }
     var customLimitError by rememberSaveable { mutableStateOf<String?>(null) }
@@ -589,20 +531,15 @@ internal fun SteamStreamCacheSetting(
         } ?: SteamStreamCachePreset.CUSTOM
 
     SettingChoiceRow(
-        title = text("SteamKit 在线播放缓存", "SteamKit streaming cache"),
+        title = stringResource(R.string.settings_streaming_cache),
         selectedValue = selectedPreset,
         values = SteamStreamCachePreset.entries.toList(),
         label = { preset ->
-            preset.limitMb?.let(::formatSteamStreamCacheLimit) ?: text(
-                "自定义：${formatSteamStreamCacheLimit(cacheLimitMb)}",
-                "Custom: ${formatSteamStreamCacheLimit(cacheLimitMb)}",
-            )
+            preset.limitMb?.let(::formatSteamStreamCacheLimit)
+                ?: stringResource(R.string.settings_custom_value, formatSteamStreamCacheLimit(cacheLimitMb))
         },
         supportingText =
-            text(
-                "限制在线播放的已解密 Steam 分块缓存；默认 512 MB。",
-                "Limits cached decrypted Steam chunks for streaming. Default: 512 MB.",
-            ),
+            stringResource(R.string.settings_streaming_cache_description),
         onSelected = { preset ->
             preset.limitMb?.let(onCacheLimitChange) ?: run {
                 customLimitText = cacheLimitMb.toString()
@@ -616,15 +553,12 @@ internal fun SteamStreamCacheSetting(
         ModalBottomSheet(onDismissRequest = { customSheetVisible = false }) {
             SettingsSheetContent {
                 Text(
-                    text = text("自定义在线播放缓存", "Custom streaming cache"),
+                    text = stringResource(R.string.settings_custom_streaming_cache),
                     style = MaterialTheme.typography.titleLarge,
                 )
                 Text(
                     text =
-                        text(
-                            "输入不低于 128 MB 的缓存大小。",
-                            "Enter a cache size of at least 128 MB.",
-                        ),
+                        stringResource(R.string.settings_custom_streaming_cache_description),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 SettingsFilledTextField(
@@ -633,7 +567,7 @@ internal fun SteamStreamCacheSetting(
                         customLimitText = value.filter(Char::isDigit)
                         customLimitError = null
                     },
-                    label = { Text(text("缓存大小 (MB)", "Cache size (MB)")) },
+                    label = { Text(stringResource(R.string.settings_cache_size_mb)) },
                     singleLine = true,
                     isError = customLimitError != null,
                     supportingText = customLimitError?.let { error -> { Text(error) } },
@@ -644,10 +578,7 @@ internal fun SteamStreamCacheSetting(
                         val limitMb = customLimitText.toIntOrNull()
                         if (limitMb == null || limitMb < 128) {
                             customLimitError =
-                                text(
-                                    "请输入不低于 128 的有效数值",
-                                    "Enter a valid value of at least 128",
-                                )
+                                context.getString(R.string.settings_error_cache_size)
                         } else {
                             onCacheLimitChange(limitMb)
                             customSheetVisible = false
@@ -655,7 +586,7 @@ internal fun SteamStreamCacheSetting(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(text("应用", "Apply"))
+                    Text(stringResource(R.string.settings_action_apply))
                 }
                 Spacer(modifier = Modifier.height(WallHubSpacing.xs))
             }
@@ -671,7 +602,7 @@ internal fun <T> SettingChoiceSheet(
     title: String,
     selectedValue: T,
     values: List<T>,
-    label: (T) -> String,
+    label: @Composable (T) -> String,
     onSelected: (T) -> Unit,
 ) {
     SettingsSheetContent {
@@ -751,7 +682,6 @@ internal fun AccentPreferenceChoiceRow(
     selectedValue: AccentPreference,
     values: List<AccentPreference>,
     customColor: String,
-    language: AppLanguage,
     systemMonetColor: Color,
     onSelected: (AccentPreference) -> Unit,
     onCustomColorChanged: (String) -> Unit,
@@ -781,7 +711,7 @@ internal fun AccentPreferenceChoiceRow(
                 horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
                 Text(
-                    text = selectedValue.label(language),
+                    text = selectedValue.label(),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
@@ -803,7 +733,7 @@ internal fun AccentPreferenceChoiceRow(
                 Text(title, style = MaterialTheme.typography.titleLarge)
                 values.forEach { accent ->
                     SettingChoiceSheetOption(
-                        label = accent.label(language),
+                        label = accent.label(),
                         selected = accent == draftAccent,
                         onClick = {
                             if (accent == AccentPreference.CUSTOM) {
@@ -827,7 +757,6 @@ internal fun AccentPreferenceChoiceRow(
                 if (draftAccent == AccentPreference.CUSTOM) {
                     MonetColorPicker(
                         colorHex = customColor,
-                        language = language,
                         onColorChanged = onCustomColorChanged,
                     )
                     Button(
@@ -837,7 +766,7 @@ internal fun AccentPreferenceChoiceRow(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(language.text("应用此莫奈色", "Apply this Monet color"))
+                        Text(stringResource(R.string.settings_action_apply_monet_color))
                     }
                 }
                 Spacer(modifier = Modifier.height(WallHubSpacing.sm))
@@ -866,7 +795,6 @@ internal fun AccentColorDot(color: Color) {
 @Composable
 internal fun MonetColorPicker(
     colorHex: String,
-    language: AppLanguage,
     onColorChanged: (String) -> Unit,
 ) {
     val hsv = colorHex.toMonetHsv()
@@ -879,7 +807,7 @@ internal fun MonetColorPicker(
         }
     Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.compact)) {
         Text(
-            text = language.text("自定义莫奈种子色", "Custom Monet seed color"),
+            text = stringResource(R.string.settings_custom_monet_seed_color),
             style = MaterialTheme.typography.labelLarge,
         )
         Surface(
@@ -939,21 +867,21 @@ internal fun MonetColorPicker(
             }
         }
         MonetColorSlider(
-            label = language.text("色相 ${hsv.hue.toInt()}°", "Hue ${hsv.hue.toInt()}°"),
+            label = stringResource(R.string.settings_hue_value, hsv.hue.toInt()),
             value = hsv.hue,
             valueRange = 0f..360f,
             color = previewColor,
             onValueChange = { hue -> onColorChanged(hsv.copy(hue = hue).toHex()) },
         )
         MonetColorSlider(
-            label = language.text("饱和度 ${(hsv.saturation * 100).toInt()}%", "Saturation ${(hsv.saturation * 100).toInt()}%"),
+            label = stringResource(R.string.settings_saturation_value, (hsv.saturation * 100).toInt()),
             value = hsv.saturation,
             valueRange = 0f..1f,
             color = previewColor,
             onValueChange = { saturation -> onColorChanged(hsv.copy(saturation = saturation).toHex()) },
         )
         MonetColorSlider(
-            label = language.text("亮度 ${(hsv.brightness * 100).toInt()}%", "Brightness ${(hsv.brightness * 100).toInt()}%"),
+            label = stringResource(R.string.settings_brightness_value, (hsv.brightness * 100).toInt()),
             value = hsv.brightness,
             valueRange = 0f..1f,
             color = previewColor,
@@ -1029,35 +957,39 @@ internal fun circularHueDistance(
     return minOf(difference, 360f - difference)
 }
 
-internal fun ThemePreference.label(language: AppLanguage): String =
+@Composable
+internal fun ThemePreference.label(): String =
     when (this) {
-        ThemePreference.SYSTEM -> language.text("跟随系统", "System")
-        ThemePreference.LIGHT -> language.text("浅色", "Light")
-        ThemePreference.DARK -> language.text("深色", "Dark")
+        ThemePreference.SYSTEM -> stringResource(R.string.settings_theme_system)
+        ThemePreference.LIGHT -> stringResource(R.string.settings_theme_light)
+        ThemePreference.DARK -> stringResource(R.string.settings_theme_dark)
     }
 
-internal fun AccentPreference.label(language: AppLanguage): String =
+@Composable
+internal fun AccentPreference.label(): String =
     when (this) {
-        AccentPreference.DEFAULT -> language.text("默认", "Default")
-        AccentPreference.MONET -> language.text("系统莫奈", "System Monet")
-        AccentPreference.BLUE -> language.text("蓝色", "Blue")
-        AccentPreference.GREEN -> language.text("绿色", "Green")
-        AccentPreference.ROSE -> language.text("红色", "Red")
-        AccentPreference.VIOLET -> language.text("紫色", "Purple")
-        AccentPreference.CUSTOM -> language.text("自定义", "Custom")
+        AccentPreference.DEFAULT -> stringResource(R.string.settings_accent_default)
+        AccentPreference.MONET -> stringResource(R.string.settings_accent_system_monet)
+        AccentPreference.BLUE -> stringResource(R.string.settings_accent_blue)
+        AccentPreference.GREEN -> stringResource(R.string.settings_accent_green)
+        AccentPreference.ROSE -> stringResource(R.string.settings_accent_red)
+        AccentPreference.VIOLET -> stringResource(R.string.settings_accent_purple)
+        AccentPreference.CUSTOM -> stringResource(R.string.settings_accent_custom)
     }
 
-internal fun HomeCardAction.label(language: AppLanguage): String =
+@Composable
+internal fun HomeCardAction.label(): String =
     when (this) {
-        HomeCardAction.DOWNLOAD -> language.text("下载", "Download")
-        HomeCardAction.PLAY_VIDEO -> language.text("播放", "Play")
-        HomeCardAction.OPEN_STEAM -> "Steam"
+        HomeCardAction.DOWNLOAD -> stringResource(R.string.settings_action_download)
+        HomeCardAction.PLAY_VIDEO -> stringResource(R.string.settings_action_play)
+        HomeCardAction.OPEN_STEAM -> stringResource(R.string.settings_action_open_steam)
     }
 
-internal fun HomePaginationMode.label(language: AppLanguage): String =
+@Composable
+internal fun HomePaginationMode.label(): String =
     when (this) {
-        HomePaginationMode.INFINITE_SCROLL -> language.text("瀑布流拼接", "Infinite scroll")
-        HomePaginationMode.PAGED -> language.text("Web 页码模式", "Web-style pages")
+        HomePaginationMode.INFINITE_SCROLL -> stringResource(R.string.settings_pagination_infinite)
+        HomePaginationMode.PAGED -> stringResource(R.string.settings_pagination_pages)
     }
 
 internal const val DEFAULT_CUSTOM_MONET_HEX = "#5B7AA0"

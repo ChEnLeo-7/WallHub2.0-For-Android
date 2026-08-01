@@ -1,5 +1,6 @@
 package com.wallhub.android.data.steam
 
+import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopComment
 import com.wallhub.android.core.model.WorkshopCommentPage
 import com.wallhub.android.core.model.WorkshopDetail
@@ -12,7 +13,7 @@ internal data class SteamProfile(
 )
 
 internal fun buildUnifiedWorkshopDetailRequest(workshopId: Long): SteammessagesPublishedfileSteamclient.CPublishedFile_GetDetails_Request {
-    require(workshopId > 0L) { "创意工坊项目 ID 无效" }
+    require(workshopId > 0L) { "Invalid Workshop item ID" }
     return SteammessagesPublishedfileSteamclient.CPublishedFile_GetDetails_Request
         .newBuilder()
         .addPublishedfileids(workshopId)
@@ -33,7 +34,15 @@ internal fun mapUnifiedWorkshopDetail(
 ): WorkshopDetail {
     val summary =
         detail.toWorkshopSummary().let { source ->
-            source.copy(author = creatorProfile?.displayName ?: "Steam 创作者")
+            source.copy(
+                author = creatorProfile?.displayName.orEmpty(),
+                authorPlaceholder =
+                    if (creatorProfile == null) {
+                        WorkshopAuthorPlaceholder.CREATOR
+                    } else {
+                        WorkshopAuthorPlaceholder.NONE
+                    },
+            )
         }
     val previewMediaUrl =
         detail.previewsList
@@ -61,10 +70,10 @@ internal fun buildCommunityCommentRequest(
     start: Int,
     count: Int,
 ): CommunityMessages.GetCommentThreadRequest {
-    require(workshopId > 0L) { "创意工坊项目 ID 无效" }
+    require(workshopId > 0L) { "Invalid Workshop item ID" }
     val owner =
         ownerId.toULongOrNull()?.takeIf { it > 0uL }
-            ?: error("创意工坊作者 ID 无效")
+            ?: error("Invalid Workshop author ID")
     return CommunityMessages.GetCommentThreadRequest
         .newBuilder()
         .setSteamid(owner.toLong())
@@ -99,12 +108,13 @@ internal fun mapCommunityComments(
             if (text.isBlank() || comment.deleted || comment.hidden) return@mapNotNull null
             val profile = profiles[comment.steamid]
             WorkshopComment(
-                author = profile?.displayName ?: "Steam 用户",
+                author = profile?.displayName.orEmpty(),
                 authorId = comment.steamid.toString().takeIf { comment.steamid > 0L },
                 text = text,
                 avatarUrl = profile?.avatarUrl,
                 isCreator = comment.steamid.toString() == creatorId,
                 timestamp = comment.timestamp.toLong().takeIf { it > 0L },
+                isAuthorPlaceholder = profile == null,
             )
         }
     val start = response.start.takeIf { response.hasStart() && it >= 0 } ?: requestedStart.coerceAtLeast(0)

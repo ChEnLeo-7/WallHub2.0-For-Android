@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import com.wallhub.android.R
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.DiagnosticEvent
 import com.wallhub.android.core.model.DiagnosticLevel
@@ -276,7 +277,7 @@ class SteamAccessManager
                     networkType = route.networkType,
                     activeHost = host,
                     selectedAddress = address.hostAddress,
-                    message = "内置无 SNI 线路已连接",
+                    message = context.getString(R.string.backend_steam_access_accelerated_connected),
                     updatedAt = System.currentTimeMillis(),
                 )
             return true
@@ -310,7 +311,7 @@ class SteamAccessManager
             mutableState.value =
                 mutableState.value.copy(
                     phase = SteamAccessPhase.DEGRADED,
-                    message = "内置线路失败：${error.javaClass.simpleName}",
+                    message = context.getString(R.string.backend_steam_access_route_failed, error.javaClass.simpleName),
                     updatedAt = System.currentTimeMillis(),
                 )
             recordDiagnostic(
@@ -336,14 +337,14 @@ class SteamAccessManager
                     SteamAccessState(
                         phase = SteamAccessPhase.RESOLVING,
                         networkType = networkType,
-                        message = "正在后台检测 Steam 服务线路",
+                        message = context.getString(R.string.backend_steam_access_checking_routes),
                     )
                 CORE_WARMUP_HOSTS.forEach(::requestRouteRefresh)
             }.onFailure { error ->
                 mutableState.value =
                     mutableState.value.copy(
                         phase = SteamAccessPhase.FAILED,
-                        message = "Steam 线路检测失败：${error.javaClass.simpleName}",
+                        message = context.getString(R.string.backend_steam_access_check_failed, error.javaClass.simpleName),
                         updatedAt = System.currentTimeMillis(),
                     )
                 recordDiagnostic(
@@ -494,7 +495,7 @@ class SteamAccessManager
                     phase = SteamAccessPhase.RESOLVING,
                     networkType = selectedNetworkType,
                     activeHost = hostname,
-                    message = "正在检测 $hostname",
+                    message = context.getString(R.string.backend_steam_access_checking_host, hostname),
                     updatedAt = startedAt,
                 )
             val systemAddresses = runCatching { Dns.SYSTEM.lookup(hostname) }.getOrDefault(emptyList())
@@ -517,7 +518,7 @@ class SteamAccessManager
                             activeHost = hostname,
                             selectedAddress = systemAddresses.firstOrNull()?.hostAddress,
                             candidateCount = systemAddresses.size,
-                            message = "Steam 服务直连正常",
+                            message = context.getString(R.string.backend_steam_access_direct_ready),
                             updatedAt = System.currentTimeMillis(),
                         )
                 }
@@ -590,9 +591,9 @@ class SteamAccessManager
                         candidateCount = successfulAddresses.size,
                         message =
                             when {
-                                accelerated -> "检测到直连异常，已启用内置无 SNI 线路"
-                                fallbackAvailable -> "线路刷新失败，继续使用最近可用线路"
-                                else -> "直连与内置线路均不可用"
+                                accelerated -> context.getString(R.string.backend_steam_access_accelerated_selected)
+                                fallbackAvailable -> context.getString(R.string.backend_steam_access_using_recent_route)
+                                else -> context.getString(R.string.backend_steam_access_unavailable)
                             },
                         updatedAt = System.currentTimeMillis(),
                     )
@@ -693,7 +694,7 @@ class SteamAccessManager
                         networkType = networkType,
                         activeHost = host,
                         selectedAddress = address.hostAddress,
-                        message = "Steam 服务直连正常",
+                        message = context.getString(R.string.backend_steam_access_direct_ready),
                         updatedAt = System.currentTimeMillis(),
                     )
             }
@@ -714,7 +715,7 @@ class SteamAccessManager
                     mutableState.value.copy(
                         phase = SteamAccessPhase.DEGRADED,
                         activeHost = host,
-                        message = "Steam 直连异常，将重新检测内置线路",
+                        message = context.getString(R.string.backend_steam_access_direct_degraded),
                         updatedAt = System.currentTimeMillis(),
                     )
             }

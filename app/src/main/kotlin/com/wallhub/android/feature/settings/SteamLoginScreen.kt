@@ -28,12 +28,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSecondaryButton
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.SteamSessionRepository
@@ -156,14 +158,14 @@ fun SteamLoginScreen(
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                         )
-                        Text("Steam 登录")
+                        Text(stringResource(R.string.settings_steam_login_title))
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = "返回",
+                            contentDescription = stringResource(R.string.settings_action_back),
                         )
                     }
                 },
@@ -196,12 +198,12 @@ fun SteamLoginScreen(
 
             if (uiState.isSignedIn) {
                 SteamLoginCard {
-                    Text("已登录：${session.accountName.orEmpty()}")
+                    Text(stringResource(R.string.settings_steam_signed_in_as, session.accountName.orEmpty()))
                     WallHubSecondaryButton(
                         onClick = onLogout,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("退出 Steam")
+                        Text(stringResource(R.string.settings_action_sign_out_steam))
                     }
                 }
                 return@Column
@@ -214,7 +216,7 @@ fun SteamLoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     enabled = !uiState.isBusy,
-                    label = { Text("Steam 用户名") },
+                    label = { Text(stringResource(R.string.settings_steam_username)) },
                 )
                 SettingsFilledTextField(
                     value = password,
@@ -222,7 +224,7 @@ fun SteamLoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     enabled = !uiState.isBusy,
-                    label = { Text("密码") },
+                    label = { Text(stringResource(R.string.settings_password)) },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     leadingIcon = {
@@ -238,7 +240,7 @@ fun SteamLoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !uiState.isBusy && accountName.isNotBlank() && password.isNotBlank(),
                 ) {
-                    Text("登录 Steam")
+                    Text(stringResource(R.string.settings_action_sign_in_steam))
                 }
             }
 
@@ -247,13 +249,13 @@ fun SteamLoginScreen(
                     onClick = onRetryRestore,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("重试恢复已保存的 Steam 会话")
+                    Text(stringResource(R.string.settings_action_retry_restore_steam_session))
                 }
             }
 
             if (uiState.showDeviceConfirmationHint) {
                 Text(
-                    "已向 Steam 手机客户端发送确认请求。完成放行后，页面会自动继续。",
+                    stringResource(R.string.settings_steam_device_confirmation_hint),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (uiState.showManualCodeFallback) {
@@ -262,7 +264,10 @@ fun SteamLoginScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(imageVector = Icons.Outlined.PhoneAndroid, contentDescription = null)
-                        Text("改用 Steam Guard 验证码", modifier = Modifier.padding(start = WallHubSpacing.xs))
+                        Text(
+                            stringResource(R.string.settings_action_use_steam_guard_code),
+                            modifier = Modifier.padding(start = WallHubSpacing.xs),
+                        )
                     }
                 }
             }
@@ -274,7 +279,7 @@ fun SteamLoginScreen(
                         onValueChange = { guardCode = it },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        label = { Text("Steam Guard / 邮件验证码") },
+                        label = { Text(stringResource(R.string.settings_steam_guard_code)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     )
                     Button(
@@ -285,7 +290,7 @@ fun SteamLoginScreen(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = guardCode.isNotBlank(),
                     ) {
-                        Text("提交验证码")
+                        Text(stringResource(R.string.settings_action_submit_code))
                     }
                 }
             }

@@ -4,6 +4,7 @@ package com.wallhub.android.feature.library
 
 import android.content.Intent
 import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
@@ -78,6 +79,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -93,7 +95,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
-import com.wallhub.android.core.designsystem.LocalWallHubLanguage
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
@@ -103,17 +105,16 @@ import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.formatMegabytes
+import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.designsystem.rememberWallHubDirectionalCollapseConnection
-import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.designsystem.wallHubText
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
+import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopPage
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
@@ -166,6 +167,7 @@ data class LibraryUiState(
     val isRefreshing: Boolean = false,
     val isLoadingMore: Boolean = false,
     val error: String? = null,
+    @StringRes val errorRes: Int? = null,
     val appliedSearchQuery: String = "",
     val searchResultGeneration: Long = 0L,
     val searchAnimationItemIds: Set<Long> = emptySet(),
@@ -389,7 +391,7 @@ class LibraryViewModel
         }
 
         private fun requestAuthorDisplayName(item: WorkshopSummary) {
-            if (!item.author.isSteamAuthorPlaceholder() || item.id in authorNameRequests) return
+            if (item.authorPlaceholder == WorkshopAuthorPlaceholder.NONE || item.id in authorNameRequests) return
             authorNameRequests += item.id
             viewModelScope.launch {
                 val authorName =
@@ -518,6 +520,7 @@ class LibraryViewModel
                             isRefreshing = false,
                             isLoadingMore = false,
                             error = null,
+                            errorRes = null,
                             appliedSearchQuery = state.searchQuery,
                             searchResultGeneration =
                                 if (state.searchQuery.trim() != state.appliedSearchQuery.trim()) {
@@ -560,6 +563,7 @@ class LibraryViewModel
                             isRefreshing = refreshing && !append,
                             isLoadingMore = append,
                             error = null,
+                            errorRes = null,
                         )
                     try {
                         val query =
@@ -592,7 +596,8 @@ class LibraryViewModel
                                 isLoading = false,
                                 isRefreshing = false,
                                 isLoadingMore = false,
-                                error = error.message ?: "无法读取个人资料库",
+                                error = null,
+                                errorRes = R.string.library_load_failed,
                             )
                     }
                 }
@@ -615,7 +620,7 @@ class LibraryViewModel
                     }
                 }
             }
-            throw lastFailure ?: IllegalStateException("无法读取个人资料库")
+            throw lastFailure ?: IllegalStateException()
         }
 
         private fun WorkshopPage.mergeInto(
@@ -642,6 +647,7 @@ class LibraryViewModel
                 isRefreshing = false,
                 isLoadingMore = false,
                 error = null,
+                errorRes = null,
                 appliedSearchQuery = previous.searchQuery,
                 searchResultGeneration =
                     if (!append && previous.searchQuery.trim() != previous.appliedSearchQuery.trim()) {
@@ -805,7 +811,7 @@ fun LibraryScreen(
     onAction: (LibraryAction) -> Unit,
     onContextMenuActiveChanged: (Boolean) -> Unit = {},
 ) {
-    WallHubPageScaffold(title = wallHubText("资料库", "Library")) { padding ->
+    WallHubPageScaffold(title = stringResource(R.string.library_title)) { padding ->
         LibraryContent(
             state = state,
             onAction = onAction,
@@ -827,7 +833,6 @@ fun LibraryContent(
     floatingActionButton: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val language = LocalWallHubLanguage.current
     val focusManager = LocalFocusManager.current
     val gridState = rememberLazyGridState()
     val contextMenuCoordinator = rememberLibraryContextMenuCoordinator()
@@ -913,14 +918,14 @@ fun LibraryContent(
                         options = LibraryCollectionTab.entries,
                         selected = state.collection,
                         onSelected = { onAction(LibraryAction.SelectCollection(it)) },
-                        label = { tab -> Text(tab.label(language)) },
+                        label = { tab -> Text(tab.label()) },
                         modifier = Modifier.padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xs),
                     )
                     WallHubSingleChoiceSegmentedControl(
                         options = LibraryTypeFilter.entries,
                         selected = state.typeFilter,
                         onSelected = { onAction(LibraryAction.SelectType(it)) },
-                        label = { filter -> Text(filter.label(language)) },
+                        label = { filter -> Text(filter.label()) },
                         modifier = Modifier.padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xxs),
                     )
                 }
@@ -932,7 +937,6 @@ fun LibraryContent(
                 ) {
                     LibrarySearchField(
                         query = state.searchQuery,
-                        language = language,
                         enabled = state.session.phase == SteamSessionPhase.SIGNED_IN,
                         onQueryChanged = { onAction(LibraryAction.UpdateSearchQuery(it)) },
                         onSubmit = { onAction(LibraryAction.SubmitSearch) },
@@ -964,7 +968,6 @@ fun LibraryContent(
                     onDownload = { onAction(LibraryAction.Download(it)) },
                     onCopyText = { text, message -> onAction(LibraryAction.CopyText(text, message)) },
                     onOpenSteam = { onAction(LibraryAction.OpenSteam(it)) },
-                    language = language,
                     gridState = gridState,
                     contextMenuCoordinator = contextMenuCoordinator,
                     modifier = Modifier.weight(1f),
@@ -987,7 +990,6 @@ fun LibraryContent(
 @Composable
 private fun LibrarySearchField(
     query: String,
-    language: AppLanguage,
     enabled: Boolean,
     onQueryChanged: (String) -> Unit,
     onSubmit: () -> Unit,
@@ -1001,7 +1003,7 @@ private fun LibrarySearchField(
         singleLine = true,
         shape = MaterialTheme.shapes.medium,
         placeholder = {
-            Text(language.text("搜索已收藏或订阅的壁纸", "Search saved wallpapers"))
+            Text(stringResource(R.string.library_search_placeholder))
         },
         leadingIcon = {
             Icon(imageVector = Icons.Outlined.Search, contentDescription = null)
@@ -1012,7 +1014,7 @@ private fun LibrarySearchField(
                     IconButton(onClick = { onQueryChanged("") }) {
                         Icon(
                             imageVector = Icons.Outlined.Cancel,
-                            contentDescription = language.text("清除搜索", "Clear search"),
+                            contentDescription = stringResource(R.string.library_clear_search),
                         )
                     }
                 }
@@ -1038,10 +1040,7 @@ private fun LibrarySearchField(
 }
 
 @Composable
-private fun LibraryLoadingOverlay(
-    language: AppLanguage,
-    modifier: Modifier = Modifier,
-) {
+private fun LibraryLoadingOverlay(modifier: Modifier = Modifier) {
     Box(
         modifier =
             modifier
@@ -1055,11 +1054,11 @@ private fun LibraryLoadingOverlay(
         ) {
             CircularProgressIndicator()
             Text(
-                text = language.text("正在加载资料库内容…", "Loading your library…"),
+                text = stringResource(R.string.library_loading),
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                text = language.text("加载完成后即可浏览资料库", "Your library will appear when loading finishes"),
+                text = stringResource(R.string.library_loading_supporting),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1082,7 +1081,6 @@ private fun LibraryResults(
     onDownload: (WorkshopSummary) -> Unit,
     onCopyText: (String, String) -> Unit,
     onOpenSteam: (Long) -> Unit,
-    language: AppLanguage,
     gridState: LazyGridState,
     contextMenuCoordinator: LibraryContextMenuCoordinator,
     modifier: Modifier = Modifier,
@@ -1126,7 +1124,6 @@ private fun LibraryResults(
             onDownload = onDownload,
             onCopyText = onCopyText,
             onOpenSteam = onOpenSteam,
-            language = language,
             gridState = gridState,
             contextMenuCoordinator = contextMenuCoordinator,
             modifier = Modifier.fillMaxSize(),
@@ -1140,7 +1137,7 @@ private fun LibraryResults(
             exit = fadeOut(tween(durationMillis = 180)) + scaleOut(targetScale = 0.98f),
             modifier = Modifier.fillMaxSize(),
         ) {
-            LibraryLoadingOverlay(language = language, modifier = Modifier.fillMaxSize())
+            LibraryLoadingOverlay(modifier = Modifier.fillMaxSize())
         }
     }
 }
@@ -1159,7 +1156,6 @@ private fun LibraryResultsContent(
     onDownload: (WorkshopSummary) -> Unit,
     onCopyText: (String, String) -> Unit,
     onOpenSteam: (Long) -> Unit,
-    language: AppLanguage,
     gridState: LazyGridState,
     contextMenuCoordinator: LibraryContextMenuCoordinator,
     modifier: Modifier = Modifier,
@@ -1168,10 +1164,10 @@ private fun LibraryResultsContent(
         state.session.phase != SteamSessionPhase.SIGNED_IN -> {
             WallHubEmptyState(
                 icon = Icons.Outlined.BookmarkBorder,
-                title = state.session.libraryMessage(language),
+                title = state.session.libraryMessage(),
                 actionLabel =
                     if (state.session.isRestoreRetryable) {
-                        language.text("重试恢复", "Retry restore")
+                        stringResource(R.string.library_retry_restore)
                     } else {
                         null
                     },
@@ -1184,11 +1180,11 @@ private fun LibraryResultsContent(
             Box(modifier = modifier.fillMaxSize())
         }
 
-        state.error != null && state.items.isEmpty() -> {
+        (state.error != null || state.errorRes != null) && state.items.isEmpty() -> {
             WallHubEmptyState(
                 icon = Icons.Outlined.Refresh,
-                title = state.error,
-                actionLabel = language.text("重试", "Retry"),
+                title = state.error ?: stringResource(requireNotNull(state.errorRes)),
+                actionLabel = stringResource(R.string.library_retry),
                 onAction = onRefresh,
                 modifier = modifier.refreshableEmptyState(),
             )
@@ -1199,15 +1195,15 @@ private fun LibraryResultsContent(
                 icon = if (state.searchQuery.isNotBlank()) Icons.Outlined.Search else Icons.Outlined.BookmarkBorder,
                 title =
                     if (state.searchQuery.isNotBlank()) {
-                        language.text("资料库中没有匹配的壁纸", "No matching wallpaper in this library")
+                        stringResource(R.string.library_empty_search)
                     } else if (state.collection == LibraryCollectionTab.SUBSCRIPTIONS) {
-                        language.text("没有符合条件的个人订阅", "No matching subscriptions")
+                        stringResource(R.string.library_empty_subscriptions)
                     } else if (state.collection == LibraryCollectionTab.FAVORITES) {
-                        language.text("没有符合条件的收藏", "No matching favorites")
+                        stringResource(R.string.library_empty_favorites)
                     } else {
-                        language.text("没有符合条件的投票项目", "No matching voted items")
+                        stringResource(R.string.library_empty_voted)
                     },
-                actionLabel = language.text("刷新", "Refresh"),
+                actionLabel = stringResource(R.string.library_refresh),
                 onAction = onRefresh,
                 modifier = modifier.refreshableEmptyState(),
             )
@@ -1252,7 +1248,6 @@ private fun LibraryResultsContent(
                         LibraryWorkshopCard(
                             item = item,
                             authorDisplayName = authorDisplayNames[item.id],
-                            language = language,
                             onClick = { onOpenDetail(item.id) },
                             onPlayVideo = { onPlayVideo(item.id) },
                             onSearchAuthor = { onSearchAuthor(item.creatorId ?: item.author) },
@@ -1281,7 +1276,6 @@ private fun LibraryResultsContent(
                                 currentPage = state.currentPage,
                                 totalPages = state.totalPages,
                                 isLoading = state.isLoading,
-                                language = language,
                                 onPageSelected = onPageSelected,
                             )
 
@@ -1304,7 +1298,6 @@ private fun LibraryPagination(
     currentPage: Int,
     totalPages: Int,
     isLoading: Boolean,
-    language: AppLanguage,
     onPageSelected: (Int) -> Unit,
 ) {
     WallHubPaginationControl(
@@ -1312,10 +1305,7 @@ private fun LibraryPagination(
         totalPages = totalPages,
         isLoading = isLoading,
         currentContentDescription =
-            language.text(
-                "当前第 $currentPage 页；当前已知最大页码为 $totalPages；点击输入页码",
-                "Page $currentPage; known last page $totalPages; tap to enter a page",
-            ),
+            stringResource(R.string.library_current_page_description, currentPage, totalPages),
         onPageSelected = onPageSelected,
         modifier = Modifier.padding(vertical = WallHubSpacing.xs),
     )
@@ -1325,7 +1315,6 @@ private fun LibraryPagination(
 private fun LibraryWorkshopCard(
     item: WorkshopSummary,
     authorDisplayName: String?,
-    language: AppLanguage,
     onClick: () -> Unit,
     onPlayVideo: () -> Unit,
     onSearchAuthor: () -> Unit,
@@ -1335,9 +1324,9 @@ private fun LibraryWorkshopCard(
     onOpenSteam: () -> Unit,
     contextMenuCoordinator: LibraryContextMenuCoordinator,
 ) {
+    val title = item.localizedTitle()
     LibraryContextMenuCard(
         item = item,
-        language = language,
         coordinator = contextMenuCoordinator,
         onOpen = onClick,
         onSearchAuthor = onSearchAuthor,
@@ -1359,7 +1348,7 @@ private fun LibraryWorkshopCard(
                 if (item.previewUrl != null) {
                     AsyncImage(
                         model = item.previewUrl,
-                        contentDescription = language.text("${item.title} 预览图", "${item.title} preview"),
+                        contentDescription = stringResource(R.string.library_preview, title),
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -1387,7 +1376,7 @@ private fun LibraryWorkshopCard(
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                 ) {
                     Text(
-                        text = item.type.label(language),
+                        text = item.type.label(),
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = WallHubSpacing.xs, vertical = WallHubSpacing.xxs),
                     )
@@ -1409,7 +1398,7 @@ private fun LibraryWorkshopCard(
                     )
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text(
-                        text = item.title,
+                        text = title,
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.height(LIBRARY_CARD_TITLE_HEIGHT),
                         maxLines = 2,
@@ -1426,8 +1415,8 @@ private fun LibraryWorkshopCard(
                     ) {
                         LibraryWorkshopCardStatistic(
                             icon = Icons.Outlined.FavoriteBorder,
-                            value = item.subscriptions?.let(language::formatCompact) ?: "—",
-                            contentDescription = language.text("订阅数", "Subscriptions"),
+                            value = item.subscriptions?.let(::formatCompact) ?: "—",
+                            contentDescription = stringResource(R.string.library_subscriptions_count),
                             textStyle = statisticsStyle,
                             iconSize = statisticsMetrics.iconSize,
                             iconSpacing = statisticsMetrics.iconSpacing,
@@ -1435,8 +1424,8 @@ private fun LibraryWorkshopCard(
                         )
                         LibraryWorkshopCardStatistic(
                             icon = Icons.Outlined.StarBorder,
-                            value = item.favorites?.let(language::formatCompact) ?: "—",
-                            contentDescription = language.text("收藏数", "Favorites"),
+                            value = item.favorites?.let(::formatCompact) ?: "—",
+                            contentDescription = stringResource(R.string.library_favorites_count),
                             textStyle = statisticsStyle,
                             iconSize = statisticsMetrics.iconSize,
                             iconSpacing = statisticsMetrics.iconSpacing,
@@ -1560,37 +1549,38 @@ private data class LibraryCardStatisticsMetrics(
     }
 }
 
-private fun LibraryCollectionTab.label(language: AppLanguage): String =
+@Composable
+private fun LibraryCollectionTab.label(): String =
     when (this) {
-        LibraryCollectionTab.SUBSCRIPTIONS -> language.text("个人订阅", "Subscriptions")
-        LibraryCollectionTab.FAVORITES -> language.text("我的收藏", "Favorites")
-        LibraryCollectionTab.VOTED -> language.text("我的投票", "Voted")
+        LibraryCollectionTab.SUBSCRIPTIONS -> stringResource(R.string.library_collection_subscriptions)
+        LibraryCollectionTab.FAVORITES -> stringResource(R.string.library_collection_favorites)
+        LibraryCollectionTab.VOTED -> stringResource(R.string.library_collection_voted)
     }
 
-private fun LibraryTypeFilter.label(language: AppLanguage): String =
+@Composable
+private fun LibraryTypeFilter.label(): String =
     when (this) {
-        LibraryTypeFilter.ALL -> language.text("全部", "All")
-        LibraryTypeFilter.VIDEO -> language.text("视频", "Video")
-        LibraryTypeFilter.SCENE -> language.text("场景", "Scene")
-        LibraryTypeFilter.WEB -> language.text("网站", "Web")
+        LibraryTypeFilter.ALL -> stringResource(R.string.library_type_all)
+        LibraryTypeFilter.VIDEO -> stringResource(R.string.library_type_video)
+        LibraryTypeFilter.SCENE -> stringResource(R.string.library_type_scene)
+        LibraryTypeFilter.WEB -> stringResource(R.string.library_type_web)
     }
 
-private fun SteamSessionState.libraryMessage(language: AppLanguage): String =
+@Composable
+private fun SteamSessionState.libraryMessage(): String =
     when (phase) {
-        SteamSessionPhase.SIGNED_OUT -> language.text("登录 Steam 后可查看个人订阅和收藏", "Sign in to Steam to view subscriptions and favorites")
+        SteamSessionPhase.SIGNED_OUT -> stringResource(R.string.library_sign_in_required)
         SteamSessionPhase.SIGNING_IN,
         SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
         SteamSessionPhase.WAITING_FOR_CODE,
-        -> message ?: language.text("正在恢复 Steam 登录状态", "Restoring Steam sign-in")
+        -> stringResource(R.string.library_restoring_sign_in)
 
         SteamSessionPhase.EXPIRED,
         SteamSessionPhase.FAILED,
-        -> message ?: language.text("Steam 登录需要重新验证", "Steam sign-in needs verification")
+        -> stringResource(R.string.library_sign_in_verification_required)
 
-        SteamSessionPhase.RESTORABLE ->
-            message
-                ?: language.text("Steam 会话暂时不可用，请重试恢复", "Steam session is unavailable; retry restore")
-        SteamSessionPhase.SIGNED_IN -> language.text("正在读取资料库", "Loading library")
+        SteamSessionPhase.RESTORABLE -> stringResource(R.string.library_session_unavailable)
+        SteamSessionPhase.SIGNED_IN -> stringResource(R.string.library_loading_short)
     }
 
 private val SteamSessionState.isRestoreRetryable: Boolean
@@ -1600,28 +1590,30 @@ private val SteamSessionState.isRestoreRetryable: Boolean
                 phase == SteamSessionPhase.RESTORABLE || phase == SteamSessionPhase.FAILED
             )
 
-private fun WorkshopType.label(language: AppLanguage): String =
+@Composable
+private fun WorkshopType.label(): String =
     when (this) {
-        WorkshopType.VIDEO -> language.text("视频", "Video")
-        WorkshopType.SCENE -> language.text("场景", "Scene")
-        WorkshopType.WEB -> language.text("网站", "Web")
-        WorkshopType.UNKNOWN -> language.text("壁纸", "Wallpaper")
+        WorkshopType.VIDEO -> stringResource(R.string.library_type_video)
+        WorkshopType.SCENE -> stringResource(R.string.library_type_scene)
+        WorkshopType.WEB -> stringResource(R.string.library_type_web)
+        WorkshopType.UNKNOWN -> stringResource(R.string.library_type_wallpaper)
     }
 
-private fun String.isSteamAuthorPlaceholder(): Boolean = this == "Steam 创作者" || startsWith("Steam 用户 ")
-
-private fun AppLanguage.formatCompact(value: Long): String =
-    when {
-        value >= 1_000_000 ->
+private fun formatCompact(value: Long): String {
+    val locale = Locale.getDefault()
+    val isChinese = locale.language == Locale.CHINESE.language
+    return when {
+        (isChinese && value >= 10_000) || (!isChinese && value >= 1_000_000) ->
             String.format(
-                Locale.getDefault(),
-                if (this == AppLanguage.EN) "%.1fM" else "%.1f 万",
-                if (this == AppLanguage.EN) value / 1_000_000.0 else value / 10_000.0,
+                locale,
+                if (isChinese) "%.1f 万" else "%.1fM",
+                if (isChinese) value / 10_000.0 else value / 1_000_000.0,
             )
 
-        value >= 1_000 -> String.format(Locale.getDefault(), "%.1fK", value / 1_000.0)
+        value >= 1_000 -> String.format(locale, "%.1fK", value / 1_000.0)
         else -> value.toString()
     }
+}
 
 private val LIBRARY_CARD_TITLE_HEIGHT = WallHubSizeTokens.cardTitleHeight
 private const val LIBRARY_AUTO_LOAD_MORE_THRESHOLD = 2

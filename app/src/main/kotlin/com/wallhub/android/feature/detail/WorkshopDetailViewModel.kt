@@ -9,7 +9,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.exoplayer.ExoPlayer
-import com.wallhub.android.core.designsystem.text
+import com.wallhub.android.R
+import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadRequest
@@ -72,7 +73,7 @@ class WorkshopDetailViewModel
                     } else {
                         emitEffect(
                             WorkshopDetailEffect.ShowMessage(
-                                "未授予存储权限，无法导出到 Download/WallHub",
+                                DetailUiText.Resource(R.string.detail_storage_permission_denied),
                             ),
                         )
                     }
@@ -206,7 +207,7 @@ class WorkshopDetailViewModel
                         mutableState.value =
                             mutableState.value.copy(
                                 isLoading = false,
-                                error = error.message ?: "无法读取该创意工坊项目",
+                                error = error.toDetailUiText(R.string.detail_workshop_load_failed),
                             )
                     }
             }
@@ -259,7 +260,7 @@ class WorkshopDetailViewModel
                                 inlineVideoPlayer = null,
                                 isInlineVideoFullscreen = false,
                                 isLoadingInlineVideo = false,
-                                inlineVideoError = error.message ?: "无法初始化视频在线播放",
+                                inlineVideoError = error.toDetailUiText(R.string.detail_inline_video_init_failed),
                             )
                     } finally {
                         openedStream?.close()
@@ -312,7 +313,10 @@ class WorkshopDetailViewModel
             val detail = current.detail ?: return
             val ownerId = current.commentsOwnerId ?: detail.creatorId ?: detail.summary.creatorId
             if (ownerId.isNullOrBlank()) {
-                mutableState.value = current.copy(commentPostError = "无法确定该项目的作者")
+                mutableState.value =
+                    current.copy(
+                        commentPostError = DetailUiText.Resource(R.string.detail_comment_author_unknown),
+                    )
                 return
             }
             val comment = current.commentDraft.trim()
@@ -337,7 +341,7 @@ class WorkshopDetailViewModel
                     mutableState.value =
                         mutableState.value.copy(
                             isPostingComment = false,
-                            commentPostError = error.message ?: "无法发表评论，请稍后重试",
+                            commentPostError = error.toDetailUiText(R.string.detail_comment_post_failed),
                         )
                 }
             }
@@ -397,7 +401,7 @@ class WorkshopDetailViewModel
                             mutableState.value.copy(
                                 isLoadingComments = false,
                                 isLoadingMoreComments = false,
-                                commentsError = error.message ?: "无法读取 Steam 评论",
+                                commentsError = error.toDetailUiText(R.string.detail_comments_load_failed),
                             )
                     }
                 }
@@ -410,9 +414,9 @@ class WorkshopDetailViewModel
             updateInteraction(
                 successMessage =
                     if (currentlySubscribed) {
-                        "已向 Steam 提交取消订阅请求"
+                        R.string.detail_unsubscribe_submitted
                     } else {
-                        "已向 Steam 提交订阅请求"
+                        R.string.detail_subscribe_submitted
                     },
             ) {
                 accountWorkshopRepository.setSubscribed(workshopId, !currentlySubscribed)
@@ -424,9 +428,9 @@ class WorkshopDetailViewModel
             updateInteraction(
                 successMessage =
                     if (currentlyFavorited) {
-                        "已向 Steam 提交取消收藏请求"
+                        R.string.detail_unfavorite_submitted
                     } else {
-                        "已向 Steam 提交收藏请求"
+                        R.string.detail_favorite_submitted
                     },
             ) {
                 accountWorkshopRepository.setFavorited(workshopId, !currentlyFavorited)
@@ -445,7 +449,7 @@ class WorkshopDetailViewModel
                     downloadTaskRepository.enqueue(
                         DownloadRequest(
                             workshopId = detail.summary.id,
-                            title = detail.summary.title,
+                            title = applicationContext.localizedTitle(detail.summary),
                             type = detail.summary.type,
                             previewUrl = detail.summary.previewUrl,
                             expectedTotalBytes = detail.summary.fileSizeBytes ?: 0L,
@@ -460,16 +464,19 @@ class WorkshopDetailViewModel
                             waitingForLocalVideoPlayback = playWhenReady,
                             downloadMessage =
                                 if (playWhenReady) {
-                                    "视频已加入下载队列，完成后将自动播放"
+                                    DetailUiText.Resource(R.string.detail_video_queued_for_playback)
                                 } else {
-                                    "已加入下载队列：${task.title}"
+                                    DetailUiText.Resource(
+                                        R.string.detail_added_to_download_queue,
+                                        listOf(task.title),
+                                    )
                                 },
                         )
                 }.onFailure { error ->
                     mutableState.value =
                         mutableState.value.copy(
                             isEnqueuingDownload = false,
-                            downloadMessage = error.message ?: "无法加入下载队列",
+                            downloadMessage = error.toDetailUiText(R.string.detail_download_enqueue_failed),
                         )
                 }
             }
@@ -487,7 +494,7 @@ class WorkshopDetailViewModel
                     mutableState.value =
                         current.copy(
                             waitingForLocalVideoPlayback = true,
-                            downloadMessage = "视频正在下载，完成后将自动播放",
+                            downloadMessage = DetailUiText.Resource(R.string.detail_video_downloading_for_playback),
                         )
                 }
 
@@ -505,18 +512,20 @@ class WorkshopDetailViewModel
             val taskId = mutableState.value.stagedTaskId ?: return
             viewModelScope.launch {
                 runCatching {
-                    val task = downloadTaskRepository.find(taskId) ?: error("下载任务不存在")
+                    val task =
+                        downloadTaskRepository.find(taskId)
+                            ?: throw DetailUiTextException(R.string.detail_download_task_missing)
                     downloadTaskRepository.upsert(task.copy(exportFormat = format))
                     downloadTaskRepository.requestAction(taskId, DownloadAction.EXPORT)
                 }.onSuccess {
                     mutableState.value =
                         mutableState.value.copy(
-                            downloadMessage = "已开始转换并导出已有暂存文件",
+                            downloadMessage = DetailUiText.Resource(R.string.detail_conversion_started),
                         )
                 }.onFailure { error ->
                     mutableState.value =
                         mutableState.value.copy(
-                            downloadMessage = error.message ?: "无法转换已有暂存文件",
+                            downloadMessage = error.toDetailUiText(R.string.detail_conversion_failed),
                         )
                 }
             }
@@ -541,7 +550,7 @@ class WorkshopDetailViewModel
         }
 
         private fun updateInteraction(
-            successMessage: String,
+            @androidx.annotation.StringRes successMessage: Int,
             operation: suspend () -> WorkshopInteraction,
         ) {
             viewModelScope.launch {
@@ -556,13 +565,13 @@ class WorkshopDetailViewModel
                             mutableState.value.copy(
                                 interaction = interaction,
                                 isUpdatingInteraction = false,
-                                interactionMessage = successMessage,
+                                interactionMessage = DetailUiText.Resource(successMessage),
                             )
                     }.onFailure { error ->
                         mutableState.value =
                             mutableState.value.copy(
                                 isUpdatingInteraction = false,
-                                interactionMessage = error.message ?: "Steam 请求失败，请稍后重试",
+                                interactionMessage = error.toDetailUiText(R.string.detail_steam_request_failed),
                             )
                     }
             }

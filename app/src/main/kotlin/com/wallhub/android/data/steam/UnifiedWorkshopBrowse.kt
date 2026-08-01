@@ -3,6 +3,7 @@ package com.wallhub.android.data.steam
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.FavoriteState
 import com.wallhub.android.core.model.SubscriptionState
+import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopFilterCatalog
 import com.wallhub.android.core.model.WorkshopPage
@@ -113,8 +114,8 @@ internal fun SteammessagesPublishedfileSteamclient.PublishedFileDetails.toWorksh
         }
     return WorkshopSummary(
         id = publishedfileid,
-        title = title.ifBlank { "壁纸 $publishedfileid" },
-        author = "Steam 用户 $creator",
+        title = title,
+        author = "",
         creatorId = creator.toString(),
         previewUrl = previewUrl.takeIf(String::isNotBlank),
         type = type,
@@ -139,6 +140,8 @@ internal fun SteammessagesPublishedfileSteamclient.PublishedFileDetails.toWorksh
             } else {
                 FavoriteState.UNKNOWN
             },
+        isTitlePlaceholder = title.isBlank(),
+        authorPlaceholder = WorkshopAuthorPlaceholder.USER_WITH_ID,
     )
 }
 

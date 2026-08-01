@@ -1,6 +1,7 @@
 package com.wallhub.android.data.steam
 
 import android.content.Context
+import com.wallhub.android.R
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.DiagnosticEvent
@@ -205,14 +206,14 @@ internal fun SecureSteamSessionRepository.requireAuthenticatedSteamSession(): St
     if (activeSession != null) {
         handleUnexpectedDisconnect(activeSession.id, userInitiated = false)
     }
-    error(mutableSession.value.message ?: "请先恢复 Steam 登录后再使用个人资料库")
+    error(mutableSession.value.message ?: "Restore the Steam login before using the personal library")
 }
 
 internal suspend fun SecureSteamSessionRepository.readInteraction(
     steamSession: SteamClientSession,
     workshopId: Long,
 ): WorkshopInteraction {
-    require(workshopId > 0L) { "创意工坊项目 ID 无效" }
+    require(workshopId > 0L) { "Invalid Workshop item ID" }
     val service = steamSession.unified.createService(PublishedFile::class.java)
     val subscriptionState =
         runCatching {
@@ -339,14 +340,14 @@ internal suspend fun SecureSteamSessionRepository.loginInternal(
         setStateIfCurrent(
             generation = generation,
             phase = SteamSessionPhase.SIGNING_IN,
-            message = "正在连接 Steam，随后可能要求手机客户端确认或 Steam Guard 验证…",
+            message = applicationContext.getString(R.string.backend_steam_connecting),
             accountName = login.accountName,
         )
         connect(steamSession, generation)
         setStateIfCurrent(
             generation = generation,
             phase = SteamSessionPhase.SIGNING_IN,
-            message = "正在请求 Steam 登录会话…",
+            message = applicationContext.getString(R.string.backend_steam_requesting_login),
             accountName = login.accountName,
         )
         val authDetails =
@@ -370,13 +371,13 @@ internal suspend fun SecureSteamSessionRepository.loginInternal(
                     .await()
             }
         val pollingResult = awaitAuthenticationResult(authSession)
-        check(pollingResult.refreshToken.isNotBlank()) { "Steam 未返回 refresh token" }
+        check(pollingResult.refreshToken.isNotBlank()) { "Steam returned no refresh token" }
 
         val authenticatedName = pollingResult.accountName.ifBlank { login.accountName }
         setStateIfCurrent(
             generation = generation,
             phase = SteamSessionPhase.SIGNING_IN,
-            message = "账户凭据已验证，正在建立 Steam 登录会话…",
+            message = applicationContext.getString(R.string.backend_steam_credentials_verified),
             accountName = authenticatedName,
         )
         logOn(steamSession, authenticatedName, pollingResult.refreshToken, generation)
@@ -394,7 +395,7 @@ internal suspend fun SecureSteamSessionRepository.loginInternal(
         setStateIfCurrent(
             generation = generation,
             phase = SteamSessionPhase.SIGNED_IN,
-            message = "Steam 登录成功，已加密保存本机登录状态。",
+            message = applicationContext.getString(R.string.backend_steam_login_success),
             accountName = authenticatedName,
             hasStoredSession = true,
         )
@@ -404,7 +405,7 @@ internal suspend fun SecureSteamSessionRepository.loginInternal(
         setStateIfCurrent(
             generation = generation,
             phase = SteamSessionPhase.FAILED,
-            message = "Steam 登录验证失败：${error.displayMessage()}",
+            message = applicationContext.getString(R.string.backend_steam_login_failed, error.displayMessage()),
         )
     } finally {
         if (!promoted) steamSession.close()
@@ -417,7 +418,7 @@ internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInterna
         setStateIfCurrent(
             generation = generation,
             phase = SteamSessionPhase.SIGNED_OUT,
-            message = "未检测到已保存的 Steam 登录状态",
+            message = applicationContext.getString(R.string.backend_steam_no_saved_session),
         )
         return
     }
@@ -426,7 +427,7 @@ internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInterna
         setStateIfCurrent(
             generation = generation,
             phase = SteamSessionPhase.SIGNED_IN,
-            message = "Steam 登录状态已恢复",
+            message = applicationContext.getString(R.string.backend_steam_session_restored),
             accountName = credential.accountName,
             hasStoredSession = true,
         )
@@ -447,9 +448,9 @@ internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInterna
                         phase = SteamSessionPhase.SIGNING_IN,
                         message =
                             if (attempt == 0) {
-                                "正在恢复已保存的 Steam 登录状态…"
+                                applicationContext.getString(R.string.backend_steam_restoring_session)
                             } else {
-                                "首次连接未成功，正在重新连接 Steam…"
+                                applicationContext.getString(R.string.backend_steam_reconnecting)
                             },
                         accountName = credential.accountName,
                         hasStoredSession = true,
@@ -486,7 +487,7 @@ internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInterna
         setStateIfCurrent(
             generation = generation,
             phase = SteamSessionPhase.SIGNED_IN,
-            message = "已恢复 Steam 登录状态。",
+            message = applicationContext.getString(R.string.backend_steam_session_restored),
             accountName = credential.accountName,
             hasStoredSession = true,
         )
@@ -502,9 +503,9 @@ internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInterna
                 },
             message =
                 if (error.result.isCredentialRejection()) {
-                    "保存的 Steam 登录凭据已失效，请重新登录。"
+                    applicationContext.getString(R.string.backend_steam_credentials_expired)
                 } else {
-                    "Steam 暂时拒绝了会话恢复，请稍后重试。"
+                    applicationContext.getString(R.string.backend_steam_restore_rejected)
                 },
             accountName = credential.accountName,
             hasStoredSession = true,
@@ -514,7 +515,7 @@ internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInterna
         setStateIfCurrent(
             generation = generation,
             phase = SteamSessionPhase.RESTORABLE,
-            message = "恢复 Steam 会话超时，请检查网络后重试。",
+            message = applicationContext.getString(R.string.backend_steam_restore_timeout),
             accountName = credential.accountName,
             hasStoredSession = true,
         )
@@ -525,7 +526,7 @@ internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInterna
         setStateIfCurrent(
             generation = generation,
             phase = SteamSessionPhase.RESTORABLE,
-            message = "暂时无法恢复 Steam 会话，请检查网络后重试。",
+            message = applicationContext.getString(R.string.backend_steam_restore_failed),
             accountName = credential.accountName,
             hasStoredSession = true,
         )
@@ -603,7 +604,7 @@ internal fun SecureSteamSessionRepository.createAuthenticator(
                 setStateIfCurrent(
                     generation = generation,
                     phase = SteamSessionPhase.SIGNING_IN,
-                    message = "正在切换为 Steam Guard 令牌验证码…",
+                    message = applicationContext.getString(R.string.backend_steam_switching_to_guard),
                     accountName = accountName,
                 )
                 return CompletableFuture.completedFuture(false)
@@ -611,7 +612,7 @@ internal fun SecureSteamSessionRepository.createAuthenticator(
             setStateIfCurrent(
                 generation = generation,
                 phase = SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
-                message = "请在 Steam 手机客户端确认此次登录，确认后会自动继续。",
+                message = applicationContext.getString(R.string.backend_steam_confirm_mobile),
                 accountName = accountName,
                 awaitingDeviceConfirmation = true,
             )
@@ -622,9 +623,9 @@ internal fun SecureSteamSessionRepository.createAuthenticator(
             requestCode(
                 message =
                     if (previousCodeWasIncorrect) {
-                        "Steam Guard 验证码错误，请重新查看手机"
+                        applicationContext.getString(R.string.backend_steam_guard_code_incorrect)
                     } else {
-                        "请输入 Steam Guard 手机验证码"
+                        applicationContext.getString(R.string.backend_steam_enter_guard_code)
                     },
                 accountName = accountName,
                 generation = generation,
@@ -637,9 +638,13 @@ internal fun SecureSteamSessionRepository.createAuthenticator(
             requestCode(
                 message =
                     if (previousCodeWasIncorrect) {
-                        "邮件验证码错误，请重新输入"
+                        applicationContext.getString(R.string.backend_steam_email_code_incorrect)
                     } else {
-                        "请输入 Steam 邮件验证码${email?.let { "（$it）" }.orEmpty()}"
+                        if (email.isNullOrBlank()) {
+                            applicationContext.getString(R.string.backend_steam_enter_email_code)
+                        } else {
+                            applicationContext.getString(R.string.backend_steam_enter_email_code_address, email)
+                        }
                     },
                 accountName = accountName,
                 generation = generation,
@@ -766,7 +771,7 @@ internal fun SecureSteamSessionRepository.createSteamSession(
             if (callback.result == EResult.OK) {
                 val steamId = callback.clientSteamID
                 if (steamId == null) {
-                    val error = IllegalStateException("Steam 登录成功但未返回账户 ID")
+                    val error = IllegalStateException("Steam login succeeded but returned no account ID")
                     accountSteamId.completeExceptionally(error)
                     loggedOn.completeExceptionally(error)
                 } else {
@@ -854,7 +859,7 @@ internal suspend fun <T> SecureSteamSessionRepository.awaitSteamRpc(
             if (!steamSession.isUsable) {
                 handleUnexpectedDisconnect(steamSession.id, userInitiated = false)
             }
-            throw IllegalStateException("Steam 请求超时，请稍后重试")
+            throw IllegalStateException("Steam request timed out; try again later")
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -937,7 +942,7 @@ internal fun SecureSteamSessionRepository.handleUnexpectedDisconnect(
         setStateIfCurrent(
             generation = invalidation.first,
             phase = SteamSessionPhase.RESTORABLE,
-            message = "Steam 连接已中断，请重试恢复会话。",
+            message = applicationContext.getString(R.string.backend_steam_disconnected),
             accountName = mutableSession.value.accountName,
             hasStoredSession = true,
         )
@@ -1157,15 +1162,15 @@ internal fun normalizeWorkshopCommentRequest(
     ownerId: String,
     text: String,
 ): NormalizedWorkshopCommentRequest {
-    require(workshopId > 0L) { "创意工坊项目 ID 无效" }
+    require(workshopId > 0L) { "Invalid Workshop item ID" }
     val normalizedOwnerId = ownerId.trim()
     require(normalizedOwnerId.toULongOrNull()?.let { it > 0uL } == true) {
-        "创意工坊作者 ID 无效"
+        "Invalid Workshop author ID"
     }
     val normalizedText = text.trim()
-    require(normalizedText.isNotEmpty()) { "评论不能为空" }
+    require(normalizedText.isNotEmpty()) { "Comment must not be empty" }
     require(normalizedText.length <= WORKSHOP_COMMENT_MAX_LENGTH) {
-        "评论不能超过 $WORKSHOP_COMMENT_MAX_LENGTH 个字符"
+        "Comment must not exceed $WORKSHOP_COMMENT_MAX_LENGTH characters"
     }
     return NormalizedWorkshopCommentRequest(
         workshopId = workshopId,

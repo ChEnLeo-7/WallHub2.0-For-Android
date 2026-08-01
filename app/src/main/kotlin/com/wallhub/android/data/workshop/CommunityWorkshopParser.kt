@@ -2,6 +2,7 @@ package com.wallhub.android.data.workshop
 
 import com.wallhub.android.core.model.FavoriteState
 import com.wallhub.android.core.model.SubscriptionState
+import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopComment
 import com.wallhub.android.core.model.WorkshopCommentPage
 import com.wallhub.android.core.model.WorkshopDetail
@@ -33,11 +34,12 @@ internal fun parsePublicCommentsPage(
                 val authorId = value.opt("steamid")?.toString()?.takeIf(String::isNotBlank)
                 add(
                     WorkshopComment(
-                        author = "Steam 用户",
+                        author = "",
                         authorId = authorId,
                         text = text,
                         isCreator = authorId == creatorId,
                         timestamp = value.opt("timestamp")?.toString()?.toLongOrNull(),
+                        isAuthorPlaceholder = true,
                     ),
                 )
             }
@@ -272,6 +274,7 @@ internal object CommunityWorkshopParser {
                                 ?.groupValues
                                 ?.getOrNull(1)
                                 ?.toLongOrNull(),
+                        isAuthorPlaceholder = author.isBlank(),
                     ),
                 )
                 if (size >= limit.coerceIn(1, MAX_COMMENT_PAGE_SIZE)) return@buildList
@@ -339,7 +342,8 @@ internal object CommunityWorkshopParser {
 
     private fun JSONObject.toWorkshopDetail(id: Long): WorkshopDetail {
         val tags = jsonTags("tags")
-        val title = jsonString("title").ifBlank { "壁纸 $id" }
+        val title = jsonString("title")
+        val author = jsonString("creator_name")
         val previewUrl = jsonString("preview_url").ifBlank { null }
         val description =
             cleanHtml(
@@ -351,7 +355,7 @@ internal object CommunityWorkshopParser {
             WorkshopSummary(
                 id = id,
                 title = title,
-                author = jsonString("creator_name").ifBlank { DEFAULT_AUTHOR_NAME },
+                author = author,
                 creatorId = jsonString("creator").takeIf(String::isNotBlank),
                 previewUrl = previewUrl,
                 type = classifyType(tags),
@@ -366,6 +370,9 @@ internal object CommunityWorkshopParser {
                 fileSizeBytes = jsonLong("file_size").takeIf { it > 0L },
                 subscriptionState = SubscriptionState.UNKNOWN,
                 favoriteState = FavoriteState.UNKNOWN,
+                isTitlePlaceholder = title.isBlank(),
+                authorPlaceholder =
+                    if (author.isBlank()) WorkshopAuthorPlaceholder.CREATOR else WorkshopAuthorPlaceholder.NONE,
             )
         return WorkshopDetail(
             summary = summary,
@@ -447,8 +454,7 @@ internal object CommunityWorkshopParser {
             ?: fallback
 
     private const val RESULT_OK = 1L
-    private const val DEFAULT_AUTHOR_NAME = "Steam 创作者"
-    private const val DEFAULT_COMMENT_AUTHOR = "Steam 用户"
+    private const val DEFAULT_COMMENT_AUTHOR = ""
     private const val MAX_COMMENT_PAGE_SIZE = 50
     private const val STEAM_ID64_ACCOUNT_BASE = 76_561_197_960_265_728L
 }

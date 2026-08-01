@@ -13,8 +13,6 @@ interface SettingsRepository {
 
     suspend fun setTheme(theme: ThemePreference)
 
-    suspend fun setLanguage(language: AppLanguage)
-
     suspend fun setAccent(
         accent: AccentPreference,
         customColor: String? = null,

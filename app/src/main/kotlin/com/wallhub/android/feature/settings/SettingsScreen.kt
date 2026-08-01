@@ -49,14 +49,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.VisualTransformation
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
-import com.wallhub.android.core.designsystem.text
 import com.wallhub.android.core.model.AccentPreference
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
@@ -77,12 +77,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onAction: (SettingsAction) -> Unit,
 ) {
-    fun text(
-        zh: String,
-        en: String,
-    ): String = if (preferences.language == AppLanguage.EN) en else zh
     val onThemePreferenceChange: (ThemePreference) -> Unit = { onAction(SettingsAction.ThemeChanged(it)) }
-    val onLanguageChange: (AppLanguage) -> Unit = { onAction(SettingsAction.LanguageChanged(it)) }
     val onAccentChange: (AccentPreference, String?) -> Unit = { accent, customColor ->
         onAction(SettingsAction.AccentChanged(accent, customColor))
     }
@@ -239,14 +234,13 @@ fun SettingsScreen(
     ) { displayedCategory ->
         if (displayedCategory == null) {
             SettingsCategoryIndex(
-                title = text("设置", "Settings"),
-                language = preferences.language,
+                title = stringResource(R.string.settings_title),
                 onBack = onBack,
                 onOpenCategory = { selectedCategoryName = it.name },
             )
         } else {
             WallHubPageScaffold(
-                title = text("设置", "Settings"),
+                title = stringResource(R.string.settings_title),
                 topBarContent =
                     displayedCategory?.let { category ->
                         {
@@ -261,7 +255,7 @@ fun SettingsScreen(
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.primary,
                                         )
-                                        Text(category.label(preferences.language))
+                                        Text(stringResource(category.labelRes))
                                     }
                                 },
                                 colors =
@@ -272,7 +266,7 @@ fun SettingsScreen(
                                     IconButton(onClick = { selectedCategoryName = null }) {
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                            contentDescription = text("返回设置", "Back to Settings"),
+                                            contentDescription = stringResource(R.string.settings_action_back_to_settings),
                                         )
                                     }
                                 },
@@ -317,7 +311,6 @@ fun SettingsScreen(
                                 saveHomePreferences(matureContentEnabled = enabled)
                             },
                             onThemePreferenceChange = onThemePreferenceChange,
-                            onLanguageChange = onLanguageChange,
                             onAccentChange = onAccentChange,
                             onSystemMonetEnabledChange = onSystemMonetEnabledChange,
                             onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
@@ -343,7 +336,6 @@ fun SettingsScreen(
                             onExportDiagnostics = onExportDiagnostics,
                             onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
                             onRequestNotifications = onRequestNotifications,
-                            text = ::text,
                         )
                     }
                 }
@@ -370,7 +362,6 @@ internal fun SettingsCategoryContent(
     onOpenCategory: (SettingsCategory) -> Unit,
     onMatureContentEnabledChange: (Boolean) -> Unit,
     onThemePreferenceChange: (ThemePreference) -> Unit,
-    onLanguageChange: (AppLanguage) -> Unit,
     onAccentChange: (AccentPreference, String?) -> Unit,
     onSystemMonetEnabledChange: (Boolean) -> Unit,
     onThemedLauncherIconEnabledChange: (Boolean) -> Unit,
@@ -396,20 +387,18 @@ internal fun SettingsCategoryContent(
     onExportDiagnostics: () -> Unit,
     onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
     onRequestNotifications: () -> Unit,
-    text: (String, String) -> String,
 ) {
+    val openSteamApiKeyPageFailure = stringResource(R.string.settings_error_open_steam_api_key_page)
     when (category) {
         null ->
             SettingsCategoryIndex(
-                title = preferences.language.text("设置", "Settings"),
-                language = preferences.language,
+                title = stringResource(R.string.settings_title),
                 onBack = {},
                 onOpenCategory = onOpenCategory,
             )
 
         SettingsCategory.BASIC ->
             BasicSettingsContent(
-                language = preferences.language,
                 matureContentEnabled = preferences.matureContentEnabled,
                 diagnosticExportState = diagnosticExportState,
                 appUpdateState = appUpdateState,
@@ -435,7 +424,6 @@ internal fun SettingsCategoryContent(
 
         SettingsCategory.STEAM ->
             SteamSettingsContent(
-                language = preferences.language,
                 session = session,
                 steamAccessEnabled = preferences.steamAccessEnabled,
                 steamAccessState = steamAccessState,
@@ -453,7 +441,7 @@ internal fun SettingsCategoryContent(
                 onOpenApiKeyPage = {
                     onOpenExternalUri(
                         STEAM_API_KEY_URL,
-                        text("无法打开 Steam API Key 页面", "Unable to open the Steam API key page"),
+                        openSteamApiKeyPageFailure,
                     )
                 },
                 onOpenSteamLogin = onOpenSteamLogin,
@@ -466,7 +454,6 @@ internal fun SettingsCategoryContent(
                 availableAccents = availableAccents,
                 customAccentColor = customAccentColor,
                 onCustomAccentColorChanged = onCustomAccentColorChanged,
-                onLanguageChange = onLanguageChange,
                 onThemePreferenceChange = onThemePreferenceChange,
                 onAccentChange = onAccentChange,
                 onSystemMonetEnabledChange = onSystemMonetEnabledChange,

@@ -4,6 +4,7 @@ package com.wallhub.android
 
 import android.os.Build
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.EnterTransition
@@ -58,6 +59,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.invisibleToUser
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -76,7 +78,6 @@ import com.wallhub.android.core.designsystem.WallHubGlobalToastHost
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubTheme
 import com.wallhub.android.core.designsystem.rememberWallHubToastState
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.feature.detail.LocalVideoPlayerRoute
 import com.wallhub.android.feature.detail.OnlineVideoPlayerRoute
@@ -90,30 +91,24 @@ import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 private enum class TopLevelDestination(
     val route: String,
     val target: WallHubDestination,
-    val labelZh: String,
-    val labelEn: String,
+    @StringRes val labelRes: Int,
     val icon: ImageVector,
     val selectedIcon: ImageVector,
 ) {
-    HOME("home", HomeDestination, "发现", "Discover", Icons.Outlined.Explore, Icons.Filled.Explore),
+    HOME("home", HomeDestination, R.string.navigation_discover, Icons.Outlined.Explore, Icons.Filled.Explore),
     MANAGEMENT(
         "management",
         ManagementDestination,
-        "管理",
-        "Manage",
+        R.string.navigation_management,
         Icons.Outlined.FolderOpen,
         Icons.Filled.FolderOpen,
     ),
-    ;
-
-    fun label(language: AppLanguage): String = if (language == AppLanguage.EN) labelEn else labelZh
 }
 
 @Composable
 fun FormalWallHubApp(preferences: AppPreferences) {
     WallHubTheme(
         preference = preferences.theme,
-        language = preferences.language,
         accent = preferences.accent,
         customAccentColor = preferences.customAccentColor,
         useSystemMonet = preferences.useSystemMonet,
@@ -173,7 +168,6 @@ fun FormalWallHubApp(preferences: AppPreferences) {
                     isTopLevelDestination = isTopLevelDestination,
                     destinations = destinations,
                     currentTopLevelDestination = currentTopLevelDestination,
-                    language = preferences.language,
                     homeContextMenuActive = homeContextMenuActive,
                     onHomeContextMenuActiveChanged = { homeContextMenuActive = it },
                     onNavigateTo = navigateTo,
@@ -193,7 +187,6 @@ private fun WallHubAdaptiveNavigationLayout(
     isTopLevelDestination: Boolean,
     destinations: List<TopLevelDestination>,
     currentTopLevelDestination: TopLevelDestination?,
-    language: AppLanguage,
     homeContextMenuActive: Boolean,
     onHomeContextMenuActiveChanged: (Boolean) -> Unit,
     onNavigateTo: (TopLevelDestination) -> Unit,
@@ -212,6 +205,7 @@ private fun WallHubAdaptiveNavigationLayout(
                     ) {
                         destinations.forEach { destination ->
                             val selected = currentTopLevelDestination == destination
+                            val label = stringResource(destination.labelRes)
                             NavigationRailItem(
                                 selected = selected,
                                 enabled = !homeContextMenuActive,
@@ -220,10 +214,10 @@ private fun WallHubAdaptiveNavigationLayout(
                                     WallHubDestinationIcon(
                                         destination = destination,
                                         selected = selected,
-                                        contentDescription = destination.label(language),
+                                        contentDescription = label,
                                     )
                                 },
-                                label = { Text(destination.label(language)) },
+                                label = { Text(label) },
                                 colors =
                                     NavigationRailItemDefaults.colors(
                                         selectedIconColor = MaterialTheme.colorScheme.primary,
@@ -261,6 +255,7 @@ private fun WallHubAdaptiveNavigationLayout(
                         ) {
                             destinations.forEach { destination ->
                                 val selected = currentTopLevelDestination == destination
+                                val label = stringResource(destination.labelRes)
                                 NavigationDrawerItem(
                                     selected = selected,
                                     onClick = {
@@ -270,10 +265,10 @@ private fun WallHubAdaptiveNavigationLayout(
                                         WallHubDestinationIcon(
                                             destination = destination,
                                             selected = selected,
-                                            contentDescription = destination.label(language),
+                                            contentDescription = label,
                                         )
                                     },
-                                    label = { Text(destination.label(language)) },
+                                    label = { Text(label) },
                                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                                     colors =
                                         NavigationDrawerItemDefaults.colors(
@@ -357,6 +352,7 @@ private fun WallHubAdaptiveNavigationLayout(
                         ) {
                             destinations.forEach { destination ->
                                 val selected = currentTopLevelDestination == destination
+                                val label = stringResource(destination.labelRes)
                                 NavigationBarItem(
                                     selected = selected,
                                     enabled = !homeContextMenuActive,
@@ -365,10 +361,10 @@ private fun WallHubAdaptiveNavigationLayout(
                                         WallHubDestinationIcon(
                                             destination = destination,
                                             selected = selected,
-                                            contentDescription = destination.label(language),
+                                            contentDescription = label,
                                         )
                                     },
-                                    label = { Text(destination.label(language)) },
+                                    label = { Text(label) },
                                     colors =
                                         NavigationBarItemDefaults.colors(
                                             selectedIconColor = MaterialTheme.colorScheme.primary,

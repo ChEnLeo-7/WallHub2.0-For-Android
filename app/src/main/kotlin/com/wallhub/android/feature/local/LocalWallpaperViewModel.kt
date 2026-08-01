@@ -1,8 +1,11 @@
 package com.wallhub.android.feature.local
 
+import androidx.annotation.PluralsRes
+import androidx.annotation.StringRes
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.wallhub.android.R
 import com.wallhub.android.core.model.LocalWallpaperImportState
 import com.wallhub.android.core.model.LocalWallpaperRepository
 import com.wallhub.android.core.model.LocalWallpaperResource
@@ -129,14 +132,46 @@ data class LocalWallpaperUiState(
                 sort != LocalWallpaperSort.RECENT,
             ).count { it }
 
-    val summary: String
+    val summary: LocalUiText
         get() =
             when {
-                scan.isScanning -> "正在扫描 · 已发现 ${scan.discoveredCount} 个文件"
-                resources.isEmpty() -> "没有符合条件的本地资源"
-                activeFilterCount > 0 -> "显示 ${resources.size} 个匹配资源"
-                else -> "共 ${resources.size} 个本地资源"
+                scan.isScanning ->
+                    LocalUiText.Plural(
+                        R.plurals.local_summary_scanning,
+                        scan.discoveredCount,
+                        listOf(scan.discoveredCount),
+                    )
+                resources.isEmpty() -> LocalUiText.Resource(R.string.local_summary_empty)
+                activeFilterCount > 0 ->
+                    LocalUiText.Plural(
+                        R.plurals.local_summary_filtered,
+                        resources.size,
+                        listOf(resources.size),
+                    )
+                else ->
+                    LocalUiText.Plural(
+                        R.plurals.local_summary_total,
+                        resources.size,
+                        listOf(resources.size),
+                    )
             }
+}
+
+sealed interface LocalUiText {
+    data class Resource(
+        @StringRes val id: Int,
+        val formatArgs: List<Any> = emptyList(),
+    ) : LocalUiText
+
+    data class Plural(
+        @PluralsRes val id: Int,
+        val quantity: Int,
+        val formatArgs: List<Any>,
+    ) : LocalUiText
+
+    data class Raw(
+        val value: String,
+    ) : LocalUiText
 }
 
 sealed interface LocalWallpaperAction {
@@ -274,7 +309,8 @@ sealed interface LocalWallpaperEffect {
     ) : LocalWallpaperEffect
 
     data class ShowMessage(
-        val message: String,
+        val message: String? = null,
+        @StringRes val messageRes: Int? = null,
     ) : LocalWallpaperEffect
 }
 
@@ -370,7 +406,7 @@ class LocalWallpaperViewModel
                             currentSourceLabel = null,
                         ),
                 )
-            showMessage("已取消扫描")
+            showMessage(R.string.local_scan_cancelled)
         }
 
         private fun setViewMode(mode: LocalWallpaperViewMode) {
@@ -481,8 +517,8 @@ class LocalWallpaperViewModel
                     scan()
                 } catch (error: CancellationException) {
                     throw error
-                } catch (error: Throwable) {
-                    showMessage(error.message ?: "无法保存目录")
+                } catch (_: Throwable) {
+                    showMessage(R.string.local_save_directory_failed)
                 }
             }
         }
@@ -505,8 +541,8 @@ class LocalWallpaperViewModel
                     updateResource(resourceId) { it.copy(isFavorite = value) }
                 } catch (error: CancellationException) {
                     throw error
-                } catch (error: Throwable) {
-                    showMessage(error.message ?: "收藏状态保存失败")
+                } catch (_: Throwable) {
+                    showMessage(R.string.local_save_favorite_failed)
                     scan()
                 }
             }
@@ -531,8 +567,8 @@ class LocalWallpaperViewModel
                     clearSelection()
                 } catch (error: CancellationException) {
                     throw error
-                } catch (error: Throwable) {
-                    showMessage(error.message ?: "标签保存失败")
+                } catch (_: Throwable) {
+                    showMessage(R.string.local_save_tags_failed)
                     scan()
                 }
             }
@@ -553,8 +589,8 @@ class LocalWallpaperViewModel
                     updateResource(resourceId) { it.copy(tags = normalized) }
                 } catch (error: CancellationException) {
                     throw error
-                } catch (error: Throwable) {
-                    showMessage(error.message ?: "标签保存失败")
+                } catch (_: Throwable) {
+                    showMessage(R.string.local_save_tags_failed)
                     scan()
                 }
             }
@@ -590,8 +626,8 @@ class LocalWallpaperViewModel
                         )
                 } catch (error: CancellationException) {
                     throw error
-                } catch (error: Throwable) {
-                    showMessage(error.message ?: "标签重命名失败")
+                } catch (_: Throwable) {
+                    showMessage(R.string.local_rename_tag_failed)
                     scan()
                 }
             }
@@ -614,8 +650,8 @@ class LocalWallpaperViewModel
                         )
                 } catch (error: CancellationException) {
                     throw error
-                } catch (error: Throwable) {
-                    showMessage(error.message ?: "标签删除失败")
+                } catch (_: Throwable) {
+                    showMessage(R.string.local_delete_tag_failed)
                     scan()
                 }
             }
@@ -629,8 +665,8 @@ class LocalWallpaperViewModel
                     updateResource(resourceId) { it.copy(importRequestedAt = now) }
                 } catch (error: CancellationException) {
                     throw error
-                } catch (error: Throwable) {
-                    showMessage(error.message ?: "导入状态保存失败")
+                } catch (_: Throwable) {
+                    showMessage(R.string.local_save_import_state_failed)
                     scan()
                 }
             }
@@ -644,7 +680,7 @@ class LocalWallpaperViewModel
                 val results = resources.map { resource -> repository.delete(resource) }
                 val failures = results.filterNot { it.deleted }
                 if (failures.isNotEmpty()) {
-                    showMessage(failures.first().message)
+                    showMessage(R.string.backend_local_delete_failed)
                 }
                 clearSelection()
                 scan()
@@ -736,8 +772,14 @@ class LocalWallpaperViewModel
             }
         }
 
+        private fun showMessage(
+            @StringRes messageRes: Int,
+        ) {
+            emitEffect(LocalWallpaperEffect.ShowMessage(messageRes = messageRes))
+        }
+
         private fun showMessage(message: String) {
-            emitEffect(LocalWallpaperEffect.ShowMessage(message))
+            emitEffect(LocalWallpaperEffect.ShowMessage(message = message))
         }
 
         private fun emitEffect(effect: LocalWallpaperEffect) {

@@ -11,14 +11,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSpacing
-import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 @Composable
 internal fun BasicSettingsContent(
-    language: AppLanguage,
     matureContentEnabled: Boolean,
     diagnosticExportState: DiagnosticExportUiState,
     appUpdateState: AppUpdateUiState,
@@ -33,11 +32,10 @@ internal fun BasicSettingsContent(
     val installed = appUpdateState.installed
 
     SettingsSection(
-        title = "WallHub For Android",
+        title = stringResource(R.string.settings_wallhub_project_title),
         icon = Icons.Outlined.Info,
     ) {
         AboutWallHubContent(
-            language = language,
             installed = installed,
             appUpdateState = appUpdateState,
             onCheckForAppUpdate = onCheckForAppUpdate,
@@ -49,22 +47,15 @@ internal fun BasicSettingsContent(
     }
 
     SettingsSection(
-        title = language.text("诊断与支持", "Diagnostics & support"),
-        supportingText =
-            language.text(
-                "导出经过脱敏处理的运行信息",
-                "Export redacted runtime information",
-            ),
+        title = stringResource(R.string.settings_diagnostics_title),
+        supportingText = stringResource(R.string.settings_diagnostics_description),
         icon = Icons.Outlined.FolderOpen,
     ) {
         SettingsListItem(
-            headlineContent = { Text(language.text("诊断日志", "Diagnostic log")) },
+            headlineContent = { Text(stringResource(R.string.settings_diagnostic_log)) },
             supportingContent = {
                 Text(
-                    language.text(
-                        "包含业务日志与崩溃调用栈，不包含登录凭据",
-                        "Includes app logs and crash traces without sign-in credentials",
-                    ),
+                    stringResource(R.string.settings_diagnostic_log_description),
                 )
             },
         )
@@ -78,9 +69,9 @@ internal fun BasicSettingsContent(
                 Text(
                     text =
                         if (diagnosticExportState.isExporting) {
-                            language.text("正在导出…", "Exporting…")
+                            stringResource(R.string.settings_diagnostic_exporting)
                         } else {
-                            language.text("导出诊断日志", "Export diagnostic log")
+                            stringResource(R.string.settings_action_export_diagnostic_log)
                         },
                     modifier = Modifier.padding(start = WallHubSpacing.xs),
                 )
@@ -95,16 +86,12 @@ internal fun BasicSettingsContent(
     }
 
     SettingsSection(
-        title = language.text("内容访问", "Content access"),
+        title = stringResource(R.string.settings_content_access_title),
         icon = Icons.Outlined.Visibility,
     ) {
         SettingsSwitchRow(
-            title = language.text("NSFW 内容", "NSFW content"),
-            supportingText =
-                language.text(
-                    "控制发现页是否显示成人内容",
-                    "Control whether mature content appears in Discover",
-                ),
+            title = stringResource(R.string.settings_nsfw_content),
+            supportingText = stringResource(R.string.settings_nsfw_content_description),
             checked = matureContentEnabled,
             onCheckedChange = onMatureContentEnabledChange,
         )

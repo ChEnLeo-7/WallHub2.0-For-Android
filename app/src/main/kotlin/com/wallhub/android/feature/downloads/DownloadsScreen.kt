@@ -3,8 +3,10 @@
 package com.wallhub.android.feature.downloads
 
 import android.Manifest
+import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
@@ -47,6 +49,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,7 +60,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
-import com.wallhub.android.core.designsystem.LocalWallHubLanguage
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
@@ -67,10 +70,8 @@ import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
 import com.wallhub.android.core.designsystem.formatMegabytes
+import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
-import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.designsystem.wallHubText
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
@@ -80,6 +81,7 @@ import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.WorkshopSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -167,7 +169,8 @@ sealed interface DownloadsEffect {
     ) : DownloadsEffect
 
     data class ShowMessage(
-        val message: String,
+        @StringRes val messageRes: Int,
+        val formatArgs: List<Any> = emptyList(),
     ) : DownloadsEffect
 
     data class PlayVideo(
@@ -179,6 +182,7 @@ sealed interface DownloadsEffect {
 class DownloadsViewModel
     @Inject
     constructor(
+        @ApplicationContext private val applicationContext: Context,
         private val taskRepository: DownloadTaskRepository,
         private val settingsRepository: SettingsRepository,
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
@@ -220,7 +224,7 @@ class DownloadsViewModel
                     } else {
                         emitEffect(
                             DownloadsEffect.ShowMessage(
-                                "未授予存储权限，无法导出到 Download/WallHub",
+                                R.string.downloads_storage_permission_denied,
                             ),
                         )
                     }
@@ -266,12 +270,12 @@ class DownloadsViewModel
                     .onSuccess {
                         if (action == DownloadAction.EXPORT) {
                             effectChannel.send(
-                                DownloadsEffect.ShowMessage("已加入转换和导出任务"),
+                                DownloadsEffect.ShowMessage(R.string.downloads_export_queued),
                             )
                         }
-                    }.onFailure { error ->
+                    }.onFailure {
                         effectChannel.send(
-                            DownloadsEffect.ShowMessage(error.message ?: "操作失败，请稍后重试"),
+                            DownloadsEffect.ShowMessage(R.string.downloads_action_failed),
                         )
                     }
             }
@@ -284,7 +288,7 @@ class DownloadsViewModel
                     taskRepository.enqueue(
                         DownloadRequest(
                             workshopId = item.id,
-                            title = item.title,
+                            title = applicationContext.localizedTitle(item),
                             type = item.type,
                             previewUrl = item.previewUrl,
                             expectedTotalBytes = item.fileSizeBytes ?: 0L,
@@ -294,11 +298,14 @@ class DownloadsViewModel
                     )
                 }.onSuccess { task ->
                     effectChannel.send(
-                        DownloadsEffect.ShowMessage("已加入下载队列：${task.title}"),
+                        DownloadsEffect.ShowMessage(
+                            R.string.downloads_added_to_queue,
+                            listOf(task.title),
+                        ),
                     )
-                }.onFailure { error ->
+                }.onFailure {
                     effectChannel.send(
-                        DownloadsEffect.ShowMessage(error.message ?: "无法加入下载队列"),
+                        DownloadsEffect.ShowMessage(R.string.downloads_enqueue_failed),
                     )
                 }
             }
@@ -406,7 +413,8 @@ fun DownloadsEffectHandler(
                         )
                     }
                 }
-                is DownloadsEffect.ShowMessage -> toastState.show(effect.message)
+                is DownloadsEffect.ShowMessage ->
+                    toastState.show(context.getString(effect.messageRes, *effect.formatArgs.toTypedArray()))
                 is DownloadsEffect.PlayVideo -> currentOnPlayVideo(effect.taskId)
             }
         }
@@ -419,7 +427,7 @@ fun DownloadsScreen(
     onAction: (DownloadsAction) -> Unit,
 ) {
     WallHubPageScaffold(
-        title = wallHubText("下载", "Downloads"),
+        title = stringResource(R.string.downloads_title),
     ) { padding ->
         DownloadsContent(
             state = state,
@@ -437,7 +445,6 @@ fun DownloadsContent(
     showFilters: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val language = LocalWallHubLanguage.current
     Column(
         modifier = modifier.fillMaxSize(),
     ) {
@@ -446,7 +453,7 @@ fun DownloadsContent(
                 options = DownloadFilter.entries,
                 selected = state.filter,
                 onSelected = { filter -> onAction(DownloadsAction.SelectFilter(filter)) },
-                label = { filter -> Text(filter.label(language)) },
+                label = { filter -> Text(filter.label()) },
                 modifier =
                     Modifier
                         .fillMaxWidth()
@@ -456,7 +463,7 @@ fun DownloadsContent(
                 options = DownloadTypeFilter.entries,
                 selected = state.typeFilter,
                 onSelected = { filter -> onAction(DownloadsAction.SelectTypeFilter(filter)) },
-                label = { filter -> Text(filter.label(language)) },
+                label = { filter -> Text(filter.label()) },
                 modifier =
                     Modifier
                         .fillMaxWidth()
@@ -466,13 +473,12 @@ fun DownloadsContent(
         if (state.tasks.isEmpty()) {
             WallHubEmptyState(
                 icon = Icons.Outlined.Download,
-                title = wallHubText("暂无下载任务", "No download tasks"),
+                title = stringResource(R.string.downloads_empty),
                 modifier = Modifier.weight(1f),
             )
         } else {
             ReorderableDownloadList(
                 tasks = state.tasks,
-                language = language,
                 onAction = { taskId, action ->
                     onAction(DownloadsAction.RequestTaskAction(taskId, action))
                 },
@@ -487,7 +493,6 @@ fun DownloadsContent(
 @Composable
 private fun ReorderableDownloadList(
     tasks: List<DownloadTask>,
-    language: AppLanguage,
     onAction: (String, DownloadAction) -> Unit,
     onPlayVideo: (String) -> Unit,
     onReorder: (List<String>) -> Unit,
@@ -601,7 +606,6 @@ private fun ReorderableDownloadList(
                     }
             DownloadTaskCard(
                 task = task,
-                language = language,
                 onAction = { action -> onAction(task.id, action) },
                 onPlayVideo = { onPlayVideo(task.id) },
                 modifier = dragModifier,
@@ -613,7 +617,6 @@ private fun ReorderableDownloadList(
 @Composable
 private fun DownloadTaskCard(
     task: DownloadTask,
-    language: AppLanguage,
     onAction: (DownloadAction) -> Unit,
     onPlayVideo: () -> Unit,
     modifier: Modifier = Modifier,
@@ -663,7 +666,7 @@ private fun DownloadTaskCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = task.projectSizeLabel(language),
+                    text = task.projectSizeLabel(),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -691,12 +694,9 @@ private fun DownloadTaskCard(
                                     "${formatMegabytes(task.bytesPerSecond)}/s"
 
                                 task.status == DownloadStatus.DOWNLOADING ->
-                                    language.text("正在测速", "Measuring")
+                                    stringResource(R.string.downloads_measuring)
 
-                                task.status == DownloadStatus.FAILED && !task.message.isNullOrBlank() ->
-                                    task.message.orEmpty()
-
-                                else -> task.status.label(language)
+                                else -> task.status.label()
                             },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -711,14 +711,14 @@ private fun DownloadTaskCard(
                     ) {
                         DownloadIconButton(
                             icon = Icons.Outlined.PlayArrow,
-                            label = language.text("播放视频", "Play video"),
+                            label = stringResource(R.string.downloads_play_video),
                             onClick = onPlayVideo,
                         )
                     }
                     task.availableActions.forEach { action ->
                         DownloadIconButton(
                             icon = action.icon(),
-                            label = action.label(language),
+                            label = action.label(),
                             onClick = { onAction(action) },
                         )
                     }
@@ -774,52 +774,48 @@ internal fun filterTasks(
             }
         }.toList()
 
-private fun DownloadFilter.label(language: AppLanguage): String =
+@Composable
+private fun DownloadFilter.label(): String =
     when (this) {
-        DownloadFilter.ALL -> language.text("全部", "All")
-        DownloadFilter.COMPLETED -> language.text("已完成", "Completed")
-        DownloadFilter.DOWNLOADING -> language.text("下载中", "Active")
-        DownloadFilter.QUEUED -> language.text("待下载", "Queued")
-        DownloadFilter.FAILED -> language.text("失败", "Failed")
+        DownloadFilter.ALL -> stringResource(R.string.downloads_filter_all)
+        DownloadFilter.COMPLETED -> stringResource(R.string.downloads_filter_completed)
+        DownloadFilter.DOWNLOADING -> stringResource(R.string.downloads_filter_active)
+        DownloadFilter.QUEUED -> stringResource(R.string.downloads_filter_queued)
+        DownloadFilter.FAILED -> stringResource(R.string.downloads_filter_failed)
     }
 
-private fun DownloadTypeFilter.label(language: AppLanguage): String =
+@Composable
+private fun DownloadTypeFilter.label(): String =
     when (this) {
-        DownloadTypeFilter.ALL -> language.text("全部", "All")
-        DownloadTypeFilter.VIDEO -> language.text("视频", "Video")
-        DownloadTypeFilter.SCENE -> language.text("场景", "Scene")
-        DownloadTypeFilter.WEB -> language.text("网站", "Web")
+        DownloadTypeFilter.ALL -> stringResource(R.string.downloads_type_all)
+        DownloadTypeFilter.VIDEO -> stringResource(R.string.downloads_type_video)
+        DownloadTypeFilter.SCENE -> stringResource(R.string.downloads_type_scene)
+        DownloadTypeFilter.WEB -> stringResource(R.string.downloads_type_web)
     }
 
-private fun com.wallhub.android.core.model.WorkshopType.label(language: AppLanguage): String =
+@Composable
+private fun DownloadStatus.label(): String =
     when (this) {
-        com.wallhub.android.core.model.WorkshopType.VIDEO -> language.text("视频", "Video")
-        com.wallhub.android.core.model.WorkshopType.SCENE -> language.text("场景", "Scene")
-        com.wallhub.android.core.model.WorkshopType.WEB -> language.text("网站", "Web")
-        com.wallhub.android.core.model.WorkshopType.UNKNOWN -> language.text("壁纸", "Wallpaper")
+        DownloadStatus.QUEUED -> stringResource(R.string.downloads_status_queued)
+        DownloadStatus.RESOLVING -> stringResource(R.string.downloads_status_resolving)
+        DownloadStatus.DOWNLOADING -> stringResource(R.string.downloads_status_downloading)
+        DownloadStatus.PAUSED -> stringResource(R.string.downloads_status_paused)
+        DownloadStatus.CONVERTING -> stringResource(R.string.downloads_status_converting)
+        DownloadStatus.EXPORTING -> stringResource(R.string.downloads_status_exporting)
+        DownloadStatus.COMPLETED -> stringResource(R.string.downloads_status_completed)
+        DownloadStatus.FAILED -> stringResource(R.string.downloads_status_failed)
+        DownloadStatus.CANCELLED -> stringResource(R.string.downloads_status_cancelled)
     }
 
-private fun DownloadStatus.label(language: AppLanguage): String =
+@Composable
+private fun DownloadAction.label(): String =
     when (this) {
-        DownloadStatus.QUEUED -> language.text("等待中", "Queued")
-        DownloadStatus.RESOLVING -> language.text("解析中", "Resolving")
-        DownloadStatus.DOWNLOADING -> language.text("下载中", "Downloading")
-        DownloadStatus.PAUSED -> language.text("已暂停", "Paused")
-        DownloadStatus.CONVERTING -> language.text("转换中", "Converting")
-        DownloadStatus.EXPORTING -> language.text("导出中", "Exporting")
-        DownloadStatus.COMPLETED -> language.text("已完成", "Completed")
-        DownloadStatus.FAILED -> language.text("失败", "Failed")
-        DownloadStatus.CANCELLED -> language.text("已取消", "Cancelled")
-    }
-
-private fun DownloadAction.label(language: AppLanguage): String =
-    when (this) {
-        DownloadAction.PAUSE -> language.text("暂停", "Pause")
-        DownloadAction.RESUME -> language.text("继续", "Resume")
-        DownloadAction.RETRY -> language.text("重试", "Retry")
-        DownloadAction.EXPORT -> language.text("导出", "Export")
-        DownloadAction.CANCEL -> language.text("取消", "Cancel")
-        DownloadAction.DELETE -> language.text("删除", "Delete")
+        DownloadAction.PAUSE -> stringResource(R.string.downloads_action_pause)
+        DownloadAction.RESUME -> stringResource(R.string.downloads_action_resume)
+        DownloadAction.RETRY -> stringResource(R.string.downloads_action_retry)
+        DownloadAction.EXPORT -> stringResource(R.string.downloads_action_export)
+        DownloadAction.CANCEL -> stringResource(R.string.downloads_action_cancel)
+        DownloadAction.DELETE -> stringResource(R.string.downloads_action_delete)
     }
 
 private fun DownloadAction.icon() =
@@ -832,11 +828,12 @@ private fun DownloadAction.icon() =
         DownloadAction.DELETE -> Icons.Outlined.DeleteSweep
     }
 
-private fun DownloadTask.projectSizeLabel(language: AppLanguage): String =
+@Composable
+private fun DownloadTask.projectSizeLabel(): String =
     totalBytes
         .takeIf { it > 0L }
         ?.let(::formatMegabytes)
-        ?: language.text("正在读取大小", "Reading size")
+        ?: stringResource(R.string.downloads_reading_size)
 
 private val REORDERABLE_DOWNLOAD_STATUSES =
     setOf(

@@ -8,11 +8,6 @@ enum class ThemePreference {
     DARK,
 }
 
-enum class AppLanguage {
-    ZH,
-    EN,
-}
-
 enum class AccentPreference {
     DEFAULT,
     MONET,
@@ -114,7 +109,6 @@ data class SteamContentCredential(
 
 data class AppPreferences(
     val theme: ThemePreference = ThemePreference.SYSTEM,
-    val language: AppLanguage = AppLanguage.ZH,
     val accent: AccentPreference = AccentPreference.MONET,
     val customAccentColor: String = "#5B7AA0",
     val useSystemMonet: Boolean = true,
@@ -151,7 +145,7 @@ data class AppPreferences(
 ) {
     override fun toString(): String =
         "AppPreferences(" +
-            "theme=$theme, language=$language, accent=$accent, customAccentColor=$customAccentColor, " +
+            "theme=$theme, accent=$accent, customAccentColor=$customAccentColor, " +
             "useSystemMonet=$useSystemMonet, useThemedLauncherIcon=$useThemedLauncherIcon, " +
             "outputTreeUri=$outputTreeUri, outputDirectoryLabel=$outputDirectoryLabel, " +
             "localManagementTreeUri=$localManagementTreeUri, " +

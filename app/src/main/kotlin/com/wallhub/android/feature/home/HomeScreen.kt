@@ -110,6 +110,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.invisibleToUser
@@ -127,6 +129,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubContextMenuDefaults
 import com.wallhub.android.core.designsystem.WallHubContextMenuSurface
 import com.wallhub.android.core.designsystem.WallHubEmptyState
@@ -134,10 +137,10 @@ import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubPaginationControl
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
-import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.model.AppLanguage
+import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
+import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
 import kotlinx.coroutines.delay
@@ -249,7 +252,6 @@ fun HomeScreen(
             applied = state.filterSelection(),
             config =
                 HomeFilterUiConfig(
-                    language = state.language,
                     multiSelect = state.multiSelect,
                     matureContentEnabled = state.matureContentEnabled,
                 ),
@@ -363,7 +365,7 @@ internal fun HomeScreenBody(
                 ),
     ) {
         WallHubPageScaffold(
-            title = "WallHub",
+            title = stringResource(R.string.app_name),
             topBarContent = {
                 HomeSearchTopBar(
                     state = state,
@@ -510,14 +512,14 @@ internal fun HomeSearchTopBar(
                     )
                     Spacer(modifier = Modifier.width(WallHubSpacing.xxs))
                     Text(
-                        text = state.text("返回", "Back"),
+                        text = stringResource(R.string.home_back),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
             } else {
                 Text(
-                    text = "WallHub",
+                    text = stringResource(R.string.app_name),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                     modifier =
@@ -586,7 +588,7 @@ internal fun HomeSearchTopBar(
                                 ) {
                                     if (state.query.isBlank()) {
                                         Text(
-                                            text = state.text("搜索创意工坊", "Search Workshop"),
+                                            text = stringResource(R.string.home_search_workshop),
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
@@ -600,7 +602,7 @@ internal fun HomeSearchTopBar(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Outlined.Search,
-                                        contentDescription = state.text("搜索", "Search"),
+                                        contentDescription = stringResource(R.string.home_search),
                                     )
                                 }
                             }
@@ -660,7 +662,7 @@ internal fun HomeSearchTopBar(
                             }
                         }
                         Text(
-                            text = state.text("精确匹配短语", "Exact phrase"),
+                            text = stringResource(R.string.home_exact_phrase),
                             style = MaterialTheme.typography.labelMedium,
                             color =
                                 if (state.exactPhrase) {
@@ -675,7 +677,7 @@ internal fun HomeSearchTopBar(
             if (onOpenSettings != null) {
                 SettingsToolbarActionButton(
                     imageVector = Icons.Outlined.Settings,
-                    contentDescription = state.text("设置", "Settings"),
+                    contentDescription = stringResource(R.string.home_settings),
                     onClick = onOpenSettings,
                     buttonSize = 64.dp,
                     containerSize = 48.dp,
@@ -707,18 +709,19 @@ internal fun HomeFilterPanel(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = state.text("浏览条件", "Browse settings"),
+                    text = stringResource(R.string.home_browse_settings),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     text =
                         if (state.activeFilterCount == 0) {
-                            state.text("使用默认条件", "Using defaults")
+                            stringResource(R.string.home_using_defaults)
                         } else {
-                            state.text(
-                                "已启用 ${state.activeFilterCount} 项",
-                                "${state.activeFilterCount} active",
+                            pluralStringResource(
+                                R.plurals.home_filters_active,
+                                state.activeFilterCount,
+                                state.activeFilterCount,
                             )
                         },
                     style = MaterialTheme.typography.bodySmall,
@@ -737,7 +740,7 @@ internal fun HomeFilterPanel(
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Tune,
-                        contentDescription = state.text("打开全部筛选", "Open all filters"),
+                        contentDescription = stringResource(R.string.home_open_all_filters),
                     )
                 }
             }
@@ -748,7 +751,7 @@ internal fun HomeFilterPanel(
         ) {
             items(HomeFilterPage.entries, key = { it }) { page ->
                 HomeConditionChip(
-                    label = page.label(state.language),
+                    label = page.label(),
                     value = page.summary(selection, state),
                     active = page.activeSectionCount(selection) > 0,
                     onClick = { onOpenFilters(page) },
@@ -849,16 +852,21 @@ internal fun HomeResultsHeader(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = state.text("发现壁纸", "Discover wallpapers"),
+                text = stringResource(R.string.home_discover_wallpapers),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
                 text =
                     when {
-                        state.isInitialLoading -> state.text("正在加载…", "Loading…")
-                        state.totalCount != null -> state.text("约 ${state.totalCount} 个项目", "About ${state.totalCount} items")
-                        else -> state.text("${state.items.size} 个项目", "${state.items.size} items")
+                        state.isInitialLoading -> stringResource(R.string.home_loading)
+                        state.totalCount != null ->
+                            pluralStringResource(
+                                R.plurals.home_about_items,
+                                state.totalCount,
+                                state.totalCount,
+                            )
+                        else -> pluralStringResource(R.plurals.home_items, state.items.size, state.items.size)
                     },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -867,8 +875,8 @@ internal fun HomeResultsHeader(
         HomeViewModeToggle(
             selected = state.viewMode,
             onViewModeSelected = onViewModeSelected,
-            gridContentDescription = state.text("网格视图", "Grid view"),
-            listContentDescription = state.text("列表视图", "List view"),
+            gridContentDescription = stringResource(R.string.home_grid_view),
+            listContentDescription = stringResource(R.string.home_list_view),
         )
     }
 }
@@ -979,7 +987,7 @@ internal fun HomeResults(
     onPrimaryAction: (WorkshopSummary) -> Unit,
     onDownload: (WorkshopSummary) -> Unit,
     onSearchAuthor: (String) -> Unit,
-    onCopyText: (String, String) -> Unit,
+    onCopyText: (String, Int) -> Unit,
     onOpenSteam: (Long) -> Unit,
     onAuthorNameRequested: (WorkshopSummary) -> Unit,
     gridState: LazyGridState,
@@ -1049,7 +1057,7 @@ internal fun HomeResults(
                     ) {
                         CircularProgressIndicator()
                         Text(
-                            text = state.text("正在预热SteamIP", "Warming up Steam IP…"),
+                            text = stringResource(R.string.home_warming_steam_ip),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1059,11 +1067,11 @@ internal fun HomeResults(
                 }
             }
 
-            state.error != null && state.items.isEmpty() -> {
+            (state.error != null || state.errorRes != null) && state.items.isEmpty() -> {
                 WallHubEmptyState(
                     icon = Icons.Outlined.Refresh,
-                    title = state.error,
-                    actionLabel = state.text("重试", "Retry"),
+                    title = state.error ?: stringResource(requireNotNull(state.errorRes)),
+                    actionLabel = stringResource(R.string.home_retry),
                     onAction = onRetry,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -1072,8 +1080,8 @@ internal fun HomeResults(
             state.items.isEmpty() -> {
                 WallHubEmptyState(
                     icon = Icons.Outlined.Search,
-                    title = state.text("没有找到符合条件的壁纸", "No matching wallpapers"),
-                    actionLabel = state.text("重新加载", "Reload"),
+                    title = stringResource(R.string.home_no_matching_wallpapers),
+                    actionLabel = stringResource(R.string.home_reload),
                     onAction = onRetry,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -1128,7 +1136,6 @@ internal fun HomeResults(
                                 modifier = Modifier,
                                 item = item,
                                 authorDisplayName = state.authorDisplayNames[item.id],
-                                language = state.language,
                                 layoutKey = layoutKey,
                                 animateEdgeEntry = animateLayoutEdgeEntry,
                                 gridShowFileSize = state.columns < 3,
@@ -1165,7 +1172,6 @@ internal fun HomeResults(
                                         currentPage = state.currentPage,
                                         totalPages = state.totalPages,
                                         isLoading = state.isPageLoading,
-                                        language = state.language,
                                         onPageSelected = onPageSelected,
                                     )
 
@@ -1184,18 +1190,13 @@ internal fun HomePagination(
     currentPage: Int,
     totalPages: Int,
     isLoading: Boolean,
-    language: AppLanguage,
     onPageSelected: (Int) -> Unit,
 ) {
     WallHubPaginationControl(
         currentPage = currentPage,
         totalPages = totalPages,
         isLoading = isLoading,
-        currentContentDescription =
-            language.text(
-                "当前第 $currentPage 页；当前已知最大页码为 $totalPages；点击输入页码",
-                "Page $currentPage; known last page $totalPages; tap to enter a page",
-            ),
+        currentContentDescription = stringResource(R.string.home_pagination_description, currentPage, totalPages),
         onPageSelected = onPageSelected,
         modifier = Modifier.padding(vertical = WallHubSpacing.xs),
     )
@@ -1207,7 +1208,6 @@ internal fun WorkshopCard(
     modifier: Modifier = Modifier,
     item: WorkshopSummary,
     authorDisplayName: String?,
-    language: AppLanguage,
     layoutKey: HomeCardLayoutKey,
     animateEdgeEntry: Boolean,
     gridShowFileSize: Boolean,
@@ -1220,7 +1220,7 @@ internal fun WorkshopCard(
     onPrimaryAction: () -> Unit,
     onDownload: () -> Unit,
     onSearchAuthor: () -> Unit,
-    onCopyText: (String, String) -> Unit,
+    onCopyText: (String, Int) -> Unit,
     onOpenSteam: () -> Unit,
     onAuthorNameRequested: () -> Unit,
     contextMenuGeometry: HomeContextMenuGeometry,
@@ -1244,6 +1244,8 @@ internal fun WorkshopCard(
     var contextMenuEntranceRequest by remember { mutableIntStateOf(0) }
     var contextMenuTarget by remember(item.id) { mutableStateOf<HomeContextMenuTarget?>(null) }
     var contextMenuPositionInWindow by remember { mutableStateOf(Offset.Zero) }
+    val viewDetailsLabel = stringResource(R.string.home_view_details)
+    val openActionsMenuLabel = stringResource(R.string.home_open_actions_menu)
     val density = LocalDensity.current
     val hapticFeedback = LocalHapticFeedback.current
     val contextMenuPositionProvider =
@@ -1330,11 +1332,11 @@ internal fun WorkshopCard(
                 )
             }.semantics {
                 role = Role.Button
-                onClick(label = language.text("查看详情", "View details")) {
+                onClick(label = viewDetailsLabel) {
                     onOpen()
                     true
                 }
-                onLongClick(label = language.text("打开操作菜单", "Open actions menu")) {
+                onLongClick(label = openActionsMenuLabel) {
                     val size = cardPosition.touchCoordinates?.size
                     if (size == null || size.width <= 0 || size.height <= 0) {
                         false
@@ -1413,7 +1415,6 @@ internal fun WorkshopCard(
             if (listMode) {
                 WorkshopListCardContent(
                     item = item,
-                    language = language,
                     typeTagScale = typeTagScale,
                     action = action,
                     showFileSize = true,
@@ -1426,7 +1427,6 @@ internal fun WorkshopCard(
                 Column {
                     WorkshopCoverFrame(
                         item = item,
-                        language = language,
                         compact = false,
                         typeTagScale = typeTagScale,
                         coverShape = layoutMotion.coverShape(),
@@ -1439,7 +1439,6 @@ internal fun WorkshopCard(
                     )
                     WorkshopCardCopy(
                         item = item,
-                        language = language,
                         compact = false,
                         twoColumnGrid = twoColumnGrid,
                         showFileSize = gridShowFileSize,
@@ -1455,7 +1454,6 @@ internal fun WorkshopCard(
                     )
                     WorkshopGridCardAction(
                         action = action,
-                        language = language,
                         layoutMotion = layoutMotion,
                         onPrimaryAction = onPrimaryAction,
                         modifier =
@@ -1481,7 +1479,6 @@ internal fun WorkshopCard(
                             contextMenuTarget?.let { target ->
                                 with(density) { target.cardBounds.width.toDp() }
                             },
-                        language = language,
                     )
                 WallHubContextMenuSurface(
                     width = menuWidth,
@@ -1504,31 +1501,25 @@ internal fun WorkshopCard(
                                 },
                             ),
                 ) {
+                    val title = item.localizedTitle()
                     HomeContextMenuMetadataItem(
-                        label = if (language == AppLanguage.EN) "Wallpaper title" else "Wallpaper 标题",
-                        value = item.title,
+                        label = stringResource(R.string.home_wallpaper_title),
+                        value = title,
                         icon = Icons.Outlined.ContentCopy,
                         onClick = {
                             onCopyText(
-                                item.title,
-                                if (language == AppLanguage.EN) {
-                                    "Wallpaper title copied"
-                                } else {
-                                    "已复制 Wallpaper 标题"
-                                },
+                                title,
+                                R.string.home_wallpaper_title_copied,
                             )
                             dismissContextMenu()
                         },
                     )
                     HomeContextMenuMetadataItem(
-                        label = if (language == AppLanguage.EN) "Author" else "作者",
+                        label = stringResource(R.string.home_author),
                         value =
                             authorDisplayName
-                                ?: item.author.takeUnless(String::isSteamAuthorPlaceholder)
-                                ?: language.text(
-                                    "正在获取 Steam 用户名",
-                                    "Loading Steam username…",
-                                ),
+                                ?: item.author.takeIf { item.authorPlaceholder == WorkshopAuthorPlaceholder.NONE }
+                                ?: stringResource(R.string.home_loading_steam_username),
                         icon = Icons.Outlined.PersonOutline,
                         onClick = {
                             dismissContextMenu()
@@ -1536,24 +1527,20 @@ internal fun WorkshopCard(
                         },
                     )
                     HomeContextMenuMetadataItem(
-                        label = if (language == AppLanguage.EN) "Project ID" else "项目 ID",
+                        label = stringResource(R.string.home_project_id),
                         value = item.id.toString(),
                         icon = Icons.Outlined.ContentCopy,
                         onClick = {
                             onCopyText(
                                 item.id.toString(),
-                                if (language == AppLanguage.EN) {
-                                    "Project ID copied"
-                                } else {
-                                    "已复制项目 ID"
-                                },
+                                R.string.home_project_id_copied,
                             )
                             dismissContextMenu()
                         },
                     )
                     Spacer(modifier = Modifier.height(WallHubSpacing.xxxs))
                     HomeContextMenuItem(
-                        text = if (language == AppLanguage.EN) "Download" else "下载",
+                        text = stringResource(R.string.home_download),
                         icon = Icons.Outlined.Download,
                         onClick = {
                             dismissContextMenu()
@@ -1562,12 +1549,7 @@ internal fun WorkshopCard(
                     )
                     if (item.type == WorkshopType.VIDEO) {
                         HomeContextMenuItem(
-                            text =
-                                if (language == AppLanguage.EN) {
-                                    "Open video details"
-                                } else {
-                                    "视频播放"
-                                },
+                            text = stringResource(R.string.home_open_video_details),
                             icon = Icons.Outlined.PlayArrow,
                             onClick = {
                                 dismissContextMenu()
@@ -1576,7 +1558,7 @@ internal fun WorkshopCard(
                         )
                     }
                     HomeContextMenuItem(
-                        text = if (language == AppLanguage.EN) "Open in Steam" else "打开 Steam",
+                        text = stringResource(R.string.home_open_in_steam),
                         icon = Icons.Outlined.OpenInNew,
                         onClick = {
                             dismissContextMenu()

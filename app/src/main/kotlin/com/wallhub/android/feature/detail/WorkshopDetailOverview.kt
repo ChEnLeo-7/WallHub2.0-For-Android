@@ -35,16 +35,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
 import com.wallhub.android.core.designsystem.formatMegabytes
-import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.WorkshopDetail
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -52,14 +52,11 @@ import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun DetailOverviewPage(
-    detail: WorkshopDetail,
-    language: AppLanguage,
-) {
+internal fun DetailOverviewPage(detail: WorkshopDetail) {
     val summary = detail.summary
     val description =
         detail.description.ifBlank {
-            language.text("该壁纸没有提供简介。", "No description was provided.")
+            stringResource(R.string.detail_no_description)
         }
     var descriptionExpanded by rememberSaveable(summary.id, description) { mutableStateOf(false) }
     var descriptionCanExpand by remember(description) { mutableStateOf(false) }
@@ -94,7 +91,7 @@ internal fun DetailOverviewPage(
                     verticalArrangement = Arrangement.spacedBy(WallHubSpacing.controlInset),
                 ) {
                     Text(
-                        text = language.text("壁纸信息", "Wallpaper information"),
+                        text = stringResource(R.string.detail_wallpaper_information),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -102,13 +99,13 @@ internal fun DetailOverviewPage(
                         first =
                             DetailMetricValue(
                                 Icons.Heart,
-                                language.text("订阅数", "Subscriptions"),
+                                stringResource(R.string.detail_subscriptions),
                                 formatCompactCount(detail.subscriptions ?: summary.subscriptions),
                             ),
                         second =
                             DetailMetricValue(
                                 Icons.Star,
-                                language.text("收藏数", "Favorites"),
+                                stringResource(R.string.detail_favorites),
                                 formatCompactCount(summary.favorites),
                             ),
                     )
@@ -117,15 +114,15 @@ internal fun DetailOverviewPage(
                         first =
                             DetailMetricValue(
                                 Icons.Visibility,
-                                language.text("浏览量", "Views"),
+                                stringResource(R.string.detail_views),
                                 formatCompactCount(summary.views),
                             ),
                         second =
                             DetailMetricValue(
                                 Icons.Download,
-                                language.text("文件大小", "File size"),
+                                stringResource(R.string.detail_file_size),
                                 detail.fileSizeBytes?.let(::formatMegabytes)
-                                    ?: language.text("未知", "Unknown"),
+                                    ?: stringResource(R.string.detail_unknown),
                             ),
                     )
                     DetailDivider()
@@ -133,20 +130,20 @@ internal fun DetailOverviewPage(
                         first =
                             DetailMetricValue(
                                 Icons.Schedule,
-                                language.text("最后更新", "Last updated"),
-                                formatWorkshopDate(detail.updatedAt, language),
+                                stringResource(R.string.detail_last_updated),
+                                formatWorkshopDate(detail.updatedAt),
                             ),
                         second =
                             DetailMetricValue(
                                 Icons.Info,
-                                language.text("类型", "Type"),
-                                summary.type.label(language),
+                                stringResource(R.string.detail_type),
+                                summary.type.label(),
                             ),
                     )
                     if (summary.tags.isNotEmpty()) {
                         DetailDivider()
                         Text(
-                            text = language.text("标签", "Tags"),
+                            text = stringResource(R.string.detail_tags),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                         )
@@ -184,7 +181,7 @@ internal fun DetailOverviewPage(
                         verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
                     ) {
                         Text(
-                            text = language.text("简介", "Description"),
+                            text = stringResource(R.string.detail_description),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                         )
@@ -202,11 +199,7 @@ internal fun DetailOverviewPage(
                                                 .clickable(
                                                     enabled = !descriptionTogglePending,
                                                     role = Role.Button,
-                                                    onClickLabel =
-                                                        language.text(
-                                                            "展开简介",
-                                                            "Expand description",
-                                                        ),
+                                                    onClickLabel = stringResource(R.string.detail_expand_description),
                                                 ) {
                                                     requestDescriptionExpansion(true)
                                                 }
@@ -216,11 +209,7 @@ internal fun DetailOverviewPage(
                                                 indication = null,
                                                 enabled = !descriptionTogglePending,
                                                 role = Role.Button,
-                                                onClickLabel =
-                                                    language.text(
-                                                        "收起简介",
-                                                        "Collapse description",
-                                                    ),
+                                                onClickLabel = stringResource(R.string.detail_collapse_description),
                                             ) {
                                                 requestDescriptionExpansion(false)
                                             }
@@ -255,9 +244,9 @@ internal fun DetailOverviewPage(
                                 Text(
                                     text =
                                         if (descriptionExpanded) {
-                                            language.text("收起", "Show less")
+                                            stringResource(R.string.detail_show_less)
                                         } else {
-                                            language.text("展开查看更多", "Show more")
+                                            stringResource(R.string.detail_show_more)
                                         },
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.SemiBold,

@@ -2,12 +2,13 @@
 
 package com.wallhub.android.feature.settings
 
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.wallhub.android.R
 import com.wallhub.android.core.model.AccentPreference
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.AppUpdateRepository
 import com.wallhub.android.core.model.DiagnosticExportRepository
@@ -22,6 +23,7 @@ import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -39,6 +41,7 @@ import javax.inject.Inject
 class SettingsViewModel
     @Inject
     constructor(
+        @ApplicationContext private val context: Context,
         private val settingsRepository: SettingsRepository,
         private val launcherIconController: LauncherIconController,
         private val steamSessionRepository: SteamSessionRepository,
@@ -90,7 +93,6 @@ class SettingsViewModel
         private fun handleAppearanceAndHomeAction(action: SettingsAction): Boolean {
             when (action) {
                 is SettingsAction.ThemeChanged -> setTheme(action.theme)
-                is SettingsAction.LanguageChanged -> setLanguage(action.language)
                 is SettingsAction.AccentChanged -> setAccent(action.accent, action.customColor)
                 is SettingsAction.SystemMonetEnabledChanged -> setSystemMonetEnabled(action.enabled)
                 is SettingsAction.ThemedLauncherIconEnabledChanged -> setThemedLauncherIconEnabled(action.enabled)
@@ -159,10 +161,6 @@ class SettingsViewModel
 
         private fun setTheme(theme: ThemePreference) {
             viewModelScope.launch { settingsRepository.setTheme(theme) }
-        }
-
-        private fun setLanguage(language: AppLanguage) {
-            viewModelScope.launch { settingsRepository.setLanguage(language) }
         }
 
         private fun setAccent(
@@ -306,11 +304,11 @@ class SettingsViewModel
                             )
                     } catch (error: CancellationException) {
                         throw error
-                    } catch (error: Throwable) {
+                    } catch (_: Throwable) {
                         mutableAppUpdateState.value =
                             mutableAppUpdateState.value.copy(
                                 phase = AppUpdatePhase.FAILED,
-                                message = error.message ?: "无法检查 GitHub Release",
+                                message = context.getString(R.string.settings_error_check_github_release),
                             )
                     } finally {
                         appUpdateJob = null
@@ -352,12 +350,12 @@ class SettingsViewModel
                             )
                     } catch (error: CancellationException) {
                         throw error
-                    } catch (error: Throwable) {
+                    } catch (_: Throwable) {
                         mutableAppUpdateState.value =
                             mutableAppUpdateState.value.copy(
                                 phase = AppUpdatePhase.FAILED,
                                 downloadedApkPath = null,
-                                message = error.message ?: "Release APK 下载或校验失败",
+                                message = context.getString(R.string.settings_error_download_release_apk),
                             )
                     } finally {
                         appUpdateJob = null
@@ -402,12 +400,12 @@ class SettingsViewModel
                 }.onSuccess {
                     mutableDiagnosticExportState.value =
                         DiagnosticExportUiState(
-                            message = "诊断日志已导出",
+                            message = context.getString(R.string.settings_diagnostic_exported),
                         )
                 }.onFailure { error ->
                     mutableDiagnosticExportState.value =
                         DiagnosticExportUiState(
-                            message = "导出失败：${error.javaClass.simpleName}",
+                            message = context.getString(R.string.settings_error_diagnostic_export, error.javaClass.simpleName),
                             isFailure = true,
                         )
                 }

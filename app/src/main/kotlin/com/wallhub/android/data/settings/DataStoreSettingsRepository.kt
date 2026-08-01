@@ -2,7 +2,6 @@ package com.wallhub.android.data.settings
 
 import com.wallhub.android.core.database.AppPreferencesStore
 import com.wallhub.android.core.model.AccentPreference
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
@@ -28,10 +27,6 @@ class DataStoreSettingsRepository
 
         override suspend fun setTheme(theme: ThemePreference) {
             store.setTheme(theme)
-        }
-
-        override suspend fun setLanguage(language: AppLanguage) {
-            store.setLanguage(language)
         }
 
         override suspend fun setAccent(

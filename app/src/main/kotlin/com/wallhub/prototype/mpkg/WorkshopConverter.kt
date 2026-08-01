@@ -122,12 +122,12 @@ object WorkshopConverter {
                 when (extension) {
                     "tex" -> {
                         require(entry.length <= MAX_DESKTOP_TEX_BYTES) {
-                            "无法转换移动端纹理 ${entry.path}：纹理文件超过移动端转换内存限制"
+                            "Failed to convert mobile texture ${entry.path}: texture file exceeds the mobile conversion memory limit"
                         }
                         val transformed = File(transformedDirectory, "$index.tex")
                         val result = TexMobileConverter.convertToFile(archive.readBytes(entry), transformed)
                         if (!result.converted) {
-                            error("无法转换移动端纹理 ${entry.path}：${result.reason}")
+                            error("Failed to convert mobile texture ${entry.path}: ${result.reason}")
                         }
                         convertedTextures += 1
                         entries += MpkgInputEntry(entry.path, FilePayload(transformed))

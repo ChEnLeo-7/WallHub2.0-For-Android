@@ -2,11 +2,11 @@
 
 package com.wallhub.android.feature.home
 
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.SteamAccessRepository
@@ -108,7 +108,6 @@ data class HomeFilterSelection(
 
 @Immutable
 internal data class HomeFilterUiConfig(
-    val language: AppLanguage,
     val multiSelect: Boolean,
     val matureContentEnabled: Boolean,
 )
@@ -171,7 +170,6 @@ data class HomeUiState(
     val sort: WorkshopSort = WorkshopSort.TRENDING,
     val days: Int = 30,
     val viewMode: HomeViewMode = HomeViewMode.GRID,
-    val language: AppLanguage = AppLanguage.ZH,
     val pageSize: Int = 24,
     val columns: Int = 2,
     val multiSelect: Boolean = true,
@@ -194,6 +192,7 @@ data class HomeUiState(
     val isLoadingMore: Boolean = false,
     val isPageLoading: Boolean = false,
     val error: String? = null,
+    @StringRes val errorRes: Int? = null,
     val successfulSearchToken: Long = 0L,
 ) {
     val activeFilterCount: Int
@@ -252,7 +251,7 @@ sealed interface HomeAction {
 
     data class CopyText(
         val text: String,
-        val message: String,
+        @StringRes val messageRes: Int,
     ) : HomeAction
 
     data class OpenSteam(
@@ -266,6 +265,11 @@ sealed interface HomeEffect {
     ) : HomeEffect
 
     data class ShowMessage(
+        @StringRes val messageRes: Int,
+        val formatArgs: List<Any> = emptyList(),
+    ) : HomeEffect
+
+    data class ShowMessageText(
         val message: String,
     ) : HomeEffect
 
@@ -279,7 +283,7 @@ sealed interface HomeEffect {
 
     data class CopyText(
         val text: String,
-        val message: String,
+        @StringRes val messageRes: Int,
     ) : HomeEffect
 
     data class OpenSteam(
@@ -304,8 +308,6 @@ internal fun String.creatorIdOrNull(): String? {
     return query.substringAfter(':').filter(Char::isDigit).takeIf(String::isNotBlank)
 }
 
-internal fun String.isSteamAuthorPlaceholder(): Boolean = this == "Steam 创作者" || startsWith("Steam 用户 ")
-
 internal fun HomeUiState.asAuthorSearchState(creatorId: String): HomeUiState =
     copy(
         query = "author:$creatorId",
@@ -324,6 +326,7 @@ internal fun HomeUiState.asAuthorSearchState(creatorId: String): HomeUiState =
         sort = WorkshopSort.MOST_RECENT,
         days = 0,
         error = null,
+        errorRes = null,
     )
 
 internal fun initialHomeUiState(authorSearchCreator: String?): HomeUiState {
@@ -350,9 +353,13 @@ internal suspend fun requireSteamIpPrewarm(
     shouldPrewarm: Boolean,
     dataSource: SteamWorkshopDataSource,
     steamAccessRepository: SteamAccessRepository,
-    failureMessage: String,
+    @StringRes failureMessageRes: Int,
 ) {
     if (shouldPrewarm && !steamAccessRepository.prewarmSteamIp(dataSource)) {
-        error(failureMessage)
+        throw HomeResourceMessageException(failureMessageRes)
     }
 }
+
+internal class HomeResourceMessageException(
+    @StringRes val messageRes: Int,
+) : IllegalStateException()

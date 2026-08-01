@@ -20,12 +20,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubPrimaryAction
 import com.wallhub.android.core.designsystem.WallHubSecondaryButton
 import com.wallhub.android.core.designsystem.WallHubSpacing
-import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.FavoriteState
 import com.wallhub.android.core.model.SubscriptionState
@@ -35,18 +37,18 @@ import com.wallhub.android.core.model.WorkshopType
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.util.Locale
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 @Composable
 internal fun DetailActionBar(
-    language: AppLanguage,
     interaction: WorkshopInteraction,
     isLoadingInteraction: Boolean,
     isUpdatingInteraction: Boolean,
-    interactionMessage: String?,
+    interactionMessage: DetailUiText?,
     isEnqueuingDownload: Boolean,
-    downloadMessage: String?,
+    downloadMessage: DetailUiText?,
     onToggleSubscription: () -> Unit,
     onToggleFavorite: () -> Unit,
     onDownload: () -> Unit,
@@ -73,9 +75,9 @@ internal fun DetailActionBar(
                 Text(
                     text =
                         if (interaction.subscriptionState == SubscriptionState.SUBSCRIBED) {
-                            language.text("取消订阅", "Unsubscribe")
+                            stringResource(R.string.detail_unsubscribe)
                         } else {
-                            language.text("订阅", "Subscribe")
+                            stringResource(R.string.detail_subscribe)
                         },
                     modifier = Modifier.padding(start = WallHubSpacing.dense),
                 )
@@ -89,9 +91,9 @@ internal fun DetailActionBar(
                 Text(
                     text =
                         if (interaction.favoriteState == FavoriteState.FAVORITED) {
-                            language.text("取消收藏", "Unfavorite")
+                            stringResource(R.string.detail_unfavorite)
                         } else {
-                            language.text("收藏", "Favorite")
+                            stringResource(R.string.detail_favorite)
                         },
                     modifier = Modifier.padding(start = WallHubSpacing.dense),
                 )
@@ -100,9 +102,9 @@ internal fun DetailActionBar(
         WallHubPrimaryAction(
             label =
                 if (isEnqueuingDownload) {
-                    language.text("正在加入下载队列…", "Adding to download queue…")
+                    stringResource(R.string.detail_adding_to_download_queue)
                 } else {
-                    language.text("下载", "Download")
+                    stringResource(R.string.detail_download)
                 },
             onClick = onDownload,
             icon = Icons.Download,
@@ -110,10 +112,10 @@ internal fun DetailActionBar(
         )
         val status =
             when {
-                isLoadingInteraction -> language.text("正在读取 Steam 账户状态…", "Loading Steam account state…")
-                isUpdatingInteraction -> language.text("正在向 Steam 提交请求…", "Sending request to Steam…")
-                interactionMessage != null -> interactionMessage
-                downloadMessage != null -> downloadMessage
+                isLoadingInteraction -> stringResource(R.string.detail_loading_steam_account)
+                isUpdatingInteraction -> stringResource(R.string.detail_sending_steam_request)
+                interactionMessage != null -> interactionMessage.resolve()
+                downloadMessage != null -> downloadMessage.resolve()
                 else -> ""
             }
         Text(
@@ -129,69 +131,64 @@ internal fun DetailActionBar(
 
 internal fun formatCompactCount(value: Long?): String {
     if (value == null) return "—"
+    val locale = Locale.getDefault()
+    val isChinese = locale.language == Locale.CHINESE.language
     return when {
-        value >= 1_000_000L ->
+        (isChinese && value >= 10_000L) || (!isChinese && value >= 1_000_000L) ->
             String
-                .format(Locale.getDefault(), "%.1fM", value / 1_000_000.0)
-                .replace(".0M", "M")
+                .format(
+                    locale,
+                    if (isChinese) "%.1f 万" else "%.1fM",
+                    if (isChinese) value / 10_000.0 else value / 1_000_000.0,
+                ).let { formatted ->
+                    if (isChinese) formatted.replace(".0 万", " 万") else formatted.replace(".0M", "M")
+                }
         value >= 1_000L ->
             String
-                .format(Locale.getDefault(), "%.1fK", value / 1_000.0)
+                .format(locale, "%.1fK", value / 1_000.0)
                 .replace(".0K", "K")
         else -> value.toString()
     }
 }
 
-internal fun formatWorkshopDate(
-    timestamp: Long?,
-    language: AppLanguage,
-): String {
-    if (timestamp == null || timestamp <= 0L) return language.text("未知", "Unknown")
-    val pattern = if (language == AppLanguage.EN) "MMM d, yyyy" else "yyyy年M月d日"
+@Composable
+internal fun formatWorkshopDate(timestamp: Long?): String {
+    val unknown = stringResource(R.string.detail_unknown)
+    if (timestamp == null || timestamp <= 0L) return unknown
+    val locale = LocalConfiguration.current.locales[0]
     return runCatching {
         DateTimeFormatter
-            .ofPattern(pattern, Locale.getDefault())
+            .ofLocalizedDate(FormatStyle.MEDIUM)
+            .withLocale(locale)
             .format(Instant.ofEpochSecond(timestamp).atZone(ZoneId.systemDefault()))
-    }.getOrDefault(language.text("未知", "Unknown"))
+    }.getOrDefault(unknown)
 }
 
+@Composable
 internal fun formatCommentDate(
     comment: WorkshopComment,
-    language: AppLanguage,
     nowMillis: Long = System.currentTimeMillis(),
 ): String {
+    val locale = LocalConfiguration.current.locales[0]
     comment.timestamp?.takeIf { it > 0L }?.let { timestamp ->
         val timestampMillis = if (timestamp > 100_000_000_000L) timestamp else timestamp * 1_000L
         val difference = nowMillis - timestampMillis
         if (difference in 0 until COMMENT_HOUR_MS) {
             val minutes = (difference / COMMENT_MINUTE_MS).coerceAtLeast(1L)
-            return language.text("$minutes 分钟以前", "$minutes minutes ago")
+            return pluralStringResource(R.plurals.detail_minutes_ago, minutes.toInt(), minutes)
         }
         if (difference in 0 until COMMENT_DAY_MS) {
             val hours = difference / COMMENT_HOUR_MS
-            return language.text("$hours 小时以前", "$hours hours ago")
+            return pluralStringResource(R.plurals.detail_hours_ago, hours.toInt(), hours)
         }
         return runCatching {
             val dateTime = Instant.ofEpochMilli(timestampMillis).atZone(ZoneId.systemDefault())
             val currentYear = Instant.ofEpochMilli(nowMillis).atZone(ZoneId.systemDefault()).year
-            val pattern =
-                when (language) {
-                    AppLanguage.EN ->
-                        if (dateTime.year == currentYear) {
-                            "MMM dd, hh:mm:ss a"
-                        } else {
-                            "yyyy MMM dd, hh:mm:ss a"
-                        }
-
-                    AppLanguage.ZH ->
-                        if (dateTime.year == currentYear) {
-                            "MM 月 dd 日 a hh:mm:ss"
-                        } else {
-                            "yyyy 年 MM 月 dd 日 a hh:mm:ss"
-                        }
-                }
-            val locale = if (language == AppLanguage.EN) Locale.ENGLISH else Locale.SIMPLIFIED_CHINESE
-            DateTimeFormatter.ofPattern(pattern, locale).format(dateTime)
+            val dateStyle = if (dateTime.year == currentYear) FormatStyle.SHORT else FormatStyle.MEDIUM
+            DateTimeFormatter
+                .ofLocalizedDateTime(dateStyle, FormatStyle.MEDIUM)
+                .withLocale(locale)
+                .format(dateTime)
         }.getOrDefault(comment.dateLabel.orEmpty())
     }
     return comment.dateLabel.orEmpty()
@@ -211,7 +208,6 @@ internal const val COMMENT_DAY_MS = 24L * COMMENT_HOUR_MS
 @Composable
 internal fun DownloadChoiceSheet(
     type: WorkshopType,
-    language: AppLanguage,
     exportFormats: List<ExportFormat>,
     onDismiss: () -> Unit,
     onDownload: (ExportFormat) -> Unit,
@@ -224,12 +220,9 @@ internal fun DownloadChoiceSheet(
                     .padding(horizontal = WallHubSpacing.lg, vertical = WallHubSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
         ) {
-            Text(language.text("下载选项", "Download options"), style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.detail_download_options), style = MaterialTheme.typography.titleLarge)
             Text(
-                language.text(
-                    "${type.label(language)} 项目会加入下载队列，可在下载页面查看进度。",
-                    "${type.label(language)} tasks are added to the download queue. Track their progress on Downloads.",
-                ),
+                stringResource(R.string.detail_download_queue_explanation, type.label()),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -240,27 +233,28 @@ internal fun DownloadChoiceSheet(
                 ) {
                     Text(
                         when (format) {
-                            ExportFormat.MPKG -> language.text("下载 MPKG 文件（手机）", "Download MPKG (mobile)")
-                            ExportFormat.ZIP -> language.text("下载 ZIP 压缩包", "Download ZIP archive")
-                            ExportFormat.AUTO -> language.text("自动选择格式", "Automatically choose format")
+                            ExportFormat.MPKG -> stringResource(R.string.detail_download_mpkg)
+                            ExportFormat.ZIP -> stringResource(R.string.detail_download_zip)
+                            ExportFormat.AUTO -> stringResource(R.string.detail_choose_format_automatically)
                         },
                     )
                 }
             }
             WallHubSecondaryButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                Text(language.text("关闭", "Close"))
+                Text(stringResource(R.string.detail_close))
             }
             Spacer(modifier = Modifier.height(WallHubSpacing.sm))
         }
     }
 }
 
-internal fun WorkshopType.label(language: AppLanguage): String =
+@Composable
+internal fun WorkshopType.label(): String =
     when (this) {
-        WorkshopType.VIDEO -> language.text("视频", "Video")
-        WorkshopType.SCENE -> language.text("场景", "Scene")
-        WorkshopType.WEB -> language.text("网站", "Web")
-        WorkshopType.UNKNOWN -> language.text("未知", "Unknown")
+        WorkshopType.VIDEO -> stringResource(R.string.detail_workshop_type_video)
+        WorkshopType.SCENE -> stringResource(R.string.detail_workshop_type_scene)
+        WorkshopType.WEB -> stringResource(R.string.detail_workshop_type_web)
+        WorkshopType.UNKNOWN -> stringResource(R.string.detail_unknown)
     }
 
 internal fun WorkshopType.defaultExportFormat(): ExportFormat =
@@ -281,9 +275,10 @@ internal fun WorkshopType.availableExportFormats(): List<ExportFormat> =
         -> listOf(ExportFormat.MPKG, ExportFormat.ZIP)
     }
 
-internal fun ExportFormat.label(language: AppLanguage): String =
+@Composable
+internal fun ExportFormat.label(): String =
     when (this) {
-        ExportFormat.AUTO -> language.text("自动", "Automatic")
-        ExportFormat.MPKG -> language.text("MPKG（移动端）", "MPKG (mobile)")
-        ExportFormat.ZIP -> language.text("ZIP 压缩包", "ZIP archive")
+        ExportFormat.AUTO -> stringResource(R.string.detail_export_format_automatic)
+        ExportFormat.MPKG -> stringResource(R.string.detail_export_format_mpkg)
+        ExportFormat.ZIP -> stringResource(R.string.detail_export_format_zip)
     }

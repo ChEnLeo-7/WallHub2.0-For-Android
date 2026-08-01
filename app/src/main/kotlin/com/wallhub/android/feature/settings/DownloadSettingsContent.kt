@@ -15,9 +15,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSpacing
-import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
@@ -32,11 +33,6 @@ internal fun DownloadSettingsContent(
     onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit,
     onDownloadProxyEnabledChange: (Boolean) -> Unit,
 ) {
-    fun text(
-        zh: String,
-        en: String,
-    ): String = if (preferences.language == AppLanguage.EN) en else zh
-
     fun saveDownloadPreferences(
         maxDownloads: Int = preferences.maxConcurrentDownloads,
         chunkConcurrency: Int = preferences.chunkDownloadConcurrency,
@@ -51,22 +47,15 @@ internal fun DownloadSettingsContent(
     }
 
     SettingsSection(
-        title = text("存储位置", "Storage location"),
-        supportingText =
-            text(
-                "选择转换完成后的文件导出位置",
-                "Choose where converted files are exported",
-            ),
+        title = stringResource(R.string.settings_storage_location_title),
+        supportingText = stringResource(R.string.settings_storage_location_description),
         icon = Icons.Outlined.FolderOpen,
     ) {
         SettingsListItem(
-            headlineContent = { Text(text("当前导出目录", "Current export directory")) },
+            headlineContent = { Text(stringResource(R.string.settings_current_export_directory)) },
             supportingContent = {
                 Text(
-                    preferences.outputDirectoryLabel ?: text(
-                        "默认：Download/WallHub",
-                        "Default: Download/WallHub",
-                    ),
+                    preferences.outputDirectoryLabel ?: stringResource(R.string.settings_default_export_directory),
                 )
             },
         )
@@ -82,9 +71,9 @@ internal fun DownloadSettingsContent(
                 Text(
                     text =
                         if (preferences.outputTreeUri == null) {
-                            text("选择自定义目录", "Choose custom directory")
+                            stringResource(R.string.settings_action_choose_custom_directory)
                         } else {
-                            text("更改自定义目录", "Change custom directory")
+                            stringResource(R.string.settings_action_change_custom_directory)
                         },
                     modifier = Modifier.padding(start = WallHubSpacing.xs),
                 )
@@ -94,64 +83,48 @@ internal fun DownloadSettingsContent(
                     onClick = onClearOutputDirectory,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(text("恢复默认目录", "Restore default directory"))
+                    Text(stringResource(R.string.settings_action_restore_default_directory))
                 }
             }
         }
     }
 
     SettingsSection(
-        title = text("下载性能", "Download performance"),
-        supportingText =
-            text(
-                "调整任务数量与单任务分块并发",
-                "Adjust task count and per-download chunk concurrency",
-            ),
+        title = stringResource(R.string.settings_download_performance_title),
+        supportingText = stringResource(R.string.settings_download_performance_description),
         icon = Icons.Outlined.Download,
     ) {
         SettingChoiceRow(
-            title = text("同时下载项目数", "Concurrent downloads"),
+            title = stringResource(R.string.settings_concurrent_downloads),
             selectedValue = preferences.maxConcurrentDownloads,
             values = listOf(1, 2, 3, 4),
-            label = { text("$it 项", "$it tasks") },
+            label = { pluralStringResource(R.plurals.settings_download_task_count, it, it) },
             onSelected = { value -> saveDownloadPreferences(maxDownloads = value) },
         )
         SettingsItemDivider()
         SettingChoiceRow(
-            title = text("单项目分块并发", "Chunks per download"),
+            title = stringResource(R.string.settings_chunks_per_download),
             selectedValue = preferences.chunkDownloadConcurrency,
             values = listOf(12, 16, 24, 32, 48),
-            label = { value -> text("$value 个", "$value chunks") },
+            label = { value -> pluralStringResource(R.plurals.settings_chunk_count, value, value) },
             onSelected = { value -> saveDownloadPreferences(chunkConcurrency = value) },
         )
     }
 
     SettingsSection(
-        title = text("网络代理", "Network proxy"),
-        supportingText =
-            text(
-                "用于下载、在线播放和 Steam CM 登录；社区内置访问线路仍独立管理",
-                "Used by downloads, online playback, and Steam CM login; built-in Community access remains independent",
-            ),
+        title = stringResource(R.string.settings_network_proxy_title),
+        supportingText = stringResource(R.string.settings_network_proxy_description),
         icon = Icons.Outlined.Tune,
     ) {
         if (preferences.downloadProxyRequiresConfirmation) {
             SettingsNotice(
-                title = text("旧版代理需要确认", "Legacy proxy needs confirmation"),
-                message =
-                    text(
-                        "已保留旧版代理地址，但不会自动启用。请确认地址后再开启代理。",
-                        "The saved legacy address was kept but is not enabled automatically. Confirm it before enabling the proxy.",
-                    ),
+                title = stringResource(R.string.settings_legacy_proxy_confirmation_title),
+                message = stringResource(R.string.settings_legacy_proxy_confirmation_description),
             )
         }
         SettingsSwitchRow(
-            title = text("使用网络代理", "Use network proxy"),
-            supportingText =
-                text(
-                    "下载、在线播放和 Steam CM 登录使用此地址；失败时不会切换其他代理",
-                    "Downloads, online playback, and Steam CM login use this address; failures do not switch proxies",
-                ),
+            title = stringResource(R.string.settings_use_network_proxy),
+            supportingText = stringResource(R.string.settings_use_network_proxy_description),
             checked = preferences.downloadProxyEnabled,
             enabled = isSupportedDownloadProxyUrl(preferences.downloadProxyUrl),
             onCheckedChange = onDownloadProxyEnabledChange,
@@ -164,7 +137,7 @@ internal fun DownloadSettingsContent(
             SettingsFilledTextField(
                 value = proxyUrl,
                 onValueChange = onProxyUrlChanged,
-                label = { Text(text("HTTP(S) / SOCKS5 代理", "HTTP(S) / SOCKS5 proxy")) },
+                label = { Text(stringResource(R.string.settings_proxy_field_label)) },
                 placeholder = { Text("socks5://127.0.0.1:1080") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -174,7 +147,7 @@ internal fun DownloadSettingsContent(
                 enabled = proxyUrl != preferences.downloadProxyUrl,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(text("保存代理设置", "Save proxy settings"))
+                Text(stringResource(R.string.settings_action_save_proxy_settings))
             }
         }
     }

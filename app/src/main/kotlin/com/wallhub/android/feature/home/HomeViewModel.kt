@@ -2,6 +2,7 @@
 
 package com.wallhub.android.feature.home
 
+import android.content.Context
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.getValue
@@ -9,13 +10,15 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.wallhub.android.core.designsystem.text
+import com.wallhub.android.R
+import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadTaskRepository
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamAccessRepository
+import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopPage
 import com.wallhub.android.core.model.WorkshopRating
@@ -23,6 +26,7 @@ import com.wallhub.android.core.model.WorkshopRepository
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -40,6 +44,7 @@ import javax.inject.Inject
 class HomeViewModel
     @Inject
     constructor(
+        @ApplicationContext private val applicationContext: Context,
         private val workshopRepository: WorkshopRepository,
         private val settingsRepository: SettingsRepository,
         private val steamAccessRepository: SteamAccessRepository,
@@ -82,7 +87,6 @@ class HomeViewModel
                             previous.steamWorkshopDataSource != preferences.steamWorkshopDataSource
                     mutableState.value =
                         previous.copy(
-                            language = preferences.language,
                             pageSize = preferences.homePageSize,
                             columns = preferences.homeColumns,
                             multiSelect = preferences.homeFilterMultiSelect,
@@ -114,7 +118,7 @@ class HomeViewModel
                     } else {
                         emitEffect(
                             HomeEffect.ShowMessage(
-                                "未授予存储权限，无法导出到 Download/WallHub",
+                                R.string.home_storage_permission_denied,
                             ),
                         )
                     }
@@ -160,6 +164,7 @@ class HomeViewModel
                     query = query,
                     creatorId = null,
                     error = null,
+                    errorRes = null,
                 )
         }
 
@@ -178,17 +183,18 @@ class HomeViewModel
                     query = restoredQuery,
                     creatorId = restoredQuery.creatorIdOrNull(),
                     error = null,
+                    errorRes = null,
                 )
         }
 
         private fun requestAuthorDisplayName(item: WorkshopSummary) {
-            if (!item.author.isSteamAuthorPlaceholder() || item.id in authorNameRequests) return
+            if (item.authorPlaceholder == WorkshopAuthorPlaceholder.NONE || item.id in authorNameRequests) return
             authorNameRequests += item.id
             viewModelScope.launch {
                 val authorName =
                     runCatching {
-                        workshopRepository.getDetail(item.id).summary.author
-                    }.getOrNull()?.takeUnless(String::isSteamAuthorPlaceholder)
+                        workshopRepository.getDetail(item.id).summary
+                    }.getOrNull()?.takeIf { it.authorPlaceholder == WorkshopAuthorPlaceholder.NONE }?.author
                 if (!authorName.isNullOrBlank()) {
                     mutableState.value =
                         mutableState.value.let { state ->
@@ -263,6 +269,7 @@ class HomeViewModel
                     sort = WorkshopSort.TRENDING,
                     days = 30,
                     error = null,
+                    errorRes = null,
                 )
             refresh()
         }
@@ -296,7 +303,7 @@ class HomeViewModel
                     downloadTaskRepository.enqueue(
                         DownloadRequest(
                             workshopId = item.id,
-                            title = item.title,
+                            title = applicationContext.localizedTitle(item),
                             type = item.type,
                             previewUrl = item.previewUrl,
                             expectedTotalBytes = item.fileSizeBytes ?: 0L,
@@ -306,11 +313,14 @@ class HomeViewModel
                     )
                 }.onSuccess {
                     effectChannel.send(
-                        HomeEffect.ShowMessage("已加入下载队列：${it.title}"),
+                        HomeEffect.ShowMessage(
+                            R.string.home_added_to_download_queue,
+                            listOf(it.title),
+                        ),
                     )
-                }.onFailure { error ->
+                }.onFailure {
                     effectChannel.send(
-                        HomeEffect.ShowMessage(error.message ?: "无法加入下载队列"),
+                        HomeEffect.ShowMessage(R.string.home_unable_to_queue_download),
                     )
                 }
             }
@@ -339,6 +349,7 @@ class HomeViewModel
                             isLoadingMore = append,
                             isPageLoading = !append && requestState.items.isNotEmpty(),
                             error = null,
+                            errorRes = null,
                         )
                     try {
                         if (shouldPrewarm) {
@@ -346,11 +357,7 @@ class HomeViewModel
                                 shouldPrewarm = true,
                                 dataSource = requestState.steamWorkshopDataSource,
                                 steamAccessRepository = steamAccessRepository,
-                                failureMessage =
-                                    requestState.text(
-                                        "Steam IP预热失败，请检查网络后重试",
-                                        "Steam IP prewarm failed. Check your network and retry.",
-                                    ),
+                                failureMessageRes = R.string.home_steam_ip_prewarm_failed,
                             )
                             mutableState.value = mutableState.value.copy(isSteamIpPrewarming = false)
                         }
@@ -396,7 +403,10 @@ class HomeViewModel
                                 isSteamIpPrewarming = false,
                                 isLoadingMore = false,
                                 isPageLoading = false,
-                                error = error.message ?: "无法加载 Steam 创意工坊，请稍后重试",
+                                error = null,
+                                errorRes =
+                                    (error as? HomeResourceMessageException)?.messageRes
+                                        ?: R.string.home_unable_to_load_workshop,
                             )
                     }
                 }
@@ -437,6 +447,7 @@ class HomeViewModel
                 isLoadingMore = false,
                 isPageLoading = false,
                 error = null,
+                errorRes = null,
             )
         }
     }
@@ -446,7 +457,7 @@ internal fun HomeAction.immediateEffect(): HomeEffect? =
         is HomeAction.RequestDownload -> HomeEffect.ResolveLegacyStoragePermission(item)
         is HomeAction.OpenDetail -> HomeEffect.OpenDetail(workshopId)
         is HomeAction.SearchAuthor -> HomeEffect.SearchAuthor(creator)
-        is HomeAction.CopyText -> HomeEffect.CopyText(text, message)
+        is HomeAction.CopyText -> HomeEffect.CopyText(text, messageRes)
         is HomeAction.OpenSteam -> HomeEffect.OpenSteam(workshopId)
         is HomeAction.LegacyStoragePermissionResult -> null
         is HomeAction.QueryChanged,

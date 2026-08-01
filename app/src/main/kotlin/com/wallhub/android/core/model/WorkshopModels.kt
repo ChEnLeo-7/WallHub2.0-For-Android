@@ -85,6 +85,13 @@ data class WorkshopInteraction(
     val favoriteState: FavoriteState = FavoriteState.UNKNOWN,
 )
 
+enum class WorkshopAuthorPlaceholder {
+    NONE,
+    USER,
+    USER_WITH_ID,
+    CREATOR,
+}
+
 data class WorkshopSummary(
     val id: Long,
     val title: String,
@@ -99,6 +106,8 @@ data class WorkshopSummary(
     val fileSizeBytes: Long? = null,
     val subscriptionState: SubscriptionState = SubscriptionState.UNKNOWN,
     val favoriteState: FavoriteState = FavoriteState.UNKNOWN,
+    val isTitlePlaceholder: Boolean = false,
+    val authorPlaceholder: WorkshopAuthorPlaceholder = WorkshopAuthorPlaceholder.NONE,
 )
 
 data class WorkshopDetail(
@@ -121,6 +130,7 @@ data class WorkshopComment(
     val isCreator: Boolean = false,
     val timestamp: Long? = null,
     val dateLabel: String? = null,
+    val isAuthorPlaceholder: Boolean = false,
 )
 
 data class WorkshopCommentPage(

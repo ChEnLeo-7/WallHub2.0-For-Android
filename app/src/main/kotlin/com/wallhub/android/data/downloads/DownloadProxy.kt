@@ -12,19 +12,19 @@ internal fun OkHttpClient.Builder.applyDownloadProxy(proxyUrl: String): OkHttpCl
     }
 
 internal fun parseDownloadProxy(raw: String): Proxy {
-    require(isSupportedDownloadProxyUrl(raw)) { "下载代理地址无效" }
+    require(isSupportedDownloadProxyUrl(raw)) { "Invalid download proxy URL" }
     val uri =
         runCatching { URI(raw.trim()) }.getOrElse {
-            throw IllegalArgumentException("下载代理地址无效")
+            throw IllegalArgumentException("Invalid download proxy URL")
         }
     val host =
         uri.host?.takeIf(String::isNotBlank)
-            ?: throw IllegalArgumentException("下载代理缺少主机名")
+            ?: throw IllegalArgumentException("Download proxy URL has no host")
     val type =
         when (uri.scheme?.lowercase()) {
             "http", "https" -> Proxy.Type.HTTP
             "socks", "socks5" -> Proxy.Type.SOCKS
-            else -> throw IllegalArgumentException("下载代理仅支持 HTTP(S) 或 SOCKS5")
+            else -> throw IllegalArgumentException("Download proxy supports only HTTP(S) or SOCKS5")
         }
     val port =
         if (uri.port > 0) {

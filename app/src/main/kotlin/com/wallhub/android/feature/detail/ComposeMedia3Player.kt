@@ -182,7 +182,8 @@ private class WallHubPlayerControlsBinder(
                 ) as TextView
             option.text = speed.toSpeedLabel()
             option.isSelected = abs(player.playbackParameters.speed - speed) < SPEED_EPSILON
-            option.contentDescription = "${anchor.context.getString(R.string.wallhub_player_playback_speed)} ${option.text}"
+            option.contentDescription =
+                anchor.context.getString(R.string.detail_playback_speed_value, option.text)
             option.setOnClickListener {
                 player.setPlaybackParameters(player.playbackParameters.withSpeed(speed))
                 popup.dismiss()
@@ -251,7 +252,7 @@ private class WallHubPlayerControlsBinder(
             )
             contentDescription =
                 context.getString(
-                    if (isMuted) R.string.wallhub_player_unmute else R.string.wallhub_player_mute,
+                    if (isMuted) R.string.detail_unmute else R.string.detail_mute,
                 )
         }
     }

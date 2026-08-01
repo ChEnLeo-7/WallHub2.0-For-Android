@@ -67,7 +67,7 @@ class FileDiagnosticRepository
                 val content = exportRedactedText()
                 val output =
                     context.contentResolver.openOutputStream(android.net.Uri.parse(destinationUri), "wt")
-                        ?: error("无法创建诊断日志文件")
+                        ?: error("Failed to create diagnostic log file")
                 output.bufferedWriter(Charsets.UTF_8).use { writer -> writer.write(content) }
             }
 

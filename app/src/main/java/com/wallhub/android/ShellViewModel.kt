@@ -38,7 +38,7 @@ class ShellViewModel
                         DiagnosticEvent(
                             source = "app-shell",
                             level = DiagnosticLevel.INFO,
-                            message = "正式应用 Shell 已启动",
+                            message = "Production app shell started",
                         ),
                     )
                 }

@@ -50,7 +50,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.PopupPositionProvider
-import com.wallhub.android.core.model.AppLanguage
+import java.util.Locale
 import kotlin.math.roundToInt
 
 object WallHubContextMenuDefaults {
@@ -72,11 +72,8 @@ object WallHubContextMenuDefaults {
 
     val Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
-    fun menuWidth(
-        cardWidth: Dp?,
-        language: AppLanguage,
-    ): Dp {
-        val maximum = if (language == AppLanguage.EN) MaxWidthEn else MaxWidthZh
+    fun menuWidth(cardWidth: Dp?): Dp {
+        val maximum = if (Locale.getDefault().language == Locale.CHINESE.language) MaxWidthZh else MaxWidthEn
         return cardWidth
             ?.minus(CardWidthInset)
             ?.coerceIn(minimumValue = MinWidth, maximumValue = maximum)

@@ -64,14 +64,14 @@ internal suspend fun resolveContentAccess(
     target: WorkshopContentTarget,
 ): SteamContentAccess {
     val depotKey = session.apps.getDepotDecryptionKey(target.depotId, target.appId).await()
-    check(depotKey.result == EResult.OK) { "Steam 未提供 depot key：${depotKey.result}" }
+    check(depotKey.result == EResult.OK) { "Steam did not provide a depot key: ${depotKey.result}" }
     val servers =
         session.content
             .getServersForSteamPipe(null, CDN_SERVER_LIMIT, session.callbackScope)
             .await()
             .filter { resolveCdnRequestHost(it.vHost, it.host) != null }
             .let(::prioritizeCdnServers)
-    check(servers.isNotEmpty()) { "Steam 未返回可用的 CDN 服务器" }
+    check(servers.isNotEmpty()) { "Steam returned no available CDN servers" }
     val requestCode =
         session.content
             .getManifestRequestCode(
@@ -157,9 +157,9 @@ internal class SteamContentVideoStream internal constructor(
         length: Int,
     ): ByteArray =
         withContext(Dispatchers.IO) {
-            check(!closed) { "SteamKit 在线播放会话已关闭" }
-            require(position >= 0L) { "在线播放读取位置无效" }
-            require(length >= 0) { "在线播放读取长度无效" }
+            check(!closed) { "SteamKit streaming session is closed" }
+            require(position >= 0L) { "Invalid streaming read position" }
+            require(length >= 0) { "Invalid streaming read length" }
             if (length == 0 || position >= contentLength) return@withContext ByteArray(0)
 
             val requestedLength = min(length.toLong(), contentLength - position).toInt()
@@ -183,7 +183,7 @@ internal class SteamContentVideoStream internal constructor(
                 )
                 destinationOffset += copiedLength
             }
-            check(destinationOffset == requestedLength) { "Steam 视频分块存在缺失数据" }
+            check(destinationOffset == requestedLength) { "Steam video chunk has missing data" }
             lastReadEnd.set(endExclusive - 1L)
             scheduleAheadPrefetch(endExclusive)
             result
@@ -398,9 +398,9 @@ internal class SteamContentVideoStream internal constructor(
         }
         if (file.exists() && !file.delete()) {
             partial.delete()
-            error("无法替换在线播放缓存分块")
+            error("Failed to replace streaming cache chunk")
         }
-        check(partial.renameTo(file)) { "无法提交在线播放缓存分块" }
+        check(partial.renameTo(file)) { "Failed to commit streaming cache chunk" }
         file.setLastModified(System.currentTimeMillis())
         if (cachedBytes >= 0L) cachedBytes += data.size.toLong()
     }
@@ -501,7 +501,7 @@ internal suspend fun downloadChunk(
                     token,
                 ).await()
             val written = DepotChunk.process(chunk, encrypted, decoded, depotKey)
-            check(written == decoded.size) { "Steam chunk 解压长度不匹配" }
+            check(written == decoded.size) { "Steam chunk decompressed length mismatch" }
             onSuccess?.invoke(server)
             return decoded
         } catch (error: Throwable) {
@@ -611,14 +611,14 @@ internal suspend fun downloadFilePlan(
         return
     }
     if (destination.exists() && !destination.isFile) {
-        error("Steam 暂存文件路径不是普通文件：${manifestFile.fileName}")
+        error("Steam staging file path is not a regular file: ${manifestFile.fileName}")
     }
     if (destination.isFile && !partial.exists()) {
         check(destination.renameTo(partial)) {
-            "无法保留未完成的 Steam 文件：${manifestFile.fileName}"
+            "Failed to preserve incomplete Steam file: ${manifestFile.fileName}"
         }
     } else if (destination.isFile && partial.exists()) {
-        check(destination.delete()) { "无法清理过期文件：${manifestFile.fileName}" }
+        check(destination.delete()) { "Failed to delete stale file: ${manifestFile.fileName}" }
     }
 
     val verifiedOffsets = findVerifiedChunkOffsets(partial, plan.chunks)
@@ -655,13 +655,13 @@ internal suspend fun downloadFilePlan(
     }
     checkDownloadControl(control)
     check(partial.length() == manifestFile.totalSize) {
-        "文件大小校验失败：${manifestFile.fileName}"
+        "File size verification failed: ${manifestFile.fileName}"
     }
     verifyFileHash(manifestFile, calculateFileHash(partial))
     if (destination.exists()) {
-        check(destination.delete()) { "无法替换已存在的文件：${manifestFile.fileName}" }
+        check(destination.delete()) { "Failed to replace existing file: ${manifestFile.fileName}" }
     }
-    check(partial.renameTo(destination)) { "无法提交下载文件：${manifestFile.fileName}" }
+    check(partial.renameTo(destination)) { "Failed to commit downloaded file: ${manifestFile.fileName}" }
     progressReporter.markFileCompleted(manifestFile.fileName)
 }
 
@@ -723,7 +723,7 @@ internal fun verifyFileHash(
 ) {
     if (file.fileHash.isNotEmpty()) {
         check(file.fileHash.contentEquals(calculatedHash)) {
-            "文件哈希校验失败：${file.fileName}"
+            "File hash verification failed: ${file.fileName}"
         }
     }
 }
@@ -798,15 +798,15 @@ internal fun describeServer(
     server: Server,
     hasToken: Boolean,
 ): String {
-    val requestHost = resolveCdnRequestHost(server.vHost, server.host) ?: "未知 CDN"
+    val requestHost = resolveCdnRequestHost(server.vHost, server.host) ?: "unknown CDN"
     val endpointHost = server.host?.trim()?.takeIf(String::isNotBlank)
     val endpoint =
         if (endpointHost != null && !endpointHost.equals(requestHost, ignoreCase = true)) {
-            "，节点：$endpointHost"
+            ", endpoint: $endpointHost"
         } else {
             ""
         }
-    return "$requestHost（CDN 令牌：${if (hasToken) "已附加" else "未附加"}$endpoint）"
+    return "$requestHost (CDN token: ${if (hasToken) "attached" else "not attached"}$endpoint)"
 }
 
 internal fun buildCdnError(
@@ -815,11 +815,11 @@ internal fun buildCdnError(
     lastError: Throwable?,
 ): String =
     if (failures.isEmpty()) {
-        "Steam CDN $kind 下载失败：${lastError?.message ?: "无可用 CDN 路由"}"
+        "Steam CDN $kind download failed: ${lastError?.message ?: "no available CDN route"}"
     } else {
         failures
             .take(MAX_CDN_ERROR_DETAILS)
-            .joinToString(prefix = "Steam CDN $kind 下载失败：", separator = "；")
+            .joinToString(prefix = "Steam CDN $kind download failed: ", separator = "; ")
     }
 
 internal suspend fun openContentSession(
@@ -839,14 +839,14 @@ internal suspend fun openContentSession(
     val loggedOn = CompletableDeferred<Unit>()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val subscriptions = mutableListOf<Closeable>()
-    val sessionLabel = if (credential == null) "匿名 Steam 内容会话" else "已登录 Steam 内容会话"
+    val sessionLabel = if (credential == null) "Anonymous Steam content session" else "Authenticated Steam content session"
     subscriptions +=
         callbackManager.subscribe(ConnectedCallback::class.java) {
             connected.complete(Unit)
         }
     subscriptions +=
         callbackManager.subscribe(DisconnectedCallback::class.java) {
-            val failure = IllegalStateException("${sessionLabel}已断开")
+            val failure = IllegalStateException("$sessionLabel disconnected")
             if (!connected.isCompleted) connected.completeExceptionally(failure)
             if (!loggedOn.isCompleted) loggedOn.completeExceptionally(failure)
         }
@@ -856,7 +856,7 @@ internal suspend fun openContentSession(
                 loggedOn.complete(Unit)
             } else {
                 loggedOn.completeExceptionally(
-                    IllegalStateException("${sessionLabel}登录失败：${callback.result}"),
+                    IllegalStateException("$sessionLabel login failed: ${callback.result}"),
                 )
             }
         }
@@ -978,11 +978,11 @@ internal class CdnAuthTokenProvider(
                             content
                                 .getCDNAuthToken(appId, depotId, requestHost, callbackScope)
                                 .await()
-                        check(response.result == EResult.OK) { "Steam CDN 授权失败：${response.result}" }
+                        check(response.result == EResult.OK) { "Steam CDN authorization failed: ${response.result}" }
                         CachedCdnAuthToken(
                             token =
                                 normalizeCdnAuthToken(response.token).takeIf(String::isNotBlank)
-                                    ?: error("Steam 未返回 CDN 授权 token"),
+                                    ?: error("Steam returned no CDN authorization token"),
                             expiresAtMs = response.expiration?.time ?: Long.MAX_VALUE,
                         )
                     }.also { request -> pendingTokens[cacheKey] = request }
@@ -1237,15 +1237,15 @@ internal object WorkshopStagingPath {
     ): File {
         val normalized = relativePath.replace('\\', '/')
         val segments = normalized.split('/')
-        require(normalized.isNotBlank()) { "Steam manifest 包含空文件路径" }
-        require(!normalized.startsWith('/')) { "Steam manifest 包含绝对文件路径" }
+        require(normalized.isNotBlank()) { "Steam manifest contains an empty file path" }
+        require(!normalized.startsWith('/')) { "Steam manifest contains an absolute file path" }
         require(segments.none { it.isBlank() || it == "." || it == ".." }) {
-            "Steam manifest 包含不安全文件路径"
+            "Steam manifest contains an unsafe file path"
         }
         val root = rootDirectory.canonicalFile
         val target = File(root, normalized).canonicalFile
         require(target.path.startsWith(root.path + File.separator)) {
-            "Steam manifest 文件路径超出暂存目录"
+            "Steam manifest file path escapes the staging directory"
         }
         return target
     }

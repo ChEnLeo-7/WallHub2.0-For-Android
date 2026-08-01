@@ -2,6 +2,7 @@
 
 package com.wallhub.android.feature.home
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.SizeTransform
@@ -58,6 +59,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
@@ -65,12 +68,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubFilterChip
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
-import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.WorkshopFilterCatalog
 import com.wallhub.android.core.model.WorkshopRating
@@ -139,7 +141,6 @@ internal fun HomeFiltersSheet(
                         .heightIn(max = contentMaxHeight),
             ) {
                 HomeFilterSheetHeader(
-                    language = config.language,
                     draft = draft,
                     defaults = defaults,
                     onReset = { updateSelection(defaults) },
@@ -150,7 +151,6 @@ internal fun HomeFiltersSheet(
                         pages = pages,
                         selectedPage = selectedPage,
                         draft = draft,
-                        language = config.language,
                         compact = true,
                         onPageSelected = { page -> selectedPage = page },
                     )
@@ -184,7 +184,6 @@ internal fun HomeFiltersSheet(
                             pages = pages,
                             selectedPage = selectedPage,
                             draft = draft,
-                            language = config.language,
                             compact = false,
                             onPageSelected = { page -> selectedPage = page },
                             modifier = Modifier.width(208.dp),
@@ -241,7 +240,6 @@ internal fun homeFilterPageContentTransform(): ContentTransform =
 
 @Composable
 internal fun HomeFilterSheetHeader(
-    language: AppLanguage,
     draft: HomeFilterSelection,
     defaults: HomeFilterSelection,
     onReset: () -> Unit,
@@ -260,7 +258,7 @@ internal fun HomeFilterSheetHeader(
         horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),
     ) {
         Text(
-            text = language.text("筛选与排序", "Filter and sort"),
+            text = stringResource(R.string.home_filter_and_sort),
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
@@ -269,7 +267,7 @@ internal fun HomeFilterSheetHeader(
             onClick = onReset,
             enabled = draft != defaults,
         ) {
-            Text(language.text("恢复默认", "Reset"))
+            Text(stringResource(R.string.home_reset))
         }
     }
 }
@@ -280,7 +278,6 @@ internal fun HomeFilterPageNavigation(
     pages: List<HomeFilterPage>,
     selectedPage: HomeFilterPage,
     draft: HomeFilterSelection,
-    language: AppLanguage,
     compact: Boolean,
     onPageSelected: (HomeFilterPage) -> Unit,
     modifier: Modifier = Modifier,
@@ -320,7 +317,7 @@ internal fun HomeFilterPageNavigation(
                         },
                         text = {
                             Text(
-                                text = page.label(language),
+                                text = page.label(),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -348,7 +345,7 @@ internal fun HomeFilterPageNavigation(
                     },
                     label = {
                         Text(
-                            text = page.label(language),
+                            text = page.label(),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -438,12 +435,8 @@ internal fun HomeBrowseFilterPage(
     ) {
         HomeFilterSectionCard {
             HomeFilterSectionHeading(
-                title = config.language.text("排序依据", "Sort by"),
-                supportingText =
-                    config.language.text(
-                        "选择创意工坊结果的排列方式",
-                        "Choose how Workshop results are ordered",
-                    ),
+                title = stringResource(R.string.home_sort_by),
+                supportingText = stringResource(R.string.home_sort_by_supporting),
             )
             Column(
                 modifier = Modifier.selectableGroup(),
@@ -451,7 +444,7 @@ internal fun HomeBrowseFilterPage(
             ) {
                 WorkshopSort.entries.forEach { sort ->
                     HomeFilterChoiceRow(
-                        label = sort.label(config.language),
+                        label = sort.label(),
                         selected = draft.sort == sort,
                         onClick = { onDraftChanged(draft.copy(sort = sort)) },
                     )
@@ -460,12 +453,8 @@ internal fun HomeBrowseFilterPage(
         }
         HomeFilterSectionCard(enabled = draft.sort == WorkshopSort.TRENDING) {
             HomeFilterSectionHeading(
-                title = config.language.text("时间范围", "Time range"),
-                supportingText =
-                    config.language.text(
-                        "仅“热门”排序会使用时间范围",
-                        "Time range is available only for Popular sorting",
-                    ),
+                title = stringResource(R.string.home_time_range),
+                supportingText = stringResource(R.string.home_time_range_supporting),
                 enabled = draft.sort == WorkshopSort.TRENDING,
             )
             FlowRow(
@@ -473,7 +462,7 @@ internal fun HomeBrowseFilterPage(
                 horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
                 verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
-                timeRangeOptions(config.language, draft.days).forEach { (days, label) ->
+                timeRangeOptions(draft.days).forEach { (days, label) ->
                     HomeDraftFilterChip(
                         label = label,
                         selected = draft.days == days,
@@ -506,12 +495,12 @@ internal fun HomeContentFilterPage(
     ) {
         HomeFilterSectionCard {
             HomeFilterSectionHeading(
-                title = config.language.text("壁纸类型", "Wallpaper type"),
+                title = stringResource(R.string.home_wallpaper_type),
                 supportingText =
                     if (config.multiSelect) {
-                        config.language.text("可以同时选择多个类型", "You can select multiple types")
+                        stringResource(R.string.home_multiple_types_allowed)
                     } else {
-                        config.language.text("当前设置为单选", "Currently configured for single selection")
+                        stringResource(R.string.home_single_selection)
                     },
             )
             FlowRow(
@@ -520,14 +509,14 @@ internal fun HomeContentFilterPage(
                 verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
                 HomeDraftFilterChip(
-                    label = config.language.text("不限", "Any"),
+                    label = stringResource(R.string.home_any),
                     selected = draft.types.isEmpty(),
                     singleChoice = !config.multiSelect,
                     onClick = { onDraftChanged(draft.copy(types = emptySet())) },
                 )
                 listOf(WorkshopType.SCENE, WorkshopType.VIDEO, WorkshopType.WEB).forEach { type ->
                     HomeDraftFilterChip(
-                        label = type.label(config.language),
+                        label = type.label(),
                         selected = type in draft.types,
                         singleChoice = !config.multiSelect,
                         onClick = {
@@ -543,12 +532,12 @@ internal fun HomeContentFilterPage(
         }
         HomeFilterSectionCard {
             HomeFilterSectionHeading(
-                title = config.language.text("年龄评级", "Age rating"),
+                title = stringResource(R.string.home_age_rating),
                 supportingText =
                     if (config.matureContentEnabled) {
-                        config.language.text("已允许显示成人内容选项", "Mature content options are available")
+                        stringResource(R.string.home_mature_options_available)
                     } else {
-                        config.language.text("成人内容已在设置中关闭", "Mature content is disabled in Settings")
+                        stringResource(R.string.home_mature_disabled)
                     },
             )
             FlowRow(
@@ -562,9 +551,9 @@ internal fun HomeContentFilterPage(
                         HomeDraftFilterChip(
                             label =
                                 if (rating == WorkshopRating.ALL && !config.matureContentEnabled) {
-                                    config.language.text("全部允许级别", "All allowed")
+                                    stringResource(R.string.home_all_allowed)
                                 } else {
-                                    rating.label(config.language)
+                                    rating.label()
                                 },
                             selected =
                                 draft.ratings.isRatingSelected(
@@ -613,13 +602,9 @@ internal fun HomeThemeFilterPage(
     ) {
         HomeFilterSectionCard {
             HomeFilterSectionHeading(
-                title = config.language.text("内容分类", "Genres"),
-                supportingText =
-                    config.language.text(
-                        "选择至少一个分类；全选时视为不限",
-                        "Choose one or more genres; all selected means any",
-                    ),
-                actionLabel = config.language.text("反选", "Invert"),
+                title = stringResource(R.string.home_genres),
+                supportingText = stringResource(R.string.home_genres_supporting),
+                actionLabel = stringResource(R.string.home_invert),
                 actionEnabled = !genresUnrestricted,
                 onAction = {
                     onDraftChanged(draft.copy(genres = draft.genres.invertBounded(allGenres)))
@@ -630,13 +615,13 @@ internal fun HomeThemeFilterPage(
                 verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
                 HomeDraftFilterChip(
-                    label = config.language.text("不限", "Any"),
+                    label = stringResource(R.string.home_any),
                     selected = genresUnrestricted,
                     onClick = { onDraftChanged(draft.copy(genres = allGenres)) },
                 )
                 WorkshopFilterCatalog.genres.forEach { genre ->
                     HomeDraftFilterChip(
-                        label = genre.localizedGenre(config.language),
+                        label = genre.localizedGenre(),
                         selected = !genresUnrestricted && genre in draft.genres,
                         onClick = {
                             onDraftChanged(
@@ -651,13 +636,9 @@ internal fun HomeThemeFilterPage(
         }
         HomeFilterSectionCard {
             HomeFilterSectionHeading(
-                title = config.language.text("官方特性", "Official features"),
-                supportingText =
-                    config.language.text(
-                        "所选特性需要同时匹配",
-                        "Results must match every selected feature",
-                    ),
-                actionLabel = config.language.text("反选", "Invert"),
+                title = stringResource(R.string.home_official_features),
+                supportingText = stringResource(R.string.home_official_features_supporting),
+                actionLabel = stringResource(R.string.home_invert),
                 actionEnabled = draft.officialTags.isNotEmpty(),
                 onAction = {
                     onDraftChanged(
@@ -670,13 +651,13 @@ internal fun HomeThemeFilterPage(
                 verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
                 HomeDraftFilterChip(
-                    label = config.language.text("不限", "Any"),
+                    label = stringResource(R.string.home_any),
                     selected = draft.officialTags.isEmpty(),
                     onClick = { onDraftChanged(draft.copy(officialTags = emptySet())) },
                 )
                 WorkshopFilterCatalog.officialTags.forEach { tag ->
                     HomeDraftFilterChip(
-                        label = tag.localizedOfficialTag(config.language),
+                        label = tag.localizedOfficialTag(),
                         selected = tag in draft.officialTags,
                         onClick = {
                             onDraftChanged(
@@ -713,13 +694,9 @@ internal fun HomeDisplayFilterPage(
     ) {
         HomeFilterSectionCard {
             HomeFilterSectionHeading(
-                title = config.language.text("分辨率", "Resolution"),
-                supportingText =
-                    config.language.text(
-                        "选择至少一个尺寸；全选时视为不限",
-                        "Choose one or more sizes; all selected means any",
-                    ),
-                actionLabel = config.language.text("反选", "Invert"),
+                title = stringResource(R.string.home_resolution),
+                supportingText = stringResource(R.string.home_resolution_supporting),
+                actionLabel = stringResource(R.string.home_invert),
                 actionEnabled = !unrestricted,
                 onAction = {
                     onDraftChanged(
@@ -728,14 +705,14 @@ internal fun HomeDisplayFilterPage(
                 },
             )
             HomeDraftFilterChip(
-                label = config.language.text("不限", "Any"),
+                label = stringResource(R.string.home_any),
                 selected = unrestricted,
                 onClick = { onDraftChanged(draft.copy(resolutions = allResolutions)) },
             )
             WorkshopFilterCatalog.resolutionGroups.forEach { group ->
                 Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs)) {
                     Text(
-                        text = group.id.localizedResolutionGroup(config.language),
+                        text = group.id.localizedResolutionGroup(),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
@@ -745,7 +722,7 @@ internal fun HomeDisplayFilterPage(
                     ) {
                         group.options.forEach { resolution ->
                             HomeDraftFilterChip(
-                                label = resolution.localizedResolution(config.language),
+                                label = resolution.localizedResolution(),
                                 selected = !unrestricted && resolution in draft.resolutions,
                                 onClick = {
                                     onDraftChanged(
@@ -897,14 +874,16 @@ internal fun HomeDraftFilterChip(
     )
 }
 
-internal fun HomeFilterPage.label(language: AppLanguage): String =
+@Composable
+internal fun HomeFilterPage.label(): String =
     when (this) {
-        HomeFilterPage.BROWSE -> language.text("浏览", "Browse")
-        HomeFilterPage.CONTENT -> language.text("内容", "Content")
-        HomeFilterPage.THEME -> language.text("主题", "Theme")
-        HomeFilterPage.DISPLAY -> language.text("屏幕", "Display")
+        HomeFilterPage.BROWSE -> stringResource(R.string.home_filter_page_browse)
+        HomeFilterPage.CONTENT -> stringResource(R.string.home_filter_page_content)
+        HomeFilterPage.THEME -> stringResource(R.string.home_filter_page_theme)
+        HomeFilterPage.DISPLAY -> stringResource(R.string.home_filter_page_display)
     }
 
+@Composable
 internal fun HomeFilterPage.summary(
     selection: HomeFilterSelection,
     state: HomeUiState,
@@ -912,41 +891,40 @@ internal fun HomeFilterPage.summary(
     when (this) {
         HomeFilterPage.BROWSE ->
             if (selection.sort == WorkshopSort.TRENDING) {
-                "${selection.sort.label(state.language)} · ${selection.days.label(state.language)}"
+                "${selection.sort.label()} · ${selection.days.label()}"
             } else {
-                selection.sort.label(state.language)
+                selection.sort.label()
             }
 
         HomeFilterPage.CONTENT ->
             when (activeSectionCount(selection)) {
-                0 -> state.text("不限", "Any")
+                0 -> stringResource(R.string.home_any)
                 1 ->
                     if (selection.types.isNotEmpty()) {
-                        selection.types.summary(state.language, state.text("不限", "Any"))
+                        selection.types.summary(stringResource(R.string.home_any))
                     } else {
-                        selection.ratings.summary(state.language, state.matureContentEnabled)
+                        selection.ratings.summary(state.matureContentEnabled)
                     }
 
-                else -> state.text("类型与评级", "Type and rating")
+                else -> stringResource(R.string.home_type_and_rating)
             }
 
         HomeFilterPage.THEME ->
             if (activeSectionCount(selection) == 0) {
-                state.text("不限", "Any")
+                stringResource(R.string.home_any)
             } else {
-                state.text(
-                    "${activeSectionCount(selection)} 个分区",
-                    "${activeSectionCount(selection)} sections",
-                )
+                val sectionCount = activeSectionCount(selection)
+                pluralStringResource(R.plurals.home_sections, sectionCount, sectionCount)
             }
 
         HomeFilterPage.DISPLAY ->
             if (selection.resolutions == DEFAULT_HOME_RESOLUTION_SELECTION) {
-                state.text("不限", "Any")
+                stringResource(R.string.home_any)
             } else {
-                state.text(
-                    "${selection.resolutions.size} 项",
-                    "${selection.resolutions.size} selected",
+                pluralStringResource(
+                    R.plurals.home_selected_count,
+                    selection.resolutions.size,
+                    selection.resolutions.size,
                 )
             }
     }
@@ -1051,84 +1029,78 @@ internal fun Set<WorkshopRating>.isRatingSelected(
     }
 }
 
-internal fun HomeUiState.text(
-    zh: String,
-    en: String,
-): String = if (language == AppLanguage.EN) en else zh
-
-internal fun WorkshopSort.label(language: AppLanguage): String =
+@Composable
+internal fun WorkshopSort.label(): String =
     when (this) {
-        WorkshopSort.TRENDING -> if (language == AppLanguage.EN) "Popular" else "热门"
-        WorkshopSort.MOST_RECENT -> if (language == AppLanguage.EN) "Most recent" else "最新"
-        WorkshopSort.TOP_RATED -> if (language == AppLanguage.EN) "Top rated" else "最高评分"
-        WorkshopSort.MOST_VOTES -> if (language == AppLanguage.EN) "Most votes" else "最多投票"
-        WorkshopSort.MOST_SUBSCRIBERS -> if (language == AppLanguage.EN) "Most subscribers" else "最多订阅"
+        WorkshopSort.TRENDING -> stringResource(R.string.home_sort_popular)
+        WorkshopSort.MOST_RECENT -> stringResource(R.string.home_sort_most_recent)
+        WorkshopSort.TOP_RATED -> stringResource(R.string.home_sort_top_rated)
+        WorkshopSort.MOST_VOTES -> stringResource(R.string.home_sort_most_votes)
+        WorkshopSort.MOST_SUBSCRIBERS -> stringResource(R.string.home_sort_most_subscribers)
     }
 
-internal fun Int.label(language: AppLanguage): String =
+@Composable
+internal fun Int.label(): String =
     when (this) {
-        0 -> if (language == AppLanguage.EN) "All time" else "全部时间"
-        1 -> if (language == AppLanguage.EN) "Today" else "今天"
-        7 -> if (language == AppLanguage.EN) "7 days" else "7 天"
-        30 -> if (language == AppLanguage.EN) "30 days" else "30 天"
-        90 -> if (language == AppLanguage.EN) "3 months" else "3 个月"
-        180 -> if (language == AppLanguage.EN) "6 months" else "半年"
-        365 -> if (language == AppLanguage.EN) "1 year" else "一年"
-        else -> if (language == AppLanguage.EN) "$this days" else "$this 天"
+        0 -> stringResource(R.string.home_all_time)
+        1 -> stringResource(R.string.home_today)
+        7 -> stringResource(R.string.home_7_days)
+        30 -> stringResource(R.string.home_30_days)
+        90 -> stringResource(R.string.home_3_months)
+        180 -> stringResource(R.string.home_6_months)
+        365 -> stringResource(R.string.home_1_year)
+        else -> pluralStringResource(R.plurals.home_days, this, this)
     }
 
-internal fun timeRangeOptions(
-    language: AppLanguage,
-    currentDays: Int,
-): List<Pair<Int, String>> {
+@Composable
+internal fun timeRangeOptions(currentDays: Int): List<Pair<Int, String>> {
     val finiteRanges =
         (listOf(1, 7, 30, 90, 180, 365) + currentDays)
             .filter { it > 0 }
             .distinct()
             .sorted()
-    return (finiteRanges + 0).map { it to it.label(language) }
+    return (finiteRanges + 0).map { it to it.label() }
 }
 
-internal fun WorkshopType.label(language: AppLanguage): String =
+@Composable
+internal fun WorkshopType.label(): String =
     when (this) {
-        WorkshopType.VIDEO -> if (language == AppLanguage.EN) "Video" else "视频"
-        WorkshopType.SCENE -> if (language == AppLanguage.EN) "Scene" else "场景"
-        WorkshopType.WEB -> if (language == AppLanguage.EN) "Web" else "网站"
-        WorkshopType.UNKNOWN -> if (language == AppLanguage.EN) "Wallpaper" else "壁纸"
+        WorkshopType.VIDEO -> stringResource(R.string.home_video)
+        WorkshopType.SCENE -> stringResource(R.string.home_scene)
+        WorkshopType.WEB -> stringResource(R.string.home_web)
+        WorkshopType.UNKNOWN -> stringResource(R.string.home_wallpaper)
     }
 
-internal fun Set<WorkshopType>.summary(
-    language: AppLanguage,
-    all: String,
-): String = if (isEmpty()) all else joinToString(" / ") { it.label(language) }
+@Composable
+internal fun Set<WorkshopType>.summary(all: String): String = if (isEmpty()) all else map { it.label() }.joinToString(" / ")
 
-internal fun WorkshopRating.label(language: AppLanguage): String =
+@Composable
+internal fun WorkshopRating.label(): String =
     when (this) {
-        WorkshopRating.ALL -> if (language == AppLanguage.EN) "All" else "全部"
-        WorkshopRating.EVERYONE -> if (language == AppLanguage.EN) "Everyone" else "大众级"
-        WorkshopRating.QUESTIONABLE -> if (language == AppLanguage.EN) "Questionable" else "家长指导级"
-        WorkshopRating.MATURE -> if (language == AppLanguage.EN) "Mature" else "限制成人级"
+        WorkshopRating.ALL -> stringResource(R.string.home_all)
+        WorkshopRating.EVERYONE -> stringResource(R.string.home_rating_everyone)
+        WorkshopRating.QUESTIONABLE -> stringResource(R.string.home_rating_questionable)
+        WorkshopRating.MATURE -> stringResource(R.string.home_rating_mature)
     }
 
-internal fun Set<WorkshopRating>.summary(
-    language: AppLanguage,
-    matureContentEnabled: Boolean,
-): String {
+@Composable
+internal fun Set<WorkshopRating>.summary(matureContentEnabled: Boolean): String {
     val normalized = normalizedRatings(matureContentEnabled)
     return when {
-        WorkshopRating.ALL in normalized -> WorkshopRating.ALL.label(language)
+        WorkshopRating.ALL in normalized -> WorkshopRating.ALL.label()
         !matureContentEnabled && normalized == SAFE_HOME_RATING_SELECTION ->
-            language.text("全部允许级别", "All allowed")
+            stringResource(R.string.home_all_allowed)
 
-        else -> normalized.joinToString(" / ") { it.label(language) }
+        else -> normalized.map { it.label() }.joinToString(" / ")
     }
 }
 
-internal fun HomeCardAction.label(language: AppLanguage): String =
+@Composable
+internal fun HomeCardAction.label(): String =
     when (this) {
-        HomeCardAction.DOWNLOAD -> if (language == AppLanguage.EN) "Download" else "下载"
-        HomeCardAction.PLAY_VIDEO -> if (language == AppLanguage.EN) "Play" else "播放"
-        HomeCardAction.OPEN_STEAM -> if (language == AppLanguage.EN) "Steam" else "打开 Steam"
+        HomeCardAction.DOWNLOAD -> stringResource(R.string.home_download)
+        HomeCardAction.PLAY_VIDEO -> stringResource(R.string.home_play)
+        HomeCardAction.OPEN_STEAM -> stringResource(R.string.home_open_steam)
     }
 
 internal fun HomeCardAction.icon() =
@@ -1138,104 +1110,100 @@ internal fun HomeCardAction.icon() =
         HomeCardAction.OPEN_STEAM -> Icons.Outlined.OpenInNew
     }
 
-internal fun AppLanguage.formatCompact(value: Long): String =
-    when {
-        value >= 1_000_000 ->
+internal fun formatCompact(value: Long): String {
+    val locale = Locale.getDefault()
+    val isChinese = locale.language == Locale.CHINESE.language
+    return when {
+        (isChinese && value >= 10_000) || (!isChinese && value >= 1_000_000) ->
             String.format(
-                Locale.getDefault(),
-                if (this ==
-                    AppLanguage.EN
-                ) {
-                    "%.1fM"
-                } else {
-                    "%.1f 万"
-                },
-                if (this == AppLanguage.EN) value / 1_000_000.0 else value / 10_000.0,
+                locale,
+                if (isChinese) "%.1f 万" else "%.1fM",
+                if (isChinese) value / 10_000.0 else value / 1_000_000.0,
             )
         value >= 1_000 -> String.format(Locale.getDefault(), "%.1fK", value / 1_000.0)
         else -> value.toString()
     }
-
-internal fun String.localizedGenre(language: AppLanguage): String {
-    if (language == AppLanguage.EN) return this
-    return HOME_GENRE_LABELS_ZH[this] ?: this
 }
 
-internal fun String.localizedOfficialTag(language: AppLanguage): String {
-    if (language == AppLanguage.EN) return this
-    return HOME_OFFICIAL_TAG_LABELS_ZH[this] ?: this
-}
+@Composable
+internal fun String.localizedGenre(): String = genreLabelRes()?.let { stringResource(it) } ?: this
 
-internal fun String.localizedResolutionGroup(language: AppLanguage): String =
-    if (language == AppLanguage.EN) {
-        replaceFirstChar { it.uppercase() }
-    } else {
-        when (this) {
-            "widescreen" -> "宽屏"
-            "ultrawide" -> "超宽屏"
-            "dual" -> "双显示器"
-            "triple" -> "三显示器"
-            "portrait" -> "纵向屏幕 / 手机"
-            else -> "其他"
-        }
+@StringRes
+private fun String.genreLabelRes(): Int? =
+    when (this) {
+        "Abstract" -> R.string.home_genre_abstract
+        "Animal" -> R.string.home_genre_animal
+        "Anime" -> R.string.home_genre_anime
+        "Cartoon" -> R.string.home_genre_cartoon
+        "CGI" -> R.string.home_genre_cgi
+        "Cyberpunk" -> R.string.home_genre_cyberpunk
+        "Fantasy" -> R.string.home_genre_fantasy
+        "Game" -> R.string.home_genre_game
+        "Girls" -> R.string.home_genre_girls
+        "Guys" -> R.string.home_genre_guys
+        "Landscape" -> R.string.home_genre_landscape
+        "Medieval" -> R.string.home_genre_medieval
+        "Memes" -> R.string.home_genre_memes
+        "MMD" -> R.string.home_genre_mmd
+        "Music" -> R.string.home_genre_music
+        "Nature" -> R.string.home_genre_nature
+        "Pixel art" -> R.string.home_genre_pixel_art
+        "Relaxing" -> R.string.home_genre_relaxing
+        "Retro" -> R.string.home_genre_retro
+        "Sci-Fi" -> R.string.home_genre_sci_fi
+        "Sports" -> R.string.home_genre_sports
+        "Technology" -> R.string.home_genre_technology
+        "Television" -> R.string.home_genre_television
+        "Vehicle" -> R.string.home_genre_vehicle
+        "Unspecified" -> R.string.home_genre_unspecified
+        else -> null
     }
 
-internal fun String.localizedResolution(language: AppLanguage): String {
-    if (language == AppLanguage.EN) return this
-    return HOME_RESOLUTION_LABELS_ZH[this] ?: this
-}
+@Composable
+internal fun String.localizedOfficialTag(): String = officialTagLabelRes()?.let { stringResource(it) } ?: this
 
-internal val HOME_GENRE_LABELS_ZH =
-    mapOf(
-        "Abstract" to "抽象",
-        "Animal" to "动物",
-        "Anime" to "动漫",
-        "Cartoon" to "卡通",
-        "CGI" to "CGI",
-        "Cyberpunk" to "赛博朋克",
-        "Fantasy" to "幻想",
-        "Game" to "游戏",
-        "Girls" to "女性",
-        "Guys" to "男性",
-        "Landscape" to "风景",
-        "Medieval" to "中世纪",
-        "Memes" to "网络事物",
-        "MMD" to "MMD",
-        "Music" to "音乐",
-        "Nature" to "自然",
-        "Pixel art" to "像素艺术",
-        "Relaxing" to "放松",
-        "Retro" to "复古",
-        "Sci-Fi" to "科幻",
-        "Sports" to "运动",
-        "Technology" to "科技",
-        "Television" to "电视节目",
-        "Vehicle" to "汽车",
-        "Unspecified" to "未指定样式",
+@StringRes
+private fun String.officialTagLabelRes(): Int? =
+    when (this) {
+        "Approved" -> R.string.home_tag_approved
+        "Audio responsive" -> R.string.home_tag_audio_responsive
+        "Customizable" -> R.string.home_tag_customizable
+        "Puppet Warp" -> R.string.home_tag_puppet_warp
+        "Media Integration" -> R.string.home_tag_media_integration
+        "User Shortcut" -> R.string.home_tag_user_shortcut
+        "Video Texture" -> R.string.home_tag_video_texture
+        "Asset Pack" -> R.string.home_tag_asset_pack
+        else -> null
+    }
+
+@Composable
+internal fun String.localizedResolutionGroup(): String =
+    stringResource(
+        when (this) {
+            "widescreen" -> R.string.home_resolution_group_widescreen
+            "ultrawide" -> R.string.home_resolution_group_ultrawide
+            "dual" -> R.string.home_resolution_group_dual
+            "triple" -> R.string.home_resolution_group_triple
+            "portrait" -> R.string.home_resolution_group_portrait
+            else -> R.string.home_resolution_group_other
+        },
     )
 
-internal val HOME_OFFICIAL_TAG_LABELS_ZH =
-    mapOf(
-        "Approved" to "广受好评",
-        "Audio responsive" to "音频响应",
-        "Customizable" to "可自定义",
-        "Puppet Warp" to "骨骼变形",
-        "Media Integration" to "媒体集成",
-        "User Shortcut" to "用户快捷方式",
-        "Video Texture" to "视频纹理",
-        "Asset Pack" to "资源包",
-    )
+@Composable
+internal fun String.localizedResolution(): String = resolutionLabelRes()?.let { stringResource(it) } ?: this
 
-internal val HOME_RESOLUTION_LABELS_ZH =
-    mapOf(
-        "Standard" to "标准",
-        "Ultrawide" to "超宽（标准）",
-        "Dual monitor" to "双显示器（标准）",
-        "Triple monitor" to "三显示器（标准）",
-        "Portrait" to "纵向（标准）",
-        "Other resolution" to "其他分辨率",
-        "Dynamic resolution" to "动态分辨率",
-    )
+@StringRes
+private fun String.resolutionLabelRes(): Int? =
+    when (this) {
+        "Standard" -> R.string.home_resolution_standard
+        "Ultrawide" -> R.string.home_resolution_ultrawide
+        "Dual monitor" -> R.string.home_resolution_dual_monitor
+        "Triple monitor" -> R.string.home_resolution_triple_monitor
+        "Portrait" -> R.string.home_resolution_portrait
+        "Other resolution" -> R.string.home_resolution_other
+        "Dynamic resolution" -> R.string.home_resolution_dynamic
+        else -> null
+    }
 
 internal const val FILTER_COLLAPSE_OFFSET_PX = 24
 internal const val HOME_FILTER_PAGE_EXIT_DURATION_MS = 90

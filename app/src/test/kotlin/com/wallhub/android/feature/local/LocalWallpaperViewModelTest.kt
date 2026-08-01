@@ -2,7 +2,6 @@ package com.wallhub.android.feature.local
 
 import androidx.lifecycle.SavedStateHandle
 import com.wallhub.android.core.model.AccentPreference
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.LocalWallpaperDeleteResult
@@ -253,8 +252,6 @@ private object EmptyLocalSettingsRepository : SettingsRepository {
     override val preferences: Flow<AppPreferences> = MutableStateFlow(AppPreferences())
 
     override suspend fun setTheme(theme: ThemePreference) = Unit
-
-    override suspend fun setLanguage(language: AppLanguage) = Unit
 
     override suspend fun setAccent(
         accent: AccentPreference,

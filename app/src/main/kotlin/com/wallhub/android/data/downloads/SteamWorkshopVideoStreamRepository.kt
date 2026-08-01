@@ -25,14 +25,14 @@ class SteamWorkshopVideoStreamRepository
     ) : WorkshopVideoStreamRepository {
         override suspend fun open(workshopId: Long): WorkshopVideoStreamSession =
             withContext(Dispatchers.IO) {
-                require(workshopId > 0L) { "创意工坊项目 ID 无效" }
+                require(workshopId > 0L) { "Invalid Workshop item ID" }
                 val preferences = settingsRepository.preferences.first()
                 val activeProxyUrl = preferences.downloadProxyUrl.takeIf { preferences.downloadProxyEnabled }.orEmpty()
                 val target =
                     SteamWorkshopContentApi(
                         steamHttpClientFactory.newBuilder().applyDownloadProxy(activeProxyUrl),
                     ).fetchContentTarget(workshopId)
-                check(target.contentTypeHint == "video") { "该项目不是可在线播放的视频壁纸" }
+                check(target.contentTypeHint == "video") { "This item is not a streamable video wallpaper" }
                 val cacheDirectory =
                     File(
                         context.cacheDir,

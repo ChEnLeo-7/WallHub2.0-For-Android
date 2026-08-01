@@ -19,9 +19,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
-import com.wallhub.android.core.designsystem.text
 import com.wallhub.android.core.model.WorkshopSummary
 import kotlinx.coroutines.launch
 
@@ -102,12 +102,14 @@ fun HomeEffectHandler(
                         )
                     }
                 }
-                is HomeEffect.ShowMessage -> toast.show(effect.message)
+                is HomeEffect.ShowMessage ->
+                    toast.show(context.getString(effect.messageRes, *effect.formatArgs.toTypedArray()))
+                is HomeEffect.ShowMessageText -> toast.show(context.getString(R.string.home_unable_to_queue_download))
                 is HomeEffect.OpenDetail -> currentOnOpenDetail(effect.workshopId)
                 is HomeEffect.SearchAuthor -> currentOnSearchAuthor(effect.creator)
                 is HomeEffect.CopyText -> {
                     clipboard.setText(AnnotatedString(effect.text))
-                    toast.show(effect.message)
+                    toast.show(context.getString(effect.messageRes))
                 }
                 is HomeEffect.OpenSteam -> {
                     val intent =

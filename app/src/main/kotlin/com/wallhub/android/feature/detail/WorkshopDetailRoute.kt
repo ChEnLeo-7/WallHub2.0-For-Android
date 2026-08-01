@@ -23,7 +23,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
-import com.wallhub.android.core.designsystem.text
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
@@ -110,6 +109,12 @@ fun WorkshopDetailEffectHandler(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val toast = LocalWallHubToastState.current
+    var effectMessage by remember { mutableStateOf<DetailUiText?>(null) }
+    val resolvedEffectMessage = effectMessage?.resolve()
+    LaunchedEffect(resolvedEffectMessage) {
+        resolvedEffectMessage?.let(toast::show)
+        effectMessage = null
+    }
     val currentOnBack by rememberUpdatedState(onBack)
     val currentOnSearchAuthor by rememberUpdatedState(onSearchAuthor)
     val currentOnOpenLocalVideo by rememberUpdatedState(onOpenLocalVideo)
@@ -162,7 +167,7 @@ fun WorkshopDetailEffectHandler(
                     viewModel.stopInlineVideoPlayback()
                     currentOnOpenLocalVideo(effect.taskId)
                 }
-                is WorkshopDetailEffect.ShowMessage -> toast.show(effect.message)
+                is WorkshopDetailEffect.ShowMessage -> effectMessage = effect.message
             }
         }
     }

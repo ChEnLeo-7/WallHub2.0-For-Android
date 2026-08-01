@@ -34,7 +34,7 @@ internal enum class SteamDownloadControl {
     CANCEL,
 }
 
-internal class SteamDownloadCancelledException : Exception("Steam 下载已取消")
+internal class SteamDownloadCancelledException : Exception("Steam download was cancelled")
 
 internal data class SteamDownloadProgress(
     val phase: SteamDownloadPhase,
@@ -187,8 +187,8 @@ internal class SteamContentDownloader {
         onProgress: suspend (SteamDownloadProgress) -> Unit,
     ): SteamContentDownloadResult =
         withContext(Dispatchers.IO) {
-            require(target.appId > 0) { "无效的 Steam App ID" }
-            require(target.contentManifestId > 0L) { "无效的 Steam manifest ID" }
+            require(target.appId > 0) { "Invalid Steam App ID" }
+            require(target.contentManifestId > 0L) { "Invalid Steam manifest ID" }
             checkDownloadControl(control)
 
             onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.CONNECTING))
@@ -222,11 +222,11 @@ internal class SteamContentDownloader {
                         control = control,
                     )
                 check(!manifest.filenamesEncrypted || manifest.decryptFilenames(access.depotKey)) {
-                    "无法解密 Steam manifest 中的文件名"
+                    "Failed to decrypt file names in the Steam manifest"
                 }
 
                 destinationDirectory.mkdirs()
-                check(destinationDirectory.isDirectory) { "无法创建下载暂存目录" }
+                check(destinationDirectory.isDirectory) { "Failed to create download staging directory" }
                 val files = manifest.files.filterNot { it.flags.contains(EDepotFileFlag.Directory) }
                 val totalBytes =
                     manifest.totalUncompressedSize.takeIf { it > 0L }
@@ -250,11 +250,11 @@ internal class SteamContentDownloader {
                         val destination = WorkshopStagingPath.resolve(destinationDirectory, manifestFile.fileName)
                         if (manifestFile.flags.contains(EDepotFileFlag.Directory)) {
                             destination.mkdirs()
-                            check(destination.isDirectory) { "无法创建目录：${manifestFile.fileName}" }
+                            check(destination.isDirectory) { "Failed to create directory: ${manifestFile.fileName}" }
                             return@mapNotNull null
                         }
                         check(!manifestFile.flags.contains(EDepotFileFlag.Symlink)) {
-                            "当前不处理 Steam manifest 符号链接：${manifestFile.fileName}"
+                            "Steam manifest symbolic links are not supported: ${manifestFile.fileName}"
                         }
                         ManifestFilePlan(
                             file = manifestFile,
@@ -297,8 +297,8 @@ internal class SteamContentDownloader {
         cacheLimitBytes: Long,
     ): SteamContentVideoStream =
         withContext(Dispatchers.IO) {
-            require(target.appId > 0) { "无效的 Steam App ID" }
-            require(target.contentManifestId > 0L) { "无效的 Steam manifest ID" }
+            require(target.appId > 0) { "Invalid Steam App ID" }
+            require(target.contentManifestId > 0L) { "Invalid Steam manifest ID" }
             val normalizedOptions = options.normalized()
             val session = openContentSession(credential) {}
             val cdnClient = createCdnClient(normalizedOptions)
@@ -316,7 +316,7 @@ internal class SteamContentDownloader {
                         control = { SteamDownloadControl.CONTINUE },
                     )
                 check(!manifest.filenamesEncrypted || manifest.decryptFilenames(access.depotKey)) {
-                    "无法解密 Steam manifest 中的视频文件名"
+                    "Failed to decrypt video file names in the Steam manifest"
                 }
                 val videoFile =
                     manifest.files
@@ -325,9 +325,9 @@ internal class SteamContentDownloader {
                         .filterNot { it.flags.contains(EDepotFileFlag.Symlink) }
                         .filter { it.fileName.videoFileExtension() in VIDEO_FILE_EXTENSIONS }
                         .maxByOrNull(FileData::totalSize)
-                        ?: error("未在 Steam Depot 中找到可在线播放的视频文件")
+                        ?: error("No streamable video file found in the Steam depot")
                 cacheDirectory.mkdirs()
-                check(cacheDirectory.isDirectory) { "无法创建在线播放缓存目录" }
+                check(cacheDirectory.isDirectory) { "Failed to create streaming cache directory" }
                 SteamContentVideoStream(
                     title = target.title,
                     fileName = videoFile.fileName,

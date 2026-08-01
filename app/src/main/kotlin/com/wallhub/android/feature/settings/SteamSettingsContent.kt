@@ -57,9 +57,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -67,11 +69,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
-import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
 import com.wallhub.android.core.model.STEAM_ACCESS_DOH_ENDPOINT_LIMIT
@@ -86,7 +87,6 @@ import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 @Composable
 internal fun SteamSettingsContent(
-    language: AppLanguage,
     session: SteamSessionState,
     steamAccessEnabled: Boolean,
     steamAccessState: SteamAccessState,
@@ -109,26 +109,22 @@ internal fun SteamSettingsContent(
     val apiKeyChanged = apiKey != savedApiKey
 
     SettingsSection(
-        title = language.text("Steam 账户", "Steam account"),
-        supportingText =
-            language.text(
-                "管理资料库使用的登录会话",
-                "Manage the sign-in session used by Library",
-            ),
+        title = stringResource(R.string.settings_steam_account_title),
+        supportingText = stringResource(R.string.settings_steam_account_description),
         icon = Icons.Outlined.PersonOutline,
     ) {
         SettingsListItem(
             headlineContent = {
                 Text(
                     if (session.phase == SteamSessionPhase.SIGNED_IN) {
-                        session.accountName.orEmpty().ifBlank { "Steam" }
+                        session.accountName.orEmpty().ifBlank { stringResource(R.string.settings_steam_name) }
                     } else {
-                        language.text("登录状态", "Sign-in status")
+                        stringResource(R.string.settings_steam_sign_in_status)
                     },
                 )
             },
             supportingContent = {
-                Text(session.settingsSummary(language))
+                Text(session.settingsSummary())
             },
         )
         SettingsActionArea {
@@ -142,7 +138,7 @@ internal fun SteamSettingsContent(
                         contentDescription = null,
                     )
                     Text(
-                        text = language.text("退出 Steam", "Sign out of Steam"),
+                        text = stringResource(R.string.settings_action_sign_out_steam),
                         modifier = Modifier.padding(start = WallHubSpacing.xs),
                     )
                 }
@@ -159,17 +155,14 @@ internal fun SteamSettingsContent(
                         text =
                             when (session.phase) {
                                 SteamSessionPhase.RESTORABLE ->
-                                    language.text(
-                                        "恢复 Steam 登录",
-                                        "Restore Steam sign-in",
-                                    )
+                                    stringResource(R.string.settings_action_restore_steam_sign_in)
 
                                 SteamSessionPhase.SIGNING_IN,
                                 SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
                                 SteamSessionPhase.WAITING_FOR_CODE,
-                                -> language.text("查看登录进度", "View sign-in progress")
+                                -> stringResource(R.string.settings_action_view_sign_in_progress)
 
-                                else -> language.text("登录 Steam", "Sign in to Steam")
+                                else -> stringResource(R.string.settings_action_sign_in_steam)
                             },
                         modifier = Modifier.padding(start = WallHubSpacing.xs),
                     )
@@ -179,17 +172,13 @@ internal fun SteamSettingsContent(
     }
 
     SettingsSection(
-        title = language.text("Steam 服务访问", "Steam service access"),
-        supportingText =
-            language.text(
-                "仅在社区与 API 直连异常时启用内置无 SNI 线路",
-                "Uses the built-in no-SNI route only when Community or API direct access fails",
-            ),
+        title = stringResource(R.string.settings_steam_service_access_title),
+        supportingText = stringResource(R.string.settings_steam_service_access_description),
         icon = Icons.Outlined.Language,
     ) {
         SettingsSwitchRow(
-            title = language.text("自动防阻断", "Automatic anti-blocking"),
-            supportingText = steamAccessState.summary(language),
+            title = stringResource(R.string.settings_steam_automatic_anti_blocking),
+            supportingText = steamAccessState.summary(),
             checked = steamAccessEnabled,
             onCheckedChange = onSteamAccessEnabledChange,
         )
@@ -197,7 +186,6 @@ internal fun SteamSettingsContent(
         SteamAccessDohEndpointsSetting(
             endpoints = steamAccessDohEndpoints,
             disabledEndpoints = steamAccessDisabledDohEndpoints,
-            language = language,
             onSave = onSteamAccessDohEndpointsChange,
         )
         SettingsActionArea {
@@ -211,7 +199,7 @@ internal fun SteamSettingsContent(
                     contentDescription = null,
                 )
                 Text(
-                    text = language.text("重新检测线路", "Check routes again"),
+                    text = stringResource(R.string.settings_action_check_routes_again),
                     modifier = Modifier.padding(start = WallHubSpacing.xs),
                 )
             }
@@ -219,56 +207,40 @@ internal fun SteamSettingsContent(
     }
 
     SettingsSection(
-        title = language.text("创意工坊数据源", "Workshop data source"),
-        supportingText =
-            language.text(
-                "为发现、详情与评论选择严格的数据通道",
-                "Choose the strict data channel used by discovery, details, and comments",
-            ),
+        title = stringResource(R.string.settings_workshop_data_source_title),
+        supportingText = stringResource(R.string.settings_workshop_data_source_description),
         icon = Icons.Outlined.Language,
     ) {
         SettingChoiceRow(
-            title = language.text("数据获取源", "Data source"),
+            title = stringResource(R.string.settings_data_source),
             selectedValue = steamWorkshopDataSource,
             values = SteamWorkshopDataSource.entries,
             label = { source ->
                 when (source) {
-                    SteamWorkshopDataSource.COMMUNITY_HTML -> "Steam Community HTML"
-                    SteamWorkshopDataSource.WEB_API -> "Steam Web API"
-                    SteamWorkshopDataSource.CM_WEBSOCKET -> "Steam CM WebSocket"
+                    SteamWorkshopDataSource.COMMUNITY_HTML -> stringResource(R.string.settings_steam_community_html)
+                    SteamWorkshopDataSource.WEB_API -> stringResource(R.string.settings_steam_web_api)
+                    SteamWorkshopDataSource.CM_WEBSOCKET -> stringResource(R.string.settings_steam_cm_websocket)
                 }
             },
             supportingText =
                 when (steamWorkshopDataSource) {
                     SteamWorkshopDataSource.COMMUNITY_HTML ->
-                        language.text(
-                            "使用 Steam Community 页面获取公开数据",
-                            "Use Steam Community pages for public data",
-                        )
+                        stringResource(R.string.settings_data_source_community_description)
 
                     SteamWorkshopDataSource.WEB_API ->
-                        language.text(
-                            "发现页需要有效的 Steam API Key",
-                            "Discovery requires a valid Steam API key",
-                        )
+                        stringResource(R.string.settings_data_source_web_api_description)
 
                     SteamWorkshopDataSource.CM_WEBSOCKET ->
-                        language.text(
-                            "公开发现与详情支持匿名 CM；评论需要登录",
-                            "Public discovery and details support anonymous CM; comments require sign-in",
-                        )
+                        stringResource(R.string.settings_data_source_cm_description)
                 },
             onSelected = onSteamWorkshopDataSourceChange,
         )
     }
 
     SettingsSection(
-        title = "Steam Web API",
+        title = stringResource(R.string.settings_steam_web_api),
         supportingText =
-            language.text(
-                "供 Web API 数据源与匿名昵称补全使用",
-                "Used by the Web API source and anonymous profile enrichment",
-            ),
+            stringResource(R.string.settings_steam_web_api_description),
         icon = Icons.Outlined.Tune,
     ) {
         Column(
@@ -278,7 +250,7 @@ internal fun SteamSettingsContent(
             SettingsFilledTextField(
                 value = apiKey,
                 onValueChange = onApiKeyChanged,
-                label = { Text("Steam API Key") },
+                label = { Text(stringResource(R.string.settings_steam_api_key)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
                 visualTransformation =
@@ -298,9 +270,9 @@ internal fun SteamSettingsContent(
                                 },
                             contentDescription =
                                 if (apiKeyVisible) {
-                                    language.text("隐藏 API Key", "Hide API key")
+                                    stringResource(R.string.settings_action_hide_api_key)
                                 } else {
-                                    language.text("显示 API Key", "Show API key")
+                                    stringResource(R.string.settings_action_show_api_key)
                                 },
                         )
                     }
@@ -316,7 +288,7 @@ internal fun SteamSettingsContent(
                     contentDescription = null,
                 )
                 Text(
-                    text = language.text("获取 Steam API Key", "Get Steam API Key"),
+                    text = stringResource(R.string.settings_action_get_steam_api_key),
                     modifier = Modifier.padding(start = WallHubSpacing.xs),
                 )
             }
@@ -327,9 +299,9 @@ internal fun SteamSettingsContent(
             ) {
                 Text(
                     if (apiKey.isBlank() && savedApiKey.isNotBlank()) {
-                        language.text("清除 Steam API Key", "Clear Steam API Key")
+                        stringResource(R.string.settings_action_clear_steam_api_key)
                     } else {
-                        language.text("保存 Steam API Key", "Save Steam API Key")
+                        stringResource(R.string.settings_action_save_steam_api_key)
                     },
                 )
             }
@@ -342,9 +314,9 @@ internal fun SteamSettingsContent(
 internal fun SteamAccessDohEndpointsSetting(
     endpoints: List<String>,
     disabledEndpoints: Set<String>,
-    language: AppLanguage,
     onSave: (List<String>, Set<String>) -> Unit,
 ) {
+    val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     var editorVisible by rememberSaveable { mutableStateOf(false) }
     var confirmDiscardVisible by rememberSaveable { mutableStateOf(false) }
@@ -379,22 +351,13 @@ internal fun SteamAccessDohEndpointsSetting(
         endpointError =
             when {
                 normalized == null ->
-                    language.text(
-                        "请输入有效的 HTTPS DoH 地址",
-                        "Enter a valid HTTPS DoH URL",
-                    )
+                    context.getString(R.string.settings_error_invalid_doh_url)
 
                 normalized in draftEndpoints ->
-                    language.text(
-                        "此 DoH 地址已在列表中",
-                        "This DoH URL is already in the list",
-                    )
+                    context.getString(R.string.settings_error_duplicate_doh_url)
 
                 draftEndpoints.size >= STEAM_ACCESS_DOH_ENDPOINT_LIMIT ->
-                    language.text(
-                        "最多可配置 $STEAM_ACCESS_DOH_ENDPOINT_LIMIT 个 DoH 地址",
-                        "Up to $STEAM_ACCESS_DOH_ENDPOINT_LIMIT DoH URLs are supported",
-                    )
+                    context.getString(R.string.settings_error_doh_url_limit, STEAM_ACCESS_DOH_ENDPOINT_LIMIT)
 
                 else -> null
             }
@@ -413,14 +376,11 @@ internal fun SteamAccessDohEndpointsSetting(
                 .clip(MaterialTheme.shapes.medium)
                 .clickable(onClick = ::openEditor),
         headlineContent = {
-            Text(language.text("DoH 地址", "DoH URLs"))
+            Text(stringResource(R.string.settings_doh_urls))
         },
         supportingContent = {
             Text(
-                language.text(
-                    "已启用 $enabledCount/${endpoints.size}，拖动可调整优先级",
-                    "$enabledCount/${endpoints.size} enabled; drag to change priority",
-                ),
+                stringResource(R.string.settings_doh_enabled_summary, enabledCount, endpoints.size),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -459,7 +419,6 @@ internal fun SteamAccessDohEndpointsSetting(
                         disabledEndpoints = draftDisabledEndpoints,
                         endpointText = endpointText,
                         endpointError = endpointError,
-                        language = language,
                         hasChanges = draftChanged,
                         onEndpointTextChange = { value ->
                             endpointText = value
@@ -501,18 +460,15 @@ internal fun SteamAccessDohEndpointsSetting(
     if (confirmDiscardVisible) {
         AlertDialog(
             onDismissRequest = { confirmDiscardVisible = false },
-            title = { Text(language.text("放弃更改？", "Discard changes?")) },
+            title = { Text(stringResource(R.string.settings_discard_changes_title)) },
             text = {
                 Text(
-                    language.text(
-                        "尚未保存的 DoH 地址、启用状态和优先级调整将丢失。",
-                        "Unsaved DoH URLs, enabled states, and priority changes will be lost.",
-                    ),
+                    stringResource(R.string.settings_discard_doh_changes_description),
                 )
             },
             dismissButton = {
                 TextButton(onClick = { confirmDiscardVisible = false }) {
-                    Text(language.text("继续编辑", "Keep editing"))
+                    Text(stringResource(R.string.settings_action_keep_editing))
                 }
             },
             confirmButton = {
@@ -524,7 +480,7 @@ internal fun SteamAccessDohEndpointsSetting(
                         endpointError = null
                     },
                 ) {
-                    Text(language.text("放弃", "Discard"))
+                    Text(stringResource(R.string.settings_action_discard))
                 }
             },
         )
@@ -537,7 +493,6 @@ internal fun SteamAccessDohEditor(
     disabledEndpoints: Set<String>,
     endpointText: String,
     endpointError: String?,
-    language: AppLanguage,
     hasChanges: Boolean,
     onEndpointTextChange: (String) -> Unit,
     onAddEndpoint: () -> Unit,
@@ -576,12 +531,12 @@ internal fun SteamAccessDohEditor(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = language.text("自定义 DoH", "Custom DoH"),
+                    text = stringResource(R.string.settings_custom_doh),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = language.text("已启用 $enabledCount/${endpoints.size}", "$enabledCount/${endpoints.size} enabled"),
+                    text = stringResource(R.string.settings_doh_enabled_count, enabledCount, endpoints.size),
                     style = MaterialTheme.typography.labelMedium,
                     color =
                         if (hasChanges) {
@@ -593,10 +548,7 @@ internal fun SteamAccessDohEditor(
             }
             Text(
                 text =
-                    language.text(
-                        "长按手柄并拖动调整优先级，顶部地址优先使用。",
-                        "Long-press a handle and drag to change priority; top URLs are preferred.",
-                    ),
+                    stringResource(R.string.settings_doh_reorder_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -692,7 +644,6 @@ internal fun SteamAccessDohEditor(
                     endpoint = endpoint,
                     enabled = endpoint !in disabledEndpoints,
                     canDelete = endpoints.size > 1,
-                    language = language,
                     onEnabledChange = { enabled -> onEnabledChange(endpoint, enabled) },
                     onDelete = { onDelete(endpoint) },
                     dragHandleModifier = dragHandleModifier,
@@ -710,20 +661,17 @@ internal fun SteamAccessDohEditor(
                         verticalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
                     ) {
                         Text(
-                            text = language.text("添加地址", "Add URL"),
+                            text = stringResource(R.string.settings_add_url),
                             style = MaterialTheme.typography.titleSmall,
                         )
                         SettingsFilledTextField(
                             value = endpointText,
                             onValueChange = onEndpointTextChange,
-                            label = { Text(language.text("HTTPS DoH 地址", "HTTPS DoH URL")) },
+                            label = { Text(stringResource(R.string.settings_https_doh_url)) },
                             placeholder = { Text("https://dns.example/dns-query") },
                             supportingText = {
                                 Text(
-                                    endpointError ?: language.text(
-                                        "新地址默认开启，并添加到列表末尾",
-                                        "New URLs are enabled and added at the end",
-                                    ),
+                                    endpointError ?: stringResource(R.string.settings_new_doh_url_description),
                                 )
                             },
                             isError = endpointError != null,
@@ -747,7 +695,7 @@ internal fun SteamAccessDohEditor(
                         ) {
                             Icon(imageVector = Icons.Outlined.Add, contentDescription = null)
                             Text(
-                                text = language.text("添加", "Add"),
+                                text = stringResource(R.string.settings_action_add),
                                 modifier = Modifier.padding(start = WallHubSpacing.xs),
                             )
                         }
@@ -770,7 +718,7 @@ internal fun SteamAccessDohEditor(
                     colors = secondaryButtonColors,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text(language.text("恢复默认", "Reset"))
+                    Text(stringResource(R.string.settings_action_reset))
                 }
                 Button(
                     onClick = onCancel,
@@ -778,7 +726,7 @@ internal fun SteamAccessDohEditor(
                     colors = secondaryButtonColors,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text(language.text("取消", "Cancel"))
+                    Text(stringResource(R.string.settings_action_cancel))
                 }
             }
             Button(
@@ -787,7 +735,7 @@ internal fun SteamAccessDohEditor(
                 shape = MaterialTheme.shapes.large,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(language.text("保存更改", "Save changes"))
+                Text(stringResource(R.string.settings_action_save_changes))
             }
         }
     }
@@ -798,7 +746,6 @@ internal fun SteamAccessDohEndpointItem(
     endpoint: String,
     enabled: Boolean,
     canDelete: Boolean,
-    language: AppLanguage,
     onEnabledChange: (Boolean) -> Unit,
     onDelete: () -> Unit,
     dragHandleModifier: Modifier,
@@ -826,10 +773,7 @@ internal fun SteamAccessDohEndpointItem(
                 Icon(
                     imageVector = Icons.Outlined.DragIndicator,
                     contentDescription =
-                        language.text(
-                            "拖动 $endpoint 调整优先级",
-                            "Drag $endpoint to change priority",
-                        ),
+                        stringResource(R.string.settings_action_drag_doh_url, endpoint),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -852,9 +796,9 @@ internal fun SteamAccessDohEndpointItem(
                 Text(
                     text =
                         if (enabled) {
-                            language.text("已开启", "Enabled")
+                            stringResource(R.string.settings_enabled)
                         } else {
-                            language.text("已关闭", "Disabled")
+                            stringResource(R.string.settings_disabled)
                         },
                     style = MaterialTheme.typography.labelMedium,
                     color =
@@ -875,7 +819,7 @@ internal fun SteamAccessDohEndpointItem(
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Delete,
-                    contentDescription = language.text("删除 $endpoint", "Delete $endpoint"),
+                    contentDescription = stringResource(R.string.settings_action_delete_doh_url, endpoint),
                 )
             }
         }
@@ -889,64 +833,39 @@ internal fun ExperimentalSettingsContent(
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
     onRequestNotifications: () -> Unit,
 ) {
-    fun text(
-        zh: String,
-        en: String,
-    ): String = if (preferences.language == AppLanguage.EN) en else zh
-
     SettingsNotice(
-        title = text("实验功能可能改变网络与播放行为", "Experimental features may change networking and playback"),
-        message =
-            text(
-                "遇到稳定性问题时，可关闭相关开关恢复默认流程。",
-                "Turn off the related option to return to the default flow if stability issues occur.",
-            ),
+        title = stringResource(R.string.settings_experimental_notice_title),
+        message = stringResource(R.string.settings_experimental_notice_description),
     )
 
     SettingsSection(
-        title = text("在线播放", "Online playback"),
-        supportingText =
-            text(
-                "控制 Steam 分块播放及本地缓存",
-                "Control Steam chunk streaming and local cache",
-            ),
+        title = stringResource(R.string.settings_online_playback_title),
+        supportingText = stringResource(R.string.settings_online_playback_description),
         icon = Icons.Outlined.PlayArrow,
     ) {
         SettingsSwitchRow(
-            title = text("SteamKit 在线分块播放", "SteamKit chunk streaming"),
-            supportingText =
-                text(
-                    "开启后直接从 Steam 分块播放；关闭后先下载再播放",
-                    "Stream directly from Steam when on; download before playback when off",
-                ),
+            title = stringResource(R.string.settings_steamkit_chunk_streaming),
+            supportingText = stringResource(R.string.settings_steamkit_chunk_streaming_description),
             checked = preferences.onlineChunkPlaybackEnabled,
             onCheckedChange = onOnlineChunkPlaybackEnabledChange,
         )
         SettingsItemDivider()
         SteamStreamCacheSetting(
             cacheLimitMb = preferences.mediaCacheLimitMb,
-            language = preferences.language,
             onCacheLimitChange = onOnlineStreamCacheLimitChange,
         )
     }
 
     SettingsSection(
-        title = text("系统权限", "System permissions"),
-        supportingText =
-            text(
-                "管理后台任务需要的 Android 权限",
-                "Manage Android permissions used by background work",
-            ),
+        title = stringResource(R.string.settings_system_permissions_title),
+        supportingText = stringResource(R.string.settings_system_permissions_description),
         icon = Icons.Outlined.Notifications,
     ) {
         SettingsListItem(
-            headlineContent = { Text(text("后台任务通知", "Background task notifications")) },
+            headlineContent = { Text(stringResource(R.string.settings_background_task_notifications)) },
             supportingContent = {
                 Text(
-                    text(
-                        "用于显示下载、转换和导出的实时进度",
-                        "Shows live progress for downloads, conversion, and export",
-                    ),
+                    stringResource(R.string.settings_background_task_notifications_description),
                 )
             },
         )
@@ -960,7 +879,7 @@ internal fun ExperimentalSettingsContent(
                     contentDescription = null,
                 )
                 Text(
-                    text = text("允许后台通知", "Allow background notifications"),
+                    text = stringResource(R.string.settings_action_allow_background_notifications),
                     modifier = Modifier.padding(start = WallHubSpacing.xs),
                 )
             }

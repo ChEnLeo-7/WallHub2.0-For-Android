@@ -91,13 +91,15 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.wallhub.android.core.designsystem.LocalWallHubLanguage
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
@@ -105,8 +107,6 @@ import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.formatMegabytes
 import com.wallhub.android.core.designsystem.rememberWallHubDirectionalCollapseConnection
-import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.LocalWallpaperFormat
 import com.wallhub.android.core.model.LocalWallpaperImportState
 import com.wallhub.android.core.model.LocalWallpaperResource
@@ -143,8 +143,15 @@ fun LocalWallpaperRoute(
 @Composable
 private fun LocalWallpaperEffectHandler(viewModel: LocalWallpaperViewModel) {
     val context = LocalContext.current
-    val language = LocalWallHubLanguage.current
     val toastState = LocalWallHubToastState.current
+    val selectedDirectoryLabel = stringResource(R.string.local_selected_directory)
+    val authorizeDirectoryFailed = stringResource(R.string.local_authorize_directory_failed)
+    val openResourceFailed = stringResource(R.string.local_open_resource_failed)
+    val shareResourcesFailed = stringResource(R.string.local_share_resources_failed)
+    val locationCopied = stringResource(R.string.local_location_copied)
+    val importFailed = stringResource(R.string.local_import_failed)
+    val readResourceFailed = stringResource(R.string.local_read_resource_failed)
+    val wallpaperEngineNotInstalled = stringResource(R.string.local_wallpaper_engine_not_installed)
     val directoryLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.OpenDocumentTree(),
@@ -160,71 +167,76 @@ private fun LocalWallpaperEffectHandler(viewModel: LocalWallpaperViewModel) {
                                     treeUri.lastPathSegment
                                         ?.substringAfterLast(':')
                                         ?.ifBlank { null }
-                                        ?: "已选择本地管理目录",
+                                        ?: selectedDirectoryLabel,
                             ),
                         )
-                    }.onFailure { error ->
+                    }.onFailure {
                         viewModel.onAction(
                             LocalWallpaperAction.SystemActionFailed(
-                                error.message ?: "无法授权本地目录",
+                                authorizeDirectoryFailed,
                             ),
                         )
                     }
             }
         }
-    LaunchedEffect(viewModel, context, language) {
+    LaunchedEffect(
+        viewModel,
+        context,
+        openResourceFailed,
+        shareResourcesFailed,
+        locationCopied,
+        importFailed,
+        readResourceFailed,
+        wallpaperEngineNotInstalled,
+    ) {
         viewModel.effects.collect { effect ->
             when (effect) {
                 LocalWallpaperEffect.ChooseDirectory -> directoryLauncher.launch(null)
                 is LocalWallpaperEffect.OpenResource -> {
-                    openLocalResource(context, effect.resource).onFailure { error ->
+                    openLocalResource(context, effect.resource).onFailure {
                         viewModel.onAction(
                             LocalWallpaperAction.SystemActionFailed(
-                                error.message ?: language.text(
-                                    "无法打开本地资源",
-                                    "Unable to open local resource",
-                                ),
+                                openResourceFailed,
                             ),
                         )
                     }
                 }
                 is LocalWallpaperEffect.ShareResources -> {
-                    shareLocalResources(context, effect.resources).onFailure { error ->
+                    shareLocalResources(context, effect.resources).onFailure {
                         viewModel.onAction(
                             LocalWallpaperAction.SystemActionFailed(
-                                error.message ?: language.text(
-                                    "无法分享本地资源",
-                                    "Unable to share local resources",
-                                ),
+                                shareResourcesFailed,
                             ),
                         )
                     }
                 }
                 is LocalWallpaperEffect.CopyLocation -> {
                     copyLocalResourceLocation(context, effect.resource)
-                    toastState.show(language.text("已复制位置", "Location copied"))
+                    toastState.show(locationCopied)
                 }
                 is LocalWallpaperEffect.ImportToWallpaperEngine -> {
                     launchWallpaperEngineImport(
                         context = context,
                         resource = effect.resource,
-                        language = language,
+                        readResourceFailed = readResourceFailed,
+                        notInstalledMessage = wallpaperEngineNotInstalled,
                     ).onSuccess {
                         viewModel.onAction(
                             LocalWallpaperAction.ImportLaunched(effect.resource.id),
                         )
-                    }.onFailure { error ->
+                    }.onFailure {
                         viewModel.onAction(
                             LocalWallpaperAction.SystemActionFailed(
-                                error.message ?: language.text(
-                                    "无法启动 Wallpaper Engine 导入",
-                                    "Unable to start Wallpaper Engine import",
-                                ),
+                                importFailed,
                             ),
                         )
                     }
                 }
-                is LocalWallpaperEffect.ShowMessage -> toastState.show(effect.message)
+                is LocalWallpaperEffect.ShowMessage ->
+                    toastState.show(
+                        effect.message
+                            ?: context.getString(requireNotNull(effect.messageRes)),
+                    )
             }
         }
     }
@@ -261,7 +273,6 @@ private fun LocalWallpaperScreen(
     val onDeleteTag: (String) -> Unit = { onAction(LocalWallpaperAction.DeleteTag(it)) }
     val onDeleteResources: (Set<String>) -> Unit = { onAction(LocalWallpaperAction.DeleteResources(it)) }
     val onSystemAction: (LocalWallpaperAction) -> Unit = onAction
-    val language = LocalWallHubLanguage.current
     var tagDialogVisible by remember { mutableStateOf(false) }
     var tagManagerVisible by remember { mutableStateOf(false) }
     var editingTag by remember { mutableStateOf<String?>(null) }
@@ -332,7 +343,6 @@ private fun LocalWallpaperScreen(
                     LocalHeaderMode.WORKSPACE ->
                         LocalWorkspaceHeader(
                             state = state,
-                            language = language,
                             onChooseDirectory = onChooseDirectory,
                             onResetDirectory = onResetDirectory,
                             onRefresh = onRefresh,
@@ -346,7 +356,6 @@ private fun LocalWallpaperScreen(
                     LocalHeaderMode.SELECTION ->
                         LocalSelectionBar(
                             selectedCount = state.selectedResourceIds.size,
-                            language = language,
                             menuExpanded = selectionMenuExpanded,
                             onMenuExpandedChanged = { selectionMenuExpanded = it },
                             onClearSelection = onClearSelection,
@@ -385,7 +394,6 @@ private fun LocalWallpaperScreen(
             }
             LocalWallpaperContent(
                 state = state,
-                language = language,
                 selected = selected,
                 onSelectResource = onSelectResource,
                 onStartSelection = onStartSelection,
@@ -405,7 +413,6 @@ private fun LocalWallpaperScreen(
 
     LocalWallpaperDialogs(
         state = state,
-        language = language,
         tagDialogVisible = tagDialogVisible,
         tagInput = tagInput,
         onTagInputChanged = { tagInput = it.take(40) },
@@ -454,7 +461,6 @@ private fun LocalWallpaperScreen(
 @Composable
 private fun LocalWallpaperDialogs(
     state: LocalWallpaperUiState,
-    language: AppLanguage,
     tagDialogVisible: Boolean,
     tagInput: String,
     onTagInputChanged: (String) -> Unit,
@@ -476,23 +482,23 @@ private fun LocalWallpaperDialogs(
     if (tagDialogVisible) {
         AlertDialog(
             onDismissRequest = onDismissTagDialog,
-            title = { Text(language.text("添加标签", "Add tag")) },
+            title = { Text(stringResource(R.string.local_add_tag)) },
             text = {
                 OutlinedTextField(
                     value = tagInput,
                     onValueChange = onTagInputChanged,
                     singleLine = true,
-                    label = { Text(language.text("标签名称", "Tag name")) },
+                    label = { Text(stringResource(R.string.local_tag_name)) },
                 )
             },
             confirmButton = {
                 TextButton(enabled = tagInput.isNotBlank(), onClick = onConfirmAddTag) {
-                    Text(language.text("添加", "Add"))
+                    Text(stringResource(R.string.local_add))
                 }
             },
             dismissButton = {
                 TextButton(onClick = onDismissTagDialog) {
-                    Text(language.text("取消", "Cancel"))
+                    Text(stringResource(R.string.local_cancel))
                 }
             },
         )
@@ -500,7 +506,6 @@ private fun LocalWallpaperDialogs(
     if (tagManagerVisible) {
         LocalTagManagerDialog(
             state = state,
-            language = language,
             editingTag = editingTag,
             editedTag = editedTag,
             onEditedTagChanged = onEditedTagChanged,
@@ -514,21 +519,18 @@ private fun LocalWallpaperDialogs(
     if (deleteConfirmationVisible) {
         AlertDialog(
             onDismissRequest = onDismissDeleteConfirmation,
-            title = { Text(language.text("删除本地资源？", "Delete local resources?")) },
+            title = { Text(stringResource(R.string.local_delete_resources_title)) },
             text = {
                 Text(
-                    language.text(
-                        "文件会从原目录删除，WallHub 不会移动或备份它们。此操作无法撤销。",
-                        "The files will be deleted from their original directory. WallHub will not move or back them up. This cannot be undone.",
-                    ),
+                    stringResource(R.string.local_delete_resources_message),
                 )
             },
             confirmButton = {
-                TextButton(onClick = onConfirmDelete) { Text(language.text("删除", "Delete")) }
+                TextButton(onClick = onConfirmDelete) { Text(stringResource(R.string.local_delete)) }
             },
             dismissButton = {
                 TextButton(onClick = onDismissDeleteConfirmation) {
-                    Text(language.text("取消", "Cancel"))
+                    Text(stringResource(R.string.local_cancel))
                 }
             },
         )
@@ -538,7 +540,6 @@ private fun LocalWallpaperDialogs(
 @Composable
 private fun LocalTagManagerDialog(
     state: LocalWallpaperUiState,
-    language: AppLanguage,
     editingTag: String?,
     editedTag: String,
     onEditedTagChanged: (String) -> Unit,
@@ -550,17 +551,17 @@ private fun LocalTagManagerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(language.text("管理标签", "Manage tags")) },
+        title = { Text(stringResource(R.string.local_manage_tags)) },
         text = {
             if (editingTag != null) {
                 OutlinedTextField(
                     value = editedTag,
                     onValueChange = onEditedTagChanged,
                     singleLine = true,
-                    label = { Text(language.text("新名称", "New name")) },
+                    label = { Text(stringResource(R.string.local_new_name)) },
                 )
             } else if (state.allTags.isEmpty()) {
-                Text(language.text("暂无自定义标签", "No custom tags"))
+                Text(stringResource(R.string.local_no_custom_tags))
             } else {
                 LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
                     items(state.allTags, key = { tag -> tag }) { tag ->
@@ -572,13 +573,13 @@ private fun LocalTagManagerDialog(
                             IconButton(onClick = { onStartTagEdit(tag) }) {
                                 Icon(
                                     imageVector = Icons.Outlined.Edit,
-                                    contentDescription = language.text("重命名标签", "Rename tag"),
+                                    contentDescription = stringResource(R.string.local_rename_tag),
                                 )
                             }
                             IconButton(onClick = { onDeleteTag(tag) }) {
                                 Icon(
                                     imageVector = Icons.Outlined.DeleteSweep,
-                                    contentDescription = language.text("删除标签", "Delete tag"),
+                                    contentDescription = stringResource(R.string.local_delete_tag),
                                 )
                             }
                         }
@@ -593,9 +594,9 @@ private fun LocalTagManagerDialog(
             ) {
                 Text(
                     if (editingTag == null) {
-                        language.text("完成", "Done")
+                        stringResource(R.string.local_done)
                     } else {
-                        language.text("保存", "Save")
+                        stringResource(R.string.local_save)
                     },
                 )
             }
@@ -604,7 +605,7 @@ private fun LocalTagManagerDialog(
             if (editingTag != null) {
                 {
                     TextButton(onClick = onCancelEdit) {
-                        Text(language.text("取消", "Cancel"))
+                        Text(stringResource(R.string.local_cancel))
                     }
                 }
             } else {
@@ -616,7 +617,6 @@ private fun LocalTagManagerDialog(
 @Composable
 private fun LocalSelectionBar(
     selectedCount: Int,
-    language: AppLanguage,
     menuExpanded: Boolean,
     onMenuExpandedChanged: (Boolean) -> Unit,
     onClearSelection: () -> Unit,
@@ -646,24 +646,24 @@ private fun LocalSelectionBar(
             IconButton(onClick = onClearSelection) {
                 Icon(
                     imageVector = Icons.Outlined.Cancel,
-                    contentDescription = language.text("退出选择", "Exit selection"),
+                    contentDescription = stringResource(R.string.local_exit_selection),
                 )
             }
             Text(
-                language.text("已选择 $selectedCount 项", "$selectedCount selected"),
+                pluralStringResource(R.plurals.local_selected_count, selectedCount, selectedCount),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = onShare) {
                 Icon(
                     imageVector = Icons.Outlined.FileUpload,
-                    contentDescription = language.text("分享所选", "Share selected"),
+                    contentDescription = stringResource(R.string.local_share_selected),
                 )
             }
             IconButton(onClick = onDelete) {
                 Icon(
                     imageVector = Icons.Outlined.DeleteSweep,
-                    contentDescription = language.text("删除所选", "Delete selected"),
+                    contentDescription = stringResource(R.string.local_delete_selected),
                     tint = MaterialTheme.colorScheme.error,
                 )
             }
@@ -671,7 +671,7 @@ private fun LocalSelectionBar(
                 IconButton(onClick = { onMenuExpandedChanged(true) }) {
                     Icon(
                         imageVector = Icons.Outlined.MoreVert,
-                        contentDescription = language.text("更多选择操作", "More selection actions"),
+                        contentDescription = stringResource(R.string.local_more_selection_actions),
                     )
                 }
                 DropdownMenu(
@@ -679,7 +679,7 @@ private fun LocalSelectionBar(
                     onDismissRequest = { onMenuExpandedChanged(false) },
                 ) {
                     DropdownMenuItem(
-                        text = { Text(language.text("添加标签", "Add tag")) },
+                        text = { Text(stringResource(R.string.local_add_tag)) },
                         leadingIcon = {
                             Icon(imageVector = Icons.Outlined.Edit, contentDescription = null)
                         },
@@ -689,7 +689,7 @@ private fun LocalSelectionBar(
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text(language.text("切换收藏", "Toggle favorites")) },
+                        text = { Text(stringResource(R.string.local_toggle_favorites)) },
                         leadingIcon = {
                             Icon(imageVector = Icons.Outlined.FavoriteBorder, contentDescription = null)
                         },
@@ -707,7 +707,6 @@ private fun LocalSelectionBar(
 @Composable
 private fun LocalWorkspaceHeader(
     state: LocalWallpaperUiState,
-    language: AppLanguage,
     onChooseDirectory: () -> Unit,
     onResetDirectory: () -> Unit,
     onRefresh: () -> Unit,
@@ -749,7 +748,6 @@ private fun LocalWorkspaceHeader(
                     Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.dense)) {
                         LocalSearchField(
                             query = state.searchQuery,
-                            language = language,
                             onQueryChanged = onSearchQueryChanged,
                         )
                         Row(
@@ -759,7 +757,6 @@ private fun LocalWorkspaceHeader(
                         ) {
                             ViewModeButtons(
                                 selected = state.viewMode,
-                                language = language,
                                 onSelected = onViewModeSelected,
                                 modifier = Modifier.width(160.dp),
                             )
@@ -774,15 +771,14 @@ private fun LocalWorkspaceHeader(
                                         },
                                     contentDescription =
                                         if (state.scan.isScanning) {
-                                            language.text("取消扫描", "Cancel scan")
+                                            stringResource(R.string.local_cancel_scan)
                                         } else {
-                                            language.text("刷新扫描", "Refresh scan")
+                                            stringResource(R.string.local_refresh_scan)
                                         },
                                 )
                             }
                             LocalWorkspaceMenu(
                                 hasCustomSource = customSource != null,
-                                language = language,
                                 onChooseDirectory = onChooseDirectory,
                                 onResetDirectory = onResetDirectory,
                                 onManageTags = onManageTags,
@@ -808,7 +804,6 @@ private fun LocalWorkspaceHeader(
 @Composable
 private fun LocalSearchField(
     query: String,
-    language: AppLanguage,
     onQueryChanged: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -817,7 +812,7 @@ private fun LocalSearchField(
         onValueChange = onQueryChanged,
         modifier = modifier.fillMaxWidth(),
         singleLine = true,
-        placeholder = { Text(language.text("搜索本地壁纸", "Search local wallpapers")) },
+        placeholder = { Text(stringResource(R.string.local_search_placeholder)) },
         leadingIcon = { Icon(imageVector = Icons.Outlined.Search, contentDescription = null) },
         trailingIcon =
             if (query.isNotEmpty()) {
@@ -825,7 +820,7 @@ private fun LocalSearchField(
                     IconButton(onClick = { onQueryChanged("") }) {
                         Icon(
                             imageVector = Icons.Outlined.Cancel,
-                            contentDescription = language.text("清除搜索", "Clear search"),
+                            contentDescription = stringResource(R.string.local_clear_search),
                         )
                     }
                 }
@@ -848,7 +843,6 @@ private fun LocalSearchField(
 @Composable
 private fun LocalWorkspaceMenu(
     hasCustomSource: Boolean,
-    language: AppLanguage,
     onChooseDirectory: () -> Unit,
     onResetDirectory: () -> Unit,
     onManageTags: () -> Unit,
@@ -858,7 +852,7 @@ private fun LocalWorkspaceMenu(
         IconButton(onClick = { expanded = true }) {
             Icon(
                 imageVector = Icons.Outlined.MoreVert,
-                contentDescription = language.text("更多本地操作", "More local actions"),
+                contentDescription = stringResource(R.string.local_more_actions),
             )
         }
         DropdownMenu(
@@ -866,7 +860,7 @@ private fun LocalWorkspaceMenu(
             onDismissRequest = { expanded = false },
         ) {
             DropdownMenuItem(
-                text = { Text(language.text("选择扫描目录", "Choose scan directory")) },
+                text = { Text(stringResource(R.string.local_choose_scan_directory)) },
                 leadingIcon = {
                     Icon(imageVector = Icons.Outlined.FolderOpen, contentDescription = null)
                 },
@@ -877,7 +871,7 @@ private fun LocalWorkspaceMenu(
             )
             if (hasCustomSource) {
                 DropdownMenuItem(
-                    text = { Text(language.text("移除自定义目录", "Remove custom directory")) },
+                    text = { Text(stringResource(R.string.local_remove_custom_directory)) },
                     leadingIcon = {
                         Icon(imageVector = Icons.Outlined.Cancel, contentDescription = null)
                     },
@@ -888,7 +882,7 @@ private fun LocalWorkspaceMenu(
                 )
             }
             DropdownMenuItem(
-                text = { Text(language.text("管理标签", "Manage tags")) },
+                text = { Text(stringResource(R.string.local_manage_tags)) },
                 leadingIcon = {
                     Icon(imageVector = Icons.Outlined.Edit, contentDescription = null)
                 },
@@ -908,7 +902,7 @@ private fun LocalScanIssueSummary(state: LocalWallpaperUiState) {
         color = MaterialTheme.colorScheme.tertiaryContainer,
     ) {
         Text(
-            text = state.scan.issues.joinToString(" · ") { issue -> issue.message },
+            text = stringResource(R.string.local_read_resource_failed),
             modifier =
                 Modifier
                     .widthIn(max = WallHubSizeTokens.readableContentMaxWidth)
@@ -923,7 +917,6 @@ private fun LocalScanIssueSummary(state: LocalWallpaperUiState) {
 @Composable
 private fun ViewModeButtons(
     selected: LocalWallpaperViewMode,
-    language: AppLanguage,
     onSelected: (LocalWallpaperViewMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -935,7 +928,7 @@ private fun ViewModeButtons(
         label = { mode ->
             Icon(
                 imageVector = mode.icon(),
-                contentDescription = mode.label(language),
+                contentDescription = mode.label(),
                 modifier = Modifier.size(WallHubSizeTokens.smallIcon),
             )
         },
@@ -946,7 +939,6 @@ private fun ViewModeButtons(
 @Composable
 private fun LocalWallpaperContent(
     state: LocalWallpaperUiState,
-    language: AppLanguage,
     selected: LocalWallpaperResource?,
     onSelectResource: (String?) -> Unit,
     onStartSelection: (String) -> Unit,
@@ -975,7 +967,7 @@ private fun LocalWallpaperContent(
     ) {
         WallHubEmptyState(
             icon = Icons.Outlined.FolderOpen,
-            title = language.text("没有找到本地壁纸", "No local wallpapers found"),
+            title = stringResource(R.string.local_empty),
             modifier = modifier.fillMaxSize(),
         )
         return
@@ -1017,7 +1009,6 @@ private fun LocalWallpaperContent(
                     resources = resources,
                     state = state,
                     selected = selected,
-                    language = language,
                     onSelectResource = onSelectResource,
                     onStartSelection = onStartSelection,
                     onToggleSelection = onToggleSelection,
@@ -1034,7 +1025,6 @@ private fun LocalWallpaperContent(
                 LocalWallpaperGrid(
                     resources = resources,
                     state = state,
-                    language = language,
                     onSelectResource = onSelectResource,
                     onStartSelection = onStartSelection,
                     onToggleSelection = onToggleSelection,
@@ -1046,7 +1036,6 @@ private fun LocalWallpaperContent(
                 LocalWallpaperList(
                     resources = resources,
                     state = state,
-                    language = language,
                     onSelectResource = onSelectResource,
                     onStartSelection = onStartSelection,
                     onToggleSelection = onToggleSelection,
@@ -1063,7 +1052,6 @@ private fun LocalWallpaperListDetailLayout(
     resources: List<LocalWallpaperResource>,
     state: LocalWallpaperUiState,
     selected: LocalWallpaperResource?,
-    language: AppLanguage,
     onSelectResource: (String?) -> Unit,
     onStartSelection: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
@@ -1106,7 +1094,6 @@ private fun LocalWallpaperListDetailLayout(
                 LocalWallpaperList(
                     resources = resources,
                     state = state,
-                    language = language,
                     onSelectResource = onSelectResource,
                     onStartSelection = onStartSelection,
                     onToggleSelection = onToggleSelection,
@@ -1118,7 +1105,6 @@ private fun LocalWallpaperListDetailLayout(
             AnimatedPane {
                 LocalWallpaperDetail(
                     resource = selected,
-                    language = language,
                     onBack = { onSelectResource(null) },
                     onToggleFavorite = onToggleFavorite,
                     onDeleteResource = onDeleteResource,
@@ -1137,7 +1123,6 @@ private fun LocalWallpaperListDetailLayout(
 internal fun LocalWallpaperList(
     resources: List<LocalWallpaperResource>,
     state: LocalWallpaperUiState,
-    language: AppLanguage,
     onSelectResource: (String?) -> Unit,
     onStartSelection: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
@@ -1157,7 +1142,6 @@ internal fun LocalWallpaperList(
         items(resources, key = LocalWallpaperResource::id) { resource ->
             LocalWallpaperListItem(
                 resource = resource,
-                language = language,
                 selected = resource.id == state.selectedResourceId,
                 checked = resource.id in state.selectedResourceIds,
                 selectionMode = state.selectionMode,
@@ -1184,7 +1168,6 @@ internal fun LocalWallpaperList(
 @Composable
 private fun LocalWallpaperListItem(
     resource: LocalWallpaperResource,
-    language: AppLanguage,
     selected: Boolean,
     checked: Boolean,
     selectionMode: Boolean,
@@ -1238,11 +1221,11 @@ private fun LocalWallpaperListItem(
                 Text(
                     text =
                         buildString {
-                            append(resource.format.label(language))
+                            append(resource.format.label())
                             append(" · ${formatLocalSize(resource.sizeBytes)}")
                             append(" · ${resource.sourceLabel}")
                             if (resource.importState == LocalWallpaperImportState.IMPORT_REQUESTED) {
-                                append(language.text(" · 已发起导入", " · Import requested"))
+                                append(stringResource(R.string.local_import_requested_suffix))
                             }
                         },
                     style = MaterialTheme.typography.bodyMedium,
@@ -1255,18 +1238,14 @@ private fun LocalWallpaperListItem(
                 resource.isFavorite ->
                     Icon(
                         imageVector = Icons.Outlined.FavoriteBorder,
-                        contentDescription = language.text("已收藏", "Favorite"),
+                        contentDescription = stringResource(R.string.local_favorite),
                         tint = MaterialTheme.colorScheme.primary,
                     )
 
                 resource.format == LocalWallpaperFormat.MPKG ->
                     Icon(
                         imageVector = Icons.Outlined.PhoneAndroid,
-                        contentDescription =
-                            language.text(
-                                "可导入 Wallpaper Engine",
-                                "Can import to Wallpaper Engine",
-                            ),
+                        contentDescription = stringResource(R.string.local_can_import),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
@@ -1281,7 +1260,6 @@ private fun LocalWallpaperListItem(
 private fun LocalWallpaperGrid(
     resources: List<LocalWallpaperResource>,
     state: LocalWallpaperUiState,
-    language: AppLanguage,
     onSelectResource: (String?) -> Unit,
     onStartSelection: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
@@ -1338,7 +1316,6 @@ private fun LocalWallpaperGrid(
                         )
                         LocalFormatBadge(
                             format = resource.format,
-                            language = language,
                             modifier = Modifier.align(Alignment.TopStart).padding(WallHubSpacing.xs),
                         )
                         if (state.selectionMode) {
@@ -1365,7 +1342,7 @@ private fun LocalWallpaperGrid(
                             horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.dense),
                         ) {
                             Text(
-                                text = "${resource.format.label(language)} · ${formatLocalSize(resource.sizeBytes)}",
+                                text = "${resource.format.label()} · ${formatLocalSize(resource.sizeBytes)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -1375,7 +1352,7 @@ private fun LocalWallpaperGrid(
                             if (resource.isFavorite) {
                                 Icon(
                                     imageVector = Icons.Outlined.FavoriteBorder,
-                                    contentDescription = language.text("已收藏", "Favorite"),
+                                    contentDescription = stringResource(R.string.local_favorite),
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(WallHubSizeTokens.compactIcon),
                                 )
@@ -1391,7 +1368,6 @@ private fun LocalWallpaperGrid(
 @Composable
 private fun LocalWallpaperDetail(
     resource: LocalWallpaperResource?,
-    language: AppLanguage,
     onBack: () -> Unit,
     onToggleFavorite: (String) -> Unit,
     onDeleteResource: (LocalWallpaperResource) -> Unit,
@@ -1403,7 +1379,7 @@ private fun LocalWallpaperDetail(
     if (resource == null) {
         WallHubEmptyState(
             icon = Icons.Outlined.Info,
-            title = language.text("选择资源查看详情", "Select a resource to view details"),
+            title = stringResource(R.string.local_select_resource),
             modifier = modifier,
         )
         return
@@ -1424,7 +1400,7 @@ private fun LocalWallpaperDetail(
             IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                    contentDescription = language.text("返回资源列表", "Back to resources"),
+                    contentDescription = stringResource(R.string.local_back_to_resources),
                 )
             }
             Text(
@@ -1437,7 +1413,7 @@ private fun LocalWallpaperDetail(
             IconButton(onClick = { onToggleFavorite(resource.id) }) {
                 Icon(
                     imageVector = Icons.Outlined.FavoriteBorder,
-                    contentDescription = language.text("收藏", "Favorite"),
+                    contentDescription = stringResource(R.string.local_favorite),
                     tint = if (resource.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -1449,22 +1425,23 @@ private fun LocalWallpaperDetail(
         )
         ResourceActionRow(
             resource = resource,
-            language = language,
             onDeleteResource = onDeleteResource,
             onSystemAction = onSystemAction,
         )
         HorizontalDivider(color = DividerDefaults.color)
         Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs)) {
-            Text(language.text("文件信息", "File information"), style = MaterialTheme.typography.titleMedium)
-            DetailLine(language.text("格式", "Format"), resource.format.label(language))
-            DetailLine(language.text("识别依据", "Detection"), resource.detectionReason)
-            DetailLine(language.text("大小", "Size"), formatLocalSize(resource.sizeBytes))
-            DetailLine(language.text("来源", "Source"), resource.sourceLabel)
-            DetailLine(language.text("位置", "Location"), resource.relativePath)
-            resource.workshopId?.let { id -> DetailLine("Workshop ID", id.toString()) }
+            Text(stringResource(R.string.local_file_information), style = MaterialTheme.typography.titleMedium)
+            DetailLine(stringResource(R.string.local_format), resource.format.label())
+            DetailLine(stringResource(R.string.local_detection), resource.detectionReason)
+            DetailLine(stringResource(R.string.local_size), formatLocalSize(resource.sizeBytes))
+            DetailLine(stringResource(R.string.local_source), resource.sourceLabel)
+            DetailLine(stringResource(R.string.local_location), resource.relativePath)
+            resource.workshopId?.let { id ->
+                DetailLine(stringResource(R.string.local_workshop_id), id.toString())
+            }
             DetailLine(
-                language.text("导入状态", "Import state"),
-                resource.importState.label(language),
+                stringResource(R.string.local_import_state),
+                resource.importState.label(),
             )
         }
         Row(
@@ -1472,14 +1449,14 @@ private fun LocalWallpaperDetail(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
         ) {
-            Text(language.text("标签", "Tags"), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.local_tags), style = MaterialTheme.typography.titleMedium)
             TextButton(onClick = { onAddTag(resource) }) {
-                Text(language.text("添加", "Add"))
+                Text(stringResource(R.string.local_add))
             }
         }
         if (resource.tags.isEmpty()) {
             Text(
-                language.text("暂无自定义标签", "No custom tags"),
+                stringResource(R.string.local_no_custom_tags),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
@@ -1496,7 +1473,7 @@ private fun LocalWallpaperDetail(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Outlined.Cancel,
-                                contentDescription = language.text("移除标签", "Remove tag"),
+                                contentDescription = stringResource(R.string.local_remove_tag),
                                 modifier = Modifier.size(WallHubSizeTokens.compactIcon),
                             )
                         },
@@ -1510,7 +1487,6 @@ private fun LocalWallpaperDetail(
 @Composable
 private fun ResourceActionRow(
     resource: LocalWallpaperResource,
-    language: AppLanguage,
     onDeleteResource: (LocalWallpaperResource) -> Unit,
     onSystemAction: (LocalWallpaperAction) -> Unit,
 ) {
@@ -1526,13 +1502,11 @@ private fun ResourceActionRow(
             Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs)) {
                 ResourcePrimaryActionButton(
                     resource = resource,
-                    language = language,
                     onClick = onPrimaryAction,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 ResourceUtilityActions(
                     resource = resource,
-                    language = language,
                     onDeleteResource = onDeleteResource,
                     onSystemAction = onSystemAction,
                     modifier = Modifier.align(Alignment.End),
@@ -1546,13 +1520,11 @@ private fun ResourceActionRow(
             ) {
                 ResourcePrimaryActionButton(
                     resource = resource,
-                    language = language,
                     onClick = onPrimaryAction,
                     modifier = Modifier.weight(1f),
                 )
                 ResourceUtilityActions(
                     resource = resource,
-                    language = language,
                     onDeleteResource = onDeleteResource,
                     onSystemAction = onSystemAction,
                 )
@@ -1564,7 +1536,6 @@ private fun ResourceActionRow(
 @Composable
 private fun ResourcePrimaryActionButton(
     resource: LocalWallpaperResource,
-    language: AppLanguage,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1584,9 +1555,9 @@ private fun ResourcePrimaryActionButton(
         Spacer(modifier = Modifier.width(WallHubSpacing.xs))
         Text(
             if (resource.format == LocalWallpaperFormat.MPKG) {
-                language.text("导入 Wallpaper Engine", "Import to Wallpaper Engine")
+                stringResource(R.string.local_import_wallpaper_engine)
             } else {
-                language.text("打开文件", "Open file")
+                stringResource(R.string.local_open_file)
             },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1597,7 +1568,6 @@ private fun ResourcePrimaryActionButton(
 @Composable
 private fun ResourceUtilityActions(
     resource: LocalWallpaperResource,
-    language: AppLanguage,
     onDeleteResource: (LocalWallpaperResource) -> Unit,
     onSystemAction: (LocalWallpaperAction) -> Unit,
     modifier: Modifier = Modifier,
@@ -1618,7 +1588,7 @@ private fun ResourceUtilityActions(
             ) {
                 Icon(
                     imageVector = Icons.Outlined.FileUpload,
-                    contentDescription = language.text("分享", "Share"),
+                    contentDescription = stringResource(R.string.local_share),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -1631,7 +1601,7 @@ private fun ResourceUtilityActions(
             ) {
                 Icon(
                     imageVector = Icons.Outlined.ContentCopy,
-                    contentDescription = language.text("复制位置", "Copy location"),
+                    contentDescription = stringResource(R.string.local_copy_location),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -1642,7 +1612,7 @@ private fun ResourceUtilityActions(
             IconButton(onClick = { onDeleteResource(resource) }) {
                 Icon(
                     imageVector = Icons.Outlined.DeleteSweep,
-                    contentDescription = language.text("删除", "Delete"),
+                    contentDescription = stringResource(R.string.local_delete),
                     tint = MaterialTheme.colorScheme.error,
                 )
             }
@@ -1666,7 +1636,7 @@ private fun LocalWallpaperPreview(
     ) {
         Icon(
             imageVector = resource.format.icon(),
-            contentDescription = resource.format.label(LocalWallHubLanguage.current),
+            contentDescription = resource.format.label(),
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(WallHubSpacing.xl),
         )
@@ -1693,7 +1663,6 @@ private fun LocalWallpaperPreview(
 @Composable
 private fun LocalFormatBadge(
     format: LocalWallpaperFormat,
-    language: AppLanguage,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -1702,7 +1671,7 @@ private fun LocalFormatBadge(
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
     ) {
         Text(
-            text = format.label(language),
+            text = format.label(),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(horizontal = 7.dp, vertical = WallHubSpacing.xxs),
@@ -1771,7 +1740,7 @@ private fun openLocalResource(
 ): Result<Unit> {
     val uri =
         shareableUri(context, resource.contentUri)
-            ?: return Result.failure(IllegalStateException("无法读取本地资源"))
+            ?: return Result.failure(IllegalStateException())
     val intent =
         Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, resource.mimeType ?: "application/octet-stream")
@@ -1787,11 +1756,11 @@ private fun shareLocalResources(
     resources: List<LocalWallpaperResource>,
 ): Result<Unit> {
     if (resources.isEmpty()) {
-        return Result.failure(IllegalStateException("没有可分享的本地资源"))
+        return Result.failure(IllegalStateException())
     }
     val uris = resources.mapNotNull { resource -> shareableUri(context, resource.contentUri) }
     if (uris.isEmpty()) {
-        return Result.failure(IllegalStateException("无法读取要分享的本地资源"))
+        return Result.failure(IllegalStateException())
     }
     val mimeTypes = resources.mapNotNull(LocalWallpaperResource::mimeType).distinct()
     val intent =
@@ -1825,11 +1794,12 @@ private fun copyLocalResourceLocation(
 private fun launchWallpaperEngineImport(
     context: android.content.Context,
     resource: LocalWallpaperResource,
-    language: AppLanguage,
+    readResourceFailed: String,
+    notInstalledMessage: String,
 ): Result<Unit> {
     val uri =
         shareableUri(context, resource.contentUri)
-            ?: return Result.failure(IllegalStateException("无法读取本地资源"))
+            ?: return Result.failure(IllegalStateException(readResourceFailed))
     val component =
         ComponentName(
             WALLPAPER_ENGINE_PACKAGE,
@@ -1842,10 +1812,7 @@ private fun launchWallpaperEngineImport(
     if (!installed) {
         return Result.failure(
             IllegalStateException(
-                language.text(
-                    "未安装官方 Wallpaper Engine",
-                    "Official Wallpaper Engine is not installed",
-                ),
+                notInstalledMessage,
             ),
         )
     }
@@ -1889,20 +1856,22 @@ private fun LocalWallpaperViewMode.icon(): androidx.compose.ui.graphics.vector.I
         LocalWallpaperViewMode.DETAIL -> Icons.Outlined.Info
     }
 
-private fun LocalWallpaperViewMode.label(language: AppLanguage): String =
+@Composable
+private fun LocalWallpaperViewMode.label(): String =
     when (this) {
-        LocalWallpaperViewMode.LIST -> language.text("列表", "List")
-        LocalWallpaperViewMode.GRID -> language.text("网格", "Grid")
-        LocalWallpaperViewMode.DETAIL -> language.text("详情", "Detail")
+        LocalWallpaperViewMode.LIST -> stringResource(R.string.local_view_list)
+        LocalWallpaperViewMode.GRID -> stringResource(R.string.local_view_grid)
+        LocalWallpaperViewMode.DETAIL -> stringResource(R.string.local_view_detail)
     }
 
-private fun LocalWallpaperFormat.label(language: AppLanguage): String =
+@Composable
+private fun LocalWallpaperFormat.label(): String =
     when (this) {
         LocalWallpaperFormat.MPKG -> "MPKG"
         LocalWallpaperFormat.PKG -> "PKG"
-        LocalWallpaperFormat.VIDEO -> language.text("视频", "Video")
+        LocalWallpaperFormat.VIDEO -> stringResource(R.string.local_format_video)
         LocalWallpaperFormat.HTML -> "HTML"
-        LocalWallpaperFormat.UNKNOWN -> language.text("未知", "Unknown")
+        LocalWallpaperFormat.UNKNOWN -> stringResource(R.string.local_format_unknown)
     }
 
 private fun LocalWallpaperFormat.icon(): androidx.compose.ui.graphics.vector.ImageVector =
@@ -1916,10 +1885,11 @@ private fun LocalWallpaperFormat.icon(): androidx.compose.ui.graphics.vector.Ima
         LocalWallpaperFormat.UNKNOWN -> Icons.Outlined.Info
     }
 
-private fun LocalWallpaperImportState.label(language: AppLanguage): String =
+@Composable
+private fun LocalWallpaperImportState.label(): String =
     when (this) {
-        LocalWallpaperImportState.NOT_IMPORTED -> language.text("未导入", "Not imported")
-        LocalWallpaperImportState.IMPORT_REQUESTED -> language.text("已发起导入", "Import requested")
+        LocalWallpaperImportState.NOT_IMPORTED -> stringResource(R.string.local_not_imported)
+        LocalWallpaperImportState.IMPORT_REQUESTED -> stringResource(R.string.local_import_requested)
     }
 
 private fun formatLocalSize(bytes: Long): String =

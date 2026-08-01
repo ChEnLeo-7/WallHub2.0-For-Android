@@ -67,12 +67,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.wallhub.android.core.designsystem.LocalWallHubLanguage
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubColorTokens
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
@@ -80,8 +81,8 @@ import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubToastHost
-import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.model.AppLanguage
+import com.wallhub.android.core.designsystem.localizedAuthor
+import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.WorkshopComment
@@ -114,8 +115,10 @@ fun WorkshopDetailScreen(
     onCopyText: (String, String) -> Unit,
     onOpenSteam: (Long) -> Unit,
 ) {
-    val language = LocalWallHubLanguage.current
     val selectedSummary = state.detail?.summary
+    val unknown = stringResource(R.string.detail_unknown)
+    val steamCdnMessageTemplate = stringResource(R.string.detail_steam_cdn, "%s")
+    val projectIdCopiedMessage = stringResource(R.string.detail_project_id_copied, selectedSummary?.id ?: 0L)
     var toastMessage by remember { mutableStateOf<String?>(null) }
     val inlineVideoStream = state.inlineVideoStream
     val inlineFullscreen = state.isInlineVideoFullscreen
@@ -129,7 +132,7 @@ fun WorkshopDetailScreen(
                     onFirstFrameRendered = {
                         if (!cdnToastDelivered) {
                             cdnToastDelivered = true
-                            toastMessage = "Steam CDN: ${stream.currentCdnHost ?: "Unknown"}"
+                            toastMessage = steamCdnMessageTemplate.format(stream.currentCdnHost ?: unknown)
                         }
                     },
                 )
@@ -155,11 +158,10 @@ fun WorkshopDetailScreen(
             )
         } else {
             WallHubPageScaffold(
-                title = selectedSummary?.title ?: language.text("壁纸详情", "Wallpaper details"),
+                title = selectedSummary?.title ?: stringResource(R.string.detail_wallpaper_details),
                 topBarContent = {
                     WorkshopDetailTopBar(
                         summary = selectedSummary,
-                        language = language,
                         onBack = onBack,
                         onCopyText = onCopyText,
                         onOpenSteam = onOpenSteam,
@@ -182,8 +184,8 @@ fun WorkshopDetailScreen(
                     state.error != null -> {
                         WallHubEmptyState(
                             icon = Icons.Outlined.Refresh,
-                            title = state.error,
-                            actionLabel = language.text("重试", "Retry"),
+                            title = state.error.resolve(),
+                            actionLabel = stringResource(R.string.detail_retry),
                             onAction = onRetry,
                             modifier =
                                 Modifier
@@ -195,7 +197,6 @@ fun WorkshopDetailScreen(
                     state.detail != null ->
                         WorkshopDetailPagerContent(
                             detail = state.detail,
-                            language = language,
                             interaction = state.interaction,
                             isLoadingInteraction = state.isLoadingInteraction,
                             isUpdatingInteraction = state.isUpdatingInteraction,
@@ -228,7 +229,7 @@ fun WorkshopDetailScreen(
                             onCopyWorkshopId = { id ->
                                 onCopyText(
                                     id.toString(),
-                                    language.text("已复制项目 ID：$id", "Project ID copied: $id"),
+                                    projectIdCopiedMessage,
                                 )
                             },
                             onSearchAuthor = onSearchAuthor,
@@ -247,24 +248,25 @@ fun WorkshopDetailScreen(
 @Composable
 internal fun WorkshopDetailTopBar(
     summary: WorkshopSummary?,
-    language: AppLanguage,
     onBack: () -> Unit,
     onCopyText: (String, String) -> Unit,
     onOpenSteam: (Long) -> Unit,
 ) {
+    val titleCopiedMessage = stringResource(R.string.detail_wallpaper_title_copied)
+    val localizedTitle = summary?.localizedTitle()
     TopAppBar(
         navigationIcon = {
             IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                    contentDescription = language.text("返回", "Back"),
+                    contentDescription = stringResource(R.string.detail_back),
                 )
             }
         },
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = summary?.title ?: language.text("壁纸详情", "Wallpaper details"),
+                    text = localizedTitle ?: stringResource(R.string.detail_wallpaper_details),
                     style = MaterialTheme.typography.headlineSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -274,15 +276,15 @@ internal fun WorkshopDetailTopBar(
                     IconButton(
                         onClick = {
                             onCopyText(
-                                workshop.title,
-                                language.text("已复制壁纸标题", "Wallpaper title copied"),
+                                localizedTitle.orEmpty(),
+                                titleCopiedMessage,
                             )
                         },
                         modifier = Modifier.size(WallHubSizeTokens.compactActionHeight),
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.ContentCopy,
-                            contentDescription = language.text("复制标题", "Copy title"),
+                            contentDescription = stringResource(R.string.detail_copy_title),
                         )
                     }
                 }
@@ -293,7 +295,7 @@ internal fun WorkshopDetailTopBar(
                 IconButton(onClick = { onOpenSteam(workshop.id) }) {
                     Icon(
                         imageVector = Icons.Outlined.OpenInNew,
-                        contentDescription = language.text("打开 Steam 页面", "Open Steam page"),
+                        contentDescription = stringResource(R.string.detail_open_steam_page),
                     )
                 }
             }
@@ -336,32 +338,31 @@ internal fun FullscreenWallpaperVideoPlayer(
 @Composable
 internal fun WorkshopDetailPagerContent(
     detail: WorkshopDetail,
-    language: AppLanguage,
     interaction: WorkshopInteraction,
     isLoadingInteraction: Boolean,
     isUpdatingInteraction: Boolean,
-    interactionMessage: String?,
+    interactionMessage: DetailUiText?,
     onToggleSubscription: () -> Unit,
     onToggleFavorite: () -> Unit,
     inlineVideoPlayback: SteamChunkPlayback?,
     isLoadingInlineVideo: Boolean,
-    inlineVideoError: String?,
+    inlineVideoError: DetailUiText?,
     onStartInlineVideo: () -> Unit,
     onInlineFullscreenChange: (Boolean) -> Unit,
     onExportFormatSelected: (ExportFormat) -> Unit,
     isEnqueuingDownload: Boolean,
-    downloadMessage: String?,
+    downloadMessage: DetailUiText?,
     onDownload: () -> Unit,
     comments: List<WorkshopComment>,
     commentsTotal: Int?,
     commentsHasMore: Boolean,
     isLoadingComments: Boolean,
     isLoadingMoreComments: Boolean,
-    commentsError: String?,
+    commentsError: DetailUiText?,
     canPostComment: Boolean,
     commentDraft: String,
     isPostingComment: Boolean,
-    commentPostError: String?,
+    commentPostError: DetailUiText?,
     onRetryComments: () -> Unit,
     onLoadMoreComments: () -> Unit,
     onCommentDraftChanged: (String) -> Unit,
@@ -464,7 +465,6 @@ internal fun WorkshopDetailPagerContent(
                 WorkshopDetailSectionList(
                     selectedPage = pagerState.currentPage,
                     commentsTotal = commentsTotal,
-                    language = language,
                     onPageSelected = { page ->
                         coroutineScope.launch {
                             paneNavigator.navigateTo(ListDetailPaneScaffoldRole.Detail, page)
@@ -477,7 +477,6 @@ internal fun WorkshopDetailPagerContent(
             AnimatedPane {
                 WorkshopDetailPane(
                     detail = detail,
-                    language = language,
                     pagerState = pagerState,
                     nestedScrollConnection = nestedScrollConnection,
                     headerOffsetPx = headerOffsetPx,
@@ -521,7 +520,6 @@ internal fun WorkshopDetailPagerContent(
     if (showDownloadChoices) {
         DownloadChoiceSheet(
             type = summary.type,
-            language = language,
             exportFormats = exportFormats,
             onDismiss = { showDownloadChoices = false },
             onDownload = { format ->
@@ -541,7 +539,6 @@ internal fun WorkshopDetailPagerContent(
 @Composable
 internal fun WorkshopDetailPane(
     detail: WorkshopDetail,
-    language: AppLanguage,
     pagerState: androidx.compose.foundation.pager.PagerState,
     nestedScrollConnection: NestedScrollConnection,
     headerOffsetPx: Float,
@@ -550,7 +547,7 @@ internal fun WorkshopDetailPane(
     onCoverHeightChanged: (Int) -> Unit,
     inlineVideoPlayback: SteamChunkPlayback?,
     isLoadingInlineVideo: Boolean,
-    inlineVideoError: String?,
+    inlineVideoError: DetailUiText?,
     onStartInlineVideo: () -> Unit,
     onInlineFullscreenChange: (Boolean) -> Unit,
     comments: List<WorkshopComment>,
@@ -558,11 +555,11 @@ internal fun WorkshopDetailPane(
     commentsHasMore: Boolean,
     isLoadingComments: Boolean,
     isLoadingMoreComments: Boolean,
-    commentsError: String?,
+    commentsError: DetailUiText?,
     canPostComment: Boolean,
     commentDraft: String,
     isPostingComment: Boolean,
-    commentPostError: String?,
+    commentPostError: DetailUiText?,
     onRetryComments: () -> Unit,
     onLoadMoreComments: () -> Unit,
     onCommentDraftChanged: (String) -> Unit,
@@ -570,9 +567,9 @@ internal fun WorkshopDetailPane(
     interaction: WorkshopInteraction,
     isLoadingInteraction: Boolean,
     isUpdatingInteraction: Boolean,
-    interactionMessage: String?,
+    interactionMessage: DetailUiText?,
     isEnqueuingDownload: Boolean,
-    downloadMessage: String?,
+    downloadMessage: DetailUiText?,
     onToggleSubscription: () -> Unit,
     onToggleFavorite: () -> Unit,
     onShowDownloadChoices: () -> Unit,
@@ -582,7 +579,6 @@ internal fun WorkshopDetailPane(
     Column(modifier = Modifier.fillMaxSize().nestedScroll(nestedScrollConnection)) {
         WorkshopDetailCollapsibleHeader(
             detail = detail,
-            language = language,
             offsetPx = headerOffsetPx,
             onHeaderHeightChanged = onHeaderHeightChanged,
             onCoverHeightChanged = onCoverHeightChanged,
@@ -596,7 +592,6 @@ internal fun WorkshopDetailPane(
         )
         WorkshopDetailTabPager(
             detail = detail,
-            language = language,
             pagerState = pagerState,
             comments = comments,
             commentsTotal = commentsTotal,
@@ -616,7 +611,6 @@ internal fun WorkshopDetailPane(
             onSubmitComment = onSubmitComment,
         )
         DetailActionBar(
-            language = language,
             interaction = interaction,
             isLoadingInteraction = isLoadingInteraction,
             isUpdatingInteraction = isUpdatingInteraction,
@@ -633,19 +627,20 @@ internal fun WorkshopDetailPane(
 @Composable
 internal fun WorkshopDetailCollapsibleHeader(
     detail: WorkshopDetail,
-    language: AppLanguage,
     offsetPx: Float,
     onHeaderHeightChanged: (Int) -> Unit,
     onCoverHeightChanged: (Int) -> Unit,
     inlineVideoPlayback: SteamChunkPlayback?,
     isLoadingInlineVideo: Boolean,
-    inlineVideoError: String?,
+    inlineVideoError: DetailUiText?,
     onStartInlineVideo: () -> Unit,
     onInlineFullscreenChange: (Boolean) -> Unit,
     onCopyWorkshopId: (Long) -> Unit,
     onSearchAuthor: (String) -> Unit,
 ) {
     val summary = detail.summary
+    val title = summary.localizedTitle()
+    val author = summary.localizedAuthor()
     CollapsibleDetailHeader(
         offsetPx = offsetPx,
         onHeightChanged = onHeaderHeightChanged,
@@ -659,23 +654,22 @@ internal fun WorkshopDetailCollapsibleHeader(
             verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
         ) {
             DetailIdentityChip(
-                label = language.text("项目 ID", "Project ID"),
+                label = stringResource(R.string.detail_project_id),
                 value = summary.id.toString(),
                 icon = Icons.Outlined.ContentCopy,
                 onClick = { onCopyWorkshopId(summary.id) },
             )
             DetailIdentityChip(
-                label = language.text("作者", "Author"),
-                value = summary.author,
+                label = stringResource(R.string.detail_author),
+                value = author,
                 icon = Icons.Outlined.Search,
                 onClick = { onSearchAuthor(detail.creatorId ?: summary.author) },
             )
         }
         DetailCover(
-            title = summary.title,
+            title = title,
             previewUrl = summary.previewUrl,
             type = summary.type,
-            language = language,
             playback = inlineVideoPlayback,
             isLoadingInlineVideo = isLoadingInlineVideo,
             inlineVideoError = inlineVideoError,
@@ -694,18 +688,17 @@ internal fun WorkshopDetailCollapsibleHeader(
 @Composable
 internal fun ColumnScope.WorkshopDetailTabPager(
     detail: WorkshopDetail,
-    language: AppLanguage,
     pagerState: androidx.compose.foundation.pager.PagerState,
     comments: List<WorkshopComment>,
     commentsTotal: Int?,
     commentsHasMore: Boolean,
     isLoadingComments: Boolean,
     isLoadingMoreComments: Boolean,
-    commentsError: String?,
+    commentsError: DetailUiText?,
     canPostComment: Boolean,
     commentDraft: String,
     isPostingComment: Boolean,
-    commentPostError: String?,
+    commentPostError: DetailUiText?,
     isWallpaperHeaderCollapsed: Boolean,
     onReturnToWallpaperTop: () -> Unit,
     onRetryComments: () -> Unit,
@@ -722,7 +715,7 @@ internal fun ColumnScope.WorkshopDetailTabPager(
     ) {
         DetailTab(
             selected = pagerState.currentPage == DETAIL_OVERVIEW_PAGE,
-            text = language.text("详情", "Details"),
+            text = stringResource(R.string.detail_details),
             onClick = {
                 coroutineScope.launch {
                     pagerState.animateScrollToPage(DETAIL_OVERVIEW_PAGE)
@@ -731,8 +724,8 @@ internal fun ColumnScope.WorkshopDetailTabPager(
         )
         val commentsLabel =
             commentsTotal?.takeIf { it > 0 }?.let { total ->
-                language.text("评论 ($total)", "Comments ($total)")
-            } ?: language.text("评论", "Comments")
+                stringResource(R.string.detail_comments_count, total)
+            } ?: stringResource(R.string.detail_comments)
         DetailTab(
             selected = pagerState.currentPage == DETAIL_COMMENTS_PAGE,
             text = commentsLabel,
@@ -755,7 +748,6 @@ internal fun ColumnScope.WorkshopDetailTabPager(
             DETAIL_OVERVIEW_PAGE ->
                 DetailOverviewPage(
                     detail = detail,
-                    language = language,
                 )
 
             else ->
@@ -769,7 +761,6 @@ internal fun ColumnScope.WorkshopDetailTabPager(
                     commentDraft = commentDraft,
                     isPostingComment = isPostingComment,
                     commentPostError = commentPostError,
-                    language = language,
                     onRetry = onRetryComments,
                     onLoadMore = onLoadMoreComments,
                     onCommentDraftChanged = onCommentDraftChanged,
@@ -785,13 +776,12 @@ internal fun ColumnScope.WorkshopDetailTabPager(
 internal fun WorkshopDetailSectionList(
     selectedPage: Int,
     commentsTotal: Int?,
-    language: AppLanguage,
     onPageSelected: (Int) -> Unit,
 ) {
     val commentsLabel =
         commentsTotal?.takeIf { it > 0 }?.let { total ->
-            language.text("评论 ($total)", "Comments ($total)")
-        } ?: language.text("评论", "Comments")
+            stringResource(R.string.detail_comments_count, total)
+        } ?: stringResource(R.string.detail_comments)
     Column(
         modifier =
             Modifier
@@ -800,11 +790,11 @@ internal fun WorkshopDetailSectionList(
         verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
     ) {
         Text(
-            text = language.text("详情导航", "Details navigation"),
+            text = stringResource(R.string.detail_details_navigation),
             style = MaterialTheme.typography.titleMedium,
         )
         DetailSectionListItem(
-            label = language.text("详情", "Details"),
+            label = stringResource(R.string.detail_details),
             selected = selectedPage == DETAIL_OVERVIEW_PAGE,
             onClick = { onPageSelected(DETAIL_OVERVIEW_PAGE) },
         )
@@ -932,10 +922,9 @@ internal fun DetailCover(
     title: String,
     previewUrl: String?,
     type: WorkshopType,
-    language: AppLanguage,
     playback: SteamChunkPlayback?,
     isLoadingInlineVideo: Boolean,
-    inlineVideoError: String?,
+    inlineVideoError: DetailUiText?,
     onStartInlineVideo: () -> Unit,
     onFullscreenChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -981,7 +970,7 @@ internal fun DetailCover(
             if (previewUrl != null) {
                 AsyncImage(
                     model = previewUrl,
-                    contentDescription = language.text(title + " 预览图", title + " preview"),
+                    contentDescription = stringResource(R.string.detail_preview_image, title),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.matchParentSize(),
                 )
@@ -1002,7 +991,7 @@ internal fun DetailCover(
                         .background(WallHubColorTokens.mediaControlScrim)
                         .clickable(
                             role = Role.Button,
-                            onClickLabel = language.text("播放视频", "Play video"),
+                            onClickLabel = stringResource(R.string.detail_play_video),
                             onClick = onStartInlineVideo,
                         ),
                 contentAlignment = Alignment.Center,
@@ -1029,7 +1018,7 @@ internal fun DetailCover(
                                 modifier = Modifier.size(34.dp),
                             )
                             Text(
-                                text = inlineVideoError,
+                                text = inlineVideoError.resolve(),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = WallHubColorTokens.mediaOverlayContent,
                                 maxLines = 3,
@@ -1046,7 +1035,7 @@ internal fun DetailCover(
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.PlayArrow,
-                                contentDescription = language.text("播放视频", "Play video"),
+                                contentDescription = stringResource(R.string.detail_play_video),
                                 modifier = Modifier.padding(WallHubSpacing.controlInset).size(34.dp),
                             )
                         }

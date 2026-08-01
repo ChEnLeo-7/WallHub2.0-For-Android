@@ -22,6 +22,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import kotlinx.coroutines.launch
 import java.io.File
@@ -55,13 +56,13 @@ fun SettingsRoute(
                                     treeUri.lastPathSegment
                                         ?.substringAfterLast(':')
                                         ?.ifBlank { null }
-                                        ?: "已选择导出目录",
+                                        ?: context.getString(R.string.settings_selected_export_directory),
                             ),
                         )
-                    }.onFailure { error ->
+                    }.onFailure {
                         viewModel.onAction(
                             SettingsAction.SystemActionFailed(
-                                error.message ?: "无法授权导出目录",
+                                context.getString(R.string.settings_error_authorize_export_directory),
                             ),
                         )
                     }
@@ -83,7 +84,7 @@ fun SettingsRoute(
     val launchSystemInstaller: (String) -> Unit = { path ->
         runCatching {
             val apk = File(path)
-            check(apk.isFile) { "已验证的安装包不存在" }
+            check(apk.isFile) { context.getString(R.string.settings_error_verified_apk_missing) }
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
             val intent =
                 Intent(Intent.ACTION_VIEW).apply {
@@ -92,9 +93,11 @@ fun SettingsRoute(
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             context.startActivity(intent)
-        }.onFailure { error ->
+        }.onFailure {
             viewModel.onAction(
-                SettingsAction.InstallerFailed(error.message ?: "无法打开 Android 系统安装器"),
+                SettingsAction.InstallerFailed(
+                    context.getString(R.string.settings_error_open_android_installer),
+                ),
             )
         }
     }
@@ -110,7 +113,11 @@ fun SettingsRoute(
             ) {
                 launchSystemInstaller(path)
             } else if (path != null) {
-                viewModel.onAction(SettingsAction.InstallerFailed("需要允许 WallHub 安装未知应用后才能继续"))
+                viewModel.onAction(
+                    SettingsAction.InstallerFailed(
+                        context.getString(R.string.settings_error_unknown_sources_permission),
+                    ),
+                )
             }
         }
     val requestReleaseInstall: (String) -> Unit = { path ->
@@ -122,10 +129,12 @@ fun SettingsRoute(
                     Uri.parse("package:${context.packageName}"),
                 )
             runCatching { unknownSourcesLauncher.launch(intent) }
-                .onFailure { error ->
+                .onFailure {
                     pendingUpdateApkPath = null
                     viewModel.onAction(
-                        SettingsAction.InstallerFailed(error.message ?: "无法打开安装未知应用设置"),
+                        SettingsAction.InstallerFailed(
+                            context.getString(R.string.settings_error_open_unknown_sources_settings),
+                        ),
                     )
                 }
         } else {

@@ -11,7 +11,6 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.wallhub.android.core.model.AccentPreference
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
 import com.wallhub.android.core.model.HomeCardAction
@@ -53,12 +52,6 @@ class AppPreferencesStore(
     suspend fun setTheme(theme: ThemePreference) {
         applicationContext.dataStore.edit { preferences ->
             preferences[Keys.theme] = theme.name
-        }
-    }
-
-    suspend fun setLanguage(language: AppLanguage) {
-        applicationContext.dataStore.edit { preferences ->
-            preferences[Keys.language] = language.name
         }
     }
 
@@ -212,7 +205,7 @@ class AppPreferencesStore(
         treeUri: String,
         label: String,
     ) {
-        require(treeUri.isNotBlank()) { "导出目录 URI 不能为空" }
+        require(treeUri.isNotBlank()) { "Export directory URI must not be blank" }
         applicationContext.dataStore.edit { preferences ->
             preferences[Keys.outputTreeUri] = treeUri
             preferences[Keys.outputDirectoryLabel] = label
@@ -230,7 +223,7 @@ class AppPreferencesStore(
         treeUri: String,
         label: String,
     ) {
-        require(treeUri.isNotBlank()) { "本地管理目录 URI 不能为空" }
+        require(treeUri.isNotBlank()) { "Local management directory URI must not be blank" }
         applicationContext.dataStore.edit { preferences ->
             preferences[Keys.localManagementTreeUri] = treeUri
             preferences[Keys.localManagementDirectoryLabel] = label
@@ -271,7 +264,6 @@ class AppPreferencesStore(
                 .orEmpty()
         return AppPreferences(
             theme = theme,
-            language = preferences.enumValue(Keys.language, AppLanguage.ZH),
             accent = preferences.enumValue(Keys.accent, AccentPreference.MONET),
             customAccentColor = preferences[Keys.customAccentColor].orEmpty().ifBlank { "#5B7AA0" },
             useSystemMonet = preferences[Keys.useSystemMonet] ?: true,
@@ -329,7 +321,6 @@ class AppPreferencesStore(
 
     private object Keys {
         val theme = stringPreferencesKey("theme")
-        val language = stringPreferencesKey("language")
         val accent = stringPreferencesKey("accent")
         val customAccentColor = stringPreferencesKey("custom_accent_color")
         val useSystemMonet = booleanPreferencesKey("use_system_monet")

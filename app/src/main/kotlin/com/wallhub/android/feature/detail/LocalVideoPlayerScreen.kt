@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -26,9 +27,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
-import com.wallhub.android.core.designsystem.wallHubText
 import com.wallhub.android.core.model.DownloadTaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,7 +44,7 @@ data class LocalVideoPlayerUiState(
     val title: String = "",
     val videoPath: String? = null,
     val isLoading: Boolean = true,
-    val error: String? = null,
+    val error: DetailUiText? = null,
 )
 
 @HiltViewModel
@@ -68,15 +69,15 @@ class LocalVideoPlayerViewModel
                 runCatching {
                     val task =
                         downloadTaskRepository.find(taskId)
-                            ?: error("下载任务不存在")
+                            ?: throw DetailUiTextException(R.string.detail_download_task_missing)
                     val root =
                         task.stagingDirectory
                             ?.let(::File)
                             ?.takeIf(File::isDirectory)
-                            ?: error("下载暂存文件不存在")
+                            ?: throw DetailUiTextException(R.string.detail_download_staging_missing)
                     val video =
                         resolveVideoFile(root)
-                            ?: error("未在已下载项目中找到可播放的视频文件")
+                            ?: throw DetailUiTextException(R.string.detail_playable_video_missing)
                     task.title to video.absolutePath
                 }.onSuccess { (title, path) ->
                     mutableState.value =
@@ -89,7 +90,7 @@ class LocalVideoPlayerViewModel
                     mutableState.value =
                         LocalVideoPlayerUiState(
                             isLoading = false,
-                            error = error.message ?: "无法准备本地视频播放",
+                            error = error.toDetailUiText(R.string.detail_local_video_prepare_failed),
                         )
                 }
             }
@@ -125,12 +126,12 @@ fun LocalVideoPlayerScreen(
         return
     }
     WallHubPageScaffold(
-        title = state.title.ifBlank { wallHubText("视频播放", "Video player") },
+        title = state.title.ifBlank { stringResource(R.string.detail_video_player) },
         navigationIcon = {
             IconButton(onClick = onBack) {
                 Icon(
                     Icons.AutoMirrored.Outlined.ArrowBack,
-                    contentDescription = wallHubText("返回", "Back"),
+                    contentDescription = stringResource(R.string.detail_back),
                 )
             }
         },
@@ -145,8 +146,8 @@ fun LocalVideoPlayerScreen(
             state.error != null ->
                 WallHubEmptyState(
                     icon = Icons.Outlined.Refresh,
-                    title = state.error,
-                    actionLabel = wallHubText("重试", "Retry"),
+                    title = state.error.resolve(),
+                    actionLabel = stringResource(R.string.detail_retry),
                     onAction = onRetry,
                     modifier = Modifier.fillMaxSize().padding(padding),
                 )

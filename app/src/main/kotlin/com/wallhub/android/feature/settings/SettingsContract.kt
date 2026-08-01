@@ -2,11 +2,12 @@
 
 package com.wallhub.android.feature.settings
 
+import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.wallhub.android.R
 import com.wallhub.android.core.model.AccentPreference
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppReleaseInfo
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
@@ -58,10 +59,6 @@ data class AppUpdateUiState(
 sealed interface SettingsAction {
     data class ThemeChanged(
         val theme: ThemePreference,
-    ) : SettingsAction
-
-    data class LanguageChanged(
-        val language: AppLanguage,
     ) : SettingsAction
 
     data class AccentChanged(
@@ -207,52 +204,35 @@ internal fun SettingsAction.toEffect(): SettingsEffect? =
     }
 
 internal enum class SettingsCategory(
-    val labelZh: String,
-    val labelEn: String,
-    val descriptionZh: String,
-    val descriptionEn: String,
+    @StringRes val labelRes: Int,
+    @StringRes val descriptionRes: Int,
     val icon: ImageVector,
 ) {
     BASIC(
-        labelZh = "基本设置",
-        labelEn = "Basic settings",
-        descriptionZh = "内容访问、应用信息、更新与诊断",
-        descriptionEn = "Content access, app information, updates, and diagnostics",
+        labelRes = R.string.settings_category_basic,
+        descriptionRes = R.string.settings_category_basic_description,
         icon = Icons.Outlined.Tune,
     ),
     DOWNLOAD(
-        labelZh = "下载",
-        labelEn = "Downloads",
-        descriptionZh = "导出目录、下载并发与代理",
-        descriptionEn = "Export directory, concurrency, and proxy",
+        labelRes = R.string.settings_category_downloads,
+        descriptionRes = R.string.settings_category_downloads_description,
         icon = Icons.Outlined.Download,
     ),
     STEAM(
-        labelZh = "Steam",
-        labelEn = "Steam",
-        descriptionZh = "账户、服务访问与创意工坊数据源",
-        descriptionEn = "Account, service access, and Workshop data source",
+        labelRes = R.string.settings_category_steam,
+        descriptionRes = R.string.settings_category_steam_description,
         icon = Icons.Outlined.PersonOutline,
     ),
     APPEARANCE(
-        labelZh = "外观",
-        labelEn = "Appearance",
-        descriptionZh = "语言、主题、强调色与发现页偏好",
-        descriptionEn = "Language, theme, accent color, and Discover preferences",
+        labelRes = R.string.settings_category_appearance,
+        descriptionRes = R.string.settings_category_appearance_description,
         icon = Icons.Outlined.Palette,
     ),
     EXPERIMENTAL(
-        labelZh = "实验功能",
-        labelEn = "Experimental",
-        descriptionZh = "在线分块播放与系统权限",
-        descriptionEn = "Online chunk streaming and system permissions",
+        labelRes = R.string.settings_category_experimental,
+        descriptionRes = R.string.settings_category_experimental_description,
         icon = Icons.Outlined.Notifications,
     ),
-    ;
-
-    fun label(language: AppLanguage): String = if (language == AppLanguage.EN) labelEn else labelZh
-
-    fun description(language: AppLanguage): String = if (language == AppLanguage.EN) descriptionEn else descriptionZh
 }
 
 internal enum class SteamStreamCachePreset(

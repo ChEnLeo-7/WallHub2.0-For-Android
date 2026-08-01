@@ -15,11 +15,9 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
@@ -32,13 +30,11 @@ import com.google.android.material.color.utilities.Hct
 import com.google.android.material.color.utilities.MaterialDynamicColors
 import com.google.android.material.color.utilities.SchemeTonalSpot
 import com.wallhub.android.core.model.AccentPreference
-import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.ThemePreference
 
 @Composable
 fun WallHubTheme(
     preference: ThemePreference,
-    language: AppLanguage = AppLanguage.ZH,
     accent: AccentPreference = AccentPreference.MONET,
     customAccentColor: String = DEFAULT_CUSTOM_MONET_SEED_HEX,
     useSystemMonet: Boolean = true,
@@ -68,34 +64,13 @@ fun WallHubTheme(
         colorScheme = colorScheme,
         useDarkTheme = useDarkTheme,
     )
-    CompositionLocalProvider(LocalWallHubLanguage provides language) {
-        MaterialTheme(
-            colorScheme = colorScheme,
-            typography = WallHubTypography,
-            shapes = WallHubShapeTokens.material,
-            content = content,
-        )
-    }
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = WallHubTypography,
+        shapes = WallHubShapeTokens.material,
+        content = content,
+    )
 }
-
-val LocalWallHubLanguage = staticCompositionLocalOf { AppLanguage.ZH }
-
-@Composable
-fun wallHubText(
-    zh: String,
-    en: String,
-): String = if (LocalWallHubLanguage.current == AppLanguage.EN) en else zh
-
-/**
- * Selects the Chinese or English literal for an explicit [AppLanguage].
- *
- * Use this outside composition, or wherever the language is already resolved.
- * Prefer [wallHubText] inside composables that can read [LocalWallHubLanguage].
- */
-fun AppLanguage.text(
-    zh: String,
-    en: String,
-): String = if (this == AppLanguage.EN) en else zh
 
 @Composable
 @Suppress("DEPRECATION")

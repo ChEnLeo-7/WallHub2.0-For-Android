@@ -1,6 +1,7 @@
 package com.wallhub.android.data.steam
 
 import android.content.Context
+import com.wallhub.android.R
 import com.wallhub.android.core.database.AppPreferencesStore
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
@@ -15,6 +16,7 @@ import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.SubscriptionState
+import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopCommentPage
 import com.wallhub.android.core.model.WorkshopDetail
@@ -73,7 +75,8 @@ class SecureSteamSessionRepository
         SteamContentCredentialProvider,
         AccountWorkshopRepository,
         SteamUnifiedWorkshopRepository {
-        internal val credentialStore = EncryptedSteamCredentialStore(context.applicationContext)
+        internal val applicationContext = context.applicationContext
+        internal val credentialStore = EncryptedSteamCredentialStore(applicationContext)
         internal val steamServerListProvider = SteamWebSocketServerListProvider()
         internal val authorDisplayNames = ConcurrentHashMap<Long, String>()
         internal val steamProfiles = ConcurrentHashMap<Long, SteamProfile>()
@@ -165,7 +168,7 @@ class SecureSteamSessionRepository
             if (accountName.isBlank() || password.isBlank()) {
                 setState(
                     phase = SteamSessionPhase.FAILED,
-                    message = "请输入 Steam 用户名和密码",
+                    message = applicationContext.getString(R.string.backend_steam_enter_credentials),
                 )
                 return
             }
@@ -177,13 +180,13 @@ class SecureSteamSessionRepository
             if (code.isBlank() || future == null || !future.complete(code.trim())) {
                 setState(
                     phase = SteamSessionPhase.FAILED,
-                    message = "当前没有等待中的 Steam Guard 验证请求",
+                    message = applicationContext.getString(R.string.backend_steam_no_guard_request),
                 )
                 return
             }
             setState(
                 phase = SteamSessionPhase.SIGNING_IN,
-                message = "已提交验证码，正在等待 Steam 确认…",
+                message = applicationContext.getString(R.string.backend_steam_code_submitted),
             )
         }
 
@@ -192,7 +195,7 @@ class SecureSteamSessionRepository
             if (activeLogin == null) {
                 setState(
                     phase = SteamSessionPhase.FAILED,
-                    message = "当前没有可切换为令牌码的登录请求，请重新输入账号和密码。",
+                    message = applicationContext.getString(R.string.backend_steam_no_manual_login),
                 )
                 return
             }
@@ -220,7 +223,7 @@ class SecureSteamSessionRepository
                 setStateIfCurrent(
                     generation = generation,
                     phase = SteamSessionPhase.SIGNED_OUT,
-                    message = "已退出 Steam 登录，并清除本机保存的登录状态。",
+                    message = applicationContext.getString(R.string.backend_steam_signed_out),
                 )
             }
         }
@@ -259,12 +262,15 @@ class SecureSteamSessionRepository
                 page.copy(
                     items =
                         page.items.map { item ->
+                            val profile = item.creatorId?.toLongOrNull()?.let(profiles::get)
                             item.copy(
-                                author =
-                                    item.creatorId
-                                        ?.toLongOrNull()
-                                        ?.let(profiles::get)
-                                        ?.displayName ?: item.author,
+                                author = profile?.displayName ?: item.author,
+                                authorPlaceholder =
+                                    if (profile == null) {
+                                        item.authorPlaceholder
+                                    } else {
+                                        WorkshopAuthorPlaceholder.NONE
+                                    },
                             )
                         },
                 )
@@ -433,7 +439,7 @@ class SecureSteamSessionRepository
             }
 
         override suspend fun resolveAuthorDisplayName(workshopId: Long): String? {
-            require(workshopId > 0L) { "创意工坊项目 ID 无效" }
+            require(workshopId > 0L) { "Invalid Workshop item ID" }
             authorDisplayNames[workshopId]?.let { return it }
             return withAuthenticatedSteamSession { steamSession ->
                 val service = steamSession.unified.createService(PublishedFile::class.java)
@@ -468,7 +474,7 @@ class SecureSteamSessionRepository
             subscribed: Boolean,
         ): WorkshopInteraction =
             withAuthenticatedSteamSession { steamSession ->
-                require(workshopId > 0L) { "创意工坊项目 ID 无效" }
+                require(workshopId > 0L) { "Invalid Workshop item ID" }
                 val service = steamSession.unified.createService(PublishedFile::class.java)
                 if (subscribed) {
                     awaitSteamRpc(steamSession, "subscribe") {
@@ -515,7 +521,7 @@ class SecureSteamSessionRepository
             favorited: Boolean,
         ): WorkshopInteraction =
             withAuthenticatedSteamSession { steamSession ->
-                require(workshopId > 0L) { "创意工坊项目 ID 无效" }
+                require(workshopId > 0L) { "Invalid Workshop item ID" }
                 val service = steamSession.unified.createService(PublishedFile::class.java)
                 if (favorited) {
                     awaitSteamRpc(steamSession, "favorite") {

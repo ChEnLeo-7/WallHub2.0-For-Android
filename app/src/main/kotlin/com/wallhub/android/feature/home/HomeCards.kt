@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -47,10 +48,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.formatMegabytes
-import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.model.AppLanguage
+import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
@@ -58,7 +59,6 @@ import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 @Composable
 internal fun WorkshopListCardContent(
     item: WorkshopSummary,
-    language: AppLanguage,
     typeTagScale: State<Float>,
     action: HomeCardAction,
     showFileSize: Boolean,
@@ -76,7 +76,6 @@ internal fun WorkshopListCardContent(
     ) {
         WorkshopCoverFrame(
             item = item,
-            language = language,
             compact = true,
             typeTagScale = typeTagScale,
             coverShape = layoutMotion.coverShape(),
@@ -88,7 +87,6 @@ internal fun WorkshopListCardContent(
         )
         WorkshopCardCopy(
             item = item,
-            language = language,
             compact = true,
             twoColumnGrid = false,
             showFileSize = showFileSize,
@@ -102,7 +100,6 @@ internal fun WorkshopListCardContent(
         )
         WorkshopCardActionButton(
             action = action,
-            language = language,
             shape = layoutMotion.actionShape(),
             contentModifier = layoutMotion.actionContentModifier(),
             labelVisibility = layoutMotion.actionLabelVisibility(),
@@ -119,7 +116,6 @@ internal fun WorkshopListCardContent(
 @Composable
 internal fun WorkshopCoverFrame(
     item: WorkshopSummary,
-    language: AppLanguage,
     compact: Boolean,
     typeTagScale: State<Float>,
     coverShape: Shape,
@@ -136,7 +132,6 @@ internal fun WorkshopCoverFrame(
         )
         WorkshopCoverTypeTag(
             item = item,
-            language = language,
             typeTagScale = typeTagScale,
             modifier =
                 Modifier
@@ -162,7 +157,7 @@ internal fun WorkshopCover(
         if (item.previewUrl != null) {
             AsyncImage(
                 model = item.previewUrl,
-                contentDescription = "${item.title} 预览图",
+                contentDescription = stringResource(R.string.home_preview_image, item.localizedTitle()),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -180,7 +175,6 @@ internal fun WorkshopCover(
 @Composable
 internal fun WorkshopCoverTypeTag(
     item: WorkshopSummary,
-    language: AppLanguage,
     typeTagScale: State<Float>,
     modifier: Modifier = Modifier,
 ) {
@@ -196,7 +190,7 @@ internal fun WorkshopCoverTypeTag(
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
     ) {
         Text(
-            text = item.type.label(language),
+            text = item.type.label(),
             style = MaterialTheme.typography.labelSmall,
             modifier =
                 Modifier.padding(
@@ -211,7 +205,6 @@ internal fun WorkshopCoverTypeTag(
 @Composable
 internal fun WorkshopCardCopy(
     item: WorkshopSummary,
-    language: AppLanguage,
     compact: Boolean,
     twoColumnGrid: Boolean,
     showFileSize: Boolean,
@@ -274,7 +267,7 @@ internal fun WorkshopCardCopy(
             ),
     ) {
         Text(
-            text = item.title,
+            text = item.localizedTitle(),
             style = MaterialTheme.typography.titleSmall,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -292,7 +285,6 @@ internal fun WorkshopCardCopy(
             ) {
                 WorkshopCardStatisticsItems(
                     item = item,
-                    language = language,
                     showFileSize = showFileSize,
                     showFavorites = showFavorites,
                     textStyle = statisticTextStyle,
@@ -312,7 +304,6 @@ internal fun WorkshopCardCopy(
             ) {
                 WorkshopCardStatisticsItems(
                     item = item,
-                    language = language,
                     showFileSize = showFileSize,
                     showFavorites = showFavorites,
                     textStyle = statisticTextStyle,
@@ -327,7 +318,6 @@ internal fun WorkshopCardCopy(
 @Composable
 internal fun WorkshopCardStatisticsItems(
     item: WorkshopSummary,
-    language: AppLanguage,
     showFileSize: Boolean,
     showFavorites: Boolean,
     textStyle: androidx.compose.ui.text.TextStyle,
@@ -336,8 +326,8 @@ internal fun WorkshopCardStatisticsItems(
 ) {
     WorkshopCardStatistic(
         icon = Icons.Outlined.FavoriteBorder,
-        value = item.subscriptions?.let(language::formatCompact) ?: "—",
-        contentDescription = language.text("订阅数", "Subscriptions"),
+        value = item.subscriptions?.let(::formatCompact) ?: "—",
+        contentDescription = stringResource(R.string.home_subscriptions),
         textStyle = textStyle,
         iconSize = metrics.iconSize,
         iconSpacing = metrics.iconSpacing,
@@ -346,8 +336,8 @@ internal fun WorkshopCardStatisticsItems(
     if (showFavorites) {
         WorkshopCardStatistic(
             icon = Icons.Outlined.StarBorder,
-            value = item.favorites?.let(language::formatCompact) ?: "—",
-            contentDescription = language.text("收藏数", "Favorites"),
+            value = item.favorites?.let(::formatCompact) ?: "—",
+            contentDescription = stringResource(R.string.home_favorites),
             textStyle = textStyle,
             iconSize = metrics.iconSize,
             iconSpacing = metrics.iconSpacing,
@@ -369,14 +359,12 @@ internal fun WorkshopCardStatisticsItems(
 @Composable
 internal fun WorkshopGridCardAction(
     action: HomeCardAction,
-    language: AppLanguage,
     layoutMotion: HomeViewCardLayoutMotion,
     onPrimaryAction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     WorkshopCardActionButton(
         action = action,
-        language = language,
         shape = layoutMotion.actionShape(),
         contentModifier = layoutMotion.actionContentModifier(),
         labelVisibility = layoutMotion.actionLabelVisibility(),
@@ -392,7 +380,6 @@ internal fun WorkshopGridCardAction(
 @Composable
 internal fun WorkshopCardActionButton(
     action: HomeCardAction,
-    language: AppLanguage,
     shape: Shape,
     contentModifier: Modifier,
     labelVisibility: Float,
@@ -400,7 +387,7 @@ internal fun WorkshopCardActionButton(
     modifier: Modifier = Modifier,
 ) {
     val actionContentColor = MaterialTheme.colorScheme.onPrimary
-    val label = action.label(language)
+    val label = action.label()
     val labelStyle = MaterialTheme.typography.labelLarge
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current

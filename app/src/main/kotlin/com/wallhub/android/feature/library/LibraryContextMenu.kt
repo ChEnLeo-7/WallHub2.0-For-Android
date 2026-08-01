@@ -48,6 +48,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.invisibleToUser
@@ -57,12 +58,13 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubContextMenuDefaults
 import com.wallhub.android.core.designsystem.WallHubContextMenuSurface
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
-import com.wallhub.android.core.designsystem.text
-import com.wallhub.android.core.model.AppLanguage
+import com.wallhub.android.core.designsystem.localizedTitle
+import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.designsystem.WallHubContextMenuAction as LibraryContextMenuAction
 import com.wallhub.android.core.designsystem.WallHubContextMenuCardPreview as SharedContextMenuCardPreview
@@ -216,7 +218,6 @@ internal fun LibraryContextMenuLayer(
 @Composable
 internal fun LibraryContextMenuCard(
     item: WorkshopSummary,
-    language: AppLanguage,
     coordinator: LibraryContextMenuCoordinator,
     onOpen: () -> Unit,
     onSearchAuthor: () -> Unit,
@@ -241,6 +242,10 @@ internal fun LibraryContextMenuCard(
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
     val shape = MaterialTheme.shapes.medium
+    val viewDetailsLabel = stringResource(R.string.library_view_details)
+    val openActionsMenuLabel = stringResource(R.string.library_open_actions_menu)
+    val wallpaperTitleCopiedMessage = stringResource(R.string.library_wallpaper_title_copied)
+    val projectIdCopiedMessage = stringResource(R.string.library_project_id_copied)
     val positionProvider =
         remember(touchPositionInWindow, density) {
             LibraryContextMenuPositionProvider(
@@ -326,11 +331,11 @@ internal fun LibraryContextMenuCard(
                 )
             }.semantics {
                 role = Role.Button
-                onClick(label = language.text("查看详情", "View details")) {
+                onClick(label = viewDetailsLabel) {
                     onOpen()
                     true
                 }
-                onLongClick(label = language.text("打开操作菜单", "Open actions menu")) {
+                onLongClick(label = openActionsMenuLabel) {
                     val size = position.touchCoordinates?.size
                     if (size == null || size.width <= 0 || size.height <= 0) {
                         false
@@ -380,7 +385,6 @@ internal fun LibraryContextMenuCard(
                             target?.let { captured ->
                                 with(density) { captured.cardBounds.width.toDp() }
                             },
-                        language = language,
                     )
                 WallHubContextMenuSurface(
                     width = menuWidth,
@@ -403,27 +407,25 @@ internal fun LibraryContextMenuCard(
                                 },
                             ),
                 ) {
+                    val title = item.localizedTitle()
                     LibraryContextMenuMetadataItem(
-                        label = language.text("Wallpaper 标题", "Wallpaper title"),
-                        value = item.title,
+                        label = stringResource(R.string.library_wallpaper_title),
+                        value = title,
                         icon = Icons.Outlined.ContentCopy,
                         onClick = {
                             onCopyText(
-                                item.title,
-                                language.text("已复制 Wallpaper 标题", "Wallpaper title copied"),
+                                title,
+                                wallpaperTitleCopiedMessage,
                             )
                             dismissMenu()
                         },
                     )
                     LibraryContextMenuMetadataItem(
-                        label = language.text("作者", "Author"),
+                        label = stringResource(R.string.library_author),
                         value =
                             authorDisplayName
-                                ?: item.author.takeUnless(String::isSteamAuthorPlaceholder)
-                                ?: language.text(
-                                    "正在获取 Steam 用户名",
-                                    "Loading Steam username…",
-                                ),
+                                ?: item.author.takeIf { item.authorPlaceholder == WorkshopAuthorPlaceholder.NONE }
+                                ?: stringResource(R.string.library_loading_steam_username),
                         icon = Icons.Outlined.PersonOutline,
                         onClick = {
                             dismissMenu()
@@ -431,20 +433,20 @@ internal fun LibraryContextMenuCard(
                         },
                     )
                     LibraryContextMenuMetadataItem(
-                        label = language.text("项目 ID", "Project ID"),
+                        label = stringResource(R.string.library_project_id),
                         value = item.id.toString(),
                         icon = Icons.Outlined.ContentCopy,
                         onClick = {
                             onCopyText(
                                 item.id.toString(),
-                                language.text("已复制项目 ID", "Project ID copied"),
+                                projectIdCopiedMessage,
                             )
                             dismissMenu()
                         },
                     )
                     Spacer(modifier = Modifier.height(WallHubSpacing.xxxs))
                     LibraryContextMenuAction(
-                        text = language.text("下载", "Download"),
+                        text = stringResource(R.string.library_download),
                         icon = Icons.Outlined.Download,
                         onClick = {
                             dismissMenu()
@@ -453,7 +455,7 @@ internal fun LibraryContextMenuCard(
                     )
                     if (item.type == com.wallhub.android.core.model.WorkshopType.VIDEO) {
                         LibraryContextMenuAction(
-                            text = language.text("视频播放", "Open video details"),
+                            text = stringResource(R.string.library_open_video_details),
                             icon = Icons.Outlined.PlayArrow,
                             onClick = {
                                 dismissMenu()
@@ -462,7 +464,7 @@ internal fun LibraryContextMenuCard(
                         )
                     }
                     LibraryContextMenuAction(
-                        text = language.text("打开 Steam", "Open in Steam"),
+                        text = stringResource(R.string.library_open_in_steam),
                         icon = Icons.Outlined.OpenInNew,
                         onClick = {
                             dismissMenu()
@@ -502,7 +504,5 @@ private class LibraryCardPositionHolder {
     var cardCoordinates: LayoutCoordinates? = null
     var touchCoordinates: LayoutCoordinates? = null
 }
-
-private fun String.isSteamAuthorPlaceholder(): Boolean = this == "Steam 创作者" || startsWith("Steam 用户 ")
 
 private const val CONTEXT_MENU_PRESS_SCALE = 0.985f

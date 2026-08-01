@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -57,6 +58,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
@@ -79,7 +81,7 @@ data class OnlineVideoPlayerUiState(
     val title: String = "",
     val stream: WorkshopVideoStreamSession? = null,
     val isLoading: Boolean = true,
-    val error: String? = null,
+    val error: DetailUiText? = null,
 )
 
 @HiltViewModel
@@ -116,7 +118,7 @@ class OnlineVideoPlayerViewModel
                     mutableState.value =
                         OnlineVideoPlayerUiState(
                             isLoading = false,
-                            error = error.message ?: "无法初始化 SteamKit 在线分块播放",
+                            error = error.toDetailUiText(R.string.detail_online_video_init_failed),
                         )
                 }
             }
@@ -148,6 +150,8 @@ fun OnlineVideoPlayerScreen(
     var playbackHapticDelivered by remember(state.stream) { mutableStateOf(false) }
     var cdnToastDelivered by remember(state.stream) { mutableStateOf(false) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
+    val streamingStartedMessage = stringResource(R.string.detail_streaming_started)
+    val steamCdnMessageTemplate = stringResource(R.string.detail_steam_cdn, "%s")
     val onFirstFrameRendered = {
         if (!playbackHapticDelivered) {
             playbackHapticDelivered = true
@@ -156,8 +160,8 @@ fun OnlineVideoPlayerScreen(
         if (!cdnToastDelivered) {
             cdnToastDelivered = true
             toastMessage = state.stream?.currentCdnHost?.let { host ->
-                "Steam CDN: $host"
-            } ?: "SteamKit streaming started"
+                steamCdnMessageTemplate.format(host)
+            } ?: streamingStartedMessage
         }
     }
     val playback =
@@ -190,12 +194,12 @@ fun OnlineVideoPlayerScreen(
             )
         } else {
             WallHubPageScaffold(
-                title = state.title.ifBlank { "SteamKit 在线播放" },
+                title = state.title.ifBlank { stringResource(R.string.detail_online_video_player) },
                 navigationIcon = {
                     androidx.compose.material3.IconButton(onClick = onBack) {
                         androidx.compose.material3.Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = "返回",
+                            contentDescription = stringResource(R.string.detail_back),
                         )
                     }
                 },
@@ -213,8 +217,8 @@ fun OnlineVideoPlayerScreen(
                     state.error != null -> {
                         WallHubEmptyState(
                             icon = Icons.Outlined.PlayArrow,
-                            title = state.error,
-                            actionLabel = "重试",
+                            title = state.error.resolve(),
+                            actionLabel = stringResource(R.string.detail_retry),
                             onAction = onRetry,
                             modifier = Modifier.fillMaxSize().then(Modifier.padding(padding)),
                         )
@@ -302,7 +306,11 @@ private fun rememberSteamChunkPlaybackState(
     var renderedFirstFrame by remember(stream, player) {
         mutableStateOf(player.videoSize.width > 0 && player.videoSize.height > 0)
     }
-    var playbackError by remember(stream, player) { mutableStateOf(player.playerError?.message) }
+    var playbackError by remember(stream, player) {
+        mutableStateOf(
+            player.playerError?.toDetailUiText(R.string.detail_online_playback_failed),
+        )
+    }
     val onFirstFrameRenderedState by rememberUpdatedState(onFirstFrameRendered)
     DisposableEffect(player, stream) {
         val listener =
@@ -313,7 +321,7 @@ private fun rememberSteamChunkPlaybackState(
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
-                    playbackError = error.message ?: "SteamKit 在线播放失败"
+                    playbackError = error.toDetailUiText(R.string.detail_online_playback_failed)
                 }
             }
         player.addListener(listener)
@@ -332,7 +340,7 @@ private fun rememberSteamChunkPlaybackState(
 internal data class SteamChunkPlayback(
     val player: ExoPlayer,
     val renderedFirstFrame: Boolean,
-    val error: String?,
+    val error: DetailUiText?,
 )
 
 @Composable
@@ -374,7 +382,7 @@ internal fun SteamChunkVideoPlayer(
                 color = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer,
             ) {
-                Text(text = error, modifier = Modifier.padding(WallHubSpacing.md))
+                Text(text = error.resolve(), modifier = Modifier.padding(WallHubSpacing.md))
             }
         }
     }
@@ -386,7 +394,7 @@ private fun PlayerLoadingIndicator(modifier: Modifier = Modifier) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator(modifier = Modifier.size(WallHubSizeTokens.compactIconButton))
             Text(
-                text = "正在准备视频…",
+                text = stringResource(R.string.detail_preparing_video),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = WallHubSpacing.sm),
@@ -467,7 +475,7 @@ private class SteamChunkDataSource(
 
     override fun open(dataSpec: DataSpec): Long {
         transferInitializing(dataSpec)
-        check(dataSpec.position in 0..stream.contentLength) { "视频读取位置无效" }
+        check(dataSpec.position in 0..stream.contentLength) { "Invalid video read position" }
         currentUri = dataSpec.uri
         readPosition = dataSpec.position
         val available = stream.contentLength - readPosition
