@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -123,6 +124,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.wallhub.android.core.designsystem.WallHubContextMenuDefaults
@@ -140,6 +142,7 @@ import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.uwuaosp.compose.settingslib.SettingsToolbarActionButton
 import kotlin.math.roundToInt
 import com.wallhub.android.core.designsystem.WallHubContextMenuAction as HomeContextMenuItem
 import com.wallhub.android.core.designsystem.WallHubContextMenuMetadataItem as HomeContextMenuMetadataItem
@@ -150,6 +153,7 @@ import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 fun HomeScreen(
     state: HomeUiState,
     onAction: (HomeAction) -> Unit,
+    onOpenSettings: (() -> Unit)? = null,
     onBack: (() -> Unit)? = null,
     scrollToTopRequest: Int = 0,
     onContextMenuActiveChanged: (Boolean) -> Unit = {},
@@ -225,6 +229,7 @@ fun HomeScreen(
     HomeScreenFrame(
         state = state,
         onAction = onAction,
+        onOpenSettings = onOpenSettings,
         onBack = onBack,
         gridState = gridState,
         filtersCollapsed = filtersCollapsed,
@@ -263,6 +268,7 @@ fun HomeScreen(
 internal fun HomeScreenFrame(
     state: HomeUiState,
     onAction: (HomeAction) -> Unit,
+    onOpenSettings: (() -> Unit)?,
     onBack: (() -> Unit)?,
     gridState: LazyGridState,
     filtersCollapsed: Boolean,
@@ -302,6 +308,7 @@ internal fun HomeScreenFrame(
         HomeScreenBody(
             state = state,
             onAction = onAction,
+            onOpenSettings = onOpenSettings,
             onBack = onBack,
             gridState = gridState,
             filtersCollapsed = filtersCollapsed,
@@ -324,6 +331,7 @@ internal fun HomeScreenFrame(
 internal fun HomeScreenBody(
     state: HomeUiState,
     onAction: (HomeAction) -> Unit,
+    onOpenSettings: (() -> Unit)?,
     onBack: (() -> Unit)?,
     gridState: LazyGridState,
     filtersCollapsed: Boolean,
@@ -364,6 +372,7 @@ internal fun HomeScreenBody(
                     onToggleExactPhrase = { onAction(HomeAction.ToggleExactPhrase) },
                     onSearchBoundsChanged = onSearchBoundsChanged,
                     onBack = onBack,
+                    onOpenSettings = onOpenSettings,
                     onResetAndRefresh = {
                         onAction(HomeAction.ResetAndRefresh)
                         coroutineScope.launch { gridState.scrollToItem(0) }
@@ -462,6 +471,7 @@ internal fun HomeSearchTopBar(
     onToggleExactPhrase: () -> Unit,
     onSearchBoundsChanged: (IntRect) -> Unit,
     onBack: (() -> Unit)?,
+    onOpenSettings: (() -> Unit)?,
     onResetAndRefresh: () -> Unit,
 ) {
     var exactPhraseMenuExpanded by rememberSaveable { mutableStateOf(false) }
@@ -477,7 +487,7 @@ internal fun HomeSearchTopBar(
         }
     }
     Surface(
-        modifier = Modifier,
+        modifier = Modifier.statusBarsPadding(),
         color = MaterialTheme.colorScheme.background,
     ) {
         Row(
@@ -661,6 +671,15 @@ internal fun HomeSearchTopBar(
                         )
                     }
                 }
+            }
+            if (onOpenSettings != null) {
+                SettingsToolbarActionButton(
+                    imageVector = Icons.Outlined.Settings,
+                    contentDescription = state.text("设置", "Settings"),
+                    onClick = onOpenSettings,
+                    buttonSize = 64.dp,
+                    containerSize = 48.dp,
+                )
             }
         }
     }

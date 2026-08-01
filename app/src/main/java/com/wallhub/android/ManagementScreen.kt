@@ -113,6 +113,7 @@ import com.wallhub.android.feature.local.LocalWallpaperUiState
 import com.wallhub.android.feature.local.LocalWallpaperViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import org.uwuaosp.compose.settingslib.SettingsToolbarActionButton
 import kotlin.math.abs
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
@@ -128,6 +129,7 @@ fun ManagementRoute(
     onOpenLocalVideo: (String) -> Unit,
     onOpenOnlineVideo: (Long) -> Unit,
     onSearchAuthor: (String) -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     onContextMenuActiveChanged: (Boolean) -> Unit = {},
     onNavigatePreviousTopLevel: () -> Unit = {},
     onNavigateNextTopLevel: () -> Unit = {},
@@ -162,6 +164,7 @@ fun ManagementRoute(
         localWallpaperState = localWallpaperState,
         localWallpaperViewModel = localWallpaperViewModel,
         onContextMenuActiveChanged = onContextMenuActiveChanged,
+        onOpenSettings = onOpenSettings,
         onNavigatePreviousTopLevel = onNavigatePreviousTopLevel,
         onNavigateNextTopLevel = onNavigateNextTopLevel,
     )
@@ -178,6 +181,7 @@ private fun ManagementScreen(
     onLocalAction: (LocalWallpaperAction) -> Unit,
     libraryScrollToTopRequest: Int,
     onContextMenuActiveChanged: (Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
     onNavigatePreviousTopLevel: () -> Unit,
     onNavigateNextTopLevel: () -> Unit,
     localWallpaperViewModel: LocalWallpaperViewModel,
@@ -292,6 +296,7 @@ private fun ManagementScreen(
                 navigationEnabled = !libraryContextMenuActive,
                 indicatorPosition = workspaceIndicatorPosition,
                 contextMenuActive = libraryContextMenuActive,
+                onOpenSettings = onOpenSettings,
             ) { pagerModifier ->
                 ManagementWorkspacePager(
                     pagerState = pagerState,
@@ -397,6 +402,7 @@ private fun ManagementWorkspaceLayout(
     navigationEnabled: Boolean,
     indicatorPosition: Float,
     contextMenuActive: Boolean,
+    onOpenSettings: () -> Unit,
     pager: @Composable (Modifier) -> Unit,
 ) {
     if (expanded) {
@@ -408,6 +414,7 @@ private fun ManagementWorkspaceLayout(
                 navigationEnabled = navigationEnabled,
                 indicatorPosition = indicatorPosition,
                 expanded = true,
+                onOpenSettings = onOpenSettings,
                 modifier =
                     Modifier
                         .width(MANAGEMENT_SIDE_PANEL_WIDTH)
@@ -426,6 +433,7 @@ private fun ManagementWorkspaceLayout(
                 navigationEnabled = navigationEnabled,
                 indicatorPosition = indicatorPosition,
                 expanded = false,
+                onOpenSettings = onOpenSettings,
                 modifier = Modifier.managementContextMenuBackdrop(contextMenuActive),
             )
             pager(Modifier.fillMaxWidth().weight(1f))
@@ -493,6 +501,7 @@ private fun ManagementNavigationPanel(
     navigationEnabled: Boolean,
     indicatorPosition: Float,
     expanded: Boolean,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -512,6 +521,7 @@ private fun ManagementNavigationPanel(
                 ManagementPageHeading(
                     content = content,
                     language = language,
+                    onOpenSettings = onOpenSettings,
                     modifier =
                         Modifier
                             .fillMaxWidth()
@@ -541,6 +551,7 @@ private fun ManagementNavigationPanel(
                 ManagementPageHeading(
                     content = content,
                     language = language,
+                    onOpenSettings = onOpenSettings,
                     modifier =
                         Modifier
                             .fillMaxWidth()
@@ -597,6 +608,7 @@ private fun ManagementNavigationPanel(
 private fun ManagementPageHeading(
     content: ManagementContent,
     language: AppLanguage,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -611,6 +623,7 @@ private fun ManagementPageHeading(
             tint = MaterialTheme.colorScheme.primary,
         )
         Column(
+            modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             Text(
@@ -627,6 +640,13 @@ private fun ManagementPageHeading(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        SettingsToolbarActionButton(
+            imageVector = Icons.Outlined.Settings,
+            contentDescription = language.text("设置", "Settings"),
+            onClick = onOpenSettings,
+            buttonSize = 64.dp,
+            containerSize = 48.dp,
+        )
     }
 }
 

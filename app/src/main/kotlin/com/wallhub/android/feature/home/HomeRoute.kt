@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun HomeRoute(
     onOpenDetail: (Long) -> Unit,
+    onOpenSettings: (() -> Unit)? = null,
     onSearchAuthor: (String) -> Unit = {},
     onBack: (() -> Unit)? = null,
     scrollToTopRequest: Int = 0,
@@ -56,6 +57,7 @@ fun HomeRoute(
     HomeScreen(
         state = state,
         onAction = onHomeAction,
+        onOpenSettings = onOpenSettings,
         onBack = onBack,
         scrollToTopRequest = scrollToTopRequest,
         onContextMenuActiveChanged = onContextMenuActiveChanged,

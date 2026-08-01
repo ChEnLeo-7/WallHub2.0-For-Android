@@ -23,6 +23,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -103,8 +104,6 @@ private enum class TopLevelDestination(
         Icons.Outlined.FolderOpen,
         Icons.Filled.FolderOpen,
     ),
-    SETTINGS("settings", SettingsDestination, "设置", "Settings", Icons.Outlined.Settings, Icons.Filled.Settings),
-
     ;
 
     fun label(language: AppLanguage): String = if (language == AppLanguage.EN) labelEn else labelZh
@@ -312,6 +311,7 @@ private fun WallHubAdaptiveNavigationLayout(
 
         else -> {
             Scaffold(
+                contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 bottomBar = {
                     AnimatedVisibility(
                         visible = isTopLevelDestination,
@@ -441,6 +441,11 @@ private fun WallHubNavHost(
             if (currentCreatorId != destination.authorSearchCreator) navController.navigate(destination)
         }
     }
+    val openSettings = {
+        navController.navigate(SettingsDestination) {
+            launchSingleTop = true
+        }
+    }
     NavHost(
         navController = navController,
         startDestination = HomeDestination,
@@ -532,6 +537,7 @@ private fun WallHubNavHost(
     ) {
         composable<HomeDestination> {
             HomeRoute(
+                onOpenSettings = openSettings,
                 onOpenDetail = { workshopId ->
                     navController.navigate(WorkshopDetailDestination(workshopId))
                 },
@@ -552,6 +558,7 @@ private fun WallHubNavHost(
         }
         composable<ManagementDestination> {
             ManagementRoute(
+                onOpenSettings = openSettings,
                 onOpenDetail = { workshopId ->
                     navController.navigate(WorkshopDetailDestination(workshopId))
                 },
@@ -569,7 +576,10 @@ private fun WallHubNavHost(
             )
         }
         composable<SettingsDestination> {
-            SettingsRoute(onOpenSteamLogin = { navController.navigate(SteamLoginDestination) })
+            SettingsRoute(
+                onOpenSteamLogin = { navController.navigate(SteamLoginDestination) },
+                onBack = { navController.popBackStack() },
+            )
         }
         composable<SteamLoginDestination> {
             SteamLoginRoute(onBack = { navController.popBackStack() })

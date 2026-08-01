@@ -74,6 +74,7 @@ fun SettingsScreen(
     session: SteamSessionState,
     diagnosticExportState: DiagnosticExportUiState,
     appUpdateState: AppUpdateUiState,
+    onBack: () -> Unit,
     onAction: (SettingsAction) -> Unit,
 ) {
     fun text(
@@ -236,106 +237,115 @@ fun SettingsScreen(
         contentKey = { category -> category?.name ?: SETTINGS_CATEGORY_INDEX_KEY },
         label = "SettingsCategoryPage",
     ) { displayedCategory ->
-        WallHubPageScaffold(
-            title = text("设置", "Settings"),
-            topBarContent =
-                displayedCategory?.let { category ->
-                    {
-                        TopAppBar(
-                            title = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
-                                ) {
-                                    Icon(
-                                        imageVector = category.icon,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                    Text(category.label(preferences.language))
-                                }
-                            },
-                            colors =
-                                TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.background,
-                                ),
-                            navigationIcon = {
-                                IconButton(onClick = { selectedCategoryName = null }) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                        contentDescription = text("返回设置", "Back to Settings"),
-                                    )
-                                }
-                            },
-                        )
-                    }
-                },
-        ) { padding ->
-            BoxWithConstraints(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-            ) {
-                val horizontalPadding = if (maxWidth >= SETTINGS_MEDIUM_WIDTH) WallHubSpacing.lg else WallHubSpacing.md
-                Column(
+        if (displayedCategory == null) {
+            SettingsCategoryIndex(
+                title = text("设置", "Settings"),
+                language = preferences.language,
+                onBack = onBack,
+                onOpenCategory = { selectedCategoryName = it.name },
+            )
+        } else {
+            WallHubPageScaffold(
+                title = text("设置", "Settings"),
+                topBarContent =
+                    displayedCategory?.let { category ->
+                        {
+                            TopAppBar(
+                                title = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
+                                    ) {
+                                        Icon(
+                                            imageVector = category.icon,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                        Text(category.label(preferences.language))
+                                    }
+                                },
+                                colors =
+                                    TopAppBarDefaults.topAppBarColors(
+                                        containerColor = MaterialTheme.colorScheme.background,
+                                    ),
+                                navigationIcon = {
+                                    IconButton(onClick = { selectedCategoryName = null }) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                            contentDescription = text("返回设置", "Back to Settings"),
+                                        )
+                                    }
+                                },
+                            )
+                        }
+                    },
+            ) { padding ->
+                BoxWithConstraints(
                     modifier =
                         Modifier
-                            .align(Alignment.TopCenter)
-                            .widthIn(max = SETTINGS_CONTENT_MAX_WIDTH)
-                            .fillMaxWidth()
-                            .fillMaxHeight()
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = horizontalPadding, vertical = WallHubSpacing.md),
-                    verticalArrangement = Arrangement.spacedBy(WallHubSpacing.lg),
+                            .fillMaxSize()
+                            .padding(padding),
                 ) {
-                    SettingsCategoryContent(
-                        category = displayedCategory,
-                        preferences = preferences,
-                        steamAccessState = steamAccessState,
-                        session = session,
-                        diagnosticExportState = diagnosticExportState,
-                        appUpdateState = appUpdateState,
-                        availableAccents = availableAccents,
-                        customAccentColor = customAccentColor,
-                        onCustomAccentColorChanged = { customAccentColor = it },
-                        proxyUrl = proxyUrl,
-                        onProxyUrlChanged = { proxyUrl = it },
-                        steamApiKey = steamApiKey,
-                        onSteamApiKeyChanged = { steamApiKey = it },
-                        onOpenCategory = { selectedCategoryName = it.name },
-                        onMatureContentEnabledChange = { enabled ->
-                            saveHomePreferences(matureContentEnabled = enabled)
-                        },
-                        onThemePreferenceChange = onThemePreferenceChange,
-                        onLanguageChange = onLanguageChange,
-                        onAccentChange = onAccentChange,
-                        onSystemMonetEnabledChange = onSystemMonetEnabledChange,
-                        onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
-                        onHomePreferencesChange = onHomePreferencesChange,
-                        onHomePaginationModeChange = onHomePaginationModeChange,
-                        onDownloadPreferencesChange = onDownloadPreferencesChange,
-                        onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
-                        onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
-                        onSteamAccessEnabledChange = onSteamAccessEnabledChange,
-                        onSteamAccessDohEndpointsChange = onSteamAccessDohEndpointsChange,
-                        onSteamWorkshopDataSourceChange = onSteamWorkshopDataSourceChange,
-                        onRefreshSteamAccess = onRefreshSteamAccess,
-                        onSaveSteamApiKey = { onSteamApiKeyChange(steamApiKey) },
-                        onOpenExternalUri = onOpenExternalUri,
-                        onOpenSteamLogin = onOpenSteamLogin,
-                        onLogoutSteam = onLogoutSteam,
-                        onSelectOutputDirectory = onSelectOutputDirectory,
-                        onClearOutputDirectory = onClearOutputDirectory,
-                        onCheckForAppUpdate = onCheckForAppUpdate,
-                        onDownloadLatestRelease = onDownloadLatestRelease,
-                        onCancelAppUpdateDownload = onCancelAppUpdateDownload,
-                        onInstallDownloadedRelease = onInstallDownloadedRelease,
-                        onExportDiagnostics = onExportDiagnostics,
-                        onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
-                        onRequestNotifications = onRequestNotifications,
-                        text = ::text,
-                    )
+                    val horizontalPadding = if (maxWidth >= SETTINGS_MEDIUM_WIDTH) WallHubSpacing.lg else WallHubSpacing.md
+                    Column(
+                        modifier =
+                            Modifier
+                                .align(Alignment.TopCenter)
+                                .widthIn(max = SETTINGS_CONTENT_MAX_WIDTH)
+                                .fillMaxWidth()
+                                .fillMaxHeight()
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = horizontalPadding, vertical = WallHubSpacing.md),
+                        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.lg),
+                    ) {
+                        SettingsCategoryContent(
+                            category = displayedCategory,
+                            preferences = preferences,
+                            steamAccessState = steamAccessState,
+                            session = session,
+                            diagnosticExportState = diagnosticExportState,
+                            appUpdateState = appUpdateState,
+                            availableAccents = availableAccents,
+                            customAccentColor = customAccentColor,
+                            onCustomAccentColorChanged = { customAccentColor = it },
+                            proxyUrl = proxyUrl,
+                            onProxyUrlChanged = { proxyUrl = it },
+                            steamApiKey = steamApiKey,
+                            onSteamApiKeyChanged = { steamApiKey = it },
+                            onOpenCategory = { selectedCategoryName = it.name },
+                            onMatureContentEnabledChange = { enabled ->
+                                saveHomePreferences(matureContentEnabled = enabled)
+                            },
+                            onThemePreferenceChange = onThemePreferenceChange,
+                            onLanguageChange = onLanguageChange,
+                            onAccentChange = onAccentChange,
+                            onSystemMonetEnabledChange = onSystemMonetEnabledChange,
+                            onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
+                            onHomePreferencesChange = onHomePreferencesChange,
+                            onHomePaginationModeChange = onHomePaginationModeChange,
+                            onDownloadPreferencesChange = onDownloadPreferencesChange,
+                            onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
+                            onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
+                            onSteamAccessEnabledChange = onSteamAccessEnabledChange,
+                            onSteamAccessDohEndpointsChange = onSteamAccessDohEndpointsChange,
+                            onSteamWorkshopDataSourceChange = onSteamWorkshopDataSourceChange,
+                            onRefreshSteamAccess = onRefreshSteamAccess,
+                            onSaveSteamApiKey = { onSteamApiKeyChange(steamApiKey) },
+                            onOpenExternalUri = onOpenExternalUri,
+                            onOpenSteamLogin = onOpenSteamLogin,
+                            onLogoutSteam = onLogoutSteam,
+                            onSelectOutputDirectory = onSelectOutputDirectory,
+                            onClearOutputDirectory = onClearOutputDirectory,
+                            onCheckForAppUpdate = onCheckForAppUpdate,
+                            onDownloadLatestRelease = onDownloadLatestRelease,
+                            onCancelAppUpdateDownload = onCancelAppUpdateDownload,
+                            onInstallDownloadedRelease = onInstallDownloadedRelease,
+                            onExportDiagnostics = onExportDiagnostics,
+                            onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
+                            onRequestNotifications = onRequestNotifications,
+                            text = ::text,
+                        )
+                    }
                 }
             }
         }
@@ -391,7 +401,9 @@ internal fun SettingsCategoryContent(
     when (category) {
         null ->
             SettingsCategoryIndex(
+                title = preferences.language.text("设置", "Settings"),
                 language = preferences.language,
+                onBack = {},
                 onOpenCategory = onOpenCategory,
             )
 

@@ -29,6 +29,7 @@ import java.io.File
 @Composable
 fun SettingsRoute(
     onOpenSteamLogin: () -> Unit,
+    onBack: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -177,6 +178,7 @@ fun SettingsRoute(
         session = session,
         diagnosticExportState = diagnosticExportState,
         appUpdateState = appUpdateState,
+        onBack = onBack,
         onAction = viewModel::onAction,
     )
 }

@@ -69,6 +69,12 @@ import com.wallhub.android.core.model.SteamAccessState
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.ThemePreference
+import org.uwuaosp.compose.settingslib.PreferenceGroupSpacer
+import org.uwuaosp.compose.settingslib.PreferencePosition
+import org.uwuaosp.compose.settingslib.PreferenceRow
+import org.uwuaosp.compose.settingslib.SettingsHomepageIcon
+import org.uwuaosp.compose.settingslib.SettingsScaffold
+import org.uwuaosp.compose.settingslib.rememberSettingsTypography
 import java.util.Locale
 import android.graphics.Color as AndroidColor
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
@@ -424,32 +430,53 @@ internal fun SettingsLeadingIcon(
 
 @Composable
 internal fun SettingsCategoryIndex(
+    title: String,
     language: AppLanguage,
+    onBack: () -> Unit,
     onOpenCategory: (SettingsCategory) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm)) {
-        SettingsCategory.entries.forEach { category ->
-            SettingsSectionSurface(
+    val colorScheme = MaterialTheme.colorScheme
+    MaterialTheme(
+        colorScheme =
+            colorScheme.copy(
+                surfaceContainer = colorScheme.surfaceContainerLowest,
+                surfaceBright = colorScheme.surfaceContainerLow,
+            ),
+        typography = rememberSettingsTypography(),
+    ) {
+        SettingsScaffold(
+            title = title,
+            showBackButton = true,
+            onNavigateUp = onBack,
+        ) {
+            Column(
                 modifier =
                     Modifier
-                        .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.large)
-                        .clickable { onOpenCategory(category) },
+                        .align(Alignment.CenterHorizontally)
+                        .widthIn(max = SETTINGS_CONTENT_MAX_WIDTH)
+                        .fillMaxWidth(),
             ) {
-                SettingsListItem(
-                    modifier = Modifier.fillMaxWidth(),
-                    headlineContent = { Text(category.label(language)) },
-                    supportingContent = { Text(category.description(language)) },
-                    leadingContent = {
-                        SettingsLeadingIcon(icon = category.icon)
-                    },
-                    trailingContent = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                            contentDescription = null,
-                        )
-                    },
-                )
+                SettingsCategory.entries.forEachIndexed { index, category ->
+                    PreferenceRow(
+                        title = category.label(language),
+                        summary = category.description(language),
+                        position =
+                            when (index) {
+                                0 -> PreferencePosition.Top
+                                SettingsCategory.entries.lastIndex -> PreferencePosition.Bottom
+                                else -> PreferencePosition.Middle
+                            },
+                        iconContent = {
+                            SettingsHomepageIcon(
+                                imageVector = category.icon,
+                                backgroundColor = MaterialTheme.colorScheme.primary,
+                                foregroundColor = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        },
+                        onClick = { onOpenCategory(category) },
+                    )
+                    if (index != SettingsCategory.entries.lastIndex) PreferenceGroupSpacer()
+                }
             }
         }
     }

@@ -107,8 +107,8 @@ private fun WallHubSystemBars(
     if (view.isInEditMode) return
     SideEffect {
         val window = view.context.findActivity()?.window ?: return@SideEffect
-        window.statusBarColor = colorScheme.background.toArgb()
-        window.navigationBarColor = colorScheme.surfaceContainerLow.toArgb()
+        window.statusBarColor = Color.Transparent.toArgb()
+        window.navigationBarColor = Color.Transparent.toArgb()
         WindowCompat.getInsetsController(window, view).apply {
             isAppearanceLightStatusBars = !useDarkTheme
             isAppearanceLightNavigationBars = !useDarkTheme
