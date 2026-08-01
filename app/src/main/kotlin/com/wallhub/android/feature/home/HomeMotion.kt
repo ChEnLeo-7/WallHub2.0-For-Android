@@ -7,12 +7,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -29,8 +29,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -161,54 +160,27 @@ internal class HomeLayoutTransactionState(
     }
 }
 
-internal class HomeLayoutEdgeEntryState(
-    initialKey: HomeCardLayoutKey,
-) {
-    private var layoutKey = initialKey
-    private var completedRequestId by mutableLongStateOf(0L)
-
-    var requestId: Long = 0L
-        private set
-
-    val isActive: Boolean
-        get() = requestId != completedRequestId
-
-    fun update(key: HomeCardLayoutKey): Long {
-        if (key != layoutKey) {
-            layoutKey = key
-            requestId += 1L
-        }
-        return requestId
-    }
-
-    fun complete(expectedRequestId: Long): Boolean {
-        if (expectedRequestId != requestId) return false
-        completedRequestId = expectedRequestId
-        return true
-    }
-}
-
 internal enum class HomeCardProjectionParticipant {
     CARD,
     MEDIA,
-    TAG,
-    CONTENT,
+    TITLE,
+    METADATA,
     ACTION,
 }
 
 internal data class HomeCardProjectionTransforms(
     val card: HomeCardLayoutTransform,
     val media: HomeCardLayoutTransform,
-    val tag: HomeCardLayoutTransform,
-    val content: HomeCardLayoutTransform,
+    val title: HomeCardLayoutTransform,
+    val metadata: HomeCardLayoutTransform,
     val action: HomeCardLayoutTransform,
 ) {
     operator fun get(participant: HomeCardProjectionParticipant): HomeCardLayoutTransform =
         when (participant) {
             HomeCardProjectionParticipant.CARD -> card
             HomeCardProjectionParticipant.MEDIA -> media
-            HomeCardProjectionParticipant.TAG -> tag
-            HomeCardProjectionParticipant.CONTENT -> content
+            HomeCardProjectionParticipant.TITLE -> title
+            HomeCardProjectionParticipant.METADATA -> metadata
             HomeCardProjectionParticipant.ACTION -> action
         }
 
@@ -219,8 +191,8 @@ internal data class HomeCardProjectionTransforms(
         when (participant) {
             HomeCardProjectionParticipant.CARD -> copy(card = transform)
             HomeCardProjectionParticipant.MEDIA -> copy(media = transform)
-            HomeCardProjectionParticipant.TAG -> copy(tag = transform)
-            HomeCardProjectionParticipant.CONTENT -> copy(content = transform)
+            HomeCardProjectionParticipant.TITLE -> copy(title = transform)
+            HomeCardProjectionParticipant.METADATA -> copy(metadata = transform)
             HomeCardProjectionParticipant.ACTION -> copy(action = transform)
         }
 
@@ -229,8 +201,8 @@ internal data class HomeCardProjectionTransforms(
             HomeCardProjectionTransforms(
                 card = HomeCardLayoutTransform.Identity,
                 media = HomeCardLayoutTransform.Identity,
-                tag = HomeCardLayoutTransform.Identity,
-                content = HomeCardLayoutTransform.Identity,
+                title = HomeCardLayoutTransform.Identity,
+                metadata = HomeCardLayoutTransform.Identity,
                 action = HomeCardLayoutTransform.Identity,
             )
     }
@@ -240,7 +212,6 @@ internal class HomeCardProjectionGroupRun internal constructor(
     val id: Long,
     val epoch: Long,
     val transforms: HomeCardProjectionTransforms,
-    val cardInitialAlpha: Float,
     val shouldAnimate: Boolean,
     initialProgress: Float,
 ) {
@@ -255,8 +226,6 @@ internal class HomeCardProjectionGroupRun internal constructor(
 internal class HomeCardProjectionGroupStage internal constructor(
     val transaction: HomeLayoutTransaction,
     val sourceTransforms: HomeCardProjectionTransforms,
-    val sourceCardAlpha: Float,
-    val edgeEntryRequired: Boolean,
     sourceBounds: Map<HomeCardProjectionParticipant, HomeCardBounds?>,
 ) {
     private val sourceBounds = sourceBounds.toMap()
@@ -325,7 +294,6 @@ internal class HomeCardProjectionGroupState(
             id = nextRunId,
             epoch = initialEpoch,
             transforms = HomeCardProjectionTransforms.Identity,
-            cardInitialAlpha = 1f,
             shouldAnimate = false,
             initialProgress = 1f,
         ),
@@ -357,26 +325,15 @@ internal class HomeCardProjectionGroupState(
         return transforms
     }
 
-    fun currentCardAlpha(): Float {
-        displayVersion
-        return pendingStage?.sourceCardAlpha ?: activeCardAlpha()
-    }
-
     fun beginStage(
         transaction: HomeLayoutTransaction,
         sourceBounds: Map<HomeCardProjectionParticipant, HomeCardBounds?>,
-        edgeEntryEnabled: Boolean = false,
     ): HomeCardProjectionGroupStage {
         val replacedStage = pendingStage
-        val edgeEntryRequired =
-            sourceBounds[HomeCardProjectionParticipant.CARD]?.hasArea() != true &&
-                (edgeEntryEnabled || replacedStage?.edgeEntryRequired == true)
         val stage =
             HomeCardProjectionGroupStage(
                 transaction = transaction,
                 sourceTransforms = replacedStage?.sourceTransforms ?: captureCurrentTransforms(),
-                sourceCardAlpha = replacedStage?.sourceCardAlpha ?: if (edgeEntryRequired) 0f else activeCardAlpha(),
-                edgeEntryRequired = edgeEntryRequired,
                 sourceBounds = sourceBounds,
             )
         pendingStage = stage
@@ -434,24 +391,6 @@ internal class HomeCardProjectionGroupState(
         return activeRun === expectedRun && pendingStage == null
     }
 
-    fun startStandalone(
-        transforms: HomeCardProjectionTransforms,
-        cardInitialAlpha: Float,
-    ) {
-        pendingStage = null
-        nextRunId += 1L
-        activeRun =
-            HomeCardProjectionGroupRun(
-                id = nextRunId,
-                epoch = activeRun.epoch,
-                transforms = transforms,
-                cardInitialAlpha = cardInitialAlpha,
-                shouldAnimate = true,
-                initialProgress = 0f,
-            )
-        displayVersion += 1
-    }
-
     fun cancelStageIntoRun(expectedStage: HomeCardProjectionGroupStage): Boolean {
         if (pendingStage !== expectedStage) return false
         pendingStage = null
@@ -461,15 +400,12 @@ internal class HomeCardProjectionGroupState(
                 id = nextRunId,
                 epoch = activeRun.epoch,
                 transforms = expectedStage.sourceTransforms,
-                cardInitialAlpha = expectedStage.sourceCardAlpha,
                 shouldAnimate = true,
                 initialProgress = 0f,
             )
         displayVersion += 1
         return true
     }
-
-    private fun activeCardAlpha(): Float = activeRun.cardInitialAlpha + (1f - activeRun.cardInitialAlpha) * activeRun.progress
 
     private fun commit(stage: HomeCardProjectionGroupStage) {
         if (pendingStage !== stage) return
@@ -479,7 +415,6 @@ internal class HomeCardProjectionGroupState(
                 id = nextRunId,
                 epoch = stage.epoch,
                 transforms = stage.committedTransforms(),
-                cardInitialAlpha = stage.sourceCardAlpha,
                 shouldAnimate = true,
                 initialProgress = 0f,
             )
@@ -491,10 +426,9 @@ internal class HomeCardProjectionGroupState(
 @Composable
 internal fun rememberHomeViewCardLayoutMotion(
     layoutKey: HomeCardLayoutKey,
-    animateEdgeEntry: Boolean,
 ): HomeViewCardLayoutMotion {
-    val motion = remember { HomeViewCardLayoutMotion(layoutKey, animateEdgeEntry) }
-    motion.updateLayout(layoutKey, animateEdgeEntry)
+    val motion = remember { HomeViewCardLayoutMotion(layoutKey) }
+    motion.updateLayout(layoutKey)
 
     HomeProjectionGroupEffect(motion)
 
@@ -528,7 +462,6 @@ internal class HomeCardProjectionSlot(
 
 internal class HomeViewCardLayoutMotion(
     initialLayoutKey: HomeCardLayoutKey,
-    initialAnimateEdgeEntry: Boolean,
 ) {
     private val transactions = HomeLayoutTransactionState(initialLayoutKey)
     private val projectionGroup = HomeCardProjectionGroupState()
@@ -538,7 +471,6 @@ internal class HomeViewCardLayoutMotion(
         }
     private val layoutKey: HomeCardLayoutKey
         get() = transactions.requestedKey
-    private var animateEdgeEntry = initialAnimateEdgeEntry
     private var coverCornerFrom by mutableStateOf(HomeCoverCorners.forListMode(initialLayoutKey.listMode))
     private var coverCornerTo by mutableStateOf(HomeCoverCorners.forListMode(initialLayoutKey.listMode))
     private var actionCornerFrom by mutableStateOf(HomeActionCorners.forListMode(initialLayoutKey.listMode))
@@ -551,12 +483,8 @@ internal class HomeViewCardLayoutMotion(
     val pendingGroupStage: HomeCardProjectionGroupStage?
         get() = projectionGroup.pendingStage
 
-    fun updateLayout(
-        value: HomeCardLayoutKey,
-        shouldAnimateEdgeEntry: Boolean,
-    ) {
+    fun updateLayout(value: HomeCardLayoutKey) {
         transactions.request(value)
-        animateEdgeEntry = shouldAnimateEdgeEntry
         val pendingStage = projectionGroup.pendingStage
         if (
             pendingStage != null &&
@@ -582,43 +510,21 @@ internal class HomeViewCardLayoutMotion(
         val callbackRequestId = transactions.requestId
         val cardSlot = slot(HomeCardProjectionParticipant.CARD)
         return Modifier
-            .onGloballyPositioned { coordinates ->
+            .onPlaced { coordinates ->
                 val currentBounds =
                     HomeCardBounds(
                         position = coordinates.positionInRoot(),
                         size = coordinates.size,
                     )
                 onPositioned(currentBounds.position)
-                val wasUnmeasured = cardSlot.previousBounds == null
                 recordProjectionMeasurement(
                     participant = HomeCardProjectionParticipant.CARD,
                     callbackKey = callbackKey,
                     callbackRequestId = callbackRequestId,
                     bounds = currentBounds,
                 )
-                if (
-                    wasUnmeasured &&
-                    animateEdgeEntry &&
-                    projectionGroup.pendingStage == null &&
-                    currentBounds.hasArea()
-                ) {
-                    projectionGroup.startStandalone(
-                        transforms =
-                            HomeCardProjectionTransforms.Identity.with(
-                                HomeCardProjectionParticipant.CARD,
-                                HomeCardLayoutTransform(
-                                    translationX = 0f,
-                                    translationY = currentBounds.size.height * HOME_VIEW_EDGE_ENTRY_OFFSET_FRACTION,
-                                    scaleX = 1f,
-                                    scaleY = 1f,
-                                ),
-                            ),
-                        cardInitialAlpha = 0f,
-                    )
-                }
             }.then(
                 if (
-                    animateEdgeEntry ||
                     projectionGroup.requiresGraphicsLayer ||
                     cardSlot.previousLayoutKey != layoutKey
                 ) {
@@ -640,44 +546,31 @@ internal class HomeViewCardLayoutMotion(
             parentParticipant = HomeCardProjectionParticipant.CARD,
         )
 
-    fun tagModifier(): Modifier {
-        val callbackKey = layoutKey
-        val callbackRequestId = transactions.requestId
-        val tagSlot = slot(HomeCardProjectionParticipant.TAG)
-        return Modifier
-            .onGloballyPositioned { coordinates ->
-                recordProjectionMeasurement(
-                    participant = HomeCardProjectionParticipant.TAG,
-                    callbackKey = callbackKey,
-                    callbackRequestId = callbackRequestId,
-                    bounds =
-                        HomeCardBounds(
-                            position = coordinates.positionInParent(),
-                            size = coordinates.size,
-                        ),
-                )
-            }.then(
-                if (
-                    animateEdgeEntry ||
-                    projectionGroup.requiresGraphicsLayer ||
-                    tagSlot.previousLayoutKey != layoutKey
-                ) {
-                    Modifier.graphicsLayer {
-                        applyProjectionToLayer(
-                            participant = HomeCardProjectionParticipant.TAG,
-                            layerScope = this,
-                            parentTransform = projectionGroup.currentTransform(HomeCardProjectionParticipant.MEDIA),
-                        )
-                    }
-                } else {
-                    Modifier
-                },
-            )
+    fun mediaContentScaleCompensationModifier(): Modifier {
+        val mediaSlot = slot(HomeCardProjectionParticipant.MEDIA)
+        if (
+            !projectionGroup.requiresGraphicsLayer &&
+            mediaSlot.previousLayoutKey == layoutKey
+        ) {
+            return Modifier
+        }
+        return Modifier.graphicsLayer {
+            val mediaTransform = projectionGroup.currentTransform(HomeCardProjectionParticipant.MEDIA)
+            transformOrigin = TransformOrigin(0f, 0f)
+            scaleX = 1f / mediaTransform.scaleX.coerceAtLeast(HOME_VIEW_LAYOUT_MIN_SCALE)
+            scaleY = 1f / mediaTransform.scaleY.coerceAtLeast(HOME_VIEW_LAYOUT_MIN_SCALE)
+        }
     }
 
-    fun contentModifier(): Modifier =
+    fun titleModifier(): Modifier =
         projectionModifier(
-            participant = HomeCardProjectionParticipant.CONTENT,
+            participant = HomeCardProjectionParticipant.TITLE,
+            parentParticipant = HomeCardProjectionParticipant.CARD,
+        )
+
+    fun metadataModifier(): Modifier =
+        projectionModifier(
+            participant = HomeCardProjectionParticipant.METADATA,
             parentParticipant = HomeCardProjectionParticipant.CARD,
         )
 
@@ -692,7 +585,6 @@ internal class HomeViewCardLayoutMotion(
     fun actionContentModifier(): Modifier {
         val actionSlot = slot(HomeCardProjectionParticipant.ACTION)
         if (
-            !animateEdgeEntry &&
             !projectionGroup.requiresGraphicsLayer &&
             actionSlot.previousLayoutKey == layoutKey
         ) {
@@ -708,12 +600,7 @@ internal class HomeViewCardLayoutMotion(
     }
 
     fun actionLabelVisibility(): Float {
-        val contentProgress =
-            (
-                (projectionGroup.progress - HOME_VIEW_ACTION_CONTENT_FADE_START) /
-                    (HOME_VIEW_ACTION_CONTENT_FADE_END - HOME_VIEW_ACTION_CONTENT_FADE_START)
-            ).coerceIn(0f, 1f)
-        return actionLabelFrom + (actionLabelTo - actionLabelFrom) * contentProgress
+        return actionLabelFrom + (actionLabelTo - actionLabelFrom) * projectionGroup.progress
     }
 
     fun cardShape(): Shape =
@@ -726,10 +613,7 @@ internal class HomeViewCardLayoutMotion(
             transform = projectionGroup.currentTransform(HomeCardProjectionParticipant.MEDIA),
         )
 
-    fun actionShape(): Shape =
-        currentActionCorners().toCoverCorners().toProjectedShape(
-            transform = projectionGroup.currentTransform(HomeCardProjectionParticipant.ACTION),
-        )
+    fun actionShape(): Shape = RoundedCornerShape(currentActionCorners().radius)
 
     private fun projectionModifier(
         participant: HomeCardProjectionParticipant,
@@ -739,7 +623,7 @@ internal class HomeViewCardLayoutMotion(
         val callbackRequestId = transactions.requestId
         val projectionSlot = slot(participant)
         return Modifier
-            .onGloballyPositioned { coordinates ->
+            .onPlaced { coordinates ->
                 recordProjectionMeasurement(
                     participant = participant,
                     callbackKey = callbackKey,
@@ -752,7 +636,6 @@ internal class HomeViewCardLayoutMotion(
                 )
             }.then(
                 if (
-                    animateEdgeEntry ||
                     projectionGroup.requiresGraphicsLayer ||
                     projectionSlot.previousLayoutKey != layoutKey
                 ) {
@@ -799,7 +682,6 @@ internal class HomeViewCardLayoutMotion(
                 projectionGroup.beginStage(
                     transaction = transaction,
                     sourceBounds = sourceBounds,
-                    edgeEntryEnabled = animateEdgeEntry,
                 )
         }
 
@@ -828,9 +710,9 @@ internal class HomeViewCardLayoutMotion(
         if (projectionGroup.pendingStage !== stage) return
         stageCard(stage)
         stageChild(stage, HomeCardProjectionParticipant.MEDIA, HomeChildScaleMode.UNIFORM)
-        stageChild(stage, HomeCardProjectionParticipant.CONTENT, HomeChildScaleMode.NONE)
+        stageChild(stage, HomeCardProjectionParticipant.TITLE, HomeChildScaleMode.NONE)
+        stageChild(stage, HomeCardProjectionParticipant.METADATA, HomeChildScaleMode.NONE)
         stageChild(stage, HomeCardProjectionParticipant.ACTION, HomeChildScaleMode.NON_UNIFORM)
-        stageTag(stage)
         if (projectionGroup.pendingStage !== stage) finalizeStage(stage)
     }
 
@@ -844,7 +726,6 @@ internal class HomeViewCardLayoutMotion(
                 sourceBounds = sourceBounds,
                 sourceTransform = stage.sourceTransforms[participant],
                 targetBounds = targetBounds,
-                edgeEntryRequired = stage.edgeEntryRequired,
             )
         projectionGroup.stageParticipant(stage, participant, transform)
     }
@@ -911,46 +792,6 @@ internal class HomeViewCardLayoutMotion(
         projectionGroup.stageParticipant(stage, participant, transform)
     }
 
-    private fun stageTag(stage: HomeCardProjectionGroupStage) {
-        val participant = HomeCardProjectionParticipant.TAG
-        if (
-            !stage.isParticipantReady(HomeCardProjectionParticipant.CARD) ||
-            !stage.isParticipantReady(HomeCardProjectionParticipant.MEDIA) ||
-            !stage.hasMeasurement(participant) ||
-            stage.isParticipantReady(participant)
-        ) {
-            return
-        }
-        val sourceCardBounds = stage.sourceBounds(HomeCardProjectionParticipant.CARD)
-        val targetCardBounds = stage.targetBounds(HomeCardProjectionParticipant.CARD)
-        val sourceMediaBounds = stage.sourceBounds(HomeCardProjectionParticipant.MEDIA)
-        val targetMediaBounds = stage.targetBounds(HomeCardProjectionParticipant.MEDIA)
-        val sourceBounds = stage.sourceBounds(participant)
-        val targetBounds = stage.targetBounds(participant)
-        val initialMediaTransform = stage.stagedTransform(HomeCardProjectionParticipant.MEDIA)
-        val transform =
-            if (
-                sourceCardBounds != null &&
-                targetCardBounds != null &&
-                sourceMediaBounds != null &&
-                targetMediaBounds != null &&
-                sourceBounds != null &&
-                targetBounds != null &&
-                initialMediaTransform != null
-            ) {
-                calculateHomeTagProjection(
-                    sourceBounds = sourceBounds,
-                    targetBounds = targetBounds,
-                    sourceTagTransform = stage.sourceTransforms[participant],
-                    sourceMediaTransform = stage.sourceTransforms[HomeCardProjectionParticipant.MEDIA],
-                    initialMediaTransform = initialMediaTransform,
-                )
-            } else {
-                HomeCardLayoutTransform.Identity
-            }
-        projectionGroup.stageParticipant(stage, participant, transform)
-    }
-
     private fun finalizeStage(stage: HomeCardProjectionGroupStage) {
         if (!transactions.commit(stage.transaction)) return
         HomeCardProjectionParticipant.entries.forEach { participant ->
@@ -999,12 +840,6 @@ internal class HomeViewCardLayoutMotion(
         layerScope.transformOrigin = TransformOrigin(0f, 0f)
         layerScope.translationX = visibleTransform.translationX
         layerScope.translationY = visibleTransform.translationY
-        layerScope.alpha =
-            if (participant == HomeCardProjectionParticipant.CARD) {
-                projectionGroup.currentCardAlpha()
-            } else {
-                1f
-            }
         layerScope.scaleX = visibleTransform.scaleX / parentScaleX.coerceAtLeast(HOME_VIEW_LAYOUT_MIN_SCALE)
         layerScope.scaleY = visibleTransform.scaleY / parentScaleY.coerceAtLeast(HOME_VIEW_LAYOUT_MIN_SCALE)
     }
@@ -1117,7 +952,6 @@ internal fun calculateHomeCardInitialProjection(
     sourceBounds: HomeCardBounds?,
     sourceTransform: HomeCardLayoutTransform,
     targetBounds: HomeCardBounds?,
-    edgeEntryRequired: Boolean,
 ): HomeCardLayoutTransform {
     val visibleBounds = sourceBounds?.project(sourceTransform)
     return when {
@@ -1129,38 +963,8 @@ internal fun calculateHomeCardInitialProjection(
                 scaleY = visibleBounds.height / targetBounds.size.height,
             )
 
-        edgeEntryRequired && targetBounds != null ->
-            HomeCardLayoutTransform.Identity.copy(
-                translationY = targetBounds.size.height * HOME_VIEW_EDGE_ENTRY_OFFSET_FRACTION,
-            )
-
         else -> HomeCardLayoutTransform.Identity
     }
-}
-
-internal fun calculateHomeTagProjection(
-    sourceBounds: HomeCardBounds,
-    targetBounds: HomeCardBounds,
-    sourceTagTransform: HomeCardLayoutTransform,
-    sourceMediaTransform: HomeCardLayoutTransform,
-    initialMediaTransform: HomeCardLayoutTransform,
-): HomeCardLayoutTransform {
-    val sourceOffset =
-        Offset(
-            x = (sourceBounds.position.x + sourceTagTransform.translationX) * sourceMediaTransform.scaleX,
-            y = (sourceBounds.position.y + sourceTagTransform.translationY) * sourceMediaTransform.scaleY,
-        )
-    val initialMediaScaleX = initialMediaTransform.scaleX.coerceAtLeast(HOME_VIEW_LAYOUT_MIN_SCALE)
-    val initialMediaScaleY = initialMediaTransform.scaleY.coerceAtLeast(HOME_VIEW_LAYOUT_MIN_SCALE)
-    val uniformScale =
-        sourceBounds.size.width.toFloat() * sourceTagTransform.scaleX /
-            targetBounds.size.width.toFloat()
-    return HomeCardLayoutTransform(
-        translationX = sourceOffset.x / initialMediaScaleX - targetBounds.position.x,
-        translationY = sourceOffset.y / initialMediaScaleY - targetBounds.position.y,
-        scaleX = uniformScale,
-        scaleY = uniformScale,
-    )
 }
 
 internal data class HomeCoverCorners(

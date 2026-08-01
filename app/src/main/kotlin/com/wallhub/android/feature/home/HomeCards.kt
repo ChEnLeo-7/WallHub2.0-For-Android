@@ -24,7 +24,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,7 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -47,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSpacing
@@ -59,7 +58,6 @@ import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 @Composable
 internal fun WorkshopListCardContent(
     item: WorkshopSummary,
-    typeTagScale: State<Float>,
     action: HomeCardAction,
     showFileSize: Boolean,
     showFavorites: Boolean,
@@ -76,13 +74,12 @@ internal fun WorkshopListCardContent(
     ) {
         WorkshopCoverFrame(
             item = item,
-            compact = true,
-            typeTagScale = typeTagScale,
             coverShape = layoutMotion.coverShape(),
-            typeTagModifier = layoutMotion.tagModifier(),
+            typeTagModifier = layoutMotion.mediaContentScaleCompensationModifier(),
             modifier =
                 Modifier
                     .size(LIST_CARD_MEDIA_SIZE)
+                    .zIndex(HOME_CARD_PREVIEW_Z_INDEX)
                     .then(layoutMotion.mediaModifier()),
         )
         WorkshopCardCopy(
@@ -92,11 +89,12 @@ internal fun WorkshopListCardContent(
             showFileSize = showFileSize,
             showFavorites = showFavorites,
             statisticsAvailableWidth = statisticsAvailableWidth,
+            titleModifier = layoutMotion.titleModifier(),
+            metadataModifier = layoutMotion.metadataModifier(),
             modifier =
                 Modifier
                     .weight(1f)
-                    .padding(start = WallHubSpacing.sm, top = WallHubSpacing.xs, end = WallHubSpacing.xs, bottom = WallHubSpacing.xs)
-                    .then(layoutMotion.contentModifier()),
+                    .padding(start = WallHubSpacing.sm, top = WallHubSpacing.xs, end = WallHubSpacing.xs, bottom = WallHubSpacing.xs),
         )
         WorkshopCardActionButton(
             action = action,
@@ -116,8 +114,6 @@ internal fun WorkshopListCardContent(
 @Composable
 internal fun WorkshopCoverFrame(
     item: WorkshopSummary,
-    compact: Boolean,
-    typeTagScale: State<Float>,
     coverShape: Shape,
     typeTagModifier: Modifier,
     modifier: Modifier,
@@ -132,12 +128,11 @@ internal fun WorkshopCoverFrame(
         )
         WorkshopCoverTypeTag(
             item = item,
-            typeTagScale = typeTagScale,
             modifier =
                 Modifier
                     .align(Alignment.TopStart)
-                    .padding(if (compact) WallHubSpacing.dense else WallHubSpacing.xs)
-                    .then(typeTagModifier),
+                    .then(typeTagModifier)
+                    .padding(WallHubSpacing.xs),
         )
     }
 }
@@ -175,17 +170,10 @@ internal fun WorkshopCover(
 @Composable
 internal fun WorkshopCoverTypeTag(
     item: WorkshopSummary,
-    typeTagScale: State<Float>,
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier =
-            modifier.graphicsLayer {
-                val scale = typeTagScale.value
-                transformOrigin = TransformOrigin(0f, 0f)
-                scaleX = scale
-                scaleY = scale
-            },
+        modifier = modifier,
         shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
     ) {
@@ -211,6 +199,8 @@ internal fun WorkshopCardCopy(
     showFavorites: Boolean,
     statisticsAvailableWidth: Dp,
     modifier: Modifier = Modifier,
+    titleModifier: Modifier = Modifier,
+    metadataModifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
     val statisticCount =
@@ -271,45 +261,48 @@ internal fun WorkshopCardCopy(
             style = MaterialTheme.typography.titleSmall,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
+            modifier = titleModifier,
         )
-        if (twoColumnGrid) {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement =
-                    Arrangement.spacedBy(
-                        space = statisticsMetrics.itemSpacing,
-                        alignment = Alignment.Start,
-                    ),
-                verticalArrangement = Arrangement.spacedBy(TWO_COLUMN_CARD_STATISTICS_ROW_SPACING),
-                maxItemsInEachRow = 3,
-            ) {
-                WorkshopCardStatisticsItems(
-                    item = item,
-                    showFileSize = showFileSize,
-                    showFavorites = showFavorites,
-                    textStyle = statisticTextStyle,
-                    metrics = statisticsMetrics,
-                    overflow = TextOverflow.Clip,
-                )
-            }
-        } else {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement =
-                    Arrangement.spacedBy(
-                        space = statisticsMetrics.itemSpacing,
-                        alignment = Alignment.Start,
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                WorkshopCardStatisticsItems(
-                    item = item,
-                    showFileSize = showFileSize,
-                    showFavorites = showFavorites,
-                    textStyle = statisticTextStyle,
-                    metrics = statisticsMetrics,
-                    overflow = TextOverflow.Clip,
-                )
+        Box(modifier = metadataModifier.fillMaxWidth()) {
+            if (twoColumnGrid) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement =
+                        Arrangement.spacedBy(
+                            space = statisticsMetrics.itemSpacing,
+                            alignment = Alignment.Start,
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(TWO_COLUMN_CARD_STATISTICS_ROW_SPACING),
+                    maxItemsInEachRow = 3,
+                ) {
+                    WorkshopCardStatisticsItems(
+                        item = item,
+                        showFileSize = showFileSize,
+                        showFavorites = showFavorites,
+                        textStyle = statisticTextStyle,
+                        metrics = statisticsMetrics,
+                        overflow = TextOverflow.Clip,
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement =
+                        Arrangement.spacedBy(
+                            space = statisticsMetrics.itemSpacing,
+                            alignment = Alignment.Start,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    WorkshopCardStatisticsItems(
+                        item = item,
+                        showFileSize = showFileSize,
+                        showFavorites = showFavorites,
+                        textStyle = statisticTextStyle,
+                        metrics = statisticsMetrics,
+                        overflow = TextOverflow.Clip,
+                    )
+                }
             }
         }
     }

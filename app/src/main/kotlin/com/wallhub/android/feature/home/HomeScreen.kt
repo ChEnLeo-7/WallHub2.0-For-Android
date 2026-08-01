@@ -5,7 +5,6 @@ package com.wallhub.android.feature.home
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -132,6 +131,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.zIndex
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubContextMenuDefaults
 import com.wallhub.android.core.designsystem.WallHubContextMenuSurface
@@ -1121,16 +1121,7 @@ internal fun HomeResults(
                 )
             }
         },
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .animateContentSize(
-                    animationSpec =
-                        tween(
-                            durationMillis = HOME_FILTER_PAGE_SIZE_DURATION_MS,
-                            easing = HOME_FILTER_PAGE_EASING,
-                        ),
-                ),
+        modifier = modifier.fillMaxWidth(),
     ) {
         when {
             state.isInitialLoading -> {
@@ -1178,9 +1169,6 @@ internal fun HomeResults(
             else -> {
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                     val layoutKey = HomeCardLayoutKey.resolve(state.viewMode, state.columns)
-                    val edgeEntryState = remember { HomeLayoutEdgeEntryState(layoutKey) }
-                    val edgeEntryRequestId = edgeEntryState.update(layoutKey)
-                    val animateLayoutEdgeEntry = edgeEntryState.isActive
                     val contentWidth = (maxWidth - HOME_GRID_HORIZONTAL_PADDING * 2).coerceAtLeast(WallHubSpacing.none)
                     val gridCardWidth =
                         (
@@ -1205,7 +1193,6 @@ internal fun HomeResults(
                                 .fillMaxSize()
                                 .onGloballyPositioned { coordinates ->
                                     contextMenuGeometry.gridCoordinates = coordinates
-                                    edgeEntryState.complete(edgeEntryRequestId)
                                 },
                         contentPadding =
                             PaddingValues(
@@ -1225,7 +1212,6 @@ internal fun HomeResults(
                                 item = item,
                                 authorDisplayName = state.authorDisplayNames[item.id],
                                 layoutKey = layoutKey,
-                                animateEdgeEntry = animateLayoutEdgeEntry,
                                 gridShowFileSize = state.columns < 3,
                                 gridShowFavorites = state.columns < 4,
                                 gridStatisticsAvailableWidth = gridStatisticsAvailableWidth,
@@ -1297,7 +1283,6 @@ internal fun WorkshopCard(
     item: WorkshopSummary,
     authorDisplayName: String?,
     layoutKey: HomeCardLayoutKey,
-    animateEdgeEntry: Boolean,
     gridShowFileSize: Boolean,
     gridShowFavorites: Boolean,
     gridStatisticsAvailableWidth: Dp,
@@ -1320,7 +1305,6 @@ internal fun WorkshopCard(
     val layoutMotion =
         rememberHomeViewCardLayoutMotion(
             layoutKey = layoutKey,
-            animateEdgeEntry = animateEdgeEntry,
         )
     val contextMenuPreviewLayer = rememberGraphicsLayer()
     val cardPosition = remember { HomeCardPositionHolder() }
@@ -1459,18 +1443,6 @@ internal fun WorkshopCard(
             ),
         label = "WorkshopCardPressTranslation",
     )
-    // Grid and list use different composition branches; keep the scale state
-    // above them so an interrupted switch continues from its presented value.
-    val typeTagScale =
-        animateFloatAsState(
-            targetValue = if (listMode) HOME_COMPACT_TYPE_TAG_SCALE else 1f,
-            animationSpec =
-                tween(
-                    durationMillis = HOME_VIEW_TYPE_TAG_LAYOUT_DURATION_MS,
-                    easing = HOME_VIEW_LAYOUT_EASING,
-                ),
-            label = "WorkshopCoverTypeTagScale",
-        )
     Box(
         modifier =
             modifier
@@ -1503,7 +1475,6 @@ internal fun WorkshopCard(
             if (listMode) {
                 WorkshopListCardContent(
                     item = item,
-                    typeTagScale = typeTagScale,
                     action = action,
                     showFileSize = true,
                     showFavorites = true,
@@ -1515,14 +1486,13 @@ internal fun WorkshopCard(
                 Column {
                     WorkshopCoverFrame(
                         item = item,
-                        compact = false,
-                        typeTagScale = typeTagScale,
                         coverShape = layoutMotion.coverShape(),
-                        typeTagModifier = layoutMotion.tagModifier(),
+                        typeTagModifier = layoutMotion.mediaContentScaleCompensationModifier(),
                         modifier =
                             Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(1f)
+                                .zIndex(HOME_CARD_PREVIEW_Z_INDEX)
                                 .then(layoutMotion.mediaModifier()),
                     )
                     WorkshopCardCopy(
@@ -1532,13 +1502,15 @@ internal fun WorkshopCard(
                         showFileSize = gridShowFileSize,
                         showFavorites = gridShowFavorites,
                         statisticsAvailableWidth = gridStatisticsAvailableWidth,
+                        titleModifier = layoutMotion.titleModifier(),
+                        metadataModifier = layoutMotion.metadataModifier(),
                         modifier =
                             Modifier
                                 .padding(
                                     start = WallHubSpacing.compact,
                                     top = if (twoColumnGrid) TWO_COLUMN_CARD_COPY_TOP_PADDING else WallHubSpacing.compact,
                                     end = WallHubSpacing.compact,
-                                ).then(layoutMotion.contentModifier()),
+                                ),
                     )
                     WorkshopGridCardAction(
                         action = action,
