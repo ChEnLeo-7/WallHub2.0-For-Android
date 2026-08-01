@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
@@ -43,6 +44,49 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+
+/**
+ * Hosts the uwu application bar without imposing a scroll container on the page content.
+ *
+ * This variant is intended for screens whose content owns its scroll state, such as lazy lists
+ * and grids. The application bar remains responsible for status-bar insets and actions.
+ */
+@Composable
+fun SettingsAppBarScaffold(
+    title: String,
+    modifier: Modifier = Modifier,
+    showBackButton: Boolean = false,
+    onNavigateUp: () -> Unit = {},
+    actions: @Composable RowScope.() -> Unit = {},
+    titleContent: (@Composable () -> Unit)? = null,
+    contentTopPaddingAdjustment: Dp = 0.dp,
+    content: @Composable (PaddingValues) -> Unit,
+) {
+    val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val actionBarHeight = 64.dp
+    val contentPadding = PaddingValues(top = statusBarPadding + actionBarHeight + contentTopPaddingAdjustment)
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+    ) {
+        content(contentPadding)
+        SettingsToolbar(
+            title = title,
+            showBackButton = showBackButton,
+            useCollapsingToolbar = false,
+            progress = 1f,
+            toolbarHeight = actionBarHeight,
+            statusBarPadding = statusBarPadding,
+            onNavigateUp = onNavigateUp,
+            actions = actions,
+            titleContent = titleContent,
+            useWeightedTitleLayout = true,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+        )
+    }
+}
 
 @Composable
 fun SettingsScaffold(
