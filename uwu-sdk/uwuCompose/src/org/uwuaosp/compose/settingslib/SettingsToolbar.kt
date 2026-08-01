@@ -74,15 +74,17 @@ fun SettingsToolbarActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     iconSize: Dp = 24.dp,
+    buttonSize: Dp = 56.dp,
+    containerSize: Dp = 40.dp,
 ) {
     Box(
-        modifier = modifier.size(56.dp),
+        modifier = modifier.size(buttonSize),
         contentAlignment = Alignment.Center,
     ) {
         val interactionSource = remember { MutableInteractionSource() }
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .size(containerSize)
                 .clip(RoundedCornerShape(100.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                 .clickable(
