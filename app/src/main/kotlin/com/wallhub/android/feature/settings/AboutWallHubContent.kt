@@ -158,9 +158,9 @@ internal fun AboutWallHubContent(
     AboutListItem(
         headline = stringResource(R.string.settings_about_qq_group),
         supporting = stringResource(R.string.settings_about_qq_group_description, WALLHUB_QQ_GROUP_NUMBER),
-        leadingContent = { AboutIcon(Icons.MessageCircle) },
+        leadingContent = { AboutIcon(Icons.Outlined.ChatBubbleOutline) },
         trailingContent = {
-            Icon(imageVector = Icons.ExternalLink, contentDescription = null)
+            Icon(imageVector = Icons.Outlined.OpenInNew, contentDescription = null)
         },
         modifier =
             Modifier.clickable {
@@ -174,9 +174,9 @@ internal fun AboutWallHubContent(
     AboutListItem(
         headline = stringResource(R.string.settings_about_github_repository),
         supporting = WALLHUB_REPOSITORY_LABEL,
-        leadingContent = { AboutIcon(Icons.ExternalLink) },
+        leadingContent = { AboutIcon(Icons.Outlined.OpenInNew) },
         trailingContent = {
-            Icon(imageVector = Icons.ExternalLink, contentDescription = null)
+            Icon(imageVector = Icons.Outlined.OpenInNew, contentDescription = null)
         },
         modifier =
             Modifier.clickable {
@@ -198,7 +198,7 @@ internal fun AboutWallHubContent(
                     it.publishedAt.take(10),
                 )
             } ?: stringResource(R.string.settings_about_current_version, installed.versionName, installed.versionCode),
-        leadingContent = { AboutIcon(Icons.Download) },
+        leadingContent = { AboutIcon(Icons.Outlined.Download) },
         trailingContent = {
             if (appUpdateState.phase == AppUpdatePhase.CHECKING) {
                 Box(modifier = Modifier.size(WallHubSpacing.xxl), contentAlignment = Alignment.Center) {
@@ -210,7 +210,7 @@ internal fun AboutWallHubContent(
                     enabled = appUpdateState.phase != AppUpdatePhase.DOWNLOADING,
                 ) {
                     Icon(
-                        imageVector = Icons.RotateCw,
+                        imageVector = Icons.Outlined.Refresh,
                         contentDescription = stringResource(R.string.settings_action_check_for_updates),
                     )
                 }
@@ -240,9 +240,9 @@ internal fun AboutWallHubContent(
         AboutListItem(
             headline = stringResource(R.string.settings_about_release_notes),
             supporting = stringResource(R.string.settings_about_release_notes_description),
-            leadingContent = { AboutIcon(Icons.Info) },
+            leadingContent = { AboutIcon(Icons.Outlined.Info) },
             trailingContent = {
-                Icon(imageVector = Icons.ChevronRight, contentDescription = null)
+                Icon(imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null)
             },
             modifier = Modifier.clickable { releaseNotesVisible = true },
         )
@@ -328,7 +328,7 @@ private fun WallHubPersonRow(
         supporting = stringResource(person.roleRes),
         leadingContent = { GitHubAvatar(person = person) },
         trailingContent = {
-            Icon(imageVector = Icons.ExternalLink, contentDescription = null)
+            Icon(imageVector = Icons.Outlined.OpenInNew, contentDescription = null)
         },
         modifier = Modifier.clickable(onClick = onClick),
     )
@@ -357,7 +357,7 @@ private fun GitHubAvatar(person: WallHubPerson) {
         } else {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = Icons.UserRound,
+                    imageVector = Icons.Outlined.PersonOutline,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(26.dp),
@@ -400,7 +400,7 @@ private fun AboutUpdateActions(
                     onClick = { onInstallDownloadedRelease(downloadedPath) },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(imageVector = Icons.Download, contentDescription = null)
+                    Icon(imageVector = Icons.Outlined.Download, contentDescription = null)
                     Text(
                         text = stringResource(R.string.settings_action_install_with_android_installer),
                         modifier = Modifier.padding(start = WallHubSpacing.xs),
@@ -412,7 +412,7 @@ private fun AboutUpdateActions(
                     onClick = onDownloadLatestRelease,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(imageVector = Icons.Download, contentDescription = null)
+                    Icon(imageVector = Icons.Outlined.Download, contentDescription = null)
                     Text(
                         text =
                             stringResource(R.string.settings_action_download_latest_apk),
@@ -473,14 +473,14 @@ private fun ReleaseNotesDialog(
                     )
                     IconButton(onClick = onOpenGitHub) {
                         Icon(
-                            imageVector = Icons.ExternalLink,
+                            imageVector = Icons.Outlined.OpenInNew,
                             contentDescription =
                                 stringResource(R.string.settings_action_open_on_github),
                         )
                     }
                     IconButton(onClick = onDismiss) {
                         Icon(
-                            imageVector = Icons.CircleX,
+                            imageVector = Icons.Outlined.Cancel,
                             contentDescription = stringResource(R.string.settings_action_close),
                         )
                     }

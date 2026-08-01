@@ -108,7 +108,7 @@ import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubToolbarSearchTitle
-import com.wallhub.android.core.designsystem.formatMegabytes
+import com.wallhub.android.core.format.formatByteSize
 import com.wallhub.android.core.designsystem.rememberWallHubDirectionalCollapseConnection
 import com.wallhub.android.core.model.LocalWallpaperFormat
 import com.wallhub.android.core.model.LocalWallpaperImportState
@@ -1962,7 +1962,7 @@ private fun formatLocalSize(bytes: Long): String =
     when {
         bytes <= 0L -> "—"
         bytes < 1024L * 1024L -> "${bytes / 1024L} KB"
-        else -> formatMegabytes(bytes)
+        else -> formatByteSize(bytes)
     }
 
 private val LOCAL_DETAIL_ACTION_BREAKPOINT = 460.dp

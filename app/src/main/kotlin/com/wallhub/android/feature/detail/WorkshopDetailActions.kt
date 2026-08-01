@@ -70,7 +70,7 @@ internal fun DetailActionBar(
                 modifier = Modifier.weight(1f),
                 enabled = interactionEnabled,
             ) {
-                Icon(imageVector = Icons.Bell, contentDescription = null)
+                Icon(imageVector = Icons.Outlined.Notifications, contentDescription = null)
                 Text(
                     text =
                         if (interaction.subscriptionState == SubscriptionState.SUBSCRIBED) {
@@ -86,7 +86,7 @@ internal fun DetailActionBar(
                 modifier = Modifier.weight(1f),
                 enabled = interactionEnabled,
             ) {
-                Icon(imageVector = Icons.Star, contentDescription = null)
+                Icon(imageVector = Icons.Outlined.StarBorder, contentDescription = null)
                 Text(
                     text =
                         if (interaction.favoriteState == FavoriteState.FAVORITED) {
@@ -104,7 +104,7 @@ internal fun DetailActionBar(
             enabled = !isEnqueuingDownload,
             shape = MaterialTheme.shapes.large,
         ) {
-            Icon(imageVector = Icons.Download, contentDescription = null)
+            Icon(imageVector = Icons.Outlined.Download, contentDescription = null)
             Text(
                 text =
                     if (isEnqueuingDownload) {

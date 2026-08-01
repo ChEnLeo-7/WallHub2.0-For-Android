@@ -105,7 +105,7 @@ import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
-import com.wallhub.android.core.designsystem.formatMegabytes
+import com.wallhub.android.core.format.formatByteSize
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.designsystem.rememberWallHubDirectionalCollapseConnection
 import com.wallhub.android.core.model.AccountWorkshopCollection
@@ -1469,7 +1469,7 @@ private fun LibraryWorkshopCard(
                             modifier = Modifier,
                         )
                         Text(
-                            text = item.fileSizeBytes?.let(::formatMegabytes) ?: "— MB",
+                            text = item.fileSizeBytes?.let(::formatByteSize) ?: "— MB",
                             modifier = Modifier,
                             style = statisticsStyle,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

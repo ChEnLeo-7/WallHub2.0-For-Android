@@ -49,7 +49,7 @@ import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSpacing
-import com.wallhub.android.core.designsystem.formatMegabytes
+import com.wallhub.android.core.format.formatByteSize
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.WorkshopSummary
@@ -339,7 +339,7 @@ internal fun WorkshopCardStatisticsItems(
     }
     if (showFileSize) {
         Text(
-            text = item.fileSizeBytes?.let(::formatMegabytes) ?: "— MB",
+            text = item.fileSizeBytes?.let(::formatByteSize) ?: "— MB",
             style = textStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,

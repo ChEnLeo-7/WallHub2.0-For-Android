@@ -69,7 +69,7 @@ import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
-import com.wallhub.android.core.designsystem.formatMegabytes
+import com.wallhub.android.core.format.formatByteSize
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
 import com.wallhub.android.core.model.DownloadAction
@@ -705,7 +705,7 @@ private fun DownloadTaskCard(
                         text =
                             when {
                                 task.status == DownloadStatus.DOWNLOADING && task.bytesPerSecond > 0L ->
-                                    "${formatMegabytes(task.bytesPerSecond)}/s"
+                                    "${formatByteSize(task.bytesPerSecond)}/s"
 
                                 task.status == DownloadStatus.DOWNLOADING ->
                                     stringResource(R.string.downloads_measuring)
@@ -846,7 +846,7 @@ private fun DownloadAction.icon() =
 private fun DownloadTask.projectSizeLabel(): String =
     totalBytes
         .takeIf { it > 0L }
-        ?.let(::formatMegabytes)
+        ?.let(::formatByteSize)
         ?: stringResource(R.string.downloads_reading_size)
 
 private val REORDERABLE_DOWNLOAD_STATUSES =

@@ -13,6 +13,7 @@ import androidx.work.WorkerParameters
 import com.wallhub.android.R
 import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.database.FormalTaskRecordEntity
+import com.wallhub.android.core.format.formatByteSize
 import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.SettingsRepository
@@ -285,7 +286,7 @@ class FormalWorkshopDownloadWorker
                                     },
                                     download.fileCount,
                                     download.fileCount,
-                                    formatMegabytes(download.downloadedBytes),
+                                    formatByteSize(download.downloadedBytes),
                                 ),
                         )
                     if (shouldConvertAndExport) conversionScheduler.enqueue(taskId)
@@ -461,16 +462,6 @@ class FormalWorkshopDownloadWorker
             }
         }
 
-        private fun formatMegabytes(bytes: Long): String {
-            val safeBytes = bytes.coerceAtLeast(0L)
-            val megabytes = safeBytes / BYTES_PER_MEGABYTE
-            return if (megabytes > MEGABYTES_PER_GIGABYTE) {
-                String.format(java.util.Locale.getDefault(), "%.1f GB", safeBytes / BYTES_PER_GIGABYTE)
-            } else {
-                String.format(java.util.Locale.getDefault(), "%.1f MB", megabytes)
-            }
-        }
-
         private fun isManagedStagingDirectory(directory: File): Boolean =
             isManagedWorkshopStagingDirectory(
                 persistentRoot = File(applicationContext.filesDir, WORKSHOP_STAGING_DIRECTORY_NAME),
@@ -510,9 +501,6 @@ class FormalWorkshopDownloadWorker
             private const val PROGRESS_PERSIST_INTERVAL_MS = 750L
             private const val CONTROL_POLL_INTERVAL_MS = 300L
             private const val PAUSE_POLL_INTERVAL_MS = 250L
-            private const val BYTES_PER_MEGABYTE = 1024.0 * 1024.0
-            private const val MEGABYTES_PER_GIGABYTE = 1024.0
-            private const val BYTES_PER_GIGABYTE = BYTES_PER_MEGABYTE * MEGABYTES_PER_GIGABYTE
         }
     }
 

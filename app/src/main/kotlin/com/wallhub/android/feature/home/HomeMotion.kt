@@ -20,14 +20,12 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInRoot
@@ -38,74 +36,12 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import kotlin.math.abs
-import com.wallhub.android.core.designsystem.WallHubContextMenuCardPreview as SharedContextMenuCardPreview
-
-internal data class HomeContextMenuTarget(
-    val itemId: Long,
-    val graphicsLayer: GraphicsLayer,
-    val cardBounds: Rect,
-    val clipBounds: Rect,
-    val touchPositionInWindow: Offset,
-    val shape: Shape,
-)
-
-internal class HomeContextMenuGeometry {
-    var rootCoordinates: LayoutCoordinates? = null
-    var gridCoordinates: LayoutCoordinates? = null
-
-    fun captureTarget(
-        itemId: Long,
-        graphicsLayer: GraphicsLayer,
-        cardCoordinates: LayoutCoordinates?,
-        touchCoordinates: LayoutCoordinates?,
-        touchPosition: Offset,
-        shape: Shape,
-    ): HomeContextMenuTarget? {
-        val root = rootCoordinates?.takeIf(LayoutCoordinates::isAttached) ?: return null
-        val grid = gridCoordinates?.takeIf(LayoutCoordinates::isAttached) ?: return null
-        val card = cardCoordinates?.takeIf(LayoutCoordinates::isAttached) ?: return null
-        val touchTarget = touchCoordinates?.takeIf(LayoutCoordinates::isAttached) ?: return null
-        val cardBounds = root.localBoundingBoxOf(card, clipBounds = false)
-        val clipBounds = root.localBoundingBoxOf(grid, clipBounds = true)
-        val touchPositionInWindow = touchTarget.localToWindow(touchPosition)
-        if (
-            cardBounds.width <= 0f ||
-            cardBounds.height <= 0f ||
-            clipBounds.width <= 0f ||
-            clipBounds.height <= 0f ||
-            !touchPositionInWindow.x.isFinite() ||
-            !touchPositionInWindow.y.isFinite()
-        ) {
-            return null
-        }
-        return HomeContextMenuTarget(
-            itemId = itemId,
-            graphicsLayer = graphicsLayer,
-            cardBounds = cardBounds,
-            clipBounds = clipBounds,
-            touchPositionInWindow = touchPositionInWindow,
-            shape = shape,
-        )
-    }
-}
+internal typealias HomeContextMenuGeometry = com.wallhub.android.core.designsystem.WallHubContextMenuState
+internal typealias HomeContextMenuTarget = com.wallhub.android.core.designsystem.WallHubContextMenuTarget
 
 internal class HomeCardPositionHolder {
     var cardCoordinates: LayoutCoordinates? = null
     var touchCoordinates: LayoutCoordinates? = null
-}
-
-@Composable
-internal fun HomeContextMenuCardPreview(
-    target: HomeContextMenuTarget,
-    elevationProgress: Float,
-) {
-    SharedContextMenuCardPreview(
-        graphicsLayer = target.graphicsLayer,
-        cardBounds = target.cardBounds,
-        clipBounds = target.clipBounds,
-        shape = target.shape,
-        elevationProgress = elevationProgress,
-    )
 }
 
 /**

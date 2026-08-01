@@ -2,7 +2,6 @@
 
 package com.wallhub.android.feature.home
 
-import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -89,7 +88,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.onFocusChanged
@@ -100,7 +98,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -116,7 +113,6 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.invisibleToUser
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
@@ -134,6 +130,7 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubContextMenuDefaults
+import com.wallhub.android.core.designsystem.WallHubContextMenuLayer
 import com.wallhub.android.core.designsystem.WallHubContextMenuSurface
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
@@ -142,6 +139,7 @@ import com.wallhub.android.core.designsystem.WallHubPaginationControl
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.localizedTitle
+import com.wallhub.android.core.designsystem.rememberWallHubContextMenuState
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
@@ -171,43 +169,7 @@ fun HomeScreen(
     var handledScrollToTopRequest by rememberSaveable { mutableIntStateOf(scrollToTopRequest) }
     var handledSearchToken by remember { mutableLongStateOf(state.successfulSearchToken) }
     var searchBoundsInRoot by remember { mutableStateOf<IntRect?>(null) }
-    val contextMenuGeometry = remember { HomeContextMenuGeometry() }
-    var activeContextMenuTarget by remember { mutableStateOf<HomeContextMenuTarget?>(null) }
-    var renderedContextMenuTarget by remember { mutableStateOf<HomeContextMenuTarget?>(null) }
-    val contextMenuActive = activeContextMenuTarget != null
-    val contextMenuBackdropProgress by animateFloatAsState(
-        targetValue = if (contextMenuActive) 1f else 0f,
-        animationSpec =
-            tween(
-                durationMillis =
-                    if (contextMenuActive) {
-                        WallHubContextMenuDefaults.EnterDurationMillis
-                    } else {
-                        WallHubContextMenuDefaults.ExitDurationMillis
-                    },
-                easing = WallHubContextMenuDefaults.Easing,
-            ),
-        label = "HomeContextMenuBackdrop",
-        finishedListener = { completedProgress ->
-            if (completedProgress == 0f && activeContextMenuTarget == null) {
-                renderedContextMenuTarget = null
-            }
-        },
-    )
-    val openContextMenu: (HomeContextMenuTarget) -> Unit = { target ->
-        activeContextMenuTarget = target
-        renderedContextMenuTarget = target
-        onContextMenuActiveChanged(true)
-    }
-    val dismissContextMenu: (Long) -> Unit = { itemId ->
-        if (activeContextMenuTarget?.itemId == itemId) {
-            activeContextMenuTarget = null
-            onContextMenuActiveChanged(false)
-        }
-    }
-    DisposableEffect(Unit) {
-        onDispose { onContextMenuActiveChanged(false) }
-    }
+    val contextMenuGeometry = rememberWallHubContextMenuState()
     LaunchedEffect(scrollToTopRequest) {
         if (scrollToTopRequest > handledScrollToTopRequest) {
             val isAtTop =
@@ -233,23 +195,27 @@ fun HomeScreen(
                 gridState.firstVisibleItemScrollOffset > FILTER_COLLAPSE_OFFSET_PX
         }
     }
-    HomeScreenFrame(
-        state = state,
-        onAction = onAction,
-        onOpenSettings = onOpenSettings,
-        onBack = onBack,
-        gridState = gridState,
-        filtersCollapsed = filtersCollapsed,
-        searchBoundsInRoot = searchBoundsInRoot,
-        onSearchBoundsChanged = { searchBoundsInRoot = it },
-        focusManager = focusManager,
-        contextMenuGeometry = contextMenuGeometry,
-        backdropProgress = contextMenuBackdropProgress,
-        renderedContextMenuTarget = renderedContextMenuTarget,
-        onContextMenuOpen = openContextMenu,
-        onContextMenuDismiss = dismissContextMenu,
-        onOpenFilters = { filterSheetInitialPage = it },
-    )
+    WallHubContextMenuLayer(
+        state = contextMenuGeometry,
+        onActiveChanged = onContextMenuActiveChanged,
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        HomeScreenFrame(
+            state = state,
+            onAction = onAction,
+            onOpenSettings = onOpenSettings,
+            onBack = onBack,
+            gridState = gridState,
+            filtersCollapsed = filtersCollapsed,
+            searchBoundsInRoot = searchBoundsInRoot,
+            onSearchBoundsChanged = { searchBoundsInRoot = it },
+            focusManager = focusManager,
+            contextMenuGeometry = contextMenuGeometry,
+            onContextMenuOpen = contextMenuGeometry::open,
+            onContextMenuDismiss = contextMenuGeometry::dismiss,
+            onOpenFilters = { filterSheetInitialPage = it },
+        )
+    }
 
     filterSheetInitialPage?.let { initialPage ->
         HomeFiltersSheet(
@@ -284,8 +250,6 @@ internal fun HomeScreenFrame(
     onSearchBoundsChanged: (IntRect) -> Unit,
     focusManager: androidx.compose.ui.focus.FocusManager,
     contextMenuGeometry: HomeContextMenuGeometry,
-    backdropProgress: Float,
-    renderedContextMenuTarget: HomeContextMenuTarget?,
     onContextMenuOpen: (HomeContextMenuTarget) -> Unit,
     onContextMenuDismiss: (Long) -> Unit,
     onOpenFilters: (HomeFilterPage) -> Unit,
@@ -294,7 +258,6 @@ internal fun HomeScreenFrame(
         modifier =
             Modifier
                 .fillMaxSize()
-                .onGloballyPositioned { contextMenuGeometry.rootCoordinates = it }
                 .pointerInput(searchBoundsInRoot) {
                     awaitEachGesture {
                         val down =
@@ -322,15 +285,10 @@ internal fun HomeScreenFrame(
             filtersCollapsed = filtersCollapsed,
             onSearchBoundsChanged = onSearchBoundsChanged,
             contextMenuGeometry = contextMenuGeometry,
-            backdropProgress = backdropProgress,
-            contextMenuPreviewItemId = renderedContextMenuTarget?.itemId,
+            contextMenuPreviewItemId = contextMenuGeometry.previewItemId,
             onContextMenuOpen = onContextMenuOpen,
             onContextMenuDismiss = onContextMenuDismiss,
             onOpenFilters = onOpenFilters,
-        )
-        HomeContextMenuOverlay(
-            target = renderedContextMenuTarget,
-            backdropProgress = backdropProgress,
         )
     }
 }
@@ -345,31 +303,13 @@ internal fun HomeScreenBody(
     filtersCollapsed: Boolean,
     onSearchBoundsChanged: (IntRect) -> Unit,
     contextMenuGeometry: HomeContextMenuGeometry,
-    backdropProgress: Float,
     contextMenuPreviewItemId: Long?,
     onContextMenuOpen: (HomeContextMenuTarget) -> Unit,
     onContextMenuDismiss: (Long) -> Unit,
     onOpenFilters: (HomeFilterPage) -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
-    Box(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .then(
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && backdropProgress > 0f) {
-                        Modifier.blur(WallHubContextMenuDefaults.BackgroundBlurRadius * backdropProgress)
-                    } else {
-                        Modifier
-                    },
-                ).then(
-                    if (contextMenuPreviewItemId != null) {
-                        Modifier.semantics { invisibleToUser() }
-                    } else {
-                        Modifier
-                    },
-                ),
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
         WallHubPageScaffold(
             title = stringResource(R.string.app_name),
             useUwuToolbar = onBack == null,
@@ -454,35 +394,6 @@ internal fun HomeScreenBody(
                 )
             }
         }
-    }
-}
-
-@Composable
-internal fun HomeContextMenuOverlay(
-    target: HomeContextMenuTarget?,
-    backdropProgress: Float,
-) {
-    if (backdropProgress > 0f) {
-        val scrimAlpha =
-            if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
-                WallHubContextMenuDefaults.DarkScrimAlpha
-            } else {
-                WallHubContextMenuDefaults.LightScrimAlpha
-            }
-        Box(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .background(
-                        MaterialTheme.colorScheme.scrim.copy(alpha = scrimAlpha * backdropProgress),
-                    ),
-        )
-    }
-    target?.let {
-        HomeContextMenuCardPreview(
-            target = it,
-            elevationProgress = backdropProgress,
-        )
     }
 }
 

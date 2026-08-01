@@ -2,8 +2,12 @@
 
 package com.wallhub.android.core.designsystem
 
+import android.os.Build
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,8 +30,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -36,10 +47,14 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.invisibleToUser
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,6 +67,149 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.PopupPositionProvider
 import java.util.Locale
 import kotlin.math.roundToInt
+
+data class WallHubContextMenuTarget(
+    val itemId: Long,
+    val graphicsLayer: GraphicsLayer,
+    val cardBounds: Rect,
+    val clipBounds: Rect,
+    val touchPositionInWindow: Offset,
+    val shape: Shape,
+)
+
+class WallHubContextMenuState {
+    var rootCoordinates: LayoutCoordinates? = null
+    var gridCoordinates: LayoutCoordinates? = null
+    var activeTarget by mutableStateOf<WallHubContextMenuTarget?>(null)
+        private set
+    var renderedTarget by mutableStateOf<WallHubContextMenuTarget?>(null)
+        private set
+
+    val previewItemId: Long?
+        get() = renderedTarget?.itemId
+
+    fun open(target: WallHubContextMenuTarget) {
+        activeTarget = target
+        renderedTarget = target
+    }
+
+    fun dismiss(itemId: Long) {
+        if (activeTarget?.itemId == itemId) activeTarget = null
+    }
+
+    internal fun finishDismiss() {
+        if (activeTarget == null) renderedTarget = null
+    }
+
+    fun captureTarget(
+        itemId: Long,
+        graphicsLayer: GraphicsLayer,
+        cardCoordinates: LayoutCoordinates?,
+        touchCoordinates: LayoutCoordinates?,
+        touchPosition: Offset,
+        shape: Shape,
+    ): WallHubContextMenuTarget? {
+        val root = rootCoordinates?.takeIf(LayoutCoordinates::isAttached) ?: return null
+        val grid = gridCoordinates?.takeIf(LayoutCoordinates::isAttached) ?: return null
+        val card = cardCoordinates?.takeIf(LayoutCoordinates::isAttached) ?: return null
+        val touchTarget = touchCoordinates?.takeIf(LayoutCoordinates::isAttached) ?: return null
+        val cardBounds = root.localBoundingBoxOf(card, clipBounds = false)
+        val clipBounds = root.localBoundingBoxOf(grid, clipBounds = true)
+        val touchPositionInWindow = touchTarget.localToWindow(touchPosition)
+        if (
+            cardBounds.width <= 0f || cardBounds.height <= 0f ||
+            clipBounds.width <= 0f || clipBounds.height <= 0f ||
+            !touchPositionInWindow.x.isFinite() || !touchPositionInWindow.y.isFinite()
+        ) {
+            return null
+        }
+        return WallHubContextMenuTarget(
+            itemId = itemId,
+            graphicsLayer = graphicsLayer,
+            cardBounds = cardBounds,
+            clipBounds = clipBounds,
+            touchPositionInWindow = touchPositionInWindow,
+            shape = shape,
+        )
+    }
+}
+
+@Composable
+fun rememberWallHubContextMenuState(): WallHubContextMenuState = remember { WallHubContextMenuState() }
+
+@Composable
+fun WallHubContextMenuLayer(
+    state: WallHubContextMenuState,
+    onActiveChanged: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val targetActive = state.activeTarget != null
+    val progress by animateFloatAsState(
+        targetValue = if (targetActive) 1f else 0f,
+        animationSpec =
+            tween(
+                durationMillis =
+                    if (targetActive) {
+                        WallHubContextMenuDefaults.EnterDurationMillis
+                    } else {
+                        WallHubContextMenuDefaults.ExitDurationMillis
+                    },
+                easing = WallHubContextMenuDefaults.Easing,
+            ),
+        label = "WallHubContextMenuBackdrop",
+        finishedListener = { completedProgress ->
+            if (completedProgress == 0f) state.finishDismiss()
+        },
+    )
+    LaunchedEffect(targetActive) { onActiveChanged(targetActive) }
+    DisposableEffect(Unit) {
+        onDispose { onActiveChanged(false) }
+    }
+    Box(modifier = modifier.onGloballyPositioned { state.rootCoordinates = it }) {
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && progress > 0f) {
+                            Modifier.blur(WallHubContextMenuDefaults.BackgroundBlurRadius * progress)
+                        } else {
+                            Modifier
+                        },
+                    ).then(
+                        if (state.renderedTarget != null) {
+                            Modifier.semantics { invisibleToUser() }
+                        } else {
+                            Modifier
+                        },
+                    ),
+        ) { content() }
+        if (progress > 0f) {
+            val scrimAlpha =
+                if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+                    WallHubContextMenuDefaults.DarkScrimAlpha
+                } else {
+                    WallHubContextMenuDefaults.LightScrimAlpha
+                }
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = scrimAlpha * progress)),
+            )
+        }
+        state.renderedTarget?.let { target ->
+            WallHubContextMenuCardPreview(
+                graphicsLayer = target.graphicsLayer,
+                cardBounds = target.cardBounds,
+                clipBounds = target.clipBounds,
+                shape = target.shape,
+                elevationProgress = progress,
+            )
+        }
+    }
+}
 
 object WallHubContextMenuDefaults {
     val TouchOffset = 12.dp

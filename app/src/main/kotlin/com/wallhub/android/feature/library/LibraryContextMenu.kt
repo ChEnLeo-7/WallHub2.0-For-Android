@@ -2,13 +2,11 @@
 
 package com.wallhub.android.feature.library
 
-import android.os.Build
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -29,16 +27,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -51,7 +45,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.invisibleToUser
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
@@ -60,80 +53,26 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubContextMenuDefaults
+import com.wallhub.android.core.designsystem.WallHubContextMenuLayer
+import com.wallhub.android.core.designsystem.WallHubContextMenuState
 import com.wallhub.android.core.designsystem.WallHubContextMenuSurface
+import com.wallhub.android.core.designsystem.WallHubContextMenuTarget
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.designsystem.WallHubContextMenuAction as LibraryContextMenuAction
-import com.wallhub.android.core.designsystem.WallHubContextMenuCardPreview as SharedContextMenuCardPreview
 import com.wallhub.android.core.designsystem.WallHubContextMenuMetadataItem as LibraryContextMenuMetadataItem
 import com.wallhub.android.core.designsystem.WallHubContextMenuPositionProvider as LibraryContextMenuPositionProvider
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
-internal class LibraryContextMenuCoordinator {
-    var rootCoordinates: LayoutCoordinates? = null
-    var gridCoordinates: LayoutCoordinates? = null
-    var activeTarget by mutableStateOf<LibraryContextMenuTarget?>(null)
-        private set
-    var renderedTarget by mutableStateOf<LibraryContextMenuTarget?>(null)
-        private set
-
-    val previewItemId: Long?
-        get() = renderedTarget?.itemId
-
-    fun open(target: LibraryContextMenuTarget) {
-        activeTarget = target
-        renderedTarget = target
-    }
-
-    fun dismiss(itemId: Long) {
-        if (activeTarget?.itemId == itemId) activeTarget = null
-    }
-
-    fun finishDismiss() {
-        if (activeTarget == null) renderedTarget = null
-    }
-
-    fun captureTarget(
-        itemId: Long,
-        graphicsLayer: GraphicsLayer,
-        cardCoordinates: LayoutCoordinates?,
-        touchCoordinates: LayoutCoordinates?,
-        touchPosition: Offset,
-        shape: Shape,
-    ): LibraryContextMenuTarget? {
-        val root = rootCoordinates?.takeIf(LayoutCoordinates::isAttached) ?: return null
-        val grid = gridCoordinates?.takeIf(LayoutCoordinates::isAttached) ?: return null
-        val card = cardCoordinates?.takeIf(LayoutCoordinates::isAttached) ?: return null
-        val touchTarget = touchCoordinates?.takeIf(LayoutCoordinates::isAttached) ?: return null
-        val cardBounds = root.localBoundingBoxOf(card, clipBounds = false)
-        val clipBounds = root.localBoundingBoxOf(grid, clipBounds = true)
-        val touchPositionInWindow = touchTarget.localToWindow(touchPosition)
-        if (
-            cardBounds.width <= 0f ||
-            cardBounds.height <= 0f ||
-            clipBounds.width <= 0f ||
-            clipBounds.height <= 0f ||
-            !touchPositionInWindow.x.isFinite() ||
-            !touchPositionInWindow.y.isFinite()
-        ) {
-            return null
-        }
-        return LibraryContextMenuTarget(
-            itemId = itemId,
-            graphicsLayer = graphicsLayer,
-            cardBounds = cardBounds,
-            clipBounds = clipBounds,
-            touchPositionInWindow = touchPositionInWindow,
-            shape = shape,
-        )
-    }
-}
+internal typealias LibraryContextMenuCoordinator = WallHubContextMenuState
+internal typealias LibraryContextMenuTarget = WallHubContextMenuTarget
 
 @Composable
-internal fun rememberLibraryContextMenuCoordinator(): LibraryContextMenuCoordinator = remember { LibraryContextMenuCoordinator() }
+internal fun rememberLibraryContextMenuCoordinator(): LibraryContextMenuCoordinator =
+    com.wallhub.android.core.designsystem.rememberWallHubContextMenuState()
 
 @Composable
 internal fun LibraryContextMenuLayer(
@@ -142,75 +81,12 @@ internal fun LibraryContextMenuLayer(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    val targetActive = coordinator.activeTarget != null
-    val active = coordinator.renderedTarget != null
-    val progress by animateFloatAsState(
-        targetValue = if (targetActive) 1f else 0f,
-        animationSpec =
-            tween(
-                durationMillis =
-                    if (targetActive) {
-                        WallHubContextMenuDefaults.EnterDurationMillis
-                    } else {
-                        WallHubContextMenuDefaults.ExitDurationMillis
-                    },
-                easing = WallHubContextMenuDefaults.Easing,
-            ),
-        label = "LibraryContextMenuBackdrop",
-        finishedListener = { completedProgress ->
-            if (completedProgress == 0f) coordinator.finishDismiss()
-        },
-    )
-    LaunchedEffect(active) {
-        onActiveChanged(active)
-    }
-    DisposableEffect(Unit) {
-        onDispose { onActiveChanged(false) }
-    }
-    Box(
-        modifier = modifier.onGloballyPositioned { coordinator.rootCoordinates = it },
+    WallHubContextMenuLayer(
+        state = coordinator,
+        onActiveChanged = onActiveChanged,
+        modifier = modifier,
     ) {
-        Box(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .then(
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && progress > 0f) {
-                            Modifier.blur(WallHubContextMenuDefaults.BackgroundBlurRadius * progress)
-                        } else {
-                            Modifier
-                        },
-                    ).then(
-                        if (coordinator.renderedTarget != null) {
-                            Modifier.semantics { invisibleToUser() }
-                        } else {
-                            Modifier
-                        },
-                    ),
-        ) { content() }
-        if (progress > 0f) {
-            val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            MaterialTheme.colorScheme.scrim.copy(
-                                alpha =
-                                    (
-                                        if (dark) {
-                                            WallHubContextMenuDefaults.DarkScrimAlpha
-                                        } else {
-                                            WallHubContextMenuDefaults.LightScrimAlpha
-                                        }
-                                    ) * progress,
-                            ),
-                        ),
-            )
-        }
-        coordinator.renderedTarget?.let { target ->
-            LibraryContextMenuCardPreview(target = target, elevationProgress = progress)
-        }
+        content()
     }
 }
 
@@ -476,29 +352,6 @@ internal fun LibraryContextMenuCard(
         }
     }
 }
-
-@Composable
-private fun LibraryContextMenuCardPreview(
-    target: LibraryContextMenuTarget,
-    elevationProgress: Float,
-) {
-    SharedContextMenuCardPreview(
-        graphicsLayer = target.graphicsLayer,
-        cardBounds = target.cardBounds,
-        clipBounds = target.clipBounds,
-        shape = target.shape,
-        elevationProgress = elevationProgress,
-    )
-}
-
-internal data class LibraryContextMenuTarget(
-    val itemId: Long,
-    val graphicsLayer: GraphicsLayer,
-    val cardBounds: Rect,
-    val clipBounds: Rect,
-    val touchPositionInWindow: Offset,
-    val shape: Shape,
-)
 
 private class LibraryCardPositionHolder {
     var cardCoordinates: LayoutCoordinates? = null

@@ -44,7 +44,7 @@ import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
-import com.wallhub.android.core.designsystem.formatMegabytes
+import com.wallhub.android.core.format.formatByteSize
 import com.wallhub.android.core.model.WorkshopDetail
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -98,13 +98,13 @@ internal fun DetailOverviewPage(detail: WorkshopDetail) {
                     DetailMetricRow(
                         first =
                             DetailMetricValue(
-                                Icons.Heart,
+                                Icons.Outlined.FavoriteBorder,
                                 stringResource(R.string.detail_subscriptions),
                                 formatCompactCount(detail.subscriptions ?: summary.subscriptions),
                             ),
                         second =
                             DetailMetricValue(
-                                Icons.Star,
+                                Icons.Outlined.StarBorder,
                                 stringResource(R.string.detail_favorites),
                                 formatCompactCount(summary.favorites),
                             ),
@@ -113,15 +113,15 @@ internal fun DetailOverviewPage(detail: WorkshopDetail) {
                     DetailMetricRow(
                         first =
                             DetailMetricValue(
-                                Icons.Visibility,
+                                Icons.Outlined.Visibility,
                                 stringResource(R.string.detail_views),
                                 formatCompactCount(summary.views),
                             ),
                         second =
                             DetailMetricValue(
-                                Icons.Download,
+                                Icons.Outlined.Download,
                                 stringResource(R.string.detail_file_size),
-                                detail.fileSizeBytes?.let(::formatMegabytes)
+                                detail.fileSizeBytes?.let(::formatByteSize)
                                     ?: stringResource(R.string.detail_unknown),
                             ),
                     )
@@ -129,13 +129,13 @@ internal fun DetailOverviewPage(detail: WorkshopDetail) {
                     DetailMetricRow(
                         first =
                             DetailMetricValue(
-                                Icons.Schedule,
+                                Icons.Outlined.Schedule,
                                 stringResource(R.string.detail_last_updated),
                                 formatWorkshopDate(detail.updatedAt),
                             ),
                         second =
                             DetailMetricValue(
-                                Icons.Info,
+                                Icons.Outlined.Info,
                                 stringResource(R.string.detail_type),
                                 summary.type.label(),
                             ),

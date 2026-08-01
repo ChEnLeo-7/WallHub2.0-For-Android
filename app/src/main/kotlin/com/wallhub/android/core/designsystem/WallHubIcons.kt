@@ -66,105 +66,54 @@ import androidx.compose.material.icons.Icons as MaterialIcons
 
 /** Official Material Design 3 icon aliases used throughout WallHub. */
 object WallHubIcons {
-    val Add: ImageVector get() = MaterialIcons.Outlined.Add
-    val ArrowDown: ImageVector get() = MaterialIcons.Outlined.ArrowDownward
-    val ArrowLeft: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.ArrowBack
-    val ArrowUp: ImageVector get() = MaterialIcons.Outlined.ArrowUpward
-    val Bell: ImageVector get() = MaterialIcons.Outlined.Notifications
-    val Bookmark: ImageVector get() = MaterialIcons.Outlined.BookmarkBorder
-    val Check: ImageVector get() = MaterialIcons.Outlined.Check
-    val ChevronDown: ImageVector get() = MaterialIcons.Outlined.KeyboardArrowDown
-    val ChevronLeft: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.KeyboardArrowLeft
-    val ChevronRight: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.KeyboardArrowRight
-    val CircleX: ImageVector get() = MaterialIcons.Outlined.Cancel
-    val Compass: ImageVector get() = MaterialIcons.Outlined.Explore
-    val Copy: ImageVector get() = MaterialIcons.Outlined.ContentCopy
-    val Delete: ImageVector get() = MaterialIcons.Outlined.Delete
-    val Download: ImageVector get() = MaterialIcons.Outlined.Download
-    val DragHandle: ImageVector get() = MaterialIcons.Outlined.DragIndicator
-    val Edit: ImageVector get() = MaterialIcons.Outlined.Edit
-    val ExternalLink: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.OpenInNew
-    val Filter: ImageVector get() = MaterialIcons.Outlined.FilterList
-    val FolderOpen: ImageVector get() = MaterialIcons.Outlined.FolderOpen
-    val Grid3X3: ImageVector get() = MaterialIcons.Outlined.GridView
-    val Heart: ImageVector get() = MaterialIcons.Outlined.FavoriteBorder
-    val ImageOff: ImageVector get() = MaterialIcons.Outlined.ImageNotSupported
-    val Info: ImageVector get() = MaterialIcons.Outlined.Info
-    val Languages: ImageVector get() = MaterialIcons.Outlined.Language
-    val List: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.ViewList
-    val LockKeyhole: ImageVector get() = MaterialIcons.Outlined.Lock
-    val LogOut: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.Logout
-    val Maximize2: ImageVector get() = MaterialIcons.Outlined.Fullscreen
-    val Minimize2: ImageVector get() = MaterialIcons.Outlined.FullscreenExit
-    val Moon: ImageVector get() = MaterialIcons.Outlined.DarkMode
-    val MoreVertical: ImageVector get() = MaterialIcons.Outlined.MoreVert
-    val Palette: ImageVector get() = MaterialIcons.Outlined.Palette
-    val Pause: ImageVector get() = MaterialIcons.Outlined.Pause
-    val Play: ImageVector get() = MaterialIcons.Outlined.PlayArrow
-    val RotateCw: ImageVector get() = MaterialIcons.Outlined.Refresh
-    val Schedule: ImageVector get() = MaterialIcons.Outlined.Schedule
-    val Send: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.Send
-    val Search: ImageVector get() = MaterialIcons.Outlined.Search
-    val Settings: ImageVector get() = MaterialIcons.Outlined.Settings
-    val SlidersHorizontal: ImageVector get() = MaterialIcons.Outlined.Tune
-    val Smartphone: ImageVector get() = MaterialIcons.Outlined.PhoneAndroid
-    val Star: ImageVector get() = MaterialIcons.Outlined.StarBorder
-    val MessageCircle: ImageVector get() = MaterialIcons.Outlined.ChatBubbleOutline
-    val Trash2: ImageVector get() = MaterialIcons.Outlined.DeleteSweep
-    val Upload: ImageVector get() = MaterialIcons.Outlined.FileUpload
-    val UserRound: ImageVector get() = MaterialIcons.Outlined.PersonOutline
-    val VerticalAlignTop: ImageVector get() = MaterialIcons.Outlined.VerticalAlignTop
-    val Visibility: ImageVector get() = MaterialIcons.Outlined.Visibility
-    val VisibilityOff: ImageVector get() = MaterialIcons.Outlined.VisibilityOff
-
     object Outlined {
-        val Add: ImageVector get() = WallHubIcons.Add
-        val ArrowDownward: ImageVector get() = WallHubIcons.ArrowDown
-        val ArrowUpward: ImageVector get() = WallHubIcons.ArrowUp
-        val BookmarkBorder: ImageVector get() = WallHubIcons.Bookmark
+        val Add: ImageVector get() = MaterialIcons.Outlined.Add
+        val ArrowDownward: ImageVector get() = MaterialIcons.Outlined.ArrowDownward
+        val ArrowUpward: ImageVector get() = MaterialIcons.Outlined.ArrowUpward
+        val BookmarkBorder: ImageVector get() = MaterialIcons.Outlined.BookmarkBorder
         val Bookmarks: ImageVector get() = MaterialIcons.Outlined.Bookmarks
-        val Cancel: ImageVector get() = WallHubIcons.CircleX
-        val Check: ImageVector get() = WallHubIcons.Check
-        val ContentCopy: ImageVector get() = WallHubIcons.Copy
-        val DarkMode: ImageVector get() = WallHubIcons.Moon
-        val Delete: ImageVector get() = WallHubIcons.Delete
-        val DeleteSweep: ImageVector get() = WallHubIcons.Trash2
-        val Download: ImageVector get() = WallHubIcons.Download
-        val DragIndicator: ImageVector get() = WallHubIcons.DragHandle
-        val Edit: ImageVector get() = WallHubIcons.Edit
-        val Explore: ImageVector get() = WallHubIcons.Compass
-        val FavoriteBorder: ImageVector get() = WallHubIcons.Heart
-        val FileUpload: ImageVector get() = WallHubIcons.Upload
-        val FilterList: ImageVector get() = WallHubIcons.Filter
-        val FolderOpen: ImageVector get() = WallHubIcons.FolderOpen
-        val Fullscreen: ImageVector get() = WallHubIcons.Maximize2
-        val FullscreenExit: ImageVector get() = WallHubIcons.Minimize2
-        val GridView: ImageVector get() = WallHubIcons.Grid3X3
-        val ImageNotSupported: ImageVector get() = WallHubIcons.ImageOff
-        val Info: ImageVector get() = WallHubIcons.Info
-        val KeyboardArrowDown: ImageVector get() = WallHubIcons.ChevronDown
-        val Language: ImageVector get() = WallHubIcons.Languages
-        val Lock: ImageVector get() = WallHubIcons.LockKeyhole
-        val MoreVert: ImageVector get() = WallHubIcons.MoreVertical
-        val Notifications: ImageVector get() = WallHubIcons.Bell
-        val OpenInNew: ImageVector get() = WallHubIcons.ExternalLink
-        val Palette: ImageVector get() = WallHubIcons.Palette
-        val Pause: ImageVector get() = WallHubIcons.Pause
-        val PersonOutline: ImageVector get() = WallHubIcons.UserRound
-        val PhoneAndroid: ImageVector get() = WallHubIcons.Smartphone
-        val PlayArrow: ImageVector get() = WallHubIcons.Play
-        val Refresh: ImageVector get() = WallHubIcons.RotateCw
-        val Schedule: ImageVector get() = WallHubIcons.Schedule
-        val Send: ImageVector get() = WallHubIcons.Send
-        val Search: ImageVector get() = WallHubIcons.Search
-        val Settings: ImageVector get() = WallHubIcons.Settings
-        val StarBorder: ImageVector get() = WallHubIcons.Star
-        val ChatBubbleOutline: ImageVector get() = WallHubIcons.MessageCircle
-        val Tune: ImageVector get() = WallHubIcons.SlidersHorizontal
-        val VerticalAlignTop: ImageVector get() = WallHubIcons.VerticalAlignTop
-        val ViewList: ImageVector get() = WallHubIcons.List
-        val Visibility: ImageVector get() = WallHubIcons.Visibility
-        val VisibilityOff: ImageVector get() = WallHubIcons.VisibilityOff
+        val Cancel: ImageVector get() = MaterialIcons.Outlined.Cancel
+        val Check: ImageVector get() = MaterialIcons.Outlined.Check
+        val ContentCopy: ImageVector get() = MaterialIcons.Outlined.ContentCopy
+        val DarkMode: ImageVector get() = MaterialIcons.Outlined.DarkMode
+        val Delete: ImageVector get() = MaterialIcons.Outlined.Delete
+        val DeleteSweep: ImageVector get() = MaterialIcons.Outlined.DeleteSweep
+        val Download: ImageVector get() = MaterialIcons.Outlined.Download
+        val DragIndicator: ImageVector get() = MaterialIcons.Outlined.DragIndicator
+        val Edit: ImageVector get() = MaterialIcons.Outlined.Edit
+        val Explore: ImageVector get() = MaterialIcons.Outlined.Explore
+        val FavoriteBorder: ImageVector get() = MaterialIcons.Outlined.FavoriteBorder
+        val FileUpload: ImageVector get() = MaterialIcons.Outlined.FileUpload
+        val FilterList: ImageVector get() = MaterialIcons.Outlined.FilterList
+        val FolderOpen: ImageVector get() = MaterialIcons.Outlined.FolderOpen
+        val Fullscreen: ImageVector get() = MaterialIcons.Outlined.Fullscreen
+        val FullscreenExit: ImageVector get() = MaterialIcons.Outlined.FullscreenExit
+        val GridView: ImageVector get() = MaterialIcons.Outlined.GridView
+        val ImageNotSupported: ImageVector get() = MaterialIcons.Outlined.ImageNotSupported
+        val Info: ImageVector get() = MaterialIcons.Outlined.Info
+        val KeyboardArrowDown: ImageVector get() = MaterialIcons.Outlined.KeyboardArrowDown
+        val Language: ImageVector get() = MaterialIcons.Outlined.Language
+        val Lock: ImageVector get() = MaterialIcons.Outlined.Lock
+        val MoreVert: ImageVector get() = MaterialIcons.Outlined.MoreVert
+        val Notifications: ImageVector get() = MaterialIcons.Outlined.Notifications
+        val OpenInNew: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.OpenInNew
+        val Palette: ImageVector get() = MaterialIcons.Outlined.Palette
+        val Pause: ImageVector get() = MaterialIcons.Outlined.Pause
+        val PersonOutline: ImageVector get() = MaterialIcons.Outlined.PersonOutline
+        val PhoneAndroid: ImageVector get() = MaterialIcons.Outlined.PhoneAndroid
+        val PlayArrow: ImageVector get() = MaterialIcons.Outlined.PlayArrow
+        val Refresh: ImageVector get() = MaterialIcons.Outlined.Refresh
+        val Schedule: ImageVector get() = MaterialIcons.Outlined.Schedule
+        val Send: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.Send
+        val Search: ImageVector get() = MaterialIcons.Outlined.Search
+        val Settings: ImageVector get() = MaterialIcons.Outlined.Settings
+        val StarBorder: ImageVector get() = MaterialIcons.Outlined.StarBorder
+        val ChatBubbleOutline: ImageVector get() = MaterialIcons.Outlined.ChatBubbleOutline
+        val Tune: ImageVector get() = MaterialIcons.Outlined.Tune
+        val VerticalAlignTop: ImageVector get() = MaterialIcons.Outlined.VerticalAlignTop
+        val ViewList: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.ViewList
+        val Visibility: ImageVector get() = MaterialIcons.Outlined.Visibility
+        val VisibilityOff: ImageVector get() = MaterialIcons.Outlined.VisibilityOff
     }
 
     object Filled {
@@ -178,9 +127,9 @@ object WallHubIcons {
 
     object AutoMirrored {
         object Outlined {
-            val ArrowBack: ImageVector get() = WallHubIcons.ArrowLeft
-            val KeyboardArrowRight: ImageVector get() = WallHubIcons.ChevronRight
-            val Logout: ImageVector get() = WallHubIcons.LogOut
+            val ArrowBack: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.ArrowBack
+            val KeyboardArrowRight: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.KeyboardArrowRight
+            val Logout: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.Logout
         }
     }
 }
