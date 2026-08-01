@@ -39,6 +39,7 @@ import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSecondaryButton
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.SteamSessionRepository
+import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -62,6 +63,40 @@ sealed interface SteamLoginAction {
     data object RetryRestore : SteamLoginAction
 
     data object Logout : SteamLoginAction
+}
+
+internal data class SteamLoginUiState(
+    val isBusy: Boolean,
+    val isSignedIn: Boolean,
+    val showDeviceConfirmationHint: Boolean,
+    val showManualCodeFallback: Boolean,
+    val showCodeInput: Boolean,
+    val showRestoreRetry: Boolean,
+    val isFailure: Boolean,
+)
+
+internal fun SteamSessionState.toSteamLoginUiState(): SteamLoginUiState {
+    val isBusy =
+        phase in
+            setOf(
+                SteamSessionPhase.SIGNING_IN,
+                SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
+                SteamSessionPhase.WAITING_FOR_CODE,
+            )
+    val waitingForDeviceConfirmation =
+        phase == SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION && awaitingDeviceConfirmation
+    return SteamLoginUiState(
+        isBusy = isBusy,
+        isSignedIn = phase == SteamSessionPhase.SIGNED_IN,
+        showDeviceConfirmationHint = waitingForDeviceConfirmation,
+        showManualCodeFallback = waitingForDeviceConfirmation,
+        showCodeInput = phase == SteamSessionPhase.WAITING_FOR_CODE && requiresCode,
+        showRestoreRetry = phase == SteamSessionPhase.RESTORABLE && hasStoredSession,
+        isFailure =
+            phase == SteamSessionPhase.FAILED ||
+                phase == SteamSessionPhase.EXPIRED ||
+                phase == SteamSessionPhase.RESTORABLE,
+    )
 }
 
 @HiltViewModel

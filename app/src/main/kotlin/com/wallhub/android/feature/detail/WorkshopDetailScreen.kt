@@ -76,11 +76,11 @@ import coil.compose.AsyncImage
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubColorTokens
 import com.wallhub.android.core.designsystem.WallHubEmptyState
+import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
-import com.wallhub.android.core.designsystem.WallHubToastHost
 import com.wallhub.android.core.designsystem.localizedAuthor
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.ExportFormat
@@ -90,7 +90,6 @@ import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopInteraction
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
@@ -119,7 +118,7 @@ fun WorkshopDetailScreen(
     val unknown = stringResource(R.string.detail_unknown)
     val steamCdnMessageTemplate = stringResource(R.string.detail_steam_cdn, "%s")
     val projectIdCopiedMessage = stringResource(R.string.detail_project_id_copied, selectedSummary?.id ?: 0L)
-    var toastMessage by remember { mutableStateOf<String?>(null) }
+    val toastState = LocalWallHubToastState.current
     val inlineVideoStream = state.inlineVideoStream
     val inlineFullscreen = state.isInlineVideoFullscreen
     var cdnToastDelivered by remember(inlineVideoStream) { mutableStateOf(false) }
@@ -132,7 +131,7 @@ fun WorkshopDetailScreen(
                     onFirstFrameRendered = {
                         if (!cdnToastDelivered) {
                             cdnToastDelivered = true
-                            toastMessage = steamCdnMessageTemplate.format(stream.currentCdnHost ?: unknown)
+                            toastState.show(steamCdnMessageTemplate.format(stream.currentCdnHost ?: unknown))
                         }
                     },
                 )
@@ -140,17 +139,7 @@ fun WorkshopDetailScreen(
         }
     BackHandler(enabled = inlineFullscreen) { onInlineFullscreenChange(false) }
     FullscreenSystemBarsEffect(enabled = inlineFullscreen)
-    LaunchedEffect(toastMessage) {
-        if (toastMessage != null) {
-            delay(3_000L)
-            toastMessage = null
-        }
-    }
-    WallHubToastHost(
-        message = toastMessage,
-        onDismiss = { toastMessage = null },
-        modifier = Modifier.fillMaxSize(),
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
         if (inlineFullscreen && inlinePlayback != null) {
             FullscreenWallpaperVideoPlayer(
                 playback = inlinePlayback,

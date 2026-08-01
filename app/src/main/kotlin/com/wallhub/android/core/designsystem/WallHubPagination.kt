@@ -429,15 +429,6 @@ private fun paginationPageChangeTransition(
             )
     )
 
-internal fun buildPaginationItems(
-    currentPage: Int,
-    totalPages: Int,
-): List<Int> {
-    val safeTotalPages = totalPages.coerceAtLeast(1)
-    val safeCurrentPage = currentPage.coerceIn(1, safeTotalPages)
-    return listOf(1, safeCurrentPage, safeTotalPages).distinct()
-}
-
 internal fun sanitizePaginationPageInput(raw: String): String {
     val digits = raw.filter { it in '0'..'9' }
     if (digits.isEmpty()) return ""

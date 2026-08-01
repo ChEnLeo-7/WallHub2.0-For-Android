@@ -5,7 +5,6 @@ package com.wallhub.android.core.designsystem
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -16,11 +15,9 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -30,24 +27,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ButtonGroupDefaults
@@ -58,9 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
@@ -79,9 +68,6 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -372,27 +358,6 @@ fun WallHubGlobalToastHost(
     }
 }
 
-/**
- * Compatibility host for individual screens. Feedback is forwarded to the root host so it stays
- * visible while navigation and page transitions continue underneath it.
- */
-@Composable
-fun WallHubToastHost(
-    message: String?,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier,
-    content: @Composable BoxScope.() -> Unit,
-) {
-    val toastState = LocalWallHubToastState.current
-    LaunchedEffect(message) {
-        message?.let { toastMessage ->
-            toastState.show(toastMessage)
-            onDismiss()
-        }
-    }
-    Box(modifier = modifier, content = content)
-}
-
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun <T> WallHubSingleChoiceSegmentedControl(
@@ -504,196 +469,6 @@ private class WallHubDirectionalCollapseConnection(
 }
 
 @Composable
-fun <T> WallHubSlidingSingleChoiceControl(
-    options: List<T>,
-    selected: T,
-    onSelected: (T) -> Unit,
-    label: @Composable (T) -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    role: Role = Role.RadioButton,
-    indicatorPosition: Float? = null,
-    height: Dp = SLIDING_CONTROL_HEIGHT,
-    showPressIndication: Boolean = true,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
-    indicatorColor: Color = MaterialTheme.colorScheme.primary,
-    selectedContentColor: Color = MaterialTheme.colorScheme.onPrimary,
-    unselectedContentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-    containerShape: Shape = MaterialTheme.shapes.medium,
-    indicatorShape: Shape = MaterialTheme.shapes.small,
-) {
-    if (options.isEmpty()) return
-    BoxWithConstraints(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .height(height)
-                .clip(containerShape)
-                .background(containerColor),
-    ) {
-        val selectedIndex = options.indexOf(selected).coerceAtLeast(0)
-        val itemWidth = maxWidth / options.size
-        val animatedIndicatorOffset by animateDpAsState(
-            targetValue = itemWidth * selectedIndex + SLIDING_CONTROL_INSET,
-            animationSpec =
-                tween(
-                    durationMillis = 280,
-                    easing = FastOutSlowInEasing,
-                ),
-            label = "WallHubSlidingChoice",
-        )
-        val indicatorOffset =
-            indicatorPosition
-                ?.coerceIn(0f, options.lastIndex.toFloat())
-                ?.let { position -> itemWidth * position + SLIDING_CONTROL_INSET }
-                ?: animatedIndicatorOffset
-        Box(
-            modifier =
-                Modifier
-                    .offset(
-                        x = indicatorOffset,
-                        y = SLIDING_CONTROL_INSET,
-                    ).width((itemWidth - SLIDING_CONTROL_INSET * 2).coerceAtLeast(0.dp))
-                    .height((height - SLIDING_CONTROL_INSET * 2).coerceAtLeast(0.dp))
-                    .clip(indicatorShape)
-                    .background(indicatorColor),
-        )
-        androidx.compose.foundation.layout.Row(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .selectableGroup(),
-        ) {
-            options.forEach { option ->
-                val isSelected = option == selected
-                val interactionSource = remember(option) { MutableInteractionSource() }
-                Box(
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .fillMaxSize()
-                            .selectable(
-                                selected = isSelected,
-                                enabled = enabled,
-                                interactionSource = interactionSource,
-                                indication = if (showPressIndication) ripple() else null,
-                                role = role,
-                                onClick = { onSelected(option) },
-                            ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CompositionLocalProvider(
-                        LocalContentColor provides
-                            if (isSelected) {
-                                selectedContentColor
-                            } else {
-                                unselectedContentColor
-                            },
-                    ) {
-                        label(option)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun WallHubFilterSheetHeader(
-    title: String,
-    status: String? = null,
-    hasChanges: Boolean = false,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .heightIn(min = FILTER_SHEET_HEADER_MIN_HEIGHT),
-        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.weight(1f),
-        )
-        if (status != null) {
-            Text(
-                text = status,
-                style = MaterialTheme.typography.labelMedium,
-                color =
-                    if (hasChanges) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                maxLines = 1,
-            )
-        }
-    }
-}
-
-@Composable
-fun WallHubFilterSection(
-    title: String,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        content()
-    }
-}
-
-@Composable
-fun WallHubFilterChip(
-    selected: Boolean,
-    onClick: () -> Unit,
-    label: String,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    singleChoice: Boolean = false,
-) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        modifier =
-            modifier.then(
-                if (singleChoice) Modifier.semantics { role = Role.RadioButton } else Modifier,
-            ),
-        enabled = enabled,
-        leadingIcon =
-            if (selected) {
-                {
-                    Icon(
-                        imageVector = Icons.Outlined.Check,
-                        contentDescription = null,
-                        modifier = Modifier.size(FilterChipDefaults.IconSize),
-                    )
-                }
-            } else {
-                null
-            },
-        label = {
-            Text(
-                text = label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-    )
-}
-
-@Composable
 fun WallHubAnimatedSelectionCheck(
     selected: Boolean,
     modifier: Modifier = Modifier,
@@ -722,73 +497,6 @@ fun WallHubAnimatedSelectionCheck(
             contentDescription = null,
             modifier = Modifier.size(size),
         )
-    }
-}
-
-@Composable
-fun WallHubFilterSheetActions(
-    secondaryLabel: String,
-    cancelLabel: String,
-    applyLabel: String?,
-    onSecondary: () -> Unit,
-    onCancel: () -> Unit,
-    onApply: (() -> Unit)?,
-    modifier: Modifier = Modifier,
-    secondaryEnabled: Boolean = true,
-    applyEnabled: Boolean = true,
-) {
-    val secondaryColors =
-        ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.6f),
-            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-        )
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Button(
-                onClick = onSecondary,
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .heightIn(min = FILTER_SHEET_ACTION_MIN_HEIGHT),
-                enabled = secondaryEnabled,
-                shape = MaterialTheme.shapes.medium,
-                colors = secondaryColors,
-            ) {
-                Text(secondaryLabel)
-            }
-            Button(
-                onClick = onCancel,
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .heightIn(min = FILTER_SHEET_ACTION_MIN_HEIGHT),
-                shape = MaterialTheme.shapes.medium,
-                colors = secondaryColors,
-            ) {
-                Text(cancelLabel)
-            }
-        }
-        if (applyLabel != null && onApply != null) {
-            Button(
-                onClick = onApply,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = FILTER_SHEET_ACTION_MIN_HEIGHT),
-                enabled = applyEnabled,
-                shape = MaterialTheme.shapes.medium,
-            ) {
-                Text(applyLabel)
-            }
-        }
     }
 }
 
@@ -848,27 +556,6 @@ fun WallHubEmptyState(
 }
 
 @Composable
-fun WallHubPrimaryAction(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    icon: ImageVector? = null,
-    enabled: Boolean = true,
-) {
-    Button(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        enabled = enabled,
-        shape = MaterialTheme.shapes.large,
-    ) {
-        if (icon != null) {
-            Icon(imageVector = icon, contentDescription = null)
-        }
-        Text(text = label, modifier = Modifier.padding(start = if (icon == null) 0.dp else 8.dp))
-    }
-}
-
-@Composable
 fun WallHubSecondaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -901,11 +588,7 @@ fun formatMegabytes(bytes: Long): String {
     }
 }
 
-private val SLIDING_CONTROL_HEIGHT = 44.dp
-private val SLIDING_CONTROL_INSET = 4.dp
-private val FILTER_SHEET_HEADER_MIN_HEIGHT = 48.dp
 private val FILTER_CHIP_ICON_SIZE = 18.dp
-private val FILTER_SHEET_ACTION_MIN_HEIGHT = 48.dp
 val WallHubFabDefaultElevation = 3.dp
 val WallHubFabActiveElevation = 4.dp
 private val WALLHUB_TOAST_BLUR_RADIUS = 18.dp

@@ -60,10 +60,10 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubEmptyState
+import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
-import com.wallhub.android.core.designsystem.WallHubToastHost
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamSession
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -149,7 +149,7 @@ fun OnlineVideoPlayerScreen(
     val hapticFeedback = LocalHapticFeedback.current
     var playbackHapticDelivered by remember(state.stream) { mutableStateOf(false) }
     var cdnToastDelivered by remember(state.stream) { mutableStateOf(false) }
-    var toastMessage by remember { mutableStateOf<String?>(null) }
+    val toastState = LocalWallHubToastState.current
     val streamingStartedMessage = stringResource(R.string.detail_streaming_started)
     val steamCdnMessageTemplate = stringResource(R.string.detail_steam_cdn, "%s")
     val onFirstFrameRendered = {
@@ -159,9 +159,10 @@ fun OnlineVideoPlayerScreen(
         }
         if (!cdnToastDelivered) {
             cdnToastDelivered = true
-            toastMessage = state.stream?.currentCdnHost?.let { host ->
-                steamCdnMessageTemplate.format(host)
-            } ?: streamingStartedMessage
+            toastState.show(
+                state.stream?.currentCdnHost?.let { host -> steamCdnMessageTemplate.format(host) }
+                    ?: streamingStartedMessage,
+            )
         }
     }
     val playback =
@@ -173,18 +174,7 @@ fun OnlineVideoPlayerScreen(
     LaunchedEffect(state.stream) {
         if (state.stream == null) fullscreen = false
     }
-    LaunchedEffect(toastMessage) {
-        if (toastMessage != null) {
-            kotlinx.coroutines.delay(3_000L)
-            toastMessage = null
-        }
-    }
-
-    WallHubToastHost(
-        message = toastMessage,
-        onDismiss = { toastMessage = null },
-        modifier = Modifier.fillMaxSize(),
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
         if (fullscreen && playback != null) {
             SteamChunkVideoPlayer(
                 playback = playback,

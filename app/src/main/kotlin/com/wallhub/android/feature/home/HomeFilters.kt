@@ -34,6 +34,7 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalRippleConfiguration
@@ -65,12 +66,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wallhub.android.R
-import com.wallhub.android.core.designsystem.WallHubFilterChip
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
@@ -877,12 +878,24 @@ internal fun HomeDraftFilterChip(
     enabled: Boolean = true,
     singleChoice: Boolean = false,
 ) {
-    WallHubFilterChip(
+    FilterChip(
         selected = selected,
         onClick = onClick,
-        label = label,
         enabled = enabled,
-        singleChoice = singleChoice,
+        modifier = Modifier.then(if (singleChoice) Modifier.semantics { role = Role.RadioButton } else Modifier),
+        leadingIcon =
+            if (selected) {
+                {
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(FilterChipDefaults.IconSize),
+                    )
+                }
+            } else {
+                null
+            },
+        label = { Text(text = label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
     )
 }
 

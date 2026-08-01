@@ -5,28 +5,18 @@ import kotlinx.serialization.Serializable
 @Serializable
 internal sealed interface WallHubDestination
 
-@Serializable
-internal data object HomeDestination : WallHubDestination
-
-@Serializable
-internal data object DownloadsDestination : WallHubDestination
-
-@Serializable
-internal data object LibraryDestination : WallHubDestination
-
-@Serializable
-internal data object LocalDestination : WallHubDestination
-
-@Serializable
-internal data object SettingsDestination : WallHubDestination
+@Serializable internal data object HomeDestination : WallHubDestination
+@Serializable internal data object DownloadsDestination : WallHubDestination
+@Serializable internal data object LibraryDestination : WallHubDestination
+@Serializable internal data object LocalDestination : WallHubDestination
+@Serializable internal data object SettingsDestination : WallHubDestination
 
 @Serializable
 internal data class AuthorSearchDestination(
     val authorSearchCreator: String,
 ) : WallHubDestination
 
-@Serializable
-internal data object SteamLoginDestination : WallHubDestination
+@Serializable internal data object SteamLoginDestination : WallHubDestination
 
 @Serializable
 internal data class WorkshopDetailDestination(

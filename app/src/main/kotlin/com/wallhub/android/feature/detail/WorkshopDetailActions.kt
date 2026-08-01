@@ -25,7 +25,6 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import com.wallhub.android.R
-import com.wallhub.android.core.designsystem.WallHubPrimaryAction
 import com.wallhub.android.core.designsystem.WallHubSecondaryButton
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.ExportFormat
@@ -99,17 +98,23 @@ internal fun DetailActionBar(
                 )
             }
         }
-        WallHubPrimaryAction(
-            label =
-                if (isEnqueuingDownload) {
-                    stringResource(R.string.detail_adding_to_download_queue)
-                } else {
-                    stringResource(R.string.detail_download)
-                },
+        Button(
             onClick = onDownload,
-            icon = Icons.Download,
+            modifier = Modifier.fillMaxWidth(),
             enabled = !isEnqueuingDownload,
-        )
+            shape = MaterialTheme.shapes.large,
+        ) {
+            Icon(imageVector = Icons.Download, contentDescription = null)
+            Text(
+                text =
+                    if (isEnqueuingDownload) {
+                        stringResource(R.string.detail_adding_to_download_queue)
+                    } else {
+                        stringResource(R.string.detail_download)
+                    },
+                modifier = Modifier.padding(start = WallHubSpacing.xs),
+            )
+        }
         val status =
             when {
                 isLoadingInteraction -> stringResource(R.string.detail_loading_steam_account)
