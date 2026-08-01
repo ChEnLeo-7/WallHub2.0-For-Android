@@ -53,14 +53,17 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -134,6 +137,7 @@ import com.wallhub.android.core.designsystem.WallHubContextMenuDefaults
 import com.wallhub.android.core.designsystem.WallHubContextMenuSurface
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
+import com.wallhub.android.core.designsystem.WallHubToolbarSearchTitle
 import com.wallhub.android.core.designsystem.WallHubPaginationControl
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
@@ -256,6 +260,8 @@ fun HomeScreen(
                     matureContentEnabled = state.matureContentEnabled,
                 ),
             initialPage = initialPage,
+            exactPhrase = state.exactPhrase,
+            onToggleExactPhrase = { onAction(HomeAction.ToggleExactPhrase) },
             onDismiss = { selection ->
                 filterSheetInitialPage = null
                 if (selection != state.filterSelection()) {
@@ -366,20 +372,41 @@ internal fun HomeScreenBody(
     ) {
         WallHubPageScaffold(
             title = stringResource(R.string.app_name),
-            topBarContent = {
-                HomeSearchTopBar(
-                    state = state,
-                    onQueryChanged = { onAction(HomeAction.QueryChanged(it)) },
-                    onSubmitSearch = { onAction(HomeAction.SubmitSearch) },
-                    onToggleExactPhrase = { onAction(HomeAction.ToggleExactPhrase) },
-                    onSearchBoundsChanged = onSearchBoundsChanged,
-                    onBack = onBack,
-                    onOpenSettings = onOpenSettings,
-                    onResetAndRefresh = {
-                        onAction(HomeAction.ResetAndRefresh)
-                        coroutineScope.launch { gridState.scrollToItem(0) }
-                    },
+            useUwuToolbar = onBack == null,
+            topBarContent =
+                onBack?.let { back ->
+                    {
+                        HomeSearchTopBar(
+                            state = state,
+                            onQueryChanged = { onAction(HomeAction.QueryChanged(it)) },
+                            onSubmitSearch = { onAction(HomeAction.SubmitSearch) },
+                            onToggleExactPhrase = { onAction(HomeAction.ToggleExactPhrase) },
+                            onSearchBoundsChanged = onSearchBoundsChanged,
+                            onBack = back,
+                            onOpenSettings = onOpenSettings,
+                            onResetAndRefresh = {
+                                onAction(HomeAction.Refresh)
+                                coroutineScope.launch { gridState.scrollToItem(0) }
+                            },
+                        )
+                    }
+                },
+            actions = {
+                HomeViewModeToggle(
+                    selected = state.viewMode,
+                    onViewModeSelected = { onAction(HomeAction.SelectViewMode(it)) },
+                    gridContentDescription = stringResource(R.string.home_grid_view),
+                    listContentDescription = stringResource(R.string.home_list_view),
                 )
+                onOpenSettings?.let { openSettings ->
+                    SettingsToolbarActionButton(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = stringResource(R.string.home_settings),
+                        onClick = openSettings,
+                        buttonSize = 64.dp,
+                        containerSize = 48.dp,
+                    )
+                }
             },
         ) { padding ->
             Column(
@@ -388,19 +415,14 @@ internal fun HomeScreenBody(
                         .fillMaxSize()
                         .padding(padding),
             ) {
-                AnimatedVisibility(
-                    visible = !filtersCollapsed,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut(),
-                ) {
-                    HomeFilterPanel(
-                        state = state,
-                        onOpenFilters = onOpenFilters,
-                    )
-                }
-                HomeResultsHeader(
+                HomePersistentSearchBar(
                     state = state,
-                    onViewModeSelected = { onAction(HomeAction.SelectViewMode(it)) },
+                    onQueryChanged = { onAction(HomeAction.QueryChanged(it)) },
+                    onSubmitSearch = { onAction(HomeAction.SubmitSearch) },
+                    onSearchBoundsChanged = onSearchBoundsChanged,
+                    onClear = { onAction(HomeAction.QueryChanged("")) },
+                    onOpenFilters = { onOpenFilters(HomeFilterPage.BROWSE) },
+                    filtersActive = state.activeFilterCount > 0 || state.exactPhrase,
                 )
                 HomeResults(
                     state = state,
@@ -464,6 +486,106 @@ internal fun HomeContextMenuOverlay(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HomePersistentSearchBar(
+    state: HomeUiState,
+    onQueryChanged: (String) -> Unit,
+    onSubmitSearch: () -> Unit,
+    onSearchBoundsChanged: (IntRect) -> Unit,
+    onClear: () -> Unit,
+    onOpenFilters: () -> Unit,
+    filtersActive: Boolean,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+                .padding(start = WallHubSpacing.md, end = WallHubSpacing.xs)
+                .padding(bottom = WallHubSpacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+    ) {
+        Surface(
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .height(56.dp)
+                .onGloballyPositioned { coordinates ->
+                    val topLeft = coordinates.positionInRoot()
+                    onSearchBoundsChanged(
+                        IntRect(
+                            left = topLeft.x.roundToInt(),
+                            top = topLeft.y.roundToInt(),
+                            right = topLeft.x.roundToInt() + coordinates.size.width,
+                            bottom = topLeft.y.roundToInt() + coordinates.size.height,
+                        ),
+                    )
+                },
+            shape = RoundedCornerShape(100.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        ) {
+            BasicTextField(
+                value = state.query,
+                onValueChange = onQueryChanged,
+                modifier = Modifier.fillMaxSize(),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { onSubmitSearch() }),
+                decorationBox = { innerTextField ->
+                    Row(
+                        modifier = Modifier.padding(start = WallHubSpacing.md, end = WallHubSpacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Outlined.Search, contentDescription = null)
+                        Spacer(modifier = Modifier.width(WallHubSpacing.sm))
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (state.query.isBlank()) {
+                                Text(
+                                    text = stringResource(R.string.home_search_workshop),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            innerTextField()
+                        }
+                        if (state.query.isNotBlank()) {
+                            IconButton(onClick = onClear) {
+                                Icon(Icons.Outlined.Cancel, contentDescription = stringResource(R.string.home_search))
+                            }
+                        }
+                    }
+                },
+            )
+        }
+        Surface(
+            onClick = onOpenFilters,
+            modifier = Modifier.size(56.dp),
+            shape = if (filtersActive) RoundedCornerShape(16.dp) else RoundedCornerShape(100.dp),
+            color =
+                if (filtersActive) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHighest
+                },
+            contentColor =
+                if (filtersActive) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Outlined.Tune,
+                    contentDescription = stringResource(R.string.home_open_all_filters),
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun HomeSearchTopBar(
@@ -490,7 +612,7 @@ internal fun HomeSearchTopBar(
     }
     Surface(
         modifier = Modifier.statusBarsPadding(),
-        color = MaterialTheme.colorScheme.background,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
     ) {
         Row(
             modifier =
@@ -691,6 +813,7 @@ internal fun HomeSearchTopBar(
 internal fun HomeFilterPanel(
     state: HomeUiState,
     onOpenFilters: (HomeFilterPage) -> Unit,
+    onToggleExactPhrase: () -> Unit,
 ) {
     val selection = state.filterSelection()
     Column(
@@ -838,50 +961,6 @@ internal fun HomeFlatCard(
 }
 
 @Composable
-internal fun HomeResultsHeader(
-    state: HomeUiState,
-    onViewModeSelected: (HomeViewMode) -> Unit,
-) {
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = WallHubSpacing.content, vertical = WallHubSpacing.compact),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.home_discover_wallpapers),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text =
-                    when {
-                        state.isInitialLoading -> stringResource(R.string.home_loading)
-                        state.totalCount != null ->
-                            pluralStringResource(
-                                R.plurals.home_about_items,
-                                state.totalCount,
-                                state.totalCount,
-                            )
-                        else -> pluralStringResource(R.plurals.home_items, state.items.size, state.items.size)
-                    },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        HomeViewModeToggle(
-            selected = state.viewMode,
-            onViewModeSelected = onViewModeSelected,
-            gridContentDescription = stringResource(R.string.home_grid_view),
-            listContentDescription = stringResource(R.string.home_list_view),
-        )
-    }
-}
-
-@Composable
 internal fun HomeViewModeToggle(
     selected: HomeViewMode,
     onViewModeSelected: (HomeViewMode) -> Unit,
@@ -902,42 +981,47 @@ internal fun HomeViewModeToggle(
             ),
         label = "HomeViewModeIndicator",
     )
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    Box(
+        modifier = Modifier.height(64.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier =
-                Modifier
-                    .width(HOME_VIEW_MODE_TOGGLE_WIDTH)
-                    .height(HOME_VIEW_MODE_TOGGLE_HEIGHT),
+        Surface(
+            shape = RoundedCornerShape(100.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
-            Surface(
+            Box(
                 modifier =
                     Modifier
-                        .offset(x = indicatorOffset, y = HOME_VIEW_MODE_TOGGLE_INSET)
-                        .size(HOME_VIEW_MODE_TOGGLE_BUTTON_SIZE),
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.primary,
-            ) {}
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .padding(HOME_VIEW_MODE_TOGGLE_INSET),
+                        .width(HOME_VIEW_MODE_TOGGLE_WIDTH)
+                        .height(HOME_VIEW_MODE_TOGGLE_HEIGHT),
             ) {
-                ViewModeButton(
-                    selected = selected == HomeViewMode.GRID,
-                    icon = Icons.Outlined.GridView,
-                    contentDescription = gridContentDescription,
-                    onClick = { onViewModeSelected(HomeViewMode.GRID) },
-                )
-                ViewModeButton(
-                    selected = selected == HomeViewMode.LIST,
-                    icon = Icons.Outlined.ViewList,
-                    contentDescription = listContentDescription,
-                    onClick = { onViewModeSelected(HomeViewMode.LIST) },
-                )
+                Surface(
+                    modifier =
+                        Modifier
+                            .offset(x = indicatorOffset, y = HOME_VIEW_MODE_TOGGLE_INSET)
+                            .size(HOME_VIEW_MODE_TOGGLE_BUTTON_SIZE),
+                    shape = RoundedCornerShape(100.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                ) {}
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(HOME_VIEW_MODE_TOGGLE_INSET),
+                ) {
+                    ViewModeButton(
+                        selected = selected == HomeViewMode.GRID,
+                        icon = Icons.Outlined.GridView,
+                        contentDescription = gridContentDescription,
+                        onClick = { onViewModeSelected(HomeViewMode.GRID) },
+                    )
+                    ViewModeButton(
+                        selected = selected == HomeViewMode.LIST,
+                        icon = Icons.Outlined.ViewList,
+                        contentDescription = listContentDescription,
+                        onClick = { onViewModeSelected(HomeViewMode.LIST) },
+                    )
+                }
             }
         }
     }
@@ -972,6 +1056,7 @@ internal fun ViewModeButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = tint,
+            modifier = Modifier.size(26.dp),
         )
     }
 }
@@ -1029,7 +1114,10 @@ internal fun HomeResults(
                 PullToRefreshDefaults.Indicator(
                     state = pullToRefreshState,
                     isRefreshing = loadingIndicators.showPullToRefresh,
-                    modifier = Modifier.align(Alignment.TopCenter),
+                    modifier =
+                        Modifier
+                            .align(Alignment.TopCenter)
+                            .size(48.dp),
                 )
             }
         },

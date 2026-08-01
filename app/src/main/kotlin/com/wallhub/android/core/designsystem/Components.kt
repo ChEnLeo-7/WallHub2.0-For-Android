@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,6 +36,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,6 +46,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -89,7 +92,9 @@ import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.delay
+import org.uwuaosp.compose.settingslib.SettingsAppBarScaffold
 import java.util.Locale
+import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,11 +104,26 @@ fun WallHubPageScaffold(
     navigationIcon: @Composable (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
     topBarContent: @Composable (() -> Unit)? = null,
+    useUwuToolbar: Boolean = false,
+    titleContent: (@Composable () -> Unit)? = null,
+    onNavigateUp: () -> Unit = {},
+    contentTopPaddingAdjustment: Dp = 0.dp,
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    Scaffold(
+    if (useUwuToolbar && topBarContent == null) {
+        SettingsAppBarScaffold(
+            title = title,
+            modifier = modifier,
+            showBackButton = navigationIcon != null,
+            onNavigateUp = onNavigateUp,
+            actions = actions,
+            titleContent = titleContent,
+            contentTopPaddingAdjustment = contentTopPaddingAdjustment,
+            content = content,
+        )
+    } else Scaffold(
         modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
         topBar = {
             if (topBarContent != null) {
                 topBarContent()
@@ -119,7 +139,7 @@ fun WallHubPageScaffold(
                     navigationIcon = { navigationIcon?.invoke() },
                     colors =
                         TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.background,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
                             titleContentColor = MaterialTheme.colorScheme.onBackground,
                             actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         ),
@@ -128,6 +148,83 @@ fun WallHubPageScaffold(
         },
         content = content,
     )
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+fun WallHubToolbarSearchTitle(
+    title: String,
+    query: String,
+    expanded: Boolean,
+    placeholder: String,
+    onQueryChanged: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onClear: () -> Unit,
+    onExpand: () -> Unit,
+    onCollapse: () -> Unit,
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier = Modifier.fillMaxWidth().height(56.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        AnimatedVisibility(
+            visible = !expanded,
+            modifier = Modifier.align(Alignment.CenterEnd),
+            enter = fadeIn(),
+            exit = fadeOut(),
+        ) {
+            IconButton(onClick = onExpand) {
+                Icon(Icons.Outlined.Search, contentDescription = placeholder)
+            }
+        }
+        AnimatedVisibility(
+            visible = expanded,
+            modifier = Modifier.fillMaxWidth(),
+            enter = fadeIn(),
+            exit = fadeOut(),
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(100.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            ) {
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChanged,
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxSize(),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { onSubmit() }),
+                    decorationBox = { innerTextField ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = onCollapse) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                            Icon(Icons.Outlined.Search, contentDescription = null)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Box(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                                if (query.isBlank()) Text(placeholder, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                innerTextField()
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
 }
 
 @Stable
@@ -221,7 +318,7 @@ fun WallHubTopToast(
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.94f),
                 ) {
                     Icon(
-                        imageVector = WallHubIcons.Outlined.Check,
+                        imageVector = Icons.Outlined.Check,
                         contentDescription = null,
                         modifier = Modifier.padding(WallHubSpacing.xs),
                     )
@@ -578,7 +675,7 @@ fun WallHubFilterChip(
             if (selected) {
                 {
                     Icon(
-                        imageVector = WallHubIcons.Outlined.Check,
+                        imageVector = Icons.Outlined.Check,
                         contentDescription = null,
                         modifier = Modifier.size(FilterChipDefaults.IconSize),
                     )
@@ -621,7 +718,7 @@ fun WallHubAnimatedSelectionCheck(
                 ),
     ) {
         Icon(
-            imageVector = WallHubIcons.Outlined.Check,
+            imageVector = Icons.Outlined.Check,
             contentDescription = null,
             modifier = Modifier.size(size),
         )

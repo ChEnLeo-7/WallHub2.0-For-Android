@@ -99,6 +99,7 @@ import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
+import com.wallhub.android.core.designsystem.WallHubToolbarSearchTitle
 import com.wallhub.android.core.designsystem.WallHubPaginationControl
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
@@ -815,9 +816,28 @@ fun LibraryScreen(
     onOpenSettings: () -> Unit = {},
     onContextMenuActiveChanged: (Boolean) -> Unit = {},
 ) {
+    var searchToolbarExpanded by remember { mutableStateOf(false) }
     WallHubPageScaffold(
         title = stringResource(R.string.library_title),
+        useUwuToolbar = true,
+        titleContent = {
+            WallHubToolbarSearchTitle(
+                title = stringResource(R.string.library_title),
+                query = state.searchQuery,
+                expanded = searchToolbarExpanded,
+                placeholder = stringResource(R.string.library_search_placeholder),
+                onQueryChanged = { onAction(LibraryAction.UpdateSearchQuery(it)) },
+                onSubmit = { onAction(LibraryAction.SubmitSearch) },
+                onClear = { onAction(LibraryAction.UpdateSearchQuery("")) },
+                onExpand = { searchToolbarExpanded = true },
+                onCollapse = { searchToolbarExpanded = false },
+                enabled = state.session.phase == SteamSessionPhase.SIGNED_IN,
+            )
+        },
         actions = {
+            IconButton(onClick = { onAction(LibraryAction.Refresh) }) {
+                Icon(Icons.Outlined.Refresh, contentDescription = stringResource(R.string.library_refresh))
+            }
             SettingsToolbarActionButton(
                 imageVector = Icons.Outlined.Settings,
                 contentDescription = stringResource(R.string.management_settings),
@@ -832,6 +852,7 @@ fun LibraryScreen(
             onAction = onAction,
             onContextMenuActiveChanged = onContextMenuActiveChanged,
             showFilters = true,
+            showSearch = false,
             modifier = Modifier.padding(padding),
         )
     }
@@ -843,6 +864,7 @@ fun LibraryContent(
     onAction: (LibraryAction) -> Unit,
     onContextMenuActiveChanged: (Boolean) -> Unit,
     showFilters: Boolean,
+    showSearch: Boolean = true,
     onScrollChromeCollapsedChanged: (Boolean) -> Unit = {},
     scrollToTopRequest: Int = 0,
     floatingActionButton: (@Composable () -> Unit)? = null,
@@ -945,7 +967,7 @@ fun LibraryContent(
                     )
                 }
                 AnimatedVisibility(
-                    visible = !scrollChromeCollapsed,
+                    visible = showSearch && !scrollChromeCollapsed,
                     enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(tween(180)),
                     exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(tween(120)),
                     label = "LibrarySearchChrome",

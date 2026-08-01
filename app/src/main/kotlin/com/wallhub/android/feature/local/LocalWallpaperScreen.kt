@@ -83,6 +83,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -106,6 +107,7 @@ import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
+import com.wallhub.android.core.designsystem.WallHubToolbarSearchTitle
 import com.wallhub.android.core.designsystem.formatMegabytes
 import com.wallhub.android.core.designsystem.rememberWallHubDirectionalCollapseConnection
 import com.wallhub.android.core.model.LocalWallpaperFormat
@@ -114,6 +116,7 @@ import com.wallhub.android.core.model.LocalWallpaperResource
 import com.wallhub.android.core.model.LocalWallpaperViewMode
 import kotlinx.coroutines.flow.collect
 import org.uwuaosp.compose.settingslib.SettingsToolbarActionButton
+import org.uwuaosp.compose.settingslib.SettingsAppBarScaffold
 import java.io.File
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
@@ -285,6 +288,7 @@ private fun LocalWallpaperScreen(
     var tagInput by remember { mutableStateOf("") }
     var deleteConfirmationVisible by remember { mutableStateOf(false) }
     var selectionMenuExpanded by remember { mutableStateOf(false) }
+    var searchToolbarExpanded by remember { mutableStateOf(false) }
     var secondaryChromeCollapsed by remember { mutableStateOf(false) }
     val updateSecondaryChromeCollapsed: (Boolean) -> Unit = { collapsed ->
         if (collapsed != secondaryChromeCollapsed) {
@@ -321,8 +325,77 @@ private fun LocalWallpaperScreen(
         it.collect()
         if (state.selectionMode) onClearSelection() else onSelectResource(null)
     }
-    Scaffold(
-        topBar = {
+    val pageContent: @Composable (PaddingValues) -> Unit = { padding ->
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .nestedScroll(chromeScrollConnection),
+        ) {
+            if (state.scan.issues.isNotEmpty()) {
+                LocalScanIssueSummary(state = state)
+            }
+            LocalWallpaperContent(
+                state = state,
+                selected = selected,
+                onSelectResource = onSelectResource,
+                onStartSelection = onStartSelection,
+                onToggleSelection = onToggleSelection,
+                onToggleFavorite = onToggleFavorite,
+                onDeleteResource = { resource ->
+                    onSelectResource(resource.id)
+                    deleteConfirmationVisible = true
+                },
+                onReplaceTags = onReplaceTags,
+                onAddTag = { tagDialogVisible = true },
+                onSystemAction = onSystemAction,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+    if (headerMode == LocalHeaderMode.WORKSPACE) {
+        SettingsAppBarScaffold(
+            title = stringResource(R.string.navigation_local),
+            titleContent = {
+                WallHubToolbarSearchTitle(
+                    title = stringResource(R.string.navigation_local),
+                    query = state.searchQuery,
+                    expanded = searchToolbarExpanded,
+                    placeholder = stringResource(R.string.local_search_placeholder),
+                    onQueryChanged = onSearchQueryChanged,
+                    onSubmit = onRefresh,
+                    onClear = { onSearchQueryChanged("") },
+                    onExpand = { searchToolbarExpanded = true },
+                    onCollapse = { searchToolbarExpanded = false },
+                )
+            },
+            actions = {
+                IconButton(onClick = if (state.scan.isScanning) onCancelScan else onRefresh) {
+                    Icon(
+                        imageVector = if (state.scan.isScanning) Icons.Outlined.Cancel else Icons.Outlined.Refresh,
+                        contentDescription = stringResource(R.string.local_refresh_scan),
+                    )
+                }
+                LocalWorkspaceMenu(
+                    hasCustomSource = state.scan.sources.any { source -> !source.isDownloadDirectory },
+                    onChooseDirectory = onChooseDirectory,
+                    onResetDirectory = onResetDirectory,
+                    onManageTags = { tagManagerVisible = true },
+                )
+                SettingsToolbarActionButton(
+                    imageVector = Icons.Outlined.Settings,
+                    contentDescription = stringResource(R.string.management_settings),
+                    onClick = onOpenSettings,
+                    buttonSize = 64.dp,
+                    containerSize = 48.dp,
+                )
+            },
+            content = pageContent,
+        )
+    } else {
+        Scaffold(
+            topBar = {
             AnimatedContent(
                 targetState = headerMode,
                 transitionSpec = {
@@ -397,37 +470,11 @@ private fun LocalWallpaperScreen(
                         )
                 }
             }
-        },
-        containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-    ) { padding ->
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .nestedScroll(chromeScrollConnection),
-        ) {
-            if (state.scan.issues.isNotEmpty()) {
-                LocalScanIssueSummary(state = state)
-            }
-            LocalWallpaperContent(
-                state = state,
-                selected = selected,
-                onSelectResource = onSelectResource,
-                onStartSelection = onStartSelection,
-                onToggleSelection = onToggleSelection,
-                onToggleFavorite = onToggleFavorite,
-                onDeleteResource = { resource ->
-                    onSelectResource(resource.id)
-                    deleteConfirmationVisible = true
-                },
-                onReplaceTags = onReplaceTags,
-                onAddTag = { tagDialogVisible = true },
-                onSystemAction = onSystemAction,
-                modifier = Modifier.weight(1f),
-            )
-        }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            content = pageContent,
+        )
     }
 
     LocalWallpaperDialogs(
@@ -738,7 +785,7 @@ private fun LocalWorkspaceHeader(
     val customSource = state.scan.sources.firstOrNull { source -> !source.isDownloadDirectory }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.background,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             Column(

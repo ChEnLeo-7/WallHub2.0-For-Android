@@ -291,6 +291,7 @@
     <string name='home_back'>返回</string>
     <string name='home_search_workshop'>搜索创意工坊</string>
     <string name='home_search'>搜索</string>
+    <string name='home_refresh'>刷新</string>
     <string name='home_exact_phrase'>精确匹配短语</string>
     <string name='home_settings'>设置</string>
     <string name='home_browse_settings'>浏览条件</string>

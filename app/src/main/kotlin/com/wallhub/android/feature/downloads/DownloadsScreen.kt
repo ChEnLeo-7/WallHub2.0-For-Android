@@ -432,6 +432,7 @@ fun DownloadsScreen(
 ) {
     WallHubPageScaffold(
         title = stringResource(R.string.downloads_title),
+        useUwuToolbar = true,
         actions = {
             SettingsToolbarActionButton(
                 imageVector = Icons.Outlined.Settings,

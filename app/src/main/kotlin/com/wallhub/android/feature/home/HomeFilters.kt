@@ -33,6 +33,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalRippleConfiguration
@@ -87,6 +88,8 @@ internal fun HomeFiltersSheet(
     applied: HomeFilterSelection,
     config: HomeFilterUiConfig,
     initialPage: HomeFilterPage,
+    exactPhrase: Boolean,
+    onToggleExactPhrase: () -> Unit,
     onDismiss: (HomeFilterSelection) -> Unit,
 ) {
     val pages = HomeFilterPage.entries
@@ -145,6 +148,15 @@ internal fun HomeFiltersSheet(
                     defaults = defaults,
                     onReset = { updateSelection(defaults) },
                     horizontalPadding = horizontalPadding,
+                )
+                FilterChip(
+                    selected = exactPhrase,
+                    onClick = onToggleExactPhrase,
+                    label = { Text(stringResource(R.string.home_exact_phrase)) },
+                    leadingIcon = {
+                        if (exactPhrase) Icon(Icons.Outlined.Check, contentDescription = null)
+                    },
+                    modifier = Modifier.padding(horizontal = horizontalPadding),
                 )
                 if (compact) {
                     HomeFilterPageNavigation(
@@ -1257,9 +1269,9 @@ internal const val TWO_COLUMN_CARD_STATISTICS_MIN_FONT_SIZE = 10.5f
 internal const val TWO_COLUMN_CARD_STATISTICS_MAX_FONT_SIZE = 11.5f
 internal const val TWO_COLUMN_CARD_STATISTICS_FONT_WIDTH_DIVISOR = 4.6f
 internal val HOME_VIEW_MODE_TOGGLE_INSET = 3.dp
-internal val HOME_VIEW_MODE_TOGGLE_BUTTON_SIZE = 34.dp
-internal val HOME_VIEW_MODE_TOGGLE_HEIGHT = WallHubSizeTokens.compactActionHeight
-internal val HOME_VIEW_MODE_TOGGLE_WIDTH = 74.dp
+internal val HOME_VIEW_MODE_TOGGLE_BUTTON_SIZE = 42.dp
+internal val HOME_VIEW_MODE_TOGGLE_HEIGHT = 48.dp
+internal val HOME_VIEW_MODE_TOGGLE_WIDTH = 90.dp
 internal const val HOME_VIEW_MODE_TOGGLE_DURATION_MS = 240
 internal val GRID_CARD_ACTION_CORNER_RADIUS = WallHubSpacing.sm
 internal val LIST_CARD_ACTION_CORNER_RADIUS = WallHubSpacing.sm
