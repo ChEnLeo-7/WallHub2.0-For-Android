@@ -9,7 +9,13 @@ internal sealed interface WallHubDestination
 internal data object HomeDestination : WallHubDestination
 
 @Serializable
-internal data object ManagementDestination : WallHubDestination
+internal data object DownloadsDestination : WallHubDestination
+
+@Serializable
+internal data object LibraryDestination : WallHubDestination
+
+@Serializable
+internal data object LocalDestination : WallHubDestination
 
 @Serializable
 internal data object SettingsDestination : WallHubDestination

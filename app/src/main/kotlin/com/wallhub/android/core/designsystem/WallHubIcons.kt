@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowDownward
@@ -170,6 +171,7 @@ object WallHubIcons {
         val Bookmarks: ImageVector get() = MaterialIcons.Filled.Bookmarks
         val Download: ImageVector get() = MaterialIcons.Filled.Download
         val Explore: ImageVector get() = MaterialIcons.Filled.Explore
+        val Favorite: ImageVector get() = MaterialIcons.Filled.Favorite
         val FolderOpen: ImageVector get() = MaterialSymbolFolderOpenFilled
         val Settings: ImageVector get() = MaterialIcons.Filled.Settings
     }

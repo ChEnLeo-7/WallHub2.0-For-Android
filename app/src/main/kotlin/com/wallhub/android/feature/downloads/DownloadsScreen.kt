@@ -92,6 +92,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.uwuaosp.compose.settingslib.SettingsToolbarActionButton
 import javax.inject.Inject
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
@@ -361,6 +362,7 @@ private const val DOWNLOAD_TYPE_FILTER_KEY = "downloads.typeFilter"
 
 @Composable
 fun DownloadsRoute(
+    onOpenSettings: () -> Unit = {},
     onPlayVideo: (String) -> Unit = {},
     viewModel: DownloadsViewModel = hiltViewModel(),
 ) {
@@ -372,6 +374,7 @@ fun DownloadsRoute(
     DownloadsScreen(
         state = state,
         onAction = viewModel::onAction,
+        onOpenSettings = onOpenSettings,
     )
 }
 
@@ -425,9 +428,19 @@ fun DownloadsEffectHandler(
 fun DownloadsScreen(
     state: DownloadsUiState,
     onAction: (DownloadsAction) -> Unit,
+    onOpenSettings: () -> Unit = {},
 ) {
     WallHubPageScaffold(
         title = stringResource(R.string.downloads_title),
+        actions = {
+            SettingsToolbarActionButton(
+                imageVector = Icons.Outlined.Settings,
+                contentDescription = stringResource(R.string.management_settings),
+                onClick = onOpenSettings,
+                buttonSize = 64.dp,
+                containerSize = 48.dp,
+            )
+        },
     ) { padding ->
         DownloadsContent(
             state = state,

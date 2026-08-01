@@ -82,7 +82,10 @@ import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.feature.detail.LocalVideoPlayerRoute
 import com.wallhub.android.feature.detail.OnlineVideoPlayerRoute
 import com.wallhub.android.feature.detail.WorkshopDetailRoute
+import com.wallhub.android.feature.downloads.DownloadsRoute
 import com.wallhub.android.feature.home.HomeRoute
+import com.wallhub.android.feature.library.LibraryRoute
+import com.wallhub.android.feature.local.LocalWallpaperRoute
 import com.wallhub.android.feature.settings.SettingsRoute
 import com.wallhub.android.feature.settings.SteamLoginRoute
 import kotlinx.coroutines.flow.collect
@@ -96,13 +99,9 @@ private enum class TopLevelDestination(
     val selectedIcon: ImageVector,
 ) {
     HOME("home", HomeDestination, R.string.navigation_discover, Icons.Outlined.Explore, Icons.Filled.Explore),
-    MANAGEMENT(
-        "management",
-        ManagementDestination,
-        R.string.navigation_management,
-        Icons.Outlined.FolderOpen,
-        Icons.Filled.FolderOpen,
-    ),
+    DOWNLOADS("downloads", DownloadsDestination, R.string.navigation_downloads, Icons.Outlined.Download, Icons.Filled.Download),
+    LIBRARY("library", LibraryDestination, R.string.navigation_library, Icons.Outlined.FavoriteBorder, Icons.Filled.Favorite),
+    LOCAL("local", LocalDestination, R.string.navigation_local, Icons.Outlined.FolderOpen, Icons.Filled.FolderOpen),
 }
 
 @Composable
@@ -123,16 +122,12 @@ fun FormalWallHubApp(preferences: AppPreferences) {
             }
         val isTopLevelDestination = currentTopLevelDestination != null
         var homeScrollRequest by rememberSaveable { mutableIntStateOf(0) }
-        var managementScrollToTopRequest by rememberSaveable { mutableIntStateOf(0) }
         var homeContextMenuActive by remember { mutableStateOf(false) }
         val toastState = rememberWallHubToastState()
         val navigateTo: (TopLevelDestination) -> Unit = { destination ->
             when {
                 destination == TopLevelDestination.HOME &&
                     currentTopLevelDestination == TopLevelDestination.HOME -> homeScrollRequest += 1
-
-                destination == TopLevelDestination.MANAGEMENT &&
-                    currentTopLevelDestination == TopLevelDestination.MANAGEMENT -> managementScrollToTopRequest += 1
 
                 currentTopLevelDestination == destination -> Unit
 
@@ -146,10 +141,6 @@ fun FormalWallHubApp(preferences: AppPreferences) {
                     }
                 }
             }
-        }
-        val navigateAcrossManagementBoundary: (Int) -> Unit = { direction ->
-            val managementIndex = destinations.indexOf(TopLevelDestination.MANAGEMENT)
-            destinations.getOrNull(managementIndex + direction)?.let(navigateTo)
         }
         PredictiveBackHandler(
             enabled = isTopLevelDestination && currentTopLevelDestination != TopLevelDestination.HOME,
@@ -173,8 +164,6 @@ fun FormalWallHubApp(preferences: AppPreferences) {
                     onNavigateTo = navigateTo,
                     navController = navController,
                     homeScrollRequest = homeScrollRequest,
-                    managementScrollToTopRequest = managementScrollToTopRequest,
-                    onManagementBoundaryNavigation = navigateAcrossManagementBoundary,
                 )
             }
         }
@@ -192,8 +181,6 @@ private fun WallHubAdaptiveNavigationLayout(
     onNavigateTo: (TopLevelDestination) -> Unit,
     navController: NavHostController,
     homeScrollRequest: Int,
-    managementScrollToTopRequest: Int,
-    onManagementBoundaryNavigation: (Int) -> Unit,
 ) {
     when (windowWidthSizeClass) {
         WindowWidthSizeClass.MEDIUM -> {
@@ -234,9 +221,7 @@ private fun WallHubAdaptiveNavigationLayout(
                     modifier = Modifier.fillMaxSize(),
                     navController = navController,
                     homeScrollRequest = homeScrollRequest,
-                    managementScrollToTopRequest = managementScrollToTopRequest,
                     onHomeContextMenuActiveChanged = onHomeContextMenuActiveChanged,
-                    onManagementBoundaryNavigation = onManagementBoundaryNavigation,
                     animateTopLevelTransitions = false,
                 )
             }
@@ -285,9 +270,7 @@ private fun WallHubAdaptiveNavigationLayout(
                         modifier = Modifier.fillMaxSize(),
                         navController = navController,
                         homeScrollRequest = homeScrollRequest,
-                        managementScrollToTopRequest = managementScrollToTopRequest,
                         onHomeContextMenuActiveChanged = onHomeContextMenuActiveChanged,
-                        onManagementBoundaryNavigation = onManagementBoundaryNavigation,
                         animateTopLevelTransitions = false,
                     )
                 }
@@ -296,9 +279,7 @@ private fun WallHubAdaptiveNavigationLayout(
                     modifier = Modifier.fillMaxSize(),
                     navController = navController,
                     homeScrollRequest = homeScrollRequest,
-                    managementScrollToTopRequest = managementScrollToTopRequest,
                     onHomeContextMenuActiveChanged = onHomeContextMenuActiveChanged,
-                    onManagementBoundaryNavigation = onManagementBoundaryNavigation,
                     animateTopLevelTransitions = false,
                 )
             }
@@ -387,9 +368,7 @@ private fun WallHubAdaptiveNavigationLayout(
                             .consumeWindowInsets(padding),
                     navController = navController,
                     homeScrollRequest = homeScrollRequest,
-                    managementScrollToTopRequest = managementScrollToTopRequest,
                     onHomeContextMenuActiveChanged = onHomeContextMenuActiveChanged,
-                    onManagementBoundaryNavigation = onManagementBoundaryNavigation,
                     animateTopLevelTransitions = true,
                 )
             }
@@ -420,9 +399,7 @@ private fun WallHubNavHost(
     modifier: Modifier,
     navController: NavHostController,
     homeScrollRequest: Int,
-    managementScrollToTopRequest: Int,
     onHomeContextMenuActiveChanged: (Boolean) -> Unit,
-    onManagementBoundaryNavigation: (Int) -> Unit,
     animateTopLevelTransitions: Boolean,
 ) {
     val navigateToAuthorSearch: (String) -> Unit = { creator ->
@@ -552,24 +529,27 @@ private fun WallHubNavHost(
                 onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
             )
         }
-        composable<ManagementDestination> {
-            ManagementRoute(
+        composable<DownloadsDestination> {
+            DownloadsRoute(
+                onOpenSettings = openSettings,
+                onPlayVideo = { taskId -> navController.navigate(LocalVideoPlayerDestination(taskId)) },
+            )
+        }
+        composable<LibraryDestination> {
+            LibraryRoute(
                 onOpenSettings = openSettings,
                 onOpenDetail = { workshopId ->
                     navController.navigate(WorkshopDetailDestination(workshopId))
                 },
-                onOpenLocalVideo = { taskId ->
-                    navController.navigate(LocalVideoPlayerDestination(taskId))
-                },
-                onOpenOnlineVideo = { workshopId ->
+                onPlayVideo = { workshopId ->
                     navController.navigate(OnlineVideoPlayerDestination(workshopId))
                 },
                 onSearchAuthor = navigateToAuthorSearch,
-                libraryScrollToTopRequest = managementScrollToTopRequest,
                 onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
-                onNavigatePreviousTopLevel = { onManagementBoundaryNavigation(-1) },
-                onNavigateNextTopLevel = { onManagementBoundaryNavigation(1) },
             )
+        }
+        composable<LocalDestination> {
+            LocalWallpaperRoute(onOpenSettings = openSettings)
         }
         composable<SettingsDestination> {
             SettingsRoute(

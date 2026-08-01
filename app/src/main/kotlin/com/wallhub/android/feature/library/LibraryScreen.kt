@@ -130,6 +130,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import org.uwuaosp.compose.settingslib.SettingsToolbarActionButton
 import java.util.Locale
 import javax.inject.Inject
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
@@ -745,6 +746,7 @@ private const val LIBRARY_PAGE_SIZE = 16
 
 @Composable
 fun LibraryRoute(
+    onOpenSettings: () -> Unit = {},
     onOpenDetail: (Long) -> Unit,
     onPlayVideo: (Long) -> Unit = {},
     onSearchAuthor: (String) -> Unit = {},
@@ -761,6 +763,7 @@ fun LibraryRoute(
     LibraryScreen(
         state = state,
         onAction = viewModel::onAction,
+        onOpenSettings = onOpenSettings,
         onContextMenuActiveChanged = onContextMenuActiveChanged,
     )
 }
@@ -809,9 +812,21 @@ fun LibraryEffectHandler(
 fun LibraryScreen(
     state: LibraryUiState,
     onAction: (LibraryAction) -> Unit,
+    onOpenSettings: () -> Unit = {},
     onContextMenuActiveChanged: (Boolean) -> Unit = {},
 ) {
-    WallHubPageScaffold(title = stringResource(R.string.library_title)) { padding ->
+    WallHubPageScaffold(
+        title = stringResource(R.string.library_title),
+        actions = {
+            SettingsToolbarActionButton(
+                imageVector = Icons.Outlined.Settings,
+                contentDescription = stringResource(R.string.management_settings),
+                onClick = onOpenSettings,
+                buttonSize = 64.dp,
+                containerSize = 48.dp,
+            )
+        },
+    ) { padding ->
         LibraryContent(
             state = state,
             onAction = onAction,

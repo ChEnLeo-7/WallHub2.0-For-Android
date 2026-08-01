@@ -227,7 +227,9 @@
     <string name='settings_error_check_github_release'>无法检查 GitHub Release</string>
     <string name='settings_error_download_release_apk'>Release APK 下载或校验失败</string>
     <string name='navigation_discover'>发现</string>
-    <string name='navigation_management'>管理</string>
+    <string name='navigation_downloads'>下载</string>
+    <string name='navigation_library'>资料库</string>
+    <string name='navigation_local'>本地</string>
     <string name='management_settings'>设置</string>
     <string name='management_filters'>筛选</string>
     <plurals name='management_filters_active'>

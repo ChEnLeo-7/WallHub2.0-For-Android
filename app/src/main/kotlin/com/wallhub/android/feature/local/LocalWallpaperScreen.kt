@@ -69,6 +69,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.layout.AnimatedPane
@@ -112,12 +113,14 @@ import com.wallhub.android.core.model.LocalWallpaperImportState
 import com.wallhub.android.core.model.LocalWallpaperResource
 import com.wallhub.android.core.model.LocalWallpaperViewMode
 import kotlinx.coroutines.flow.collect
+import org.uwuaosp.compose.settingslib.SettingsToolbarActionButton
 import java.io.File
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun LocalWallpaperRoute(
+    onOpenSettings: () -> Unit = {},
     onScrollChromeCollapsedChanged: (Boolean) -> Unit = {},
     isPageActive: Boolean = true,
     viewModel: LocalWallpaperViewModel = hiltViewModel(),
@@ -137,6 +140,7 @@ fun LocalWallpaperRoute(
         isPageActive = isPageActive,
         onAction = viewModel::onAction,
         onScrollChromeCollapsedChanged = onScrollChromeCollapsedChanged,
+        onOpenSettings = onOpenSettings,
     )
 }
 
@@ -249,6 +253,7 @@ private fun LocalWallpaperScreen(
     isPageActive: Boolean,
     onAction: (LocalWallpaperAction) -> Unit,
     onScrollChromeCollapsedChanged: (Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val onChooseDirectory: () -> Unit = { onAction(LocalWallpaperAction.ChooseDirectory) }
     val onResetDirectory: () -> Unit = { onAction(LocalWallpaperAction.ResetDirectory) }
@@ -341,17 +346,31 @@ private fun LocalWallpaperScreen(
                 when (mode) {
                     LocalHeaderMode.HIDDEN -> Spacer(modifier = Modifier.height(WallHubSpacing.none))
                     LocalHeaderMode.WORKSPACE ->
-                        LocalWorkspaceHeader(
-                            state = state,
-                            onChooseDirectory = onChooseDirectory,
-                            onResetDirectory = onResetDirectory,
-                            onRefresh = onRefresh,
-                            onCancelScan = onCancelScan,
-                            onSearchQueryChanged = onSearchQueryChanged,
-                            onViewModeSelected = onViewModeSelected,
-                            onManageTags = { tagManagerVisible = true },
-                            secondaryChromeCollapsed = secondaryChromeCollapsed,
-                        )
+                        Column {
+                            TopAppBar(
+                                title = { Text(stringResource(R.string.navigation_local)) },
+                                actions = {
+                                    SettingsToolbarActionButton(
+                                        imageVector = Icons.Outlined.Settings,
+                                        contentDescription = stringResource(R.string.management_settings),
+                                        onClick = onOpenSettings,
+                                        buttonSize = 64.dp,
+                                        containerSize = 48.dp,
+                                    )
+                                },
+                            )
+                            LocalWorkspaceHeader(
+                                state = state,
+                                onChooseDirectory = onChooseDirectory,
+                                onResetDirectory = onResetDirectory,
+                                onRefresh = onRefresh,
+                                onCancelScan = onCancelScan,
+                                onSearchQueryChanged = onSearchQueryChanged,
+                                onViewModeSelected = onViewModeSelected,
+                                onManageTags = { tagManagerVisible = true },
+                                secondaryChromeCollapsed = secondaryChromeCollapsed,
+                            )
+                        }
 
                     LocalHeaderMode.SELECTION ->
                         LocalSelectionBar(
