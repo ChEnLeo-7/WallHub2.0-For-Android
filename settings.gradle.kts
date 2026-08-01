@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 rootProject.name = "WallHubAndroid"
 
 include(":app")
+include(":uwu-sdk")

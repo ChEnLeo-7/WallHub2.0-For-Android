@@ -185,6 +185,7 @@ protobuf {
 }
 
 dependencies {
+    implementation(project(":uwu-sdk"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material.icons.extended)
