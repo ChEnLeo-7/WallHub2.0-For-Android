@@ -313,24 +313,7 @@ internal fun HomeScreenBody(
         WallHubPageScaffold(
             title = stringResource(R.string.app_name),
             useUwuToolbar = onBack == null,
-            topBarContent =
-                onBack?.let { back ->
-                    {
-                        HomeSearchTopBar(
-                            state = state,
-                            onQueryChanged = { onAction(HomeAction.QueryChanged(it)) },
-                            onSubmitSearch = { onAction(HomeAction.SubmitSearch) },
-                            onToggleExactPhrase = { onAction(HomeAction.ToggleExactPhrase) },
-                            onSearchBoundsChanged = onSearchBoundsChanged,
-                            onBack = back,
-                            onOpenSettings = onOpenSettings,
-                            onResetAndRefresh = {
-                                onAction(HomeAction.Refresh)
-                                coroutineScope.launch { gridState.scrollToItem(0) }
-                            },
-                        )
-                    }
-                },
+            topBarContent = if (onBack != null) ({}) else null,
             actions = {
                 HomeViewModeToggle(
                     selected = state.viewMode,
@@ -363,6 +346,7 @@ internal fun HomeScreenBody(
                     onClear = { onAction(HomeAction.QueryChanged("")) },
                     onOpenFilters = { onOpenFilters(HomeFilterPage.BROWSE) },
                     filtersActive = state.activeFilterCount > 0 || state.exactPhrase,
+                    onBack = onBack,
                 )
                 HomeResults(
                     state = state,
@@ -407,6 +391,7 @@ private fun HomePersistentSearchBar(
     onClear: () -> Unit,
     onOpenFilters: () -> Unit,
     filtersActive: Boolean,
+    onBack: (() -> Unit)? = null,
 ) {
     Row(
         modifier =
@@ -418,6 +403,15 @@ private fun HomePersistentSearchBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
     ) {
+        onBack?.let { back ->
+            SettingsToolbarActionButton(
+                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                contentDescription = stringResource(R.string.home_back),
+                onClick = back,
+                buttonSize = 56.dp,
+                containerSize = 56.dp,
+            )
+        }
         Surface(
             modifier =
                 Modifier
@@ -491,229 +485,6 @@ private fun HomePersistentSearchBar(
                 Icon(
                     imageVector = Icons.Outlined.Tune,
                     contentDescription = stringResource(R.string.home_open_all_filters),
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-internal fun HomeSearchTopBar(
-    state: HomeUiState,
-    onQueryChanged: (String) -> Unit,
-    onSubmitSearch: () -> Unit,
-    onToggleExactPhrase: () -> Unit,
-    onSearchBoundsChanged: (IntRect) -> Unit,
-    onBack: (() -> Unit)?,
-    onOpenSettings: (() -> Unit)?,
-    onResetAndRefresh: () -> Unit,
-) {
-    var exactPhraseMenuExpanded by rememberSaveable { mutableStateOf(false) }
-    var searchFieldFocused by remember { mutableStateOf(false) }
-    var imeWasVisibleForSearch by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
-    val imeVisible = WindowInsets.isImeVisible
-    LaunchedEffect(searchFieldFocused, imeVisible) {
-        when {
-            !searchFieldFocused -> imeWasVisibleForSearch = false
-            imeVisible -> imeWasVisibleForSearch = true
-            imeWasVisibleForSearch -> focusManager.clearFocus(force = true)
-        }
-    }
-    Surface(
-        modifier = Modifier.statusBarsPadding(),
-        color = MaterialTheme.colorScheme.surfaceContainerLowest,
-    ) {
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xxs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (onBack != null) {
-                TextButton(
-                    onClick = onBack,
-                    modifier = Modifier.heightIn(min = WallHubSpacing.xxl),
-                    contentPadding = PaddingValues(horizontal = WallHubSpacing.xxs),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = null,
-                        modifier = Modifier.size(WallHubSizeTokens.smallIcon),
-                    )
-                    Spacer(modifier = Modifier.width(WallHubSpacing.xxs))
-                    Text(
-                        text = stringResource(R.string.home_back),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-            } else {
-                Text(
-                    text = stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier =
-                        Modifier
-                            .clip(MaterialTheme.shapes.medium)
-                            .clickable(onClick = onResetAndRefresh)
-                            .padding(vertical = WallHubSpacing.compact, horizontal = WallHubSpacing.xxs),
-                )
-            }
-            Spacer(modifier = Modifier.width(WallHubSpacing.compact))
-            Box(modifier = Modifier.weight(1f)) {
-                HomeFlatCard(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(HOME_SEARCH_FIELD_HEIGHT)
-                            .onGloballyPositioned { coordinates ->
-                                val topLeft = coordinates.positionInRoot()
-                                onSearchBoundsChanged(
-                                    IntRect(
-                                        left = topLeft.x.roundToInt(),
-                                        top = topLeft.y.roundToInt(),
-                                        right = topLeft.x.roundToInt() + coordinates.size.width,
-                                        bottom = topLeft.y.roundToInt() + coordinates.size.height,
-                                    ),
-                                )
-                            },
-                    shape = HOME_WALLPAPER_CARD_SHAPE,
-                ) {
-                    BasicTextField(
-                        value = state.query,
-                        onValueChange = { query ->
-                            onQueryChanged(query)
-                            // Keep the exact-phrase chooser visible while the user
-                            // continues typing, without recreating a focus-owning popup.
-                            exactPhraseMenuExpanded = searchFieldFocused && query.isNotBlank()
-                        },
-                        modifier =
-                            Modifier
-                                .fillMaxSize()
-                                .onFocusChanged { focusState ->
-                                    searchFieldFocused = focusState.isFocused
-                                    exactPhraseMenuExpanded = focusState.isFocused && state.query.isNotBlank()
-                                }.padding(start = WallHubSpacing.sm, end = WallHubSpacing.xxs),
-                        textStyle =
-                            MaterialTheme.typography.bodyMedium.copy(
-                                color = MaterialTheme.colorScheme.onSurface,
-                            ),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        singleLine = true,
-                        keyboardOptions =
-                            androidx.compose.foundation.text
-                                .KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions =
-                            androidx.compose.foundation.text.KeyboardActions(
-                                onSearch = { onSubmitSearch() },
-                            ),
-                        decorationBox = { innerTextField ->
-                            Row(
-                                modifier = Modifier.fillMaxSize(),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Box(
-                                    modifier = Modifier.weight(1f),
-                                    contentAlignment = Alignment.CenterStart,
-                                ) {
-                                    if (state.query.isBlank()) {
-                                        Text(
-                                            text = stringResource(R.string.home_search_workshop),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                    innerTextField()
-                                }
-                                IconButton(
-                                    onClick = onSubmitSearch,
-                                    modifier = Modifier.size(WallHubSizeTokens.compactActionHeight),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Search,
-                                        contentDescription = stringResource(R.string.home_search),
-                                    )
-                                }
-                            }
-                        },
-                    )
-                }
-                DropdownMenu(
-                    expanded = exactPhraseMenuExpanded && state.query.isNotBlank(),
-                    onDismissRequest = { exactPhraseMenuExpanded = false },
-                    offset = DpOffset(WallHubSpacing.none, WallHubSpacing.xxs),
-                    shape = MaterialTheme.shapes.medium,
-                    containerColor =
-                        if (state.exactPhrase) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerHighest
-                        },
-                    tonalElevation = WallHubSpacing.none,
-                    shadowElevation = WallHubSpacing.dense,
-                    // The search field must retain IME focus while this optional
-                    // checkbox is shown. A focusable dropdown steals that focus on
-                    // every edit on some Android devices.
-                    properties = PopupProperties(focusable = false),
-                ) {
-                    Row(
-                        modifier =
-                            Modifier
-                                .clip(MaterialTheme.shapes.small)
-                                .clickable {
-                                    onToggleExactPhrase()
-                                    exactPhraseMenuExpanded = false
-                                }.padding(horizontal = WallHubSpacing.compact, vertical = WallHubSpacing.xs),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
-                    ) {
-                        Box(
-                            modifier =
-                                Modifier
-                                    .size(WallHubSpacing.md)
-                                    .clip(MaterialTheme.shapes.extraSmall)
-                                    .background(
-                                        if (state.exactPhrase) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.surfaceContainerLowest
-                                        },
-                                    ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (state.exactPhrase) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Check,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(WallHubSpacing.sm),
-                                )
-                            }
-                        }
-                        Text(
-                            text = stringResource(R.string.home_exact_phrase),
-                            style = MaterialTheme.typography.labelMedium,
-                            color =
-                                if (state.exactPhrase) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                        )
-                    }
-                }
-            }
-            if (onOpenSettings != null) {
-                SettingsToolbarActionButton(
-                    imageVector = Icons.Outlined.Settings,
-                    contentDescription = stringResource(R.string.home_settings),
-                    onClick = onOpenSettings,
-                    buttonSize = 64.dp,
-                    containerSize = 48.dp,
                 )
             }
         }

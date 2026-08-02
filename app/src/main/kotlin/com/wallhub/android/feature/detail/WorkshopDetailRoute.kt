@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
 fun WorkshopDetailRoute(
     onBack: () -> Unit,
     onSearchAuthor: (String) -> Unit = {},
+    onSearchTag: (String) -> Unit = {},
     onOpenLocalVideo: (String) -> Unit = {},
     viewModel: WorkshopDetailViewModel =
         androidx.hilt.navigation.compose
@@ -91,6 +92,7 @@ fun WorkshopDetailRoute(
         onSearchAuthor = { author ->
             viewModel.onAction(WorkshopDetailAction.SearchAuthor(author))
         },
+        onSearchTag = onSearchTag,
         onCopyText = { text, message ->
             viewModel.onAction(WorkshopDetailAction.CopyText(text, message))
         },

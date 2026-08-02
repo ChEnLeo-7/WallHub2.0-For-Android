@@ -9,6 +9,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,24 +21,27 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -50,9 +55,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -66,6 +74,8 @@ import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.localizedAuthor
 import com.wallhub.android.core.model.WorkshopComment
 import kotlinx.coroutines.launch
+import org.uwuaosp.compose.settingslib.CustomPreferenceRow
+import org.uwuaosp.compose.settingslib.PreferencePosition
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -84,6 +94,7 @@ internal fun DetailCommentsPage(
     onLoadMore: () -> Unit,
     onCommentDraftChanged: (String) -> Unit,
     onSubmitComment: () -> Unit,
+    onComposerHeightChanged: (Int) -> Unit,
     isWallpaperHeaderCollapsed: Boolean,
     onReturnToWallpaperTop: () -> Unit,
 ) {
@@ -92,6 +103,12 @@ internal fun DetailCommentsPage(
     val focusManager = LocalFocusManager.current
     var commentsBoundsInWindow by remember { mutableStateOf(Rect.Zero) }
     var composerBoundsInWindow by remember { mutableStateOf(Rect.Zero) }
+    var composerHeightPx by remember { mutableIntStateOf(0) }
+    val composerHeight = with(LocalDensity.current) { composerHeightPx.toDp() }
+    val bottomContentPadding = maxOf(88.dp, composerHeight + WallHubSpacing.md)
+    DisposableEffect(Unit) {
+        onDispose { onComposerHeightChanged(0) }
+    }
     val showScrollToTop by remember(isWallpaperHeaderCollapsed) {
         derivedStateOf {
             isWallpaperHeaderCollapsed ||
@@ -137,25 +154,10 @@ internal fun DetailCommentsPage(
                         start = WallHubSpacing.md,
                         top = WallHubSpacing.md,
                         end = WallHubSpacing.md,
-                        bottom = 88.dp,
+                        bottom = bottomContentPadding,
                     ),
-                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxxs),
             ) {
-                if (canPostComment) {
-                    item(key = "comment-composer") {
-                        CommentComposer(
-                            value = commentDraft,
-                            isPosting = isPostingComment,
-                            error = commentPostError,
-                            onValueChange = onCommentDraftChanged,
-                            onSubmit = onSubmitComment,
-                            modifier =
-                                Modifier.onGloballyPositioned {
-                                    composerBoundsInWindow = it.boundsInWindow()
-                                },
-                        )
-                    }
-                }
                 when {
                     isLoading && comments.isEmpty() ->
                         item {
@@ -189,13 +191,22 @@ internal fun DetailCommentsPage(
                         }
 
                     else -> {
-                        items(
+                        itemsIndexed(
                             items = comments,
-                            key = { comment ->
+                            key = { _, comment ->
                                 listOf(comment.author, comment.timestamp, comment.text).joinToString("|")
                             },
-                        ) { comment ->
-                            WorkshopCommentItem(comment = comment)
+                        ) { index, comment ->
+                            WorkshopCommentItem(
+                                comment = comment,
+                                position =
+                                    when {
+                                        comments.size == 1 -> PreferencePosition.Single
+                                        index == 0 -> PreferencePosition.Top
+                                        index == comments.lastIndex -> PreferencePosition.Bottom
+                                        else -> PreferencePosition.Middle
+                                    },
+                            )
                         }
                         if (error != null) {
                             item {
@@ -235,12 +246,41 @@ internal fun DetailCommentsPage(
                 }
             }
         }
+        if (canPostComment) {
+            Surface(
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .onSizeChanged { size ->
+                            composerHeightPx = size.height
+                            onComposerHeightChanged(size.height)
+                        }
+                        .onGloballyPositioned { composerBoundsInWindow = it.boundsInWindow() },
+                color = MaterialTheme.colorScheme.surfaceContainer,
+            ) {
+                CommentComposer(
+                    value = commentDraft,
+                    isPosting = isPostingComment,
+                    error = commentPostError,
+                    onValueChange = onCommentDraftChanged,
+                    onSubmit = onSubmitComment,
+                    modifier =
+                        Modifier.padding(
+                            start = WallHubSpacing.md,
+                            top = WallHubSpacing.xs,
+                            end = WallHubSpacing.md,
+                            bottom = WallHubSpacing.xs,
+                        ),
+                )
+            }
+        }
         AnimatedVisibility(
             visible = showScrollToTop,
             modifier =
                 Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(WallHubSpacing.md),
+                    .padding(end = WallHubSpacing.md, bottom = composerHeight + WallHubSpacing.md),
             enter = fadeIn() + scaleIn(initialScale = 0.88f),
             exit = fadeOut() + scaleOut(targetScale = 0.88f),
         ) {
@@ -277,54 +317,71 @@ internal fun CommentComposer(
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
+    Row(
         modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        placeholder = { Text(stringResource(R.string.detail_write_comment)) },
-        trailingIcon = {
-            IconButton(
-                onClick = {
-                    focusManager.clearFocus(force = true)
-                    onSubmit()
+        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        TextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.weight(1f),
+            placeholder = { Text(stringResource(R.string.detail_write_comment)) },
+            supportingText =
+                error?.let { message ->
+                    { Text(message.resolve()) }
                 },
-                enabled = value.isNotBlank() && !isPosting,
-            ) {
-                if (isPosting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(WallHubSizeTokens.smallIcon),
-                        strokeWidth = WallHubSpacing.xxxs,
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Outlined.Send,
-                        contentDescription = stringResource(R.string.detail_post_comment),
-                    )
-                }
-            }
-        },
-        supportingText =
-            error?.let { message ->
-                { Text(message.resolve()) }
+            isError = error != null,
+            enabled = !isPosting,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions =
+                KeyboardActions(
+                    onSend = {
+                        if (value.isNotBlank() && !isPosting) {
+                            focusManager.clearFocus(force = true)
+                            onSubmit()
+                        }
+                    },
+                ),
+            minLines = 1,
+            maxLines = 4,
+        )
+        FilledIconButton(
+            onClick = {
+                focusManager.clearFocus(force = true)
+                onSubmit()
             },
-        isError = error != null,
-        enabled = !isPosting,
-        minLines = 1,
-        maxLines = 4,
-    )
+            enabled = value.isNotBlank() && !isPosting,
+            modifier = Modifier.size(56.dp),
+            shape = CircleShape,
+        ) {
+            if (isPosting) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(WallHubSizeTokens.smallIcon),
+                    strokeWidth = WallHubSpacing.xxxs,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Send,
+                    contentDescription = stringResource(R.string.detail_post_comment),
+                )
+            }
+        }
+    }
 }
 
 @Composable
-internal fun WorkshopCommentItem(comment: WorkshopComment) {
+internal fun WorkshopCommentItem(
+    comment: WorkshopComment,
+    position: PreferencePosition,
+) {
     val author = comment.localizedAuthor()
-    Surface(
+    CustomPreferenceRow(
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        position = position,
     ) {
         Row(
-            modifier = Modifier.padding(WallHubSpacing.controlInset),
+            modifier = Modifier.fillMaxWidth().padding(vertical = WallHubSpacing.controlInset),
             horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
             verticalAlignment = Alignment.Top,
         ) {

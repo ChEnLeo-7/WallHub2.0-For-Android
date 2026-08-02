@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Button
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -43,16 +43,23 @@ import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
-import com.wallhub.android.core.designsystem.WallHubSurfaceCard
 import com.wallhub.android.core.format.formatByteSize
+import com.wallhub.android.core.designsystem.localizedAuthor
 import com.wallhub.android.core.model.WorkshopDetail
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.uwuaosp.compose.settingslib.CustomPreferenceRow
+import org.uwuaosp.compose.settingslib.PreferencePosition
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun DetailOverviewPage(detail: WorkshopDetail) {
+internal fun DetailOverviewPage(
+    detail: WorkshopDetail,
+    onCopyWorkshopId: (Long) -> Unit,
+    onSearchAuthor: (String) -> Unit,
+    onSearchTag: (String) -> Unit,
+) {
     val summary = detail.summary
     val description =
         detail.description.ifBlank {
@@ -81,103 +88,12 @@ internal fun DetailOverviewPage(detail: WorkshopDetail) {
                 .PaddingValues(WallHubSpacing.md),
     ) {
         item {
-            WallHubSurfaceCard(
-                modifier = Modifier.fillMaxWidth(),
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = MaterialTheme.shapes.large,
-            ) {
-                Column(
-                    modifier = Modifier.padding(WallHubSpacing.md),
-                    verticalArrangement = Arrangement.spacedBy(WallHubSpacing.controlInset),
+            Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm)) {
+                CustomPreferenceRow(
+                    position = PreferencePosition.Single,
                 ) {
-                    Text(
-                        text = stringResource(R.string.detail_wallpaper_information),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    DetailMetricRow(
-                        first =
-                            DetailMetricValue(
-                                Icons.Outlined.FavoriteBorder,
-                                stringResource(R.string.detail_subscriptions),
-                                formatCompactCount(detail.subscriptions ?: summary.subscriptions),
-                            ),
-                        second =
-                            DetailMetricValue(
-                                Icons.Outlined.StarBorder,
-                                stringResource(R.string.detail_favorites),
-                                formatCompactCount(summary.favorites),
-                            ),
-                    )
-                    DetailDivider()
-                    DetailMetricRow(
-                        first =
-                            DetailMetricValue(
-                                Icons.Outlined.Visibility,
-                                stringResource(R.string.detail_views),
-                                formatCompactCount(summary.views),
-                            ),
-                        second =
-                            DetailMetricValue(
-                                Icons.Outlined.Download,
-                                stringResource(R.string.detail_file_size),
-                                detail.fileSizeBytes?.let(::formatByteSize)
-                                    ?: stringResource(R.string.detail_unknown),
-                            ),
-                    )
-                    DetailDivider()
-                    DetailMetricRow(
-                        first =
-                            DetailMetricValue(
-                                Icons.Outlined.Schedule,
-                                stringResource(R.string.detail_last_updated),
-                                formatWorkshopDate(detail.updatedAt),
-                            ),
-                        second =
-                            DetailMetricValue(
-                                Icons.Outlined.Info,
-                                stringResource(R.string.detail_type),
-                                summary.type.label(),
-                            ),
-                    )
-                    if (summary.tags.isNotEmpty()) {
-                        DetailDivider()
-                        Text(
-                            text = stringResource(R.string.detail_tags),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
-                            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
-                        ) {
-                            summary.tags.forEach { tag ->
-                                Surface(
-                                    shape = MaterialTheme.shapes.small,
-                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                ) {
-                                    Text(
-                                        text = tag,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        modifier = Modifier.padding(horizontal = WallHubSpacing.compact, vertical = WallHubSpacing.dense),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    DetailDivider()
                     Column(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .animateContentSize(
-                                    animationSpec =
-                                        spring(
-                                            dampingRatio = Spring.DampingRatioNoBouncy,
-                                            stiffness = Spring.StiffnessMediumLow,
-                                        ),
-                                ).padding(WallHubSpacing.xs),
+                        modifier = Modifier.weight(1f).padding(vertical = WallHubSpacing.sm),
                         verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
                     ) {
                         Text(
@@ -192,6 +108,13 @@ internal fun DetailOverviewPage(detail: WorkshopDetail) {
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
+                                    .animateContentSize(
+                                        animationSpec =
+                                            spring(
+                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                stiffness = Spring.StiffnessMediumLow,
+                                            ),
+                                    )
                                     .then(
                                         if (!descriptionExpanded && descriptionCanExpand) {
                                             Modifier
@@ -256,6 +179,97 @@ internal fun DetailOverviewPage(detail: WorkshopDetail) {
                         }
                     }
                 }
+                CustomPreferenceRow(position = PreferencePosition.Single) {
+                    Column(
+                        modifier = Modifier.weight(1f).padding(vertical = WallHubSpacing.sm),
+                        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.controlInset),
+                    ) {
+                        DetailMetricRow(
+                            first =
+                                DetailMetricValue(
+                                    Icons.Outlined.PersonOutline,
+                                    stringResource(R.string.detail_author),
+                                    summary.localizedAuthor(),
+                                    onClick = { onSearchAuthor(detail.creatorId ?: summary.author) },
+                                ),
+                            second =
+                                DetailMetricValue(
+                                    Icons.Outlined.ContentCopy,
+                                    stringResource(R.string.detail_project_id),
+                                    summary.id.toString(),
+                                    onClick = { onCopyWorkshopId(summary.id) },
+                                ),
+                        )
+                        DetailMetricRow(
+                            first =
+                                DetailMetricValue(
+                                    Icons.Outlined.FavoriteBorder,
+                                    stringResource(R.string.detail_subscriptions),
+                                    formatCompactCount(detail.subscriptions ?: summary.subscriptions),
+                                ),
+                            second =
+                                DetailMetricValue(
+                                    Icons.Outlined.StarBorder,
+                                    stringResource(R.string.detail_favorites),
+                                    formatCompactCount(summary.favorites),
+                                ),
+                        )
+                        DetailMetricRow(
+                            first =
+                                DetailMetricValue(
+                                    Icons.Outlined.Visibility,
+                                    stringResource(R.string.detail_views),
+                                    formatCompactCount(summary.views),
+                                ),
+                            second =
+                                DetailMetricValue(
+                                    Icons.Outlined.Download,
+                                    stringResource(R.string.detail_file_size),
+                                    detail.fileSizeBytes?.let(::formatByteSize)
+                                        ?: stringResource(R.string.detail_unknown),
+                                ),
+                        )
+                        DetailMetricRow(
+                            first =
+                                DetailMetricValue(
+                                    Icons.Outlined.Schedule,
+                                    stringResource(R.string.detail_last_updated),
+                                    formatWorkshopDate(detail.updatedAt),
+                                ),
+                            second =
+                                DetailMetricValue(
+                                    Icons.Outlined.Info,
+                                    stringResource(R.string.detail_type),
+                                    summary.type.label(),
+                                ),
+                        )
+                    }
+                }
+                if (summary.tags.isNotEmpty()) {
+                    CustomPreferenceRow(position = PreferencePosition.Single) {
+                        Column(
+                            modifier = Modifier.weight(1f).padding(vertical = WallHubSpacing.sm),
+                            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.detail_tags),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                            ) {
+                                summary.tags.forEach { tag ->
+                                    AssistChip(
+                                        onClick = { onSearchTag(tag) },
+                                        label = { Text(text = tag) },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -265,19 +279,20 @@ internal data class DetailMetricValue(
     val icon: ImageVector,
     val label: String,
     val value: String,
+    val onClick: (() -> Unit)? = null,
 )
 
 @Composable
 internal fun DetailMetricRow(
     first: DetailMetricValue,
-    second: DetailMetricValue,
+    second: DetailMetricValue? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
     ) {
         DetailMetric(first, Modifier.weight(1f))
-        DetailMetric(second, Modifier.weight(1f))
+        second?.let { DetailMetric(it, Modifier.weight(1f)) }
     }
 }
 
@@ -287,7 +302,15 @@ internal fun DetailMetric(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier,
+        modifier =
+            modifier
+                .then(
+                    metric.onClick?.let { onClick ->
+                        Modifier
+                            .clip(MaterialTheme.shapes.small)
+                            .clickable(onClick = onClick)
+                    } ?: Modifier,
+                ).padding(WallHubSpacing.xs),
         horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
         verticalAlignment = Alignment.CenterVertically,
     ) {

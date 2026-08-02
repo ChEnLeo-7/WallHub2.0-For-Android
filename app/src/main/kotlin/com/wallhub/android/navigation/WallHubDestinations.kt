@@ -16,6 +16,11 @@ internal data class AuthorSearchDestination(
     val authorSearchCreator: String,
 ) : WallHubDestination
 
+@Serializable
+internal data class TagSearchDestination(
+    val tagSearchTag: String,
+) : WallHubDestination
+
 @Serializable internal data object SteamLoginDestination : WallHubDestination
 
 @Serializable

@@ -157,10 +157,12 @@ internal fun HomeUiState.filterSelection(): HomeFilterSelection =
     ).normalized(matureContentEnabled)
 
 const val HOME_AUTHOR_SEARCH_CREATOR_ARGUMENT = "authorSearchCreator"
+const val HOME_TAG_SEARCH_ARGUMENT = "tagSearchTag"
 
 data class HomeUiState(
     val query: String = "",
     val creatorId: String? = null,
+    val requiredTags: Set<String> = emptySet(),
     val exactPhrase: Boolean = false,
     val selectedTypes: Set<WorkshopType> = emptySet(),
     val selectedRatings: Set<WorkshopRating> = DEFAULT_HOME_RATING_SELECTION,
@@ -196,7 +198,7 @@ data class HomeUiState(
     val successfulSearchToken: Long = 0L,
 ) {
     val activeFilterCount: Int
-        get() = filterSelection().activeSectionCount()
+        get() = filterSelection().activeSectionCount() + if (requiredTags.isNotEmpty()) 1 else 0
 }
 
 sealed interface HomeAction {
@@ -329,13 +331,40 @@ internal fun HomeUiState.asAuthorSearchState(creatorId: String): HomeUiState =
         errorRes = null,
     )
 
-internal fun initialHomeUiState(authorSearchCreator: String?): HomeUiState {
+internal fun HomeUiState.asTagSearchState(tag: String): HomeUiState {
+    val normalizedTag = tag.trim()
+    val genre = WorkshopFilterCatalog.genres.firstOrNull { it.equals(normalizedTag, ignoreCase = true) }
+    val officialTag = WorkshopFilterCatalog.officialTags.firstOrNull { it.equals(normalizedTag, ignoreCase = true) }
+    val resolution =
+        WorkshopFilterCatalog.resolutions.firstOrNull { it.equals(normalizedTag, ignoreCase = true) }
+    return copy(
+        query = "",
+        creatorId = null,
+        requiredTags = if (genre == null && officialTag == null && resolution == null) setOf(normalizedTag) else emptySet(),
+        selectedGenres = genre?.let(::setOf) ?: DEFAULT_HOME_GENRE_SELECTION,
+        selectedOfficialTags = officialTag?.let(::setOf).orEmpty(),
+        selectedResolutions = resolution?.let(::setOf) ?: DEFAULT_HOME_RESOLUTION_SELECTION,
+        sort = WorkshopSort.MOST_RECENT,
+        days = 0,
+        error = null,
+        errorRes = null,
+    )
+}
+
+internal fun initialHomeUiState(
+    authorSearchCreator: String?,
+    tagSearchTag: String?,
+): HomeUiState {
     val normalizedCreatorId =
         authorSearchCreator
             ?.filter(Char::isDigit)
             ?.takeIf(String::isNotBlank)
-            ?: return HomeUiState()
-    return HomeUiState().asAuthorSearchState(normalizedCreatorId)
+    if (normalizedCreatorId != null) return HomeUiState().asAuthorSearchState(normalizedCreatorId)
+    return tagSearchTag
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?.let { HomeUiState().asTagSearchState(it) }
+        ?: HomeUiState()
 }
 
 internal fun shouldPrewarmSteamIp(

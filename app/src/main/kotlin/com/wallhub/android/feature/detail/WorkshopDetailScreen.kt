@@ -77,7 +77,6 @@ import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
-import com.wallhub.android.core.designsystem.localizedAuthor
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SteamSessionPhase
@@ -109,6 +108,7 @@ fun WorkshopDetailScreen(
     onSubmitComment: () -> Unit,
     onInlineFullscreenChange: (Boolean) -> Unit,
     onSearchAuthor: (String) -> Unit,
+    onSearchTag: (String) -> Unit,
     onCopyText: (String, String) -> Unit,
     onOpenSteam: (Long) -> Unit,
 ) {
@@ -242,6 +242,7 @@ fun WorkshopDetailScreen(
                                 )
                             },
                             onSearchAuthor = onSearchAuthor,
+                            onSearchTag = onSearchTag,
                             modifier =
                                 Modifier
                                     .fillMaxSize()
@@ -315,6 +316,7 @@ internal fun WorkshopDetailPagerContent(
     onSubmitComment: () -> Unit,
     onCopyWorkshopId: (Long) -> Unit,
     onSearchAuthor: (String) -> Unit,
+    onSearchTag: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val summary = detail.summary
@@ -408,6 +410,7 @@ internal fun WorkshopDetailPagerContent(
         onShowDownloadChoices = { showDownloadChoices = true },
         onCopyWorkshopId = onCopyWorkshopId,
         onSearchAuthor = onSearchAuthor,
+        onSearchTag = onSearchTag,
         modifier = modifier,
     )
     if (showDownloadChoices) {
@@ -470,6 +473,7 @@ internal fun WorkshopDetailPane(
     onShowDownloadChoices: () -> Unit,
     onCopyWorkshopId: (Long) -> Unit,
     onSearchAuthor: (String) -> Unit,
+    onSearchTag: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -512,7 +516,9 @@ internal fun WorkshopDetailPane(
         }
     }
     var actionBarHeightPx by remember { mutableIntStateOf(0) }
+    var commentComposerHeightPx by remember { mutableIntStateOf(0) }
     val actionBarHeight = with(LocalDensity.current) { actionBarHeightPx.toDp() }
+    val commentComposerHeight = with(LocalDensity.current) { commentComposerHeightPx.toDp() }
 
     Box(modifier = modifier.fillMaxSize().nestedScroll(nestedScrollConnection)) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -526,8 +532,6 @@ internal fun WorkshopDetailPane(
                 inlineVideoError = inlineVideoError,
                 onStartInlineVideo = onStartInlineVideo,
                 onInlineFullscreenChange = onInlineFullscreenChange,
-                onCopyWorkshopId = onCopyWorkshopId,
-                onSearchAuthor = onSearchAuthor,
             )
             WorkshopDetailTabPager(
                 detail = detail,
@@ -548,6 +552,10 @@ internal fun WorkshopDetailPane(
                 onLoadMoreComments = onLoadMoreComments,
                 onCommentDraftChanged = onCommentDraftChanged,
                 onSubmitComment = onSubmitComment,
+                onCommentComposerHeightChanged = { commentComposerHeightPx = it },
+                onCopyWorkshopId = onCopyWorkshopId,
+                onSearchAuthor = onSearchAuthor,
+                onSearchTag = onSearchTag,
             )
             DetailActionBar(
                 interaction = interaction,
@@ -566,7 +574,7 @@ internal fun WorkshopDetailPane(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .padding(horizontal = WallHubSpacing.md)
-                    .padding(bottom = actionBarHeight + WallHubSpacing.xs)
+                    .padding(bottom = actionBarHeight + commentComposerHeight + WallHubSpacing.xs)
                     .widthIn(max = 560.dp),
         )
     }
@@ -583,37 +591,13 @@ internal fun WorkshopDetailCollapsibleHeader(
     inlineVideoError: DetailUiText?,
     onStartInlineVideo: () -> Unit,
     onInlineFullscreenChange: (Boolean) -> Unit,
-    onCopyWorkshopId: (Long) -> Unit,
-    onSearchAuthor: (String) -> Unit,
 ) {
     val summary = detail.summary
     val title = summary.localizedTitle()
-    val author = summary.localizedAuthor()
     CollapsibleDetailHeader(
         offsetPx = offsetPx,
         onHeightChanged = onHeaderHeightChanged,
     ) {
-        FlowRow(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = WallHubSpacing.md, end = WallHubSpacing.md, bottom = WallHubSpacing.compact),
-            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
-            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
-        ) {
-            DetailIdentityChip(
-                label = stringResource(R.string.detail_project_id),
-                value = summary.id.toString(),
-                icon = Icons.Outlined.ContentCopy,
-                onClick = { onCopyWorkshopId(summary.id) },
-            )
-            DetailIdentityChip(
-                label = stringResource(R.string.detail_author),
-                value = author,
-                icon = Icons.Outlined.Search,
-                onClick = { onSearchAuthor(detail.creatorId ?: summary.author) },
-            )
-        }
         DetailCover(
             title = title,
             previewUrl = summary.previewUrl,
@@ -653,6 +637,10 @@ internal fun ColumnScope.WorkshopDetailTabPager(
     onLoadMoreComments: () -> Unit,
     onCommentDraftChanged: (String) -> Unit,
     onSubmitComment: () -> Unit,
+    onCommentComposerHeightChanged: (Int) -> Unit,
+    onCopyWorkshopId: (Long) -> Unit,
+    onSearchAuthor: (String) -> Unit,
+    onSearchTag: (String) -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
     PrimaryTabRow(
@@ -696,6 +684,9 @@ internal fun ColumnScope.WorkshopDetailTabPager(
             DETAIL_OVERVIEW_PAGE ->
                 DetailOverviewPage(
                     detail = detail,
+                    onCopyWorkshopId = onCopyWorkshopId,
+                    onSearchAuthor = onSearchAuthor,
+                    onSearchTag = onSearchTag,
                 )
 
             else ->
@@ -713,55 +704,11 @@ internal fun ColumnScope.WorkshopDetailTabPager(
                     onLoadMore = onLoadMoreComments,
                     onCommentDraftChanged = onCommentDraftChanged,
                     onSubmitComment = onSubmitComment,
+                    onComposerHeightChanged = onCommentComposerHeightChanged,
                     isWallpaperHeaderCollapsed = isWallpaperHeaderCollapsed,
                     onReturnToWallpaperTop = onReturnToWallpaperTop,
                 )
         }
-    }
-}
-
-@Composable
-internal fun DetailIdentityChip(
-    label: String,
-    value: String,
-    icon: ImageVector,
-    onClick: (() -> Unit)? = null,
-) {
-    val content: @Composable () -> Unit = {
-        Row(
-            modifier = Modifier.padding(horizontal = WallHubSpacing.compact, vertical = WallHubSpacing.dense),
-            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.dense),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                text = value,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(WallHubSpacing.controlInset),
-            )
-        }
-    }
-    if (onClick != null) {
-        Surface(
-            onClick = onClick,
-            shape = MaterialTheme.shapes.small,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            content = content,
-        )
-    } else {
-        Surface(
-            shape = MaterialTheme.shapes.small,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            content = content,
-        )
     }
 }
 

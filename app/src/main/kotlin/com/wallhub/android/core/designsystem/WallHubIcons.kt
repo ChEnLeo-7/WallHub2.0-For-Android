@@ -7,6 +7,7 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.automirrored.outlined.ViewList
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explore
@@ -126,6 +127,10 @@ object WallHubIcons {
     }
 
     object AutoMirrored {
+        object Filled {
+            val Send: ImageVector get() = MaterialIcons.AutoMirrored.Filled.Send
+        }
+
         object Outlined {
             val ArrowBack: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.ArrowBack
             val KeyboardArrowRight: ImageVector get() = MaterialIcons.AutoMirrored.Outlined.KeyboardArrowRight

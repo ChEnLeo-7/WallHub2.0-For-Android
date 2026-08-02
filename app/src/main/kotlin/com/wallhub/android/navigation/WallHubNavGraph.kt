@@ -44,6 +44,11 @@ internal fun WallHubNavHost(
             if (currentCreatorId != destination.authorSearchCreator) navController.navigate(destination)
         }
     }
+    val navigateToTagSearch: (String) -> Unit = { tag ->
+        tag.trim().takeIf(String::isNotEmpty)?.let { normalizedTag ->
+            navController.navigate(TagSearchDestination(normalizedTag))
+        }
+    }
     val openSettings = {
         navController.navigate(SettingsDestination) { launchSingleTop = true }
     }
@@ -85,6 +90,14 @@ internal fun WallHubNavHost(
                 onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
             )
         }
+        composable<TagSearchDestination> {
+            HomeRoute(
+                onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
+                onSearchAuthor = navigateToAuthorSearch,
+                onBack = { navController.popBackStack() },
+                onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
+            )
+        }
         composable<DownloadsDestination> {
             DownloadsRoute(
                 onOpenSettings = openSettings,
@@ -114,6 +127,7 @@ internal fun WallHubNavHost(
             WorkshopDetailRoute(
                 onBack = { navController.popBackStack() },
                 onSearchAuthor = navigateToAuthorSearch,
+                onSearchTag = navigateToTagSearch,
                 onOpenLocalVideo = { navController.navigate(LocalVideoPlayerDestination(it)) },
             )
         }

@@ -53,7 +53,10 @@ class HomeViewModel
     ) : ViewModel() {
         private val mutableState =
             MutableStateFlow(
-                initialHomeUiState(savedStateHandle.get(HOME_AUTHOR_SEARCH_CREATOR_ARGUMENT)),
+                initialHomeUiState(
+                    authorSearchCreator = savedStateHandle.get(HOME_AUTHOR_SEARCH_CREATOR_ARGUMENT),
+                    tagSearchTag = savedStateHandle.get(HOME_TAG_SEARCH_ARGUMENT),
+                ),
             )
         private var loadJob: Job? = null
         private var requestVersion = 0L
@@ -266,6 +269,7 @@ class HomeViewModel
                     selectedGenres = DEFAULT_HOME_GENRE_SELECTION,
                     selectedOfficialTags = emptySet(),
                     selectedResolutions = DEFAULT_HOME_RESOLUTION_SELECTION,
+                    requiredTags = emptySet(),
                     sort = WorkshopSort.TRENDING,
                     days = 30,
                     error = null,
@@ -368,6 +372,7 @@ class HomeViewModel
                                     pageSize = requestState.pageSize,
                                     searchText = requestState.query,
                                     creatorId = requestState.creatorId,
+                                    tags = requestState.requiredTags,
                                     types = requestState.selectedTypes,
                                     genres = requestState.selectedGenres.asEffectiveFilter(DEFAULT_HOME_GENRE_SELECTION),
                                     officialTags = requestState.selectedOfficialTags,
