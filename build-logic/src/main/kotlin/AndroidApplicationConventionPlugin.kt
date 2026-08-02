@@ -10,10 +10,8 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 class AndroidApplicationConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
         pluginManager.apply("com.android.application")
-        pluginManager.apply("org.jetbrains.kotlin.android")
-
         extensions.configure<ApplicationExtension> {
-            compileSdk = 36
+            compileSdk = 37
             defaultConfig.minSdk = 26
             compileOptions {
                 sourceCompatibility = JavaVersion.VERSION_17

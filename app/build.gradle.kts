@@ -5,7 +5,7 @@ import java.security.cert.X509Certificate
 plugins {
     id("wallhub.android.application")
     id("wallhub.android.compose")
-    alias(libs.plugins.kotlin.kapt)
+    alias(libs.plugins.android.legacy.kapt)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.protobuf)
@@ -146,24 +146,12 @@ android {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
         resources.excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
     }
-}
 
-kotlin {
     sourceSets.named("test") {
-        kotlin.setSrcDirs(listOf("src/test/kotlin"))
-        kotlin.include(
-            "com/wallhub/android/testutil/MainDispatcherRule.kt",
-            "com/wallhub/android/data/settings/SteamApiCredentialRepositoryTest.kt",
-            "com/wallhub/android/data/steamaccess/SteamAccessRoutesTest.kt",
-            "com/wallhub/android/data/update/GitHubReleaseParserTest.kt",
-            "com/wallhub/android/feature/local/LocalWallpaperViewModelTest.kt",
-        )
+        kotlin.directories += "src/test/kotlin"
     }
     sourceSets.named("androidTest") {
-        kotlin.setSrcDirs(listOf("src/androidTest/kotlin"))
-        kotlin.include(
-            "com/wallhub/android/core/database/FormalTaskDatabaseMigrationTest.kt",
-        )
+        kotlin.directories += "src/androidTest/kotlin"
     }
 }
 
