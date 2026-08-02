@@ -437,6 +437,11 @@ class WorkshopDetailViewModel
             }
         }
 
+        fun reconnectSteamSession() {
+            mutableState.value = mutableState.value.copy(interactionMessage = null)
+            steamSessionRepository.restorePersistedSession()
+        }
+
         fun enqueueDownload(playWhenReady: Boolean = false) {
             val detail = mutableState.value.detail ?: return
             viewModelScope.launch {

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
@@ -32,17 +33,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
-import androidx.compose.material3.adaptive.layout.AnimatedPane
-import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldRole
-import androidx.compose.material3.adaptive.layout.ThreePaneScaffoldDestinationItem
-import androidx.compose.material3.adaptive.navigation.NavigableListDetailPaneScaffold
-import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -67,6 +64,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -77,20 +75,19 @@ import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubColorTokens
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.LocalWallHubToastState
-import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
-import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.localizedAuthor
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SteamSessionPhase
+import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.WorkshopComment
 import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopInteraction
-import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
 import kotlinx.coroutines.launch
+import org.uwuaosp.compose.settingslib.SettingsCollapsingAppBarScaffold
 import kotlin.math.roundToInt
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
@@ -102,6 +99,7 @@ fun WorkshopDetailScreen(
     onRetry: () -> Unit,
     onToggleSubscription: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onReconnectSteam: () -> Unit,
     onStartInlineVideo: () -> Unit,
     onExportFormatSelected: (ExportFormat) -> Unit,
     onDownload: () -> Unit,
@@ -118,6 +116,7 @@ fun WorkshopDetailScreen(
     val unknown = stringResource(R.string.detail_unknown)
     val steamCdnMessageTemplate = stringResource(R.string.detail_steam_cdn, "%s")
     val projectIdCopiedMessage = stringResource(R.string.detail_project_id_copied, selectedSummary?.id ?: 0L)
+    val titleCopiedMessage = stringResource(R.string.detail_wallpaper_title_copied)
     val toastState = LocalWallHubToastState.current
     val inlineVideoStream = state.inlineVideoStream
     val inlineFullscreen = state.isInlineVideoFullscreen
@@ -146,50 +145,71 @@ fun WorkshopDetailScreen(
                 onFullscreenChange = onInlineFullscreenChange,
             )
         } else {
-            WallHubPageScaffold(
-                title = selectedSummary?.title ?: stringResource(R.string.detail_wallpaper_details),
-                topBarContent = {
-                    WorkshopDetailTopBar(
-                        summary = selectedSummary,
-                        onBack = onBack,
-                        onCopyText = onCopyText,
-                        onOpenSteam = onOpenSteam,
-                    )
-                },
-            ) { padding ->
-                when {
-                    state.isLoading -> {
-                        Box(
-                            modifier =
-                                Modifier
-                                    .fillMaxSize()
-                                    .padding(padding),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            androidx.compose.material3.CircularProgressIndicator()
+            val title = selectedSummary?.localizedTitle() ?: stringResource(R.string.detail_wallpaper_details)
+            val colorScheme = MaterialTheme.colorScheme
+            MaterialTheme(
+                colorScheme =
+                    colorScheme.copy(
+                        surfaceContainer = colorScheme.surfaceContainerLowest,
+                        surfaceBright = colorScheme.surfaceContainerLow,
+                    ),
+            ) {
+                SettingsCollapsingAppBarScaffold(
+                    title = title,
+                    showBackButton = true,
+                    onNavigateUp = onBack,
+                    actions = {
+                        selectedSummary?.let { workshop ->
+                            IconButton(onClick = { onCopyText(title, titleCopiedMessage) }) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ContentCopy,
+                                    contentDescription = stringResource(R.string.detail_copy_title),
+                                )
+                            }
+                            IconButton(onClick = { onOpenSteam(workshop.id) }) {
+                                Icon(
+                                    imageVector = Icons.Outlined.OpenInNew,
+                                    contentDescription = stringResource(R.string.detail_open_steam_page),
+                                )
+                            }
                         }
-                    }
+                    },
+                ) { padding ->
+                    when {
+                        state.isLoading -> {
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .fillMaxSize()
+                                        .padding(padding),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                androidx.compose.material3.CircularProgressIndicator()
+                            }
+                        }
 
-                    state.error != null -> {
-                        WallHubEmptyState(
-                            icon = Icons.Outlined.Refresh,
-                            title = state.error.resolve(),
-                            actionLabel = stringResource(R.string.detail_retry),
-                            onAction = onRetry,
-                            modifier =
-                                Modifier
-                                    .fillMaxSize()
-                                    .padding(padding),
-                        )
-                    }
+                        state.error != null -> {
+                            WallHubEmptyState(
+                                icon = Icons.Outlined.Refresh,
+                                title = state.error.resolve(),
+                                actionLabel = stringResource(R.string.detail_retry),
+                                onAction = onRetry,
+                                modifier =
+                                    Modifier
+                                        .fillMaxSize()
+                                        .padding(padding),
+                            )
+                        }
 
-                    state.detail != null ->
-                        WorkshopDetailPagerContent(
+                        state.detail != null ->
+                            WorkshopDetailPagerContent(
                             detail = state.detail,
                             interaction = state.interaction,
                             isLoadingInteraction = state.isLoadingInteraction,
                             isUpdatingInteraction = state.isUpdatingInteraction,
                             interactionMessage = state.interactionMessage,
+                            steamSession = state.steamSession,
+                            onReconnectSteam = onReconnectSteam,
                             onToggleSubscription = onToggleSubscription,
                             onToggleFavorite = onToggleFavorite,
                             inlineVideoPlayback = inlinePlayback,
@@ -226,76 +246,12 @@ fun WorkshopDetailScreen(
                                 Modifier
                                     .fillMaxSize()
                                     .padding(padding),
-                        )
+                            )
+                    }
                 }
             }
         }
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun WorkshopDetailTopBar(
-    summary: WorkshopSummary?,
-    onBack: () -> Unit,
-    onCopyText: (String, String) -> Unit,
-    onOpenSteam: (Long) -> Unit,
-) {
-    val titleCopiedMessage = stringResource(R.string.detail_wallpaper_title_copied)
-    val localizedTitle = summary?.localizedTitle()
-    TopAppBar(
-        navigationIcon = {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                    contentDescription = stringResource(R.string.detail_back),
-                )
-            }
-        },
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = localizedTitle ?: stringResource(R.string.detail_wallpaper_details),
-                    style = MaterialTheme.typography.headlineSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                summary?.let { workshop ->
-                    IconButton(
-                        onClick = {
-                            onCopyText(
-                                localizedTitle.orEmpty(),
-                                titleCopiedMessage,
-                            )
-                        },
-                        modifier = Modifier.size(WallHubSizeTokens.compactActionHeight),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.ContentCopy,
-                            contentDescription = stringResource(R.string.detail_copy_title),
-                        )
-                    }
-                }
-            }
-        },
-        actions = {
-            summary?.let { workshop ->
-                IconButton(onClick = { onOpenSteam(workshop.id) }) {
-                    Icon(
-                        imageVector = Icons.Outlined.OpenInNew,
-                        contentDescription = stringResource(R.string.detail_open_steam_page),
-                    )
-                }
-            }
-        },
-        colors =
-            TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background,
-                titleContentColor = MaterialTheme.colorScheme.onBackground,
-                actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            ),
-    )
 }
 
 @Composable
@@ -322,7 +278,6 @@ internal fun FullscreenWallpaperVideoPlayer(
     ExperimentalFoundationApi::class,
     ExperimentalLayoutApi::class,
     ExperimentalMaterial3Api::class,
-    ExperimentalMaterial3AdaptiveApi::class,
 )
 @Composable
 internal fun WorkshopDetailPagerContent(
@@ -331,6 +286,8 @@ internal fun WorkshopDetailPagerContent(
     isLoadingInteraction: Boolean,
     isUpdatingInteraction: Boolean,
     interactionMessage: DetailUiText?,
+    steamSession: SteamSessionState,
+    onReconnectSteam: () -> Unit,
     onToggleSubscription: () -> Unit,
     onToggleFavorite: () -> Unit,
     inlineVideoPlayback: SteamChunkPlayback?,
@@ -366,21 +323,7 @@ internal fun WorkshopDetailPagerContent(
         rememberPagerState(initialPage = DETAIL_OVERVIEW_PAGE) {
             DETAIL_PAGE_COUNT
         }
-    // Start on Detail for compact screens while retaining List history for wider layouts.
-    // This avoids a transient list-only frame before the navigation coroutine runs.
-    val paneNavigator =
-        rememberListDetailPaneScaffoldNavigator(
-            initialDestinationHistory =
-                listOf(
-                    ThreePaneScaffoldDestinationItem<Int>(ListDetailPaneScaffoldRole.List),
-                    ThreePaneScaffoldDestinationItem(
-                        ListDetailPaneScaffoldRole.Detail,
-                        DETAIL_OVERVIEW_PAGE,
-                    ),
-                ),
-        )
     val focusManager = LocalFocusManager.current
-    val coroutineScope = rememberCoroutineScope()
     var showDownloadChoices by remember { mutableStateOf(false) }
     var headerHeightPx by remember(summary.id) { mutableIntStateOf(0) }
     var coverHeightPx by remember(summary.id) { mutableIntStateOf(0) }
@@ -393,27 +336,6 @@ internal fun WorkshopDetailPagerContent(
     val pinnedHeaderHeightPx = if (inlineVideoActive) coverHeightPx + pinnedSpacingPx else 0
     val maxHeaderCollapsePx = (headerHeightPx - pinnedHeaderHeightPx).coerceAtLeast(0).toFloat()
     val maxHeaderCollapseState = rememberUpdatedState(maxHeaderCollapsePx)
-    LaunchedEffect(summary.id) {
-        if (paneNavigator.currentDestination?.contentKey != DETAIL_OVERVIEW_PAGE) {
-            paneNavigator.navigateTo(
-                ListDetailPaneScaffoldRole.Detail,
-                DETAIL_OVERVIEW_PAGE,
-            )
-        }
-    }
-    LaunchedEffect(pagerState.currentPage) {
-        paneNavigator.navigateTo(
-            ListDetailPaneScaffoldRole.Detail,
-            pagerState.currentPage,
-        )
-    }
-    LaunchedEffect(paneNavigator.currentDestination?.contentKey) {
-        paneNavigator.currentDestination?.contentKey?.let { destinationPage ->
-            if (destinationPage != pagerState.currentPage) {
-                pagerState.animateScrollToPage(destinationPage)
-            }
-        }
-    }
     LaunchedEffect(maxHeaderCollapsePx) {
         headerOffsetPx = headerOffsetPx.coerceIn(-maxHeaderCollapsePx, 0f)
     }
@@ -446,65 +368,47 @@ internal fun WorkshopDetailPagerContent(
                 ): Offset = if (available.y > 0f) consumeHeaderDelta(available.y) else Offset.Zero
             }
         }
-    NavigableListDetailPaneScaffold(
-        navigator = paneNavigator,
+    WorkshopDetailPane(
+        detail = detail,
+        pagerState = pagerState,
+        nestedScrollConnection = nestedScrollConnection,
+        headerOffsetPx = headerOffsetPx,
+        onHeaderOffsetChange = { headerOffsetPx = it },
+        onHeaderHeightChanged = { headerHeightPx = it },
+        onCoverHeightChanged = { coverHeightPx = it },
+        inlineVideoPlayback = inlineVideoPlayback,
+        isLoadingInlineVideo = isLoadingInlineVideo,
+        inlineVideoError = inlineVideoError,
+        onStartInlineVideo = onStartInlineVideo,
+        onInlineFullscreenChange = onInlineFullscreenChange,
+        comments = comments,
+        commentsTotal = commentsTotal,
+        commentsHasMore = commentsHasMore,
+        isLoadingComments = isLoadingComments,
+        isLoadingMoreComments = isLoadingMoreComments,
+        commentsError = commentsError,
+        canPostComment = canPostComment,
+        commentDraft = commentDraft,
+        isPostingComment = isPostingComment,
+        commentPostError = commentPostError,
+        onRetryComments = onRetryComments,
+        onLoadMoreComments = onLoadMoreComments,
+        onCommentDraftChanged = onCommentDraftChanged,
+        onSubmitComment = onSubmitComment,
+        interaction = interaction,
+        isLoadingInteraction = isLoadingInteraction,
+        isUpdatingInteraction = isUpdatingInteraction,
+        interactionMessage = interactionMessage,
+        steamSession = steamSession,
+        onReconnectSteam = onReconnectSteam,
+        isEnqueuingDownload = isEnqueuingDownload,
+        downloadMessage = downloadMessage,
+        onToggleSubscription = onToggleSubscription,
+        onToggleFavorite = onToggleFavorite,
+        onShowDownloadChoices = { showDownloadChoices = true },
+        onCopyWorkshopId = onCopyWorkshopId,
+        onSearchAuthor = onSearchAuthor,
         modifier = modifier,
-        listPane = {
-            AnimatedPane {
-                WorkshopDetailSectionList(
-                    selectedPage = pagerState.currentPage,
-                    commentsTotal = commentsTotal,
-                    onPageSelected = { page ->
-                        coroutineScope.launch {
-                            paneNavigator.navigateTo(ListDetailPaneScaffoldRole.Detail, page)
-                        }
-                    },
-                )
-            }
-        },
-        detailPane = {
-            AnimatedPane {
-                WorkshopDetailPane(
-                    detail = detail,
-                    pagerState = pagerState,
-                    nestedScrollConnection = nestedScrollConnection,
-                    headerOffsetPx = headerOffsetPx,
-                    onHeaderOffsetChange = { headerOffsetPx = it },
-                    onHeaderHeightChanged = { headerHeightPx = it },
-                    onCoverHeightChanged = { coverHeightPx = it },
-                    inlineVideoPlayback = inlineVideoPlayback,
-                    isLoadingInlineVideo = isLoadingInlineVideo,
-                    inlineVideoError = inlineVideoError,
-                    onStartInlineVideo = onStartInlineVideo,
-                    onInlineFullscreenChange = onInlineFullscreenChange,
-                    comments = comments,
-                    commentsTotal = commentsTotal,
-                    commentsHasMore = commentsHasMore,
-                    isLoadingComments = isLoadingComments,
-                    isLoadingMoreComments = isLoadingMoreComments,
-                    commentsError = commentsError,
-                    canPostComment = canPostComment,
-                    commentDraft = commentDraft,
-                    isPostingComment = isPostingComment,
-                    commentPostError = commentPostError,
-                    onRetryComments = onRetryComments,
-                    onLoadMoreComments = onLoadMoreComments,
-                    onCommentDraftChanged = onCommentDraftChanged,
-                    onSubmitComment = onSubmitComment,
-                    interaction = interaction,
-                    isLoadingInteraction = isLoadingInteraction,
-                    isUpdatingInteraction = isUpdatingInteraction,
-                    interactionMessage = interactionMessage,
-                    isEnqueuingDownload = isEnqueuingDownload,
-                    downloadMessage = downloadMessage,
-                    onToggleSubscription = onToggleSubscription,
-                    onToggleFavorite = onToggleFavorite,
-                    onShowDownloadChoices = { showDownloadChoices = true },
-                    onCopyWorkshopId = onCopyWorkshopId,
-                    onSearchAuthor = onSearchAuthor,
-                )
-            }
-        },
     )
     if (showDownloadChoices) {
         DownloadChoiceSheet(
@@ -557,6 +461,8 @@ internal fun WorkshopDetailPane(
     isLoadingInteraction: Boolean,
     isUpdatingInteraction: Boolean,
     interactionMessage: DetailUiText?,
+    steamSession: SteamSessionState,
+    onReconnectSteam: () -> Unit,
     isEnqueuingDownload: Boolean,
     downloadMessage: DetailUiText?,
     onToggleSubscription: () -> Unit,
@@ -564,51 +470,104 @@ internal fun WorkshopDetailPane(
     onShowDownloadChoices: () -> Unit,
     onCopyWorkshopId: (Long) -> Unit,
     onSearchAuthor: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(modifier = Modifier.fillMaxSize().nestedScroll(nestedScrollConnection)) {
-        WorkshopDetailCollapsibleHeader(
-            detail = detail,
-            offsetPx = headerOffsetPx,
-            onHeaderHeightChanged = onHeaderHeightChanged,
-            onCoverHeightChanged = onCoverHeightChanged,
-            inlineVideoPlayback = inlineVideoPlayback,
-            isLoadingInlineVideo = isLoadingInlineVideo,
-            inlineVideoError = inlineVideoError,
-            onStartInlineVideo = onStartInlineVideo,
-            onInlineFullscreenChange = onInlineFullscreenChange,
-            onCopyWorkshopId = onCopyWorkshopId,
-            onSearchAuthor = onSearchAuthor,
-        )
-        WorkshopDetailTabPager(
-            detail = detail,
-            pagerState = pagerState,
-            comments = comments,
-            commentsTotal = commentsTotal,
-            commentsHasMore = commentsHasMore,
-            isLoadingComments = isLoadingComments,
-            isLoadingMoreComments = isLoadingMoreComments,
-            commentsError = commentsError,
-            canPostComment = canPostComment,
-            commentDraft = commentDraft,
-            isPostingComment = isPostingComment,
-            commentPostError = commentPostError,
-            isWallpaperHeaderCollapsed = headerOffsetPx < -1f,
-            onReturnToWallpaperTop = { onHeaderOffsetChange(0f) },
-            onRetryComments = onRetryComments,
-            onLoadMoreComments = onLoadMoreComments,
-            onCommentDraftChanged = onCommentDraftChanged,
-            onSubmitComment = onSubmitComment,
-        )
-        DetailActionBar(
-            interaction = interaction,
-            isLoadingInteraction = isLoadingInteraction,
-            isUpdatingInteraction = isUpdatingInteraction,
-            interactionMessage = interactionMessage,
-            isEnqueuingDownload = isEnqueuingDownload,
-            downloadMessage = downloadMessage,
-            onToggleSubscription = onToggleSubscription,
-            onToggleFavorite = onToggleFavorite,
-            onDownload = onShowDownloadChoices,
+    val snackbarHostState = remember { SnackbarHostState() }
+    val loadingInteractionMessage = stringResource(R.string.detail_loading_steam_account)
+    val updatingInteractionMessage = stringResource(R.string.detail_sending_steam_request)
+    val resolvedInteractionMessage = interactionMessage?.resolve()
+    val resolvedDownloadMessage = downloadMessage?.resolve()
+    val disconnectedMessage = stringResource(R.string.backend_steam_disconnected)
+    val reconnectActionLabel = stringResource(R.string.detail_reconnect)
+    val canReconnect =
+        steamSession.phase == SteamSessionPhase.RESTORABLE &&
+            steamSession.hasStoredSession &&
+            steamSession.message == disconnectedMessage
+    val snackbarMessage =
+        when {
+            isLoadingInteraction -> loadingInteractionMessage
+            isUpdatingInteraction -> updatingInteractionMessage
+            canReconnect -> disconnectedMessage
+            resolvedInteractionMessage != null -> resolvedInteractionMessage
+            else -> resolvedDownloadMessage
+        }
+    val snackbarDuration =
+        if (isLoadingInteraction || isUpdatingInteraction || canReconnect) {
+            SnackbarDuration.Indefinite
+        } else {
+            SnackbarDuration.Short
+        }
+    LaunchedEffect(snackbarMessage, snackbarDuration, canReconnect) {
+        snackbarHostState.currentSnackbarData?.dismiss()
+        snackbarMessage?.let { message ->
+            val result =
+                snackbarHostState.showSnackbar(
+                    message = message,
+                    actionLabel = reconnectActionLabel.takeIf { canReconnect },
+                    duration = snackbarDuration,
+                )
+            if (canReconnect && result == SnackbarResult.ActionPerformed) {
+                onReconnectSteam()
+            }
+        }
+    }
+    var actionBarHeightPx by remember { mutableIntStateOf(0) }
+    val actionBarHeight = with(LocalDensity.current) { actionBarHeightPx.toDp() }
+
+    Box(modifier = modifier.fillMaxSize().nestedScroll(nestedScrollConnection)) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            WorkshopDetailCollapsibleHeader(
+                detail = detail,
+                offsetPx = headerOffsetPx,
+                onHeaderHeightChanged = onHeaderHeightChanged,
+                onCoverHeightChanged = onCoverHeightChanged,
+                inlineVideoPlayback = inlineVideoPlayback,
+                isLoadingInlineVideo = isLoadingInlineVideo,
+                inlineVideoError = inlineVideoError,
+                onStartInlineVideo = onStartInlineVideo,
+                onInlineFullscreenChange = onInlineFullscreenChange,
+                onCopyWorkshopId = onCopyWorkshopId,
+                onSearchAuthor = onSearchAuthor,
+            )
+            WorkshopDetailTabPager(
+                detail = detail,
+                pagerState = pagerState,
+                comments = comments,
+                commentsTotal = commentsTotal,
+                commentsHasMore = commentsHasMore,
+                isLoadingComments = isLoadingComments,
+                isLoadingMoreComments = isLoadingMoreComments,
+                commentsError = commentsError,
+                canPostComment = canPostComment,
+                commentDraft = commentDraft,
+                isPostingComment = isPostingComment,
+                commentPostError = commentPostError,
+                isWallpaperHeaderCollapsed = headerOffsetPx < -1f,
+                onReturnToWallpaperTop = { onHeaderOffsetChange(0f) },
+                onRetryComments = onRetryComments,
+                onLoadMoreComments = onLoadMoreComments,
+                onCommentDraftChanged = onCommentDraftChanged,
+                onSubmitComment = onSubmitComment,
+            )
+            DetailActionBar(
+                interaction = interaction,
+                isLoadingInteraction = isLoadingInteraction,
+                isUpdatingInteraction = isUpdatingInteraction,
+                isEnqueuingDownload = isEnqueuingDownload,
+                onToggleSubscription = onToggleSubscription,
+                onToggleFavorite = onToggleFavorite,
+                onDownload = onShowDownloadChoices,
+                modifier = Modifier.onSizeChanged { size -> actionBarHeightPx = size.height },
+            )
+        }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = WallHubSpacing.md)
+                    .padding(bottom = actionBarHeight + WallHubSpacing.xs)
+                    .widthIn(max = 560.dp),
         )
     }
 }
@@ -698,7 +657,7 @@ internal fun ColumnScope.WorkshopDetailTabPager(
     val coroutineScope = rememberCoroutineScope()
     PrimaryTabRow(
         selectedTabIndex = pagerState.currentPage,
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         contentColor = MaterialTheme.colorScheme.primary,
         divider = { DetailDivider() },
     ) {
@@ -758,75 +717,6 @@ internal fun ColumnScope.WorkshopDetailTabPager(
                     onReturnToWallpaperTop = onReturnToWallpaperTop,
                 )
         }
-    }
-}
-
-@Composable
-internal fun WorkshopDetailSectionList(
-    selectedPage: Int,
-    commentsTotal: Int?,
-    onPageSelected: (Int) -> Unit,
-) {
-    val commentsLabel =
-        commentsTotal?.takeIf { it > 0 }?.let { total ->
-            stringResource(R.string.detail_comments_count, total)
-        } ?: stringResource(R.string.detail_comments)
-    Column(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .padding(WallHubSpacing.md),
-        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
-    ) {
-        Text(
-            text = stringResource(R.string.detail_details_navigation),
-            style = MaterialTheme.typography.titleMedium,
-        )
-        DetailSectionListItem(
-            label = stringResource(R.string.detail_details),
-            selected = selectedPage == DETAIL_OVERVIEW_PAGE,
-            onClick = { onPageSelected(DETAIL_OVERVIEW_PAGE) },
-        )
-        DetailSectionListItem(
-            label = commentsLabel,
-            selected = selectedPage == DETAIL_COMMENTS_PAGE,
-            onClick = { onPageSelected(DETAIL_COMMENTS_PAGE) },
-        )
-    }
-}
-
-@Composable
-internal fun DetailSectionListItem(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color =
-            if (selected) {
-                MaterialTheme.colorScheme.secondaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerLow
-            },
-        contentColor =
-            if (selected) {
-                MaterialTheme.colorScheme.onSecondaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.titleSmall,
-            modifier =
-                Modifier.padding(
-                    horizontal = WallHubSpacing.sm,
-                    vertical = WallHubSpacing.controlInset,
-                ),
-        )
     }
 }
 

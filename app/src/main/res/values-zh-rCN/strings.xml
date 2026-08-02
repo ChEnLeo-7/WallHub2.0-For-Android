@@ -461,7 +461,6 @@
     <string name='detail_creator'>作者</string>
     <string name='detail_description'>简介</string>
     <string name='detail_details'>详情</string>
-    <string name='detail_details_navigation'>详情导航</string>
     <string name='detail_download'>下载</string>
     <string name='detail_download_enqueue_failed'>无法加入下载队列</string>
     <string name='detail_download_mpkg'>下载 MPKG 文件（手机）</string>
@@ -504,6 +503,7 @@
     <string name='detail_project_id'>项目 ID</string>
     <string name='detail_project_id_copied'>已复制项目 ID：%1$d</string>
     <string name='detail_retry'>重试</string>
+    <string name='detail_reconnect'>重连</string>
     <string name='detail_retry_loading_more_comments'>重试加载更多评论</string>
     <string name='detail_sending_steam_request'>正在向 Steam 提交请求…</string>
     <string name='detail_show_less'>收起</string>

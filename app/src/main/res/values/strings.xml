@@ -489,7 +489,6 @@
     <string name='detail_creator'>Creator</string>
     <string name='detail_description'>Description</string>
     <string name='detail_details'>Details</string>
-    <string name='detail_details_navigation'>Details navigation</string>
     <string name='detail_download'>Download</string>
     <string name='detail_download_enqueue_failed'>Could not add to the download queue</string>
     <string name='detail_download_mpkg'>Download MPKG (mobile)</string>
@@ -534,6 +533,7 @@
     <string name='detail_project_id'>Project ID</string>
     <string name='detail_project_id_copied'>Project ID copied: %1$d</string>
     <string name='detail_retry'>Retry</string>
+    <string name='detail_reconnect'>Reconnect</string>
     <string name='detail_retry_loading_more_comments'>Retry loading more comments</string>
     <string name='detail_sending_steam_request'>Sending request to Steam…</string>
     <string name='detail_show_less'>Show less</string>

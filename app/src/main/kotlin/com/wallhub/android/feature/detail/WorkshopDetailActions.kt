@@ -4,26 +4,35 @@ package com.wallhub.android.feature.detail
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSecondaryButton
 import com.wallhub.android.core.designsystem.WallHubSpacing
@@ -45,92 +54,99 @@ internal fun DetailActionBar(
     interaction: WorkshopInteraction,
     isLoadingInteraction: Boolean,
     isUpdatingInteraction: Boolean,
-    interactionMessage: DetailUiText?,
     isEnqueuingDownload: Boolean,
-    downloadMessage: DetailUiText?,
     onToggleSubscription: () -> Unit,
     onToggleFavorite: () -> Unit,
     onDownload: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val interactionEnabled = !isLoadingInteraction && !isUpdatingInteraction
-    Column(
+    val subscribed = interaction.subscriptionState == SubscriptionState.SUBSCRIBED
+    val favorited = interaction.favoriteState == FavoriteState.FAVORITED
+    Row(
         modifier =
-            Modifier
+            modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.background)
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .navigationBarsPadding()
                 .padding(start = WallHubSpacing.md, top = WallHubSpacing.compact, end = WallHubSpacing.md, bottom = WallHubSpacing.xs),
-        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.dense),
+        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
-        ) {
-            WallHubSecondaryButton(
-                onClick = onToggleSubscription,
-                modifier = Modifier.weight(1f),
-                enabled = interactionEnabled,
-            ) {
-                Icon(imageVector = Icons.Outlined.Notifications, contentDescription = null)
-                Text(
-                    text =
-                        if (interaction.subscriptionState == SubscriptionState.SUBSCRIBED) {
-                            stringResource(R.string.detail_unsubscribe)
-                        } else {
-                            stringResource(R.string.detail_subscribe)
-                        },
-                    modifier = Modifier.padding(start = WallHubSpacing.dense),
-                )
+        DetailToggleActionButton(
+            icon = Icons.Outlined.Notifications,
+            contentDescription =
+                if (subscribed) {
+                    stringResource(R.string.detail_unsubscribe)
+                } else {
+                    stringResource(R.string.detail_subscribe)
+                },
+            selected = subscribed,
+            onClick = onToggleSubscription,
+            enabled = interactionEnabled,
+        )
+        DetailToggleActionButton(
+            icon = Icons.Outlined.StarBorder,
+            contentDescription =
+                if (favorited) {
+                    stringResource(R.string.detail_unfavorite)
+                } else {
+                    stringResource(R.string.detail_favorite)
+                },
+            selected = favorited,
+            onClick = onToggleFavorite,
+            enabled = interactionEnabled,
+        )
+        val downloadContentDescription =
+            if (isEnqueuingDownload) {
+                stringResource(R.string.detail_adding_to_download_queue)
+            } else {
+                stringResource(R.string.detail_download)
             }
-            WallHubSecondaryButton(
-                onClick = onToggleFavorite,
-                modifier = Modifier.weight(1f),
-                enabled = interactionEnabled,
-            ) {
-                Icon(imageVector = Icons.Outlined.StarBorder, contentDescription = null)
-                Text(
-                    text =
-                        if (interaction.favoriteState == FavoriteState.FAVORITED) {
-                            stringResource(R.string.detail_unfavorite)
-                        } else {
-                            stringResource(R.string.detail_favorite)
-                        },
-                    modifier = Modifier.padding(start = WallHubSpacing.dense),
-                )
-            }
-        }
         Button(
             onClick = onDownload,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.weight(1f).height(56.dp),
             enabled = !isEnqueuingDownload,
-            shape = MaterialTheme.shapes.large,
+            shape = RoundedCornerShape(100.dp),
         ) {
-            Icon(imageVector = Icons.Outlined.Download, contentDescription = null)
-            Text(
-                text =
-                    if (isEnqueuingDownload) {
-                        stringResource(R.string.detail_adding_to_download_queue)
-                    } else {
-                        stringResource(R.string.detail_download)
-                    },
-                modifier = Modifier.padding(start = WallHubSpacing.xs),
+            Icon(
+                imageVector = Icons.Outlined.Download,
+                contentDescription = downloadContentDescription,
             )
         }
-        val status =
-            when {
-                isLoadingInteraction -> stringResource(R.string.detail_loading_steam_account)
-                isUpdatingInteraction -> stringResource(R.string.detail_sending_steam_request)
-                interactionMessage != null -> interactionMessage.resolve()
-                downloadMessage != null -> downloadMessage.resolve()
-                else -> ""
+    }
+}
+
+@Composable
+private fun DetailToggleActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    enabled: Boolean,
+) {
+    if (selected) {
+        Surface(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier.size(56.dp),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ) {
+            Box(contentAlignment = androidx.compose.ui.Alignment.Center) {
+                Icon(imageVector = icon, contentDescription = contentDescription)
             }
-        Text(
-            text = status,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.height(WallHubSpacing.md),
-        )
+        }
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier.size(56.dp),
+            shape = RoundedCornerShape(28.dp),
+            contentPadding = PaddingValues(0.dp),
+        ) {
+            Icon(imageVector = icon, contentDescription = contentDescription)
+        }
     }
 }
 
