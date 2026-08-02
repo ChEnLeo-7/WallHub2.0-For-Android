@@ -60,11 +60,12 @@ fun PreferenceGroupSpacer() {
 @Composable
 fun PreferenceRow(
     title: String,
-    summary: String,
+    summary: String? = null,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     icon: ImageVector? = null,
     iconContent: (@Composable () -> Unit)? = null,
+    trailingContent: (@Composable RowScope.() -> Unit)? = null,
     position: PreferencePosition = PreferencePosition.Single,
     showSummary: Boolean = true,
     onClick: () -> Unit,
@@ -86,10 +87,11 @@ fun PreferenceRow(
                 .padding(vertical = 12.dp)
         ) {
             PreferenceTitle(title)
-            if (showSummary) {
+            if (showSummary && summary != null) {
                 PreferenceSummary(summary)
             }
         }
+        trailingContent?.invoke(this)
     }
 }
 
