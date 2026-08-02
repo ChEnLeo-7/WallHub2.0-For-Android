@@ -260,6 +260,22 @@ fun SettingsScreen(
                 )
             }
 
+            displayedCategory == SettingsCategory.APPEARANCE -> {
+                AppearanceSettingsScreen(
+                    preferences = preferences,
+                    availableAccents = availableAccents,
+                    customAccentColor = customAccentColor,
+                    onBack = { selectedPageName = null },
+                    onCustomAccentColorChanged = { customAccentColor = it },
+                    onThemePreferenceChange = onThemePreferenceChange,
+                    onAccentChange = onAccentChange,
+                    onSystemMonetEnabledChange = onSystemMonetEnabledChange,
+                    onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
+                    onHomePreferencesChange = onHomePreferencesChange,
+                    onHomePaginationModeChange = onHomePaginationModeChange,
+                )
+            }
+
             displayedCategory != null -> {
             WallHubPageScaffold(
                 title = stringResource(R.string.settings_title),

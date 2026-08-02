@@ -222,17 +222,6 @@ internal fun SteamSettingsContent(
                     SteamWorkshopDataSource.CM_WEBSOCKET -> stringResource(R.string.settings_steam_cm_websocket)
                 }
             },
-            supportingText =
-                when (steamWorkshopDataSource) {
-                    SteamWorkshopDataSource.COMMUNITY_HTML ->
-                        stringResource(R.string.settings_data_source_community_description)
-
-                    SteamWorkshopDataSource.WEB_API ->
-                        stringResource(R.string.settings_data_source_web_api_description)
-
-                    SteamWorkshopDataSource.CM_WEBSOCKET ->
-                        stringResource(R.string.settings_data_source_cm_description)
-                },
             onSelected = onSteamWorkshopDataSourceChange,
         )
     }

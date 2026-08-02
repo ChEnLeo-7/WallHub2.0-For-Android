@@ -21,22 +21,30 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuGroup
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -54,7 +62,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubAnimatedSelectionCheck
@@ -74,12 +81,66 @@ import com.wallhub.android.core.model.ThemePreference
 import org.uwuaosp.compose.settingslib.PreferenceGroupSpacer
 import org.uwuaosp.compose.settingslib.PreferencePosition
 import org.uwuaosp.compose.settingslib.PreferenceRow
+import org.uwuaosp.compose.settingslib.SwitchPreferenceRow
 import org.uwuaosp.compose.settingslib.SettingsHomepageIcon
 import org.uwuaosp.compose.settingslib.SettingsScaffold
 import org.uwuaosp.compose.settingslib.rememberSettingsTypography
+import org.uwuaosp.compose.settingslib.SettingsCategory as UwuSettingsCategory
 import java.util.Locale
 import android.graphics.Color as AndroidColor
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+
+@Composable
+internal fun AppearanceSettingsScreen(
+    preferences: AppPreferences,
+    availableAccents: List<AccentPreference>,
+    customAccentColor: String,
+    onBack: () -> Unit,
+    onCustomAccentColorChanged: (String) -> Unit,
+    onThemePreferenceChange: (ThemePreference) -> Unit,
+    onAccentChange: (AccentPreference, String?) -> Unit,
+    onSystemMonetEnabledChange: (Boolean) -> Unit,
+    onThemedLauncherIconEnabledChange: (Boolean) -> Unit,
+    onHomePreferencesChange: (Int, Int, Boolean, HomeCardAction, Boolean) -> Unit,
+    onHomePaginationModeChange: (HomePaginationMode) -> Unit,
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    MaterialTheme(
+        colorScheme =
+            colorScheme.copy(
+                surfaceContainer = colorScheme.surfaceContainerLowest,
+                surfaceBright = colorScheme.surfaceContainerLow,
+            ),
+        typography = rememberSettingsTypography(),
+    ) {
+        SettingsScaffold(
+            title = stringResource(SettingsCategory.APPEARANCE.labelRes),
+            showBackButton = true,
+            onNavigateUp = onBack,
+        ) {
+            Column(
+                modifier =
+                    Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .widthIn(max = SETTINGS_CONTENT_MAX_WIDTH)
+                        .fillMaxWidth(),
+            ) {
+                AppearanceSettingsContent(
+                    preferences = preferences,
+                    availableAccents = availableAccents,
+                    customAccentColor = customAccentColor,
+                    onCustomAccentColorChanged = onCustomAccentColorChanged,
+                    onThemePreferenceChange = onThemePreferenceChange,
+                    onAccentChange = onAccentChange,
+                    onSystemMonetEnabledChange = onSystemMonetEnabledChange,
+                    onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
+                    onHomePreferencesChange = onHomePreferencesChange,
+                    onHomePaginationModeChange = onHomePaginationModeChange,
+                )
+            }
+        }
+    }
+}
 
 @Composable
 internal fun AppearanceSettingsContent(
@@ -109,201 +170,121 @@ internal fun AppearanceSettingsContent(
         )
     }
 
-    SettingsSection(
-        title = stringResource(R.string.settings_theme_title),
-        icon = Icons.Outlined.Palette,
-    ) {
-        SettingChoiceRow(
-            title = stringResource(R.string.settings_theme_mode),
-            supportingText = stringResource(R.string.settings_theme_mode_description),
-            selectedValue = preferences.theme,
-            values = ThemePreference.entries,
-            label = { theme -> theme.label() },
-            onSelected = onThemePreferenceChange,
-        )
-    }
-
-    SettingsSection(
-        title = stringResource(R.string.settings_personalized_color_title),
-        supportingText = stringResource(R.string.settings_personalized_color_description),
-        icon = Icons.Outlined.Palette,
-    ) {
-        MomentThemeCard(
-            enabled = preferences.useSystemMonet,
-            onEnabledChange = onSystemMonetEnabledChange,
-        )
-        SettingsItemDivider()
-        val themedIconsSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-        SettingsSwitchRow(
-            title = stringResource(R.string.settings_themed_app_icon),
-            supportingText =
-                if (themedIconsSupported) {
-                    stringResource(R.string.settings_themed_app_icon_description)
-                } else {
-                    stringResource(R.string.settings_requires_android_13)
-                },
-            checked = themedIconsSupported && preferences.useThemedLauncherIcon,
-            enabled = themedIconsSupported,
-            onCheckedChange = onThemedLauncherIconEnabledChange,
-        )
-        SettingsItemDivider()
-        AccentPreferenceChoiceRow(
-            title = stringResource(R.string.settings_static_palette),
-            supportingText = stringResource(R.string.settings_static_palette_description),
-            selectedValue =
-                preferences.accent.takeUnless {
-                    it == AccentPreference.MONET
-                } ?: AccentPreference.DEFAULT,
-            values = availableAccents,
-            customColor = customAccentColor,
-            systemMonetColor = MaterialTheme.colorScheme.primary,
-            onSelected = { accent ->
-                onAccentChange(
-                    accent,
-                    if (accent == AccentPreference.CUSTOM) customAccentColor else null,
-                )
-            },
-            onCustomColorChanged = onCustomAccentColorChanged,
-            onApplyCustom = {
-                onAccentChange(AccentPreference.CUSTOM, customAccentColor)
-            },
-        )
-    }
-
-    SettingsSection(
-        title = stringResource(R.string.settings_discover_title),
-        supportingText = stringResource(R.string.settings_discover_description),
-        icon = Icons.Outlined.Tune,
-    ) {
-        SettingChoiceRow(
-            title = stringResource(R.string.settings_items_per_page),
-            selectedValue = preferences.homePageSize,
-            values = listOf(10, 15, 24, 30, 50),
-            label = { "$it" },
-            onSelected = { value -> saveHomePreferences(pageSize = value) },
-        )
-        SettingsItemDivider()
-        SettingChoiceRow(
-            title = stringResource(R.string.settings_pagination),
-            selectedValue = preferences.homePaginationMode,
-            values = HomePaginationMode.entries,
-            label = { mode -> mode.label() },
-            onSelected = onHomePaginationModeChange,
-        )
-        SettingsItemDivider()
-        SettingChoiceRow(
-            title = stringResource(R.string.settings_phone_columns),
-            selectedValue = preferences.homeColumns,
-            values = listOf(1, 2, 3, 4),
-            label = { pluralStringResource(R.plurals.settings_column_count, it, it) },
-            onSelected = { value -> saveHomePreferences(columns = value) },
-        )
-        SettingsItemDivider()
-        SettingsSwitchRow(
-            title = stringResource(R.string.settings_multi_select_filters),
-            supportingText = stringResource(R.string.settings_multi_select_filters_description),
-            checked = preferences.homeFilterMultiSelect,
-            onCheckedChange = { enabled -> saveHomePreferences(multiSelect = enabled) },
-        )
-        SettingsItemDivider()
-        SettingChoiceRow(
-            title = stringResource(R.string.settings_default_card_action),
-            selectedValue = preferences.homeCardAction,
-            values = HomeCardAction.entries,
-            label = { action -> action.label() },
-            onSelected = { action -> saveHomePreferences(cardAction = action) },
-        )
-    }
-}
-
-@Composable
-internal fun MomentThemeCard(
-    enabled: Boolean,
-    onEnabledChange: (Boolean) -> Unit,
-) {
-    val containerColor =
-        if (enabled) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            Color.Transparent
-        }
-    val headlineColor =
-        if (enabled) {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        }
-    val supportingColor =
-        if (enabled) {
-            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f)
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        }
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(WallHubSpacing.dense)
-                .clip(MaterialTheme.shapes.medium)
-                .background(containerColor)
-                .toggleable(
-                    value = enabled,
-                    role = Role.Switch,
-                    onValueChange = onEnabledChange,
-                ).padding(
-                    horizontal = WallHubSpacing.controlInset,
-                    vertical = WallHubSpacing.controlInset,
-                ),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.controlInset),
-    ) {
-        SettingsLeadingIcon(
-            icon = Icons.Outlined.Palette,
-            prominent = enabled,
-        )
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),
-        ) {
-            Text(
-                text = stringResource(R.string.settings_system_dynamic_color),
-                style = MaterialTheme.typography.titleMedium,
-                color = headlineColor,
+    Column(modifier = Modifier.fillMaxWidth()) {
+            UwuSettingsCategory(title = stringResource(R.string.settings_theme_title))
+            SettingChoiceRow(
+                title = stringResource(R.string.settings_theme_mode),
+                selectedValue = preferences.theme,
+                values = ThemePreference.entries,
+                label = { theme -> theme.label() },
+                onSelected = onThemePreferenceChange,
+                position = PreferencePosition.Single,
+                icon = Icons.Outlined.DarkMode,
             )
-            Text(
-                text =
+
+            UwuSettingsCategory(title = stringResource(R.string.settings_personalized_color_title))
+            SwitchPreferenceRow(
+                title = stringResource(R.string.settings_system_dynamic_color),
+                summary =
                     when {
-                        enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+                        preferences.useSystemMonet && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
                             stringResource(R.string.settings_dynamic_color_wallpaper)
-
-                        enabled ->
-                            stringResource(R.string.settings_dynamic_color_fallback)
-
-                        else ->
-                            stringResource(R.string.settings_dynamic_color_disabled)
+                        preferences.useSystemMonet -> stringResource(R.string.settings_dynamic_color_fallback)
+                        else -> stringResource(R.string.settings_dynamic_color_disabled)
                     },
-                style = MaterialTheme.typography.bodyMedium,
-                color = supportingColor,
+                checked = preferences.useSystemMonet,
+                onCheckedChange = onSystemMonetEnabledChange,
+                iconContent = { AppearancePreferenceIcon(Icons.Outlined.Palette) },
+                position = PreferencePosition.Top,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.dense)) {
-                listOf(
-                    MaterialTheme.colorScheme.primary,
-                    MaterialTheme.colorScheme.secondary,
-                    MaterialTheme.colorScheme.tertiary,
-                ).forEach { color ->
-                    Surface(
-                        modifier = Modifier.size(width = WallHubSpacing.lg, height = WallHubSpacing.xs),
-                        shape = CircleShape,
-                        color = color,
-                        content = {},
+            PreferenceGroupSpacer()
+            val themedIconsSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+            SwitchPreferenceRow(
+                title = stringResource(R.string.settings_themed_app_icon),
+                summary =
+                    if (themedIconsSupported) {
+                        stringResource(R.string.settings_themed_app_icon_description)
+                    } else {
+                        stringResource(R.string.settings_requires_android_13)
+                    },
+                checked = themedIconsSupported && preferences.useThemedLauncherIcon,
+                enabled = themedIconsSupported,
+                onCheckedChange = onThemedLauncherIconEnabledChange,
+                iconContent = { AppearancePreferenceIcon(Icons.Outlined.PhoneAndroid) },
+                position = PreferencePosition.Middle,
+            )
+            PreferenceGroupSpacer()
+            AccentPreferenceChoiceRow(
+                title = stringResource(R.string.settings_static_palette),
+                selectedValue =
+                    preferences.accent.takeUnless {
+                        it == AccentPreference.MONET
+                    } ?: AccentPreference.DEFAULT,
+                values = availableAccents,
+                customColor = customAccentColor,
+                systemMonetColor = MaterialTheme.colorScheme.primary,
+                onSelected = { accent ->
+                    onAccentChange(
+                        accent,
+                        if (accent == AccentPreference.CUSTOM) customAccentColor else null,
                     )
-                }
-            }
-        }
-        Switch(
-            checked = enabled,
-            onCheckedChange = null,
-        )
+                },
+                onCustomColorChanged = onCustomAccentColorChanged,
+                onApplyCustom = {
+                    onAccentChange(AccentPreference.CUSTOM, customAccentColor)
+                },
+                position = PreferencePosition.Bottom,
+            )
+
+            UwuSettingsCategory(title = stringResource(R.string.settings_discover_title))
+            SettingChoiceRow(
+                title = stringResource(R.string.settings_items_per_page),
+                selectedValue = preferences.homePageSize,
+                values = listOf(10, 15, 24, 30, 50),
+                label = { "$it" },
+                onSelected = { value -> saveHomePreferences(pageSize = value) },
+                position = PreferencePosition.Top,
+                icon = Icons.Outlined.ViewList,
+            )
+            PreferenceGroupSpacer()
+            SettingChoiceRow(
+                title = stringResource(R.string.settings_pagination),
+                selectedValue = preferences.homePaginationMode,
+                values = HomePaginationMode.entries,
+                label = { mode -> mode.label() },
+                onSelected = onHomePaginationModeChange,
+                position = PreferencePosition.Middle,
+                icon = Icons.Outlined.VerticalAlignTop,
+            )
+            PreferenceGroupSpacer()
+            SettingChoiceRow(
+                title = stringResource(R.string.settings_phone_columns),
+                selectedValue = preferences.homeColumns,
+                values = listOf(1, 2, 3, 4),
+                label = { pluralStringResource(R.plurals.settings_column_count, it, it) },
+                onSelected = { value -> saveHomePreferences(columns = value) },
+                position = PreferencePosition.Middle,
+                icon = Icons.Outlined.GridView,
+            )
+            PreferenceGroupSpacer()
+            SwitchPreferenceRow(
+                title = stringResource(R.string.settings_multi_select_filters),
+                summary = stringResource(R.string.settings_multi_select_filters_description),
+                checked = preferences.homeFilterMultiSelect,
+                onCheckedChange = { enabled -> saveHomePreferences(multiSelect = enabled) },
+                position = PreferencePosition.Middle,
+                iconContent = { AppearancePreferenceIcon(Icons.Outlined.FilterList) },
+            )
+            PreferenceGroupSpacer()
+            SettingChoiceRow(
+                title = stringResource(R.string.settings_default_card_action),
+                selectedValue = preferences.homeCardAction,
+                values = HomeCardAction.entries,
+                label = { action -> action.label() },
+                onSelected = { action -> saveHomePreferences(cardAction = action) },
+                position = PreferencePosition.Bottom,
+                icon = Icons.Outlined.Tune,
+            )
     }
 }
 
@@ -479,55 +460,86 @@ internal fun <T> SettingChoiceRow(
     values: List<T>,
     label: @Composable (T) -> String,
     onSelected: (T) -> Unit,
-    supportingText: String? = null,
+    position: PreferencePosition = PreferencePosition.Single,
+    icon: ImageVector? = null,
 ) {
-    var sheetVisible by rememberSaveable { mutableStateOf(false) }
-    SettingsListItem(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(MaterialTheme.shapes.medium)
-                .clickable { sheetVisible = true },
-        headlineContent = { Text(title) },
-        supportingContent =
-            supportingText?.let { description ->
-                { Text(description) }
-            },
+    var menuVisible by rememberSaveable { mutableStateOf(false) }
+    val selectedLabel = label(selectedValue)
+    PreferenceRow(
+        title = title,
+        position = position,
+        iconContent = icon?.let { { AppearancePreferenceIcon(it) } },
         trailingContent = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.dense),
+            ExposedPreferenceDropdown(
+                value = selectedLabel,
+                expanded = menuVisible,
+                onExpandedChange = { menuVisible = it },
             ) {
-                Text(
-                    text = label(selectedValue),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = SETTINGS_TRAILING_VALUE_MAX_WIDTH),
-                )
-                Icon(
-                    imageVector = Icons.Outlined.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                DropdownMenuGroup(shapes = MenuDefaults.groupShape(index = 0, count = 1)) {
+                    values.forEachIndexed { index, value ->
+                        DropdownMenuItem(
+                            selected = value == selectedValue,
+                            onClick = {
+                                onSelected(value)
+                                menuVisible = false
+                            },
+                            text = { Text(label(value)) },
+                            shapes = MenuDefaults.itemShape(index = index, count = values.size),
+                            selectedLeadingIcon = {
+                                WallHubAnimatedSelectionCheck(selected = true)
+                            },
+                        )
+                    }
+                }
             }
         },
+        onClick = { menuVisible = true },
     )
-    if (sheetVisible) {
-        ModalBottomSheet(onDismissRequest = { sheetVisible = false }) {
-            SettingChoiceSheet(
-                title = title,
-                selectedValue = selectedValue,
-                values = values,
-                label = label,
-                onSelected = { value ->
-                    onSelected(value)
-                    sheetVisible = false
-                },
-            )
-        }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExposedPreferenceDropdown(
+    value: String,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = onExpandedChange,
+    ) {
+        TextField(
+            value = value,
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            },
+            modifier =
+                Modifier
+                    .width(SETTINGS_DROPDOWN_FIELD_WIDTH)
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) },
+            containerColor = Color.Transparent,
+            tonalElevation = WallHubSpacing.none,
+            shadowElevation = WallHubSpacing.none,
+            content = content,
+        )
     }
+}
+
+@Composable
+private fun AppearancePreferenceIcon(icon: ImageVector) {
+    SettingsHomepageIcon(
+        imageVector = icon,
+        backgroundColor = MaterialTheme.colorScheme.primary,
+        foregroundColor = MaterialTheme.colorScheme.onPrimary,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -553,8 +565,6 @@ internal fun SteamStreamCacheSetting(
             preset.limitMb?.let(::formatSteamStreamCacheLimit)
                 ?: stringResource(R.string.settings_custom_value, formatSteamStreamCacheLimit(cacheLimitMb))
         },
-        supportingText =
-            stringResource(R.string.settings_streaming_cache_description),
         onSelected = { preset ->
             preset.limitMb?.let(onCacheLimitChange) ?: run {
                 customLimitText = cacheLimitMb.toString()
@@ -613,27 +623,6 @@ internal fun formatSteamStreamCacheLimit(limitMb: Int): String =
     if (limitMb >= 1024 && limitMb % 1024 == 0) "${limitMb / 1024} GB" else "$limitMb MB"
 
 @Composable
-internal fun <T> SettingChoiceSheet(
-    title: String,
-    selectedValue: T,
-    values: List<T>,
-    label: @Composable (T) -> String,
-    onSelected: (T) -> Unit,
-) {
-    SettingsSheetContent {
-        Text(title, style = MaterialTheme.typography.titleLarge)
-        values.forEach { value ->
-            SettingChoiceSheetOption(
-                label = label(value),
-                selected = value == selectedValue,
-                onClick = { onSelected(value) },
-            )
-        }
-        Spacer(modifier = Modifier.height(WallHubSpacing.sm))
-    }
-}
-
-@Composable
 internal fun SettingsSheetContent(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier =
@@ -647,53 +636,10 @@ internal fun SettingsSheetContent(content: @Composable ColumnScope.() -> Unit) {
     )
 }
 
-@Composable
-internal fun SettingChoiceSheetOption(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    leadingContent: @Composable (() -> Unit)? = null,
-) {
-    Surface(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(MaterialTheme.shapes.medium)
-                .clickable(onClick = onClick),
-        shape = MaterialTheme.shapes.medium,
-        color =
-            if (selected) {
-                MaterialTheme.colorScheme.secondaryContainer
-            } else {
-                Color.Transparent
-            },
-        contentColor =
-            if (selected) {
-                MaterialTheme.colorScheme.onSecondaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-    ) {
-        Row(
-            modifier =
-                Modifier
-                    .heightIn(min = SETTINGS_CHOICE_OPTION_MIN_HEIGHT)
-                    .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
-        ) {
-            leadingContent?.invoke()
-            Text(text = label, modifier = Modifier.weight(1f))
-            WallHubAnimatedSelectionCheck(selected = selected)
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AccentPreferenceChoiceRow(
     title: String,
-    supportingText: String,
     selectedValue: AccentPreference,
     values: List<AccentPreference>,
     customColor: String,
@@ -701,88 +647,78 @@ internal fun AccentPreferenceChoiceRow(
     onSelected: (AccentPreference) -> Unit,
     onCustomColorChanged: (String) -> Unit,
     onApplyCustom: () -> Unit,
+    position: PreferencePosition = PreferencePosition.Single,
 ) {
-    var sheetVisible by rememberSaveable { mutableStateOf(false) }
-    var draftAccent by remember { mutableStateOf(selectedValue) }
-    val selectedColor =
-        selectedValue.wallHubPreviewColor(
-            customColor = customColor,
-            systemMonetColor = systemMonetColor,
-        )
-    SettingsListItem(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(MaterialTheme.shapes.medium)
-                .clickable {
-                    draftAccent = selectedValue
-                    sheetVisible = true
-                },
-        headlineContent = { Text(title) },
-        supportingContent = { Text(supportingText) },
+    var menuVisible by rememberSaveable { mutableStateOf(false) }
+    var customSheetVisible by rememberSaveable { mutableStateOf(false) }
+    PreferenceRow(
+        title = title,
+        position = position,
+        iconContent = { AppearancePreferenceIcon(Icons.Outlined.Palette) },
         trailingContent = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+            ExposedPreferenceDropdown(
+                value = selectedValue.label(),
+                expanded = menuVisible,
+                onExpandedChange = { menuVisible = it },
             ) {
-                Text(
-                    text = selectedValue.label(),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = SETTINGS_ACCENT_LABEL_MAX_WIDTH),
-                )
-                AccentColorDot(color = selectedColor)
-                Icon(
-                    imageVector = Icons.Outlined.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                DropdownMenuGroup(shapes = MenuDefaults.groupShape(index = 0, count = 1)) {
+                    values.forEachIndexed { index, accent ->
+                        DropdownMenuItem(
+                            selected = accent == selectedValue,
+                            onClick = {
+                                menuVisible = false
+                                if (accent == AccentPreference.CUSTOM) {
+                                    customSheetVisible = true
+                                } else {
+                                    onSelected(accent)
+                                }
+                            },
+                            text = { Text(accent.label()) },
+                            shapes = MenuDefaults.itemShape(index = index, count = values.size),
+                            leadingIcon = {
+                                AccentColorDot(
+                                    color =
+                                        accent.wallHubPreviewColor(
+                                            customColor = customColor,
+                                            systemMonetColor = systemMonetColor,
+                                        ),
+                                )
+                            },
+                            selectedLeadingIcon = {
+                                AccentColorDot(
+                                    color =
+                                        accent.wallHubPreviewColor(
+                                            customColor = customColor,
+                                            systemMonetColor = systemMonetColor,
+                                        ),
+                                )
+                            },
+                            trailingContent = {
+                                WallHubAnimatedSelectionCheck(selected = accent == selectedValue)
+                            },
+                        )
+                    }
+                }
             }
         },
+        onClick = { menuVisible = true },
     )
-    if (sheetVisible) {
-        ModalBottomSheet(onDismissRequest = { sheetVisible = false }) {
+    if (customSheetVisible) {
+        ModalBottomSheet(onDismissRequest = { customSheetVisible = false }) {
             SettingsSheetContent {
                 Text(title, style = MaterialTheme.typography.titleLarge)
-                values.forEach { accent ->
-                    SettingChoiceSheetOption(
-                        label = accent.label(),
-                        selected = accent == draftAccent,
-                        onClick = {
-                            if (accent == AccentPreference.CUSTOM) {
-                                draftAccent = AccentPreference.CUSTOM
-                            } else {
-                                onSelected(accent)
-                                sheetVisible = false
-                            }
-                        },
-                        leadingContent = {
-                            AccentColorDot(
-                                color =
-                                    accent.wallHubPreviewColor(
-                                        customColor = customColor,
-                                        systemMonetColor = systemMonetColor,
-                                    ),
-                            )
-                        },
-                    )
-                }
-                if (draftAccent == AccentPreference.CUSTOM) {
-                    MonetColorPicker(
-                        colorHex = customColor,
-                        onColorChanged = onCustomColorChanged,
-                    )
-                    Button(
-                        onClick = {
-                            onApplyCustom()
-                            sheetVisible = false
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.settings_action_apply_monet_color))
-                    }
+                MonetColorPicker(
+                    colorHex = customColor,
+                    onColorChanged = onCustomColorChanged,
+                )
+                Button(
+                    onClick = {
+                        onApplyCustom()
+                        customSheetVisible = false
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.settings_action_apply_monet_color))
                 }
                 Spacer(modifier = Modifier.height(WallHubSpacing.sm))
             }
@@ -1019,9 +955,7 @@ internal val SETTINGS_MEDIUM_WIDTH = 600.dp
 internal val SETTINGS_CONTENT_MAX_WIDTH = 760.dp
 internal val SETTINGS_SHEET_CONTENT_MAX_HEIGHT = 560.dp
 internal val SETTINGS_ITEM_MIN_HEIGHT = 64.dp
-internal val SETTINGS_CHOICE_OPTION_MIN_HEIGHT = WallHubSizeTokens.listItemMinimumHeight
-internal val SETTINGS_TRAILING_VALUE_MAX_WIDTH = 136.dp
-internal val SETTINGS_ACCENT_LABEL_MAX_WIDTH = 72.dp
+internal val SETTINGS_DROPDOWN_FIELD_WIDTH = 160.dp
 internal val STEAM_DOH_ITEM_HEIGHT = 84.dp
 internal val STEAM_DOH_ITEM_SPACING = WallHubSpacing.xs
 internal val SETTINGS_PAGE_EASING = CubicBezierEasing(0.2f, 0f, 0f, 1f)
