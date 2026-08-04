@@ -127,14 +127,8 @@ fun LocalVideoPlayerScreen(
     }
     WallHubPageScaffold(
         title = state.title.ifBlank { stringResource(R.string.detail_video_player) },
-        navigationIcon = {
-            IconButton(onClick = onBack) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.ArrowBack,
-                    contentDescription = stringResource(R.string.detail_back),
-                )
-            }
-        },
+        showBackButton = true,
+        onNavigateUp = onBack,
     ) { padding ->
         when {
             state.isLoading ->

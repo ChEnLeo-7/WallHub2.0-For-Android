@@ -185,14 +185,8 @@ fun OnlineVideoPlayerScreen(
         } else {
             WallHubPageScaffold(
                 title = state.title.ifBlank { stringResource(R.string.detail_online_video_player) },
-                navigationIcon = {
-                    androidx.compose.material3.IconButton(onClick = onBack) {
-                        androidx.compose.material3.Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = stringResource(R.string.detail_back),
-                        )
-                    }
-                },
+                showBackButton = true,
+                onNavigateUp = onBack,
             ) { padding ->
                 when {
                     state.isLoading -> {

@@ -819,7 +819,6 @@ fun LibraryScreen(
     var searchToolbarExpanded by remember { mutableStateOf(false) }
     WallHubPageScaffold(
         title = stringResource(R.string.library_title),
-        useUwuToolbar = true,
         titleContent = {
             WallHubToolbarSearchTitle(
                 title = stringResource(R.string.library_title),

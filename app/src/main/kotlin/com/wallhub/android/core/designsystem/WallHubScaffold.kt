@@ -18,15 +18,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,25 +32,23 @@ import androidx.compose.ui.unit.dp
 import org.uwuaosp.compose.settingslib.SettingsAppBarScaffold
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WallHubPageScaffold(
     title: String,
     modifier: Modifier = Modifier,
-    navigationIcon: @Composable (() -> Unit)? = null,
-    actions: @Composable RowScope.() -> Unit = {},
-    topBarContent: @Composable (() -> Unit)? = null,
-    useUwuToolbar: Boolean = false,
-    titleContent: (@Composable () -> Unit)? = null,
+    showAppBar: Boolean = true,
+    showBackButton: Boolean = false,
     onNavigateUp: () -> Unit = {},
+    actions: @Composable RowScope.() -> Unit = {},
+    titleContent: (@Composable () -> Unit)? = null,
     contentTopPaddingAdjustment: Dp = 0.dp,
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    if (useUwuToolbar && topBarContent == null) {
+    if (showAppBar) {
         SettingsAppBarScaffold(
             title = title,
             modifier = modifier,
-            showBackButton = navigationIcon != null,
+            showBackButton = showBackButton,
             onNavigateUp = onNavigateUp,
             actions = actions,
             titleContent = titleContent,
@@ -62,32 +56,12 @@ fun WallHubPageScaffold(
             content = content,
         )
     } else {
-        Scaffold(
-            modifier = modifier,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-            topBar = {
-                if (topBarContent != null) {
-                    topBarContent()
-                } else {
-                    TopAppBar(
-                        title = { Text(text = title, style = MaterialTheme.typography.headlineSmall) },
-                        actions = actions,
-                        navigationIcon = { navigationIcon?.invoke() },
-                        colors =
-                            TopAppBarDefaults.topAppBarColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-                                titleContentColor = MaterialTheme.colorScheme.onBackground,
-                                actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                    )
-                }
-            },
-            content = content,
-        )
+        Box(modifier = modifier.fillMaxSize()) {
+            content(PaddingValues())
+        }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WallHubToolbarSearchTitle(
     title: String,

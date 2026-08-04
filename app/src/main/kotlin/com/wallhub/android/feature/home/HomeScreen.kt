@@ -312,8 +312,7 @@ internal fun HomeScreenBody(
     Box(modifier = Modifier.fillMaxSize()) {
         WallHubPageScaffold(
             title = stringResource(R.string.app_name),
-            useUwuToolbar = onBack == null,
-            topBarContent = if (onBack != null) ({}) else null,
+            showAppBar = onBack == null,
             actions = {
                 HomeViewModeToggle(
                     selected = state.viewMode,

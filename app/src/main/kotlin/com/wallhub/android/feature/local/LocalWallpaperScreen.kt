@@ -20,9 +20,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -35,7 +33,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -64,12 +61,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.layout.AnimatedPane
@@ -354,127 +349,121 @@ private fun LocalWallpaperScreen(
             )
         }
     }
-    if (headerMode == LocalHeaderMode.WORKSPACE) {
-        SettingsAppBarScaffold(
-            title = stringResource(R.string.navigation_local),
-            titleContent = {
-                WallHubToolbarSearchTitle(
-                    title = stringResource(R.string.navigation_local),
-                    query = state.searchQuery,
-                    expanded = searchToolbarExpanded,
-                    placeholder = stringResource(R.string.local_search_placeholder),
-                    onQueryChanged = onSearchQueryChanged,
-                    onSubmit = onRefresh,
-                    onClear = { onSearchQueryChanged("") },
-                    onExpand = { searchToolbarExpanded = true },
-                    onCollapse = { searchToolbarExpanded = false },
-                )
-            },
-            actions = {
-                IconButton(onClick = if (state.scan.isScanning) onCancelScan else onRefresh) {
-                    Icon(
-                        imageVector = if (state.scan.isScanning) Icons.Outlined.Cancel else Icons.Outlined.Refresh,
-                        contentDescription = stringResource(R.string.local_refresh_scan),
+    when (headerMode) {
+        LocalHeaderMode.WORKSPACE ->
+            SettingsAppBarScaffold(
+                title = stringResource(R.string.navigation_local),
+                titleContent = {
+                    WallHubToolbarSearchTitle(
+                        title = stringResource(R.string.navigation_local),
+                        query = state.searchQuery,
+                        expanded = searchToolbarExpanded,
+                        placeholder = stringResource(R.string.local_search_placeholder),
+                        onQueryChanged = onSearchQueryChanged,
+                        onSubmit = onRefresh,
+                        onClear = { onSearchQueryChanged("") },
+                        onExpand = { searchToolbarExpanded = true },
+                        onCollapse = { searchToolbarExpanded = false },
                     )
-                }
-                LocalWorkspaceMenu(
-                    hasCustomSource = state.scan.sources.any { source -> !source.isDownloadDirectory },
-                    onChooseDirectory = onChooseDirectory,
-                    onResetDirectory = onResetDirectory,
-                    onManageTags = { tagManagerVisible = true },
-                )
-                SettingsToolbarActionButton(
-                    imageVector = Icons.Outlined.Settings,
-                    contentDescription = stringResource(R.string.management_settings),
-                    onClick = onOpenSettings,
-                    buttonSize = 64.dp,
-                    containerSize = 48.dp,
-                )
-            },
-            content = pageContent,
-        )
-    } else {
-        Scaffold(
-            topBar = {
-            AnimatedContent(
-                targetState = headerMode,
-                transitionSpec = {
-                    (
-                        fadeIn(tween(LOCAL_HEADER_MODE_ENTER_DURATION_MS)) +
-                            slideInVertically(
-                                animationSpec = tween(LOCAL_HEADER_MODE_ENTER_DURATION_MS),
-                                initialOffsetY = { height -> -height / 4 },
-                            )
-                    ) togetherWith
-                        (
-                            fadeOut(tween(LOCAL_HEADER_MODE_EXIT_DURATION_MS)) +
-                                slideOutVertically(
-                                    animationSpec = tween(LOCAL_HEADER_MODE_EXIT_DURATION_MS),
-                                    targetOffsetY = { height -> -height / 4 },
-                                )
-                        )
                 },
-                label = "LocalHeaderMode",
-            ) { mode ->
-                when (mode) {
-                    LocalHeaderMode.HIDDEN -> Spacer(modifier = Modifier.height(WallHubSpacing.none))
-                    LocalHeaderMode.WORKSPACE ->
-                        Column {
-                            TopAppBar(
-                                title = { Text(stringResource(R.string.navigation_local)) },
-                                actions = {
-                                    SettingsToolbarActionButton(
-                                        imageVector = Icons.Outlined.Settings,
-                                        contentDescription = stringResource(R.string.management_settings),
-                                        onClick = onOpenSettings,
-                                        buttonSize = 64.dp,
-                                        containerSize = 48.dp,
-                                    )
-                                },
+                actions = {
+                    IconButton(onClick = if (state.scan.isScanning) onCancelScan else onRefresh) {
+                        Icon(
+                            imageVector = if (state.scan.isScanning) Icons.Outlined.Cancel else Icons.Outlined.Refresh,
+                            contentDescription = stringResource(R.string.local_refresh_scan),
+                        )
+                    }
+                    LocalWorkspaceMenu(
+                        hasCustomSource = state.scan.sources.any { source -> !source.isDownloadDirectory },
+                        onChooseDirectory = onChooseDirectory,
+                        onResetDirectory = onResetDirectory,
+                        onManageTags = { tagManagerVisible = true },
+                    )
+                    SettingsToolbarActionButton(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = stringResource(R.string.management_settings),
+                        onClick = onOpenSettings,
+                        buttonSize = 64.dp,
+                        containerSize = 48.dp,
+                    )
+                },
+                content = pageContent,
+            )
+
+        LocalHeaderMode.SELECTION ->
+            SettingsAppBarScaffold(
+                title =
+                    pluralStringResource(
+                        R.plurals.local_selected_count,
+                        state.selectedResourceIds.size,
+                        state.selectedResourceIds.size,
+                    ),
+                showBackButton = true,
+                onNavigateUp = onClearSelection,
+                actions = {
+                    IconButton(
+                        onClick = {
+                            onSystemAction(
+                                LocalWallpaperAction.ShareResources(
+                                    state.scan.resources.filter { resource ->
+                                        resource.id in state.selectedResourceIds
+                                    },
+                                ),
                             )
-                            LocalWorkspaceHeader(
-                                state = state,
-                                onChooseDirectory = onChooseDirectory,
-                                onResetDirectory = onResetDirectory,
-                                onRefresh = onRefresh,
-                                onCancelScan = onCancelScan,
-                                onSearchQueryChanged = onSearchQueryChanged,
-                                onViewModeSelected = onViewModeSelected,
-                                onManageTags = { tagManagerVisible = true },
-                                secondaryChromeCollapsed = secondaryChromeCollapsed,
+                            onClearSelection()
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.FileUpload,
+                            contentDescription = stringResource(R.string.local_share_selected),
+                        )
+                    }
+                    IconButton(onClick = { deleteConfirmationVisible = true }) {
+                        Icon(
+                            imageVector = Icons.Outlined.DeleteSweep,
+                            contentDescription = stringResource(R.string.local_delete_selected),
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    Box {
+                        IconButton(onClick = { selectionMenuExpanded = true }) {
+                            Icon(
+                                imageVector = Icons.Outlined.MoreVert,
+                                contentDescription = stringResource(R.string.local_more_selection_actions),
                             )
                         }
+                        DropdownMenu(
+                            expanded = selectionMenuExpanded,
+                            onDismissRequest = { selectionMenuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.local_add_tag)) },
+                                leadingIcon = {
+                                    Icon(imageVector = Icons.Outlined.Edit, contentDescription = null)
+                                },
+                                onClick = {
+                                    selectionMenuExpanded = false
+                                    tagDialogVisible = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.local_toggle_favorites)) },
+                                leadingIcon = {
+                                    Icon(imageVector = Icons.Outlined.FavoriteBorder, contentDescription = null)
+                                },
+                                onClick = {
+                                    selectionMenuExpanded = false
+                                    state.selectedResourceIds.forEach(onToggleFavorite)
+                                    onClearSelection()
+                                },
+                            )
+                        }
+                    }
+                },
+                content = pageContent,
+            )
 
-                    LocalHeaderMode.SELECTION ->
-                        LocalSelectionBar(
-                            selectedCount = state.selectedResourceIds.size,
-                            menuExpanded = selectionMenuExpanded,
-                            onMenuExpandedChanged = { selectionMenuExpanded = it },
-                            onClearSelection = onClearSelection,
-                            onShare = {
-                                onSystemAction(
-                                    LocalWallpaperAction.ShareResources(
-                                        state.scan.resources.filter { resource ->
-                                            resource.id in state.selectedResourceIds
-                                        },
-                                    ),
-                                )
-                                onClearSelection()
-                            },
-                            onDelete = { deleteConfirmationVisible = true },
-                            onAddTag = { tagDialogVisible = true },
-                            onToggleFavorites = {
-                                state.selectedResourceIds.forEach(onToggleFavorite)
-                                onClearSelection()
-                            },
-                        )
-                }
-            }
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            content = pageContent,
-        )
+        LocalHeaderMode.HIDDEN -> pageContent(PaddingValues())
     }
 
     LocalWallpaperDialogs(
@@ -678,96 +667,6 @@ private fun LocalTagManagerDialog(
                 null
             },
     )
-}
-
-@Composable
-private fun LocalSelectionBar(
-    selectedCount: Int,
-    menuExpanded: Boolean,
-    onMenuExpandedChanged: (Boolean) -> Unit,
-    onClearSelection: () -> Unit,
-    onShare: () -> Unit,
-    onDelete: () -> Unit,
-    onAddTag: () -> Unit,
-    onToggleFavorites: () -> Unit,
-) {
-    Surface(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = WallHubSpacing.sm, vertical = WallHubSpacing.xxs),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        tonalElevation = WallHubSpacing.none,
-    ) {
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = WallHubSizeTokens.listItemMinimumHeight)
-                    .padding(horizontal = WallHubSpacing.xxs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onClearSelection) {
-                Icon(
-                    imageVector = Icons.Outlined.Cancel,
-                    contentDescription = stringResource(R.string.local_exit_selection),
-                )
-            }
-            Text(
-                pluralStringResource(R.plurals.local_selected_count, selectedCount, selectedCount),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(onClick = onShare) {
-                Icon(
-                    imageVector = Icons.Outlined.FileUpload,
-                    contentDescription = stringResource(R.string.local_share_selected),
-                )
-            }
-            IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Outlined.DeleteSweep,
-                    contentDescription = stringResource(R.string.local_delete_selected),
-                    tint = MaterialTheme.colorScheme.error,
-                )
-            }
-            Box {
-                IconButton(onClick = { onMenuExpandedChanged(true) }) {
-                    Icon(
-                        imageVector = Icons.Outlined.MoreVert,
-                        contentDescription = stringResource(R.string.local_more_selection_actions),
-                    )
-                }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { onMenuExpandedChanged(false) },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.local_add_tag)) },
-                        leadingIcon = {
-                            Icon(imageVector = Icons.Outlined.Edit, contentDescription = null)
-                        },
-                        onClick = {
-                            onMenuExpandedChanged(false)
-                            onAddTag()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.local_toggle_favorites)) },
-                        leadingIcon = {
-                            Icon(imageVector = Icons.Outlined.FavoriteBorder, contentDescription = null)
-                        },
-                        onClick = {
-                            onMenuExpandedChanged(false)
-                            onToggleFavorites()
-                        },
-                    )
-                }
-            }
-        }
-    }
 }
 
 @Composable
@@ -1450,100 +1349,94 @@ private fun LocalWallpaperDetail(
         )
         return
     }
-    Column(
-        modifier =
-            modifier
-                .verticalScroll(rememberScrollState())
-                .padding(
-                    start = WallHubSpacing.md,
-                    top = WallHubSpacing.xs,
-                    end = WallHubSpacing.md,
-                    bottom = WallHubSizeTokens.bottomNavigationClearance,
-                ),
-        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                    contentDescription = stringResource(R.string.local_back_to_resources),
-                )
-            }
-            Text(
-                text = resource.title,
-                style = MaterialTheme.typography.titleLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
+    SettingsAppBarScaffold(
+        title = resource.title,
+        modifier = modifier,
+        showBackButton = true,
+        onNavigateUp = onBack,
+        actions = {
+            SettingsToolbarActionButton(
+                imageVector = if (resource.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                contentDescription = stringResource(R.string.local_favorite),
+                onClick = { onToggleFavorite(resource.id) },
             )
-            IconButton(onClick = { onToggleFavorite(resource.id) }) {
-                Icon(
-                    imageVector = Icons.Outlined.FavoriteBorder,
-                    contentDescription = stringResource(R.string.local_favorite),
-                    tint = if (resource.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        LocalWallpaperPreview(
-            resource = resource,
-            modifier = Modifier.fillMaxWidth().aspectRatio(1.65f),
-            contentScale = ContentScale.Fit,
-        )
-        ResourceActionRow(
-            resource = resource,
-            onDeleteResource = onDeleteResource,
-            onSystemAction = onSystemAction,
-        )
-        HorizontalDivider(color = DividerDefaults.color)
-        Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs)) {
-            Text(stringResource(R.string.local_file_information), style = MaterialTheme.typography.titleMedium)
-            DetailLine(stringResource(R.string.local_format), resource.format.label())
-            DetailLine(stringResource(R.string.local_detection), resource.detectionReason)
-            DetailLine(stringResource(R.string.local_size), formatLocalSize(resource.sizeBytes))
-            DetailLine(stringResource(R.string.local_source), resource.sourceLabel)
-            DetailLine(stringResource(R.string.local_location), resource.relativePath)
-            resource.workshopId?.let { id ->
-                DetailLine(stringResource(R.string.local_workshop_id), id.toString())
-            }
-            DetailLine(
-                stringResource(R.string.local_import_state),
-                resource.importState.label(),
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+        },
+    ) { padding ->
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(padding)
+                    .padding(
+                        start = WallHubSpacing.md,
+                        top = WallHubSpacing.xs,
+                        end = WallHubSpacing.md,
+                        bottom = WallHubSizeTokens.bottomNavigationClearance,
+                    ),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
         ) {
-            Text(stringResource(R.string.local_tags), style = MaterialTheme.typography.titleMedium)
-            TextButton(onClick = { onAddTag(resource) }) {
-                Text(stringResource(R.string.local_add))
-            }
-        }
-        if (resource.tags.isEmpty()) {
-            Text(
-                stringResource(R.string.local_no_custom_tags),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            LocalWallpaperPreview(
+                resource = resource,
+                modifier = Modifier.fillMaxWidth().aspectRatio(1.65f),
+                contentScale = ContentScale.Fit,
             )
-        } else {
+            ResourceActionRow(
+                resource = resource,
+                onDeleteResource = onDeleteResource,
+                onSystemAction = onSystemAction,
+            )
+            HorizontalDivider(color = DividerDefaults.color)
+            Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs)) {
+                Text(stringResource(R.string.local_file_information), style = MaterialTheme.typography.titleMedium)
+                DetailLine(stringResource(R.string.local_format), resource.format.label())
+                DetailLine(stringResource(R.string.local_detection), resource.detectionReason)
+                DetailLine(stringResource(R.string.local_size), formatLocalSize(resource.sizeBytes))
+                DetailLine(stringResource(R.string.local_source), resource.sourceLabel)
+                DetailLine(stringResource(R.string.local_location), resource.relativePath)
+                resource.workshopId?.let { id ->
+                    DetailLine(stringResource(R.string.local_workshop_id), id.toString())
+                }
+                DetailLine(
+                    stringResource(R.string.local_import_state),
+                    resource.importState.label(),
+                )
+            }
             Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
-                resource.tags.forEach { tag ->
-                    AssistChip(
-                        onClick = {
-                            onReplaceTags(resource.id, resource.tags - tag)
-                        },
-                        label = { Text(tag) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Outlined.Cancel,
-                                contentDescription = stringResource(R.string.local_remove_tag),
-                                modifier = Modifier.size(WallHubSizeTokens.compactIcon),
-                            )
-                        },
-                    )
+                Text(stringResource(R.string.local_tags), style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = { onAddTag(resource) }) {
+                    Text(stringResource(R.string.local_add))
+                }
+            }
+            if (resource.tags.isEmpty()) {
+                Text(
+                    stringResource(R.string.local_no_custom_tags),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                ) {
+                    resource.tags.forEach { tag ->
+                        AssistChip(
+                            onClick = {
+                                onReplaceTags(resource.id, resource.tags - tag)
+                            },
+                            label = { Text(tag) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Cancel,
+                                    contentDescription = stringResource(R.string.local_remove_tag),
+                                    modifier = Modifier.size(WallHubSizeTokens.compactIcon),
+                                )
+                            },
+                        )
+                    }
                 }
             }
         }

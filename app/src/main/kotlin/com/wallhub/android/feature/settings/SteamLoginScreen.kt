@@ -12,15 +12,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +41,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import org.uwuaosp.compose.settingslib.SettingsAppBarScaffold
 import javax.inject.Inject
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
@@ -159,7 +156,6 @@ fun SteamLoginRoute(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SteamLoginScreen(
     session: SteamSessionState,
@@ -180,32 +176,10 @@ fun SteamLoginScreen(
     var guardCode by remember { mutableStateOf("") }
     val uiState = session.toSteamLoginUiState()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    androidx.compose.foundation.layout.Row(
-                        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.PersonOutline,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Text(stringResource(R.string.settings_steam_login_title))
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = stringResource(R.string.settings_action_back),
-                        )
-                    }
-                },
-            )
-        },
+    SettingsAppBarScaffold(
+        title = stringResource(R.string.settings_steam_login_title),
+        showBackButton = true,
+        onNavigateUp = onBack,
     ) { padding ->
         Column(
             modifier =
