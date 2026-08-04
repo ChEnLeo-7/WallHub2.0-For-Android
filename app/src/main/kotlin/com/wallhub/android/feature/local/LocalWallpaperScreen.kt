@@ -66,12 +66,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.VerticalDivider
-import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
-import androidx.compose.material3.adaptive.layout.AnimatedPane
-import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldRole
-import androidx.compose.material3.adaptive.layout.ThreePaneScaffoldDestinationItem
-import androidx.compose.material3.adaptive.navigation.NavigableListDetailPaneScaffold
-import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -900,7 +894,7 @@ private fun ViewModeButtons(
     )
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3AdaptiveApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LocalWallpaperContent(
     state: LocalWallpaperUiState,
@@ -970,13 +964,9 @@ private fun LocalWallpaperContent(
     ) { displayedMode ->
         when (displayedMode) {
             LocalWallpaperViewMode.DETAIL -> {
-                LocalWallpaperListDetailLayout(
-                    resources = resources,
-                    state = state,
-                    selected = selected,
-                    onSelectResource = onSelectResource,
-                    onStartSelection = onStartSelection,
-                    onToggleSelection = onToggleSelection,
+                LocalWallpaperDetail(
+                    resource = selected,
+                    onBack = { onSelectResource(null) },
                     onToggleFavorite = onToggleFavorite,
                     onDeleteResource = onDeleteResource,
                     onReplaceTags = onReplaceTags,
@@ -1009,78 +999,6 @@ private fun LocalWallpaperContent(
             }
         }
     }
-}
-
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3AdaptiveApi::class)
-@Composable
-private fun LocalWallpaperListDetailLayout(
-    resources: List<LocalWallpaperResource>,
-    state: LocalWallpaperUiState,
-    selected: LocalWallpaperResource?,
-    onSelectResource: (String?) -> Unit,
-    onStartSelection: (String) -> Unit,
-    onToggleSelection: (String) -> Unit,
-    onToggleFavorite: (String) -> Unit,
-    onDeleteResource: (LocalWallpaperResource) -> Unit,
-    onReplaceTags: (String, Set<String>) -> Unit,
-    onAddTag: (LocalWallpaperResource) -> Unit,
-    onSystemAction: (LocalWallpaperAction) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val navigator =
-        rememberListDetailPaneScaffoldNavigator(
-            initialDestinationHistory =
-                buildList {
-                    add(ThreePaneScaffoldDestinationItem<String>(ListDetailPaneScaffoldRole.List))
-                    selected?.id?.let { resourceId ->
-                        add(
-                            ThreePaneScaffoldDestinationItem(
-                                ListDetailPaneScaffoldRole.Detail,
-                                resourceId,
-                            ),
-                        )
-                    }
-                },
-        )
-    LaunchedEffect(selected?.id) {
-        selected
-            ?.id
-            ?.takeIf { resourceId ->
-                navigator.currentDestination?.contentKey != resourceId
-            }?.let { resourceId ->
-                navigator.navigateTo(ListDetailPaneScaffoldRole.Detail, resourceId)
-            }
-    }
-    NavigableListDetailPaneScaffold(
-        navigator = navigator,
-        modifier = modifier,
-        listPane = {
-            AnimatedPane {
-                LocalWallpaperList(
-                    resources = resources,
-                    state = state,
-                    onSelectResource = onSelectResource,
-                    onStartSelection = onStartSelection,
-                    onToggleSelection = onToggleSelection,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-        },
-        detailPane = {
-            AnimatedPane {
-                LocalWallpaperDetail(
-                    resource = selected,
-                    onBack = { onSelectResource(null) },
-                    onToggleFavorite = onToggleFavorite,
-                    onDeleteResource = onDeleteResource,
-                    onReplaceTags = onReplaceTags,
-                    onAddTag = onAddTag,
-                    onSystemAction = onSystemAction,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-        },
-    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
