@@ -64,6 +64,9 @@ import com.wallhub.android.core.model.SteamAccessState
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
+import org.uwuaosp.compose.settingslib.SettingsScaffold
+import org.uwuaosp.compose.settingslib.rememberSettingsTypography
+import org.uwuaosp.compose.settingslib.SettingsCategory as UwuSettingsCategory
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
@@ -277,106 +280,74 @@ fun SettingsScreen(
             }
 
             displayedCategory != null -> {
-            WallHubPageScaffold(
-                title = stringResource(R.string.settings_title),
-                topBarContent =
-                    displayedCategory?.let { category ->
-                        {
-                            TopAppBar(
-                                title = {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
-                                    ) {
-                                        Icon(
-                                            imageVector = category.icon,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                        )
-                                        Text(stringResource(category.labelRes))
-                                    }
+                val colorScheme = MaterialTheme.colorScheme
+                MaterialTheme(
+                    colorScheme =
+                        colorScheme.copy(
+                            surfaceContainer = colorScheme.surfaceContainerLowest,
+                            surfaceBright = colorScheme.surfaceContainerLow,
+                        ),
+                    typography = rememberSettingsTypography(),
+                ) {
+                    SettingsScaffold(
+                        title = stringResource(displayedCategory.labelRes),
+                        showBackButton = true,
+                        onNavigateUp = { selectedPageName = null },
+                    ) {
+                        Column(
+                            modifier =
+                                Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .widthIn(max = SETTINGS_CONTENT_MAX_WIDTH)
+                                    .fillMaxWidth(),
+                        ) {
+                            SettingsCategoryContent(
+                                category = displayedCategory,
+                                preferences = preferences,
+                                steamAccessState = steamAccessState,
+                                session = session,
+                                diagnosticExportState = diagnosticExportState,
+                                appUpdateState = appUpdateState,
+                                availableAccents = availableAccents,
+                                customAccentColor = customAccentColor,
+                                onCustomAccentColorChanged = { customAccentColor = it },
+                                proxyUrl = proxyUrl,
+                                onProxyUrlChanged = { proxyUrl = it },
+                                steamApiKey = steamApiKey,
+                                onSteamApiKeyChanged = { steamApiKey = it },
+                                onMatureContentEnabledChange = { enabled ->
+                                    saveHomePreferences(matureContentEnabled = enabled)
                                 },
-                                colors =
-                                    TopAppBarDefaults.topAppBarColors(
-                                        containerColor = MaterialTheme.colorScheme.background,
-                                    ),
-                                navigationIcon = {
-                                    IconButton(onClick = { selectedPageName = null }) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                            contentDescription = stringResource(R.string.settings_action_back_to_settings),
-                                        )
-                                    }
-                                },
+                                onThemePreferenceChange = onThemePreferenceChange,
+                                onAccentChange = onAccentChange,
+                                onSystemMonetEnabledChange = onSystemMonetEnabledChange,
+                                onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
+                                onHomePreferencesChange = onHomePreferencesChange,
+                                onHomePaginationModeChange = onHomePaginationModeChange,
+                                onDownloadPreferencesChange = onDownloadPreferencesChange,
+                                onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
+                                onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
+                                onSteamAccessEnabledChange = onSteamAccessEnabledChange,
+                                onSteamAccessDohEndpointsChange = onSteamAccessDohEndpointsChange,
+                                onSteamWorkshopDataSourceChange = onSteamWorkshopDataSourceChange,
+                                onRefreshSteamAccess = onRefreshSteamAccess,
+                                onSaveSteamApiKey = { onSteamApiKeyChange(steamApiKey) },
+                                onOpenExternalUri = onOpenExternalUri,
+                                onOpenSteamLogin = onOpenSteamLogin,
+                                onLogoutSteam = onLogoutSteam,
+                                onSelectOutputDirectory = onSelectOutputDirectory,
+                                onClearOutputDirectory = onClearOutputDirectory,
+                                onCheckForAppUpdate = onCheckForAppUpdate,
+                                onDownloadLatestRelease = onDownloadLatestRelease,
+                                onCancelAppUpdateDownload = onCancelAppUpdateDownload,
+                                onInstallDownloadedRelease = onInstallDownloadedRelease,
+                                onExportDiagnostics = onExportDiagnostics,
+                                onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
+                                onRequestNotifications = onRequestNotifications,
                             )
                         }
-                    },
-            ) { padding ->
-                BoxWithConstraints(
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .padding(padding),
-                ) {
-                    val horizontalPadding = if (maxWidth >= SETTINGS_MEDIUM_WIDTH) WallHubSpacing.lg else WallHubSpacing.md
-                    Column(
-                        modifier =
-                            Modifier
-                                .align(Alignment.TopCenter)
-                                .widthIn(max = SETTINGS_CONTENT_MAX_WIDTH)
-                                .fillMaxWidth()
-                                .fillMaxHeight()
-                                .verticalScroll(rememberScrollState())
-                                .padding(horizontal = horizontalPadding, vertical = WallHubSpacing.md),
-                        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.lg),
-                    ) {
-                        SettingsCategoryContent(
-                            category = displayedCategory,
-                            preferences = preferences,
-                            steamAccessState = steamAccessState,
-                            session = session,
-                            diagnosticExportState = diagnosticExportState,
-                            appUpdateState = appUpdateState,
-                            availableAccents = availableAccents,
-                            customAccentColor = customAccentColor,
-                            onCustomAccentColorChanged = { customAccentColor = it },
-                            proxyUrl = proxyUrl,
-                            onProxyUrlChanged = { proxyUrl = it },
-                            steamApiKey = steamApiKey,
-                            onSteamApiKeyChanged = { steamApiKey = it },
-                            onMatureContentEnabledChange = { enabled ->
-                                saveHomePreferences(matureContentEnabled = enabled)
-                            },
-                            onThemePreferenceChange = onThemePreferenceChange,
-                            onAccentChange = onAccentChange,
-                            onSystemMonetEnabledChange = onSystemMonetEnabledChange,
-                            onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
-                            onHomePreferencesChange = onHomePreferencesChange,
-                            onHomePaginationModeChange = onHomePaginationModeChange,
-                            onDownloadPreferencesChange = onDownloadPreferencesChange,
-                            onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
-                            onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
-                            onSteamAccessEnabledChange = onSteamAccessEnabledChange,
-                            onSteamAccessDohEndpointsChange = onSteamAccessDohEndpointsChange,
-                            onSteamWorkshopDataSourceChange = onSteamWorkshopDataSourceChange,
-                            onRefreshSteamAccess = onRefreshSteamAccess,
-                            onSaveSteamApiKey = { onSteamApiKeyChange(steamApiKey) },
-                            onOpenExternalUri = onOpenExternalUri,
-                            onOpenSteamLogin = onOpenSteamLogin,
-                            onLogoutSteam = onLogoutSteam,
-                            onSelectOutputDirectory = onSelectOutputDirectory,
-                            onClearOutputDirectory = onClearOutputDirectory,
-                            onCheckForAppUpdate = onCheckForAppUpdate,
-                            onDownloadLatestRelease = onDownloadLatestRelease,
-                            onCancelAppUpdateDownload = onCancelAppUpdateDownload,
-                            onInstallDownloadedRelease = onInstallDownloadedRelease,
-                            onExportDiagnostics = onExportDiagnostics,
-                            onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
-                            onRequestNotifications = onRequestNotifications,
-                        )
                     }
                 }
-            }
             }
         }
     }
@@ -593,41 +564,8 @@ internal fun SettingsSection(
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = WallHubSpacing.xxs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
-        ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(WallHubSizeTokens.smallIcon),
-                )
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxxs),
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                supportingText?.let { description ->
-                    Text(
-                        text = description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-        SettingsSectionSurface(modifier = Modifier.fillMaxWidth()) {
-            Column(content = content)
-        }
+        UwuSettingsCategory(title = title)
+        Column(content = content)
     }
 }

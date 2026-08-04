@@ -83,6 +83,8 @@ import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.normalizeSteamAccessDohEndpoint
 import kotlinx.coroutines.launch
+import org.uwuaosp.compose.settingslib.PreferencePosition
+import org.uwuaosp.compose.settingslib.PreferenceRow
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 @Composable
@@ -113,19 +115,17 @@ internal fun SteamSettingsContent(
         supportingText = stringResource(R.string.settings_steam_account_description),
         icon = Icons.Outlined.PersonOutline,
     ) {
-        SettingsListItem(
-            headlineContent = {
-                Text(
-                    if (session.phase == SteamSessionPhase.SIGNED_IN) {
-                        session.accountName.orEmpty().ifBlank { stringResource(R.string.settings_steam_name) }
-                    } else {
-                        stringResource(R.string.settings_steam_sign_in_status)
-                    },
-                )
-            },
-            supportingContent = {
-                Text(session.settingsSummary())
-            },
+        PreferenceRow(
+            title =
+                if (session.phase == SteamSessionPhase.SIGNED_IN) {
+                    session.accountName.orEmpty().ifBlank { stringResource(R.string.settings_steam_name) }
+                } else {
+                    stringResource(R.string.settings_steam_sign_in_status)
+                },
+            summary = session.settingsSummary(),
+            position = PreferencePosition.Single,
+            iconContent = { SettingsPreferenceIcon(Icons.Outlined.PersonOutline) },
+            onClick = if (session.phase == SteamSessionPhase.SIGNED_IN) onLogoutSteam else onOpenSteamLogin,
         )
         SettingsActionArea {
             if (session.phase == SteamSessionPhase.SIGNED_IN) {
@@ -180,6 +180,7 @@ internal fun SteamSettingsContent(
             title = stringResource(R.string.settings_steam_automatic_anti_blocking),
             supportingText = steamAccessState.summary(),
             checked = steamAccessEnabled,
+            icon = Icons.Outlined.Language,
             onCheckedChange = onSteamAccessEnabledChange,
         )
         SettingsItemDivider()
@@ -223,6 +224,7 @@ internal fun SteamSettingsContent(
                 }
             },
             onSelected = onSteamWorkshopDataSourceChange,
+            icon = Icons.Outlined.Language,
         )
     }
 
@@ -358,28 +360,12 @@ internal fun SteamAccessDohEndpointsSetting(
         }
     }
 
-    SettingsListItem(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(MaterialTheme.shapes.medium)
-                .clickable(onClick = ::openEditor),
-        headlineContent = {
-            Text(stringResource(R.string.settings_doh_urls))
-        },
-        supportingContent = {
-            Text(
-                stringResource(R.string.settings_doh_enabled_summary, enabledCount, endpoints.size),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        trailingContent = {
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = null,
-            )
-        },
+    PreferenceRow(
+        title = stringResource(R.string.settings_doh_urls),
+        summary = stringResource(R.string.settings_doh_enabled_summary, enabledCount, endpoints.size),
+        position = PreferencePosition.Single,
+        iconContent = { SettingsPreferenceIcon(Icons.Outlined.Tune) },
+        onClick = ::openEditor,
     )
 
     if (editorVisible) {
@@ -836,6 +822,7 @@ internal fun ExperimentalSettingsContent(
             title = stringResource(R.string.settings_steamkit_chunk_streaming),
             supportingText = stringResource(R.string.settings_steamkit_chunk_streaming_description),
             checked = preferences.onlineChunkPlaybackEnabled,
+            icon = Icons.Outlined.PlayArrow,
             onCheckedChange = onOnlineChunkPlaybackEnabledChange,
         )
         SettingsItemDivider()
@@ -850,13 +837,12 @@ internal fun ExperimentalSettingsContent(
         supportingText = stringResource(R.string.settings_system_permissions_description),
         icon = Icons.Outlined.Notifications,
     ) {
-        SettingsListItem(
-            headlineContent = { Text(stringResource(R.string.settings_background_task_notifications)) },
-            supportingContent = {
-                Text(
-                    stringResource(R.string.settings_background_task_notifications_description),
-                )
-            },
+        PreferenceRow(
+            title = stringResource(R.string.settings_background_task_notifications),
+            summary = stringResource(R.string.settings_background_task_notifications_description),
+            position = PreferencePosition.Single,
+            iconContent = { SettingsPreferenceIcon(Icons.Outlined.Notifications) },
+            onClick = onRequestNotifications,
         )
         SettingsActionArea {
             FilledTonalButton(

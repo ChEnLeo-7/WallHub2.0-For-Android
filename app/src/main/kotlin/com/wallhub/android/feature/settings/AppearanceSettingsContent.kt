@@ -191,7 +191,7 @@ internal fun AppearanceSettingsContent(
                     },
                 checked = preferences.useSystemMonet,
                 onCheckedChange = onSystemMonetEnabledChange,
-                iconContent = { AppearancePreferenceIcon(Icons.Outlined.Palette) },
+                iconContent = { SettingsPreferenceIcon(Icons.Outlined.Palette) },
                 position = PreferencePosition.Top,
             )
             PreferenceGroupSpacer()
@@ -207,7 +207,7 @@ internal fun AppearanceSettingsContent(
                 checked = themedIconsSupported && preferences.useThemedLauncherIcon,
                 enabled = themedIconsSupported,
                 onCheckedChange = onThemedLauncherIconEnabledChange,
-                iconContent = { AppearancePreferenceIcon(Icons.Outlined.PhoneAndroid) },
+                iconContent = { SettingsPreferenceIcon(Icons.Outlined.PhoneAndroid) },
                 position = PreferencePosition.Middle,
             )
             PreferenceGroupSpacer()
@@ -270,7 +270,7 @@ internal fun AppearanceSettingsContent(
                 checked = preferences.homeFilterMultiSelect,
                 onCheckedChange = { enabled -> saveHomePreferences(multiSelect = enabled) },
                 position = PreferencePosition.Middle,
-                iconContent = { AppearancePreferenceIcon(Icons.Outlined.FilterList) },
+                iconContent = { SettingsPreferenceIcon(Icons.Outlined.FilterList) },
             )
             PreferenceGroupSpacer()
             SettingChoiceRow(
@@ -291,28 +291,18 @@ internal fun SettingsSwitchRow(
     supportingText: String,
     checked: Boolean,
     enabled: Boolean = true,
+    icon: ImageVector? = null,
+    position: PreferencePosition = PreferencePosition.Single,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    SettingsListItem(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(MaterialTheme.shapes.medium)
-                .toggleable(
-                    value = checked,
-                    enabled = enabled,
-                    role = Role.Switch,
-                    onValueChange = onCheckedChange,
-                ),
-        headlineContent = { Text(title) },
-        supportingContent = { Text(supportingText) },
-        trailingContent = {
-            Switch(
-                checked = checked,
-                enabled = enabled,
-                onCheckedChange = null,
-            )
-        },
+    SwitchPreferenceRow(
+        title = title,
+        summary = supportingText,
+        checked = checked,
+        enabled = enabled,
+        iconContent = icon?.let { { SettingsPreferenceIcon(it) } },
+        position = position,
+        onCheckedChange = onCheckedChange,
     )
 }
 
@@ -465,7 +455,7 @@ internal fun <T> SettingChoiceRow(
     PreferenceRow(
         title = title,
         position = position,
-        iconContent = icon?.let { { AppearancePreferenceIcon(it) } },
+        iconContent = icon?.let { { SettingsPreferenceIcon(it) } },
         trailingContent = {
             ExposedPreferenceDropdown(
                 value = selectedLabel,
@@ -599,7 +589,7 @@ private fun ExpressiveSettingMenuItem(
 }
 
 @Composable
-private fun AppearancePreferenceIcon(icon: ImageVector) {
+internal fun SettingsPreferenceIcon(icon: ImageVector) {
     SettingsHomepageIcon(
         imageVector = icon,
         backgroundColor = MaterialTheme.colorScheme.primary,
@@ -719,7 +709,7 @@ internal fun AccentPreferenceChoiceRow(
     PreferenceRow(
         title = title,
         position = position,
-        iconContent = { AppearancePreferenceIcon(Icons.Outlined.Palette) },
+        iconContent = { SettingsPreferenceIcon(Icons.Outlined.Palette) },
         trailingContent = {
             ExposedPreferenceDropdown(
                 value = selectedValue.label(),

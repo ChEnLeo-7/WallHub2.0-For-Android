@@ -21,6 +21,10 @@ import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
+import org.uwuaosp.compose.settingslib.PreferencePosition
+import org.uwuaosp.compose.settingslib.PreferenceRow
+import org.uwuaosp.compose.settingslib.SwitchPreferenceRow
+import org.uwuaosp.compose.settingslib.SettingsCategory as UwuSettingsCategory
 import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
 @Composable
@@ -46,20 +50,15 @@ internal fun DownloadSettingsContent(
         )
     }
 
-    SettingsSection(
-        title = stringResource(R.string.settings_storage_location_title),
-        supportingText = stringResource(R.string.settings_storage_location_description),
-        icon = Icons.Outlined.FolderOpen,
-    ) {
-        SettingsListItem(
-            headlineContent = { Text(stringResource(R.string.settings_current_export_directory)) },
-            supportingContent = {
-                Text(
-                    preferences.outputDirectoryLabel ?: stringResource(R.string.settings_default_export_directory),
-                )
-            },
-        )
-        SettingsActionArea {
+    UwuSettingsCategory(title = stringResource(R.string.settings_storage_location_title))
+    PreferenceRow(
+        title = stringResource(R.string.settings_current_export_directory),
+        summary = preferences.outputDirectoryLabel ?: stringResource(R.string.settings_default_export_directory),
+        position = PreferencePosition.Single,
+        iconContent = { SettingsPreferenceIcon(Icons.Outlined.FolderOpen) },
+        onClick = onSelectOutputDirectory,
+    )
+    SettingsActionArea {
             FilledTonalButton(
                 onClick = onSelectOutputDirectory,
                 modifier = Modifier.fillMaxWidth(),
@@ -86,50 +85,45 @@ internal fun DownloadSettingsContent(
                     Text(stringResource(R.string.settings_action_restore_default_directory))
                 }
             }
-        }
     }
 
-    SettingsSection(
-        title = stringResource(R.string.settings_download_performance_title),
-        supportingText = stringResource(R.string.settings_download_performance_description),
+    UwuSettingsCategory(title = stringResource(R.string.settings_download_performance_title))
+    SettingChoiceRow(
+        title = stringResource(R.string.settings_concurrent_downloads),
+        selectedValue = preferences.maxConcurrentDownloads,
+        values = listOf(1, 2, 3, 4),
+        label = { pluralStringResource(R.plurals.settings_download_task_count, it, it) },
+        onSelected = { value -> saveDownloadPreferences(maxDownloads = value) },
+        position = PreferencePosition.Top,
         icon = Icons.Outlined.Download,
-    ) {
-        SettingChoiceRow(
-            title = stringResource(R.string.settings_concurrent_downloads),
-            selectedValue = preferences.maxConcurrentDownloads,
-            values = listOf(1, 2, 3, 4),
-            label = { pluralStringResource(R.plurals.settings_download_task_count, it, it) },
-            onSelected = { value -> saveDownloadPreferences(maxDownloads = value) },
-        )
-        SettingsItemDivider()
-        SettingChoiceRow(
-            title = stringResource(R.string.settings_chunks_per_download),
-            selectedValue = preferences.chunkDownloadConcurrency,
-            values = listOf(12, 16, 24, 32, 48),
-            label = { value -> pluralStringResource(R.plurals.settings_chunk_count, value, value) },
-            onSelected = { value -> saveDownloadPreferences(chunkConcurrency = value) },
-        )
-    }
-
-    SettingsSection(
-        title = stringResource(R.string.settings_network_proxy_title),
-        supportingText = stringResource(R.string.settings_network_proxy_description),
+    )
+    org.uwuaosp.compose.settingslib.PreferenceGroupSpacer()
+    SettingChoiceRow(
+        title = stringResource(R.string.settings_chunks_per_download),
+        selectedValue = preferences.chunkDownloadConcurrency,
+        values = listOf(12, 16, 24, 32, 48),
+        label = { value -> pluralStringResource(R.plurals.settings_chunk_count, value, value) },
+        onSelected = { value -> saveDownloadPreferences(chunkConcurrency = value) },
+        position = PreferencePosition.Bottom,
         icon = Icons.Outlined.Tune,
-    ) {
+    )
+
+    UwuSettingsCategory(title = stringResource(R.string.settings_network_proxy_title))
         if (preferences.downloadProxyRequiresConfirmation) {
             SettingsNotice(
                 title = stringResource(R.string.settings_legacy_proxy_confirmation_title),
                 message = stringResource(R.string.settings_legacy_proxy_confirmation_description),
             )
         }
-        SettingsSwitchRow(
+        SwitchPreferenceRow(
             title = stringResource(R.string.settings_use_network_proxy),
-            supportingText = stringResource(R.string.settings_use_network_proxy_description),
+            summary = stringResource(R.string.settings_use_network_proxy_description),
             checked = preferences.downloadProxyEnabled,
             enabled = isSupportedDownloadProxyUrl(preferences.downloadProxyUrl),
             onCheckedChange = onDownloadProxyEnabledChange,
+            position = PreferencePosition.Single,
+            iconContent = { SettingsPreferenceIcon(Icons.Outlined.Tune) },
         )
-        SettingsItemDivider()
         Column(
             modifier = Modifier.padding(WallHubSpacing.md),
             verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
@@ -150,5 +144,4 @@ internal fun DownloadSettingsContent(
                 Text(stringResource(R.string.settings_action_save_proxy_settings))
             }
         }
-    }
 }
