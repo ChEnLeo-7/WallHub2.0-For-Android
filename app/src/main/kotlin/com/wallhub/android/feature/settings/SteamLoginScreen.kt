@@ -2,6 +2,7 @@
 
 package com.wallhub.android.feature.settings
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -17,6 +18,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -219,15 +221,18 @@ fun SteamLoginScreen(
             }
 
             SteamLoginCard {
-                SettingsFilledTextField(
+                TextField(
                     value = accountName,
                     onValueChange = { accountName = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     enabled = !uiState.isBusy,
                     label = { Text(stringResource(R.string.settings_steam_username)) },
+                    leadingIcon = {
+                        Icon(imageVector = Icons.Outlined.PersonOutline, contentDescription = null)
+                    },
                 )
-                SettingsFilledTextField(
+                TextField(
                     value = password,
                     onValueChange = { password = it },
                     modifier = Modifier.fillMaxWidth(),
@@ -312,7 +317,8 @@ private fun SteamLoginCard(content: @Composable ColumnScope.() -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        border = BorderStroke(WallHubSpacing.xxxs, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(
             modifier = Modifier.padding(WallHubSpacing.md),
