@@ -7,12 +7,18 @@ import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -20,17 +26,25 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -50,6 +64,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selectableGroup
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -463,7 +480,7 @@ fun DownloadsContent(
         modifier = modifier.fillMaxSize(),
     ) {
         if (showFilters) {
-            WallHubSingleChoiceSegmentedControl(
+            DownloadStatusCapsuleFilter(
                 options = DownloadFilter.entries,
                 selected = state.filter,
                 onSelected = { filter -> onAction(DownloadsAction.SelectFilter(filter)) },
@@ -500,6 +517,99 @@ fun DownloadsContent(
                 onReorder = { taskIds -> onAction(DownloadsAction.ReorderTasks(taskIds)) },
                 modifier = Modifier.fillMaxSize(),
             )
+        }
+    }
+}
+
+@Composable
+private fun <T> DownloadStatusCapsuleFilter(
+    options: List<T>,
+    selected: T,
+    onSelected: (T) -> Unit,
+    label: @Composable (T) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.height(DOWNLOAD_FILTER_CONTAINER_HEIGHT),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val optionWidth = maxWidth / DOWNLOAD_FILTER_VISIBLE_OPTION_COUNT
+            val contentWidth =
+                optionWidth * options.size +
+                    DOWNLOAD_FILTER_ITEM_SPACING * (options.size - 1).coerceAtLeast(0)
+            val selectedIndex = options.indexOf(selected).coerceAtLeast(0)
+            val indicatorOffset by
+                animateDpAsState(
+                    targetValue = (optionWidth + DOWNLOAD_FILTER_ITEM_SPACING) * selectedIndex,
+                    animationSpec = tween(DOWNLOAD_FILTER_ANIMATION_DURATION_MS),
+                    label = "DownloadFilterIndicator",
+                )
+            val scrollState = rememberScrollState()
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .horizontalScroll(scrollState)
+                        .padding(DOWNLOAD_FILTER_CONTAINER_INSET)
+                        .semantics { selectableGroup() },
+            ) {
+                Box(
+                    modifier =
+                        Modifier
+                            .width(contentWidth)
+                            .fillMaxHeight(),
+                ) {
+                    Surface(
+                        modifier =
+                            Modifier
+                                .offset(x = indicatorOffset)
+                                .width(optionWidth)
+                                .fillMaxHeight(),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary,
+                        content = {},
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(DOWNLOAD_FILTER_ITEM_SPACING),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        options.forEach { option ->
+                            val isSelected = option == selected
+                            val contentColor by
+                                animateColorAsState(
+                                    targetValue =
+                                        if (isSelected) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                    animationSpec = tween(DOWNLOAD_FILTER_ANIMATION_DURATION_MS),
+                                    label = "DownloadFilterContent",
+                                )
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .width(optionWidth)
+                                        .fillMaxHeight()
+                                        .clip(CircleShape)
+                                        .selectable(
+                                            selected = isSelected,
+                                            role = Role.RadioButton,
+                                            onClick = { onSelected(option) },
+                                        ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CompositionLocalProvider(LocalContentColor provides contentColor) {
+                                    label(option)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -858,6 +968,11 @@ private val REORDERABLE_DOWNLOAD_STATUSES =
     )
 private val DOWNLOAD_CARD_HEIGHT = 132.dp
 private val DOWNLOAD_CARD_SPACING = WallHubSpacing.xs
+private val DOWNLOAD_FILTER_CONTAINER_HEIGHT = 72.dp
+private val DOWNLOAD_FILTER_CONTAINER_INSET = WallHubSpacing.dense
+private val DOWNLOAD_FILTER_ITEM_SPACING = WallHubSpacing.dense
+private const val DOWNLOAD_FILTER_VISIBLE_OPTION_COUNT = 4
+private const val DOWNLOAD_FILTER_ANIMATION_DURATION_MS = 400
 private val DOWNLOAD_ACTION_ROW_HEIGHT = WallHubSizeTokens.compactActionHeight
 private val DOWNLOAD_ICON_BUTTON_SIZE = WallHubSizeTokens.compactIconButton
 private val DOWNLOAD_DRAG_ELEVATION = WallHubSpacing.xs

@@ -24,27 +24,24 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenuGroup
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -475,25 +472,21 @@ internal fun <T> SettingChoiceRow(
                 expanded = menuVisible,
                 onExpandedChange = { menuVisible = it },
             ) {
-                DropdownMenuGroup(shapes = MenuDefaults.groupShape(index = 0, count = 1)) {
-                    values.forEachIndexed { index, value ->
-                        DropdownMenuItem(
-                            selected = value == selectedValue,
-                            onClick = {
-                                onSelected(value)
-                                menuVisible = false
-                            },
-                            text = { Text(label(value)) },
-                            shapes = MenuDefaults.itemShape(index = index, count = values.size),
-                            selectedLeadingIcon = {
-                                WallHubAnimatedSelectionCheck(selected = true)
-                            },
-                        )
-                    }
+                values.forEachIndexed { index, value ->
+                    ExpressiveSettingMenuItem(
+                        text = label(value),
+                        selected = value == selectedValue,
+                        position = index,
+                        itemCount = values.size,
+                        onClick = {
+                            onSelected(value)
+                            menuVisible = false
+                        },
+                    )
                 }
             }
         },
-        onClick = { menuVisible = true },
+        onClick = { menuVisible = !menuVisible },
     )
 }
 
@@ -505,31 +498,103 @@ private fun ExposedPreferenceDropdown(
     onExpandedChange: (Boolean) -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = onExpandedChange,
-    ) {
-        TextField(
-            value = value,
-            onValueChange = {},
-            readOnly = true,
-            singleLine = true,
-            trailingIcon = {
-                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-            },
+    Box {
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            shape = MaterialTheme.shapes.extraLarge,
             modifier =
                 Modifier
-                    .width(SETTINGS_DROPDOWN_FIELD_WIDTH)
-                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-        )
-        ExposedDropdownMenu(
+                    .widthIn(min = SETTINGS_DROPDOWN_MIN_WIDTH, max = SETTINGS_DROPDOWN_MAX_WIDTH)
+                    .clickable { onExpandedChange(!expanded) },
+        ) {
+            Row(
+                modifier =
+                    Modifier
+                        .heightIn(min = WallHubSizeTokens.compactActionHeight)
+                        .padding(start = WallHubSpacing.md, end = WallHubSpacing.sm),
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            }
+        }
+        DropdownMenu(
             expanded = expanded,
             onDismissRequest = { onExpandedChange(false) },
-            containerColor = Color.Transparent,
+            modifier = Modifier.widthIn(min = SETTINGS_DROPDOWN_MENU_MIN_WIDTH),
+            shape = RoundedCornerShape(16.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             tonalElevation = WallHubSpacing.none,
-            shadowElevation = WallHubSpacing.none,
+            shadowElevation = SETTINGS_DROPDOWN_MENU_ELEVATION,
             content = content,
         )
+    }
+}
+
+@Composable
+private fun ExpressiveSettingMenuItem(
+    text: String,
+    selected: Boolean,
+    position: Int,
+    itemCount: Int,
+    onClick: () -> Unit,
+    leadingContent: (@Composable () -> Unit)? = null,
+) {
+    val shape =
+        if (selected) {
+            RoundedCornerShape(12.dp)
+        } else {
+            when (position) {
+                0 -> RoundedCornerShape(12.dp, 12.dp, 4.dp, 4.dp)
+                itemCount - 1 -> RoundedCornerShape(4.dp, 4.dp, 12.dp, 12.dp)
+                else -> RoundedCornerShape(4.dp)
+            }
+        }
+    val contentColor =
+        if (selected) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        }
+    Row(
+        modifier =
+            Modifier
+                .padding(horizontal = 4.dp, vertical = 1.dp)
+                .fillMaxWidth()
+                .clip(shape)
+                .background(
+                    if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                ).selectable(
+                    selected = selected,
+                    role = Role.RadioButton,
+                    onClick = onClick,
+                ).heightIn(min = 44.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (leadingContent != null) {
+            leadingContent()
+            Spacer(modifier = Modifier.width(WallHubSpacing.sm))
+        } else if (selected) {
+            WallHubAnimatedSelectionCheck(selected = true)
+            Spacer(modifier = Modifier.width(WallHubSpacing.sm))
+        }
+        Text(
+            text = text,
+            color = contentColor,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        if (leadingContent != null && selected) {
+            Spacer(modifier = Modifier.weight(1f))
+            WallHubAnimatedSelectionCheck(selected = true)
+        }
     }
 }
 
@@ -661,47 +726,34 @@ internal fun AccentPreferenceChoiceRow(
                 expanded = menuVisible,
                 onExpandedChange = { menuVisible = it },
             ) {
-                DropdownMenuGroup(shapes = MenuDefaults.groupShape(index = 0, count = 1)) {
-                    values.forEachIndexed { index, accent ->
-                        DropdownMenuItem(
-                            selected = accent == selectedValue,
-                            onClick = {
-                                menuVisible = false
-                                if (accent == AccentPreference.CUSTOM) {
-                                    customSheetVisible = true
-                                } else {
-                                    onSelected(accent)
-                                }
-                            },
-                            text = { Text(accent.label()) },
-                            shapes = MenuDefaults.itemShape(index = index, count = values.size),
-                            leadingIcon = {
-                                AccentColorDot(
-                                    color =
-                                        accent.wallHubPreviewColor(
-                                            customColor = customColor,
-                                            systemMonetColor = systemMonetColor,
-                                        ),
-                                )
-                            },
-                            selectedLeadingIcon = {
-                                AccentColorDot(
-                                    color =
-                                        accent.wallHubPreviewColor(
-                                            customColor = customColor,
-                                            systemMonetColor = systemMonetColor,
-                                        ),
-                                )
-                            },
-                            trailingContent = {
-                                WallHubAnimatedSelectionCheck(selected = accent == selectedValue)
-                            },
-                        )
-                    }
+                values.forEachIndexed { index, accent ->
+                    ExpressiveSettingMenuItem(
+                        text = accent.label(),
+                        selected = accent == selectedValue,
+                        position = index,
+                        itemCount = values.size,
+                        onClick = {
+                            menuVisible = false
+                            if (accent == AccentPreference.CUSTOM) {
+                                customSheetVisible = true
+                            } else {
+                                onSelected(accent)
+                            }
+                        },
+                        leadingContent = {
+                            AccentColorDot(
+                                color =
+                                    accent.wallHubPreviewColor(
+                                        customColor = customColor,
+                                        systemMonetColor = systemMonetColor,
+                                    ),
+                            )
+                        },
+                    )
                 }
             }
         },
-        onClick = { menuVisible = true },
+        onClick = { menuVisible = !menuVisible },
     )
     if (customSheetVisible) {
         ModalBottomSheet(onDismissRequest = { customSheetVisible = false }) {
@@ -955,7 +1007,10 @@ internal val SETTINGS_MEDIUM_WIDTH = 600.dp
 internal val SETTINGS_CONTENT_MAX_WIDTH = 760.dp
 internal val SETTINGS_SHEET_CONTENT_MAX_HEIGHT = 560.dp
 internal val SETTINGS_ITEM_MIN_HEIGHT = 64.dp
-internal val SETTINGS_DROPDOWN_FIELD_WIDTH = 160.dp
+internal val SETTINGS_DROPDOWN_MIN_WIDTH = 112.dp
+internal val SETTINGS_DROPDOWN_MAX_WIDTH = 200.dp
+internal val SETTINGS_DROPDOWN_MENU_MIN_WIDTH = 180.dp
+internal val SETTINGS_DROPDOWN_MENU_ELEVATION = 3.dp
 internal val STEAM_DOH_ITEM_HEIGHT = 84.dp
 internal val STEAM_DOH_ITEM_SPACING = WallHubSpacing.xs
 internal val SETTINGS_PAGE_EASING = CubicBezierEasing(0.2f, 0f, 0f, 1f)
