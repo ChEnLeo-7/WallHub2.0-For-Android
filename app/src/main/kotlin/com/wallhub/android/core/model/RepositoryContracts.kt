@@ -11,6 +11,8 @@ import java.io.Closeable
 interface SettingsRepository {
     val preferences: Flow<AppPreferences>
 
+    suspend fun setSetupWizardCompleted(completed: Boolean) = Unit
+
     suspend fun setTheme(theme: ThemePreference)
 
     suspend fun setAccent(

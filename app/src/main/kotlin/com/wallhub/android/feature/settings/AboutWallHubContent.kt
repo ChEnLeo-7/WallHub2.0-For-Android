@@ -121,6 +121,7 @@ internal fun AboutWallHubScreen(
     onCancelAppUpdateDownload: () -> Unit,
     onInstallDownloadedRelease: (String) -> Unit,
     onOpenExternalUri: (String, String) -> Unit,
+    onRestartSetupWizard: () -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     MaterialTheme(
@@ -156,6 +157,7 @@ internal fun AboutWallHubScreen(
                     onCancelAppUpdateDownload = onCancelAppUpdateDownload,
                     onInstallDownloadedRelease = onInstallDownloadedRelease,
                     onOpenExternalUri = onOpenExternalUri,
+                    onRestartSetupWizard = onRestartSetupWizard,
                 )
             }
         }
@@ -171,6 +173,7 @@ internal fun AboutWallHubPreferences(
     onCancelAppUpdateDownload: () -> Unit,
     onInstallDownloadedRelease: (String) -> Unit,
     onOpenExternalUri: (String, String) -> Unit,
+    onRestartSetupWizard: () -> Unit,
 ) {
     val openAuthorFailure = stringResource(R.string.settings_error_open_author_profile)
     val openContributorFailure = stringResource(R.string.settings_error_open_contributor_profile)
@@ -247,6 +250,14 @@ internal fun AboutWallHubPreferences(
                 openQqGroupFailure,
             )
         },
+    )
+    Spacer(modifier = Modifier.height(WallHubSpacing.sm))
+    PreferenceRow(
+        title = stringResource(R.string.settings_restart_setup_wizard),
+        summary = stringResource(R.string.settings_restart_setup_wizard_description),
+        icon = Icons.Outlined.Settings,
+        position = PreferencePosition.Single,
+        onClick = onRestartSetupWizard,
     )
     if (appUpdateState.phase == AppUpdatePhase.DOWNLOADING) {
         Column(

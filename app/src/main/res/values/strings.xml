@@ -1,6 +1,21 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <resources xmlns:tools='http://schemas.android.com/tools'>
     <string name='app_name'>WallHub</string>
+    <string name='setup_welcome_title'>Welcome to WallHub</string>
+    <string name='setup_welcome_description'>Browse, download, and manage Wallpaper Engine Workshop content on Android.</string>
+    <string name='setup_steam_title'>Sign in to Steam</string>
+    <string name='setup_steam_description'>Connect your Steam account to access your library, comments, and authenticated Workshop features.</string>
+    <string name='setup_network_title'>Network settings</string>
+    <string name='setup_network_description'>Set the proxy, Steam service access route, Workshop data source, and Web API key.</string>
+    <string name='setup_finish_title'>Setup complete</string>
+    <string name='setup_finish_description'>WallHub is ready. You can change these options later in Settings.</string>
+    <string name='setup_action_start'>Start setup</string>
+    <string name='setup_action_next'>Next</string>
+    <string name='setup_action_skip'>Skip for now</string>
+    <string name='setup_action_finish'>Start using WallHub</string>
+    <string name='setup_action_save_and_continue'>Save and continue</string>
+    <string name='settings_restart_setup_wizard'>Run setup wizard again</string>
+    <string name='settings_restart_setup_wizard_description'>Return to the welcome page and review Steam and network setup</string>
     <string name='settings_title'>Settings</string>
     <string name='settings_wallhub_project_title'>WallHub For Android</string>
     <string name='settings_category_basic'>Basic settings</string>

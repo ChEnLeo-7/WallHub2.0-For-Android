@@ -25,6 +25,10 @@ class DataStoreSettingsRepository
                 preferences.copy(steamApiKey = apiKey)
             }
 
+        override suspend fun setSetupWizardCompleted(completed: Boolean) {
+            store.setSetupWizardCompleted(completed)
+        }
+
         override suspend fun setTheme(theme: ThemePreference) {
             store.setTheme(theme)
         }

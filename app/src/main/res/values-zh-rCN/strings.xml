@@ -1,6 +1,21 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <resources>
     <string name='app_name'>WallHub</string>
+    <string name='setup_welcome_title'>欢迎使用 WallHub</string>
+    <string name='setup_welcome_description'>在 Android 上浏览、下载与管理 Wallpaper Engine 创意工坊内容。</string>
+    <string name='setup_steam_title'>登录 Steam</string>
+    <string name='setup_steam_description'>连接 Steam 账户，以访问资料库、评论和需要登录的创意工坊功能。</string>
+    <string name='setup_network_title'>网络设置</string>
+    <string name='setup_network_description'>设置网络代理、Steam 服务访问线路、创意工坊数据源和 Web API Key。</string>
+    <string name='setup_finish_title'>设置完成</string>
+    <string name='setup_finish_description'>WallHub 已准备就绪。之后仍可在设置中修改这些选项。</string>
+    <string name='setup_action_start'>开始设置</string>
+    <string name='setup_action_next'>下一步</string>
+    <string name='setup_action_skip'>暂时跳过</string>
+    <string name='setup_action_finish'>开始使用 WallHub</string>
+    <string name='setup_action_save_and_continue'>保存并继续</string>
+    <string name='settings_restart_setup_wizard'>重新开始设置向导</string>
+    <string name='settings_restart_setup_wizard_description'>返回欢迎页，重新检查 Steam 与网络配置</string>
     <string name='settings_title'>设置</string>
     <string name='settings_wallhub_project_title'>WallHub For Android</string>
     <string name='settings_category_basic'>基本设置</string>

@@ -149,6 +149,7 @@ fun SettingsScreen(
     val onOpenExternalUri: (String, String) -> Unit = { uri, failureMessage ->
         onAction(SettingsAction.OpenExternalUri(uri, failureMessage))
     }
+    val onRestartSetupWizard: () -> Unit = { onAction(SettingsAction.RestartSetupWizard) }
     var selectedPageName by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedCategory =
         selectedPageName
@@ -258,6 +259,7 @@ fun SettingsScreen(
                     onCancelAppUpdateDownload = onCancelAppUpdateDownload,
                     onInstallDownloadedRelease = onInstallDownloadedRelease,
                     onOpenExternalUri = onOpenExternalUri,
+                    onRestartSetupWizard = onRestartSetupWizard,
                 )
             }
 

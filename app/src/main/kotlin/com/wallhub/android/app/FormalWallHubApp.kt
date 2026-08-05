@@ -22,16 +22,24 @@ import com.wallhub.android.core.designsystem.WallHubGlobalToastHost
 import com.wallhub.android.core.designsystem.WallHubTheme
 import com.wallhub.android.core.designsystem.rememberWallHubToastState
 import com.wallhub.android.core.model.AppPreferences
+import com.wallhub.android.feature.setup.WallHubSetupWizard
 import kotlinx.coroutines.flow.collect
 
 @Composable
-fun FormalWallHubApp(preferences: AppPreferences) {
+fun FormalWallHubApp(
+    preferences: AppPreferences,
+    onSetupWizardCompleted: () -> Unit,
+) {
     WallHubTheme(
         preference = preferences.theme,
         accent = preferences.accent,
         customAccentColor = preferences.customAccentColor,
         useSystemMonet = preferences.useSystemMonet,
     ) {
+        if (!preferences.setupWizardCompleted) {
+            WallHubSetupWizard(onComplete = onSetupWizardCompleted)
+            return@WallHubTheme
+        }
         val navController = rememberNavController()
         val windowWidthSizeClass = currentWindowAdaptiveInfo().windowSizeClass.windowWidthSizeClass
         val currentBackStackEntry by navController.currentBackStackEntryAsState()

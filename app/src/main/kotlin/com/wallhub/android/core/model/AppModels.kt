@@ -108,6 +108,7 @@ data class SteamContentCredential(
 )
 
 data class AppPreferences(
+    val setupWizardCompleted: Boolean = false,
     val theme: ThemePreference = ThemePreference.SYSTEM,
     val accent: AccentPreference = AccentPreference.MONET,
     val customAccentColor: String = "#5B7AA0",
@@ -145,7 +146,8 @@ data class AppPreferences(
 ) {
     override fun toString(): String =
         "AppPreferences(" +
-            "theme=$theme, accent=$accent, customAccentColor=$customAccentColor, " +
+            "setupWizardCompleted=$setupWizardCompleted, theme=$theme, " +
+            "accent=$accent, customAccentColor=$customAccentColor, " +
             "useSystemMonet=$useSystemMonet, useThemedLauncherIcon=$useThemedLauncherIcon, " +
             "outputTreeUri=$outputTreeUri, outputDirectoryLabel=$outputDirectoryLabel, " +
             "localManagementTreeUri=$localManagementTreeUri, " +

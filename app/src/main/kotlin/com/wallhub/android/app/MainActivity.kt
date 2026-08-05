@@ -21,9 +21,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel: ShellViewModel = hiltViewModel()
             val preferences by viewModel.preferences.collectAsStateWithLifecycle()
-            FormalWallHubApp(
-                preferences = preferences,
-            )
+            preferences?.let { loadedPreferences ->
+                FormalWallHubApp(
+                    preferences = loadedPreferences,
+                    onSetupWizardCompleted = { viewModel.setSetupWizardCompleted(true) },
+                )
+            }
         }
     }
 }

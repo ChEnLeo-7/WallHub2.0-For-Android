@@ -126,6 +126,8 @@ sealed interface SettingsAction {
 
     data object LogoutSteam : SettingsAction
 
+    data object RestartSetupWizard : SettingsAction
+
     data object SelectOutputDirectory : SettingsAction
 
     data class OutputDirectorySelected(

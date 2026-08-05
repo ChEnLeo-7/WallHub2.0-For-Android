@@ -23,14 +23,14 @@ class ShellViewModel
         private val steamSessionRepository: SteamSessionRepository,
         private val diagnosticRepository: DiagnosticRepository,
     ) : ViewModel() {
-        val preferences: StateFlow<AppPreferences> =
+        val preferences: StateFlow<AppPreferences?> =
             settingsRepository.preferences.stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5_000),
-                initialValue = AppPreferences(),
+                initialValue = null,
             )
 
-        init {
+    init {
             steamSessionRepository.restorePersistedSession()
             viewModelScope.launch {
                 runCatching {
@@ -43,5 +43,9 @@ class ShellViewModel
                     )
                 }
             }
+        }
+
+        fun setSetupWizardCompleted(completed: Boolean) {
+            viewModelScope.launch { settingsRepository.setSetupWizardCompleted(completed) }
         }
     }

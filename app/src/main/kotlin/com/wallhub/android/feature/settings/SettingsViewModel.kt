@@ -151,6 +151,7 @@ class SettingsViewModel
                 is SettingsAction.DiagnosticDocumentSelected -> exportDiagnostics(action.destinationUri)
                 is SettingsAction.SystemActionFailed -> reportSystemActionFailure(action.message)
                 is SettingsAction.InstallerFailed -> reportInstallerError(action.message)
+                SettingsAction.RestartSetupWizard -> restartSetupWizard()
                 else -> Unit
             }
         }
@@ -277,6 +278,10 @@ class SettingsViewModel
 
         private fun logoutSteam() {
             steamSessionRepository.logout()
+        }
+
+        private fun restartSetupWizard() {
+            viewModelScope.launch { settingsRepository.setSetupWizardCompleted(false) }
         }
 
         private fun checkForAppUpdate() {

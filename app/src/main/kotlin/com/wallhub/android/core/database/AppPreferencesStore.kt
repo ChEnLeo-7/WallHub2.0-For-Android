@@ -49,6 +49,12 @@ class AppPreferencesStore(
                 }
             }.map(::toAppPreferences)
 
+    suspend fun setSetupWizardCompleted(completed: Boolean) {
+        applicationContext.dataStore.edit { preferences ->
+            preferences[Keys.setupWizardCompleted] = completed
+        }
+    }
+
     suspend fun setTheme(theme: ThemePreference) {
         applicationContext.dataStore.edit { preferences ->
             preferences[Keys.theme] = theme.name
@@ -263,6 +269,7 @@ class AppPreferencesStore(
                 ?.filterTo(linkedSetOf()) { endpoint -> endpoint in steamAccessDohEndpoints }
                 .orEmpty()
         return AppPreferences(
+            setupWizardCompleted = preferences[Keys.setupWizardCompleted] ?: false,
             theme = theme,
             accent = preferences.enumValue(Keys.accent, AccentPreference.MONET),
             customAccentColor = preferences[Keys.customAccentColor].orEmpty().ifBlank { "#5B7AA0" },
@@ -320,6 +327,7 @@ class AppPreferencesStore(
             ?: fallback
 
     private object Keys {
+        val setupWizardCompleted = booleanPreferencesKey("setup_wizard_completed")
         val theme = stringPreferencesKey("theme")
         val accent = stringPreferencesKey("accent")
         val customAccentColor = stringPreferencesKey("custom_accent_color")
