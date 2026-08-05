@@ -565,6 +565,7 @@
     <string name='downloads_filter_queued'>待下载</string>
     <string name='downloads_filter_failed'>失败</string>
     <string name='downloads_type_all'>全部</string>
+    <string name='downloads_type_filter'>筛选下载类型</string>
     <string name='downloads_type_video'>视频</string>
     <string name='downloads_type_scene'>场景</string>
     <string name='downloads_type_web'>网站</string>
@@ -616,6 +617,7 @@
     <string name='library_collection_favorites'>我的收藏</string>
     <string name='library_collection_voted'>我的投票</string>
     <string name='library_type_all'>全部</string>
+    <string name='library_type_filter'>筛选资料库类型</string>
     <string name='library_type_video'>视频</string>
     <string name='library_type_scene'>场景</string>
     <string name='library_type_web'>网站</string>

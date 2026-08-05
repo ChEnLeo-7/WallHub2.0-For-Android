@@ -32,6 +32,7 @@ import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.FullscreenExit
@@ -86,6 +87,7 @@ object WallHubIcons {
         val FavoriteBorder: ImageVector get() = MaterialIcons.Outlined.FavoriteBorder
         val FileUpload: ImageVector get() = MaterialIcons.Outlined.FileUpload
         val FilterList: ImageVector get() = MaterialIcons.Outlined.FilterList
+        val FilterAlt: ImageVector get() = MaterialIcons.Outlined.FilterAlt
         val FolderOpen: ImageVector get() = MaterialIcons.Outlined.FolderOpen
         val Fullscreen: ImageVector get() = MaterialIcons.Outlined.Fullscreen
         val FullscreenExit: ImageVector get() = MaterialIcons.Outlined.FullscreenExit

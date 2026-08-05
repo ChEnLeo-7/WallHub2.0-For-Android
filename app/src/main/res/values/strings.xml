@@ -595,6 +595,7 @@
     <string name='downloads_filter_queued'>Queued</string>
     <string name='downloads_filter_failed'>Failed</string>
     <string name='downloads_type_all'>All</string>
+    <string name='downloads_type_filter'>Filter download types</string>
     <string name='downloads_type_video'>Video</string>
     <string name='downloads_type_scene'>Scene</string>
     <string name='downloads_type_web'>Web</string>
@@ -646,6 +647,7 @@
     <string name='library_collection_favorites'>Favorites</string>
     <string name='library_collection_voted'>Voted</string>
     <string name='library_type_all'>All</string>
+    <string name='library_type_filter'>Filter library types</string>
     <string name='library_type_video'>Video</string>
     <string name='library_type_scene'>Scene</string>
     <string name='library_type_web'>Web</string>

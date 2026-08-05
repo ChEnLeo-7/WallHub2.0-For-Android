@@ -100,9 +100,11 @@ import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubToolbarSearchTitle
+import com.wallhub.android.core.designsystem.FilterableWorkshopTypes
+import com.wallhub.android.core.designsystem.WorkshopTypeFilterMenu
 import com.wallhub.android.core.designsystem.WallHubPaginationControl
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
-import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
+import com.wallhub.android.core.designsystem.WallHubCapsuleFilter
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.format.formatByteSize
@@ -144,19 +146,10 @@ enum class LibraryCollectionTab(
     VOTED(AccountWorkshopCollection.VOTED),
 }
 
-enum class LibraryTypeFilter(
-    val type: WorkshopType?,
-) {
-    ALL(null),
-    VIDEO(WorkshopType.VIDEO),
-    SCENE(WorkshopType.SCENE),
-    WEB(WorkshopType.WEB),
-}
-
 data class LibraryUiState(
     val session: SteamSessionState = SteamSessionState(),
     val collection: LibraryCollectionTab = LibraryCollectionTab.SUBSCRIPTIONS,
-    val typeFilter: LibraryTypeFilter = LibraryTypeFilter.ALL,
+    val selectedTypes: Set<WorkshopType> = FilterableWorkshopTypes,
     val searchQuery: String = "",
     val paginationMode: HomePaginationMode = HomePaginationMode.INFINITE_SCROLL,
     val items: List<WorkshopSummary> = emptyList(),
@@ -180,8 +173,8 @@ sealed interface LibraryAction {
         val collection: LibraryCollectionTab,
     ) : LibraryAction
 
-    data class SelectType(
-        val type: LibraryTypeFilter,
+    data class ToggleType(
+        val type: WorkshopType,
     ) : LibraryAction
 
     data class UpdateSearchQuery(
@@ -263,7 +256,7 @@ sealed interface LibraryEffect {
 
 private data class LibraryQueryKey(
     val collection: LibraryCollectionTab,
-    val typeFilter: LibraryTypeFilter,
+    val selectedTypes: Set<WorkshopType>,
     val searchQuery: String,
     val paginationMode: HomePaginationMode,
 )
@@ -342,7 +335,7 @@ class LibraryViewModel
         private fun handleStateAction(action: LibraryAction) {
             when (action) {
                 is LibraryAction.SelectCollection -> selectCollection(action.collection)
-                is LibraryAction.SelectType -> selectType(action.type)
+                is LibraryAction.ToggleType -> toggleType(action.type)
                 is LibraryAction.UpdateSearchQuery -> updateSearchQuery(action.query)
                 LibraryAction.SubmitSearch -> submitSearch()
                 is LibraryAction.SelectPaginationMode -> selectPaginationMode(action.mode)
@@ -366,10 +359,13 @@ class LibraryViewModel
             loadCurrentPage(forceRefresh = false, refreshing = false)
         }
 
-        private fun selectType(type: LibraryTypeFilter) {
-            if (mutableState.value.typeFilter == type) return
+        private fun toggleType(type: WorkshopType) {
             searchJob?.cancel()
-            mutableState.value = mutableState.value.copy(typeFilter = type, currentPage = 1)
+            val selectedTypes =
+                mutableState.value.selectedTypes.toMutableSet().apply {
+                    if (!add(type)) remove(type)
+                }
+            mutableState.value = mutableState.value.copy(selectedTypes = selectedTypes, currentPage = 1)
             loadCurrentPage(forceRefresh = false, refreshing = false)
         }
 
@@ -423,7 +419,7 @@ class LibraryViewModel
             val state = mutableState.value
             if (
                 state.collection == LibraryCollectionTab.SUBSCRIPTIONS &&
-                state.typeFilter == LibraryTypeFilter.ALL &&
+                state.selectedTypes == FilterableWorkshopTypes &&
                 state.paginationMode == HomePaginationMode.INFINITE_SCROLL
             ) {
                 return
@@ -431,7 +427,7 @@ class LibraryViewModel
             mutableState.value =
                 state.copy(
                     collection = LibraryCollectionTab.SUBSCRIPTIONS,
-                    typeFilter = LibraryTypeFilter.ALL,
+                    selectedTypes = FilterableWorkshopTypes,
                     paginationMode = HomePaginationMode.INFINITE_SCROLL,
                     currentPage = 1,
                 )
@@ -575,7 +571,7 @@ class LibraryViewModel
                                 pageSize = LIBRARY_PAGE_SIZE,
                                 searchText = snapshot.searchQuery,
                                 resolveTotalCount = snapshot.paginationMode == HomePaginationMode.PAGED,
-                                type = snapshot.typeFilter.type,
+                                type = snapshot.selectedTypes.singleOrNull(),
                             )
                         val result = browseWithInitialSessionRetry(query, retry = !append && page == 1)
                         if (version != requestVersion) return@launch
@@ -632,9 +628,10 @@ class LibraryViewModel
             previous.copy(
                 items =
                     if (append) {
-                        (previous.items + items).distinctBy(WorkshopSummary::id)
+                        (previous.items + items.filter { item -> item.type in previous.selectedTypes })
+                            .distinctBy(WorkshopSummary::id)
                     } else {
-                        items
+                        items.filter { item -> item.type in previous.selectedTypes }
                     },
                 nextPage = page.nextLibraryPageOrLast(),
                 hasNextPage = hasNextPage,
@@ -670,7 +667,7 @@ class LibraryViewModel
         private fun LibraryUiState.cacheKey(): LibraryQueryKey =
             LibraryQueryKey(
                 collection = collection,
-                typeFilter = typeFilter,
+                selectedTypes = selectedTypes,
                 searchQuery = searchQuery.trim(),
                 paginationMode = paginationMode,
             )
@@ -694,7 +691,7 @@ class LibraryViewModel
 private fun SavedStateHandle.libraryState(): LibraryUiState =
     LibraryUiState(
         collection = libraryEnumValueOrDefault(get(LIBRARY_COLLECTION_KEY), LibraryCollectionTab.SUBSCRIPTIONS),
-        typeFilter = libraryEnumValueOrDefault(get(LIBRARY_TYPE_FILTER_KEY), LibraryTypeFilter.ALL),
+        selectedTypes = savedWorkshopTypes(LIBRARY_TYPE_FILTER_KEY),
         searchQuery = get<String>(LIBRARY_SEARCH_QUERY_KEY).orEmpty(),
         paginationMode = libraryEnumValueOrDefault(get(LIBRARY_PAGINATION_MODE_KEY), HomePaginationMode.INFINITE_SCROLL),
         currentPage = (get<Int>(LIBRARY_CURRENT_PAGE_KEY) ?: 1).coerceAtLeast(1),
@@ -702,7 +699,7 @@ private fun SavedStateHandle.libraryState(): LibraryUiState =
 
 private fun SavedStateHandle.saveLibraryState(state: LibraryUiState) {
     this[LIBRARY_COLLECTION_KEY] = state.collection.name
-    this[LIBRARY_TYPE_FILTER_KEY] = state.typeFilter.name
+    this[LIBRARY_TYPE_FILTER_KEY] = ArrayList(state.selectedTypes.map(WorkshopType::name))
     this[LIBRARY_SEARCH_QUERY_KEY] = state.searchQuery
     this[LIBRARY_PAGINATION_MODE_KEY] = state.paginationMode.name
     this[LIBRARY_CURRENT_PAGE_KEY] = state.currentPage
@@ -712,6 +709,18 @@ private inline fun <reified T : Enum<T>> libraryEnumValueOrDefault(
     value: String?,
     default: T,
 ): T = value?.let { name -> enumValues<T>().firstOrNull { it.name == name } } ?: default
+
+private fun SavedStateHandle.savedWorkshopTypes(key: String): Set<WorkshopType> =
+    when (val saved = get<Any>(key)) {
+        is ArrayList<*> ->
+            saved.mapNotNullTo(linkedSetOf()) { name ->
+                WorkshopType.entries.firstOrNull { it.name == name }
+            }
+        "VIDEO" -> setOf(WorkshopType.VIDEO)
+        "SCENE" -> setOf(WorkshopType.SCENE)
+        "WEB" -> setOf(WorkshopType.WEB)
+        else -> FilterableWorkshopTypes
+    }
 
 private const val LIBRARY_COLLECTION_KEY = "library.collection"
 private const val LIBRARY_TYPE_FILTER_KEY = "library.typeFilter"
@@ -834,6 +843,12 @@ fun LibraryScreen(
             )
         },
         actions = {
+            WorkshopTypeFilterMenu(
+                selectedTypes = state.selectedTypes,
+                onTypeToggled = { onAction(LibraryAction.ToggleType(it)) },
+                contentDescription = stringResource(R.string.library_type_filter),
+                typeLabel = WorkshopType::libraryTypeLabel,
+            )
             IconButton(onClick = { onAction(LibraryAction.Refresh) }) {
                 Icon(Icons.Outlined.Refresh, contentDescription = stringResource(R.string.library_refresh))
             }
@@ -900,7 +915,7 @@ fun LibraryContent(
     }
     LaunchedEffect(
         state.collection,
-        state.typeFilter,
+        state.selectedTypes,
         state.searchQuery,
         state.paginationMode,
     ) {
@@ -950,19 +965,13 @@ fun LibraryContent(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 if (showFilters) {
-                    WallHubSingleChoiceSegmentedControl(
+                    WallHubCapsuleFilter(
                         options = LibraryCollectionTab.entries,
                         selected = state.collection,
                         onSelected = { onAction(LibraryAction.SelectCollection(it)) },
                         label = { tab -> Text(tab.label()) },
+                        visibleOptionCount = LibraryCollectionTab.entries.size,
                         modifier = Modifier.padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xs),
-                    )
-                    WallHubSingleChoiceSegmentedControl(
-                        options = LibraryTypeFilter.entries,
-                        selected = state.typeFilter,
-                        onSelected = { onAction(LibraryAction.SelectType(it)) },
-                        label = { filter -> Text(filter.label()) },
-                        modifier = Modifier.padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xxs),
                     )
                 }
                 AnimatedVisibility(
@@ -1594,12 +1603,12 @@ private fun LibraryCollectionTab.label(): String =
     }
 
 @Composable
-private fun LibraryTypeFilter.label(): String =
+private fun WorkshopType.libraryTypeLabel(): String =
     when (this) {
-        LibraryTypeFilter.ALL -> stringResource(R.string.library_type_all)
-        LibraryTypeFilter.VIDEO -> stringResource(R.string.library_type_video)
-        LibraryTypeFilter.SCENE -> stringResource(R.string.library_type_scene)
-        LibraryTypeFilter.WEB -> stringResource(R.string.library_type_web)
+        WorkshopType.VIDEO -> stringResource(R.string.library_type_video)
+        WorkshopType.SCENE -> stringResource(R.string.library_type_scene)
+        WorkshopType.WEB -> stringResource(R.string.library_type_web)
+        WorkshopType.UNKNOWN -> name
     }
 
 @Composable

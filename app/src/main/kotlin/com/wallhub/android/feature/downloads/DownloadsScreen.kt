@@ -82,10 +82,12 @@ import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
-import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
+import com.wallhub.android.core.designsystem.WallHubCapsuleFilter
+import com.wallhub.android.core.designsystem.FilterableWorkshopTypes
+import com.wallhub.android.core.designsystem.WorkshopTypeFilterMenu
 import com.wallhub.android.core.format.formatByteSize
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
@@ -97,6 +99,7 @@ import com.wallhub.android.core.model.DownloadTaskRepository
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.WorkshopSummary
+import com.wallhub.android.core.model.WorkshopType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.Channel
@@ -121,18 +124,9 @@ enum class DownloadFilter {
     FAILED,
 }
 
-enum class DownloadTypeFilter(
-    val type: com.wallhub.android.core.model.WorkshopType?,
-) {
-    ALL(null),
-    VIDEO(com.wallhub.android.core.model.WorkshopType.VIDEO),
-    SCENE(com.wallhub.android.core.model.WorkshopType.SCENE),
-    WEB(com.wallhub.android.core.model.WorkshopType.WEB),
-}
-
 data class DownloadsUiState(
     val filter: DownloadFilter = DownloadFilter.ALL,
-    val typeFilter: DownloadTypeFilter = DownloadTypeFilter.ALL,
+    val selectedTypes: Set<WorkshopType> = FilterableWorkshopTypes,
     val tasks: List<DownloadTask> = emptyList(),
 )
 
@@ -141,8 +135,8 @@ sealed interface DownloadsAction {
         val filter: DownloadFilter,
     ) : DownloadsAction
 
-    data class SelectTypeFilter(
-        val filter: DownloadTypeFilter,
+    data class ToggleTypeFilter(
+        val type: WorkshopType,
     ) : DownloadsAction
 
     data class RequestTaskAction(
@@ -219,7 +213,7 @@ class DownloadsViewModel
         fun onAction(action: DownloadsAction) {
             when (action) {
                 is DownloadsAction.SelectFilter -> stateSource.setFilter(action.filter)
-                is DownloadsAction.SelectTypeFilter -> stateSource.setTypeFilter(action.filter)
+                is DownloadsAction.ToggleTypeFilter -> stateSource.toggleTypeFilter(action.type)
                 is DownloadsAction.RequestTaskAction -> prepareTaskAction(action.taskId, action.action)
                 is DownloadsAction.ReorderTasks ->
                     viewModelScope.launch {
@@ -340,21 +334,18 @@ internal class DownloadsStateSource(
 ) {
     private val selectedFilter =
         MutableStateFlow(downloadEnumValueOrDefault(savedStateHandle[DOWNLOAD_FILTER_KEY], DownloadFilter.ALL))
-    private val selectedTypeFilter =
-        MutableStateFlow(
-            downloadEnumValueOrDefault(savedStateHandle[DOWNLOAD_TYPE_FILTER_KEY], DownloadTypeFilter.ALL),
-        )
+    private val selectedTypes = MutableStateFlow(savedStateHandle.downloadSelectedTypes())
 
     val states =
         combine(
             taskRepository.tasks,
             selectedFilter,
-            selectedTypeFilter,
-        ) { tasks, filter, typeFilter ->
+            selectedTypes,
+        ) { tasks, filter, types ->
             DownloadsUiState(
                 filter = filter,
-                typeFilter = typeFilter,
-                tasks = filterTasks(tasks, filter, typeFilter),
+                selectedTypes = types,
+                tasks = filterTasks(tasks, filter, types),
             )
         }
 
@@ -363,11 +354,26 @@ internal class DownloadsStateSource(
         savedStateHandle[DOWNLOAD_FILTER_KEY] = filter.name
     }
 
-    fun setTypeFilter(filter: DownloadTypeFilter) {
-        selectedTypeFilter.value = filter
-        savedStateHandle[DOWNLOAD_TYPE_FILTER_KEY] = filter.name
+    fun toggleTypeFilter(type: WorkshopType) {
+        selectedTypes.value =
+            selectedTypes.value.toMutableSet().apply {
+                if (!add(type)) remove(type)
+            }
+        savedStateHandle[DOWNLOAD_TYPE_FILTER_KEY] = ArrayList(selectedTypes.value.map(WorkshopType::name))
     }
 }
+
+private fun SavedStateHandle.downloadSelectedTypes(): Set<WorkshopType> =
+    when (val saved = get<Any>(DOWNLOAD_TYPE_FILTER_KEY)) {
+        is ArrayList<*> ->
+            saved.mapNotNullTo(linkedSetOf()) { name ->
+                WorkshopType.entries.firstOrNull { it.name == name }
+            }
+        "VIDEO" -> setOf(WorkshopType.VIDEO)
+        "SCENE" -> setOf(WorkshopType.SCENE)
+        "WEB" -> setOf(WorkshopType.WEB)
+        else -> FilterableWorkshopTypes
+    }
 
 private inline fun <reified T : Enum<T>> downloadEnumValueOrDefault(
     value: String?,
@@ -450,6 +456,12 @@ fun DownloadsScreen(
     WallHubPageScaffold(
         title = stringResource(R.string.downloads_title),
         actions = {
+            WorkshopTypeFilterMenu(
+                selectedTypes = state.selectedTypes,
+                onTypeToggled = { onAction(DownloadsAction.ToggleTypeFilter(it)) },
+                contentDescription = stringResource(R.string.downloads_type_filter),
+                typeLabel = WorkshopType::downloadTypeLabel,
+            )
             SettingsToolbarActionButton(
                 imageVector = Icons.Outlined.Settings,
                 contentDescription = stringResource(R.string.management_settings),
@@ -479,25 +491,16 @@ fun DownloadsContent(
         modifier = modifier.fillMaxSize(),
     ) {
         if (showFilters) {
-            DownloadStatusCapsuleFilter(
+            WallHubCapsuleFilter(
                 options = DownloadFilter.entries,
                 selected = state.filter,
                 onSelected = { filter -> onAction(DownloadsAction.SelectFilter(filter)) },
                 label = { filter -> Text(filter.label()) },
+                visibleOptionCount = 4,
                 modifier =
                     Modifier
                         .fillMaxWidth()
                         .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xs),
-            )
-            WallHubSingleChoiceSegmentedControl(
-                options = DownloadTypeFilter.entries,
-                selected = state.typeFilter,
-                onSelected = { filter -> onAction(DownloadsAction.SelectTypeFilter(filter)) },
-                label = { filter -> Text(filter.label()) },
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.none),
             )
         }
         if (state.tasks.isEmpty()) {
@@ -516,99 +519,6 @@ fun DownloadsContent(
                 onReorder = { taskIds -> onAction(DownloadsAction.ReorderTasks(taskIds)) },
                 modifier = Modifier.fillMaxSize(),
             )
-        }
-    }
-}
-
-@Composable
-private fun <T> DownloadStatusCapsuleFilter(
-    options: List<T>,
-    selected: T,
-    onSelected: (T) -> Unit,
-    label: @Composable (T) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier.height(DOWNLOAD_FILTER_CONTAINER_HEIGHT),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val optionWidth = maxWidth / DOWNLOAD_FILTER_VISIBLE_OPTION_COUNT
-            val contentWidth =
-                optionWidth * options.size +
-                    DOWNLOAD_FILTER_ITEM_SPACING * (options.size - 1).coerceAtLeast(0)
-            val selectedIndex = options.indexOf(selected).coerceAtLeast(0)
-            val indicatorOffset by
-                animateDpAsState(
-                    targetValue = (optionWidth + DOWNLOAD_FILTER_ITEM_SPACING) * selectedIndex,
-                    animationSpec = tween(DOWNLOAD_FILTER_ANIMATION_DURATION_MS),
-                    label = "DownloadFilterIndicator",
-                )
-            val scrollState = rememberScrollState()
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .horizontalScroll(scrollState)
-                        .padding(DOWNLOAD_FILTER_CONTAINER_INSET)
-                        .semantics { selectableGroup() },
-            ) {
-                Box(
-                    modifier =
-                        Modifier
-                            .width(contentWidth)
-                            .fillMaxHeight(),
-                ) {
-                    Surface(
-                        modifier =
-                            Modifier
-                                .offset(x = indicatorOffset)
-                                .width(optionWidth)
-                                .fillMaxHeight(),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary,
-                        content = {},
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(DOWNLOAD_FILTER_ITEM_SPACING),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        options.forEach { option ->
-                            val isSelected = option == selected
-                            val contentColor by
-                                animateColorAsState(
-                                    targetValue =
-                                        if (isSelected) {
-                                            MaterialTheme.colorScheme.onPrimary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                    animationSpec = tween(DOWNLOAD_FILTER_ANIMATION_DURATION_MS),
-                                    label = "DownloadFilterContent",
-                                )
-                            Box(
-                                modifier =
-                                    Modifier
-                                        .width(optionWidth)
-                                        .fillMaxHeight()
-                                        .clip(CircleShape)
-                                        .selectable(
-                                            selected = isSelected,
-                                            role = Role.RadioButton,
-                                            onClick = { onSelected(option) },
-                                        ),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                CompositionLocalProvider(LocalContentColor provides contentColor) {
-                                    label(option)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -872,11 +782,11 @@ private fun DownloadIconButton(
 internal fun filterTasks(
     tasks: List<DownloadTask>,
     filter: DownloadFilter,
-    typeFilter: DownloadTypeFilter = DownloadTypeFilter.ALL,
+    selectedTypes: Set<WorkshopType> = FilterableWorkshopTypes,
 ): List<DownloadTask> =
     tasks
         .asSequence()
-        .filter { task -> typeFilter.type == null || task.type == typeFilter.type }
+        .filter { task -> task.type in selectedTypes }
         .filter { task ->
             when (filter) {
                 DownloadFilter.ALL -> true
@@ -908,12 +818,12 @@ private fun DownloadFilter.label(): String =
     }
 
 @Composable
-private fun DownloadTypeFilter.label(): String =
+private fun WorkshopType.downloadTypeLabel(): String =
     when (this) {
-        DownloadTypeFilter.ALL -> stringResource(R.string.downloads_type_all)
-        DownloadTypeFilter.VIDEO -> stringResource(R.string.downloads_type_video)
-        DownloadTypeFilter.SCENE -> stringResource(R.string.downloads_type_scene)
-        DownloadTypeFilter.WEB -> stringResource(R.string.downloads_type_web)
+        WorkshopType.VIDEO -> stringResource(R.string.downloads_type_video)
+        WorkshopType.SCENE -> stringResource(R.string.downloads_type_scene)
+        WorkshopType.WEB -> stringResource(R.string.downloads_type_web)
+        WorkshopType.UNKNOWN -> name
     }
 
 @Composable
@@ -967,11 +877,6 @@ private val REORDERABLE_DOWNLOAD_STATUSES =
     )
 private val DOWNLOAD_CARD_HEIGHT = 132.dp
 private val DOWNLOAD_CARD_SPACING = WallHubSpacing.xs
-private val DOWNLOAD_FILTER_CONTAINER_HEIGHT = 72.dp
-private val DOWNLOAD_FILTER_CONTAINER_INSET = WallHubSpacing.dense
-private val DOWNLOAD_FILTER_ITEM_SPACING = WallHubSpacing.dense
-private const val DOWNLOAD_FILTER_VISIBLE_OPTION_COUNT = 4
-private const val DOWNLOAD_FILTER_ANIMATION_DURATION_MS = 400
 private val DOWNLOAD_ACTION_ROW_HEIGHT = WallHubSizeTokens.compactActionHeight
 private val DOWNLOAD_ICON_BUTTON_SIZE = WallHubSizeTokens.compactIconButton
 private val DOWNLOAD_DRAG_ELEVATION = WallHubSpacing.xs
