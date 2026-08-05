@@ -43,7 +43,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -53,15 +52,11 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -109,7 +104,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -163,7 +157,6 @@ fun HomeScreen(
     scrollToTopRequest: Int = 0,
     onContextMenuActiveChanged: (Boolean) -> Unit = {},
 ) {
-    var filterSheetInitialPage by rememberSaveable { mutableStateOf<HomeFilterPage?>(null) }
     val focusManager = LocalFocusManager.current
     val gridState = rememberLazyGridState()
     var handledScrollToTopRequest by rememberSaveable { mutableIntStateOf(scrollToTopRequest) }
@@ -213,27 +206,6 @@ fun HomeScreen(
             contextMenuGeometry = contextMenuGeometry,
             onContextMenuOpen = contextMenuGeometry::open,
             onContextMenuDismiss = contextMenuGeometry::dismiss,
-            onOpenFilters = { filterSheetInitialPage = it },
-        )
-    }
-
-    filterSheetInitialPage?.let { initialPage ->
-        HomeFiltersSheet(
-            applied = state.filterSelection(),
-            config =
-                HomeFilterUiConfig(
-                    multiSelect = state.multiSelect,
-                    matureContentEnabled = state.matureContentEnabled,
-                ),
-            initialPage = initialPage,
-            exactPhrase = state.exactPhrase,
-            onToggleExactPhrase = { onAction(HomeAction.ToggleExactPhrase) },
-            onDismiss = { selection ->
-                filterSheetInitialPage = null
-                if (selection != state.filterSelection()) {
-                    onAction(HomeAction.ApplyFilters(selection))
-                }
-            },
         )
     }
 }
@@ -252,7 +224,6 @@ internal fun HomeScreenFrame(
     contextMenuGeometry: HomeContextMenuGeometry,
     onContextMenuOpen: (HomeContextMenuTarget) -> Unit,
     onContextMenuDismiss: (Long) -> Unit,
-    onOpenFilters: (HomeFilterPage) -> Unit,
 ) {
     Box(
         modifier =
@@ -288,7 +259,6 @@ internal fun HomeScreenFrame(
             contextMenuPreviewItemId = contextMenuGeometry.previewItemId,
             onContextMenuOpen = onContextMenuOpen,
             onContextMenuDismiss = onContextMenuDismiss,
-            onOpenFilters = onOpenFilters,
         )
     }
 }
@@ -306,9 +276,9 @@ internal fun HomeScreenBody(
     contextMenuPreviewItemId: Long?,
     onContextMenuOpen: (HomeContextMenuTarget) -> Unit,
     onContextMenuDismiss: (Long) -> Unit,
-    onOpenFilters: (HomeFilterPage) -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
+    var showFilters by remember { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxSize()) {
         WallHubPageScaffold(
             title = stringResource(R.string.app_name),
@@ -343,10 +313,16 @@ internal fun HomeScreenBody(
                     onSubmitSearch = { onAction(HomeAction.SubmitSearch) },
                     onSearchBoundsChanged = onSearchBoundsChanged,
                     onClear = { onAction(HomeAction.QueryChanged("")) },
-                    onOpenFilters = { onOpenFilters(HomeFilterPage.BROWSE) },
-                    filtersActive = state.activeFilterCount > 0 || state.exactPhrase,
                     onBack = onBack,
+                    showFilters = showFilters,
+                    onToggleFilters = { showFilters = !showFilters },
                 )
+                AnimatedVisibility(visible = showFilters) {
+                    HomeFilterBar(
+                        state = state,
+                        onAction = onAction,
+                    )
+                }
                 HomeResults(
                     state = state,
                     onRetry = { onAction(HomeAction.Refresh) },
@@ -388,10 +364,11 @@ private fun HomePersistentSearchBar(
     onSubmitSearch: () -> Unit,
     onSearchBoundsChanged: (IntRect) -> Unit,
     onClear: () -> Unit,
-    onOpenFilters: () -> Unit,
-    filtersActive: Boolean,
     onBack: (() -> Unit)? = null,
+    showFilters: Boolean = false,
+    onToggleFilters: () -> Unit = {},
 ) {
+    val hasActiveFilters = state.activeFilterCount > 0 || state.exactPhrase
     Row(
         modifier =
             Modifier
@@ -464,151 +441,31 @@ private fun HomePersistentSearchBar(
             )
         }
         Surface(
-            onClick = onOpenFilters,
+            onClick = onToggleFilters,
             modifier = Modifier.size(56.dp),
-            shape = if (filtersActive) RoundedCornerShape(16.dp) else RoundedCornerShape(100.dp),
+            shape = RoundedCornerShape(if (showFilters) 16.dp else 100.dp),
             color =
-                if (filtersActive) {
-                    MaterialTheme.colorScheme.primaryContainer
+                if (hasActiveFilters) {
+                    MaterialTheme.colorScheme.secondaryContainer
                 } else {
                     MaterialTheme.colorScheme.surfaceContainerHighest
                 },
             contentColor =
-                if (filtersActive) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
+                if (hasActiveFilters) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
         ) {
-            Box(contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
                 Icon(
-                    imageVector = Icons.Outlined.Tune,
+                    imageVector = Icons.Outlined.FilterAlt,
                     contentDescription = stringResource(R.string.home_open_all_filters),
                 )
             }
-        }
-    }
-}
-
-@Composable
-internal fun HomeFilterPanel(
-    state: HomeUiState,
-    onOpenFilters: (HomeFilterPage) -> Unit,
-    onToggleExactPhrase: () -> Unit,
-) {
-    val selection = state.filterSelection()
-    Column(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(vertical = WallHubSpacing.xxs),
-        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),
-    ) {
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = WallHubSpacing.content, end = WallHubSpacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.home_browse_settings),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text =
-                        if (state.activeFilterCount == 0) {
-                            stringResource(R.string.home_using_defaults)
-                        } else {
-                            pluralStringResource(
-                                R.plurals.home_filters_active,
-                                state.activeFilterCount,
-                                state.activeFilterCount,
-                            )
-                        },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            BadgedBox(
-                badge = {
-                    if (state.activeFilterCount > 0) {
-                        Badge { Text(state.activeFilterCount.toString()) }
-                    }
-                },
-            ) {
-                FilledTonalIconButton(
-                    onClick = { onOpenFilters(HomeFilterPage.BROWSE) },
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Tune,
-                        contentDescription = stringResource(R.string.home_open_all_filters),
-                    )
-                }
-            }
-        }
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = WallHubSpacing.md),
-            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
-        ) {
-            items(HomeFilterPage.entries, key = { it }) { page ->
-                HomeConditionChip(
-                    label = page.label(),
-                    value = page.summary(selection, state),
-                    active = page.activeSectionCount(selection) > 0,
-                    onClick = { onOpenFilters(page) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-internal fun HomeConditionChip(
-    label: String,
-    value: String,
-    active: Boolean,
-    onClick: () -> Unit,
-) {
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color =
-            if (active) {
-                MaterialTheme.colorScheme.secondaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerLow
-            },
-        contentColor =
-            if (active) {
-                MaterialTheme.colorScheme.onSecondaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-        tonalElevation = WallHubSpacing.none,
-    ) {
-        Row(
-            modifier =
-                Modifier
-                    .heightIn(min = WallHubSpacing.xxl)
-                    .clickable(
-                        role = Role.Button,
-                        onClick = onClick,
-                    ).padding(horizontal = WallHubSpacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
-        ) {
-            Text(
-                text = "$label · $value",
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Icon(
-                imageVector = Icons.Outlined.KeyboardArrowDown,
-                contentDescription = null,
-                modifier = Modifier.size(WallHubSizeTokens.compactIcon),
-            )
         }
     }
 }

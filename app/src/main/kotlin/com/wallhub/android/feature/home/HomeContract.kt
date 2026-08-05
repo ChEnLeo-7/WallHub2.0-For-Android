@@ -4,9 +4,6 @@ package com.wallhub.android.feature.home
 
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.saveable.listSaver
-import androidx.compose.runtime.setValue
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.SteamAccessRepository
@@ -39,13 +36,6 @@ internal data class HomeCardLayoutKey(
                 effectiveColumns = if (viewMode == HomeViewMode.LIST) 1 else columns.coerceAtLeast(1),
             )
     }
-}
-
-internal enum class HomeFilterPage {
-    BROWSE,
-    CONTENT,
-    THEME,
-    DISPLAY,
 }
 
 internal val DEFAULT_HOME_GENRE_SELECTION = WorkshopFilterCatalog.genres.toSet()
@@ -105,45 +95,6 @@ data class HomeFilterSelection(
             )
     }
 }
-
-@Immutable
-internal data class HomeFilterUiConfig(
-    val multiSelect: Boolean,
-    val matureContentEnabled: Boolean,
-)
-
-internal val homeFilterSelectionSaver =
-    listSaver<HomeFilterSelection, String>(
-        save = { selection ->
-            listOf(
-                selection.sort.name,
-                selection.days.toString(),
-                selection.types.joinToString(FILTER_SAVER_SEPARATOR) { it.name },
-                selection.ratings.joinToString(FILTER_SAVER_SEPARATOR) { it.name },
-                selection.genres.joinToString(FILTER_SAVER_SEPARATOR),
-                selection.officialTags.joinToString(FILTER_SAVER_SEPARATOR),
-                selection.resolutions.joinToString(FILTER_SAVER_SEPARATOR),
-            )
-        },
-        restore = { values ->
-            runCatching {
-                HomeFilterSelection(
-                    sort = WorkshopSort.valueOf(values[0]),
-                    days = values[1].toInt(),
-                    types = values[2].enumSet<WorkshopType>(),
-                    ratings = values[3].enumSet<WorkshopRating>(),
-                    genres = values[4].savedStringSet(),
-                    officialTags = values[5].savedStringSet(),
-                    resolutions = values[6].savedStringSet(),
-                )
-            }.getOrElse { HomeFilterSelection.defaults() }
-        },
-    )
-
-private inline fun <reified T : Enum<T>> String.enumSet(): Set<T> =
-    savedStringSet().mapNotNull { name -> enumValues<T>().firstOrNull { it.name == name } }.toSet()
-
-internal fun String.savedStringSet(): Set<String> = takeIf(String::isNotEmpty)?.split(FILTER_SAVER_SEPARATOR)?.toSet().orEmpty()
 
 internal fun HomeUiState.filterSelection(): HomeFilterSelection =
     HomeFilterSelection(

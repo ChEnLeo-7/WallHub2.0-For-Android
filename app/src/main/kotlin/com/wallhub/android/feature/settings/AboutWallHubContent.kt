@@ -211,7 +211,7 @@ internal fun AboutWallHubPreferences(
     Spacer(modifier = Modifier.height(WallHubSpacing.sm))
     PreferenceRow(
         title = stringResource(R.string.settings_about_version),
-        summary = stringResource(R.string.settings_about_current_version, installed.versionName, installed.versionCode),
+        summary = stringResource(R.string.settings_about_current_version, installed.versionName),
         icon = Icons.Outlined.Refresh,
         position = PreferencePosition.Top,
         enabled = appUpdateState.phase != AppUpdatePhase.DOWNLOADING,
