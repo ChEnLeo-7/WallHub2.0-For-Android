@@ -7,44 +7,31 @@ import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -65,7 +52,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.selectableGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -84,7 +70,6 @@ import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
-import com.wallhub.android.core.designsystem.WallHubSurfaceCard
 import com.wallhub.android.core.designsystem.WallHubCapsuleFilter
 import com.wallhub.android.core.designsystem.FilterableWorkshopTypes
 import com.wallhub.android.core.designsystem.WorkshopTypeFilterMenu
@@ -539,10 +524,7 @@ private fun ReorderableDownloadList(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
-    val itemExtentPx =
-        with(LocalDensity.current) {
-            (DOWNLOAD_CARD_HEIGHT + DOWNLOAD_CARD_SPACING).toPx()
-        }
+    val itemSpacingPx = with(LocalDensity.current) { DOWNLOAD_CARD_SPACING.toPx() }
     LaunchedEffect(taskIds, draggedTaskId) {
         if (draggedTaskId == null) orderedIds = taskIds
     }
@@ -595,8 +577,17 @@ private fun ReorderableDownloadList(
                             onDrag = { change, dragAmount ->
                                 change.consume()
                                 dragOffsetPx += dragAmount.y
+                                val itemInfo =
+                                    listState.layoutInfo.visibleItemsInfo
+                                        .firstOrNull { item -> item.key == taskId }
+                                val itemExtentPx =
+                                    itemInfo?.size?.toFloat()?.plus(itemSpacingPx) ?: 0f
                                 var currentIndex = orderedIds.indexOf(taskId)
-                                while (dragOffsetPx > itemExtentPx / 2f && currentIndex < orderedIds.lastIndex) {
+                                while (
+                                    itemExtentPx > 0f &&
+                                        dragOffsetPx > itemExtentPx / 2f &&
+                                        currentIndex < orderedIds.lastIndex
+                                ) {
                                     val next = currentIndex + 1
                                     orderedIds =
                                         orderedIds.toMutableList().apply {
@@ -606,7 +597,11 @@ private fun ReorderableDownloadList(
                                     dragOffsetPx -= itemExtentPx
                                     currentIndex = next
                                 }
-                                while (dragOffsetPx < -itemExtentPx / 2f && currentIndex > 0) {
+                                while (
+                                    itemExtentPx > 0f &&
+                                        dragOffsetPx < -itemExtentPx / 2f &&
+                                        currentIndex > 0
+                                ) {
                                     val previous = currentIndex - 1
                                     orderedIds =
                                         orderedIds.toMutableList().apply {
@@ -616,9 +611,6 @@ private fun ReorderableDownloadList(
                                     dragOffsetPx += itemExtentPx
                                     currentIndex = previous
                                 }
-                                val itemInfo =
-                                    listState.layoutInfo.visibleItemsInfo
-                                        .firstOrNull { item -> item.key == taskId }
                                 if (itemInfo != null) {
                                     val translatedTop = itemInfo.offset + dragOffsetPx
                                     val translatedBottom = translatedTop + itemInfo.size
@@ -654,23 +646,42 @@ private fun DownloadTaskCard(
     onPlayVideo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    WallHubSurfaceCard(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .height(DOWNLOAD_CARD_HEIGHT),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = WallHubShapeTokens.small,
+    val showProgress =
+        task.status in
+            setOf(
+                DownloadStatus.QUEUED,
+                DownloadStatus.RESOLVING,
+                DownloadStatus.DOWNLOADING,
+                DownloadStatus.PAUSED,
+                DownloadStatus.CONVERTING,
+                DownloadStatus.EXPORTING,
+            )
+    val statusColor =
+        when {
+            task.status == DownloadStatus.FAILED || task.status == DownloadStatus.CANCELLED ->
+                MaterialTheme.colorScheme.error
+            task.status == DownloadStatus.COMPLETED ->
+                MaterialTheme.colorScheme.onSurfaceVariant
+            else -> MaterialTheme.colorScheme.primary
+        }
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = DOWNLOAD_CARD_TONAL_ELEVATION,
     ) {
         Row(
-            modifier = Modifier.padding(WallHubSpacing.compact),
-            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(DOWNLOAD_CARD_PADDING),
+            horizontalArrangement = Arrangement.spacedBy(DOWNLOAD_CARD_GAP),
+            verticalAlignment = Alignment.Top,
         ) {
             Box(
                 modifier =
                     Modifier
-                        .fillMaxHeight()
-                        .aspectRatio(1f)
+                        .size(DOWNLOAD_THUMBNAIL_SIZE)
                         .clip(WallHubShapeTokens.thumbnail)
                         .background(MaterialTheme.colorScheme.surfaceContainer),
                 contentAlignment = Alignment.Center,
@@ -690,7 +701,10 @@ private fun DownloadTaskCard(
                     )
                 }
             }
-            Column(modifier = Modifier.fillMaxHeight().weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(DOWNLOAD_CONTENT_VERTICAL_GAP),
+            ) {
                 Text(
                     text = task.title,
                     style = MaterialTheme.typography.titleMedium,
@@ -698,58 +712,55 @@ private fun DownloadTaskCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = task.projectSizeLabel(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                LinearProgressIndicator(
-                    progress = { task.progress },
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(WallHubSpacing.xxs),
-                )
                 Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(DOWNLOAD_ACTION_ROW_HEIGHT),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text =
-                            when {
-                                task.status == DownloadStatus.DOWNLOADING && task.bytesPerSecond > 0L ->
-                                    "${formatByteSize(task.bytesPerSecond)}/s"
-
-                                task.status == DownloadStatus.DOWNLOADING ->
-                                    stringResource(R.string.downloads_measuring)
-
-                                else -> task.status.label()
-                            },
+                        text = task.projectSizeLabel(),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (showProgress) {
+                    LinearProgressIndicator(
+                        progress = { task.progress },
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(PROGRESS_INDICATOR_HEIGHT),
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = task.statusDescription(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = statusColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
                     if (
                         task.type == com.wallhub.android.core.model.WorkshopType.VIDEO &&
-                        task.status == DownloadStatus.COMPLETED &&
-                        !task.stagingDirectory.isNullOrBlank()
+                            task.status == DownloadStatus.COMPLETED &&
+                            !task.stagingDirectory.isNullOrBlank()
                     ) {
-                        DownloadIconButton(
+                        DownloadCompactIconButton(
                             icon = Icons.Outlined.PlayArrow,
                             label = stringResource(R.string.downloads_play_video),
                             onClick = onPlayVideo,
                         )
                     }
                     task.availableActions.forEach { action ->
-                        DownloadIconButton(
+                        DownloadCompactIconButton(
                             icon = action.icon(),
                             label = action.label(),
                             onClick = { onAction(action) },
@@ -762,14 +773,14 @@ private fun DownloadTaskCard(
 }
 
 @Composable
-private fun DownloadIconButton(
+private fun DownloadCompactIconButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     onClick: () -> Unit,
 ) {
     IconButton(
         onClick = onClick,
-        modifier = Modifier.size(DOWNLOAD_ICON_BUTTON_SIZE),
+        modifier = Modifier.size(DOWNLOAD_ACTION_BUTTON_SIZE),
     ) {
         Icon(
             imageVector = icon,
@@ -868,6 +879,18 @@ private fun DownloadTask.projectSizeLabel(): String =
         ?.let(::formatByteSize)
         ?: stringResource(R.string.downloads_reading_size)
 
+@Composable
+private fun DownloadTask.statusDescription(): String =
+    when {
+        status == DownloadStatus.DOWNLOADING && bytesPerSecond > 0L ->
+            "${formatByteSize(bytesPerSecond)}/s"
+
+        status == DownloadStatus.DOWNLOADING ->
+            stringResource(R.string.downloads_measuring)
+
+        else -> status.label()
+    }
+
 private val REORDERABLE_DOWNLOAD_STATUSES =
     setOf(
         DownloadStatus.QUEUED,
@@ -875,10 +898,14 @@ private val REORDERABLE_DOWNLOAD_STATUSES =
         DownloadStatus.DOWNLOADING,
         DownloadStatus.PAUSED,
     )
-private val DOWNLOAD_CARD_HEIGHT = 132.dp
 private val DOWNLOAD_CARD_SPACING = WallHubSpacing.xs
-private val DOWNLOAD_ACTION_ROW_HEIGHT = WallHubSizeTokens.compactActionHeight
-private val DOWNLOAD_ICON_BUTTON_SIZE = WallHubSizeTokens.compactIconButton
+private val DOWNLOAD_CARD_PADDING = WallHubSpacing.sm
+private val DOWNLOAD_CARD_GAP = WallHubSpacing.sm
+private val DOWNLOAD_CONTENT_VERTICAL_GAP = WallHubSpacing.xxs
+private val DOWNLOAD_THUMBNAIL_SIZE = 80.dp
+private val DOWNLOAD_ACTION_BUTTON_SIZE = 38.dp
+private val DOWNLOAD_CARD_TONAL_ELEVATION = 1.dp
+private val PROGRESS_INDICATOR_HEIGHT = 6.dp
 private val DOWNLOAD_DRAG_ELEVATION = WallHubSpacing.xs
 private const val DOWNLOAD_DRAG_SCALE = 1.015f
 private const val DOWNLOAD_AUTO_SCROLL_EDGE_PX = 96
