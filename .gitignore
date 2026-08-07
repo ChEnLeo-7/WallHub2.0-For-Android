@@ -37,6 +37,7 @@ signing.properties
 !/app/src/test/kotlin/com/wallhub/android/data/
 /app/src/test/kotlin/com/wallhub/android/data/*
 !/app/src/test/kotlin/com/wallhub/android/data/settings/
+!/app/src/test/kotlin/com/wallhub/android/data/steam/
 !/app/src/test/kotlin/com/wallhub/android/data/steamaccess/
 !/app/src/test/kotlin/com/wallhub/android/data/update/
 !/app/src/test/kotlin/com/wallhub/android/feature/

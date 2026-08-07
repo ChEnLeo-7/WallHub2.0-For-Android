@@ -22,7 +22,6 @@ import com.wallhub.android.feature.home.HomeRoute
 import com.wallhub.android.feature.library.LibraryRoute
 import com.wallhub.android.feature.local.LocalWallpaperRoute
 import com.wallhub.android.feature.settings.SettingsRoute
-import com.wallhub.android.feature.settings.SteamLoginRoute
 
 @Composable
 internal fun WallHubNavHost(
@@ -116,11 +115,18 @@ internal fun WallHubNavHost(
         composable<LocalDestination> { LocalWallpaperRoute(onOpenSettings = openSettings) }
         composable<SettingsDestination> {
             SettingsRoute(
-                onOpenSteamLogin = { navController.navigate(SteamLoginDestination) },
                 onBack = { navController.popBackStack() },
             )
         }
-        composable<SteamLoginDestination> { SteamLoginRoute(onBack = { navController.popBackStack() }) }
+        composable<SteamLoginDestination> {
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                if (!navController.popBackStack()) {
+                    navController.navigate(SettingsDestination) {
+                        popUpTo<SteamLoginDestination> { inclusive = true }
+                    }
+                }
+            }
+        }
         composable<WorkshopDetailDestination>(
             deepLinks = listOf(navDeepLink<WorkshopDetailDestination>(basePath = "wallhub://workshop")),
         ) {

@@ -95,6 +95,8 @@ enum class SteamSessionPhase {
 data class SteamSessionState(
     val phase: SteamSessionPhase = SteamSessionPhase.SIGNED_OUT,
     val accountName: String? = null,
+    val personaName: String? = null,
+    val avatarUrl: String? = null,
     val message: String? = null,
     val requiresCode: Boolean = false,
     val awaitingDeviceConfirmation: Boolean = false,

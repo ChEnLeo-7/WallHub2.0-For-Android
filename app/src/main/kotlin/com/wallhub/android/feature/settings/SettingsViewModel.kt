@@ -138,6 +138,10 @@ class SettingsViewModel
                 is SettingsAction.SteamAccessDohEndpointsChanged ->
                     setSteamAccessDohEndpoints(action.endpoints, action.disabledEndpoints)
                 SettingsAction.RefreshSteamAccess -> refreshSteamAccess()
+                is SettingsAction.LoginSteam -> steamSessionRepository.login(action.accountName, action.password)
+                is SettingsAction.SubmitSteamGuardCode -> steamSessionRepository.submitSteamGuardCode(action.code)
+                SettingsAction.UseManualSteamGuardFallback -> steamSessionRepository.useManualSteamGuardFallback()
+                SettingsAction.RestoreSteamSession -> steamSessionRepository.restorePersistedSession()
                 SettingsAction.LogoutSteam -> logoutSteam()
                 else -> return false
             }

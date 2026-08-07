@@ -28,8 +28,8 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 @Composable
+@Suppress("CyclomaticComplexMethod")
 fun SettingsRoute(
-    onOpenSteamLogin: () -> Unit,
     onBack: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -40,7 +40,6 @@ fun SettingsRoute(
     val appUpdateState by viewModel.appUpdateState.collectAsStateWithLifecycle()
     val steamAccessState by viewModel.steamAccessState.collectAsStateWithLifecycle()
     val toastState = LocalWallHubToastState.current
-    val currentOnOpenSteamLogin by rememberUpdatedState(onOpenSteamLogin)
     val outputDirectoryLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.OpenDocumentTree(),
@@ -162,7 +161,6 @@ fun SettingsRoute(
                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
-                SettingsEffect.OpenSteamLogin -> currentOnOpenSteamLogin()
                 is SettingsEffect.InstallDownloadedRelease -> {
                     currentRequestReleaseInstall(effect.path)
                 }

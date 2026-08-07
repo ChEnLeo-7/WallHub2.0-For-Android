@@ -54,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -78,7 +79,6 @@ import com.wallhub.android.core.model.DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
 import com.wallhub.android.core.model.STEAM_ACCESS_DOH_ENDPOINT_LIMIT
 import com.wallhub.android.core.model.SteamAccessPhase
 import com.wallhub.android.core.model.SteamAccessState
-import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.normalizeSteamAccessDohEndpoint
@@ -104,71 +104,27 @@ internal fun SteamSettingsContent(
     onApiKeyChanged: (String) -> Unit,
     onSaveApiKey: () -> Unit,
     onOpenApiKeyPage: () -> Unit,
-    onOpenSteamLogin: () -> Unit,
+    onLoginSteam: (String, String) -> Unit,
+    onSubmitSteamGuardCode: (String) -> Unit,
+    onUseManualSteamGuardFallback: () -> Unit,
+    onRestoreSteamSession: () -> Unit,
     onLogoutSteam: () -> Unit,
 ) {
     var apiKeyVisible by rememberSaveable { mutableStateOf(false) }
     val apiKeyChanged = apiKey != savedApiKey
 
-    SettingsSection(
-        title = stringResource(R.string.settings_steam_account_title),
-        supportingText = stringResource(R.string.settings_steam_account_description),
-        icon = Icons.Outlined.PersonOutline,
+    SettingsSectionSurface(
+        modifier = Modifier.padding(vertical = WallHubSpacing.xs),
     ) {
-        PreferenceRow(
-            title =
-                if (session.phase == SteamSessionPhase.SIGNED_IN) {
-                    session.accountName.orEmpty().ifBlank { stringResource(R.string.settings_steam_name) }
-                } else {
-                    stringResource(R.string.settings_steam_sign_in_status)
-                },
-            summary = session.settingsSummary(),
-            position = PreferencePosition.Single,
-            iconContent = { SettingsPreferenceIcon(Icons.Outlined.PersonOutline) },
-            onClick = if (session.phase == SteamSessionPhase.SIGNED_IN) onLogoutSteam else onOpenSteamLogin,
+        SteamAccountCard(
+            session = session,
+            onLogin = onLoginSteam,
+            onSubmitCode = onSubmitSteamGuardCode,
+            onUseManualCodeFallback = onUseManualSteamGuardFallback,
+            onRestore = onRestoreSteamSession,
+            onLogout = onLogoutSteam,
+            containerColor = Color.Transparent,
         )
-        SettingsActionArea {
-            if (session.phase == SteamSessionPhase.SIGNED_IN) {
-                OutlinedButton(
-                    onClick = onLogoutSteam,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.Logout,
-                        contentDescription = null,
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_action_sign_out_steam),
-                        modifier = Modifier.padding(start = WallHubSpacing.xs),
-                    )
-                }
-            } else {
-                Button(
-                    onClick = onOpenSteamLogin,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.PersonOutline,
-                        contentDescription = null,
-                    )
-                    Text(
-                        text =
-                            when (session.phase) {
-                                SteamSessionPhase.RESTORABLE ->
-                                    stringResource(R.string.settings_action_restore_steam_sign_in)
-
-                                SteamSessionPhase.SIGNING_IN,
-                                SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
-                                SteamSessionPhase.WAITING_FOR_CODE,
-                                -> stringResource(R.string.settings_action_view_sign_in_progress)
-
-                                else -> stringResource(R.string.settings_action_sign_in_steam)
-                            },
-                        modifier = Modifier.padding(start = WallHubSpacing.xs),
-                    )
-                }
-            }
-        }
     }
 
     SettingsSection(

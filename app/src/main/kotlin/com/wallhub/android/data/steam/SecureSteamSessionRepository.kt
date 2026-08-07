@@ -57,6 +57,8 @@ import javax.inject.Singleton
 internal data class PersistedSteamCredential(
     val accountName: String,
     val refreshToken: String,
+    val personaName: String? = null,
+    val avatarUrl: String? = null,
 )
 
 /**

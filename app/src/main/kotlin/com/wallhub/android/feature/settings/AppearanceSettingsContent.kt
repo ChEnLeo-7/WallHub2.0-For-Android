@@ -424,7 +424,8 @@ internal fun SettingsCategoryIndex(
 @Composable
 internal fun SteamSessionState.settingsSummary(): String =
     when (phase) {
-        SteamSessionPhase.SIGNED_IN -> stringResource(R.string.settings_steam_signed_in_as, accountName.orEmpty())
+        SteamSessionPhase.SIGNED_IN ->
+            stringResource(R.string.settings_steam_signed_in_as, personaName ?: accountName.orEmpty())
         SteamSessionPhase.RESTORABLE -> stringResource(R.string.settings_steam_saved_sign_in)
         SteamSessionPhase.SIGNING_IN,
         SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,

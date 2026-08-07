@@ -137,7 +137,12 @@ fun SettingsScreen(
         onAction(SettingsAction.SteamAccessDohEndpointsChanged(endpoints, disabledEndpoints))
     }
     val onRefreshSteamAccess: () -> Unit = { onAction(SettingsAction.RefreshSteamAccess) }
-    val onOpenSteamLogin: () -> Unit = { onAction(SettingsAction.OpenSteamLogin) }
+    val onLoginSteam: (String, String) -> Unit = { accountName, password ->
+        onAction(SettingsAction.LoginSteam(accountName, password))
+    }
+    val onSubmitSteamGuardCode: (String) -> Unit = { onAction(SettingsAction.SubmitSteamGuardCode(it)) }
+    val onUseManualSteamGuardFallback: () -> Unit = { onAction(SettingsAction.UseManualSteamGuardFallback) }
+    val onRestoreSteamSession: () -> Unit = { onAction(SettingsAction.RestoreSteamSession) }
     val onLogoutSteam: () -> Unit = { onAction(SettingsAction.LogoutSteam) }
     val onSelectOutputDirectory: () -> Unit = { onAction(SettingsAction.SelectOutputDirectory) }
     val onClearOutputDirectory: () -> Unit = { onAction(SettingsAction.ClearOutputDirectory) }
@@ -338,7 +343,10 @@ fun SettingsScreen(
                                 onRefreshSteamAccess = onRefreshSteamAccess,
                                 onSaveSteamApiKey = { onSteamApiKeyChange(steamApiKey) },
                                 onOpenExternalUri = onOpenExternalUri,
-                                onOpenSteamLogin = onOpenSteamLogin,
+                                onLoginSteam = onLoginSteam,
+                                onSubmitSteamGuardCode = onSubmitSteamGuardCode,
+                                onUseManualSteamGuardFallback = onUseManualSteamGuardFallback,
+                                onRestoreSteamSession = onRestoreSteamSession,
                                 onLogoutSteam = onLogoutSteam,
                                 onSelectOutputDirectory = onSelectOutputDirectory,
                                 onClearOutputDirectory = onClearOutputDirectory,
@@ -390,7 +398,10 @@ internal fun SettingsCategoryContent(
     onRefreshSteamAccess: () -> Unit,
     onSaveSteamApiKey: () -> Unit,
     onOpenExternalUri: (String, String) -> Unit,
-    onOpenSteamLogin: () -> Unit,
+    onLoginSteam: (String, String) -> Unit,
+    onSubmitSteamGuardCode: (String) -> Unit,
+    onUseManualSteamGuardFallback: () -> Unit,
+    onRestoreSteamSession: () -> Unit,
     onLogoutSteam: () -> Unit,
     onSelectOutputDirectory: () -> Unit,
     onClearOutputDirectory: () -> Unit,
@@ -445,7 +456,10 @@ internal fun SettingsCategoryContent(
                         openSteamApiKeyPageFailure,
                     )
                 },
-                onOpenSteamLogin = onOpenSteamLogin,
+                onLoginSteam = onLoginSteam,
+                onSubmitSteamGuardCode = onSubmitSteamGuardCode,
+                onUseManualSteamGuardFallback = onUseManualSteamGuardFallback,
+                onRestoreSteamSession = onRestoreSteamSession,
                 onLogoutSteam = onLogoutSteam,
             )
 

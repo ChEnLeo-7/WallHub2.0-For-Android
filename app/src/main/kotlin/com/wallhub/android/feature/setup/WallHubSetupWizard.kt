@@ -18,7 +18,6 @@ package com.wallhub.android.feature.setup
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,7 +40,6 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -73,6 +71,8 @@ import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
+import com.wallhub.android.feature.settings.SETTINGS_CONTENT_MAX_WIDTH
+import com.wallhub.android.feature.settings.SteamAccountCard
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
 import com.wallhub.android.feature.settings.SteamAccessDohEndpointsSetting
@@ -124,6 +124,14 @@ class WallHubSetupViewModel
 
         fun useManualCodeFallback() {
             steamSessionRepository.useManualSteamGuardFallback()
+        }
+
+        fun restoreSteamSession() {
+            steamSessionRepository.restorePersistedSession()
+        }
+
+        fun logoutSteam() {
+            steamSessionRepository.logout()
         }
 
         fun saveNetwork(
@@ -259,14 +267,6 @@ private fun WelcomePage() {
 private fun SteamPage(session: SteamSessionState, viewModel: WallHubSetupViewModel) {
     val signedIn = session.phase == SteamSessionPhase.SIGNED_IN
     val bottomPadding = wizardActionContentPadding(true, false, signedIn, !signedIn)
-    var accountName by rememberSaveable(session.accountName) { mutableStateOf(session.accountName.orEmpty()) }
-    var password by remember { mutableStateOf("") }
-    var guardCode by remember { mutableStateOf("") }
-    val busy = session.phase in setOf(
-        SteamSessionPhase.SIGNING_IN,
-        SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
-        SteamSessionPhase.WAITING_FOR_CODE,
-    )
     WizardPageScaffold(
         config = WizardPageConfig(
             title = stringResource(R.string.setup_steam_title),
@@ -275,70 +275,15 @@ private fun SteamPage(session: SteamSessionState, viewModel: WallHubSetupViewMod
         headerIcon = { WizardIcon(Icons.Outlined.PersonOutline) },
         bottomContentPadding = bottomPadding,
     ) {
-        OutlinedSetupCard {
-            if (signedIn) {
-                Text(stringResource(R.string.settings_steam_signed_in_as, session.accountName.orEmpty()))
-            } else {
-                TextField(
-                    value = accountName,
-                    onValueChange = { accountName = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !busy,
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.settings_steam_username)) },
-                    leadingIcon = { Icon(Icons.Outlined.PersonOutline, contentDescription = null) },
-                )
-                TextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !busy,
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.settings_password)) },
-                    leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                )
-                Button(
-                    onClick = {
-                        viewModel.login(accountName, password)
-                        password = ""
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !busy && accountName.isNotBlank() && password.isNotBlank(),
-                ) { Text(stringResource(R.string.settings_action_sign_in_steam)) }
-            }
-        }
-        if (busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
-        session.message?.let {
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 12.dp),
-            )
-        }
-        if (session.phase == SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION) {
-            Button(
-                onClick = viewModel::useManualCodeFallback,
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-            ) { Text(stringResource(R.string.settings_action_use_steam_guard_code)) }
-        }
-        if (session.phase == SteamSessionPhase.WAITING_FOR_CODE) {
-            OutlinedSetupCard(modifier = Modifier.padding(top = 12.dp)) {
-                TextField(
-                    value = guardCode,
-                    onValueChange = { guardCode = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.settings_steam_guard_code)) },
-                )
-                Button(
-                    onClick = { viewModel.submitCode(guardCode); guardCode = "" },
-                    enabled = guardCode.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(stringResource(R.string.settings_action_submit_code)) }
-            }
-        }
+        SteamAccountCard(
+            session = session,
+            onLogin = viewModel::login,
+            onSubmitCode = viewModel::submitCode,
+            onUseManualCodeFallback = viewModel::useManualCodeFallback,
+            onRestore = viewModel::restoreSteamSession,
+            onLogout = viewModel::logoutSteam,
+            modifier = Modifier.align(Alignment.CenterHorizontally).widthIn(max = SETTINGS_CONTENT_MAX_WIDTH),
+        )
     }
 }
 
@@ -480,25 +425,6 @@ private fun WizardIcon(icon: androidx.compose.ui.graphics.vector.ImageVector) {
         tint = MaterialTheme.colorScheme.primary,
         modifier = Modifier.size(48.dp),
     )
-}
-
-@Composable
-private fun OutlinedSetupCard(
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLowest,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(
-            modifier = Modifier.padding(WallHubSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
-            content = content,
-        )
-    }
 }
 
 @Composable

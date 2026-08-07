@@ -128,6 +128,19 @@ sealed interface SettingsAction {
 
     data object RefreshSteamAccess : SettingsAction
 
+    data class LoginSteam(
+        val accountName: String,
+        val password: String,
+    ) : SettingsAction
+
+    data class SubmitSteamGuardCode(
+        val code: String,
+    ) : SettingsAction
+
+    data object UseManualSteamGuardFallback : SettingsAction
+
+    data object RestoreSteamSession : SettingsAction
+
     data object LogoutSteam : SettingsAction
 
     data object RestartSetupWizard : SettingsAction
@@ -155,8 +168,6 @@ sealed interface SettingsAction {
 
     data object RequestNotifications : SettingsAction
 
-    data object OpenSteamLogin : SettingsAction
-
     data class InstallDownloadedRelease(
         val path: String,
     ) : SettingsAction
@@ -182,8 +193,6 @@ sealed interface SettingsEffect {
 
     data object RequestNotifications : SettingsEffect
 
-    data object OpenSteamLogin : SettingsEffect
-
     data class InstallDownloadedRelease(
         val path: String,
     ) : SettingsEffect
@@ -203,7 +212,6 @@ internal fun SettingsAction.toEffect(): SettingsEffect? =
         SettingsAction.SelectOutputDirectory -> SettingsEffect.SelectOutputDirectory
         SettingsAction.ExportDiagnostics -> SettingsEffect.ExportDiagnostics
         SettingsAction.RequestNotifications -> SettingsEffect.RequestNotifications
-        SettingsAction.OpenSteamLogin -> SettingsEffect.OpenSteamLogin
         is SettingsAction.InstallDownloadedRelease -> SettingsEffect.InstallDownloadedRelease(path)
         is SettingsAction.OpenExternalUri -> SettingsEffect.OpenExternalUri(uri, failureMessage)
         else -> null

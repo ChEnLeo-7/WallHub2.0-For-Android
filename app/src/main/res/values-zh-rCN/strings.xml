@@ -139,6 +139,11 @@
     <string name='settings_action_restore_steam_sign_in'>恢复 Steam 登录</string>
     <string name='settings_action_view_sign_in_progress'>查看登录进度</string>
     <string name='settings_action_sign_in_steam'>登录 Steam</string>
+    <string name='settings_steam_inline_sign_in_title'>登录 Steam</string>
+    <string name='settings_action_reconnect_steam'>重新连接</string>
+    <string name='settings_action_sign_in_again_steam'>重新登录</string>
+    <string name='settings_steam_disconnected'>连接已中断</string>
+    <string name='settings_steam_avatar'>Steam 账户头像</string>
     <string name='settings_steam_service_access_title'>Steam 服务访问</string>
     <string name='settings_steam_service_access_description'>仅在社区与 API 直连异常时启用内置无 SNI 线路</string>
     <string name='settings_steam_automatic_anti_blocking'>自动防阻断</string>

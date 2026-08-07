@@ -11,6 +11,9 @@ internal sealed interface WallHubDestination
 @Serializable internal data object LocalDestination : WallHubDestination
 @Serializable internal data object SettingsDestination : WallHubDestination
 
+// Kept only so saved navigation state from releases with the standalone login page can restore.
+@Serializable internal data object SteamLoginDestination : WallHubDestination
+
 @Serializable
 internal data class AuthorSearchDestination(
     val authorSearchCreator: String,
@@ -20,8 +23,6 @@ internal data class AuthorSearchDestination(
 internal data class TagSearchDestination(
     val tagSearchTag: String,
 ) : WallHubDestination
-
-@Serializable internal data object SteamLoginDestination : WallHubDestination
 
 @Serializable
 internal data class WorkshopDetailDestination(

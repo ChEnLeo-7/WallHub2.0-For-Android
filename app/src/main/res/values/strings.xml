@@ -151,6 +151,11 @@
     <string name='settings_action_restore_steam_sign_in'>Restore Steam sign-in</string>
     <string name='settings_action_view_sign_in_progress'>View sign-in progress</string>
     <string name='settings_action_sign_in_steam'>Sign in to Steam</string>
+    <string name='settings_steam_inline_sign_in_title'>Sign in to Steam</string>
+    <string name='settings_action_reconnect_steam'>Reconnect</string>
+    <string name='settings_action_sign_in_again_steam'>Sign in again</string>
+    <string name='settings_steam_disconnected'>Connection interrupted</string>
+    <string name='settings_steam_avatar'>Steam profile avatar</string>
     <string name='settings_steam_service_access_title'>Steam service access</string>
     <string name='settings_steam_service_access_description'>Uses the built-in no-SNI route only when Community or API direct access fails</string>
     <string name='settings_steam_automatic_anti_blocking'>Automatic anti-blocking</string>

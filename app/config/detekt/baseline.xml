@@ -31,7 +31,6 @@
     <ID>CyclomaticComplexMethod:LocalWallpaperScanner.kt$internal fun LocalWallpaperFileRepository.inspectStandalone( node: ScanNode, tasks: List&lt;FormalTaskRecordEntity&gt;, states: Map&lt;String, LocalWallpaperStateEntity&gt;, tags: Map&lt;String, List&lt;String&gt;&gt;, ): LocalWallpaperResource?</ID>
     <ID>CyclomaticComplexMethod:LocalWallpaperScanner.kt$internal fun LocalWallpaperFileRepository.inspectZip(node: ScanNode): PackageInspection</ID>
     <ID>CyclomaticComplexMethod:SecureSteamSessionRuntime.kt$internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInternal(generation: Long)</ID>
-    <ID>CyclomaticComplexMethod:SettingsRoute.kt$@Composable fun SettingsRoute( onOpenSteamLogin: () -&gt; Unit, viewModel: SettingsViewModel = hiltViewModel(), )</ID>
     <ID>CyclomaticComplexMethod:SteamAccessManager.kt$SteamAccessManager$private fun buildRoute( hostname: String, selectedNetworkType: String, settings: AppPreferences, hostsSnapshot: Map&lt;String, List&lt;InetAddress&gt;&gt;, generation: Long, fallbackAvailable: Boolean, ): SteamCachedRoute</ID>
     <ID>CyclomaticComplexMethod:TexMobileConverter.kt$TexMobileConverter$private fun parse(source: ByteArray): TexFile</ID>
     <ID>CyclomaticComplexMethod:UnifiedWorkshopBrowse.kt$private fun WorkshopBrowseQuery.matches(summary: WorkshopSummary): Boolean</ID>
@@ -43,7 +42,6 @@
     <ID>LoopWithTooManyJumpStatements:SteamWorkshopThumbnailCache.kt$for</ID>
     <ID>MatchingDeclarationName:AboutWallHubContent.kt$WallHubPerson</ID>
     <ID>MatchingDeclarationName:AccountCollectionPaging.kt$AccountCollectionPageSelection&lt;T&gt;</ID>
-    <ID>MatchingDeclarationName:SteamLoginPresentation.kt$SteamLoginUiState</ID>
     <ID>MatchingDeclarationName:UnifiedWorkshopDetails.kt$SteamProfile</ID>
     <ID>NestedBlockDepth:CommunityWorkshopRepository.kt$CommunityWorkshopRepository$private fun requestCommunityCommentsPage( workshopId: Long, start: Int, count: Int, ownerId: String, ): WorkshopCommentPage</ID>
     <ID>NestedBlockDepth:SecureSteamSessionRuntime.kt$internal suspend fun SecureSteamSessionRepository.resolveSteamProfiles( steamSession: SteamClientSession, steamIds: Set&lt;Long&gt;, ): Map&lt;Long, SteamProfile&gt;</ID>
