@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -121,6 +120,7 @@ internal fun SteamAccountCard(
                                 end = horizontalPadding,
                                 bottom = bottomPadding,
                             ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(contentGap),
                 ) {
                     if (profileCard) {
@@ -310,12 +310,15 @@ private fun SteamProfileHeader(
     avatarSize: androidx.compose.ui.unit.Dp,
     contentGap: androidx.compose.ui.unit.Dp,
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(contentGap),
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(contentGap),
     ) {
         SteamAccountAvatar(session.avatarUrl, avatarSize)
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             Text(
                 text = session.personaName.orEmpty().ifBlank { session.accountName.orEmpty() },
                 style = MaterialTheme.typography.titleLarge,
