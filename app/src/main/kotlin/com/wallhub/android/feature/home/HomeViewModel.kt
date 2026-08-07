@@ -93,6 +93,7 @@ class HomeViewModel
                             pageSize = preferences.homePageSize,
                             columns = preferences.homeColumns,
                             multiSelect = preferences.homeFilterMultiSelect,
+                            homeSearchFab = preferences.homeSearchFab,
                             steamApiKey = preferences.steamApiKey,
                             steamAccessEnabled = preferences.steamAccessEnabled,
                             steamWorkshopDataSource = preferences.steamWorkshopDataSource,

@@ -112,6 +112,8 @@
     </plurals>
     <string name='settings_multi_select_filters'>类型和评级多选</string>
     <string name='settings_multi_select_filters_description'>关闭后，类型和年龄评级使用互斥选择</string>
+    <string name='settings_home_search_fab'>首页浮动搜索</string>
+    <string name='settings_home_search_fab_description'>使用右下角按钮，并在点击后原地展开搜索框</string>
     <string name='settings_default_card_action'>卡片默认操作</string>
     <string name='settings_action_download'>下载</string>
     <string name='settings_action_play'>播放</string>

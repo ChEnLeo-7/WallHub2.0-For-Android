@@ -124,6 +124,8 @@
     </plurals>
     <string name='settings_multi_select_filters'>Multi-select types and ratings</string>
     <string name='settings_multi_select_filters_description'>When off, type and age rating filters are exclusive</string>
+    <string name='settings_home_search_fab'>Floating home search</string>
+    <string name='settings_home_search_fab_description'>Show search as a floating button that expands in place</string>
     <string name='settings_default_card_action'>Default card action</string>
     <string name='settings_action_download'>Download</string>
     <string name='settings_action_play'>Play</string>

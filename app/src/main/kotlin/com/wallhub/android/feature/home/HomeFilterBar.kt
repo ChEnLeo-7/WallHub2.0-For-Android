@@ -99,7 +99,7 @@ internal fun HomeFilterBar(
                     )
                 },
         shape = filterBarShape,
-        color = androidx.compose.ui.graphics.Color.Transparent,
+        color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 0.dp,
     ) {
         Column(

@@ -86,6 +86,10 @@ sealed interface SettingsAction {
         val mode: HomePaginationMode,
     ) : SettingsAction
 
+    data class HomeSearchFabChanged(
+        val enabled: Boolean,
+    ) : SettingsAction
+
     data class DownloadPreferencesChanged(
         val maxConcurrentDownloads: Int,
         val chunkDownloadConcurrency: Int,

@@ -101,6 +101,12 @@ class AppPreferencesStore(
         }
     }
 
+    suspend fun setHomeSearchFab(enabled: Boolean) {
+        applicationContext.dataStore.edit { preferences ->
+            preferences[Keys.homeSearchFab] = enabled
+        }
+    }
+
     suspend fun setHomePaginationMode(mode: HomePaginationMode) {
         applicationContext.dataStore.edit { preferences ->
             preferences[Keys.homePaginationMode] = mode.name
@@ -287,6 +293,7 @@ class AppPreferencesStore(
             homePageSize = (preferences[Keys.homePageSize] ?: 24).coerceIn(10, 50),
             homeColumns = (preferences[Keys.homeColumns] ?: 2).coerceIn(1, 4),
             homeFilterMultiSelect = preferences[Keys.homeFilterMultiSelect] ?: true,
+            homeSearchFab = preferences[Keys.homeSearchFab] ?: true,
             homeCardAction = preferences.enumValue(Keys.homeCardAction, HomeCardAction.DOWNLOAD),
             homePaginationMode =
                 preferences.enumValue(
@@ -341,6 +348,7 @@ class AppPreferencesStore(
         val homePageSize = intPreferencesKey("home_page_size")
         val homeColumns = intPreferencesKey("home_columns")
         val homeFilterMultiSelect = booleanPreferencesKey("home_filter_multi_select")
+        val homeSearchFab = booleanPreferencesKey("home_search_fab")
         val homeCardAction = stringPreferencesKey("home_card_action")
         val homePaginationMode = stringPreferencesKey("home_pagination_mode")
         val matureContentEnabled = booleanPreferencesKey("mature_content_enabled")

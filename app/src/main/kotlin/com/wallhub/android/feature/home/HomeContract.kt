@@ -147,6 +147,7 @@ data class HomeUiState(
     val error: String? = null,
     @StringRes val errorRes: Int? = null,
     val successfulSearchToken: Long = 0L,
+    val homeSearchFab: Boolean = true,
 ) {
     val activeFilterCount: Int
         get() = filterSelection().activeSectionCount() + if (requiredTags.isNotEmpty()) 1 else 0

@@ -105,6 +105,7 @@ class SettingsViewModel
                         matureContentEnabled = action.matureContentEnabled,
                     )
                 is SettingsAction.HomePaginationModeChanged -> setHomePaginationMode(action.mode)
+                is SettingsAction.HomeSearchFabChanged -> setHomeSearchFab(action.enabled)
                 else -> return false
             }
             return true
@@ -210,6 +211,10 @@ class SettingsViewModel
 
         private fun setHomePaginationMode(mode: HomePaginationMode) {
             viewModelScope.launch { settingsRepository.setHomePaginationMode(mode) }
+        }
+
+        private fun setHomeSearchFab(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setHomeSearchFab(enabled) }
         }
 
         private fun setDownloadPreferences(

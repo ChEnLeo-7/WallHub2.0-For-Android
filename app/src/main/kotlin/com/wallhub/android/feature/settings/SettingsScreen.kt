@@ -103,6 +103,9 @@ fun SettingsScreen(
     val onHomePaginationModeChange: (HomePaginationMode) -> Unit = {
         onAction(SettingsAction.HomePaginationModeChanged(it))
     }
+    val onHomeSearchFabChange: (Boolean) -> Unit = {
+        onAction(SettingsAction.HomeSearchFabChanged(it))
+    }
     val onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit =
         { maxConcurrentDownloads, chunkDownloadConcurrency, proxyUrl, mediaCacheLimitMb ->
             onAction(
@@ -276,6 +279,7 @@ fun SettingsScreen(
                     onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
                     onHomePreferencesChange = onHomePreferencesChange,
                     onHomePaginationModeChange = onHomePaginationModeChange,
+                    onHomeSearchFabChange = onHomeSearchFabChange,
                 )
             }
 
@@ -323,7 +327,8 @@ fun SettingsScreen(
                                 onSystemMonetEnabledChange = onSystemMonetEnabledChange,
                                 onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
                                 onHomePreferencesChange = onHomePreferencesChange,
-                                onHomePaginationModeChange = onHomePaginationModeChange,
+                    onHomePaginationModeChange = onHomePaginationModeChange,
+                    onHomeSearchFabChange = onHomeSearchFabChange,
                                 onDownloadPreferencesChange = onDownloadPreferencesChange,
                                 onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
                                 onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
@@ -375,6 +380,7 @@ internal fun SettingsCategoryContent(
     onThemedLauncherIconEnabledChange: (Boolean) -> Unit,
     onHomePreferencesChange: (Int, Int, Boolean, HomeCardAction, Boolean) -> Unit,
     onHomePaginationModeChange: (HomePaginationMode) -> Unit,
+    onHomeSearchFabChange: (Boolean) -> Unit,
     onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit,
     onDownloadProxyEnabledChange: (Boolean) -> Unit,
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
@@ -455,6 +461,7 @@ internal fun SettingsCategoryContent(
                 onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
                 onHomePreferencesChange = onHomePreferencesChange,
                 onHomePaginationModeChange = onHomePaginationModeChange,
+                onHomeSearchFabChange = onHomeSearchFabChange,
             )
 
         SettingsCategory.EXPERIMENTAL ->

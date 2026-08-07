@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -84,8 +85,11 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -210,6 +214,11 @@ fun HomeScreen(
     }
 }
 
+private val HOME_FLOATING_SEARCH_SIZE = 64.dp
+private val HOME_FLOATING_SEARCH_MAX_WIDTH = 560.dp
+private val HOME_FLOATING_FILTER_SLOT_WIDTH = 56.dp + WallHubSpacing.xs
+private const val HOME_FLOATING_FILTER_FADE_DURATION_MS = 140
+
 @Composable
 internal fun HomeScreenFrame(
     state: HomeUiState,
@@ -279,6 +288,7 @@ internal fun HomeScreenBody(
 ) {
     val coroutineScope = rememberCoroutineScope()
     var showFilters by remember { mutableStateOf(false) }
+    val useFloatingSearch = state.homeSearchFab && onBack == null
     Box(modifier = Modifier.fillMaxSize()) {
         WallHubPageScaffold(
             title = stringResource(R.string.app_name),
@@ -307,21 +317,23 @@ internal fun HomeScreenBody(
                         .fillMaxSize()
                         .padding(padding),
             ) {
-                HomePersistentSearchBar(
-                    state = state,
-                    onQueryChanged = { onAction(HomeAction.QueryChanged(it)) },
-                    onSubmitSearch = { onAction(HomeAction.SubmitSearch) },
-                    onSearchBoundsChanged = onSearchBoundsChanged,
-                    onClear = { onAction(HomeAction.QueryChanged("")) },
-                    onBack = onBack,
-                    showFilters = showFilters,
-                    onToggleFilters = { showFilters = !showFilters },
-                )
-                AnimatedVisibility(visible = showFilters) {
-                    HomeFilterBar(
+                if (!useFloatingSearch) {
+                    HomePersistentSearchBar(
                         state = state,
-                        onAction = onAction,
+                        onQueryChanged = { onAction(HomeAction.QueryChanged(it)) },
+                        onSubmitSearch = { onAction(HomeAction.SubmitSearch) },
+                        onSearchBoundsChanged = onSearchBoundsChanged,
+                        onClear = { onAction(HomeAction.QueryChanged("")) },
+                        onBack = onBack,
+                        showFilters = showFilters,
+                        onToggleFilters = { showFilters = !showFilters },
                     )
+                    AnimatedVisibility(visible = showFilters) {
+                        HomeFilterBar(
+                            state = state,
+                            onAction = onAction,
+                        )
+                    }
                 }
                 HomeResults(
                     state = state,
@@ -353,6 +365,165 @@ internal fun HomeScreenBody(
                 )
             }
         }
+        if (useFloatingSearch) {
+            HomeFloatingSearch(
+                state = state,
+                showFilters = showFilters,
+                onQueryChanged = { onAction(HomeAction.QueryChanged(it)) },
+                onSubmitSearch = { onAction(HomeAction.SubmitSearch) },
+                onClear = { onAction(HomeAction.QueryChanged("")) },
+                onToggleFilters = { showFilters = !showFilters },
+                onSearchBoundsChanged = onSearchBoundsChanged,
+                onAction = onAction,
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(horizontal = WallHubSpacing.md)
+                        .imePadding()
+                        .padding(bottom = WallHubSpacing.xs),
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeFloatingSearch(
+    state: HomeUiState,
+    showFilters: Boolean,
+    onQueryChanged: (String) -> Unit,
+    onSubmitSearch: () -> Unit,
+    onClear: () -> Unit,
+    onToggleFilters: () -> Unit,
+    onSearchBoundsChanged: (IntRect) -> Unit,
+    onAction: (HomeAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(expanded) {
+        if (expanded) focusRequester.requestFocus()
+    }
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val expandedWidth = maxWidth.coerceAtMost(HOME_FLOATING_SEARCH_MAX_WIDTH)
+        val width by animateDpAsState(
+            targetValue = if (expanded) expandedWidth else HOME_FLOATING_SEARCH_SIZE,
+            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+            label = "HomeFloatingSearchWidth",
+        )
+        val filterSlotWidth by animateDpAsState(
+            targetValue = if (expanded) HOME_FLOATING_FILTER_SLOT_WIDTH else 0.dp,
+            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+            label = "HomeFloatingFilterSlotWidth",
+        )
+        val filterButtonAlpha by animateFloatAsState(
+            targetValue = if (expanded) 1f else 0f,
+            animationSpec = tween(durationMillis = HOME_FLOATING_FILTER_FADE_DURATION_MS),
+            label = "HomeFloatingFilterButtonAlpha",
+        )
+        Column(
+            modifier = Modifier.width(width).align(Alignment.BottomEnd),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+        ) {
+            AnimatedVisibility(
+                visible = expanded && showFilters,
+                enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+                exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
+            ) {
+                HomeFilterBar(state = state, onAction = onAction)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier =
+                        Modifier
+                            .width(filterSlotWidth)
+                            .clipToBounds(),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    HomeFilterToggleButton(
+                        state = state,
+                        showFilters = showFilters,
+                        onClick = onToggleFilters,
+                        alpha = filterButtonAlpha,
+                        enabled = expanded,
+                    )
+                }
+                Surface(
+                    onClick = { expanded = true },
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .height(HOME_FLOATING_SEARCH_SIZE)
+                            .onGloballyPositioned { coordinates ->
+                                val topLeft = coordinates.positionInRoot()
+                                onSearchBoundsChanged(
+                                    IntRect(
+                                        left = topLeft.x.roundToInt(),
+                                        top = topLeft.y.roundToInt(),
+                                        right = topLeft.x.roundToInt() + coordinates.size.width,
+                                        bottom = topLeft.y.roundToInt() + coordinates.size.height,
+                                    ),
+                                )
+                            },
+                    shape = RoundedCornerShape(if (expanded) 28.dp else 100.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shadowElevation = 6.dp,
+                ) {
+                    if (!expanded) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Outlined.Search, contentDescription = stringResource(R.string.home_search))
+                        }
+                    } else {
+                        BasicTextField(
+                            value = state.query,
+                            onValueChange = onQueryChanged,
+                            modifier = Modifier.fillMaxSize().focusRequester(focusRequester),
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onPrimaryContainer),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { onSubmitSearch() }),
+                            decorationBox = { innerTextField ->
+                                Row(
+                                    modifier = Modifier.fillMaxSize().padding(start = WallHubSpacing.md, end = WallHubSpacing.xs),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Outlined.Search, contentDescription = null)
+                                    Spacer(Modifier.width(WallHubSpacing.sm))
+                                    Box(Modifier.weight(1f)) {
+                                        if (state.query.isBlank()) {
+                                            Text(
+                                                stringResource(R.string.home_search_workshop),
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            if (state.query.isNotBlank()) {
+                                                onClear()
+                                            } else {
+                                                if (showFilters) onToggleFilters()
+                                                focusManager.clearFocus(force = true)
+                                                expanded = false
+                                            }
+                                        },
+                                    ) {
+                                        Icon(Icons.Outlined.Cancel, contentDescription = stringResource(R.string.home_filter_clear))
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -368,7 +539,6 @@ private fun HomePersistentSearchBar(
     showFilters: Boolean = false,
     onToggleFilters: () -> Unit = {},
 ) {
-    val hasActiveFilters = state.activeFilterCount > 0 || state.exactPhrase
     Row(
         modifier =
             Modifier
@@ -440,32 +610,49 @@ private fun HomePersistentSearchBar(
                 },
             )
         }
-        Surface(
+        HomeFilterToggleButton(
+            state = state,
+            showFilters = showFilters,
             onClick = onToggleFilters,
-            modifier = Modifier.size(56.dp),
-            shape = RoundedCornerShape(if (showFilters) 16.dp else 100.dp),
-            color =
-                if (hasActiveFilters) {
-                    MaterialTheme.colorScheme.secondaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHighest
-                },
-            contentColor =
-                if (hasActiveFilters) {
-                    MaterialTheme.colorScheme.onSecondaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
+        )
+    }
+}
+
+@Composable
+private fun HomeFilterToggleButton(
+    state: HomeUiState,
+    showFilters: Boolean,
+    onClick: () -> Unit,
+    alpha: Float = 1f,
+    enabled: Boolean = true,
+) {
+    val hasActiveFilters = state.activeFilterCount > 0 || state.exactPhrase
+    Surface(
+        enabled = enabled,
+        onClick = onClick,
+        modifier = Modifier.size(56.dp).graphicsLayer { this.alpha = alpha },
+        shape = RoundedCornerShape(if (showFilters) 16.dp else 100.dp),
+        color =
+            if (hasActiveFilters) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            },
+        contentColor =
+            if (hasActiveFilters) {
+                MaterialTheme.colorScheme.onSecondaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.FilterAlt,
-                    contentDescription = stringResource(R.string.home_open_all_filters),
-                )
-            }
+            Icon(
+                imageVector = Icons.Outlined.FilterAlt,
+                contentDescription = stringResource(R.string.home_open_all_filters),
+            )
         }
     }
 }

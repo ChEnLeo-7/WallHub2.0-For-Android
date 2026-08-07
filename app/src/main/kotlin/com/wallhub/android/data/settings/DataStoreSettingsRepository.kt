@@ -62,6 +62,10 @@ class DataStoreSettingsRepository
             store.setHomePaginationMode(mode)
         }
 
+        override suspend fun setHomeSearchFab(enabled: Boolean) {
+            store.setHomeSearchFab(enabled)
+        }
+
         override suspend fun setDownloadPreferences(
             maxConcurrentDownloads: Int,
             chunkDownloadConcurrency: Int,

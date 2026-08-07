@@ -100,6 +100,7 @@ internal fun AppearanceSettingsScreen(
     onThemedLauncherIconEnabledChange: (Boolean) -> Unit,
     onHomePreferencesChange: (Int, Int, Boolean, HomeCardAction, Boolean) -> Unit,
     onHomePaginationModeChange: (HomePaginationMode) -> Unit,
+    onHomeSearchFabChange: (Boolean) -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     MaterialTheme(
@@ -133,6 +134,7 @@ internal fun AppearanceSettingsScreen(
                     onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
                     onHomePreferencesChange = onHomePreferencesChange,
                     onHomePaginationModeChange = onHomePaginationModeChange,
+                    onHomeSearchFabChange = onHomeSearchFabChange,
                 )
             }
         }
@@ -151,6 +153,7 @@ internal fun AppearanceSettingsContent(
     onThemedLauncherIconEnabledChange: (Boolean) -> Unit,
     onHomePreferencesChange: (Int, Int, Boolean, HomeCardAction, Boolean) -> Unit,
     onHomePaginationModeChange: (HomePaginationMode) -> Unit,
+    onHomeSearchFabChange: (Boolean) -> Unit,
 ) {
     fun saveHomePreferences(
         pageSize: Int = preferences.homePageSize,
@@ -262,6 +265,15 @@ internal fun AppearanceSettingsContent(
                 onSelected = { value -> saveHomePreferences(columns = value) },
                 position = PreferencePosition.Middle,
                 icon = Icons.Outlined.GridView,
+            )
+            PreferenceGroupSpacer()
+            SwitchPreferenceRow(
+                title = stringResource(R.string.settings_home_search_fab),
+                summary = stringResource(R.string.settings_home_search_fab_description),
+                checked = preferences.homeSearchFab,
+                onCheckedChange = onHomeSearchFabChange,
+                position = PreferencePosition.Middle,
+                iconContent = { SettingsPreferenceIcon(Icons.Outlined.Search) },
             )
             PreferenceGroupSpacer()
             SwitchPreferenceRow(

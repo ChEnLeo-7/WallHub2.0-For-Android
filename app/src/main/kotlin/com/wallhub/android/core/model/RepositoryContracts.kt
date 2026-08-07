@@ -34,6 +34,8 @@ interface SettingsRepository {
 
     suspend fun setHomePaginationMode(mode: HomePaginationMode) = Unit
 
+    suspend fun setHomeSearchFab(enabled: Boolean) = Unit
+
     suspend fun setDownloadPreferences(
         maxConcurrentDownloads: Int,
         chunkDownloadConcurrency: Int,
