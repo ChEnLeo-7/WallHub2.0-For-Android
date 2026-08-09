@@ -1,6 +1,6 @@
 @file:Suppress("ktlint:standard:function-naming")
 
-package com.wallhub.android.feature.settings
+package com.wallhub.settings
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
@@ -10,6 +10,7 @@ import org.uwuaosp.compose.settingslib.PreferenceRow
 import org.uwuaosp.compose.settingslib.SwitchPreferenceRow
 import org.uwuaosp.compose.settingslib.SettingsCategory as UwuSettingsCategory
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.Visibility
 
@@ -19,6 +20,7 @@ internal fun BasicSettingsContent(
     diagnosticExportState: DiagnosticExportUiState,
     onMatureContentEnabledChange: (Boolean) -> Unit,
     onExportDiagnostics: () -> Unit,
+    onRequestNotifications: () -> Unit,
 ) {
     UwuSettingsCategory(title = stringResource(R.string.settings_diagnostics_title))
     PreferenceRow(
@@ -50,5 +52,14 @@ internal fun BasicSettingsContent(
         onCheckedChange = onMatureContentEnabledChange,
         position = PreferencePosition.Single,
         iconContent = { SettingsPreferenceIcon(Icons.Outlined.Visibility) },
+    )
+
+    UwuSettingsCategory(title = stringResource(R.string.settings_system_permissions_title))
+    PreferenceRow(
+        title = stringResource(R.string.settings_background_task_notifications),
+        summary = stringResource(R.string.settings_background_task_notifications_description),
+        position = PreferencePosition.Single,
+        iconContent = { SettingsPreferenceIcon(Icons.Outlined.Notifications) },
+        onClick = onRequestNotifications,
     )
 }

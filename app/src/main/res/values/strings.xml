@@ -18,8 +18,8 @@
     <string name='settings_restart_setup_wizard_description'>Return to the welcome page and review Steam and network setup</string>
     <string name='settings_title'>Settings</string>
     <string name='settings_wallhub_project_title'>WallHub For Android</string>
-    <string name='settings_category_basic'>Basic settings</string>
-    <string name='settings_category_basic_description'>Content access and diagnostics</string>
+    <string name='settings_category_basic'>General</string>
+    <string name='settings_category_basic_description'>Content access, notifications, and diagnostics</string>
     <string name='settings_about_wallhub_for_android'>About WallHub for Android</string>
     <string name='settings_about_entry_description'>Version, updates, project, and contributor information</string>
     <string name='settings_about_version'>Version</string>
@@ -30,8 +30,6 @@
     <string name='settings_category_steam_description'>Account, service access, and Workshop data source</string>
     <string name='settings_category_appearance'>Appearance</string>
     <string name='settings_category_appearance_description'>Theme, accent color, and Discover preferences</string>
-    <string name='settings_category_experimental'>Experimental</string>
-    <string name='settings_category_experimental_description'>Online chunk streaming and system permissions</string>
     <string name='settings_action_back'>Back</string>
     <string name='settings_action_back_to_settings'>Back to Settings</string>
     <string name='settings_diagnostics_title'>Diagnostics &amp; support</string>

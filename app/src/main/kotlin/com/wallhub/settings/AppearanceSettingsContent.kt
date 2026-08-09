@@ -1,6 +1,6 @@
 @file:Suppress("ktlint:standard:function-naming")
 
-package com.wallhub.android.feature.settings
+package com.wallhub.settings
 
 import android.os.Build
 import androidx.compose.animation.core.CubicBezierEasing

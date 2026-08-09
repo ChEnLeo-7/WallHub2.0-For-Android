@@ -1,6 +1,6 @@
 @file:Suppress("ktlint:standard:function-naming")
 
-package com.wallhub.android.feature.settings
+package com.wallhub.settings
 
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
@@ -755,64 +755,6 @@ internal fun SteamAccessDohEndpointItem(
                 Icon(
                     imageVector = Icons.Outlined.Delete,
                     contentDescription = stringResource(R.string.settings_action_delete_doh_url, endpoint),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-internal fun ExperimentalSettingsContent(
-    preferences: AppPreferences,
-    onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
-    onOnlineStreamCacheLimitChange: (Int) -> Unit,
-    onRequestNotifications: () -> Unit,
-) {
-    SettingsNotice(
-        title = stringResource(R.string.settings_experimental_notice_title),
-        message = stringResource(R.string.settings_experimental_notice_description),
-    )
-
-    SettingsSection(
-        title = stringResource(R.string.settings_online_playback_title),
-    ) {
-        SwitchPreferenceRow(
-            title = stringResource(R.string.settings_steamkit_chunk_streaming),
-            summary = stringResource(R.string.settings_steamkit_chunk_streaming_description),
-            checked = preferences.onlineChunkPlaybackEnabled,
-            iconContent = { SettingsPreferenceIcon(Icons.Outlined.PlayArrow) },
-            position = PreferencePosition.Single,
-            onCheckedChange = onOnlineChunkPlaybackEnabledChange,
-        )
-        PreferenceGroupSpacer()
-        SteamStreamCacheSetting(
-            cacheLimitMb = preferences.mediaCacheLimitMb,
-            onCacheLimitChange = onOnlineStreamCacheLimitChange,
-        )
-    }
-
-    SettingsSection(
-        title = stringResource(R.string.settings_system_permissions_title),
-    ) {
-        PreferenceRow(
-            title = stringResource(R.string.settings_background_task_notifications),
-            summary = stringResource(R.string.settings_background_task_notifications_description),
-            position = PreferencePosition.Single,
-            iconContent = { SettingsPreferenceIcon(Icons.Outlined.Notifications) },
-            onClick = onRequestNotifications,
-        )
-        SettingsActionArea {
-            FilledTonalButton(
-                onClick = onRequestNotifications,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Notifications,
-                    contentDescription = null,
-                )
-                Text(
-                    text = stringResource(R.string.settings_action_allow_background_notifications),
-                    modifier = Modifier.padding(start = WallHubSpacing.xs),
                 )
             }
         }

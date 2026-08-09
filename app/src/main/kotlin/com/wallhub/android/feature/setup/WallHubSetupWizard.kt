@@ -71,11 +71,11 @@ import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
-import com.wallhub.android.feature.settings.SETTINGS_CONTENT_MAX_WIDTH
-import com.wallhub.android.feature.settings.SteamAccountCard
+import com.wallhub.settings.SETTINGS_CONTENT_MAX_WIDTH
+import com.wallhub.settings.SteamAccountCard
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
-import com.wallhub.android.feature.settings.SteamAccessDohEndpointsSetting
+import com.wallhub.settings.SteamAccessDohEndpointsSetting
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow

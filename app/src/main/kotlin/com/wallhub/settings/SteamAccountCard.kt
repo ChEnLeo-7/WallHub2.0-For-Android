@@ -1,4 +1,4 @@
-package com.wallhub.android.feature.settings
+package com.wallhub.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement

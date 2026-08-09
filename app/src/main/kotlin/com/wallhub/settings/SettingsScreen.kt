@@ -1,6 +1,6 @@
 @file:Suppress("ktlint:standard:function-naming")
 
-package com.wallhub.android.feature.settings
+package com.wallhub.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -364,6 +364,7 @@ internal fun SettingsCategoryContent(
                 diagnosticExportState = diagnosticExportState,
                 onMatureContentEnabledChange = onMatureContentEnabledChange,
                 onExportDiagnostics = onExportDiagnostics,
+                onRequestNotifications = onRequestNotifications,
             )
 
         SettingsCategory.DOWNLOAD ->
@@ -375,6 +376,8 @@ internal fun SettingsCategoryContent(
                 onClearOutputDirectory = onClearOutputDirectory,
                 onDownloadPreferencesChange = onDownloadPreferencesChange,
                 onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
+                onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
+                onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
             )
 
         SettingsCategory.STEAM ->
@@ -408,13 +411,6 @@ internal fun SettingsCategoryContent(
 
         SettingsCategory.APPEARANCE -> Unit
 
-        SettingsCategory.EXPERIMENTAL ->
-            ExperimentalSettingsContent(
-                preferences = preferences,
-                onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
-                onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
-                onRequestNotifications = onRequestNotifications,
-            )
     }
 }
 

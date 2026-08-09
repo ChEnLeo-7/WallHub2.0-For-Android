@@ -18,8 +18,8 @@
     <string name='settings_restart_setup_wizard_description'>返回欢迎页，重新检查 Steam 与网络配置</string>
     <string name='settings_title'>设置</string>
     <string name='settings_wallhub_project_title'>WallHub For Android</string>
-    <string name='settings_category_basic'>基本设置</string>
-    <string name='settings_category_basic_description'>内容访问与诊断</string>
+    <string name='settings_category_basic'>通用</string>
+    <string name='settings_category_basic_description'>内容访问、通知与诊断</string>
     <string name='settings_about_wallhub_for_android'>关于 WallHub for Android</string>
     <string name='settings_about_entry_description'>版本、更新、项目与贡献者信息</string>
     <string name='settings_about_version'>版本</string>
@@ -30,8 +30,6 @@
     <string name='settings_category_steam_description'>账户、服务访问与创意工坊数据源</string>
     <string name='settings_category_appearance'>外观</string>
     <string name='settings_category_appearance_description'>主题、强调色与发现页偏好</string>
-    <string name='settings_category_experimental'>实验功能</string>
-    <string name='settings_category_experimental_description'>在线分块播放与系统权限</string>
     <string name='settings_action_back'>返回</string>
     <string name='settings_action_back_to_settings'>返回设置</string>
     <string name='settings_diagnostics_title'>诊断与支持</string>

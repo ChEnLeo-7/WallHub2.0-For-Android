@@ -21,7 +21,7 @@ import com.wallhub.android.feature.downloads.DownloadsRoute
 import com.wallhub.android.feature.home.HomeRoute
 import com.wallhub.android.feature.library.LibraryRoute
 import com.wallhub.android.feature.local.LocalWallpaperRoute
-import com.wallhub.android.feature.settings.SettingsRoute
+import com.wallhub.settings.SettingsRoute
 
 @Composable
 internal fun WallHubNavHost(

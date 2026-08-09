@@ -1,6 +1,6 @@
 @file:Suppress("ktlint:standard:function-naming")
 
-package com.wallhub.android.feature.settings
+package com.wallhub.settings
 
 import androidx.annotation.StringRes
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -14,7 +14,6 @@ import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Tune
@@ -230,6 +229,11 @@ internal enum class SettingsCategory(
         descriptionRes = R.string.settings_category_basic_description,
         icon = Icons.Outlined.Tune,
     ),
+    APPEARANCE(
+        labelRes = R.string.settings_category_appearance,
+        descriptionRes = R.string.settings_category_appearance_description,
+        icon = Icons.Outlined.Palette,
+    ),
     DOWNLOAD(
         labelRes = R.string.settings_category_downloads,
         descriptionRes = R.string.settings_category_downloads_description,
@@ -239,16 +243,6 @@ internal enum class SettingsCategory(
         labelRes = R.string.settings_category_steam,
         descriptionRes = R.string.settings_category_steam_description,
         icon = Icons.Outlined.PersonOutline,
-    ),
-    APPEARANCE(
-        labelRes = R.string.settings_category_appearance,
-        descriptionRes = R.string.settings_category_appearance_description,
-        icon = Icons.Outlined.Palette,
-    ),
-    EXPERIMENTAL(
-        labelRes = R.string.settings_category_experimental,
-        descriptionRes = R.string.settings_category_experimental_description,
-        icon = Icons.Outlined.Notifications,
     ),
 }
 

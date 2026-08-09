@@ -1,6 +1,6 @@
 @file:Suppress("ktlint:standard:function-naming")
 
-package com.wallhub.android.feature.settings
+package com.wallhub.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,6 +26,7 @@ import org.uwuaosp.compose.settingslib.SettingsCategory as UwuSettingsCategory
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Tune
 
 @Composable
@@ -37,6 +38,8 @@ internal fun DownloadSettingsContent(
     onClearOutputDirectory: () -> Unit,
     onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit,
     onDownloadProxyEnabledChange: (Boolean) -> Unit,
+    onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
+    onOnlineStreamCacheLimitChange: (Int) -> Unit,
 ) {
     fun saveDownloadPreferences(
         maxDownloads: Int = preferences.maxConcurrentDownloads,
@@ -107,6 +110,21 @@ internal fun DownloadSettingsContent(
         onSelected = { value -> saveDownloadPreferences(chunkConcurrency = value) },
         position = PreferencePosition.Bottom,
         icon = Icons.Outlined.Tune,
+    )
+
+    UwuSettingsCategory(title = stringResource(R.string.settings_online_playback_title))
+    SwitchPreferenceRow(
+        title = stringResource(R.string.settings_steamkit_chunk_streaming),
+        summary = stringResource(R.string.settings_steamkit_chunk_streaming_description),
+        checked = preferences.onlineChunkPlaybackEnabled,
+        iconContent = { SettingsPreferenceIcon(Icons.Outlined.PlayArrow) },
+        position = PreferencePosition.Top,
+        onCheckedChange = onOnlineChunkPlaybackEnabledChange,
+    )
+    org.uwuaosp.compose.settingslib.PreferenceGroupSpacer()
+    SteamStreamCacheSetting(
+        cacheLimitMb = preferences.mediaCacheLimitMb,
+        onCacheLimitChange = onOnlineStreamCacheLimitChange,
     )
 
     UwuSettingsCategory(title = stringResource(R.string.settings_network_proxy_title))
