@@ -23,6 +23,7 @@ android_library {
     visibility: ["//visibility:public"],
 
     static_libs: [
+        "androidx.compose.animation_animation",
         "androidx.compose.foundation_foundation",
         "androidx.compose.foundation_foundation-layout",
         "androidx.compose.material3_material3",

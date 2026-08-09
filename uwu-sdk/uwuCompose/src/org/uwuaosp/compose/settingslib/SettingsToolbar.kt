@@ -162,62 +162,35 @@ internal fun SettingsToolbar(
         }
         if (useWeightedTitleLayout) {
             Row(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .fillMaxWidth()
-                    .height(actionBarHeight)
-                    .padding(end = 8.dp),
+                modifier = Modifier.align(Alignment.TopStart).fillMaxWidth().height(actionBarHeight).padding(end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = if (showBackButton) 88.dp else 24.dp)
+                    modifier = Modifier.weight(1f).padding(start = if (showBackButton) 88.dp else 24.dp)
                         .alpha(if (useCollapsingToolbar) progress else 1f),
                     contentAlignment = Alignment.CenterStart,
                 ) {
-                    titleContent?.invoke() ?: Text(
-                        text = title,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.titleLarge.emphasized(
-                            fontFamilies.titleLargeEmphasized
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    titleContent?.invoke() ?: Text(text = title, color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleLarge.emphasized(fontFamilies.titleLargeEmphasized),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Row(
-                    modifier = Modifier.height(actionBarHeight),
-                    verticalAlignment = Alignment.CenterVertically,
-                    content = actions,
-                )
+                Row(modifier = Modifier.height(actionBarHeight), verticalAlignment = Alignment.CenterVertically, content = actions)
             }
         } else {
             Row(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .height(actionBarHeight)
-                    .padding(end = 8.dp),
+                modifier = Modifier.align(Alignment.TopEnd).height(actionBarHeight).padding(end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 content = actions,
             )
             Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .height(actionBarHeight)
+                modifier = Modifier.align(Alignment.TopStart).height(actionBarHeight)
                     .padding(start = if (showBackButton) 88.dp else 24.dp, end = 24.dp)
                     .alpha(if (useCollapsingToolbar) progress else 1f),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                Text(
-                    text = title,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.titleLarge.emphasized(
-                        fontFamilies.titleLargeEmphasized
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Text(text = title, color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleLarge.emphasized(fontFamilies.titleLargeEmphasized),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
