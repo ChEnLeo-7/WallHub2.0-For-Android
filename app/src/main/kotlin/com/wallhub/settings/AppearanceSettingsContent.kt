@@ -57,6 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubAnimatedSelectionCheck
@@ -422,8 +423,8 @@ internal fun <T> SettingChoiceRow(
         position = position,
         iconContent = icon?.let { { SettingsPreferenceIcon(it) } },
         trailingContent = {
-            ExposedPreferenceDropdown(
-                value = selectedLabel,
+                        ExposedPreferenceDropdown(
+                            value = selectedLabel,
                 expanded = menuVisible,
                 onExpandedChange = { menuVisible = it },
             ) {
@@ -460,7 +461,7 @@ private fun ExposedPreferenceDropdown(
             shape = MaterialTheme.shapes.extraLarge,
             modifier =
                 Modifier
-                    .widthIn(min = SETTINGS_DROPDOWN_MIN_WIDTH, max = SETTINGS_DROPDOWN_MAX_WIDTH)
+                    .width(SETTINGS_DROPDOWN_WIDTH)
                     .clickable { onExpandedChange(!expanded) },
         ) {
             Row(
@@ -468,14 +469,14 @@ private fun ExposedPreferenceDropdown(
                     Modifier
                         .heightIn(min = WallHubSizeTokens.compactActionHeight)
                         .padding(start = WallHubSpacing.md, end = WallHubSpacing.sm),
-                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = value,
                     style = MaterialTheme.typography.labelLarge,
                     maxLines = 1,
-                    modifier = Modifier.weight(1f, fill = false),
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
             }
@@ -483,7 +484,7 @@ private fun ExposedPreferenceDropdown(
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { onExpandedChange(false) },
-            modifier = Modifier.widthIn(min = SETTINGS_DROPDOWN_MENU_MIN_WIDTH),
+            modifier = Modifier.width(SETTINGS_DROPDOWN_WIDTH),
             shape = RoundedCornerShape(16.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             tonalElevation = WallHubSpacing.none,
@@ -960,9 +961,7 @@ internal const val SETTINGS_PAGE_ENTER_OFFSET_DIVISOR = 9
 internal const val SETTINGS_PAGE_EXIT_OFFSET_DIVISOR = 18
 internal val SETTINGS_CONTENT_MAX_WIDTH = 760.dp
 internal val SETTINGS_SHEET_CONTENT_MAX_HEIGHT = 560.dp
-internal val SETTINGS_DROPDOWN_MIN_WIDTH = 112.dp
-internal val SETTINGS_DROPDOWN_MAX_WIDTH = 200.dp
-internal val SETTINGS_DROPDOWN_MENU_MIN_WIDTH = 180.dp
+internal val SETTINGS_DROPDOWN_WIDTH = 176.dp
 internal val SETTINGS_DROPDOWN_MENU_ELEVATION = 3.dp
 internal val STEAM_DOH_ITEM_HEIGHT = 84.dp
 internal val STEAM_DOH_ITEM_SPACING = WallHubSpacing.xs
