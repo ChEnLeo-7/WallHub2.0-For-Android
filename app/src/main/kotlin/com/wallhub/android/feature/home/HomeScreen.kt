@@ -132,7 +132,6 @@ import com.wallhub.android.core.designsystem.WallHubContextMenuLayer
 import com.wallhub.android.core.designsystem.WallHubContextMenuSurface
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
-import com.wallhub.android.core.designsystem.WallHubToolbarSearchTitle
 import com.wallhub.android.core.designsystem.WallHubPaginationControl
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
@@ -150,7 +149,20 @@ import kotlin.math.roundToInt
 import com.wallhub.android.core.designsystem.WallHubContextMenuAction as HomeContextMenuItem
 import com.wallhub.android.core.designsystem.WallHubContextMenuMetadataItem as HomeContextMenuMetadataItem
 import com.wallhub.android.core.designsystem.WallHubContextMenuPositionProvider as HomeContextMenuPositionProvider
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.automirrored.outlined.ViewList
+import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FilterAlt
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 
 @Composable
 fun HomeScreen(
@@ -742,7 +754,7 @@ internal fun HomeViewModeToggle(
                     )
                     ViewModeButton(
                         selected = selected == HomeViewMode.LIST,
-                        icon = Icons.Outlined.ViewList,
+                        icon = Icons.AutoMirrored.Outlined.ViewList,
                         contentDescription = listContentDescription,
                         onClick = { onViewModeSelected(HomeViewMode.LIST) },
                     )
@@ -1344,7 +1356,7 @@ internal fun WorkshopCard(
                     }
                     HomeContextMenuItem(
                         text = stringResource(R.string.home_open_in_steam),
-                        icon = Icons.Outlined.OpenInNew,
+                        icon = Icons.AutoMirrored.Outlined.OpenInNew,
                         onClick = {
                             dismissContextMenu()
                             onOpenSteam()

@@ -76,7 +76,11 @@ import com.wallhub.android.core.model.WorkshopComment
 import kotlinx.coroutines.launch
 import org.uwuaosp.compose.settingslib.CustomPreferenceRow
 import org.uwuaosp.compose.settingslib.PreferencePosition
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.VerticalAlignTop
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

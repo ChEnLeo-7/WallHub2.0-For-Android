@@ -10,31 +10,14 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -46,13 +29,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.VisualTransformation
 import com.wallhub.android.R
-import com.wallhub.android.core.designsystem.WallHubPageScaffold
-import com.wallhub.android.core.designsystem.WallHubSizeTokens
-import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
 import com.wallhub.android.core.model.AccentPreference
 import com.wallhub.android.core.model.AppPreferences
@@ -65,9 +44,7 @@ import com.wallhub.android.core.model.ThemePreference
 import org.uwuaosp.compose.settingslib.SettingsScaffold
 import org.uwuaosp.compose.settingslib.rememberSettingsTypography
 import org.uwuaosp.compose.settingslib.SettingsCategory as UwuSettingsCategory
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     preferences: AppPreferences,
@@ -159,10 +136,6 @@ fun SettingsScreen(
     }
     val onRestartSetupWizard: () -> Unit = { onAction(SettingsAction.RestartSetupWizard) }
     var selectedPageName by rememberSaveable { mutableStateOf<String?>(null) }
-    val selectedCategory =
-        selectedPageName
-            ?.takeUnless { it == SETTINGS_ABOUT_PAGE_KEY }
-            ?.let { categoryName -> SettingsCategory.entries.firstOrNull { it.name == categoryName } }
     val availableAccents =
         AccentPreference.entries.filter { accent ->
             accent != AccentPreference.MONET
@@ -249,12 +222,12 @@ fun SettingsScreen(
                 ?.let { categoryName -> SettingsCategory.entries.firstOrNull { it.name == categoryName } }
         when {
             displayedPageName == null -> {
-            SettingsCategoryIndex(
-                title = stringResource(R.string.settings_title),
-                onBack = onBack,
-                onOpenCategory = { selectedPageName = it.name },
-                onOpenAbout = { selectedPageName = SETTINGS_ABOUT_PAGE_KEY },
-            )
+                SettingsCategoryIndex(
+                    title = stringResource(R.string.settings_title),
+                    onBack = onBack,
+                    onOpenCategory = { selectedPageName = it.name },
+                    onOpenAbout = { selectedPageName = SETTINGS_ABOUT_PAGE_KEY },
+                )
             }
 
             displayedPageName == SETTINGS_ABOUT_PAGE_KEY -> {
@@ -316,10 +289,6 @@ fun SettingsScreen(
                                 steamAccessState = steamAccessState,
                                 session = session,
                                 diagnosticExportState = diagnosticExportState,
-                                appUpdateState = appUpdateState,
-                                availableAccents = availableAccents,
-                                customAccentColor = customAccentColor,
-                                onCustomAccentColorChanged = { customAccentColor = it },
                                 proxyUrl = proxyUrl,
                                 onProxyUrlChanged = { proxyUrl = it },
                                 steamApiKey = steamApiKey,
@@ -327,13 +296,6 @@ fun SettingsScreen(
                                 onMatureContentEnabledChange = { enabled ->
                                     saveHomePreferences(matureContentEnabled = enabled)
                                 },
-                                onThemePreferenceChange = onThemePreferenceChange,
-                                onAccentChange = onAccentChange,
-                                onSystemMonetEnabledChange = onSystemMonetEnabledChange,
-                                onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
-                                onHomePreferencesChange = onHomePreferencesChange,
-                    onHomePaginationModeChange = onHomePaginationModeChange,
-                    onHomeSearchFabChange = onHomeSearchFabChange,
                                 onDownloadPreferencesChange = onDownloadPreferencesChange,
                                 onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
                                 onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
@@ -350,10 +312,6 @@ fun SettingsScreen(
                                 onLogoutSteam = onLogoutSteam,
                                 onSelectOutputDirectory = onSelectOutputDirectory,
                                 onClearOutputDirectory = onClearOutputDirectory,
-                                onCheckForAppUpdate = onCheckForAppUpdate,
-                                onDownloadLatestRelease = onDownloadLatestRelease,
-                                onCancelAppUpdateDownload = onCancelAppUpdateDownload,
-                                onInstallDownloadedRelease = onInstallDownloadedRelease,
                                 onExportDiagnostics = onExportDiagnostics,
                                 onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
                                 onRequestNotifications = onRequestNotifications,
@@ -373,22 +331,11 @@ internal fun SettingsCategoryContent(
     steamAccessState: SteamAccessState,
     session: SteamSessionState,
     diagnosticExportState: DiagnosticExportUiState,
-    appUpdateState: AppUpdateUiState,
-    availableAccents: List<AccentPreference>,
-    customAccentColor: String,
-    onCustomAccentColorChanged: (String) -> Unit,
     proxyUrl: String,
     onProxyUrlChanged: (String) -> Unit,
     steamApiKey: String,
     onSteamApiKeyChanged: (String) -> Unit,
     onMatureContentEnabledChange: (Boolean) -> Unit,
-    onThemePreferenceChange: (ThemePreference) -> Unit,
-    onAccentChange: (AccentPreference, String?) -> Unit,
-    onSystemMonetEnabledChange: (Boolean) -> Unit,
-    onThemedLauncherIconEnabledChange: (Boolean) -> Unit,
-    onHomePreferencesChange: (Int, Int, Boolean, HomeCardAction, Boolean) -> Unit,
-    onHomePaginationModeChange: (HomePaginationMode) -> Unit,
-    onHomeSearchFabChange: (Boolean) -> Unit,
     onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit,
     onDownloadProxyEnabledChange: (Boolean) -> Unit,
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
@@ -405,10 +352,6 @@ internal fun SettingsCategoryContent(
     onLogoutSteam: () -> Unit,
     onSelectOutputDirectory: () -> Unit,
     onClearOutputDirectory: () -> Unit,
-    onCheckForAppUpdate: () -> Unit,
-    onDownloadLatestRelease: () -> Unit,
-    onCancelAppUpdateDownload: () -> Unit,
-    onInstallDownloadedRelease: (String) -> Unit,
     onExportDiagnostics: () -> Unit,
     onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
     onRequestNotifications: () -> Unit,
@@ -463,20 +406,7 @@ internal fun SettingsCategoryContent(
                 onLogoutSteam = onLogoutSteam,
             )
 
-        SettingsCategory.APPEARANCE ->
-            AppearanceSettingsContent(
-                preferences = preferences,
-                availableAccents = availableAccents,
-                customAccentColor = customAccentColor,
-                onCustomAccentColorChanged = onCustomAccentColorChanged,
-                onThemePreferenceChange = onThemePreferenceChange,
-                onAccentChange = onAccentChange,
-                onSystemMonetEnabledChange = onSystemMonetEnabledChange,
-                onThemedLauncherIconEnabledChange = onThemedLauncherIconEnabledChange,
-                onHomePreferencesChange = onHomePreferencesChange,
-                onHomePaginationModeChange = onHomePaginationModeChange,
-                onHomeSearchFabChange = onHomeSearchFabChange,
-            )
+        SettingsCategory.APPEARANCE -> Unit
 
         SettingsCategory.EXPERIMENTAL ->
             ExperimentalSettingsContent(
@@ -489,31 +419,6 @@ internal fun SettingsCategoryContent(
 }
 
 private const val SETTINGS_ABOUT_PAGE_KEY = "about_wallhub"
-
-@Composable
-internal fun SettingsListItem(
-    headlineContent: @Composable () -> Unit,
-    modifier: Modifier = Modifier,
-    supportingContent: @Composable (() -> Unit)? = null,
-    leadingContent: @Composable (() -> Unit)? = null,
-    trailingContent: @Composable (() -> Unit)? = null,
-) {
-    ListItem(
-        headlineContent = headlineContent,
-        modifier = modifier.heightIn(min = SETTINGS_ITEM_MIN_HEIGHT),
-        supportingContent = supportingContent,
-        leadingContent = leadingContent,
-        trailingContent = trailingContent,
-        colors =
-            ListItemDefaults.colors(
-                containerColor = Color.Transparent,
-                headlineColor = MaterialTheme.colorScheme.onSurface,
-                supportingColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                leadingIconColor = MaterialTheme.colorScheme.primary,
-                trailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            ),
-    )
-}
 
 @Composable
 internal fun SettingsSectionSurface(
@@ -579,8 +484,6 @@ internal fun SettingsFilledTextField(
 internal fun SettingsSection(
     title: String,
     modifier: Modifier = Modifier,
-    supportingText: String? = null,
-    icon: ImageVector? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(

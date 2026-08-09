@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -40,7 +39,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -85,7 +83,17 @@ import org.uwuaosp.compose.settingslib.rememberSettingsTypography
 import org.uwuaosp.compose.settingslib.SettingsCategory as UwuSettingsCategory
 import java.util.Locale
 import android.graphics.Color as AndroidColor
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ViewList
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.VerticalAlignTop
 
 @Composable
 internal fun AppearanceSettingsScreen(
@@ -244,7 +252,7 @@ internal fun AppearanceSettingsContent(
                 label = { "$it" },
                 onSelected = { value -> saveHomePreferences(pageSize = value) },
                 position = PreferencePosition.Top,
-                icon = Icons.Outlined.ViewList,
+                    icon = Icons.AutoMirrored.Outlined.ViewList,
             )
             PreferenceGroupSpacer()
             SettingChoiceRow(
@@ -294,62 +302,6 @@ internal fun AppearanceSettingsContent(
                 position = PreferencePosition.Bottom,
                 icon = Icons.Outlined.Tune,
             )
-    }
-}
-
-@Composable
-internal fun SettingsSwitchRow(
-    title: String,
-    supportingText: String,
-    checked: Boolean,
-    enabled: Boolean = true,
-    icon: ImageVector? = null,
-    position: PreferencePosition = PreferencePosition.Single,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    SwitchPreferenceRow(
-        title = title,
-        summary = supportingText,
-        checked = checked,
-        enabled = enabled,
-        iconContent = icon?.let { { SettingsPreferenceIcon(it) } },
-        position = position,
-        onCheckedChange = onCheckedChange,
-    )
-}
-
-@Composable
-internal fun SettingsItemDivider() {
-    Spacer(modifier = Modifier.height(WallHubSpacing.xxxs))
-}
-
-@Composable
-internal fun SettingsLeadingIcon(
-    icon: ImageVector,
-    prominent: Boolean = false,
-) {
-    val containerColor =
-        if (prominent) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.secondaryContainer
-        }
-    val contentColor =
-        if (prominent) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onSecondaryContainer
-        }
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = containerColor,
-        contentColor = contentColor,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.padding(WallHubSpacing.compact).size(WallHubSizeTokens.smallIcon),
-        )
     }
 }
 
@@ -1006,10 +958,8 @@ internal const val SETTINGS_PAGE_ENTER_DURATION_MS = 340
 internal const val SETTINGS_PAGE_EXIT_DURATION_MS = 230
 internal const val SETTINGS_PAGE_ENTER_OFFSET_DIVISOR = 9
 internal const val SETTINGS_PAGE_EXIT_OFFSET_DIVISOR = 18
-internal val SETTINGS_MEDIUM_WIDTH = 600.dp
 internal val SETTINGS_CONTENT_MAX_WIDTH = 760.dp
 internal val SETTINGS_SHEET_CONTENT_MAX_HEIGHT = 560.dp
-internal val SETTINGS_ITEM_MIN_HEIGHT = 64.dp
 internal val SETTINGS_DROPDOWN_MIN_WIDTH = 112.dp
 internal val SETTINGS_DROPDOWN_MAX_WIDTH = 200.dp
 internal val SETTINGS_DROPDOWN_MENU_MIN_WIDTH = 180.dp

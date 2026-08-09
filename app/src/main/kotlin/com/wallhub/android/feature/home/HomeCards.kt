@@ -53,7 +53,10 @@ import com.wallhub.android.core.format.formatByteSize
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.WorkshopSummary
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.ImageNotSupported
+import androidx.compose.material.icons.outlined.StarBorder
 
 @Composable
 internal fun WorkshopListCardContent(

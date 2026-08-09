@@ -27,7 +27,8 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable

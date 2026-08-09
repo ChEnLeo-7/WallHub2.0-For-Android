@@ -90,7 +90,13 @@ import org.uwuaosp.compose.wizard.wizardPageTransition
 import org.uwuaosp.compose.settingslib.SettingsToolbarActionButton
 import org.uwuaosp.compose.settingslib.rememberSettingsTypography
 import javax.inject.Inject
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 
 private enum class WallHubSetupPage {
     Welcome,
@@ -247,7 +253,12 @@ fun WallHubSetupWizard(
 
 @Composable
 private fun WelcomePage() {
-    val bottomPadding = wizardActionContentPadding(true, true, true, false)
+    val bottomPadding = wizardActionContentPadding(
+        visible = true,
+        expanded = true,
+        showPrimary = true,
+        showSecondary = false,
+    )
     WizardBrandPage(
         title = stringResource(R.string.setup_welcome_title),
         subtitle = stringResource(R.string.setup_welcome_description),
@@ -266,7 +277,12 @@ private fun WelcomePage() {
 @Composable
 private fun SteamPage(session: SteamSessionState, viewModel: WallHubSetupViewModel) {
     val signedIn = session.phase == SteamSessionPhase.SIGNED_IN
-    val bottomPadding = wizardActionContentPadding(true, false, signedIn, !signedIn)
+    val bottomPadding = wizardActionContentPadding(
+        visible = true,
+        expanded = false,
+        showPrimary = signedIn,
+        showSecondary = !signedIn,
+    )
     WizardPageScaffold(
         config = WizardPageConfig(
             title = stringResource(R.string.setup_steam_title),
@@ -294,7 +310,12 @@ private fun NetworkPage(
     onSaveDohEndpoints: (List<String>, Set<String>) -> Unit,
     onContinue: (String, Boolean, Boolean, SteamWorkshopDataSource, String) -> Unit,
 ) {
-    val bottomPadding = wizardActionContentPadding(true, false, true, false)
+    val bottomPadding = wizardActionContentPadding(
+        visible = true,
+        expanded = false,
+        showPrimary = true,
+        showSecondary = false,
+    )
     var proxyUrl by rememberSaveable(preferences.downloadProxyUrl) { mutableStateOf(preferences.downloadProxyUrl) }
     var proxyEnabled by rememberSaveable(preferences.downloadProxyEnabled) { mutableStateOf(preferences.downloadProxyEnabled) }
     var accessEnabled by rememberSaveable(preferences.steamAccessEnabled) { mutableStateOf(preferences.steamAccessEnabled) }
@@ -393,7 +414,12 @@ private fun NetworkPage(
 
 @Composable
 private fun FinishPage() {
-    val bottomPadding = wizardActionContentPadding(true, true, true, false)
+    val bottomPadding = wizardActionContentPadding(
+        visible = true,
+        expanded = true,
+        showPrimary = true,
+        showSecondary = false,
+    )
     WizardBrandPage(
         title = stringResource(R.string.setup_finish_title),
         subtitle = stringResource(R.string.setup_finish_description),

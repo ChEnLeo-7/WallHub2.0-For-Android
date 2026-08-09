@@ -167,7 +167,6 @@
     <string name='settings_steam_no_route'>No route is currently available</string>
     <string name='settings_action_check_routes_again'>Check routes again</string>
     <string name='settings_workshop_data_source_title'>Workshop data source</string>
-    <string name='settings_workshop_data_source_description'>Choose the strict data channel used by discovery, details, and comments</string>
     <string name='settings_data_source'>Data source</string>
     <string name='settings_steam_community_html'>Steam Community HTML</string>
     <string name='settings_steam_web_api'>Steam Web API</string>
@@ -175,7 +174,6 @@
     <string name='settings_data_source_community_description'>Use Steam Community pages for public data</string>
     <string name='settings_data_source_web_api_description'>Discovery requires a valid Steam API key</string>
     <string name='settings_data_source_cm_description'>Public discovery and details support anonymous CM; comments require sign-in</string>
-    <string name='settings_steam_web_api_description'>Used by the Web API source and anonymous profile enrichment</string>
     <string name='settings_steam_api_key'>Steam API Key</string>
     <string name='settings_action_hide_api_key'>Hide API key</string>
     <string name='settings_action_show_api_key'>Show API key</string>
@@ -210,11 +208,9 @@
         issues occur.
     </string>
     <string name='settings_online_playback_title'>Online playback</string>
-    <string name='settings_online_playback_description'>Control Steam chunk streaming and local cache</string>
     <string name='settings_steamkit_chunk_streaming'>SteamKit chunk streaming</string>
     <string name='settings_steamkit_chunk_streaming_description'>Stream directly from Steam when on; download before playback when off</string>
     <string name='settings_system_permissions_title'>System permissions</string>
-    <string name='settings_system_permissions_description'>Manage Android permissions used by background work</string>
     <string name='settings_background_task_notifications'>Background task notifications</string>
     <string name='settings_background_task_notifications_description'>Shows live progress for downloads, conversion, and export</string>
     <string name='settings_action_allow_background_notifications'>Allow background notifications</string>

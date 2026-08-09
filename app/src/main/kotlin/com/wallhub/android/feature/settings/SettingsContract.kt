@@ -3,8 +3,6 @@
 package com.wallhub.android.feature.settings
 
 import androidx.annotation.StringRes
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.wallhub.android.R
 import com.wallhub.android.core.model.AccentPreference
@@ -14,7 +12,12 @@ import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.InstalledAppInfo
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.Tune
 
 data class DiagnosticExportUiState(
     val isExporting: Boolean = false,

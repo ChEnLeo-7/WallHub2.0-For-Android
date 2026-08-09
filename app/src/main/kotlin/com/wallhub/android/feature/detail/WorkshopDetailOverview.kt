@@ -50,7 +50,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.uwuaosp.compose.settingslib.CustomPreferenceRow
 import org.uwuaosp.compose.settingslib.PreferencePosition
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.outlined.Visibility
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

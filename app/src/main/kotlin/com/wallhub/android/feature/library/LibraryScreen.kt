@@ -136,7 +136,15 @@ import kotlinx.coroutines.launch
 import org.uwuaosp.compose.settingslib.SettingsToolbarActionButton
 import java.util.Locale
 import javax.inject.Inject
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.ImageNotSupported
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.StarBorder
 
 enum class LibraryCollectionTab(
     val collection: AccountWorkshopCollection,
@@ -836,7 +844,6 @@ fun LibraryScreen(
                 placeholder = stringResource(R.string.library_search_placeholder),
                 onQueryChanged = { onAction(LibraryAction.UpdateSearchQuery(it)) },
                 onSubmit = { onAction(LibraryAction.SubmitSearch) },
-                onClear = { onAction(LibraryAction.UpdateSearchQuery("")) },
                 onExpand = { searchToolbarExpanded = true },
                 onCollapse = { searchToolbarExpanded = false },
                 enabled = state.session.phase == SteamSessionPhase.SIGNED_IN,

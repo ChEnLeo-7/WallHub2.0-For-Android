@@ -99,7 +99,16 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.uwuaosp.compose.settingslib.SettingsToolbarActionButton
 import javax.inject.Inject
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.ImageNotSupported
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Settings
 
 enum class DownloadFilter {
     ALL,

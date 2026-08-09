@@ -30,7 +30,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.uwuaosp.compose.settingslib.SettingsAppBarScaffold
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Search
 
 @Composable
 fun WallHubPageScaffold(
@@ -70,7 +72,6 @@ fun WallHubToolbarSearchTitle(
     placeholder: String,
     onQueryChanged: (String) -> Unit,
     onSubmit: () -> Unit,
-    onClear: () -> Unit,
     onExpand: () -> Unit,
     onCollapse: () -> Unit,
     enabled: Boolean = true,

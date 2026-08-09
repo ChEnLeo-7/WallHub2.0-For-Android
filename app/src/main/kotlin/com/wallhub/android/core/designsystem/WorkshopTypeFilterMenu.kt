@@ -1,5 +1,8 @@
 package com.wallhub.android.core.designsystem
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FilterAlt
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -27,7 +30,7 @@ fun WorkshopTypeFilterMenu(
     Box {
         IconButton(onClick = { expanded = true }) {
             Icon(
-                imageVector = WallHubIcons.Outlined.FilterAlt,
+                imageVector = Icons.Outlined.FilterAlt,
                 contentDescription = contentDescription,
             )
         }

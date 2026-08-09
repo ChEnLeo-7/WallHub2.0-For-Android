@@ -67,7 +67,18 @@ import com.wallhub.android.core.model.WorkshopFilterCatalog
 import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopType
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.StarBorder
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

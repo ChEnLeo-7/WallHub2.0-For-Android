@@ -88,7 +88,12 @@ import com.wallhub.android.core.model.WorkshopType
 import kotlinx.coroutines.launch
 import org.uwuaosp.compose.settingslib.SettingsCollapsingAppBarScaffold
 import kotlin.math.roundToInt
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.ImageNotSupported
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Refresh
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -168,7 +173,7 @@ fun WorkshopDetailScreen(
                             }
                             IconButton(onClick = { onOpenSteam(workshop.id) }) {
                                 Icon(
-                                    imageVector = Icons.Outlined.OpenInNew,
+                                    imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
                                     contentDescription = stringResource(R.string.detail_open_steam_page),
                                 )
                             }

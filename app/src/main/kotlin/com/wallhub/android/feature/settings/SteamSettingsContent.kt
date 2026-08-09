@@ -2,8 +2,6 @@
 
 package com.wallhub.android.feature.settings
 
-import android.net.Uri
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
@@ -36,7 +34,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -53,7 +50,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -83,9 +79,23 @@ import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.normalizeSteamAccessDohEndpoint
 import kotlinx.coroutines.launch
+import org.uwuaosp.compose.settingslib.PreferenceGroupSpacer
 import org.uwuaosp.compose.settingslib.PreferencePosition
 import org.uwuaosp.compose.settingslib.PreferenceRow
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import org.uwuaosp.compose.settingslib.SwitchPreferenceRow
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DragIndicator
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 
 @Composable
 internal fun SteamSettingsContent(
@@ -129,17 +139,16 @@ internal fun SteamSettingsContent(
 
     SettingsSection(
         title = stringResource(R.string.settings_steam_service_access_title),
-        supportingText = stringResource(R.string.settings_steam_service_access_description),
-        icon = Icons.Outlined.Language,
     ) {
-        SettingsSwitchRow(
+        SwitchPreferenceRow(
             title = stringResource(R.string.settings_steam_automatic_anti_blocking),
-            supportingText = steamAccessState.summary(),
+            summary = steamAccessState.summary(),
             checked = steamAccessEnabled,
-            icon = Icons.Outlined.Language,
+            iconContent = { SettingsPreferenceIcon(Icons.Outlined.Language) },
+            position = PreferencePosition.Single,
             onCheckedChange = onSteamAccessEnabledChange,
         )
-        SettingsItemDivider()
+        PreferenceGroupSpacer()
         SteamAccessDohEndpointsSetting(
             endpoints = steamAccessDohEndpoints,
             disabledEndpoints = steamAccessDisabledDohEndpoints,
@@ -165,8 +174,6 @@ internal fun SteamSettingsContent(
 
     SettingsSection(
         title = stringResource(R.string.settings_workshop_data_source_title),
-        supportingText = stringResource(R.string.settings_workshop_data_source_description),
-        icon = Icons.Outlined.Language,
     ) {
         SettingChoiceRow(
             title = stringResource(R.string.settings_data_source),
@@ -186,9 +193,6 @@ internal fun SteamSettingsContent(
 
     SettingsSection(
         title = stringResource(R.string.settings_steam_web_api),
-        supportingText =
-            stringResource(R.string.settings_steam_web_api_description),
-        icon = Icons.Outlined.Tune,
     ) {
         Column(
             modifier = Modifier.padding(WallHubSpacing.md),
@@ -231,7 +235,7 @@ internal fun SteamSettingsContent(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.OpenInNew,
+                imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
                     contentDescription = null,
                 )
                 Text(
@@ -771,17 +775,16 @@ internal fun ExperimentalSettingsContent(
 
     SettingsSection(
         title = stringResource(R.string.settings_online_playback_title),
-        supportingText = stringResource(R.string.settings_online_playback_description),
-        icon = Icons.Outlined.PlayArrow,
     ) {
-        SettingsSwitchRow(
+        SwitchPreferenceRow(
             title = stringResource(R.string.settings_steamkit_chunk_streaming),
-            supportingText = stringResource(R.string.settings_steamkit_chunk_streaming_description),
+            summary = stringResource(R.string.settings_steamkit_chunk_streaming_description),
             checked = preferences.onlineChunkPlaybackEnabled,
-            icon = Icons.Outlined.PlayArrow,
+            iconContent = { SettingsPreferenceIcon(Icons.Outlined.PlayArrow) },
+            position = PreferencePosition.Single,
             onCheckedChange = onOnlineChunkPlaybackEnabledChange,
         )
-        SettingsItemDivider()
+        PreferenceGroupSpacer()
         SteamStreamCacheSetting(
             cacheLimitMb = preferences.mediaCacheLimitMb,
             onCacheLimitChange = onOnlineStreamCacheLimitChange,
@@ -790,8 +793,6 @@ internal fun ExperimentalSettingsContent(
 
     SettingsSection(
         title = stringResource(R.string.settings_system_permissions_title),
-        supportingText = stringResource(R.string.settings_system_permissions_description),
-        icon = Icons.Outlined.Notifications,
     ) {
         PreferenceRow(
             title = stringResource(R.string.settings_background_task_notifications),

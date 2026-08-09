@@ -155,7 +155,6 @@
     <string name='settings_steam_no_route'>当前没有可用线路</string>
     <string name='settings_action_check_routes_again'>重新检测线路</string>
     <string name='settings_workshop_data_source_title'>创意工坊数据源</string>
-    <string name='settings_workshop_data_source_description'>为发现、详情与评论选择严格的数据通道</string>
     <string name='settings_data_source'>数据获取源</string>
     <string name='settings_steam_community_html'>Steam Community HTML</string>
     <string name='settings_steam_web_api'>Steam Web API</string>
@@ -163,7 +162,6 @@
     <string name='settings_data_source_community_description'>使用 Steam Community 页面获取公开数据</string>
     <string name='settings_data_source_web_api_description'>发现页需要有效的 Steam API Key</string>
     <string name='settings_data_source_cm_description'>公开发现与详情支持匿名 CM；评论需要登录</string>
-    <string name='settings_steam_web_api_description'>供 Web API 数据源与匿名昵称补全使用</string>
     <string name='settings_steam_api_key'>Steam API Key</string>
     <string name='settings_action_hide_api_key'>隐藏 API Key</string>
     <string name='settings_action_show_api_key'>显示 API Key</string>
@@ -195,11 +193,9 @@
     <string name='settings_experimental_notice_title'>实验功能可能改变网络与播放行为</string>
     <string name='settings_experimental_notice_description'>遇到稳定性问题时，可关闭相关开关恢复默认流程。</string>
     <string name='settings_online_playback_title'>在线播放</string>
-    <string name='settings_online_playback_description'>控制 Steam 分块播放及本地缓存</string>
     <string name='settings_steamkit_chunk_streaming'>SteamKit 在线分块播放</string>
     <string name='settings_steamkit_chunk_streaming_description'>开启后直接从 Steam 分块播放；关闭后先下载再播放</string>
     <string name='settings_system_permissions_title'>系统权限</string>
-    <string name='settings_system_permissions_description'>管理后台任务需要的 Android 权限</string>
     <string name='settings_background_task_notifications'>后台任务通知</string>
     <string name='settings_background_task_notifications_description'>用于显示下载、转换和导出的实时进度</string>
     <string name='settings_action_allow_background_notifications'>允许后台通知</string>

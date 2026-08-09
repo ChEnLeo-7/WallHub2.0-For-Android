@@ -18,7 +18,10 @@ import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopType
 import java.util.Locale
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.PlayArrow
 
 internal fun <T> Set<T>.toggleBounded(value: T, allOptions: Set<T>): Set<T> {
     val current = if (isEmpty() || this == allOptions) allOptions else this
@@ -113,7 +116,7 @@ internal fun HomeCardAction.icon() =
     when (this) {
         HomeCardAction.DOWNLOAD -> Icons.Outlined.Download
         HomeCardAction.PLAY_VIDEO -> Icons.Outlined.PlayArrow
-        HomeCardAction.OPEN_STEAM -> Icons.Outlined.OpenInNew
+        HomeCardAction.OPEN_STEAM -> Icons.AutoMirrored.Outlined.OpenInNew
     }
 
 internal fun formatCompact(value: Long): String {

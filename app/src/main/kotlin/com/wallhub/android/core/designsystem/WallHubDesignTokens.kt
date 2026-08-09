@@ -46,7 +46,6 @@ object WallHubShapeTokens {
 
 object WallHubSizeTokens {
     val minimumTouchTarget: Dp = 48.dp
-    val icon: Dp = 24.dp
     val compactIcon: Dp = 18.dp
     val smallIcon: Dp = 20.dp
     val compactActionHeight: Dp = 40.dp

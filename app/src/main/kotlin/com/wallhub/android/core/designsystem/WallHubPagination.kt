@@ -2,6 +2,9 @@
 
 package com.wallhub.android.core.designsystem
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Edit
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -354,7 +357,7 @@ private fun PaginationTextButton(
                     )
                     if (text == null) {
                         Icon(
-                            imageVector = WallHubIcons.Outlined.Edit,
+                            imageVector = Icons.Outlined.Edit,
                             contentDescription = null,
                             modifier = Modifier.height(18.dp),
                         )

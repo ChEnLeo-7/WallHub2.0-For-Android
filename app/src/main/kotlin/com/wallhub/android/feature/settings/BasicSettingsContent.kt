@@ -9,7 +9,9 @@ import org.uwuaosp.compose.settingslib.PreferencePosition
 import org.uwuaosp.compose.settingslib.PreferenceRow
 import org.uwuaosp.compose.settingslib.SwitchPreferenceRow
 import org.uwuaosp.compose.settingslib.SettingsCategory as UwuSettingsCategory
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.Visibility
 
 @Composable
 internal fun BasicSettingsContent(

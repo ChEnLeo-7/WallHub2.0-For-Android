@@ -107,7 +107,26 @@ import kotlinx.coroutines.flow.collect
 import org.uwuaosp.compose.settingslib.SettingsToolbarActionButton
 import org.uwuaosp.compose.settingslib.SettingsAppBarScaffold
 import java.io.File
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.automirrored.outlined.ViewList
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -355,7 +374,6 @@ private fun LocalWallpaperScreen(
                         placeholder = stringResource(R.string.local_search_placeholder),
                         onQueryChanged = onSearchQueryChanged,
                         onSubmit = onRefresh,
-                        onClear = { onSearchQueryChanged("") },
                         onExpand = { searchToolbarExpanded = true },
                         onCollapse = { searchToolbarExpanded = false },
                     )
@@ -1425,7 +1443,7 @@ private fun ResourcePrimaryActionButton(
                 if (resource.format == LocalWallpaperFormat.MPKG) {
                     Icons.Outlined.PhoneAndroid
                 } else {
-                    Icons.Outlined.OpenInNew
+                    Icons.AutoMirrored.Outlined.OpenInNew
                 },
             contentDescription = null,
         )
@@ -1728,7 +1746,7 @@ private fun shareableUri(
 
 private fun LocalWallpaperViewMode.icon(): androidx.compose.ui.graphics.vector.ImageVector =
     when (this) {
-        LocalWallpaperViewMode.LIST -> Icons.Outlined.ViewList
+        LocalWallpaperViewMode.LIST -> Icons.AutoMirrored.Outlined.ViewList
         LocalWallpaperViewMode.GRID -> Icons.Outlined.GridView
         LocalWallpaperViewMode.DETAIL -> Icons.Outlined.Info
     }
@@ -1758,7 +1776,7 @@ private fun LocalWallpaperFormat.icon(): androidx.compose.ui.graphics.vector.Ima
         -> Icons.Outlined.FolderOpen
 
         LocalWallpaperFormat.VIDEO -> Icons.Outlined.PlayArrow
-        LocalWallpaperFormat.HTML -> Icons.Outlined.OpenInNew
+        LocalWallpaperFormat.HTML -> Icons.AutoMirrored.Outlined.OpenInNew
         LocalWallpaperFormat.UNKNOWN -> Icons.Outlined.Info
     }
 

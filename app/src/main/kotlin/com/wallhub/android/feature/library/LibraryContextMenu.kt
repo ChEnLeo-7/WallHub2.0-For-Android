@@ -65,7 +65,12 @@ import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.designsystem.WallHubContextMenuAction as LibraryContextMenuAction
 import com.wallhub.android.core.designsystem.WallHubContextMenuMetadataItem as LibraryContextMenuMetadataItem
 import com.wallhub.android.core.designsystem.WallHubContextMenuPositionProvider as LibraryContextMenuPositionProvider
-import com.wallhub.android.core.designsystem.WallHubIcons as Icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.PlayArrow
 
 internal typealias LibraryContextMenuCoordinator = WallHubContextMenuState
 internal typealias LibraryContextMenuTarget = WallHubContextMenuTarget
@@ -341,7 +346,7 @@ internal fun LibraryContextMenuCard(
                     }
                     LibraryContextMenuAction(
                         text = stringResource(R.string.library_open_in_steam),
-                        icon = Icons.Outlined.OpenInNew,
+                            icon = Icons.AutoMirrored.Outlined.OpenInNew,
                         onClick = {
                             dismissMenu()
                             onOpenSteam()
