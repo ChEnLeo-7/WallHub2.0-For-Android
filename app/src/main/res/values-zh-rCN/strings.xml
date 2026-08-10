@@ -67,6 +67,7 @@
     <string name='settings_legacy_proxy_confirmation_description'>已保留旧版代理地址，但不会自动启用。请确认地址后再开启代理。</string>
     <string name='settings_use_network_proxy'>使用网络代理</string>
     <string name='settings_use_network_proxy_description'>下载、在线播放和 Steam CM 登录使用此地址；失败时不会切换其他代理</string>
+    <string name='settings_proxy_unsaved_changes'>启用代理前请先保存修改后的代理地址</string>
     <string name='settings_proxy_field_label'>HTTP(S) / SOCKS5 代理</string>
     <string name='settings_action_save_proxy_settings'>保存代理设置</string>
     <string name='settings_theme_title'>主题</string>
@@ -163,12 +164,13 @@
     <string name='settings_steam_api_key'>Steam API Key</string>
     <string name='settings_action_hide_api_key'>隐藏 API Key</string>
     <string name='settings_action_show_api_key'>显示 API Key</string>
-    <string name='settings_action_get_steam_api_key'>获取 Steam API Key</string>
+    <string name='settings_action_get_steam_api_key'>在 Steam 网站获取 API Key</string>
     <string name='settings_action_clear_steam_api_key'>清除 Steam API Key</string>
     <string name='settings_action_save_steam_api_key'>保存 Steam API Key</string>
     <string name='settings_error_open_steam_api_key_page'>无法打开 Steam API Key 页面</string>
     <string name='settings_doh_urls'>DoH 地址</string>
-    <string name='settings_doh_enabled_summary'>已启用 %1$d/%2$d，拖动可调整优先级</string>
+    <string name='settings_doh_routes'>DoH 线路</string>
+    <string name='settings_doh_enabled_summary'>已启用 %1$d/%2$d；点击编辑，拖动调整优先级</string>
     <string name='settings_error_invalid_doh_url'>请输入有效的 HTTPS DoH 地址</string>
     <string name='settings_error_duplicate_doh_url'>此 DoH 地址已在列表中</string>
     <string name='settings_error_doh_url_limit'>最多可配置 %1$d 个 DoH 地址</string>
@@ -196,6 +198,7 @@
     <string name='settings_system_permissions_title'>系统权限</string>
     <string name='settings_background_task_notifications'>后台任务通知</string>
     <string name='settings_background_task_notifications_description'>用于显示下载、转换和导出的实时进度</string>
+    <string name='settings_background_task_notifications_granted'>已允许；点击管理通知权限</string>
     <string name='settings_action_allow_background_notifications'>允许后台通知</string>
     <string name='settings_steam_login_title'>Steam 登录</string>
     <string name='settings_steam_username'>Steam 用户名</string>
@@ -218,6 +221,8 @@
     <string name='settings_error_open_github_repository'>无法打开 GitHub 仓库</string>
     <string name='settings_about_latest_version'>最新 %1$s · %2$s · %3$s</string>
     <string name='settings_about_current_version'>当前 %1$s</string>
+    <string name='settings_about_version_check'>检查更新</string>
+    <string name='settings_about_current_version_check'>当前 %1$s；点击检查更新</string>
     <string name='settings_action_check_for_updates'>检查更新</string>
     <string name='settings_about_release_notes'>Release 说明</string>
     <string name='settings_about_release_notes_description'>点击查看完整更新内容</string>

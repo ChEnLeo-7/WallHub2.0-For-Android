@@ -203,8 +203,8 @@ internal fun AboutWallHubPreferences(
     }
     Spacer(modifier = Modifier.height(WallHubSpacing.sm))
     PreferenceRow(
-        title = stringResource(R.string.settings_about_version),
-        summary = stringResource(R.string.settings_about_current_version, installed.versionName),
+        title = stringResource(R.string.settings_about_version_check),
+        summary = stringResource(R.string.settings_about_current_version_check, installed.versionName),
         icon = Icons.Outlined.Refresh,
         position = PreferencePosition.Top,
         enabled = appUpdateState.phase != AppUpdatePhase.DOWNLOADING,
@@ -216,7 +216,7 @@ internal fun AboutWallHubPreferences(
         summary = formatAppUpdateDate(installed.lastUpdateTimeMillis),
         icon = Icons.Outlined.Schedule,
         position = PreferencePosition.Middle,
-        onClick = {},
+        onClick = null,
     )
     PreferenceGroupSpacer()
     PreferenceRow(

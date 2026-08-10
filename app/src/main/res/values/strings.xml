@@ -78,6 +78,7 @@
          Downloads, online playback, and Steam CM login use this address;
         failures do not switch proxies
     </string>
+    <string name='settings_proxy_unsaved_changes'>Save the edited proxy address before enabling it</string>
     <string name='settings_proxy_field_label'>HTTP(S) / SOCKS5 proxy</string>
     <string name='settings_action_save_proxy_settings'>Save proxy settings</string>
     <string name='settings_theme_title'>Theme</string>
@@ -175,12 +176,13 @@
     <string name='settings_steam_api_key'>Steam API Key</string>
     <string name='settings_action_hide_api_key'>Hide API key</string>
     <string name='settings_action_show_api_key'>Show API key</string>
-    <string name='settings_action_get_steam_api_key'>Get Steam API Key</string>
+    <string name='settings_action_get_steam_api_key'>Get an API Key on Steam</string>
     <string name='settings_action_clear_steam_api_key'>Clear Steam API Key</string>
     <string name='settings_action_save_steam_api_key'>Save Steam API Key</string>
     <string name='settings_error_open_steam_api_key_page'>Unable to open the Steam API key page</string>
     <string name='settings_doh_urls'>DoH URLs</string>
-    <string name='settings_doh_enabled_summary' tools:ignore='PluralsCandidate'>%1$d/%2$d enabled; drag to change priority</string>
+    <string name='settings_doh_routes'>DoH routes</string>
+    <string name='settings_doh_enabled_summary' tools:ignore='PluralsCandidate'>%1$d/%2$d enabled; tap to edit, drag to change priority</string>
     <string name='settings_error_invalid_doh_url'>Enter a valid HTTPS DoH URL</string>
     <string name='settings_error_duplicate_doh_url'>This DoH URL is already in the list</string>
     <string name='settings_error_doh_url_limit'>Up to %1$d DoH URLs are supported</string>
@@ -211,6 +213,7 @@
     <string name='settings_system_permissions_title'>System permissions</string>
     <string name='settings_background_task_notifications'>Background task notifications</string>
     <string name='settings_background_task_notifications_description'>Shows live progress for downloads, conversion, and export</string>
+    <string name='settings_background_task_notifications_granted'>Allowed; tap to manage notification permission</string>
     <string name='settings_action_allow_background_notifications'>Allow background notifications</string>
     <string name='settings_steam_login_title'>Steam sign-in</string>
     <string name='settings_steam_username'>Steam username</string>
@@ -236,6 +239,8 @@
     <string name='settings_error_open_github_repository'>Unable to open the GitHub repository</string>
     <string name='settings_about_latest_version'>Latest %1$s · %2$s · %3$s</string>
     <string name='settings_about_current_version'>Current %1$s</string>
+    <string name='settings_about_version_check'>Check for updates</string>
+    <string name='settings_about_current_version_check'>Current %1$s; tap to check for updates</string>
     <string name='settings_action_check_for_updates'>Check for updates</string>
     <string name='settings_about_release_notes'>Release notes</string>
     <string name='settings_about_release_notes_description'>Open the complete update notes</string>
