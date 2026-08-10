@@ -18,13 +18,14 @@ import androidx.compose.material.icons.outlined.Visibility
 internal fun BasicSettingsContent(
     matureContentEnabled: Boolean,
     diagnosticExportState: DiagnosticExportUiState,
+    notificationsGranted: Boolean,
     onMatureContentEnabledChange: (Boolean) -> Unit,
     onExportDiagnostics: () -> Unit,
     onRequestNotifications: () -> Unit,
 ) {
     UwuSettingsCategory(title = stringResource(R.string.settings_diagnostics_title))
     PreferenceRow(
-        title = stringResource(R.string.settings_diagnostic_log),
+        title = stringResource(R.string.settings_action_export_diagnostic_log),
         summary =
             if (diagnosticExportState.isExporting) {
                 stringResource(R.string.settings_diagnostic_exporting)
@@ -57,7 +58,13 @@ internal fun BasicSettingsContent(
     UwuSettingsCategory(title = stringResource(R.string.settings_system_permissions_title))
     PreferenceRow(
         title = stringResource(R.string.settings_background_task_notifications),
-        summary = stringResource(R.string.settings_background_task_notifications_description),
+        summary = stringResource(
+            if (notificationsGranted) {
+                R.string.settings_background_task_notifications_granted
+            } else {
+                R.string.settings_background_task_notifications_description
+            },
+        ),
         position = PreferencePosition.Single,
         iconContent = { SettingsPreferenceIcon(Icons.Outlined.Notifications) },
         onClick = onRequestNotifications,

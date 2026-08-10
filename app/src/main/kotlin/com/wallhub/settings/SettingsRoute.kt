@@ -39,6 +39,15 @@ fun SettingsRoute(
     val diagnosticExportState by viewModel.diagnosticExportState.collectAsStateWithLifecycle()
     val appUpdateState by viewModel.appUpdateState.collectAsStateWithLifecycle()
     val steamAccessState by viewModel.steamAccessState.collectAsStateWithLifecycle()
+    var notificationsGranted by rememberSaveable {
+        mutableStateOf(
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) == PackageManager.PERMISSION_GRANTED,
+        )
+    }
     val toastState = LocalWallHubToastState.current
     val outputDirectoryLauncher =
         rememberLauncherForActivityResult(
@@ -70,7 +79,7 @@ fun SettingsRoute(
     val notificationLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission(),
-        ) { }
+        ) { granted -> notificationsGranted = granted }
     val diagnosticExportLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.CreateDocument("text/plain"),
@@ -184,6 +193,7 @@ fun SettingsRoute(
         steamAccessState = steamAccessState,
         session = session,
         diagnosticExportState = diagnosticExportState,
+        notificationsGranted = notificationsGranted,
         appUpdateState = appUpdateState,
         onBack = onBack,
         onAction = viewModel::onAction,
