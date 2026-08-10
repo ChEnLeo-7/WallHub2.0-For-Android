@@ -83,6 +83,7 @@ import org.uwuaosp.compose.settingslib.PreferenceGroupSpacer
 import org.uwuaosp.compose.settingslib.PreferencePosition
 import org.uwuaosp.compose.settingslib.PreferenceRow
 import org.uwuaosp.compose.settingslib.SwitchPreferenceRow
+import org.uwuaosp.compose.settingslib.CustomPreferenceRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Add
@@ -188,73 +189,83 @@ internal fun SteamSettingsContent(
             },
             onSelected = onSteamWorkshopDataSourceChange,
             icon = Icons.Outlined.Language,
+            position =
+                if (steamWorkshopDataSource == SteamWorkshopDataSource.WEB_API) {
+                    PreferencePosition.Top
+                } else {
+                    PreferencePosition.Single
+                },
         )
-    }
-
-    SettingsSection(
-        title = stringResource(R.string.settings_steam_web_api),
-    ) {
-        Column(
-            modifier = Modifier.padding(WallHubSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
-        ) {
-            SettingsFilledTextField(
-                value = apiKey,
-                onValueChange = onApiKeyChanged,
-                label = { Text(stringResource(R.string.settings_steam_api_key)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
-                visualTransformation =
-                    if (apiKeyVisible) {
-                        VisualTransformation.None
-                    } else {
-                        PasswordVisualTransformation()
-                    },
-                trailingIcon = {
-                    IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+        if (steamWorkshopDataSource == SteamWorkshopDataSource.WEB_API) {
+            PreferenceGroupSpacer()
+            CustomPreferenceRow(position = PreferencePosition.Bottom) {
+                Column(
+                    modifier = Modifier.weight(1f).padding(vertical = WallHubSpacing.md),
+                    verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_steam_api_key),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    SettingsFilledTextField(
+                        value = apiKey,
+                        onValueChange = onApiKeyChanged,
+                        placeholder = { Text(stringResource(R.string.settings_steam_api_key)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        visualTransformation =
+                            if (apiKeyVisible) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation()
+                            },
+                        trailingIcon = {
+                            IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+                                Icon(
+                                    imageVector =
+                                        if (apiKeyVisible) {
+                                            Icons.Outlined.VisibilityOff
+                                        } else {
+                                            Icons.Outlined.Visibility
+                                        },
+                                    contentDescription =
+                                        if (apiKeyVisible) {
+                                            stringResource(R.string.settings_action_hide_api_key)
+                                        } else {
+                                            stringResource(R.string.settings_action_show_api_key)
+                                        },
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    FilledTonalButton(
+                        onClick = onOpenApiKeyPage,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
                         Icon(
-                            imageVector =
-                                if (apiKeyVisible) {
-                                    Icons.Outlined.VisibilityOff
-                                } else {
-                                    Icons.Outlined.Visibility
-                                },
-                            contentDescription =
-                                if (apiKeyVisible) {
-                                    stringResource(R.string.settings_action_hide_api_key)
-                                } else {
-                                    stringResource(R.string.settings_action_show_api_key)
-                                },
+                            imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
+                            contentDescription = null,
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_action_get_steam_api_key),
+                            modifier = Modifier.padding(start = WallHubSpacing.xs),
                         )
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            FilledTonalButton(
-                onClick = onOpenApiKeyPage,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
-                    contentDescription = null,
-                )
-                Text(
-                    text = stringResource(R.string.settings_action_get_steam_api_key),
-                    modifier = Modifier.padding(start = WallHubSpacing.xs),
-                )
-            }
-            Button(
-                onClick = onSaveApiKey,
-                enabled = apiKeyChanged,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    if (apiKey.isBlank() && savedApiKey.isNotBlank()) {
-                        stringResource(R.string.settings_action_clear_steam_api_key)
-                    } else {
-                        stringResource(R.string.settings_action_save_steam_api_key)
-                    },
-                )
+                    Button(
+                        onClick = onSaveApiKey,
+                        enabled = apiKeyChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            if (apiKey.isBlank() && savedApiKey.isNotBlank()) {
+                                stringResource(R.string.settings_action_clear_steam_api_key)
+                            } else {
+                                stringResource(R.string.settings_action_save_steam_api_key)
+                            },
+                        )
+                    }
+                }
             }
         }
     }
@@ -321,7 +332,7 @@ internal fun SteamAccessDohEndpointsSetting(
     }
 
     PreferenceRow(
-        title = stringResource(R.string.settings_doh_urls),
+        title = stringResource(R.string.settings_doh_routes),
         summary = stringResource(R.string.settings_doh_enabled_summary, enabledCount, endpoints.size),
         position = PreferencePosition.Single,
         iconContent = { SettingsPreferenceIcon(Icons.Outlined.Tune) },
