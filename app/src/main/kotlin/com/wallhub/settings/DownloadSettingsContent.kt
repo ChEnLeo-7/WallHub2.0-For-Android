@@ -60,7 +60,7 @@ internal fun DownloadSettingsContent(
         summary = preferences.outputDirectoryLabel ?: stringResource(R.string.settings_default_export_directory),
         position = PreferencePosition.Single,
         iconContent = { SettingsPreferenceIcon(Icons.Outlined.FolderOpen) },
-        onClick = onSelectOutputDirectory,
+        onClick = null,
     )
     SettingsActionArea {
             FilledTonalButton(
@@ -136,7 +136,12 @@ internal fun DownloadSettingsContent(
         }
         SwitchPreferenceRow(
             title = stringResource(R.string.settings_use_network_proxy),
-            summary = stringResource(R.string.settings_use_network_proxy_description),
+            summary =
+                if (proxyUrl != preferences.downloadProxyUrl) {
+                    stringResource(R.string.settings_proxy_unsaved_changes)
+                } else {
+                    stringResource(R.string.settings_use_network_proxy_description)
+                },
             checked = preferences.downloadProxyEnabled,
             enabled = isSupportedDownloadProxyUrl(preferences.downloadProxyUrl),
             onCheckedChange = onDownloadProxyEnabledChange,
