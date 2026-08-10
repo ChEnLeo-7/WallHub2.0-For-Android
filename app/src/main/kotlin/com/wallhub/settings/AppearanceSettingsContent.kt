@@ -242,6 +242,13 @@ internal fun AppearanceSettingsContent(
                 onApplyCustom = {
                     onAccentChange(AccentPreference.CUSTOM, customAccentColor)
                 },
+                enabled = !preferences.useSystemMonet,
+                displayValue =
+                    if (preferences.useSystemMonet) {
+                        stringResource(R.string.settings_system_dynamic_color)
+                    } else {
+                        null
+                    },
                 position = PreferencePosition.Bottom,
             )
 
@@ -669,16 +676,19 @@ internal fun AccentPreferenceChoiceRow(
     onCustomColorChanged: (String) -> Unit,
     onApplyCustom: () -> Unit,
     position: PreferencePosition = PreferencePosition.Single,
+    enabled: Boolean = true,
+    displayValue: String? = null,
 ) {
     var menuVisible by rememberSaveable { mutableStateOf(false) }
     var customSheetVisible by rememberSaveable { mutableStateOf(false) }
     PreferenceRow(
         title = title,
+        enabled = enabled,
         position = position,
         iconContent = { SettingsPreferenceIcon(Icons.Outlined.Palette) },
         trailingContent = {
             ExposedPreferenceDropdown(
-                value = selectedValue.label(),
+                value = displayValue ?: selectedValue.label(),
                 expanded = menuVisible,
                 onExpandedChange = { menuVisible = it },
             ) {
