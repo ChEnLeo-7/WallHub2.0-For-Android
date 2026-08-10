@@ -68,7 +68,7 @@ fun PreferenceRow(
     trailingContent: (@Composable RowScope.() -> Unit)? = null,
     position: PreferencePosition = PreferencePosition.Single,
     showSummary: Boolean = true,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)? = null,
 ) {
     PreferenceSurface(
         modifier = modifier,
