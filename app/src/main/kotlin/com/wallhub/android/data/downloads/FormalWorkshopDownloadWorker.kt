@@ -15,6 +15,7 @@ import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.database.FormalTaskRecordEntity
 import com.wallhub.android.core.format.formatByteSize
 import com.wallhub.android.core.model.DownloadAction
+import com.wallhub.android.core.model.DownloadCredentialMode
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamContentCredentialProvider
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
@@ -127,95 +129,121 @@ class FormalWorkshopDownloadWorker
                 var stagingDirectory: File? = null
                 try {
                     setForeground(createForegroundInfo())
-                    task =
-                        persist(
-                            task,
-                            status = DownloadStatus.RESOLVING,
-                            message = applicationContext.getString(R.string.backend_download_reading_workshop_details),
-                        )
                     val downloadPreferences = settingsRepository.preferences.first()
-                    val activeProxyUrl =
-                        downloadPreferences.downloadProxyUrl
-                            .takeIf { downloadPreferences.downloadProxyEnabled }
-                            .orEmpty()
-                    val target =
-                        steamWorkshopContentClient.fetchContentTarget(
-                            publishedFileId = task.workshopId,
-                            proxyUrl = activeProxyUrl,
-                        )
-                    val credential = credentialProvider.loadContentCredential()
-                    if (
-                        !task.accountName.isNullOrBlank() &&
-                        !task.accountName.equals(credential?.accountName, ignoreCase = true)
-                    ) {
-                        persist(
-                            task,
-                            status = DownloadStatus.PAUSED,
-                            requestedAction = null,
-                            message = applicationContext.getString(R.string.backend_download_switch_account, task.accountName),
-                        )
-                        return@withContext Result.success()
-                    }
-                    val sessionLabel =
-                        credential?.let {
-                            applicationContext.getString(R.string.backend_steam_signed_in_account, it.accountName)
-                        } ?: applicationContext.getString(R.string.backend_steam_anonymous_account)
-                    val persistentRoot = File(applicationContext.filesDir, WORKSHOP_STAGING_DIRECTORY_NAME).canonicalFile
-                    val legacyRoot = File(applicationContext.cacheDir, WORKSHOP_STAGING_DIRECTORY_NAME).canonicalFile
-                    val resolvedDirectory =
-                        resolveWorkshopStagingDirectory(
-                            persistentRoot = persistentRoot,
-                            legacyRoot = legacyRoot,
-                            taskId = taskId,
-                            persistedDirectory = task.stagingDirectory,
-                        )
-                    stagingDirectory = resolvedDirectory
-                    check(isManagedWorkshopStagingDirectory(persistentRoot, legacyRoot, resolvedDirectory)) {
-                        "Invalid Steam download staging directory"
-                    }
-                    val manifestChanged =
-                        task.contentManifestId > 0L &&
-                            task.contentManifestId != target.contentManifestId
-                    if (manifestChanged && resolvedDirectory.exists()) {
-                        resolvedDirectory.deleteRecursively()
-                    }
-                    check(resolvedDirectory.exists() || resolvedDirectory.mkdirs()) {
-                        "Failed to create Workshop download staging directory"
-                    }
-                    check(resolvedDirectory.isDirectory) { "Workshop download staging path is not a directory" }
                     task =
                         persist(
                             task,
-                            title = target.title,
-                            type = target.contentTypeHint.toWorkshopType().name,
-                            appId = target.appId,
-                            contentManifestId = target.contentManifestId,
-                            stagingDirectory = resolvedDirectory.absolutePath,
-                            totalBytes = target.expectedSize,
-                            status = DownloadStatus.RESOLVING,
-                            message =
-                                applicationContext.getString(
-                                    R.string.backend_download_resolved_connecting,
-                                    target.title,
-                                    sessionLabel,
-                                ),
+                            status = DownloadStatus.QUEUED,
+                            message = applicationContext.getString(R.string.backend_download_queued),
                         )
-
-                    var previousPhase: SteamDownloadPhase? = null
-                    var lastPersistedAt = 0L
-                    var lastSpeedAt = System.currentTimeMillis()
-                    var lastSpeedBytes = task.downloadedBytes
-                    val controlProbe = TaskControlProbe(taskDao, taskId)
-                    val download =
-                        downloadConcurrencyGovernor.withSlot(
-                            taskId = taskId,
-                            priority = task.queuePosition,
-                            limit = downloadPreferences.maxConcurrentDownloads,
+                    downloadConcurrencyGovernor.withSlot(
+                        taskId = taskId,
+                        priority = task.queuePosition,
+                        limit = downloadPreferences.maxConcurrentDownloads,
+                    ) {
+                        task =
+                            persist(
+                                task,
+                                status = DownloadStatus.RESOLVING,
+                                message = applicationContext.getString(R.string.backend_download_reading_workshop_details),
+                            )
+                        val activeProxyUrl =
+                            downloadPreferences.downloadProxyUrl
+                                .takeIf { downloadPreferences.downloadProxyEnabled }
+                                .orEmpty()
+                        val target =
+                            steamWorkshopContentClient.fetchContentTarget(
+                                publishedFileId = task.workshopId,
+                                proxyUrl = activeProxyUrl,
+                            )
+                        val credential = credentialProvider.resolveContentCredential()
+                        if (task.credentialMode == DownloadCredentialMode.LEGACY_UNKNOWN.name) {
+                            persist(
+                                task,
+                                status = DownloadStatus.PAUSED,
+                                requestedAction = null,
+                                message = applicationContext.getString(R.string.backend_download_switch_account, "unknown account"),
+                            )
+                            return@withSlot Result.success()
+                        }
+                        if (
+                            task.credentialMode == DownloadCredentialMode.ACCOUNT.name &&
+                            (!task.accountName.isNullOrBlank() &&
+                                !task.accountName.equals(credential?.accountName, ignoreCase = true))
                         ) {
+                            persist(
+                                task,
+                                status = DownloadStatus.PAUSED,
+                                requestedAction = null,
+                                message = applicationContext.getString(R.string.backend_download_switch_account, task.accountName),
+                            )
+                            return@withSlot Result.success()
+                        }
+                        val effectiveCredential = credential
+                        if (effectiveCredential != null && task.credentialMode != DownloadCredentialMode.ACCOUNT.name) {
+                            task =
+                                persist(
+                                    task,
+                                    accountName = effectiveCredential.accountName,
+                                    credentialMode = DownloadCredentialMode.ACCOUNT.name,
+                                    message = applicationContext.getString(R.string.backend_download_resolved_connecting, task.title, effectiveCredential.accountName),
+                                )
+                        }
+                        val sessionLabel =
+                            effectiveCredential?.let {
+                                applicationContext.getString(R.string.backend_steam_signed_in_account, it.accountName)
+                            } ?: applicationContext.getString(R.string.backend_steam_anonymous_account)
+                        val persistentRoot = File(applicationContext.filesDir, WORKSHOP_STAGING_DIRECTORY_NAME).canonicalFile
+                        val legacyRoot = File(applicationContext.cacheDir, WORKSHOP_STAGING_DIRECTORY_NAME).canonicalFile
+                        val resolvedDirectory =
+                            resolveWorkshopStagingDirectory(
+                                persistentRoot = persistentRoot,
+                                legacyRoot = legacyRoot,
+                                taskId = taskId,
+                                persistedDirectory = task.stagingDirectory,
+                            )
+                        stagingDirectory = resolvedDirectory
+                        check(isManagedWorkshopStagingDirectory(persistentRoot, legacyRoot, resolvedDirectory)) {
+                            "Invalid Steam download staging directory"
+                        }
+                        val manifestChanged =
+                            task.contentManifestId > 0L &&
+                                task.contentManifestId != target.contentManifestId
+                        if (manifestChanged && resolvedDirectory.exists()) {
+                            resolvedDirectory.deleteRecursively()
+                        }
+                        check(resolvedDirectory.exists() || resolvedDirectory.mkdirs()) {
+                            "Failed to create Workshop download staging directory"
+                        }
+                        check(resolvedDirectory.isDirectory) { "Workshop download staging path is not a directory" }
+                        task =
+                            persist(
+                                task,
+                                title = target.title,
+                                type = target.contentTypeHint.toWorkshopType().name,
+                                appId = target.appId,
+                                contentManifestId = target.contentManifestId,
+                                stagingDirectory = resolvedDirectory.absolutePath,
+                                totalBytes = target.expectedSize,
+                                status = DownloadStatus.RESOLVING,
+                                message =
+                                    applicationContext.getString(
+                                        R.string.backend_download_resolved_connecting,
+                                        target.title,
+                                        sessionLabel,
+                                    ),
+                            )
+
+                        var previousPhase: SteamDownloadPhase? = null
+                        var lastPersistedAt = 0L
+                        var lastSpeedAt = System.currentTimeMillis()
+                        var lastSpeedBytes = task.downloadedBytes
+                        val controlProbe = TaskControlProbe(taskDao, taskId)
+                        val download =
                             steamWorkshopContentClient.download(
                                 target = target,
                                 destinationDirectory = resolvedDirectory,
-                                credential = credential,
+                                credential = effectiveCredential,
                                 options =
                                     SteamContentDownloadOptions(
                                         chunkConcurrency = downloadPreferences.chunkDownloadConcurrency,
@@ -266,31 +294,57 @@ class FormalWorkshopDownloadWorker
                                     lastPersistedAt = now
                                 }
                             }
-                        }
-                    awaitTaskControl(controlProbe)
-                    val shouldConvertAndExport = true
-                    task =
-                        persist(
-                            task,
-                            status = if (shouldConvertAndExport) DownloadStatus.CONVERTING else DownloadStatus.COMPLETED,
-                            downloadedBytes = download.downloadedBytes,
-                            totalBytes = download.totalBytes,
-                            bytesPerSecond = 0L,
-                            outputLabel = null,
-                            message =
-                                applicationContext.resources.getQuantityString(
-                                    if (download.usedAuthenticatedSession) {
-                                        R.plurals.backend_download_complete_authenticated
-                                    } else {
-                                        R.plurals.backend_download_complete_anonymous
-                                    },
-                                    download.fileCount,
-                                    download.fileCount,
-                                    formatByteSize(download.downloadedBytes),
-                                ),
-                        )
-                    if (shouldConvertAndExport) conversionScheduler.enqueue(taskId)
-                    Result.success()
+                        val dependencyDownload =
+                            downloadPresetDependencies(
+                                sourceDirectory = resolvedDirectory,
+                                rootWorkshopId = task.workshopId,
+                                credential = credential.takeIf { task.credentialMode == DownloadCredentialMode.ACCOUNT.name },
+                                options =
+                                    SteamContentDownloadOptions(
+                                        chunkConcurrency = downloadPreferences.chunkDownloadConcurrency,
+                                        proxyUrl = activeProxyUrl,
+                                    ),
+                                proxyUrl = activeProxyUrl,
+                                control = controlProbe::current,
+                            ) { completedBytes, totalBytes, dependencyTitle ->
+                                val now = System.currentTimeMillis()
+                                if (now - lastPersistedAt >= PROGRESS_PERSIST_INTERVAL_MS || completedBytes >= totalBytes) {
+                                    task =
+                                        persist(
+                                            task,
+                                            status = DownloadStatus.DOWNLOADING,
+                                            downloadedBytes = download.downloadedBytes + completedBytes,
+                                            totalBytes = download.totalBytes + totalBytes,
+                                            bytesPerSecond = 0L,
+                                            message = "正在下载依赖项目：$dependencyTitle",
+                                        )
+                                    lastPersistedAt = now
+                                }
+                            }
+                        awaitTaskControl(controlProbe)
+                        task =
+                            persist(
+                                task,
+                                status = DownloadStatus.CONVERTING,
+                                downloadedBytes = download.downloadedBytes + dependencyDownload.downloadedBytes,
+                                totalBytes = download.totalBytes + dependencyDownload.totalBytes,
+                                bytesPerSecond = 0L,
+                                outputLabel = null,
+                                message =
+                                    applicationContext.resources.getQuantityString(
+                                        if (download.usedAuthenticatedSession) {
+                                            R.plurals.backend_download_complete_authenticated
+                                        } else {
+                                            R.plurals.backend_download_complete_anonymous
+                                        },
+                                        download.fileCount,
+                                        download.fileCount,
+                                        formatByteSize(download.downloadedBytes + dependencyDownload.downloadedBytes),
+                                    ),
+                            )
+                        conversionScheduler.enqueue(taskId)
+                        Result.success()
+                    }
                 } catch (error: SteamDownloadCancelledException) {
                     stagingDirectory?.takeIf(::isManagedStagingDirectory)?.deleteRecursively()
                     persist(
@@ -305,11 +359,29 @@ class FormalWorkshopDownloadWorker
                     )
                     Result.success()
                 } catch (error: CancellationException) {
-                    persist(
-                        task,
-                        status = DownloadStatus.QUEUED,
-                        message = applicationContext.getString(R.string.backend_download_interrupted),
-                    )
+                    withContext(kotlinx.coroutines.NonCancellable) {
+                        val cancellationRequested =
+                            taskDao.find(taskId)?.requestedAction == DownloadAction.CANCEL.name
+                        if (cancellationRequested) {
+                            stagingDirectory?.takeIf(::isManagedStagingDirectory)?.deleteRecursively()
+                            persist(
+                                task,
+                                stagingDirectory = null,
+                                downloadedBytes = 0L,
+                                bytesPerSecond = 0L,
+                                status = DownloadStatus.CANCELLED,
+                                requestedAction = null,
+                                clearRequestedAction = true,
+                                message = applicationContext.getString(R.string.backend_download_cancelled_cleaned),
+                            )
+                        } else {
+                            persist(
+                                task,
+                                status = DownloadStatus.QUEUED,
+                                message = applicationContext.getString(R.string.backend_download_interrupted),
+                            )
+                        }
+                    }
                     throw error
                 } catch (error: Throwable) {
                     Log.e(
@@ -327,6 +399,68 @@ class FormalWorkshopDownloadWorker
                     ActiveFormalWorkshopDownloadWorkers.markInactive(taskId)
                 }
             }
+
+        private suspend fun downloadPresetDependencies(
+            sourceDirectory: File,
+            rootWorkshopId: Long,
+            credential: com.wallhub.android.core.model.SteamContentCredential?,
+            options: SteamContentDownloadOptions,
+            proxyUrl: String,
+            control: suspend () -> SteamDownloadControl,
+            onProgress: suspend (completedBytes: Long, totalBytes: Long, dependencyTitle: String) -> Unit,
+        ): DependencyDownloadResult {
+            var currentDirectory = sourceDirectory
+            var downloadedBytes = 0L
+            var totalBytes = 0L
+            val visited = linkedSetOf(rootWorkshopId)
+            repeat(MAX_PRESET_DEPENDENCY_DEPTH) {
+                val dependencyId = readPresetDependencyId(currentDirectory) ?: return DependencyDownloadResult(downloadedBytes, totalBytes)
+                check(visited.add(dependencyId)) { "Workshop preset dependency cycle detected: $dependencyId" }
+                val target = steamWorkshopContentClient.fetchContentTarget(dependencyId, proxyUrl)
+                check(target.contentTypeHint.equals("scene", ignoreCase = true)) {
+                    "Workshop preset dependency $dependencyId is not a scene wallpaper"
+                }
+                val dependencyDirectory = resolvePresetDependencyDirectory(currentDirectory, dependencyId)
+                val completedBefore = downloadedBytes
+                val totalBefore = totalBytes
+                val result =
+                    steamWorkshopContentClient.download(
+                        target = target,
+                        destinationDirectory = dependencyDirectory,
+                        credential = credential,
+                        options = options,
+                        control = control,
+                    ) { progress ->
+                        if (progress.phase == SteamDownloadPhase.DOWNLOADING) {
+                            onProgress(
+                                completedBefore + progress.completedBytes,
+                                totalBefore + progress.totalBytes,
+                                target.title,
+                            )
+                        }
+                    }
+                downloadedBytes += result.downloadedBytes
+                totalBytes += result.totalBytes
+                currentDirectory = dependencyDirectory
+            }
+            check(readPresetDependencyId(currentDirectory) == null) {
+                "Workshop preset dependency depth exceeds $MAX_PRESET_DEPENDENCY_DEPTH"
+            }
+            return DependencyDownloadResult(downloadedBytes, totalBytes)
+        }
+
+        private fun readPresetDependencyId(directory: File): Long? {
+            val projectFile = File(directory, "project.json")
+            if (!projectFile.isFile) return null
+            val project = JSONObject(readProjectJson(projectFile))
+            if (!project.has("preset")) return null
+            return project.opt("dependency")
+                ?.toString()
+                ?.trim()
+                ?.toLongOrNull()
+                ?.takeIf { it > 0L }
+                ?: error("Workshop preset has no valid dependency ID")
+        }
 
         private suspend fun awaitTaskControl(controlProbe: TaskControlProbe) {
             while (true) {
@@ -346,6 +480,7 @@ class FormalWorkshopDownloadWorker
             contentManifestId: Long = previous.contentManifestId,
             stagingDirectory: String? = previous.stagingDirectory,
             accountName: String? = previous.accountName,
+            credentialMode: String = previous.credentialMode,
             status: DownloadStatus = previous.status.toDownloadStatus(),
             downloadedBytes: Long = previous.downloadedBytes,
             totalBytes: Long = previous.totalBytes,
@@ -382,6 +517,7 @@ class FormalWorkshopDownloadWorker
                     contentManifestId = contentManifestId,
                     stagingDirectory = stagingDirectory,
                     accountName = accountName,
+                    credentialMode = credentialMode,
                     status = effectiveStatus.name,
                     downloadedBytes = downloadedBytes,
                     totalBytes = totalBytes,
@@ -501,8 +637,27 @@ class FormalWorkshopDownloadWorker
             private const val PROGRESS_PERSIST_INTERVAL_MS = 750L
             private const val CONTROL_POLL_INTERVAL_MS = 300L
             private const val PAUSE_POLL_INTERVAL_MS = 250L
+            private const val MAX_PRESET_DEPENDENCY_DEPTH = 4
         }
     }
+
+private data class DependencyDownloadResult(
+    val downloadedBytes: Long,
+    val totalBytes: Long,
+)
+
+internal fun resolvePresetDependencyDirectory(
+    currentDirectory: File,
+    dependencyId: Long,
+): File {
+    require(dependencyId > 0L) { "Invalid Workshop preset dependency ID" }
+    val dependencyRoot = File(currentDirectory, ".wallhub-dependencies").canonicalFile
+    val dependencyDirectory = File(dependencyRoot, dependencyId.toString()).canonicalFile
+    check(dependencyDirectory.toPath().startsWith(dependencyRoot.toPath())) {
+        "Invalid Workshop preset dependency directory"
+    }
+    return dependencyDirectory
+}
 
 private fun String.toDownloadStatus(): DownloadStatus =
     enumValues<DownloadStatus>()

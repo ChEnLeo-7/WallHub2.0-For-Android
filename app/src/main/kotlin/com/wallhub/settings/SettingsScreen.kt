@@ -53,6 +53,7 @@ fun SettingsScreen(
     diagnosticExportState: DiagnosticExportUiState,
     notificationsGranted: Boolean,
     appUpdateState: AppUpdateUiState,
+    openSteamSignIn: Boolean = false,
     onBack: () -> Unit,
     onAction: (SettingsAction) -> Unit,
 ) {
@@ -101,6 +102,9 @@ fun SettingsScreen(
     val onOnlineStreamCacheLimitChange: (Int) -> Unit = {
         onAction(SettingsAction.OnlineStreamCacheLimitChanged(it))
     }
+    val onClearOnlineStreamCache: () -> Unit = {
+        onAction(SettingsAction.ClearOnlineStreamCache)
+    }
     val onSteamApiKeyChange: (String) -> Unit = { onAction(SettingsAction.SteamApiKeyChanged(it)) }
     val onSteamWorkshopDataSourceChange: (SteamWorkshopDataSource) -> Unit = {
         onAction(SettingsAction.SteamWorkshopDataSourceChanged(it))
@@ -136,7 +140,9 @@ fun SettingsScreen(
         onAction(SettingsAction.OpenExternalUri(uri, failureMessage))
     }
     val onRestartSetupWizard: () -> Unit = { onAction(SettingsAction.RestartSetupWizard) }
-    var selectedPageName by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedPageName by rememberSaveable {
+        mutableStateOf(SettingsCategory.STEAM.name.takeIf { openSteamSignIn })
+    }
     val availableAccents =
         AccentPreference.entries.filter { accent ->
             accent != AccentPreference.MONET
@@ -301,6 +307,7 @@ fun SettingsScreen(
                                 onDownloadPreferencesChange = onDownloadPreferencesChange,
                                 onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
                                 onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
+                                onClearOnlineStreamCache = onClearOnlineStreamCache,
                                 onSteamAccessEnabledChange = onSteamAccessEnabledChange,
                                 onSteamAccessDohEndpointsChange = onSteamAccessDohEndpointsChange,
                                 onSteamWorkshopDataSourceChange = onSteamWorkshopDataSourceChange,
@@ -342,6 +349,7 @@ internal fun SettingsCategoryContent(
     onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit,
     onDownloadProxyEnabledChange: (Boolean) -> Unit,
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
+    onClearOnlineStreamCache: () -> Unit,
     onSteamAccessEnabledChange: (Boolean) -> Unit,
     onSteamAccessDohEndpointsChange: (List<String>, Set<String>) -> Unit,
     onSteamWorkshopDataSourceChange: (SteamWorkshopDataSource) -> Unit,
@@ -382,6 +390,7 @@ internal fun SettingsCategoryContent(
                 onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
                 onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
                 onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
+                onClearOnlineStreamCache = onClearOnlineStreamCache,
             )
 
         SettingsCategory.STEAM ->

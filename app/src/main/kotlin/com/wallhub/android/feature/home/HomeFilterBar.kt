@@ -256,7 +256,7 @@ private fun HomeTypeDropdown(
     itemWidth: Dp,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val isDefault = selected.isEmpty()
+    val isDefault = selected.isEmpty() || selected == typesForFilter
     val value =
         when (selected.size) {
             0 -> null
@@ -274,12 +274,13 @@ private fun HomeTypeDropdown(
         itemWidth = itemWidth,
     ) {
         typesForFilter.forEach { type ->
-            val checked = type in selected
+            val checked = selected.isFilterOptionSelected(type, typesForFilter)
             DropdownMenuItem(
                 text = { Text(type.label()) },
                 leadingIcon = { Checkbox(checked = checked, onCheckedChange = null) },
                 onClick = {
-                    onSelectedSet(if (checked) selected - type else selected + type)
+                    val updated = selected.toggleBounded(type, typesForFilter)
+                    onSelectedSet(updated.takeUnless { it == typesForFilter }.orEmpty())
                 },
             )
         }
@@ -385,7 +386,7 @@ private fun HomeGenreDropdown(
                 else WorkshopFilterCatalog.genres.filter { it.contains(searchQuery, ignoreCase = true) }
             }
             filtered.forEach { genre ->
-                val checked = !isDefault && genre in selected
+                val checked = selected.isFilterOptionSelected(genre, allGenres)
                 DropdownMenuItem(
                     text = { Text(genre.localizedGenre()) },
                     leadingIcon = { Checkbox(checked = checked, onCheckedChange = null) },
@@ -447,7 +448,7 @@ private fun HomeResolutionDropdown(
             }
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             WorkshopFilterCatalog.resolutions.forEach { resolution ->
-                val checked = !isDefault && resolution in selected
+                val checked = selected.isFilterOptionSelected(resolution, allResolutions)
                 DropdownMenuItem(
                     text = { Text(resolution.localizedResolution()) },
                     leadingIcon = { Checkbox(checked = checked, onCheckedChange = null) },
@@ -625,7 +626,7 @@ private fun ExactPhraseRow(
     }
 }
 
-private val typesForFilter = listOf(WorkshopType.SCENE, WorkshopType.VIDEO, WorkshopType.WEB)
+private val typesForFilter = linkedSetOf(WorkshopType.SCENE, WorkshopType.VIDEO, WorkshopType.WEB)
 private val FILTER_BAR_GAP = WallHubSpacing.xs
 private val FILTER_BAR_HORIZONTAL_PADDING = WallHubSpacing.md
 private val FILTER_BAR_CONTENT_PADDING = WallHubSpacing.xs

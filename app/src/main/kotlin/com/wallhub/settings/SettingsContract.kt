@@ -107,6 +107,8 @@ sealed interface SettingsAction {
         val limitMb: Int,
     ) : SettingsAction
 
+    data object ClearOnlineStreamCache : SettingsAction
+
     data class SteamApiKeyChanged(
         val apiKey: String,
     ) : SettingsAction

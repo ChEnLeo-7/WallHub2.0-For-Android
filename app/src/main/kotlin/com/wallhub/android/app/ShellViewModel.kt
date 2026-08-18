@@ -8,6 +8,7 @@ import com.wallhub.android.core.model.DiagnosticLevel
 import com.wallhub.android.core.model.DiagnosticRepository
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionRepository
+import com.wallhub.android.core.model.SteamSessionState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -29,8 +30,9 @@ class ShellViewModel
                 started = SharingStarted.WhileSubscribed(5_000),
                 initialValue = null,
             )
+        val steamSession: StateFlow<SteamSessionState> = steamSessionRepository.session
 
-    init {
+        init {
             steamSessionRepository.restorePersistedSession()
             viewModelScope.launch {
                 runCatching {

@@ -59,11 +59,14 @@ class WorkshopDetailViewModel
         private val workshopId = checkNotNull(savedStateHandle.get<Long>("workshopId"))
         private val mutableState = MutableStateFlow(WorkshopDetailUiState())
         private val effectChannel = Channel<WorkshopDetailEffect>(capacity = Channel.BUFFERED)
+        private val inlinePlaybackStartNoticeGate = PlaybackStartNoticeGate()
         private var inlineVideoLoadJob: Job? = null
         private var commentsLoadJob: Job? = null
 
         val uiState: StateFlow<WorkshopDetailUiState> = mutableState.asStateFlow()
         val effects: Flow<WorkshopDetailEffect> = effectChannel.receiveAsFlow()
+
+        fun consumeInlinePlaybackStartNotice(): Boolean = inlinePlaybackStartNoticeGate.consume()
 
         fun onAction(action: WorkshopDetailAction) {
             action.immediateEffect()?.let(::emitEffect) ?: when (action) {
@@ -213,7 +216,15 @@ class WorkshopDetailViewModel
             }
         }
 
-        fun startInlineVideoPlayback() {
+        fun startInlineVideoPlayback() = startInlineVideoPlayback(0L)
+
+        fun retryInlineVideoPlayback() {
+            val resumePositionMs = mutableState.value.inlineVideoPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
+            stopInlineVideoPlayback()
+            startInlineVideoPlayback(resumePositionMs)
+        }
+
+        private fun startInlineVideoPlayback(resumePositionMs: Long) {
             val current = mutableState.value
             if (
                 current.detail?.summary?.type != WorkshopType.VIDEO ||
@@ -238,6 +249,7 @@ class WorkshopDetailViewModel
                             createSteamChunkPlayer(
                                 context = applicationContext,
                                 stream = openedStream,
+                                startPositionMs = resumePositionMs,
                             )
                         mutableState.value =
                             mutableState.value.copy(

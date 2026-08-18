@@ -28,6 +28,12 @@ enum class ExportFormat {
     ZIP,
 }
 
+enum class DownloadCredentialMode {
+    ANONYMOUS,
+    ACCOUNT,
+    LEGACY_UNKNOWN,
+}
+
 data class DownloadRequest(
     val workshopId: Long,
     val title: String,
@@ -49,6 +55,8 @@ data class DownloadTask(
     val totalBytes: Long = 0L,
     val bytesPerSecond: Long = 0L,
     val accountName: String? = null,
+    val credentialMode: DownloadCredentialMode =
+        if (accountName.isNullOrBlank()) DownloadCredentialMode.LEGACY_UNKNOWN else DownloadCredentialMode.ACCOUNT,
     val message: String? = null,
     val outputLabel: String? = null,
     val stagingDirectory: String? = null,

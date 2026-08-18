@@ -20,6 +20,7 @@ import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
+import com.wallhub.android.core.model.workshopDetailTagSearch
 import com.wallhub.android.core.model.WorkshopPage
 import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopRepository
@@ -373,15 +374,17 @@ class HomeViewModel
                                     pageSize = requestState.pageSize,
                                     searchText = requestState.query,
                                     creatorId = requestState.creatorId,
-                                    tags = requestState.requiredTags,
+                                    tags = requestState.requiredTags + requestState.query.workshopDetailTagSearch(),
                                     types = requestState.selectedTypes,
                                     genres = requestState.selectedGenres.asEffectiveFilter(DEFAULT_HOME_GENRE_SELECTION),
                                     officialTags = requestState.selectedOfficialTags,
+                                    excludedOfficialTags = requestState.selectedExcludedOfficialTags,
                                     resolutions = requestState.selectedResolutions.asEffectiveFilter(DEFAULT_HOME_RESOLUTION_SELECTION),
                                     ratings = requestState.selectedRatings,
                                     days = requestState.days,
                                     exactPhrase = requestState.exactPhrase,
                                     sort = requestState.sort,
+                                    allowNsfw = requestState.matureContentEnabled,
                                 ),
                             )
                         if (version != requestVersion) return@launch

@@ -48,8 +48,9 @@ import java.util.zip.ZipOutputStream
 
 class FormalWorkshopConversionWorker(
     appContext: Context,
-    params: WorkerParameters,
-    private val taskDao: FormalTaskRecordDao,
+        params: WorkerParameters,
+        private val taskDao: FormalTaskRecordDao,
+        private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result =
         withContext(Dispatchers.IO) {
@@ -118,12 +119,19 @@ class FormalWorkshopConversionWorker(
                     FormalWorkshopConversionCancellation.check(taskId)
                 }
                 val conversion =
-                    convert(
-                        task = task,
-                        sourceDirectory = sourceDirectory,
-                        temporaryDirectory = temporaryDirectory,
-                        checkCancellation = checkCancellation,
-                    )
+                    DownloadDiskReservations.withReservation(
+                        destinationDirectory = temporaryDirectory,
+                        pendingBytes = estimateConversionDiskBytes(sourceDirectory),
+                    ) {
+                        downloadConcurrencyGovernor.withConversionSlot {
+                            convert(
+                                task = task,
+                                sourceDirectory = sourceDirectory,
+                                temporaryDirectory = temporaryDirectory,
+                                checkCancellation = checkCancellation,
+                            )
+                        }
+                    }
                 FormalWorkshopConversionCancellation.beginFinalization(taskId)
                 withContext(NonCancellable) {
                     task =
@@ -251,6 +259,19 @@ class FormalWorkshopConversionWorker(
                 )
             }
         }
+    }
+
+    private fun estimateConversionDiskBytes(sourceDirectory: File): Long {
+        var total = 0L
+        sourceDirectory.walkTopDown().filter(File::isFile).forEach { file ->
+            val length = file.length().coerceAtLeast(0L)
+            require(total <= MAX_CONVERSION_OUTPUT_BYTES - length) {
+                "Workshop content exceeds the $MAX_CONVERSION_OUTPUT_BYTES-byte conversion limit"
+            }
+            total += length
+        }
+        require(total <= Long.MAX_VALUE / CONVERSION_DISK_MULTIPLIER) { "Workshop conversion disk estimate overflow" }
+        return total * CONVERSION_DISK_MULTIPLIER
     }
 
     private fun convertWithEngine(
@@ -726,3 +747,6 @@ private fun String.toExportFormat(): ExportFormat =
 private fun String.toDownloadAction(): DownloadAction? =
     enumValues<DownloadAction>()
         .firstOrNull { it.name == this }
+
+private const val MAX_CONVERSION_OUTPUT_BYTES = 4L * 1024L * 1024L * 1024L
+private const val CONVERSION_DISK_MULTIPLIER = 2L

@@ -3,6 +3,7 @@
 package com.wallhub.settings
 
 import android.content.Context
+import android.text.format.Formatter
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wallhub.android.R
@@ -20,6 +21,7 @@ import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
+import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -46,6 +48,7 @@ class SettingsViewModel
         private val diagnosticExportRepository: DiagnosticExportRepository,
         private val steamAccessRepository: SteamAccessRepository,
         private val appUpdateRepository: AppUpdateRepository,
+        private val workshopVideoStreamRepository: WorkshopVideoStreamRepository,
     ) : ViewModel() {
         private val mutableDiagnosticExportState = MutableStateFlow(DiagnosticExportUiState())
         private val mutableAppUpdateState =
@@ -120,6 +123,7 @@ class SettingsViewModel
                     )
                 is SettingsAction.DownloadProxyEnabledChanged -> setDownloadProxyEnabled(action.enabled)
                 is SettingsAction.OnlineStreamCacheLimitChanged -> setOnlineStreamCacheLimitMb(action.limitMb)
+                SettingsAction.ClearOnlineStreamCache -> clearOnlineStreamCache()
                 is SettingsAction.OutputDirectorySelected -> setOutputDirectory(action.treeUri, action.label)
                 SettingsAction.ClearOutputDirectory -> clearOutputDirectory()
                 else -> return false
@@ -237,6 +241,28 @@ class SettingsViewModel
 
         private fun setOnlineStreamCacheLimitMb(limitMb: Int) {
             viewModelScope.launch { settingsRepository.setOnlineStreamCacheLimitMb(limitMb) }
+        }
+
+        private fun clearOnlineStreamCache() {
+            viewModelScope.launch {
+                runCatching { workshopVideoStreamRepository.clearCache() }
+                    .onSuccess { clearedBytes ->
+                        effectChannel.send(
+                            SettingsEffect.ShowMessage(
+                                context.getString(
+                                    R.string.settings_streaming_cache_cleared,
+                                    Formatter.formatFileSize(context, clearedBytes),
+                                ),
+                            ),
+                        )
+                    }.onFailure {
+                        effectChannel.send(
+                            SettingsEffect.ShowMessage(
+                                context.getString(R.string.settings_streaming_cache_clear_failed),
+                            ),
+                        )
+                    }
+            }
         }
 
         private fun setDownloadProxyEnabled(enabled: Boolean) {

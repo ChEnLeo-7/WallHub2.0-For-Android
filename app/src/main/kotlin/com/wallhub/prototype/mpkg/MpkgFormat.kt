@@ -152,6 +152,15 @@ object MpkgWriter {
                     writeIntLe(entry.length.toInt())
                 }
             }
+        val headerBytes = Integer.BYTES.toLong() * 2L + magic.toByteArray(Charsets.US_ASCII).size
+        val outputBytes = headerBytes + table.size.toLong() + offset
+        val parent = outputFile.absoluteFile.parentFile ?: error("Output file has no parent directory")
+        check(parent.exists() || parent.mkdirs()) { "Unable to create MPKG output directory: $parent" }
+        val reserve = MIN_MPKG_FREE_SPACE_BYTES.coerceAtMost(parent.totalSpace / 20L)
+        require(outputBytes <= parent.usableSpace - reserve) {
+            "Insufficient space for MPKG output: need $outputBytes bytes plus $reserve bytes reserve, " +
+                "but only ${parent.usableSpace} bytes are usable"
+        }
         writeAtomically(outputFile) { temporaryFile ->
             BufferedOutputStream(FileOutputStream(temporaryFile)).use { output ->
                 val magicBytes = magic.toByteArray(Charsets.US_ASCII)
@@ -202,3 +211,4 @@ internal fun writeAtomically(
 }
 
 private const val COPY_BUFFER_SIZE = 1024 * 1024
+private const val MIN_MPKG_FREE_SPACE_BYTES = 128L * 1024L * 1024L

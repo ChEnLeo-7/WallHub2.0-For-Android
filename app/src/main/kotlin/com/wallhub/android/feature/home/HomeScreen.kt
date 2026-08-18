@@ -141,6 +141,7 @@ import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopSummary
+import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.WorkshopType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -304,6 +305,36 @@ internal fun HomeScreenBody(
     Box(modifier = Modifier.fillMaxSize()) {
         WallHubPageScaffold(
             title = stringResource(R.string.app_name),
+            titleContent = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.app_name),
+                            style = MaterialTheme.typography.titleLarge,
+                            maxLines = 1,
+                        )
+                        Spacer(modifier = Modifier.width(WallHubSpacing.xs))
+                        Text(
+                            text = state.homeDataSourceLabel(),
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Text(
+                        text = state.homeLoadingSummary(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            },
             showAppBar = onBack == null,
             actions = {
                 HomeViewModeToggle(
@@ -396,6 +427,25 @@ internal fun HomeScreenBody(
             )
         }
     }
+}
+
+@Composable
+private fun HomeUiState.homeDataSourceLabel(): String =
+    when (steamWorkshopDataSource) {
+        SteamWorkshopDataSource.COMMUNITY_HTML -> stringResource(R.string.home_source_community)
+        SteamWorkshopDataSource.WEB_API -> stringResource(R.string.home_source_web_api)
+        SteamWorkshopDataSource.CM_WEBSOCKET -> stringResource(R.string.home_source_steam_cm)
+    }
+
+@Composable
+private fun HomeUiState.homeLoadingSummary(): String {
+    return stringResource(
+        R.string.home_loading_summary,
+        items.size,
+        totalCount ?: items.size,
+        currentPage,
+        totalPages,
+    )
 }
 
 @Composable

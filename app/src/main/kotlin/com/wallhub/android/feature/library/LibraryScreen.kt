@@ -4,6 +4,7 @@ package com.wallhub.android.feature.library
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -96,7 +97,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.wallhub.android.R
-import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubToolbarSearchTitle
@@ -796,7 +796,6 @@ fun LibraryEffectHandler(
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val toast = LocalWallHubToastState.current
     val currentOnOpenDetail by rememberUpdatedState(onOpenDetail)
     val currentOnPlayVideo by rememberUpdatedState(onPlayVideo)
     val currentOnSearchAuthor by rememberUpdatedState(onSearchAuthor)
@@ -810,7 +809,7 @@ fun LibraryEffectHandler(
                 is LibraryEffect.Download -> currentOnDownload(effect.item)
                 is LibraryEffect.CopyText -> {
                     clipboard.setText(AnnotatedString(effect.text))
-                    toast.show(effect.message)
+                    Toast.makeText(context.applicationContext, effect.message, Toast.LENGTH_SHORT).show()
                 }
                 is LibraryEffect.OpenSteam -> {
                     val intent =

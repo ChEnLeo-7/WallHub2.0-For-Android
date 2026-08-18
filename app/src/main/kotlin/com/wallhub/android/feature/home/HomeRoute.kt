@@ -5,6 +5,7 @@ package com.wallhub.android.feature.home
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -16,11 +17,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wallhub.android.R
-import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
 import com.wallhub.android.core.model.WorkshopSummary
 import kotlinx.coroutines.launch
@@ -38,8 +40,11 @@ fun HomeRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val onHomeAction: (HomeAction) -> Unit = { action ->
         if (action == HomeAction.SubmitSearch) {
+            val requestedWorkshopId = state.query.workshopIdOrNull()
             val requestedCreatorId = state.query.creatorIdOrNull()
-            if (requestedCreatorId != null && (onBack == null || state.creatorId != requestedCreatorId)) {
+            if (requestedWorkshopId != null) {
+                viewModel.onAction(HomeAction.OpenDetail(requestedWorkshopId))
+            } else if (requestedCreatorId != null && (onBack == null || state.creatorId != requestedCreatorId)) {
                 viewModel.onAction(HomeAction.RestoreUnsubmittedQuery)
                 viewModel.onAction(HomeAction.SearchAuthor(requestedCreatorId))
             } else {
@@ -71,8 +76,9 @@ fun HomeEffectHandler(
     onSearchAuthor: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
+    val unableToQueueDownload = stringResource(R.string.home_unable_to_queue_download)
     val clipboard = LocalClipboardManager.current
-    val toast = LocalWallHubToastState.current
     val currentOnOpenDetail by rememberUpdatedState(onOpenDetail)
     val currentOnSearchAuthor by rememberUpdatedState(onSearchAuthor)
     var pendingLegacyStorageDownload by remember { mutableStateOf<WorkshopSummary?>(null) }
@@ -84,7 +90,7 @@ fun HomeEffectHandler(
             pendingLegacyStorageDownload = null
             viewModel.onAction(HomeAction.LegacyStoragePermissionResult(pendingItem, granted))
         }
-    LaunchedEffect(viewModel, context) {
+    LaunchedEffect(viewModel, context, resources, unableToQueueDownload) {
         viewModel.effects.collect { effect ->
             when (effect) {
                 is HomeEffect.ResolveLegacyStoragePermission -> {
@@ -103,13 +109,22 @@ fun HomeEffectHandler(
                     }
                 }
                 is HomeEffect.ShowMessage ->
-                    toast.show(context.getString(effect.messageRes, *effect.formatArgs.toTypedArray()))
-                is HomeEffect.ShowMessageText -> toast.show(context.getString(R.string.home_unable_to_queue_download))
+                    Toast.makeText(
+                        context.applicationContext,
+                        resources.getString(effect.messageRes, *effect.formatArgs.toTypedArray()),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                is HomeEffect.ShowMessageText ->
+                    Toast.makeText(context.applicationContext, unableToQueueDownload, Toast.LENGTH_SHORT).show()
                 is HomeEffect.OpenDetail -> currentOnOpenDetail(effect.workshopId)
                 is HomeEffect.SearchAuthor -> currentOnSearchAuthor(effect.creator)
                 is HomeEffect.CopyText -> {
                     clipboard.setText(AnnotatedString(effect.text))
-                    toast.show(context.getString(effect.messageRes))
+                    Toast.makeText(
+                        context.applicationContext,
+                        resources.getString(effect.messageRes),
+                        Toast.LENGTH_SHORT,
+                    ).show()
                 }
                 is HomeEffect.OpenSteam -> {
                     val intent =

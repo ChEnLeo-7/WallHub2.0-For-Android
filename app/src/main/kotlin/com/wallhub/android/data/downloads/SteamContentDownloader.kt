@@ -9,6 +9,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.future.await
@@ -70,78 +72,119 @@ internal enum class SteamStreamChunkPriority {
 }
 
 /**
- * Shares the Steam CDN connection budget without allowing cache warm-up to stall an active
- * player read. One connection is always reserved for foreground work and released permits wake
- * foreground waiters before cache prefetch waiters.
+ * Shares the exact user-configured Steam CDN connection budget. Prefetch may borrow every idle
+ * permit, while released permits always wake foreground reads before additional prefetch work.
  */
 internal class ForegroundFirstPermitPool(
     maxPermits: Int,
 ) {
     private val maxPermits = maxPermits.coerceAtLeast(1)
-    private val reservedForegroundPermits = 1.coerceAtMost(this.maxPermits)
     private val mutex = Mutex()
-    private val foregroundWaiters = ArrayDeque<CompletableDeferred<Unit>>()
-    private val prefetchWaiters = ArrayDeque<CompletableDeferred<Unit>>()
+    private val foregroundWaiters = ArrayDeque<PermitWaiter>()
+    private val prefetchWaiters = ArrayDeque<PermitWaiter>()
+    private val promotedRequests = mutableSetOf<Long>()
     private var availablePermits = this.maxPermits
 
     suspend fun <T> withPermit(
         priority: SteamStreamChunkPriority,
+        requestId: Long? = null,
         block: suspend () -> T,
     ): T {
-        acquire(priority)
+        acquire(priority, requestId)
         try {
             return block()
         } finally {
-            release()
+            withContext(NonCancellable) {
+                release()
+                requestId?.let { id -> mutex.withLock { promotedRequests.remove(id) } }
+            }
         }
     }
 
-    private suspend fun acquire(priority: SteamStreamChunkPriority) {
+    suspend fun promote(requestId: Long) {
+        mutex.withLock {
+            promotedRequests += requestId
+            val waiter = prefetchWaiters.firstOrNull { it.requestId == requestId } ?: return@withLock
+            prefetchWaiters.remove(waiter)
+            foregroundWaiters.addLast(waiter)
+            dispatchWaiterIfPossible()
+        }
+    }
+
+    private suspend fun acquire(
+        priority: SteamStreamChunkPriority,
+        requestId: Long?,
+    ) {
         val waiter =
             mutex.withLock {
+                val effectivePriority =
+                    if (requestId != null && requestId in promotedRequests) {
+                        SteamStreamChunkPriority.FOREGROUND
+                    } else {
+                        priority
+                    }
                 val canAcquire =
-                    when (priority) {
+                    when (effectivePriority) {
                         SteamStreamChunkPriority.FOREGROUND -> availablePermits > 0
                         SteamStreamChunkPriority.PREFETCH ->
-                            foregroundWaiters.isEmpty() && availablePermits > reservedForegroundPermits
+                            foregroundWaiters.isEmpty() && availablePermits > 0
                     }
                 if (canAcquire) {
                     availablePermits -= 1
                     null
                 } else {
-                    CompletableDeferred<Unit>().also { deferred ->
-                        when (priority) {
-                            SteamStreamChunkPriority.FOREGROUND -> foregroundWaiters.addLast(deferred)
-                            SteamStreamChunkPriority.PREFETCH -> prefetchWaiters.addLast(deferred)
+                    PermitWaiter(requestId, CompletableDeferred()).also { queued ->
+                        when (effectivePriority) {
+                            SteamStreamChunkPriority.FOREGROUND -> foregroundWaiters.addLast(queued)
+                            SteamStreamChunkPriority.PREFETCH -> prefetchWaiters.addLast(queued)
                         }
                     }
                 }
             }
         if (waiter == null) return
         try {
-            waiter.await()
+            waiter.signal.await()
         } catch (error: CancellationException) {
-            val removedFromQueue =
-                mutex.withLock {
-                    foregroundWaiters.remove(waiter) || prefetchWaiters.remove(waiter)
-                }
-            if (!removedFromQueue) release()
+            withContext(NonCancellable) {
+                val removedFromQueue =
+                    mutex.withLock {
+                        foregroundWaiters.remove(waiter) || prefetchWaiters.remove(waiter)
+                    }
+                if (!removedFromQueue) release()
+            }
             throw error
         }
     }
 
     private suspend fun release() {
-        val waiter =
-            mutex.withLock {
-                foregroundWaiters.pollFirst()
-                    ?: prefetchWaiters.pollFirst()
-                    ?: run {
-                        availablePermits = min(maxPermits, availablePermits + 1)
-                        null
-                    }
-            }
-        waiter?.complete(Unit)
+        mutex.withLock {
+            availablePermits = min(maxPermits, availablePermits + 1)
+            dispatchWaiterIfPossible()
+        }
     }
+
+    private fun dispatchWaiterIfPossible() {
+        while (availablePermits > 0) {
+            val foreground = foregroundWaiters.pollFirst()
+            if (foreground != null) {
+                if (foreground.signal.complete(Unit)) {
+                    availablePermits -= 1
+                    return
+                }
+                continue
+            }
+            val prefetch = prefetchWaiters.pollFirst() ?: return
+            if (prefetch.signal.complete(Unit)) {
+                availablePermits -= 1
+                return
+            }
+        }
+    }
+
+    private data class PermitWaiter(
+        val requestId: Long?,
+        val signal: CompletableDeferred<Unit>,
+    )
 }
 
 internal fun findVerifiedChunkOffsets(
@@ -173,8 +216,9 @@ internal fun findVerifiedChunkOffsets(
 
 internal data class StreamChunkRequest(
     val id: Long,
-    val priority: SteamStreamChunkPriority,
     val deferred: Deferred<ByteArray>,
+    val job: Job,
+    var priority: SteamStreamChunkPriority,
 )
 
 internal class SteamContentDownloader {
@@ -190,110 +234,161 @@ internal class SteamContentDownloader {
             require(target.appId > 0) { "Invalid Steam App ID" }
             require(target.contentManifestId > 0L) { "Invalid Steam manifest ID" }
             checkDownloadControl(control)
-
-            onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.CONNECTING))
-            val session =
-                openContentSession(credential) {
-                    onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.AUTHENTICATING))
-                }
             val normalizedOptions = options.normalized()
-            val cdnClient = createCdnClient(normalizedOptions)
-            try {
-                checkDownloadControl(control)
-                onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
-                val access = resolveContentAccess(session, target)
-                val selector = CdnServerSelector()
-                Log.i(
-                    STEAM_CONTENT_LOG_TAG,
-                    "Steam CDN chunkConcurrency=${normalizedOptions.chunkConcurrency}, " +
-                        "pool=${access.servers.take(CDN_PARALLEL_SERVER_COUNT).joinToString { server ->
-                            resolveCdnRequestHost(server.vHost, server.host) ?: "unknown"
-                        }}",
-                )
-                val manifest =
-                    downloadManifest(
-                        cdnClient = cdnClient,
-                        servers = access.servers,
-                        depotId = target.depotId,
-                        manifestId = target.contentManifestId,
-                        requestCode = access.manifestRequestCode,
-                        depotKey = access.depotKey,
-                        authTokens = access.authTokens,
-                        control = control,
+            var publishedBytes = 0L
+            var publishedFiles = 0
+            val publishProgress: suspend (SteamDownloadProgress) -> Unit = { progress ->
+                if (progress.phase == SteamDownloadPhase.DOWNLOADING) {
+                    publishedBytes = maxOf(publishedBytes, progress.completedBytes)
+                    publishedFiles = maxOf(publishedFiles, progress.completedFiles)
+                    onProgress(
+                        progress.copy(
+                            completedBytes = publishedBytes,
+                            completedFiles = publishedFiles,
+                        ),
                     )
-                check(!manifest.filenamesEncrypted || manifest.decryptFilenames(access.depotKey)) {
-                    "Failed to decrypt file names in the Steam manifest"
+                } else {
+                    onProgress(progress)
                 }
-
-                destinationDirectory.mkdirs()
-                check(destinationDirectory.isDirectory) { "Failed to create download staging directory" }
-                val files = manifest.files.filterNot { it.flags.contains(EDepotFileFlag.Directory) }
-                val totalBytes =
-                    manifest.totalUncompressedSize.takeIf { it > 0L }
-                        ?: files.sumOf { it.totalSize.coerceAtLeast(0L) }
-                val progressReporter =
-                    DownloadProgressReporter(
-                        totalBytes = totalBytes,
-                        totalFiles = files.size,
-                        onProgress = onProgress,
+            }
+            withSteamCdnRecovery(
+                onRetry = { attempt, error ->
+                    Log.w(
+                        STEAM_CONTENT_LOG_TAG,
+                        "Recoverable Steam CDN failure; rebuilding session after attempt $attempt, " +
+                            "type=${error.cause?.javaClass?.name ?: error.javaClass.name}",
                     )
-                val filePlans =
-                    manifest.files.mapNotNull { manifestFile ->
-                        currentCoroutineContext().ensureActive()
-                        checkDownloadControl(control)
-                        if (
-                            manifestFile.flags.contains(EDepotFileFlag.Directory) &&
-                            (manifestFile.fileName.isBlank() || manifestFile.fileName == ".")
-                        ) {
-                            return@mapNotNull null
-                        }
-                        val destination = WorkshopStagingPath.resolve(destinationDirectory, manifestFile.fileName)
-                        if (manifestFile.flags.contains(EDepotFileFlag.Directory)) {
-                            destination.mkdirs()
-                            check(destination.isDirectory) { "Failed to create directory: ${manifestFile.fileName}" }
-                            return@mapNotNull null
-                        }
-                        check(!manifestFile.flags.contains(EDepotFileFlag.Symlink)) {
-                            "Steam manifest symbolic links are not supported: ${manifestFile.fileName}"
-                        }
-                        ManifestFilePlan(
-                            file = manifestFile,
-                            chunks = orderChunksByOffset(manifestFile.chunks),
-                        )
-                    }
-                downloadFilePlans(
-                    plans = filePlans,
+                },
+            ) {
+                downloadOnce(
+                    target = target,
                     destinationDirectory = destinationDirectory,
+                    credential = credential,
+                    options = normalizedOptions,
+                    control = control,
+                    onProgress = publishProgress,
+                )
+            }
+        }
+
+    private suspend fun downloadOnce(
+        target: WorkshopContentTarget,
+        destinationDirectory: File,
+        credential: SteamContentCredential?,
+        options: SteamContentDownloadOptions,
+        control: suspend () -> SteamDownloadControl,
+        onProgress: suspend (SteamDownloadProgress) -> Unit,
+    ): SteamContentDownloadResult {
+        onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.CONNECTING))
+        val session =
+            openContentSession(credential) {
+                onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.AUTHENTICATING))
+            }
+        val cdnClient = createCdnClient(options)
+        try {
+            checkDownloadControl(control)
+            onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
+            val access = resolveContentAccess(session, target)
+            val selector = CdnServerSelector()
+            Log.i(
+                STEAM_CONTENT_LOG_TAG,
+                "Steam CDN chunkConcurrency=${options.chunkConcurrency}, " +
+                    "pool=${access.servers.take(CDN_PARALLEL_SERVER_COUNT).joinToString { server ->
+                        resolveCdnRequestHost(server.vHost, server.host) ?: "unknown"
+                    }}",
+            )
+            val manifest =
+                downloadManifest(
                     cdnClient = cdnClient,
                     servers = access.servers,
                     depotId = target.depotId,
+                    manifestId = target.contentManifestId,
+                    requestCode = access.manifestRequestCode,
                     depotKey = access.depotKey,
                     authTokens = access.authTokens,
-                    selector = selector,
-                    chunkConcurrency = normalizedOptions.chunkConcurrency,
                     control = control,
-                    progressReporter = progressReporter,
                 )
-                val finalProgress = progressReporter.snapshot()
-
-                SteamContentDownloadResult(
-                    rootDirectory = destinationDirectory,
-                    downloadedBytes = finalProgress.downloadedBytes,
-                    totalBytes = totalBytes,
-                    fileCount = finalProgress.completedFiles,
-                    usedAuthenticatedSession = credential != null,
-                )
-            } finally {
-                runCatching { cdnClient.close() }
-                session.close()
+            check(!manifest.filenamesEncrypted || manifest.decryptFilenames(access.depotKey)) {
+                "Failed to decrypt file names in the Steam manifest"
             }
+            check(manifest.files.size <= MAX_MANIFEST_FILE_COUNT) {
+                "Steam manifest file count ${manifest.files.size} exceeds limit $MAX_MANIFEST_FILE_COUNT"
+            }
+
+            val files = manifest.files.filterNot { it.flags.contains(EDepotFileFlag.Directory) }
+            Log.i(
+                STEAM_CONTENT_LOG_TAG,
+                "Steam manifest files=${manifest.files.size}, downloadable=${files.size}, " +
+                    "totalUncompressed=${manifest.totalUncompressedSize}",
+            )
+            check(files.isNotEmpty()) { "Steam returned an empty Workshop content manifest" }
+            val filePlans =
+                manifest.files.mapNotNull { manifestFile ->
+                    currentCoroutineContext().ensureActive()
+                    checkDownloadControl(control)
+                    if (
+                        manifestFile.flags.contains(EDepotFileFlag.Directory) &&
+                        (manifestFile.fileName.isBlank() || manifestFile.fileName == ".")
+                    ) {
+                        return@mapNotNull null
+                    }
+                    WorkshopStagingPath.resolve(destinationDirectory, manifestFile.fileName)
+                    if (manifestFile.flags.contains(EDepotFileFlag.Directory)) return@mapNotNull null
+                    check(!manifestFile.flags.contains(EDepotFileFlag.Symlink)) {
+                        "Steam manifest symbolic links are not supported: ${manifestFile.fileName}"
+                    }
+                    ManifestFilePlan(
+                        file = manifestFile,
+                        chunks = orderChunksByOffset(manifestFile.chunks),
+                    )
+                }
+            val totalBytes = validateManifestFilePlans(filePlans)
+            destinationDirectory.mkdirs()
+            check(destinationDirectory.isDirectory) { "Failed to create download staging directory" }
+            val progressReporter =
+                DownloadProgressReporter(
+                    totalBytes = totalBytes,
+                    totalFiles = files.size,
+                    onProgress = onProgress,
+                )
+            manifest.files.filter { it.flags.contains(EDepotFileFlag.Directory) }.forEach { directory ->
+                if (directory.fileName.isBlank() || directory.fileName == ".") return@forEach
+                val destination = WorkshopStagingPath.resolve(destinationDirectory, directory.fileName)
+                destination.mkdirs()
+                check(destination.isDirectory) { "Failed to create directory: ${directory.fileName}" }
+            }
+            downloadFilePlans(
+                plans = filePlans,
+                destinationDirectory = destinationDirectory,
+                cdnClient = cdnClient,
+                servers = access.servers,
+                depotId = target.depotId,
+                depotKey = access.depotKey,
+                authTokens = access.authTokens,
+                selector = selector,
+                chunkConcurrency = options.chunkConcurrency,
+                control = control,
+                progressReporter = progressReporter,
+            )
+            val finalProgress = progressReporter.snapshot()
+            return SteamContentDownloadResult(
+                rootDirectory = destinationDirectory,
+                downloadedBytes = finalProgress.downloadedBytes,
+                totalBytes = totalBytes,
+                fileCount = finalProgress.completedFiles,
+                usedAuthenticatedSession = credential != null,
+            )
+        } finally {
+            runCatching { cdnClient.close() }
+            session.close()
         }
+    }
 
     suspend fun openVideoStream(
         target: WorkshopContentTarget,
         credential: SteamContentCredential?,
         options: SteamContentDownloadOptions,
-        cacheDirectory: File,
+        cacheRootDirectory: File,
         cacheLimitBytes: Long,
     ): SteamContentVideoStream =
         withContext(Dispatchers.IO) {
@@ -318,6 +413,10 @@ internal class SteamContentDownloader {
                 check(!manifest.filenamesEncrypted || manifest.decryptFilenames(access.depotKey)) {
                     "Failed to decrypt video file names in the Steam manifest"
                 }
+                check(manifest.files.size <= MAX_MANIFEST_FILE_COUNT) {
+                    "Steam manifest file count ${manifest.files.size} exceeds limit $MAX_MANIFEST_FILE_COUNT"
+                }
+                validateManifestFiles(manifest.files.filterNot { it.flags.contains(EDepotFileFlag.Directory) })
                 val videoFile =
                     manifest.files
                         .asSequence()
@@ -326,15 +425,19 @@ internal class SteamContentDownloader {
                         .filter { it.fileName.videoFileExtension() in VIDEO_FILE_EXTENSIONS }
                         .maxByOrNull(FileData::totalSize)
                         ?: error("No streamable video file found in the Steam depot")
-                cacheDirectory.mkdirs()
-                check(cacheDirectory.isDirectory) { "Failed to create streaming cache directory" }
+                cacheRootDirectory.mkdirs()
+                check(cacheRootDirectory.isDirectory) { "Failed to create streaming cache root directory" }
                 SteamContentVideoStream(
                     title = target.title,
                     fileName = videoFile.fileName,
                     contentLength = videoFile.totalSize,
                     chunks = orderChunksByOffset(videoFile.chunks),
-                    cacheDirectory = cacheDirectory,
-                    cacheLimitBytes = cacheLimitBytes.coerceAtLeast(STREAM_MIN_CACHE_LIMIT_BYTES),
+                    streamCache =
+                        SteamVideoStreamCache(
+                            rootDirectory = cacheRootDirectory,
+                            namespace = "${target.publishedFileId}-${target.contentManifestId}",
+                            limitBytes = cacheLimitBytes.coerceAtLeast(STREAM_MIN_CACHE_LIMIT_BYTES),
+                        ),
                     prefetchConcurrency = steamStreamPrefetchConcurrency(normalizedOptions.chunkConcurrency),
                     cdnClient = cdnClient,
                     session = session,

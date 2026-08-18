@@ -54,7 +54,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -278,7 +277,10 @@ internal fun SteamAccessDohEndpointsSetting(
     disabledEndpoints: Set<String>,
     onSave: (List<String>, Set<String>) -> Unit,
 ) {
-    val context = LocalContext.current
+    val invalidEndpointError = stringResource(R.string.settings_error_invalid_doh_url)
+    val duplicateEndpointError = stringResource(R.string.settings_error_duplicate_doh_url)
+    val endpointLimitError =
+        stringResource(R.string.settings_error_doh_url_limit, STEAM_ACCESS_DOH_ENDPOINT_LIMIT)
     val focusManager = LocalFocusManager.current
     var editorVisible by rememberSaveable { mutableStateOf(false) }
     var confirmDiscardVisible by rememberSaveable { mutableStateOf(false) }
@@ -313,13 +315,13 @@ internal fun SteamAccessDohEndpointsSetting(
         endpointError =
             when {
                 normalized == null ->
-                    context.getString(R.string.settings_error_invalid_doh_url)
+                    invalidEndpointError
 
                 normalized in draftEndpoints ->
-                    context.getString(R.string.settings_error_duplicate_doh_url)
+                    duplicateEndpointError
 
                 draftEndpoints.size >= STEAM_ACCESS_DOH_ENDPOINT_LIMIT ->
-                    context.getString(R.string.settings_error_doh_url_limit, STEAM_ACCESS_DOH_ENDPOINT_LIMIT)
+                    endpointLimitError
 
                 else -> null
             }

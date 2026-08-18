@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Tune
 
 @Composable
@@ -40,6 +41,7 @@ internal fun DownloadSettingsContent(
     onDownloadProxyEnabledChange: (Boolean) -> Unit,
     onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
+    onClearOnlineStreamCache: () -> Unit,
 ) {
     fun saveDownloadPreferences(
         maxDownloads: Int = preferences.maxConcurrentDownloads,
@@ -126,6 +128,21 @@ internal fun DownloadSettingsContent(
         cacheLimitMb = preferences.mediaCacheLimitMb,
         onCacheLimitChange = onOnlineStreamCacheLimitChange,
     )
+    SettingsActionArea {
+        FilledTonalButton(
+            onClick = onClearOnlineStreamCache,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.DeleteSweep,
+                contentDescription = null,
+            )
+            Text(
+                text = stringResource(R.string.settings_clear_streaming_cache),
+                modifier = Modifier.padding(start = WallHubSpacing.xs),
+            )
+        }
+    }
 
     UwuSettingsCategory(title = stringResource(R.string.settings_network_proxy_title))
         if (preferences.downloadProxyRequiresConfirmation) {

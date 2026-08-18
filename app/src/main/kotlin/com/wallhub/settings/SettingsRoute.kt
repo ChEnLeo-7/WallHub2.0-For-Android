@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -18,12 +19,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wallhub.android.R
-import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -31,9 +32,16 @@ import java.io.File
 @Suppress("CyclomaticComplexMethod")
 fun SettingsRoute(
     onBack: () -> Unit,
+    openSteamSignIn: Boolean = false,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
+    val selectedExportDirectory = stringResource(R.string.settings_selected_export_directory)
+    val authorizeExportDirectoryError = stringResource(R.string.settings_error_authorize_export_directory)
+    val verifiedApkMissingError = stringResource(R.string.settings_error_verified_apk_missing)
+    val openAndroidInstallerError = stringResource(R.string.settings_error_open_android_installer)
+    val unknownSourcesPermissionError = stringResource(R.string.settings_error_unknown_sources_permission)
+    val openUnknownSourcesSettingsError = stringResource(R.string.settings_error_open_unknown_sources_settings)
     val preferences by viewModel.preferences.collectAsStateWithLifecycle()
     val session by viewModel.session.collectAsStateWithLifecycle()
     val diagnosticExportState by viewModel.diagnosticExportState.collectAsStateWithLifecycle()
@@ -48,7 +56,6 @@ fun SettingsRoute(
                 ) == PackageManager.PERMISSION_GRANTED,
         )
     }
-    val toastState = LocalWallHubToastState.current
     val outputDirectoryLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.OpenDocumentTree(),
@@ -64,13 +71,13 @@ fun SettingsRoute(
                                     treeUri.lastPathSegment
                                         ?.substringAfterLast(':')
                                         ?.ifBlank { null }
-                                        ?: context.getString(R.string.settings_selected_export_directory),
+                                        ?: selectedExportDirectory,
                             ),
                         )
                     }.onFailure {
                         viewModel.onAction(
                             SettingsAction.SystemActionFailed(
-                                context.getString(R.string.settings_error_authorize_export_directory),
+                                authorizeExportDirectoryError,
                             ),
                         )
                     }
@@ -92,7 +99,7 @@ fun SettingsRoute(
     val launchSystemInstaller: (String) -> Unit = { path ->
         runCatching {
             val apk = File(path)
-            check(apk.isFile) { context.getString(R.string.settings_error_verified_apk_missing) }
+            check(apk.isFile) { verifiedApkMissingError }
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
             val intent =
                 Intent(Intent.ACTION_VIEW).apply {
@@ -104,7 +111,7 @@ fun SettingsRoute(
         }.onFailure {
             viewModel.onAction(
                 SettingsAction.InstallerFailed(
-                    context.getString(R.string.settings_error_open_android_installer),
+                    openAndroidInstallerError,
                 ),
             )
         }
@@ -123,7 +130,7 @@ fun SettingsRoute(
             } else if (path != null) {
                 viewModel.onAction(
                     SettingsAction.InstallerFailed(
-                        context.getString(R.string.settings_error_unknown_sources_permission),
+                        unknownSourcesPermissionError,
                     ),
                 )
             }
@@ -141,7 +148,7 @@ fun SettingsRoute(
                     pendingUpdateApkPath = null
                     viewModel.onAction(
                         SettingsAction.InstallerFailed(
-                            context.getString(R.string.settings_error_open_unknown_sources_settings),
+                            openUnknownSourcesSettingsError,
                         ),
                     )
                 }
@@ -184,7 +191,8 @@ fun SettingsRoute(
                         viewModel.onAction(SettingsAction.SystemActionFailed(effect.failureMessage))
                     }
                 }
-                is SettingsEffect.ShowMessage -> toastState.show(effect.message)
+                is SettingsEffect.ShowMessage ->
+                    Toast.makeText(context.applicationContext, effect.message, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -195,6 +203,7 @@ fun SettingsRoute(
         diagnosticExportState = diagnosticExportState,
         notificationsGranted = notificationsGranted,
         appUpdateState = appUpdateState,
+        openSteamSignIn = openSteamSignIn,
         onBack = onBack,
         onAction = viewModel::onAction,
     )

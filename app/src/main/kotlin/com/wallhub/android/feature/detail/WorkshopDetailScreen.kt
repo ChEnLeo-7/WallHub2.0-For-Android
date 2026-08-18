@@ -65,16 +65,17 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
 import coil.compose.AsyncImage
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubColorTokens
 import com.wallhub.android.core.designsystem.WallHubEmptyState
-import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.localizedTitle
@@ -105,6 +106,7 @@ fun WorkshopDetailScreen(
     onToggleFavorite: () -> Unit,
     onReconnectSteam: () -> Unit,
     onStartInlineVideo: () -> Unit,
+    onRetryInlineVideo: () -> Unit,
     onExportFormatSelected: (ExportFormat) -> Unit,
     onDownload: () -> Unit,
     onRetryComments: () -> Unit,
@@ -112,6 +114,7 @@ fun WorkshopDetailScreen(
     onCommentDraftChanged: (String) -> Unit,
     onSubmitComment: () -> Unit,
     onInlineFullscreenChange: (Boolean) -> Unit,
+    shouldShowInlinePlaybackStartNotice: () -> Boolean = { true },
     onSearchAuthor: (String) -> Unit,
     onSearchTag: (String) -> Unit,
     onCopyText: (String, String) -> Unit,
@@ -122,10 +125,9 @@ fun WorkshopDetailScreen(
     val steamCdnMessageTemplate = stringResource(R.string.detail_steam_cdn, "%s")
     val projectIdCopiedMessage = stringResource(R.string.detail_project_id_copied, selectedSummary?.id ?: 0L)
     val titleCopiedMessage = stringResource(R.string.detail_wallpaper_title_copied)
-    val toastState = LocalWallHubToastState.current
+    val context = LocalContext.current
     val inlineVideoStream = state.inlineVideoStream
     val inlineFullscreen = state.isInlineVideoFullscreen
-    var cdnToastDelivered by remember(inlineVideoStream) { mutableStateOf(false) }
     val inlinePlayback =
         inlineVideoStream?.let { stream ->
             state.inlineVideoPlayer?.let { player ->
@@ -133,9 +135,12 @@ fun WorkshopDetailScreen(
                     stream = stream,
                     player = player,
                     onFirstFrameRendered = {
-                        if (!cdnToastDelivered) {
-                            cdnToastDelivered = true
-                            toastState.show(steamCdnMessageTemplate.format(stream.currentCdnHost ?: unknown))
+                        if (shouldShowInlinePlaybackStartNotice()) {
+                            Toast.makeText(
+                                context.applicationContext,
+                                steamCdnMessageTemplate.format(stream.currentCdnHost ?: unknown),
+                                Toast.LENGTH_SHORT,
+                            ).show()
                         }
                     },
                 )
@@ -148,6 +153,7 @@ fun WorkshopDetailScreen(
             FullscreenWallpaperVideoPlayer(
                 playback = inlinePlayback,
                 onFullscreenChange = onInlineFullscreenChange,
+                onRetry = onRetryInlineVideo,
             )
         } else {
             val title = selectedSummary?.localizedTitle() ?: stringResource(R.string.detail_wallpaper_details)
@@ -221,6 +227,7 @@ fun WorkshopDetailScreen(
                             isLoadingInlineVideo = state.isLoadingInlineVideo,
                             inlineVideoError = state.inlineVideoError,
                             onStartInlineVideo = onStartInlineVideo,
+                            onRetryInlineVideo = onRetryInlineVideo,
                             onInlineFullscreenChange = onInlineFullscreenChange,
                             onExportFormatSelected = onExportFormatSelected,
                             isEnqueuingDownload = state.isEnqueuingDownload,
@@ -264,6 +271,7 @@ fun WorkshopDetailScreen(
 internal fun FullscreenWallpaperVideoPlayer(
     playback: SteamChunkPlayback,
     onFullscreenChange: (Boolean) -> Unit,
+    onRetry: () -> Unit,
 ) {
     Box(
         modifier =
@@ -275,6 +283,7 @@ internal fun FullscreenWallpaperVideoPlayer(
             playback = playback,
             fullscreen = true,
             onFullscreenChange = onFullscreenChange,
+            onRetry = onRetry,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -300,6 +309,7 @@ internal fun WorkshopDetailPagerContent(
     isLoadingInlineVideo: Boolean,
     inlineVideoError: DetailUiText?,
     onStartInlineVideo: () -> Unit,
+    onRetryInlineVideo: () -> Unit,
     onInlineFullscreenChange: (Boolean) -> Unit,
     onExportFormatSelected: (ExportFormat) -> Unit,
     isEnqueuingDownload: Boolean,
@@ -387,6 +397,7 @@ internal fun WorkshopDetailPagerContent(
         isLoadingInlineVideo = isLoadingInlineVideo,
         inlineVideoError = inlineVideoError,
         onStartInlineVideo = onStartInlineVideo,
+        onRetryInlineVideo = onRetryInlineVideo,
         onInlineFullscreenChange = onInlineFullscreenChange,
         comments = comments,
         commentsTotal = commentsTotal,
@@ -450,6 +461,7 @@ internal fun WorkshopDetailPane(
     isLoadingInlineVideo: Boolean,
     inlineVideoError: DetailUiText?,
     onStartInlineVideo: () -> Unit,
+    onRetryInlineVideo: () -> Unit,
     onInlineFullscreenChange: (Boolean) -> Unit,
     comments: List<WorkshopComment>,
     commentsTotal: Int?,
@@ -536,6 +548,7 @@ internal fun WorkshopDetailPane(
                 isLoadingInlineVideo = isLoadingInlineVideo,
                 inlineVideoError = inlineVideoError,
                 onStartInlineVideo = onStartInlineVideo,
+                onRetryInlineVideo = onRetryInlineVideo,
                 onInlineFullscreenChange = onInlineFullscreenChange,
             )
             WorkshopDetailTabPager(
@@ -595,6 +608,7 @@ internal fun WorkshopDetailCollapsibleHeader(
     isLoadingInlineVideo: Boolean,
     inlineVideoError: DetailUiText?,
     onStartInlineVideo: () -> Unit,
+    onRetryInlineVideo: () -> Unit,
     onInlineFullscreenChange: (Boolean) -> Unit,
 ) {
     val summary = detail.summary
@@ -611,6 +625,7 @@ internal fun WorkshopDetailCollapsibleHeader(
             isLoadingInlineVideo = isLoadingInlineVideo,
             inlineVideoError = inlineVideoError,
             onStartInlineVideo = onStartInlineVideo,
+            onRetryInlineVideo = onRetryInlineVideo,
             onFullscreenChange = onInlineFullscreenChange,
             modifier =
                 Modifier
@@ -757,6 +772,7 @@ internal fun DetailCover(
     isLoadingInlineVideo: Boolean,
     inlineVideoError: DetailUiText?,
     onStartInlineVideo: () -> Unit,
+    onRetryInlineVideo: () -> Unit,
     onFullscreenChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -774,6 +790,7 @@ internal fun DetailCover(
                 playback = playback,
                 fullscreen = false,
                 onFullscreenChange = onFullscreenChange,
+                onRetry = onRetryInlineVideo,
                 modifier = Modifier.matchParentSize(),
             )
             if (!playback.renderedFirstFrame && playback.error == null && previewUrl != null) {

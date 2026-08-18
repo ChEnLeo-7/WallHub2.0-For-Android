@@ -51,8 +51,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Refresh
@@ -85,13 +83,18 @@ internal val WALLHUB_AUTHOR =
         roleRes = R.string.settings_about_role_author,
     )
 
-internal val WALLHUB_CONTRIBUTORS =
+internal val WALLHUB_DEVELOPERS =
     listOf(
+        WALLHUB_AUTHOR,
         WallHubPerson(
             displayName = "uwugl",
             githubAccount = "uwu-gl",
             roleRes = R.string.settings_about_role_logo_guidance,
         ),
+    )
+
+internal val WALLHUB_CONTRIBUTORS =
+    listOf(
         WallHubPerson(
             displayName = "cccp114",
             githubAccount = "cccp114",
@@ -173,34 +176,19 @@ internal fun AboutWallHubPreferences(
     val openQqGroupFailure = stringResource(R.string.settings_error_open_qq_group)
     val openRepositoryFailure = stringResource(R.string.settings_error_open_github_repository)
 
-    WallHubPersonRow(
-        person = WALLHUB_AUTHOR,
-        position = PreferencePosition.Top,
-        onClick = {
-            onOpenExternalUri(
-                WALLHUB_AUTHOR.githubUrl,
-                openAuthorFailure,
-            )
-        },
+    WallHubPeopleSection(
+        title = stringResource(R.string.settings_about_developers),
+        people = WALLHUB_DEVELOPERS,
+        openFailureMessage = openAuthorFailure,
+        onOpenExternalUri = onOpenExternalUri,
     )
-    WALLHUB_CONTRIBUTORS.forEachIndexed { index, contributor ->
-        PreferenceGroupSpacer()
-        WallHubPersonRow(
-            person = contributor,
-            position =
-                if (index == WALLHUB_CONTRIBUTORS.lastIndex) {
-                    PreferencePosition.Bottom
-                } else {
-                    PreferencePosition.Middle
-                },
-            onClick = {
-                onOpenExternalUri(
-                    contributor.githubUrl,
-                    openContributorFailure,
-                )
-            },
-        )
-    }
+    Spacer(modifier = Modifier.height(WallHubSpacing.sm))
+    WallHubPeopleSection(
+        title = stringResource(R.string.settings_about_contributors),
+        people = WALLHUB_CONTRIBUTORS,
+        openFailureMessage = openContributorFailure,
+        onOpenExternalUri = onOpenExternalUri,
+    )
     Spacer(modifier = Modifier.height(WallHubSpacing.sm))
     PreferenceRow(
         title = stringResource(R.string.settings_about_version_check),
@@ -222,7 +210,13 @@ internal fun AboutWallHubPreferences(
     PreferenceRow(
         title = stringResource(R.string.settings_about_github_repository),
         summary = WALLHUB_REPOSITORY_LABEL,
-                        icon = Icons.AutoMirrored.Outlined.OpenInNew,
+        iconContent = {
+            Icon(
+                painter = painterResource(R.drawable.ic_brand_github),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+        },
         position = PreferencePosition.Middle,
         onClick = {
             onOpenExternalUri(
@@ -235,7 +229,13 @@ internal fun AboutWallHubPreferences(
     PreferenceRow(
         title = stringResource(R.string.settings_about_qq_group),
         summary = stringResource(R.string.settings_about_qq_group_description, WALLHUB_QQ_GROUP_NUMBER),
-        icon = Icons.Outlined.ChatBubbleOutline,
+        iconContent = {
+            Icon(
+                painter = painterResource(R.drawable.ic_brand_qq),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+        },
         position = PreferencePosition.Bottom,
         onClick = {
             onOpenExternalUri(
@@ -277,6 +277,38 @@ internal fun AboutWallHubPreferences(
         onInstallDownloadedRelease = onInstallDownloadedRelease,
     )
 }
+
+@Composable
+private fun WallHubPeopleSection(
+    title: String,
+    people: List<WallHubPerson>,
+    openFailureMessage: String,
+    onOpenExternalUri: (String, String) -> Unit,
+) {
+    SettingsSection(title = title) {
+        people.forEachIndexed { index, person ->
+            if (index > 0) PreferenceGroupSpacer()
+            WallHubPersonRow(
+                person = person,
+                position = people.preferencePosition(index),
+                onClick = {
+                    onOpenExternalUri(
+                        person.githubUrl,
+                        openFailureMessage,
+                    )
+                },
+            )
+        }
+    }
+}
+
+private fun List<WallHubPerson>.preferencePosition(index: Int): PreferencePosition =
+    when {
+        size == 1 -> PreferencePosition.Single
+        index == 0 -> PreferencePosition.Top
+        index == lastIndex -> PreferencePosition.Bottom
+        else -> PreferencePosition.Middle
+    }
 
 @Composable
 private fun WallHubProjectHeader() {

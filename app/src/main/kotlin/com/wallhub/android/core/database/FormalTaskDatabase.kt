@@ -35,6 +35,7 @@ data class FormalTaskRecordEntity(
     val totalBytes: Long = 0L,
     val bytesPerSecond: Long = 0L,
     val accountName: String? = null,
+    val credentialMode: String = "LEGACY_UNKNOWN",
     val outputLabel: String? = null,
     val message: String? = null,
     val requestedAction: String? = null,
@@ -121,6 +122,9 @@ interface FormalTaskRecordDao {
             "WHERE status IN ('COMPLETED', 'FAILED', 'CANCELLED')",
     )
     suspend fun clearFinishedHistory(): Int
+
+    @Query("DELETE FROM formal_task_records WHERE status = 'COMPLETED'")
+    suspend fun clearCompletedHistory(): Int
 }
 
 @Dao
@@ -181,7 +185,7 @@ interface LocalWallpaperMetadataDao {
         LocalWallpaperStateEntity::class,
         LocalWallpaperTagEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class FormalTaskDatabase : RoomDatabase() {
@@ -283,6 +287,21 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 }
             }
 
+        private val MIGRATION_6_7 =
+            object : Migration(6, 7) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records " +
+                            "ADD COLUMN credentialMode TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN'",
+                    )
+                    database.execSQL(
+                        "UPDATE formal_task_records SET credentialMode = " +
+                            "CASE WHEN accountName IS NULL OR accountName = '' " +
+                            "THEN 'LEGACY_UNKNOWN' ELSE 'ACCOUNT' END",
+                    )
+                }
+            }
+
         internal val migrations: Array<Migration> =
             arrayOf(
                 MIGRATION_1_2,
@@ -290,6 +309,7 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 MIGRATION_3_4,
                 MIGRATION_4_5,
                 MIGRATION_5_6,
+                MIGRATION_6_7,
             )
 
         @Volatile

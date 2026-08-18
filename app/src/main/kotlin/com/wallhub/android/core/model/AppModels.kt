@@ -109,6 +109,12 @@ data class SteamContentCredential(
     val refreshToken: String,
 )
 
+const val DEFAULT_HOME_PAGE_SIZE = 30
+val HOME_PAGE_SIZE_OPTIONS = listOf(10, 15, 30, 50)
+
+fun Int.normalizedHomePageSize(): Int =
+    HOME_PAGE_SIZE_OPTIONS.minBy { option -> kotlin.math.abs(toLong() - option.toLong()) }
+
 data class AppPreferences(
     val setupWizardCompleted: Boolean = false,
     val theme: ThemePreference = ThemePreference.SYSTEM,
@@ -121,7 +127,7 @@ data class AppPreferences(
     val localManagementTreeUri: String? = null,
     val localManagementDirectoryLabel: String? = null,
     val localWallpaperViewMode: LocalWallpaperViewMode = LocalWallpaperViewMode.LIST,
-    val homePageSize: Int = 24,
+    val homePageSize: Int = DEFAULT_HOME_PAGE_SIZE,
     val homeColumns: Int = 2,
     val homeFilterMultiSelect: Boolean = true,
     val homeSearchFab: Boolean = true,

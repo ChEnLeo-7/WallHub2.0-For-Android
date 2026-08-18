@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -25,6 +26,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -52,15 +54,17 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubEmptyState
-import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
@@ -68,11 +72,15 @@ import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamSession
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.io.IOException
+import kotlin.coroutines.coroutineContext
 import javax.inject.Inject
 import kotlin.math.min
 import androidx.compose.material.icons.Icons
@@ -83,6 +91,7 @@ data class OnlineVideoPlayerUiState(
     val stream: WorkshopVideoStreamSession? = null,
     val isLoading: Boolean = true,
     val error: DetailUiText? = null,
+    val resumePositionMs: Long = 0L,
 )
 
 @HiltViewModel
@@ -94,38 +103,59 @@ class OnlineVideoPlayerViewModel
     ) : ViewModel() {
         private val workshopId = checkNotNull(savedStateHandle.get<Long>("workshopId"))
         private val mutableState = MutableStateFlow(OnlineVideoPlayerUiState())
+        private val playbackStartNoticeGate = PlaybackStartNoticeGate()
+        private var loadJob: Job? = null
+        private var loadGeneration = 0L
 
         val uiState: StateFlow<OnlineVideoPlayerUiState> = mutableState.asStateFlow()
+
+        fun consumePlaybackStartNotice(): Boolean = playbackStartNoticeGate.consume()
 
         init {
             load()
         }
 
-        fun load() {
-            viewModelScope.launch {
-                mutableState.value.stream?.close()
-                mutableState.value = OnlineVideoPlayerUiState(isLoading = true)
+        fun load(resumePositionMs: Long = 0L) {
+            val generation = ++loadGeneration
+            loadJob?.cancel()
+            val previousStream = mutableState.value.stream
+            mutableState.value = OnlineVideoPlayerUiState(isLoading = true, resumePositionMs = resumePositionMs)
+            previousStream?.close()
+            loadJob = viewModelScope.launch {
+                var openedStream: WorkshopVideoStreamSession? = null
                 try {
-                    val stream = videoStreamRepository.open(workshopId)
+                    openedStream = videoStreamRepository.open(workshopId)
+                    coroutineContext.ensureActive()
+                    if (generation != loadGeneration) return@launch
                     mutableState.value =
                         OnlineVideoPlayerUiState(
-                            title = stream.title,
-                            stream = stream,
+                            title = openedStream.title,
+                            stream = openedStream,
                             isLoading = false,
+                            resumePositionMs = resumePositionMs,
                         )
+                    openedStream = null
                 } catch (error: CancellationException) {
                     throw error
+                } catch (error: VirtualMachineError) {
+                    throw error
                 } catch (error: Throwable) {
-                    mutableState.value =
-                        OnlineVideoPlayerUiState(
-                            isLoading = false,
-                            error = error.toDetailUiText(R.string.detail_online_video_init_failed),
-                        )
+                    if (generation == loadGeneration) {
+                        mutableState.value =
+                            OnlineVideoPlayerUiState(
+                                isLoading = false,
+                                error = error.toDetailUiText(R.string.detail_online_video_init_failed),
+                                resumePositionMs = resumePositionMs,
+                            )
+                    }
+                } finally {
+                    openedStream?.close()
                 }
             }
         }
 
         override fun onCleared() {
+            loadJob?.cancel()
             mutableState.value.stream?.close()
             super.onCleared()
         }
@@ -137,20 +167,25 @@ fun OnlineVideoPlayerRoute(
     viewModel: OnlineVideoPlayerViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    OnlineVideoPlayerScreen(state = state, onBack = onBack, onRetry = viewModel::load)
+    OnlineVideoPlayerScreen(
+        state = state,
+        onBack = onBack,
+        onRetry = viewModel::load,
+        shouldShowPlaybackStartNotice = viewModel::consumePlaybackStartNotice,
+    )
 }
 
 @Composable
 fun OnlineVideoPlayerScreen(
     state: OnlineVideoPlayerUiState,
     onBack: () -> Unit,
-    onRetry: () -> Unit,
+    onRetry: (Long) -> Unit,
+    shouldShowPlaybackStartNotice: () -> Boolean = { true },
 ) {
     var fullscreen by rememberSaveable { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
     var playbackHapticDelivered by remember(state.stream) { mutableStateOf(false) }
-    var cdnToastDelivered by remember(state.stream) { mutableStateOf(false) }
-    val toastState = LocalWallHubToastState.current
+    val context = LocalContext.current
     val streamingStartedMessage = stringResource(R.string.detail_streaming_started)
     val steamCdnMessageTemplate = stringResource(R.string.detail_steam_cdn, "%s")
     val onFirstFrameRendered = {
@@ -158,17 +193,22 @@ fun OnlineVideoPlayerScreen(
             playbackHapticDelivered = true
             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
         }
-        if (!cdnToastDelivered) {
-            cdnToastDelivered = true
-            toastState.show(
+        if (shouldShowPlaybackStartNotice()) {
+            Toast.makeText(
+                context.applicationContext,
                 state.stream?.currentCdnHost?.let { host -> steamCdnMessageTemplate.format(host) }
                     ?: streamingStartedMessage,
-            )
+                Toast.LENGTH_SHORT,
+            ).show()
         }
     }
     val playback =
         state.stream?.let { stream ->
-            rememberSteamChunkPlayback(stream = stream, onFirstFrameRendered = onFirstFrameRendered)
+            rememberSteamChunkPlayback(
+                stream = stream,
+                startPositionMs = state.resumePositionMs,
+                onFirstFrameRendered = onFirstFrameRendered,
+            )
         }
     BackHandler(enabled = fullscreen) { fullscreen = false }
     FullscreenSystemBarsEffect(enabled = fullscreen)
@@ -181,6 +221,7 @@ fun OnlineVideoPlayerScreen(
                 playback = playback,
                 fullscreen = true,
                 onFullscreenChange = { fullscreen = it },
+                onRetry = { onRetry(playback.player.currentPosition.coerceAtLeast(0L)) },
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -204,7 +245,7 @@ fun OnlineVideoPlayerScreen(
                             icon = Icons.Outlined.PlayArrow,
                             title = state.error.resolve(),
                             actionLabel = stringResource(R.string.detail_retry),
-                            onAction = onRetry,
+                            onAction = { onRetry(state.resumePositionMs) },
                             modifier = Modifier.fillMaxSize().then(Modifier.padding(padding)),
                         )
                     }
@@ -214,6 +255,7 @@ fun OnlineVideoPlayerScreen(
                             playback = playback,
                             fullscreen = false,
                             onFullscreenChange = { fullscreen = it },
+                            onRetry = { onRetry(playback.player.currentPosition.coerceAtLeast(0L)) },
                             modifier = Modifier.fillMaxSize().then(Modifier.padding(padding)),
                         )
                 }
@@ -225,12 +267,13 @@ fun OnlineVideoPlayerScreen(
 @Composable
 internal fun rememberSteamChunkPlayback(
     stream: WorkshopVideoStreamSession,
+    startPositionMs: Long = 0L,
     onFirstFrameRendered: () -> Unit,
 ): SteamChunkPlayback {
     val context = LocalContext.current
     val player =
         remember(stream) {
-            createSteamChunkPlayer(context = context, stream = stream)
+            createSteamChunkPlayer(context = context, stream = stream, startPositionMs = startPositionMs)
         }
     return rememberSteamChunkPlaybackState(
         stream = stream,
@@ -257,9 +300,14 @@ internal fun rememberRetainedSteamChunkPlayback(
 internal fun createSteamChunkPlayer(
     context: Context,
     stream: WorkshopVideoStreamSession,
+    startPositionMs: Long = 0L,
 ): ExoPlayer =
     ExoPlayer
         .Builder(context.applicationContext)
+        .setRenderersFactory(
+            DefaultRenderersFactory(context.applicationContext)
+                .setEnableDecoderFallback(true),
+        )
         .setLoadControl(
             DefaultLoadControl
                 .Builder()
@@ -268,15 +316,19 @@ internal fun createSteamChunkPlayer(
                     STREAM_MAX_BUFFER_MS,
                     STREAM_BUFFER_FOR_PLAYBACK_MS,
                     STREAM_BUFFER_FOR_REBUFFER_MS,
-                ).build(),
+                ).setTargetBufferBytes(STREAM_TARGET_BUFFER_BYTES)
+                .setPrioritizeTimeOverSizeThresholds(false)
+                .build(),
         ).build()
         .also { player ->
             val mediaItem = MediaItem.fromUri(Uri.parse("steamchunk://${stream.fileName}"))
             val mediaSource =
                 ProgressiveMediaSource
                     .Factory(SteamChunkDataSourceFactory(stream))
+                    .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(STREAM_LOAD_RETRY_COUNT))
                     .createMediaSource(mediaItem)
             player.setMediaSource(mediaSource)
+            if (startPositionMs > 0L) player.seekTo(startPositionMs)
             player.prepare()
             player.playWhenReady = true
         }
@@ -296,20 +348,36 @@ private fun rememberSteamChunkPlaybackState(
             player.playerError?.toDetailUiText(R.string.detail_online_playback_failed),
         )
     }
+    var firstFrameCallbackDelivered by remember(stream, player) { mutableStateOf(false) }
     val onFirstFrameRenderedState by rememberUpdatedState(onFirstFrameRendered)
     DisposableEffect(player, stream) {
         val listener =
             object : Player.Listener {
                 override fun onRenderedFirstFrame() {
                     renderedFirstFrame = true
-                    onFirstFrameRenderedState()
+                    if (!firstFrameCallbackDelivered) {
+                        firstFrameCallbackDelivered = true
+                        onFirstFrameRenderedState()
+                    }
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
                     playbackError = error.toDetailUiText(R.string.detail_online_playback_failed)
                 }
+
+                override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) {
+                    stream.updatePlaybackDemand(playbackParameters.speed, player.duration)
+                }
+
+                override fun onTimelineChanged(
+                    timeline: Timeline,
+                    reason: Int,
+                ) {
+                    stream.updatePlaybackDemand(player.playbackParameters.speed, player.duration)
+                }
             }
         player.addListener(listener)
+        stream.updatePlaybackDemand(player.playbackParameters.speed, player.duration)
         onDispose {
             player.removeListener(listener)
             if (releasePlayerWhenDisposed) player.release()
@@ -333,6 +401,7 @@ internal fun SteamChunkVideoPlayer(
     playback: SteamChunkPlayback,
     fullscreen: Boolean,
     onFullscreenChange: (Boolean) -> Unit,
+    onRetry: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier) {
@@ -367,7 +436,15 @@ internal fun SteamChunkVideoPlayer(
                 color = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer,
             ) {
-                Text(text = error.resolve(), modifier = Modifier.padding(WallHubSpacing.md))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(WallHubSpacing.md),
+                ) {
+                    Text(text = error.resolve())
+                    onRetry?.let { retry ->
+                        TextButton(onClick = retry) { Text(stringResource(R.string.detail_retry)) }
+                    }
+                }
             }
         }
     }
@@ -483,7 +560,19 @@ private class SteamChunkDataSource(
         if (length == 0) return 0
         if (bytesRemaining == 0L) return C.RESULT_END_OF_INPUT
         val requestedLength = min(length.toLong(), min(bytesRemaining, STREAM_READ_WINDOW_BYTES)).toInt()
-        val data = runBlocking { stream.readAt(readPosition, requestedLength) }
+        val data =
+            try {
+                runBlocking { stream.readAt(readPosition, requestedLength) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: IOException) {
+                throw error
+            } catch (error: VirtualMachineError) {
+                throw error
+            } catch (error: Throwable) {
+                // Media3 retries IO failures; preserve the underlying cause for diagnostics.
+                throw IOException("Steam video chunk read failed", error)
+            }
         if (data.isEmpty()) return C.RESULT_END_OF_INPUT
         data.copyInto(buffer, destinationOffset = offset)
         readPosition += data.size
@@ -507,7 +596,9 @@ private class SteamChunkDataSource(
     }
 }
 
-private const val STREAM_MIN_BUFFER_MS = 12_000
-private const val STREAM_MAX_BUFFER_MS = 75_000
+private const val STREAM_MIN_BUFFER_MS = 8_000
+private const val STREAM_MAX_BUFFER_MS = 30_000
 private const val STREAM_BUFFER_FOR_PLAYBACK_MS = 1_000
 private const val STREAM_BUFFER_FOR_REBUFFER_MS = 2_000
+private const val STREAM_TARGET_BUFFER_BYTES = 16 * 1024 * 1024
+private const val STREAM_LOAD_RETRY_COUNT = 5

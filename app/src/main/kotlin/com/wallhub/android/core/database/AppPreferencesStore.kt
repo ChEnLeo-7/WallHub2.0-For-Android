@@ -15,10 +15,12 @@ import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
+import com.wallhub.android.core.model.DEFAULT_HOME_PAGE_SIZE
 import com.wallhub.android.core.model.LocalWallpaperViewMode
 import com.wallhub.android.core.model.SteamAccessMode
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
+import com.wallhub.android.core.model.normalizedHomePageSize
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
 import com.wallhub.android.core.model.normalizeSteamAccessDohEndpoints
 import kotlinx.coroutines.flow.Flow
@@ -93,7 +95,7 @@ class AppPreferencesStore(
         matureContentEnabled: Boolean,
     ) {
         applicationContext.dataStore.edit { preferences ->
-            preferences[Keys.homePageSize] = pageSize.coerceIn(10, 50)
+            preferences[Keys.homePageSize] = pageSize.normalizedHomePageSize()
             preferences[Keys.homeColumns] = columns.coerceIn(1, 4)
             preferences[Keys.homeFilterMultiSelect] = multiSelect
             preferences[Keys.homeCardAction] = cardAction.name
@@ -290,7 +292,7 @@ class AppPreferencesStore(
                     Keys.localWallpaperViewMode,
                     LocalWallpaperViewMode.LIST,
                 ),
-            homePageSize = (preferences[Keys.homePageSize] ?: 24).coerceIn(10, 50),
+            homePageSize = (preferences[Keys.homePageSize] ?: DEFAULT_HOME_PAGE_SIZE).normalizedHomePageSize(),
             homeColumns = (preferences[Keys.homeColumns] ?: 2).coerceIn(1, 4),
             homeFilterMultiSelect = preferences[Keys.homeFilterMultiSelect] ?: true,
             homeSearchFab = preferences[Keys.homeSearchFab] ?: true,
@@ -304,7 +306,7 @@ class AppPreferencesStore(
             maxConcurrentDownloads = (preferences[Keys.maxConcurrentDownloads] ?: 1).coerceIn(1, 4),
             chunkDownloadConcurrency =
                 (preferences[Keys.chunkDownloadConcurrency] ?: 24)
-                    .let { saved -> if (saved <= 12) 24 else saved.coerceIn(12, 48) },
+                    .coerceIn(12, 48),
             downloadProxyUrl = preferences[Keys.downloadProxyUrl].orEmpty(),
             downloadProxyEnabled = preferences[Keys.downloadProxyEnabled] ?: false,
             downloadProxyRequiresConfirmation =

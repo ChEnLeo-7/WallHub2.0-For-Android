@@ -1,13 +1,18 @@
 package com.wallhub.android.data.downloads
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 internal data class WorkshopContentTarget(
     val publishedFileId: Long,
@@ -49,14 +54,43 @@ internal class SteamWorkshopContentApi(
                     .header("Accept", "application/json")
                     .header("User-Agent", USER_AGENT)
                     .build()
-            val body =
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        throw IOException("Steam public details request failed: HTTP ${response.code}")
-                    }
-                    response.body.string()
-                }
+            val body = client.newCall(request).awaitBody()
             parseTarget(body, publishedFileId)
+        }
+
+    private suspend fun Call.awaitBody(): String =
+        suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { cancel() }
+            enqueue(
+                object : Callback {
+                    override fun onFailure(
+                        call: Call,
+                        error: IOException,
+                    ) {
+                        if (continuation.isActive) continuation.resumeWithException(error)
+                    }
+
+                    override fun onResponse(
+                        call: Call,
+                        response: okhttp3.Response,
+                    ) {
+                        try {
+                            response.use {
+                                if (!it.isSuccessful) {
+                                    throw IOException("Steam public details request failed: HTTP ${it.code}")
+                                }
+                                val body =
+                                    it.body.byteStream().use { input ->
+                                        input.readBytesBounded(MAX_WORKSHOP_DETAILS_BYTES).toString(Charsets.UTF_8)
+                                    }
+                                if (continuation.isActive) continuation.resume(body)
+                            }
+                        } catch (error: Throwable) {
+                            if (continuation.isActive) continuation.resumeWithException(error)
+                        }
+                    }
+                },
+            )
         }
 
     private fun parseTarget(
@@ -78,6 +112,9 @@ internal class SteamWorkshopContentApi(
                 .takeIf { it in 1..Int.MAX_VALUE.toLong() }
                 ?.toInt()
                 ?: error("Steam returned no valid Wallpaper Engine App ID")
+        check(appId == WALLPAPER_ENGINE_APP_ID) {
+            "Steam Workshop item belongs to unsupported app $appId"
+        }
         val manifestId =
             detail
                 .jsonLong("hcontent_file")
@@ -126,6 +163,7 @@ internal class SteamWorkshopContentApi(
     }
 
     private companion object {
+        const val MAX_WORKSHOP_DETAILS_BYTES = 1024 * 1024
         const val RESULT_OK = 1L
         const val USER_AGENT = "WallHub-Android/0.6 (Workshop Downloader)"
         const val PUBLISHED_FILE_DETAILS_URL =

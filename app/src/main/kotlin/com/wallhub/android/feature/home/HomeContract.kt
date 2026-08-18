@@ -6,6 +6,7 @@ import androidx.annotation.StringRes
 import androidx.compose.runtime.Immutable
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
+import com.wallhub.android.core.model.DEFAULT_HOME_PAGE_SIZE
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.WorkshopFilterCatalog
@@ -13,6 +14,7 @@ import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.android.core.model.workshopSearchIdOrNull
 
 enum class HomeViewMode {
     GRID,
@@ -55,6 +57,7 @@ data class HomeFilterSelection(
     val ratings: Set<WorkshopRating>,
     val genres: Set<String>,
     val officialTags: Set<String>,
+    val excludedOfficialTags: Set<String> = emptySet(),
     val resolutions: Set<String>,
 ) {
     fun normalized(matureContentEnabled: Boolean): HomeFilterSelection =
@@ -67,6 +70,7 @@ data class HomeFilterSelection(
                     .intersect(DEFAULT_HOME_GENRE_SELECTION)
                     .ifEmpty { DEFAULT_HOME_GENRE_SELECTION },
             officialTags = officialTags.intersect(WorkshopFilterCatalog.officialTags.toSet()),
+            excludedOfficialTags = excludedOfficialTags.intersect(WorkshopFilterCatalog.officialTags.toSet()),
             resolutions =
                 resolutions
                     .intersect(DEFAULT_HOME_RESOLUTION_SELECTION)
@@ -104,6 +108,7 @@ internal fun HomeUiState.filterSelection(): HomeFilterSelection =
         ratings = selectedRatings,
         genres = selectedGenres,
         officialTags = selectedOfficialTags,
+        excludedOfficialTags = selectedExcludedOfficialTags,
         resolutions = selectedResolutions,
     ).normalized(matureContentEnabled)
 
@@ -119,11 +124,12 @@ data class HomeUiState(
     val selectedRatings: Set<WorkshopRating> = DEFAULT_HOME_RATING_SELECTION,
     val selectedGenres: Set<String> = DEFAULT_HOME_GENRE_SELECTION,
     val selectedOfficialTags: Set<String> = emptySet(),
+    val selectedExcludedOfficialTags: Set<String> = emptySet(),
     val selectedResolutions: Set<String> = DEFAULT_HOME_RESOLUTION_SELECTION,
     val sort: WorkshopSort = WorkshopSort.TRENDING,
     val days: Int = 30,
     val viewMode: HomeViewMode = HomeViewMode.GRID,
-    val pageSize: Int = 24,
+    val pageSize: Int = DEFAULT_HOME_PAGE_SIZE,
     val columns: Int = 2,
     val multiSelect: Boolean = true,
     val matureContentEnabled: Boolean = false,
@@ -259,7 +265,18 @@ internal fun HomeUiState.loadingIndicatorVisibility(): HomeLoadingIndicatorVisib
 internal fun String.creatorIdOrNull(): String? {
     val query = trim()
     if (!query.startsWith("author:", ignoreCase = true)) return null
-    return query.substringAfter(':').filter(Char::isDigit).takeIf(String::isNotBlank)
+    return query.substringAfter(':').trim().takeIf(String::isNotBlank)
+}
+
+internal fun String.workshopIdOrNull(): Long? {
+    val query = trim()
+    val candidate =
+        when {
+            query.matches(Regex("^[0-9]{6,}$")) -> query
+            query.startsWith("id:", ignoreCase = true) -> query.substringAfter(':').trim()
+            else -> query.workshopSearchIdOrNull()?.toString()
+        }
+    return candidate?.toLongOrNull()?.takeIf { it > 0L }
 }
 
 internal fun HomeUiState.asAuthorSearchState(creatorId: String): HomeUiState =
@@ -295,6 +312,7 @@ internal fun HomeUiState.asTagSearchState(tag: String): HomeUiState {
         requiredTags = if (genre == null && officialTag == null && resolution == null) setOf(normalizedTag) else emptySet(),
         selectedGenres = genre?.let(::setOf) ?: DEFAULT_HOME_GENRE_SELECTION,
         selectedOfficialTags = officialTag?.let(::setOf).orEmpty(),
+        selectedExcludedOfficialTags = emptySet(),
         selectedResolutions = resolution?.let(::setOf) ?: DEFAULT_HOME_RESOLUTION_SELECTION,
         sort = WorkshopSort.MOST_RECENT,
         days = 0,

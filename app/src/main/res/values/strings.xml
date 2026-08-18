@@ -1,6 +1,7 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <resources xmlns:tools='http://schemas.android.com/tools'>
     <string name='app_name'>WallHub</string>
+    <string name='app_saved_steam_session_expired'>Your saved Steam sign-in has expired. Sign in again to continue.</string>
     <string name='setup_welcome_title'>Welcome to WallHub</string>
     <string name='setup_welcome_description'>Browse, download, and manage Wallpaper Engine Workshop content on Android.</string>
     <string name='setup_steam_title'>Sign in to Steam</string>
@@ -131,6 +132,9 @@
     <string name='settings_action_open_steam'>Steam</string>
     <string name='settings_streaming_cache'>SteamKit streaming cache</string>
     <string name='settings_streaming_cache_description'>Limits cached decrypted Steam chunks for streaming. Default: 512 MB.</string>
+    <string name='settings_clear_streaming_cache'>Clear online playback cache</string>
+    <string name='settings_streaming_cache_cleared'>Cleared %1$s of online playback cache</string>
+    <string name='settings_streaming_cache_clear_failed'>Unable to clear the online playback cache</string>
     <string name='settings_custom_value'>Custom: %1$s</string>
     <string name='settings_custom_streaming_cache'>Custom streaming cache</string>
     <string name='settings_custom_streaming_cache_description'>Enter a cache size of at least 128 MB.</string>
@@ -226,10 +230,12 @@
     <string name='settings_action_use_steam_guard_code'>Use a Steam Guard code instead</string>
     <string name='settings_steam_guard_code'>Steam Guard / email code</string>
     <string name='settings_action_submit_code'>Submit code</string>
-    <string name='settings_about_role_author'>Author · Development and maintenance</string>
-    <string name='settings_about_role_logo_guidance'>Logo design and technical guidance</string>
+    <string name='settings_about_developers'>Developers</string>
+    <string name='settings_about_contributors'>Contributors</string>
+    <string name='settings_about_role_author'>Primary backend development, maintenance, and bug fixes</string>
+    <string name='settings_about_role_logo_guidance'>Primary frontend development and design, plus technical guidance</string>
     <string name='settings_about_role_logo_ui'>Logo refinements and UI suggestions</string>
-    <string name='settings_about_role_early_testing'>In-depth testing during early development</string>
+    <string name='settings_about_role_early_testing'>Early development testing and UI updates</string>
     <string name='settings_error_open_author_profile'>Unable to open the author profile</string>
     <string name='settings_error_open_contributor_profile'>Unable to open the contributor profile</string>
     <string name='settings_about_qq_group'>QQ community group</string>
@@ -338,6 +344,10 @@
     <string name='home_back'>Back</string>
     <string name='home_search_workshop'>Search Workshop</string>
     <string name='home_search'>Search</string>
+    <string name='home_loading_summary'>Loaded %1$d · about %2$d items · page %3$d/%4$d</string>
+    <string name='home_source_community'>steam-community</string>
+    <string name='home_source_web_api'>steam-web-api</string>
+    <string name='home_source_steam_cm'>steam-cm</string>
     <string name='home_refresh'>Refresh</string>
     <string name='home_exact_phrase'>Exact phrase</string>
     <string name='home_filter_sort'>Sort</string>
@@ -521,6 +531,7 @@
     <string name='detail_play_video'>Play video</string>
     <string name='detail_playable_video_missing'>No playable video file was found in the downloaded item</string>
     <string name='detail_playback_speed_value'>Playback speed %1$s</string>
+    <string name='detail_hold_double_speed'>Playing at %1$s speed...</string>
     <string name='detail_post_comment'>Post comment</string>
     <string name='detail_preparing_video'>Preparing video…</string>
     <string name='detail_preview_image'>Preview of %1$s</string>
@@ -594,6 +605,10 @@
     <string name='downloads_action_cancel'>Cancel</string>
     <string name='downloads_action_delete'>Delete</string>
     <string name='downloads_reading_size'>Reading size</string>
+    <string name='downloads_retry_failed'>Retry all failed downloads</string>
+    <string name='downloads_clear_completed'>Clear completed downloads</string>
+    <string name='downloads_failed_retried'>Retrying %1$d failed download(s)</string>
+    <string name='downloads_completed_cleared'>Cleared %1$d completed download(s)</string>
     <string name='library_view_details'>View details</string>
     <string name='library_open_actions_menu'>Open actions menu</string>
     <string name='library_wallpaper_title'>Wallpaper title</string>

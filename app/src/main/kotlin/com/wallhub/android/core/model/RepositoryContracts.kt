@@ -131,6 +131,9 @@ interface SteamSessionRepository {
 /** Data-layer port for short-lived Steam content sessions. Feature modules never use it. */
 interface SteamContentCredentialProvider {
     suspend fun loadContentCredential(): SteamContentCredential?
+
+    /** Requests persisted-session restoration and returns a credential only after it becomes usable. */
+    suspend fun restoreContentCredential(): SteamContentCredential? = loadContentCredential()
 }
 
 /** A seekable video stream backed by Steam Depot chunks instead of a completed download. */
@@ -144,6 +147,12 @@ interface WorkshopVideoStreamSession : Closeable {
     val currentCdnHost: String?
         get() = null
 
+    /** Updates buffering demand after Media3 learns the duration or playback speed changes. */
+    fun updatePlaybackDemand(
+        playbackSpeed: Float,
+        durationMs: Long,
+    ) = Unit
+
     suspend fun readAt(
         position: Long,
         length: Int,
@@ -152,6 +161,9 @@ interface WorkshopVideoStreamSession : Closeable {
 
 interface WorkshopVideoStreamRepository {
     suspend fun open(workshopId: Long): WorkshopVideoStreamSession
+
+    /** Clears decrypted Depot chunks retained only for online playback. */
+    suspend fun clearCache(): Long = 0L
 }
 
 /** Public Workshop data over signed-in or anonymous Steam Connection Manager sessions. */
@@ -232,6 +244,10 @@ interface DownloadTaskRepository {
     suspend fun reorder(taskIds: List<String>)
 
     suspend fun clearFinishedHistory(): Int
+
+    suspend fun clearCompletedHistory(): Int = 0
+
+    suspend fun retryFailedTasks(): Int = 0
 }
 
 interface LocalWallpaperRepository {

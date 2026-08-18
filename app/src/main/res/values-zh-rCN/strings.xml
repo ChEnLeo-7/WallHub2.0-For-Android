@@ -1,6 +1,7 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <resources>
     <string name='app_name'>WallHub</string>
+    <string name='app_saved_steam_session_expired'>已保存的 Steam 登录已失效，请重新登录。</string>
     <string name='setup_welcome_title'>欢迎使用 WallHub</string>
     <string name='setup_welcome_description'>在 Android 上浏览、下载与管理 Wallpaper Engine 创意工坊内容。</string>
     <string name='setup_steam_title'>登录 Steam</string>
@@ -119,6 +120,9 @@
     <string name='settings_action_open_steam'>Steam</string>
     <string name='settings_streaming_cache'>SteamKit 在线播放缓存</string>
     <string name='settings_streaming_cache_description'>限制在线播放的已解密 Steam 分块缓存；默认 512 MB。</string>
+    <string name='settings_clear_streaming_cache'>清理在线播放缓存</string>
+    <string name='settings_streaming_cache_cleared'>已清理 %1$s 在线播放缓存</string>
+    <string name='settings_streaming_cache_clear_failed'>清理在线播放缓存失败</string>
     <string name='settings_custom_value'>自定义：%1$s</string>
     <string name='settings_custom_streaming_cache'>自定义在线播放缓存</string>
     <string name='settings_custom_streaming_cache_description'>输入不低于 128 MB 的缓存大小。</string>
@@ -208,10 +212,12 @@
     <string name='settings_action_use_steam_guard_code'>改用 Steam Guard 验证码</string>
     <string name='settings_steam_guard_code'>Steam Guard / 邮件验证码</string>
     <string name='settings_action_submit_code'>提交验证码</string>
-    <string name='settings_about_role_author'>作者 · 项目开发与维护</string>
-    <string name='settings_about_role_logo_guidance'>LOGO 设计、技术指导</string>
+    <string name='settings_about_developers'>开发者</string>
+    <string name='settings_about_contributors'>贡献人员名单</string>
+    <string name='settings_about_role_author'>主要后端开发和维护、修bug</string>
+    <string name='settings_about_role_logo_guidance'>主要前端开发和设计、以及技术指导</string>
     <string name='settings_about_role_logo_ui'>LOGO 修改、UI 建议</string>
-    <string name='settings_about_role_early_testing'>参与了早期开发的深度内测</string>
+    <string name='settings_about_role_early_testing'>参与了早期开发内测和UI修改</string>
     <string name='settings_error_open_author_profile'>无法打开作者主页</string>
     <string name='settings_error_open_contributor_profile'>无法打开贡献者主页</string>
     <string name='settings_about_qq_group'>QQ 交流群</string>
@@ -316,6 +322,10 @@
     <string name='home_back'>返回</string>
     <string name='home_search_workshop'>搜索创意工坊</string>
     <string name='home_search'>搜索</string>
+    <string name='home_loading_summary'>已加载 %1$d · 约 %2$d 项 · 第 %3$d/%4$d 页</string>
+    <string name='home_source_community'>steam-community</string>
+    <string name='home_source_web_api'>steam-web-api</string>
+    <string name='home_source_steam_cm'>steam-cm</string>
     <string name='home_refresh'>刷新</string>
     <string name='home_exact_phrase'>精确匹配短语</string>
     <string name='home_filter_sort'>排序</string>
@@ -494,6 +504,7 @@
     <string name='detail_play_video'>播放视频</string>
     <string name='detail_playable_video_missing'>未在已下载项目中找到可播放的视频文件</string>
     <string name='detail_playback_speed_value'>播放速度 %1$s</string>
+    <string name='detail_hold_double_speed'>正在以 %1$s 倍速播放...</string>
     <string name='detail_post_comment'>发表评论</string>
     <string name='detail_preparing_video'>正在准备视频…</string>
     <string name='detail_preview_image'>%1$s 预览图</string>
@@ -567,6 +578,10 @@
     <string name='downloads_action_cancel'>取消</string>
     <string name='downloads_action_delete'>删除</string>
     <string name='downloads_reading_size'>正在读取大小</string>
+    <string name='downloads_retry_failed'>重试所有失败下载</string>
+    <string name='downloads_clear_completed'>清空已完成下载</string>
+    <string name='downloads_failed_retried'>正在重试 %1$d 个失败下载</string>
+    <string name='downloads_completed_cleared'>已清空 %1$d 个已完成下载</string>
     <string name='library_view_details'>查看详情</string>
     <string name='library_open_actions_menu'>打开操作菜单</string>
     <string name='library_wallpaper_title'>Wallpaper 标题</string>

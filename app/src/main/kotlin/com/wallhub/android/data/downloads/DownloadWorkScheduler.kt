@@ -5,6 +5,7 @@ import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
@@ -17,6 +18,8 @@ import javax.inject.Singleton
 
 interface DownloadWorkScheduler {
     fun enqueue(taskId: String)
+
+    fun cancel(taskId: String)
 }
 
 interface ConversionWorkScheduler {
@@ -40,12 +43,19 @@ class WorkManagerDownloadWorkScheduler
                             .setRequiredNetworkType(NetworkType.CONNECTED)
                             .build(),
                     ).setInputData(workDataOf(FormalWorkshopDownloadWorker.KEY_TASK_ID to taskId))
+                    .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                     .addTag(FORMAL_DOWNLOAD_TAG)
                     .build()
             WorkManager.getInstance(context).enqueueUniqueWork(
                 FormalWorkshopDownloadWorker.UNIQUE_DOWNLOAD_WORK_PREFIX + taskId,
                 ExistingWorkPolicy.KEEP,
                 request,
+            )
+        }
+
+        override fun cancel(taskId: String) {
+            WorkManager.getInstance(context).cancelUniqueWork(
+                FormalWorkshopDownloadWorker.UNIQUE_DOWNLOAD_WORK_PREFIX + taskId,
             )
         }
 
@@ -114,6 +124,7 @@ class WallHubDownloadWorkerFactory
                         appContext = appContext,
                         params = workerParameters,
                         taskDao = taskDao,
+                        downloadConcurrencyGovernor = downloadConcurrencyGovernor,
                     )
 
                 else -> null

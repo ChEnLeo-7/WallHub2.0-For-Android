@@ -25,10 +25,14 @@ import androidx.compose.material.icons.outlined.PlayArrow
 
 internal fun <T> Set<T>.toggleBounded(value: T, allOptions: Set<T>): Set<T> {
     val current = if (isEmpty() || this == allOptions) allOptions else this
-    if (current == allOptions) return setOf(value)
     val next = if (value in current) current - value else current + value
     return if (next.isEmpty() || next == allOptions) allOptions else next
 }
+
+internal fun <T> Set<T>.isFilterOptionSelected(
+    value: T,
+    allOptions: Set<T>,
+): Boolean = value in ifEmpty { allOptions }
 
 internal fun Set<WorkshopRating>.toggleRating(
     rating: WorkshopRating,

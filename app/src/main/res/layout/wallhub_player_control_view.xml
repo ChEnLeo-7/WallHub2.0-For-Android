@@ -10,7 +10,7 @@
     <FrameLayout
         android:id="@id/exo_bottom_bar"
         android:layout_width="match_parent"
-        android:layout_height="50dp"
+        android:layout_height="64dp"
         android:layout_gravity="bottom"
         android:background="@android:color/transparent"
         android:layoutDirection="ltr">
@@ -21,8 +21,8 @@
             android:layout_height="match_parent"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp">
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp">
 
             <com.wallhub.android.feature.detail.WallHubIconShadowImageButton
                 android:id="@id/exo_play_pause"
@@ -82,8 +82,8 @@
 
                 <TextView
                     android:id="@+id/wallhub_playback_speed"
-                    android:layout_width="60dp"
-                    android:layout_height="32dp"
+                    android:layout_width="68dp"
+                    android:layout_height="40dp"
                     android:background="@drawable/wallhub_player_speed_selector"
                     android:clickable="true"
                     android:contentDescription="@string/wallhub_player_playback_speed"
@@ -101,8 +101,8 @@
 
                 <com.wallhub.android.feature.detail.WallHubIconShadowImageButton
                     android:id="@+id/wallhub_mute"
-                    android:layout_width="40dp"
-                    android:layout_height="42dp"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
                     android:background="@drawable/wallhub_player_control_chip"
                     android:contentDescription="@string/wallhub_player_mute"
                     android:elevation="0dp"
@@ -112,7 +112,7 @@
                 <SeekBar
                     android:id="@+id/wallhub_volume"
                     android:layout_width="80dp"
-                    android:layout_height="42dp"
+                    android:layout_height="48dp"
                     android:layout_marginEnd="4dp"
                     android:background="@android:color/transparent"
                     android:contentDescription="@string/wallhub_player_volume"
@@ -128,8 +128,8 @@
                 <com.wallhub.android.feature.detail.WallHubIconShadowImageButton
                     android:id="@id/exo_fullscreen"
                     style="@style/ExoStyledControls.Button.Bottom.FullScreen"
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
                     android:layout_marginStart="0dp"
                     android:layout_marginEnd="0dp"
                     android:background="@drawable/wallhub_player_control_chip"
@@ -144,16 +144,16 @@
         android:layout_width="match_parent"
         android:layout_height="38dp"
         android:layout_gravity="bottom"
-        android:layout_marginStart="10dp"
-        android:layout_marginEnd="10dp"
-        android:layout_marginBottom="42dp" />
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:layout_marginBottom="56dp" />
 
     <LinearLayout
         android:id="@id/exo_minimal_controls"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
-        android:layout_marginEnd="8dp"
+        android:layout_marginEnd="20dp"
         android:layout_marginBottom="4dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">

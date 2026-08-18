@@ -12,6 +12,11 @@ import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopPage
 import com.wallhub.android.core.model.WorkshopRepository
 import com.wallhub.android.core.model.WorkshopSummary
+import com.wallhub.android.core.model.matchesSteamWallpaper
+import com.wallhub.android.core.model.workshopSearchIdOrNull
+import com.wallhub.android.core.model.workshopAuthorSearchOrNull
+import com.wallhub.android.core.model.needsQuestionableRatingFallback
+import com.wallhub.android.core.model.allowQuestionableRatingFallback
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -51,15 +56,27 @@ class CommunityWorkshopRepository
                 when (preferences.steamWorkshopDataSource) {
                     SteamWorkshopDataSource.COMMUNITY_HTML -> browseViaCommunity(normalizedQuery)
                     SteamWorkshopDataSource.WEB_API -> {
-                        require(steamApiKey.isNotEmpty()) { "The Steam Web API data source requires an API key" }
-                        require(normalizedQuery.creatorId == null) { "The Steam Web API data source does not support browsing by author" }
-                        enrichPageAuthors(browseViaSteamApi(normalizedQuery, steamApiKey), steamApiKey)
+                        require(steamApiKey.isNotEmpty() || normalizedQuery.searchText.workshopSearchIdOrNull() != null) {
+                            "The Steam Web API data source requires an API key"
+                        }
+                        enrichPageAuthors(
+                            if (normalizedQuery.creatorId != null) {
+                                browseViaSteamApiAuthor(normalizedQuery, steamApiKey)
+                            } else {
+                                browseViaSteamApi(normalizedQuery, steamApiKey)
+                            },
+                            steamApiKey,
+                        )
                     }
 
                     SteamWorkshopDataSource.CM_WEBSOCKET -> {
-                        require(normalizedQuery.creatorId == null) { "The Steam CM data source does not support browsing by author" }
-                        unifiedWorkshopRepository.browsePublic(normalizedQuery)
+                        val first = unifiedWorkshopRepository.browsePublic(normalizedQuery)
                             ?: error("Failed to establish a Steam CM WebSocket session")
+                        if (first.items.isEmpty() && normalizedQuery.needsQuestionableRatingFallback()) {
+                            unifiedWorkshopRepository.browsePublic(normalizedQuery.allowQuestionableRatingFallback()) ?: first
+                        } else {
+                            first
+                        }
                     }
                 }
             }
@@ -451,6 +468,9 @@ class CommunityWorkshopRepository
                 CommunityWorkshopParser
                     .extractItemIds(html)
                     .take(sourcePageSize)
+            if (ids.isEmpty() && normalizedQuery.needsQuestionableRatingFallback()) {
+                return browseViaCommunity(normalizedQuery.allowQuestionableRatingFallback())
+            }
             if (ids.isEmpty()) {
                 return WorkshopPage(
                     items = emptyList(),
@@ -467,7 +487,7 @@ class CommunityWorkshopRepository
                     .mapNotNull(detailMap::get)
                     .filter { item ->
                         normalizedQuery.creatorId == null || item.creatorId == normalizedQuery.creatorId
-                    }.filter { item -> normalizedQuery.matches(item.summary) }
+                    }
             return WorkshopPage(
                 items = items.map(WorkshopDetail::summary),
                 page = normalizedQuery.page,
@@ -487,7 +507,7 @@ class CommunityWorkshopRepository
             val details = CommunityWorkshopParser.parseDetails(body)
             val items =
                 details
-                    .filter { item -> normalizedQuery.matches(item.summary) }
+                    .filter { item -> normalizedQuery.matchesSteamWallpaper(item.summary) }
                     .take(normalizedQuery.pageSize)
             val total =
                 JSONObject(body)
@@ -498,7 +518,7 @@ class CommunityWorkshopRepository
                     ?.coerceAtMost(Int.MAX_VALUE.toLong())
                     ?.toInt()
             val totalPages = total?.toMaximumPage(normalizedQuery.pageSize)
-            return WorkshopPage(
+            val page = WorkshopPage(
                 items = items.map(WorkshopDetail::summary),
                 page = normalizedQuery.page,
                 hasNextPage =
@@ -506,6 +526,26 @@ class CommunityWorkshopRepository
                         (totalPages == null || normalizedQuery.page < totalPages),
                 totalCount = total,
                 totalPages = totalPages,
+            )
+            return if (page.items.isEmpty() && normalizedQuery.needsQuestionableRatingFallback()) {
+                browseViaSteamApi(normalizedQuery.allowQuestionableRatingFallback(), steamApiKey)
+            } else page
+        }
+
+        private fun browseViaSteamApiAuthor(
+            normalizedQuery: WorkshopBrowseQuery,
+            steamApiKey: String,
+        ): WorkshopPage {
+            val body = getSteamApi(buildSteamApiAuthorBrowseUrl(normalizedQuery, steamApiKey), steamApiKey)
+            val details = CommunityWorkshopParser.parseDetails(body)
+            val response = JSONObject(body).optJSONObject("response")
+            val total = response?.optInt("total", 0)?.takeIf { it > 0 }
+            return WorkshopPage(
+                items = details.filter { normalizedQuery.matchesSteamWallpaper(it.summary) }.take(normalizedQuery.pageSize).map(WorkshopDetail::summary),
+                page = normalizedQuery.page,
+                hasNextPage = details.size >= normalizedQuery.pageSize,
+                totalCount = total,
+                totalPages = total?.toMaximumPage(normalizedQuery.pageSize),
             )
         }
 

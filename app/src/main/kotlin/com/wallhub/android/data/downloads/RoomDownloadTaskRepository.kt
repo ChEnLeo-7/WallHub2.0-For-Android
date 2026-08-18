@@ -6,6 +6,7 @@ import com.wallhub.android.R
 import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.database.FormalTaskRecordEntity
 import com.wallhub.android.core.model.DownloadAction
+import com.wallhub.android.core.model.DownloadCredentialMode
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 import javax.inject.Inject
@@ -50,6 +52,10 @@ class RoomDownloadTaskRepository
             require(request.workshopId > 0L) { "Invalid Workshop item ID" }
             taskDao.findActiveForWorkshop(request.workshopId)?.toModel()?.let { return it }
             val now = System.currentTimeMillis()
+            // A null read can be a transient SIGNING_IN window while the persisted
+            // Steam session is being restored. Resolve that state before freezing the
+            // task's authorization mode; only a second null is treated as anonymous.
+            val credential = credentialProvider.resolveContentCredential()
             val task =
                 DownloadTask(
                     id = UUID.randomUUID().toString(),
@@ -59,7 +65,13 @@ class RoomDownloadTaskRepository
                     status = DownloadStatus.QUEUED,
                     previewUrl = request.previewUrl,
                     totalBytes = request.expectedTotalBytes.coerceAtLeast(0L),
-                    accountName = credentialProvider.loadContentCredential()?.accountName,
+                    accountName = credential?.accountName,
+                    credentialMode =
+                        if (credential == null) {
+                            DownloadCredentialMode.ANONYMOUS
+                        } else {
+                            DownloadCredentialMode.ACCOUNT
+                        },
                     outputTreeUri = request.outputTreeUri,
                     exportFormat = request.exportFormat,
                     message = context.getString(R.string.backend_download_queued),
@@ -123,21 +135,47 @@ class RoomDownloadTaskRepository
             action: DownloadAction,
             activeWorker: Boolean,
         ) {
-            val hasStagingDirectory = task.stagingDirectory?.let(::File)?.isDirectory == true
-            if (action == DownloadAction.RETRY && hasStagingDirectory) {
-                upsert(
+            val recoveredTask =
+                if (task.credentialMode == DownloadCredentialMode.LEGACY_UNKNOWN) {
+                    val credential = credentialProvider.resolveContentCredential()
                     task.copy(
-                        status = DownloadStatus.CONVERTING,
-                        requestedAction = null,
-                        message = context.getString(R.string.backend_conversion_retrying),
-                        updatedAt = System.currentTimeMillis(),
-                    ),
+                        accountName = credential?.accountName,
+                        credentialMode =
+                            if (credential == null) {
+                                DownloadCredentialMode.ANONYMOUS
+                            } else {
+                                DownloadCredentialMode.ACCOUNT
+                            },
+                    )
+                } else {
+                    task
+                }
+            if (action == DownloadAction.RETRY && recoveredTask.hasCompleteStagingDownload()) {
+                val converting = recoveredTask.copy(
+                    status = DownloadStatus.CONVERTING,
+                    requestedAction = null,
+                    message = context.getString(R.string.backend_conversion_retrying),
+                    updatedAt = System.currentTimeMillis(),
                 )
-                conversionScheduler.enqueue(task.id)
+                upsert(converting)
+                try {
+                    conversionScheduler.enqueue(task.id)
+                } catch (error: Throwable) {
+                    upsert(
+                        converting.copy(
+                            status = DownloadStatus.FAILED,
+                            message = context.getString(
+                                R.string.backend_download_start_failed,
+                                error.javaClass.simpleName,
+                            ),
+                            updatedAt = System.currentTimeMillis(),
+                        ),
+                    )
+                }
                 return
             }
             upsert(
-                task.copy(
+                recoveredTask.copy(
                     status = if (activeWorker) DownloadStatus.DOWNLOADING else DownloadStatus.QUEUED,
                     requestedAction = null,
                     message =
@@ -149,23 +187,35 @@ class RoomDownloadTaskRepository
                     updatedAt = System.currentTimeMillis(),
                 ),
             )
-            if (!activeWorker) workScheduler.enqueue(task.id)
+            if (!activeWorker) workScheduler.enqueue(recoveredTask.id)
         }
 
         private suspend fun requestExport(task: DownloadTask) {
             val stagingDirectory = task.stagingDirectory?.let(::File)
             require(stagingDirectory?.isDirectory == true) { "Download staging files are missing; cannot export" }
-            upsert(
-                task.copy(
-                    status = DownloadStatus.CONVERTING,
-                    outputTreeUri = settingsRepository.preferences.first().outputTreeUri,
-                    outputUri = null,
-                    requestedAction = null,
-                    message = context.getString(R.string.backend_conversion_preparing),
-                    updatedAt = System.currentTimeMillis(),
-                ),
+            val converting = task.copy(
+                status = DownloadStatus.CONVERTING,
+                outputTreeUri = settingsRepository.preferences.first().outputTreeUri,
+                outputUri = null,
+                requestedAction = null,
+                message = context.getString(R.string.backend_conversion_preparing),
+                updatedAt = System.currentTimeMillis(),
             )
-            conversionScheduler.enqueue(task.id)
+            upsert(converting)
+            try {
+                conversionScheduler.enqueue(task.id)
+            } catch (error: Throwable) {
+                upsert(
+                    converting.copy(
+                        status = DownloadStatus.FAILED,
+                        message = context.getString(
+                            R.string.backend_download_start_failed,
+                            error.javaClass.simpleName,
+                        ),
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                )
+            }
         }
 
         private suspend fun requestCancellation(
@@ -192,15 +242,19 @@ class RoomDownloadTaskRepository
                 return
             }
             if (activeWorker) {
-                upsert(
-                    task.copy(
-                        requestedAction = DownloadAction.CANCEL,
-                        message = context.getString(R.string.backend_download_cancelling),
-                        updatedAt = System.currentTimeMillis(),
-                    ),
-                )
+                withContext(NonCancellable) {
+                    upsert(
+                        task.copy(
+                            requestedAction = DownloadAction.CANCEL,
+                            message = context.getString(R.string.backend_download_cancelling),
+                            updatedAt = System.currentTimeMillis(),
+                        ),
+                    )
+                    workScheduler.cancel(task.id)
+                }
                 return
             }
+            workScheduler.cancel(task.id)
             deleteManagedStagingDirectory(context, task.stagingDirectory)
             upsert(
                 task.copy(
@@ -244,23 +298,90 @@ class RoomDownloadTaskRepository
         }
 
         override suspend fun clearFinishedHistory(): Int {
-            // Completed video tasks retain their private source files for local playback.
-            // Once their queue history is cleared, there is no route back to that player,
-            // so clean only those private staging directories while keeping exported files.
-            taskDao
-                .observeAll()
-                .first()
-                .filter { task ->
-                    task.status in
-                        setOf(
-                            DownloadStatus.COMPLETED.name,
-                            DownloadStatus.FAILED.name,
-                            DownloadStatus.CANCELLED.name,
-                        )
-                }.forEach { task -> deleteManagedStagingDirectory(context, task.stagingDirectory) }
-            return taskDao.clearFinishedHistory()
+            val removableTasks =
+                taskDao
+                    .observeAll()
+                    .first()
+                    .filter { task ->
+                        task.status in
+                            setOf(
+                                DownloadStatus.COMPLETED.name,
+                                DownloadStatus.FAILED.name,
+                                DownloadStatus.CANCELLED.name,
+                            )
+                    }.filterNot(FormalTaskRecordEntity::isRetainedLocalVideo)
+            return deleteHistoryTasks(removableTasks)
         }
+
+        override suspend fun clearCompletedHistory(): Int {
+            val removableTasks =
+                taskDao
+                    .listAll()
+                    .filter { task -> task.status == DownloadStatus.COMPLETED.name }
+                    .filterNot(FormalTaskRecordEntity::isRetainedLocalVideo)
+            return deleteHistoryTasks(removableTasks)
+        }
+
+        override suspend fun retryFailedTasks(): Int {
+            val failedTaskIds =
+                taskDao.listAll()
+                    .filter { task -> task.status == DownloadStatus.FAILED.name }
+                    .map(FormalTaskRecordEntity::taskId)
+            return failedTaskIds.count { taskId ->
+                runCatching { requestAction(taskId, DownloadAction.RETRY) }.isSuccess
+            }
+        }
+
+        private suspend fun deleteHistoryTasks(tasks: List<FormalTaskRecordEntity>): Int =
+            tasks.sumOf { task ->
+                deleteManagedStagingDirectory(context, task.stagingDirectory)
+                taskDao.delete(task.taskId)
+            }
     }
+
+internal suspend fun SteamContentCredentialProvider.resolveContentCredential() =
+    loadContentCredential() ?: restoreContentCredential()
+
+internal fun FormalTaskRecordEntity.isRetainedLocalVideo(): Boolean =
+    status == DownloadStatus.COMPLETED.name &&
+        type == WorkshopType.VIDEO.name &&
+        !stagingDirectory.isNullOrBlank()
+
+internal fun DownloadTask.hasCompleteStagingDownload(): Boolean {
+    if (totalBytes <= 0L || downloadedBytes < totalBytes) return false
+    val directory = stagingDirectory?.let(::File)?.takeIf(File::isDirectory) ?: return false
+    var hasFile = false
+    directory.walkTopDown().forEach { file ->
+        if (!file.isFile) return@forEach
+        if (file.name.endsWith(PARTIAL_DOWNLOAD_SUFFIX, ignoreCase = true)) return false
+        hasFile = true
+    }
+    return hasFile && hasCompletePresetDependency(directory)
+}
+
+internal fun hasCompletePresetDependency(directory: File): Boolean =
+    hasCompletePresetDependency(directory, depth = 0, visited = mutableSetOf())
+
+private fun hasCompletePresetDependency(
+    directory: File,
+    depth: Int,
+    visited: MutableSet<String>,
+): Boolean {
+    if (depth > MAX_PRESET_DEPENDENCY_DEPTH) return false
+    val canonicalDirectory = runCatching { directory.canonicalFile.path }.getOrNull() ?: return false
+    if (!visited.add(canonicalDirectory)) return false
+    val projectFile = File(directory, "project.json")
+    if (!projectFile.isFile) return true
+    val project = runCatching {
+        JSONObject(readProjectJson(projectFile))
+    }.getOrNull() ?: return false
+    if (!project.has("preset")) return true
+    val dependencyId = project.opt("dependency")?.toString()?.trim()?.toLongOrNull() ?: return false
+    val dependencyRoot = File(directory, ".wallhub-dependencies").canonicalFile
+    val dependency = File(dependencyRoot, dependencyId.toString()).canonicalFile
+    if (!dependency.toPath().startsWith(dependencyRoot.toPath()) || !dependency.isDirectory) return false
+    return hasCompletePresetDependency(dependency, depth + 1, visited)
+}
 
 internal fun FormalTaskRecordEntity.toModel(): DownloadTask =
     DownloadTask(
@@ -274,6 +395,7 @@ internal fun FormalTaskRecordEntity.toModel(): DownloadTask =
         totalBytes = totalBytes,
         bytesPerSecond = bytesPerSecond,
         accountName = accountName,
+        credentialMode = credentialMode.toDownloadCredentialMode(),
         message = message,
         outputLabel = outputLabel,
         stagingDirectory = stagingDirectory,
@@ -301,6 +423,7 @@ internal fun DownloadTask.toEntity(): FormalTaskRecordEntity =
         totalBytes = totalBytes,
         bytesPerSecond = bytesPerSecond,
         accountName = accountName,
+        credentialMode = credentialMode.name,
         outputLabel = outputLabel,
         stagingDirectory = stagingDirectory,
         contentManifestId = contentManifestId,
@@ -325,6 +448,11 @@ private fun String.toDownloadStatus(): DownloadStatus =
     enumValues<DownloadStatus>()
         .firstOrNull { it.name == this }
         ?: DownloadStatus.FAILED
+
+private fun String.toDownloadCredentialMode(): DownloadCredentialMode =
+    enumValues<DownloadCredentialMode>()
+        .firstOrNull { it.name == this }
+        ?: DownloadCredentialMode.LEGACY_UNKNOWN
 
 private fun String.toDownloadAction(): DownloadAction? =
     enumValues<DownloadAction>()
@@ -353,6 +481,8 @@ private fun deleteManagedStagingDirectory(
 }
 
 private const val LOG_TAG = "WallHubDownload"
+private const val MAX_PRESET_DEPENDENCY_DEPTH = 4
+private const val PARTIAL_DOWNLOAD_SUFFIX = ".wallhub.part"
 private val REORDERABLE_STATUSES =
     setOf(
         DownloadStatus.QUEUED.name,

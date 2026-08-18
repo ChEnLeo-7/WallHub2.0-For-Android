@@ -1,5 +1,7 @@
 package com.wallhub.android.core.model
 
+import java.util.Locale
+
 const val WORKSHOP_COMMENT_MAX_LENGTH = 1_000
 
 enum class WorkshopType {
@@ -55,12 +57,19 @@ data class WorkshopBrowseQuery(
     val tags: Set<String> = emptySet(),
     val genres: Set<String> = emptySet(),
     val officialTags: Set<String> = emptySet(),
+    val excludedOfficialTags: Set<String> = emptySet(),
     val resolutions: Set<String> = emptySet(),
     val ratings: Set<WorkshopRating> = setOf(WorkshopRating.EVERYONE),
     val days: Int = 30,
     val exactPhrase: Boolean = false,
     val sort: WorkshopSort = WorkshopSort.TRENDING,
+    val allowNsfw: Boolean = false,
+    val mobileCompatibleOnly: Boolean = false,
+    val language: Int = defaultSteamWorkshopLanguage(),
 )
+
+private fun defaultSteamWorkshopLanguage(): Int =
+    if (Locale.getDefault().language == Locale.CHINESE.language) 6 else 0
 
 data class AccountWorkshopQuery(
     val collection: AccountWorkshopCollection,

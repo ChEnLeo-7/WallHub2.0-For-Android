@@ -7,6 +7,7 @@ import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -81,6 +82,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -91,7 +93,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.wallhub.android.R
-import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
@@ -158,7 +159,7 @@ fun LocalWallpaperRoute(
 @Composable
 private fun LocalWallpaperEffectHandler(viewModel: LocalWallpaperViewModel) {
     val context = LocalContext.current
-    val toastState = LocalWallHubToastState.current
+    val resources = LocalResources.current
     val selectedDirectoryLabel = stringResource(R.string.local_selected_directory)
     val authorizeDirectoryFailed = stringResource(R.string.local_authorize_directory_failed)
     val openResourceFailed = stringResource(R.string.local_open_resource_failed)
@@ -227,7 +228,7 @@ private fun LocalWallpaperEffectHandler(viewModel: LocalWallpaperViewModel) {
                 }
                 is LocalWallpaperEffect.CopyLocation -> {
                     copyLocalResourceLocation(context, effect.resource)
-                    toastState.show(locationCopied)
+                    Toast.makeText(context.applicationContext, locationCopied, Toast.LENGTH_SHORT).show()
                 }
                 is LocalWallpaperEffect.ImportToWallpaperEngine -> {
                     launchWallpaperEngineImport(
@@ -248,10 +249,12 @@ private fun LocalWallpaperEffectHandler(viewModel: LocalWallpaperViewModel) {
                     }
                 }
                 is LocalWallpaperEffect.ShowMessage ->
-                    toastState.show(
+                    Toast.makeText(
+                        context.applicationContext,
                         effect.message
-                            ?: context.getString(requireNotNull(effect.messageRes)),
-                    )
+                            ?: resources.getString(requireNotNull(effect.messageRes)),
+                        Toast.LENGTH_SHORT,
+                    ).show()
             }
         }
     }

@@ -5,6 +5,7 @@ import net.jpountz.lz4.LZ4Factory
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import kotlin.math.min
 
 private const val TEX_FORMAT_RGBA8888 = 0
@@ -25,6 +26,7 @@ data class TexConversionResult(
 data class TexFileConversionResult(
     val converted: Boolean,
     val reason: String,
+    val canRetainOriginal: Boolean = false,
 )
 
 private data class MobileRgbaTexture(
@@ -97,7 +99,11 @@ object TexMobileConverter {
             val prepared = prepare(source)
             val texture =
                 prepared.texture
-                    ?: return TexFileConversionResult(false, prepared.reason)
+                    ?: return TexFileConversionResult(
+                        converted = false,
+                        reason = prepared.reason,
+                        canRetainOriginal = true,
+                    ).also { outputFile.delete() }
             writeMobileRgba(
                 outputFile = outputFile,
                 flags = texture.flags,
@@ -109,9 +115,108 @@ object TexMobileConverter {
             TexFileConversionResult(true, prepared.reason)
         }.getOrElse { error ->
             outputFile.delete()
-            TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
+            TexFileConversionResult(
+                converted = false,
+                reason = error.message ?: error.javaClass.simpleName,
+                canRetainOriginal = hasValidTexEnvelope(source),
+            )
         }
     }
+
+    internal fun hasValidTexEnvelope(source: ByteArray): Boolean =
+        runCatching {
+            val reader = ByteCursor(source)
+            require(reader.readCString() == "TEXV0005")
+            require(reader.readCString() == "TEXI0001")
+            reader.readIntLe()
+            reader.readIntLe()
+            repeat(4) { require(reader.readIntLe() > 0) }
+            reader.readIntLe()
+            val container = reader.readCString()
+            require(reader.readIntLe() == 1)
+            when (container) {
+                "TEXB0003" -> reader.readIntLe()
+                "TEXB0004" -> {
+                    reader.readIntLe()
+                    reader.readIntLe()
+                }
+                "TEXB0001", "TEXB0002" -> Unit
+                else -> error("Unsupported TEX container")
+            }
+            val mipmapCount = reader.readIntLe()
+            require(mipmapCount in 0..64)
+            repeat(mipmapCount) {
+                require(reader.readIntLe() > 0)
+                require(reader.readIntLe() > 0)
+                val storedSize =
+                    if (container == "TEXB0001") {
+                        reader.readIntLe()
+                    } else {
+                        val compressed = reader.readIntLe()
+                        val decompressedSize = reader.readIntLe()
+                        val size = reader.readIntLe()
+                        require(compressed in 0..1)
+                        require(decompressedSize in 0..MAX_RETAINED_TEX_DECOMPRESSED_BYTES)
+                        size
+                    }
+                require(storedSize >= 0)
+                reader.skip(storedSize)
+            }
+            require(reader.remainingBytes().isEmpty())
+            true
+        }.getOrDefault(false)
+
+    internal fun hasValidTexEnvelope(
+        sourceFile: File,
+        offset: Long,
+        length: Long,
+    ): Boolean =
+        runCatching {
+            require(offset >= 0L && length >= 0L && length <= sourceFile.length() && offset <= sourceFile.length() - length)
+            RandomAccessFile(sourceFile, "r").use { input ->
+                val end = offset + length
+                input.seek(offset)
+                require(input.readBoundedCString(end) == "TEXV0005")
+                require(input.readBoundedCString(end) == "TEXI0001")
+                input.readBoundedIntLe(end)
+                input.readBoundedIntLe(end)
+                repeat(4) { require(input.readBoundedIntLe(end) > 0) }
+                input.readBoundedIntLe(end)
+                val container = input.readBoundedCString(end)
+                require(input.readBoundedIntLe(end) == 1)
+                when (container) {
+                    "TEXB0003" -> input.readBoundedIntLe(end)
+                    "TEXB0004" -> {
+                        input.readBoundedIntLe(end)
+                        input.readBoundedIntLe(end)
+                    }
+                    "TEXB0001", "TEXB0002" -> Unit
+                    else -> error("Unsupported TEX container")
+                }
+                val mipmapCount = input.readBoundedIntLe(end)
+                require(mipmapCount in 0..64)
+                repeat(mipmapCount) {
+                    require(input.readBoundedIntLe(end) > 0)
+                    require(input.readBoundedIntLe(end) > 0)
+                    val storedSize =
+                        if (container == "TEXB0001") {
+                            input.readBoundedIntLe(end)
+                        } else {
+                            val compressed = input.readBoundedIntLe(end)
+                            val decompressedSize = input.readBoundedIntLe(end)
+                            val size = input.readBoundedIntLe(end)
+                            require(compressed in 0..1)
+                            require(decompressedSize in 0..MAX_RETAINED_TEX_DECOMPRESSED_BYTES)
+                            size
+                        }
+                    require(storedSize >= 0)
+                    require(input.filePointer <= end - storedSize.toLong())
+                    input.seek(input.filePointer + storedSize)
+                }
+                require(input.filePointer == end)
+            }
+            true
+        }.getOrDefault(false)
 
     fun writeMobileRgba(
         flags: Int,
@@ -155,7 +260,7 @@ object TexMobileConverter {
         val tex = parse(source)
         if (tex.mipmaps.isEmpty()) return PreparedTexConversion(null, "empty texture")
         if (tex.flags and TEX_FLAG_GIF != 0 || tex.flags and TEX_FLAG_VIDEO != 0 || tex.isMp4) {
-            return PreparedTexConversion(null, "animated texture")
+            return PreparedTexConversion(null, ANIMATED_TEXTURE_REASON)
         }
         if (tex.tailData.isNotEmpty()) return PreparedTexConversion(null, "trailing texture data")
 
@@ -249,10 +354,10 @@ object TexMobileConverter {
         require(textureWidth > 0 && textureHeight > 0 && imageWidth > 0 && imageHeight > 0) {
             "Invalid TEX dimensions"
         }
-        require(checkedPayloadSize(imageWidth, imageHeight, 4) <= MAX_MOBILE_RGBA_BYTES) {
+        require(checkedPayloadSize(imageWidth, imageHeight, 4) <= mobileRgbaLimit()) {
             "TEX texture exceeds mobile conversion memory limit"
         }
-        require(checkedPayloadSize(textureWidth, textureHeight, 4) <= MAX_MOBILE_RGBA_BYTES) {
+        require(checkedPayloadSize(textureWidth, textureHeight, 4) <= mobileRgbaLimit()) {
             "TEX base mipmap exceeds mobile conversion memory limit"
         }
         val unknown = reader.readIntLe()
@@ -636,7 +741,35 @@ object TexMobileConverter {
     ): Int = (alpha shl 24) or (red shl 16) or (green shl 8) or blue
 }
 
+private fun RandomAccessFile.readBoundedIntLe(end: Long): Int {
+    require(end >= Int.SIZE_BYTES && filePointer <= end - Int.SIZE_BYTES)
+    return Integer.reverseBytes(readInt())
+}
+
+private fun RandomAccessFile.readBoundedCString(end: Long): String {
+    val bytes = ByteArray(64)
+    var length = 0
+    while (filePointer < end) {
+        val value = read()
+        require(value >= 0)
+        if (value == 0) return bytes.copyOf(length).toString(Charsets.US_ASCII)
+        require(length < bytes.size)
+        bytes[length++] = value.toByte()
+    }
+    error("Unterminated C string")
+}
+
 private const val MOBILE_TEX_HEADER_SIZE = 91
+private const val ANIMATED_TEXTURE_REASON = "animated texture"
 private const val LZ4_COMPRESSION_LEVEL = 3
-private const val MAX_MOBILE_RGBA_BYTES = 48 * 1024 * 1024
-private const val MAX_DECOMPRESSED_TEX_BYTES = MAX_MOBILE_RGBA_BYTES
+private fun mobileRgbaLimit(maxHeapBytes: Long = Runtime.getRuntime().maxMemory()): Int =
+    (maxHeapBytes / TEX_RGBA_HEAP_DIVISOR)
+        .coerceIn(MIN_MOBILE_RGBA_BYTES.toLong(), MAX_MOBILE_RGBA_BYTES.toLong())
+        .toInt()
+
+private const val TEX_RGBA_HEAP_DIVISOR = 24L
+private const val MIN_MOBILE_RGBA_BYTES = 2 * 1024 * 1024
+private const val MAX_MOBILE_RGBA_BYTES = 8 * 1024 * 1024
+private val MAX_DECOMPRESSED_TEX_BYTES: Int
+    get() = mobileRgbaLimit()
+private const val MAX_RETAINED_TEX_DECOMPRESSED_BYTES = 64 * 1024 * 1024

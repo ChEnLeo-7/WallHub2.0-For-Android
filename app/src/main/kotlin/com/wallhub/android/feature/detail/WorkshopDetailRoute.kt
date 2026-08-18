@@ -5,6 +5,7 @@ package com.wallhub.android.feature.detail
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,7 +22,6 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -78,6 +78,7 @@ fun WorkshopDetailRoute(
         onToggleFavorite = viewModel::toggleFavorite,
         onReconnectSteam = viewModel::reconnectSteamSession,
         onStartInlineVideo = viewModel::startInlineVideoPlayback,
+        onRetryInlineVideo = viewModel::retryInlineVideoPlayback,
         onExportFormatSelected = viewModel::selectExportFormat,
         onDownload = {
             viewModel.onAction(
@@ -89,6 +90,7 @@ fun WorkshopDetailRoute(
         onCommentDraftChanged = viewModel::updateCommentDraft,
         onSubmitComment = viewModel::submitComment,
         onInlineFullscreenChange = viewModel::setInlineVideoFullscreen,
+        shouldShowInlinePlaybackStartNotice = viewModel::consumeInlinePlaybackStartNotice,
         onSearchAuthor = { author ->
             viewModel.onAction(WorkshopDetailAction.SearchAuthor(author))
         },
@@ -111,11 +113,12 @@ fun WorkshopDetailEffectHandler(
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val toast = LocalWallHubToastState.current
     var effectMessage by remember { mutableStateOf<DetailUiText?>(null) }
     val resolvedEffectMessage = effectMessage?.resolve()
     LaunchedEffect(resolvedEffectMessage) {
-        resolvedEffectMessage?.let(toast::show)
+        resolvedEffectMessage?.let { message ->
+            Toast.makeText(context.applicationContext, message, Toast.LENGTH_SHORT).show()
+        }
         effectMessage = null
     }
     val currentOnBack by rememberUpdatedState(onBack)
@@ -156,7 +159,7 @@ fun WorkshopDetailEffectHandler(
                 }
                 is WorkshopDetailEffect.CopyText -> {
                     clipboard.setText(AnnotatedString(effect.text))
-                    toast.show(effect.message)
+                    Toast.makeText(context.applicationContext, effect.message, Toast.LENGTH_SHORT).show()
                 }
                 is WorkshopDetailEffect.OpenSteam -> {
                     val intent =

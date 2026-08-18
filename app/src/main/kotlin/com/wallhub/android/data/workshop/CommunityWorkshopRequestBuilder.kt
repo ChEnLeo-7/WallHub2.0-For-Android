@@ -1,11 +1,21 @@
 package com.wallhub.android.data.workshop
 
 import android.net.Uri
+import com.wallhub.android.core.model.STEAM_CONTENT_RATING_TAGS
+import com.wallhub.android.core.model.STEAM_WORKSHOP_TYPE_TAGS
+import com.wallhub.android.core.model.WORKSHOP_RESOLUTION_TAG_MAP
 import com.wallhub.android.core.model.WorkshopBrowseQuery
-import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
-import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.android.core.model.matchesSteamWallpaper
+import com.wallhub.android.core.model.effectiveWorkshopRatings
+import com.wallhub.android.core.model.steamSearchText
+import com.wallhub.android.core.model.steamTagCriteria
+import com.wallhub.android.core.model.steamQueryType
+import com.wallhub.android.core.model.workshopAuthorSearchOrNull
+import com.wallhub.android.core.model.workshopDetailTagSearch
+import org.json.JSONArray
+import org.json.JSONObject
 import javax.inject.Singleton
 
 @Singleton
@@ -21,6 +31,7 @@ internal fun buildDetailUrl(workshopId: Long): String =
         .toString()
 
 internal fun buildBrowseUrl(query: WorkshopBrowseQuery): String {
+    val normalized = query.normalized()
     query.creatorId?.let { creatorId ->
         return Uri
             .Builder()
@@ -30,27 +41,9 @@ internal fun buildBrowseUrl(query: WorkshopBrowseQuery): String {
             .appendPath(creatorId)
             .appendPath("myworkshopfiles")
             .appendQueryParameter("appid", WALLPAPER_ENGINE_APP_ID.toString())
-            .appendQueryParameter("p", query.page.toString())
-            .appendQueryParameter("numperpage", AUTHOR_BROWSE_PAGE_SIZE.toString())
-            .apply {
-                appendFilterTags(
-                    selected = query.effectiveTypes().mapNotNull { type -> type.steamTag() }.toSet(),
-                    all = WORKSHOP_TYPE_TAGS,
-                )
-                appendFilterTags(
-                    selected = query.effectiveRatings().mapNotNull { rating -> rating.steamTag }.toSet(),
-                    all = CONTENT_RATING_TAGS,
-                )
-                appendFilterTags(selected = query.genres, all = COMMUNITY_GENRE_TAGS)
-                appendFilterTags(selected = query.resolutions, all = RESOLUTION_TAGS)
-                query.tags
-                    .plus(query.officialTags)
-                    .map(String::trim)
-                    .filter(String::isNotBlank)
-                    .distinct()
-                    .take(MAX_REQUIRED_TAGS)
-                    .forEach { tag -> appendQueryParameter("requiredtags[]", tag) }
-            }.build()
+            .appendQueryParameter("p", normalized.page.toString())
+            .appendQueryParameter("numperpage", normalized.pageSize.toString())
+            .build()
             .toString()
     }
     val sort =
@@ -70,34 +63,19 @@ internal fun buildBrowseUrl(query: WorkshopBrowseQuery): String {
         .appendQueryParameter("appid", WALLPAPER_ENGINE_APP_ID.toString())
         .appendQueryParameter("browsesort", sort)
         .appendQueryParameter("section", "readytouseitems")
-        .appendQueryParameter("actualsort", sort)
-        .appendQueryParameter("p", query.page.toString())
-        .appendQueryParameter("numperpage", query.pageSize.toString())
-        .appendQueryParameter("num_per_page", query.pageSize.toString())
+        .appendQueryParameter("p", normalized.page.toString())
+        .appendQueryParameter("num_per_page", normalized.pageSize.toString())
         .apply {
-            query.searchText.takeIf(String::isNotBlank)?.let { searchText ->
+            normalized.steamSearchText().takeIf(String::isNotBlank)?.let { searchText ->
                 appendQueryParameter("searchtext", searchText)
             }
-            if (query.sort == WorkshopSort.TRENDING && query.days > 0) {
-                appendQueryParameter("days", query.days.coerceIn(1, 365).toString())
+            if (normalized.sort == com.wallhub.android.core.model.WorkshopSort.TRENDING && normalized.days > 0) {
+                appendQueryParameter("days", normalized.days.coerceIn(1, 365).toString())
             }
-            appendFilterTags(
-                selected = query.effectiveTypes().mapNotNull { type -> type.steamTag() }.toSet(),
-                all = WORKSHOP_TYPE_TAGS,
-            )
-            appendFilterTags(
-                selected = query.effectiveRatings().mapNotNull { rating -> rating.steamTag }.toSet(),
-                all = CONTENT_RATING_TAGS,
-            )
-            appendFilterTags(selected = query.genres, all = COMMUNITY_GENRE_TAGS)
-            appendFilterTags(selected = query.resolutions, all = RESOLUTION_TAGS)
-            query.tags
-                .plus(query.officialTags)
-                .map(String::trim)
-                .filter(String::isNotBlank)
-                .distinct()
+            normalized.steamTagCriteria().requiredTags
                 .take(MAX_REQUIRED_TAGS)
                 .forEach { tag -> appendQueryParameter("requiredtags[]", tag) }
+            normalized.steamTagCriteria().excludedTags.forEach { tag -> appendQueryParameter("excludedtags[]", tag) }
         }.build()
         .toString()
 }
@@ -106,23 +84,35 @@ internal fun buildSteamApiBrowseUrl(
     query: WorkshopBrowseQuery,
     steamApiKey: String,
 ): String {
-    val requiredTags =
-        linkedSetOf<String>().apply {
-            query
-                .effectiveTypes()
-                .singleOrNull()
-                ?.steamTag()
-                ?.let(::add)
-            query
-                .effectiveRatings()
-                .singleOrNull()
-                ?.steamTag
-                ?.let(::add)
-            addAll(query.tags)
-            addAll(query.officialTags)
-            query.genres.singleOrNull()?.let(::add)
-            query.resolutions.singleOrNull()?.let(::add)
-        }
+    val normalized = query.normalized()
+    val criteria = normalized.steamTagCriteria()
+    val input = JSONObject()
+        .put("query_type", normalized.sort.steamQueryType())
+        .put("page", normalized.page)
+        .put("numperpage", normalized.pageSize)
+        .put("creator_appid", WALLPAPER_ENGINE_APP_ID)
+        .put("appid", WALLPAPER_ENGINE_APP_ID)
+        .put("filetype", 0)
+        .put("match_all_tags", true)
+        .put("requiredtags", JSONArray(criteria.requiredTags))
+        .put("excludedtags", JSONArray(criteria.excludedTags))
+        .put("return_tags", true)
+        .put("return_previews", true)
+        .put("return_short_description", true)
+        .put("return_metadata", true)
+        .put("return_vote_data", true)
+        .put("language", normalized.language)
+        .put("search_text_target", 0)
+    normalized.steamSearchText().takeIf(String::isNotBlank)?.let { input.put("search_text", it) }
+    if (normalized.sort == com.wallhub.android.core.model.WorkshopSort.TRENDING && normalized.days > 0) {
+        input.put("days", normalized.days.coerceIn(1, 365))
+    }
+    if (normalized.mobileCompatibleOnly) {
+        input.put(
+            "required_kv_tags",
+            JSONArray().put(JSONObject().put("key", "app_workshop_eula_version").put("value", "3")),
+        )
+    }
     return Uri
         .Builder()
         .scheme("https")
@@ -131,31 +121,44 @@ internal fun buildSteamApiBrowseUrl(
         .appendPath("QueryFiles")
         .appendPath("v1")
         .appendQueryParameter("key", steamApiKey)
-        .appendQueryParameter(
-            "query_type",
-            if (query.searchText.isNotBlank()) "12" else query.sort.steamApiQueryType().toString(),
-        ).appendQueryParameter("page", query.page.toString())
-        .appendQueryParameter("numperpage", query.pageSize.toString())
-        .appendQueryParameter("creator_appid", WALLPAPER_ENGINE_APP_ID.toString())
-        .appendQueryParameter("appid", WALLPAPER_ENGINE_APP_ID.toString())
-        .appendQueryParameter("filetype", "0")
-        .appendQueryParameter("match_all_tags", "1")
-        .appendQueryParameter("return_tags", "1")
-        .appendQueryParameter("return_previews", "1")
-        .appendQueryParameter("return_short_description", "1")
-        .appendQueryParameter("return_metadata", "1")
-        .apply {
-            query.searchText.takeIf(String::isNotBlank)?.let {
-                appendQueryParameter("search_text", it)
-            }
-            if (query.sort == WorkshopSort.TRENDING && query.days > 0) {
-                appendQueryParameter("days", query.days.coerceIn(1, 365).toString())
-                appendQueryParameter("include_recent_votes_only", "1")
-            }
-            requiredTags.forEachIndexed { index, tag ->
-                appendQueryParameter("requiredtags[$index]", tag)
-            }
-        }.build()
+        .appendQueryParameter("format", "json")
+        .appendQueryParameter("input_json", input.toString())
+        .build()
+        .toString()
+}
+
+internal fun buildSteamApiAuthorBrowseUrl(
+    query: WorkshopBrowseQuery,
+    steamApiKey: String,
+): String {
+    val normalized = query.normalized()
+    val creator = normalized.creatorId?.filter(Char::isDigit).orEmpty()
+    val criteria = normalized.steamTagCriteria()
+    val input = JSONObject()
+        .put("steamid", creator)
+        .put("appid", WALLPAPER_ENGINE_APP_ID)
+        .put("page", normalized.page)
+        .put("numperpage", normalized.pageSize)
+        .put("type", "myfiles")
+        .put("sortmethod", "lastupdated")
+        .put("requiredtags", JSONArray(criteria.requiredTags))
+        .put("excludedtags", JSONArray(criteria.excludedTags))
+        .put("return_tags", true)
+        .put("return_previews", true)
+        .put("return_short_description", true)
+        .put("return_metadata", true)
+        .put("return_vote_data", true)
+        .put("language", normalized.language)
+    return Uri.Builder()
+        .scheme("https")
+        .authority("api.steampowered.com")
+        .appendPath("IPublishedFileService")
+        .appendPath("GetUserFiles")
+        .appendPath("v1")
+        .appendQueryParameter("key", steamApiKey)
+        .appendQueryParameter("format", "json")
+        .appendQueryParameter("input_json", input.toString())
+        .build()
         .toString()
 }
 
@@ -164,44 +167,24 @@ internal fun WorkshopBrowseQuery.normalized(): WorkshopBrowseQuery =
         page = page.coerceAtLeast(1),
         pageSize = pageSize.coerceIn(1, MAX_PAGE_SIZE),
         searchText = searchText.trim().take(MAX_SEARCH_LENGTH),
-        creatorId = creatorId?.filter(Char::isDigit)?.takeIf(String::isNotBlank),
-        types = effectiveTypes(),
+        creatorId = creatorId?.trim()?.takeIf(String::isNotBlank) ?: searchText.workshopAuthorSearchOrNull(),
         tags =
-            tags
+            (tags + searchText.workshopDetailTagSearch())
                 .map(String::trim)
                 .filter(String::isNotBlank)
                 .take(MAX_REQUIRED_TAGS)
                 .toSet(),
         genres = genres.map(String::trim).filter { it in COMMUNITY_GENRE_TAGS }.toSet(),
         officialTags = officialTags.map(String::trim).filter { it in OFFICIAL_TAGS }.toSet(),
+        excludedOfficialTags = excludedOfficialTags.map(String::trim).filter { it in OFFICIAL_TAGS }.toSet(),
         resolutions = resolutions.map(String::trim).filter { it in RESOLUTION_TAGS }.toSet(),
-        ratings = effectiveRatings(),
+        ratings = ratings.ifEmpty { setOf(com.wallhub.android.core.model.WorkshopRating.EVERYONE) },
         days = days.coerceIn(0, 365),
     )
 
 internal fun WorkshopBrowseQuery.matches(summary: WorkshopSummary): Boolean {
-    val selectedTypes = effectiveTypes()
-    if (selectedTypes.isNotEmpty() && summary.type !in selectedTypes) return false
-    val itemTags = summary.tags.map(String::lowercase).toSet()
-    val requiredTags = tags + officialTags
-    if (!requiredTags.all { tag -> tag.lowercase() in itemTags }) return false
-    if (genres.isNotEmpty() && genres.none { tag -> tag.lowercase() in itemTags }) return false
-    if (resolutions.isNotEmpty() && resolutions.none { tag -> tag.lowercase() in itemTags }) return false
-    val selectedRatings = effectiveRatings()
-    if (selectedRatings.isNotEmpty() && WorkshopRating.ALL !in selectedRatings) {
-        val ratingTags = selectedRatings.mapNotNull(WorkshopRating::steamTag).map(String::lowercase).toSet()
-        if (ratingTags.isNotEmpty() && itemTags.none(ratingTags::contains)) return false
-    }
-    if (exactPhrase && searchText.isNotBlank() && !summary.title.contains(searchText, ignoreCase = true)) return false
-    return true
+    return matchesSteamWallpaper(summary)
 }
-
-internal fun WorkshopBrowseQuery.effectiveTypes(): Set<WorkshopType> =
-    types.filter { it != WorkshopType.UNKNOWN }.toSet().ifEmpty {
-        type?.takeIf { it != WorkshopType.UNKNOWN }?.let(::setOf).orEmpty()
-    }
-
-internal fun WorkshopBrowseQuery.effectiveRatings(): Set<WorkshopRating> = ratings.ifEmpty { setOf(WorkshopRating.EVERYONE) }
 
 internal fun WorkshopBrowseQuery.communityBrowsePageSize(): Int = if (creatorId == null) pageSize else AUTHOR_BROWSE_PAGE_SIZE
 
@@ -221,26 +204,9 @@ internal fun Uri.Builder.appendFilterTags(
     }
 }
 
-internal fun WorkshopType.steamTag(): String? =
-    when (this) {
-        WorkshopType.VIDEO -> "Video"
-        WorkshopType.SCENE -> "Scene"
-        WorkshopType.WEB -> "Web"
-        WorkshopType.UNKNOWN -> null
-    }
-
-internal fun WorkshopSort.steamApiQueryType(): Int =
-    when (this) {
-        WorkshopSort.TRENDING -> 3
-        WorkshopSort.MOST_RECENT -> 1
-        WorkshopSort.TOP_RATED -> 0
-        WorkshopSort.MOST_VOTES -> 11
-        WorkshopSort.MOST_SUBSCRIBERS -> 9
-    }
-
 internal const val WALLPAPER_ENGINE_APP_ID = 431960
 internal const val AUTHOR_BROWSE_PAGE_SIZE = 30
-internal const val MAX_PAGE_SIZE = 30
+internal const val MAX_PAGE_SIZE = 50
 internal const val MAX_DIRECT_BROWSE_PAGE = 1_000
 internal const val MAX_COMMENT_PAGE_SIZE = 50
 internal const val MAX_SEARCH_LENGTH = 128
@@ -255,8 +221,8 @@ internal const val COMMUNITY_COMMENTS_API_URL =
     "https://api.steampowered.com/ICommunityService/GetCommentThread/v1/"
 internal const val COMMUNITY_COMMENTS_HTML_URL =
     "https://steamcommunity.com/comment/PublishedFile_Public/render"
-internal val WORKSHOP_TYPE_TAGS = setOf("Scene", "Video", "Web")
-internal val CONTENT_RATING_TAGS = setOf("Everyone", "Questionable", "Mature")
+internal val WORKSHOP_TYPE_TAGS = STEAM_WORKSHOP_TYPE_TAGS
+internal val CONTENT_RATING_TAGS = STEAM_CONTENT_RATING_TAGS
 internal val COMMUNITY_GENRE_TAGS =
     setOf(
         "Abstract",
@@ -298,31 +264,4 @@ internal val OFFICIAL_TAGS =
         "Video Texture",
         "Asset Pack",
     )
-internal val RESOLUTION_TAGS =
-    setOf(
-        "Standard",
-        "1280 x 720",
-        "1366 x 768",
-        "1920 x 1080",
-        "2560 x 1440",
-        "3840 x 2160",
-        "Ultrawide",
-        "2560 x 1080",
-        "3440 x 1440",
-        "Dual monitor",
-        "3840 x 1080",
-        "5120 x 1440",
-        "7680 x 2160",
-        "Triple monitor",
-        "4096 x 768",
-        "5760 x 1080",
-        "7680 x 1440",
-        "11520 x 2160",
-        "Portrait",
-        "720 x 1280",
-        "1080 x 1920",
-        "1440 x 2560",
-        "2160 x 3840",
-        "Other resolution",
-        "Dynamic resolution",
-    )
+internal val RESOLUTION_TAGS = WORKSHOP_RESOLUTION_TAG_MAP.keys

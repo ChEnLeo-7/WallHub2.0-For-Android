@@ -119,13 +119,10 @@ internal fun WallHubNavHost(
             )
         }
         composable<SteamLoginDestination> {
-            androidx.compose.runtime.LaunchedEffect(Unit) {
-                if (!navController.popBackStack()) {
-                    navController.navigate(SettingsDestination) {
-                        popUpTo<SteamLoginDestination> { inclusive = true }
-                    }
-                }
-            }
+            SettingsRoute(
+                onBack = { navController.popBackStack() },
+                openSteamSignIn = true,
+            )
         }
         composable<WorkshopDetailDestination>(
             deepLinks = listOf(navDeepLink<WorkshopDetailDestination>(basePath = "wallhub://workshop")),

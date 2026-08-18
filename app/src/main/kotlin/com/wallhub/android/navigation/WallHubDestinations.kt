@@ -11,7 +11,7 @@ internal sealed interface WallHubDestination
 @Serializable internal data object LocalDestination : WallHubDestination
 @Serializable internal data object SettingsDestination : WallHubDestination
 
-// Kept only so saved navigation state from releases with the standalone login page can restore.
+// Preserves the legacy route while providing a direct entry to the Steam sign-in settings.
 @Serializable internal data object SteamLoginDestination : WallHubDestination
 
 @Serializable

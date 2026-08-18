@@ -4,6 +4,7 @@ package com.wallhub.android.feature.downloads
 
 import android.Manifest
 import android.content.Context
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
@@ -50,6 +51,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -64,7 +66,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.wallhub.android.R
-import com.wallhub.android.core.designsystem.LocalWallHubToastState
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
@@ -144,6 +145,10 @@ sealed interface DownloadsAction {
 
     data object ClearFinishedHistory : DownloadsAction
 
+    data object ClearCompletedHistory : DownloadsAction
+
+    data object RetryFailedTasks : DownloadsAction
+
     data class EnqueueWorkshop(
         val item: WorkshopSummary,
     ) : DownloadsAction
@@ -216,6 +221,26 @@ class DownloadsViewModel
                 DownloadsAction.ClearFinishedHistory ->
                     viewModelScope.launch {
                         taskRepository.clearFinishedHistory()
+                    }
+                DownloadsAction.ClearCompletedHistory ->
+                    viewModelScope.launch {
+                        val count = taskRepository.clearCompletedHistory()
+                        effectChannel.send(
+                            DownloadsEffect.ShowMessage(
+                                R.string.downloads_completed_cleared,
+                                listOf(count),
+                            ),
+                        )
+                    }
+                DownloadsAction.RetryFailedTasks ->
+                    viewModelScope.launch {
+                        val count = taskRepository.retryFailedTasks()
+                        effectChannel.send(
+                            DownloadsEffect.ShowMessage(
+                                R.string.downloads_failed_retried,
+                                listOf(count),
+                            ),
+                        )
                     }
                 is DownloadsAction.EnqueueWorkshop ->
                     emitEffect(
@@ -401,7 +426,7 @@ fun DownloadsEffectHandler(
     onPlayVideo: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
-    val toastState = LocalWallHubToastState.current
+    val resources = LocalResources.current
     val currentOnPlayVideo by rememberUpdatedState(onPlayVideo)
     var pendingOperation by remember { mutableStateOf<DownloadsPendingOperation?>(null) }
     val legacyStoragePermissionLauncher =
@@ -415,7 +440,7 @@ fun DownloadsEffectHandler(
             }
             pendingOperation = null
         }
-    LaunchedEffect(viewModel, context) {
+    LaunchedEffect(viewModel, context, resources) {
         viewModel.effects.collect { effect ->
             when (effect) {
                 is DownloadsEffect.ResolveLegacyStoragePermission -> {
@@ -434,7 +459,11 @@ fun DownloadsEffectHandler(
                     }
                 }
                 is DownloadsEffect.ShowMessage ->
-                    toastState.show(context.getString(effect.messageRes, *effect.formatArgs.toTypedArray()))
+                    Toast.makeText(
+                        context.applicationContext,
+                        resources.getString(effect.messageRes, *effect.formatArgs.toTypedArray()),
+                        Toast.LENGTH_SHORT,
+                    ).show()
                 is DownloadsEffect.PlayVideo -> currentOnPlayVideo(effect.taskId)
             }
         }
@@ -456,6 +485,22 @@ fun DownloadsScreen(
                 contentDescription = stringResource(R.string.downloads_type_filter),
                 typeLabel = WorkshopType::downloadTypeLabel,
             )
+            IconButton(
+                onClick = { onAction(DownloadsAction.RetryFailedTasks) },
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Refresh,
+                    contentDescription = stringResource(R.string.downloads_retry_failed),
+                )
+            }
+            IconButton(
+                onClick = { onAction(DownloadsAction.ClearCompletedHistory) },
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.DeleteSweep,
+                    contentDescription = stringResource(R.string.downloads_clear_completed),
+                )
+            }
             SettingsToolbarActionButton(
                 imageVector = Icons.Outlined.Settings,
                 contentDescription = stringResource(R.string.management_settings),

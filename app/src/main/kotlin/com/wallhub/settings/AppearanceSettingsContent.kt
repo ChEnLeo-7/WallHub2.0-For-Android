@@ -53,7 +53,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -69,6 +68,7 @@ import com.wallhub.android.core.model.AccentPreference
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
+import com.wallhub.android.core.model.HOME_PAGE_SIZE_OPTIONS
 import com.wallhub.android.core.model.SteamAccessPhase
 import com.wallhub.android.core.model.SteamAccessState
 import com.wallhub.android.core.model.SteamSessionPhase
@@ -256,7 +256,7 @@ internal fun AppearanceSettingsContent(
             SettingChoiceRow(
                 title = stringResource(R.string.settings_items_per_page),
                 selectedValue = preferences.homePageSize,
-                values = listOf(10, 15, 24, 30, 50),
+                values = HOME_PAGE_SIZE_OPTIONS,
                 label = { "$it" },
                 onSelected = { value -> saveHomePreferences(pageSize = value) },
                 position = PreferencePosition.Top,
@@ -576,7 +576,7 @@ internal fun SteamStreamCacheSetting(
     cacheLimitMb: Int,
     onCacheLimitChange: (Int) -> Unit,
 ) {
-    val context = LocalContext.current
+    val cacheSizeError = stringResource(R.string.settings_error_cache_size)
     var customSheetVisible by rememberSaveable { mutableStateOf(false) }
     var customLimitText by remember(cacheLimitMb) { mutableStateOf(cacheLimitMb.toString()) }
     var customLimitError by rememberSaveable { mutableStateOf<String?>(null) }
@@ -631,7 +631,7 @@ internal fun SteamStreamCacheSetting(
                         val limitMb = customLimitText.toIntOrNull()
                         if (limitMb == null || limitMb < 128) {
                             customLimitError =
-                                context.getString(R.string.settings_error_cache_size)
+                                cacheSizeError
                         } else {
                             onCacheLimitChange(limitMb)
                             customSheetVisible = false

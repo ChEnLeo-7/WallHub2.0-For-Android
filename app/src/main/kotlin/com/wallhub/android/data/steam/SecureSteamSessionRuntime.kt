@@ -7,6 +7,7 @@ import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.DiagnosticEvent
 import com.wallhub.android.core.model.DiagnosticLevel
 import com.wallhub.android.core.model.FavoriteState
+import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SubscriptionState
@@ -316,14 +317,26 @@ internal fun AccountWorkshopCollection.steamListType(): String =
 
 internal fun SecureSteamSessionRepository.startLogin(login: PendingLogin) {
     val previousJob: Job?
+    val previousSession: SteamClientSession?
+    val credentialBarrier: Job?
     val job: Job
     synchronized(lifecycleLock) {
+        automaticRestoreJob?.cancel()
+        automaticRestoreJob = null
+        stableSessionJob?.cancel()
+        stableSessionJob = null
+        consecutiveDisconnects = 0
         previousJob = authenticationJob
         val generation = ++sessionGeneration
+        previousSession = authenticatedSession
+        authenticatedSession = null
+        activeContentCredential = null
+        credentialBarrier = credentialClearJob
         pendingLogin = login
         job =
             serviceScope.launch(start = CoroutineStart.LAZY) {
                 try {
+                    credentialBarrier?.join()
                     loginInternal(generation, login)
                 } finally {
                     val clearPendingLogin =
@@ -342,6 +355,7 @@ internal fun SecureSteamSessionRepository.startLogin(login: PendingLogin) {
         authenticationJob = job
     }
     previousJob?.cancel()
+    previousSession?.close()
     job.start()
 }
 
@@ -350,6 +364,14 @@ internal suspend fun SecureSteamSessionRepository.loginInternal(
     login: PendingLogin,
 ) {
     val previousState = mutableSession.value.takeIf { it.accountName == login.accountName }
+    val hadStoredCredential =
+        try {
+            credentialMutex.withLock { credentialStore.load() != null }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            false
+        }
     detachAuthenticatedSession(generation)?.close()
     pendingCode.getAndSet(null)?.cancel(true)
     val steamSession = createSteamSession(generation, createCurrentSteamConfiguration(generation))
@@ -399,18 +421,19 @@ internal suspend fun SecureSteamSessionRepository.loginInternal(
             accountName = authenticatedName,
         )
         logOn(steamSession, authenticatedName, pollingResult.refreshToken, generation)
-        credentialMutex.withLock {
-            ensureCurrentGeneration(generation)
-            credentialStore.save(
-                PersistedSteamCredential(
-                    accountName = authenticatedName,
-                    refreshToken = pollingResult.refreshToken,
-                    personaName = previousState?.personaName,
-                    avatarUrl = previousState?.avatarUrl,
-                ),
+        promoted =
+            promoteAuthenticatedSession(
+                generation = generation,
+                steamSession = steamSession,
+                credential = SteamContentCredential(authenticatedName, pollingResult.refreshToken),
+                persistedCredential =
+                    PersistedSteamCredential(
+                        accountName = authenticatedName,
+                        refreshToken = pollingResult.refreshToken,
+                        personaName = previousState?.personaName,
+                        avatarUrl = previousState?.avatarUrl,
+                    ),
             )
-        }
-        promoted = promoteAuthenticatedSession(generation, steamSession)
         if (!promoted) throw CancellationException("Steam login was superseded")
         val profile = resolveOwnSteamProfile(steamSession)
         persistOptionalProfile(generation, authenticatedName, pollingResult.refreshToken, profile)
@@ -433,7 +456,7 @@ internal suspend fun SecureSteamSessionRepository.loginInternal(
             accountName = login.accountName,
             personaName = previousState?.personaName,
             avatarUrl = previousState?.avatarUrl,
-            hasStoredSession = previousState?.hasStoredSession == true,
+            hasStoredSession = hadStoredCredential,
         )
     } finally {
         if (!promoted) steamSession.close()
@@ -449,15 +472,17 @@ private suspend fun SecureSteamSessionRepository.persistOptionalProfile(
     if (profile == null) return
     try {
         credentialMutex.withLock {
-            ensureCurrentGeneration(generation)
-            credentialStore.save(
-                PersistedSteamCredential(
-                    accountName = accountName,
-                    refreshToken = refreshToken,
-                    personaName = profile.displayName,
-                    avatarUrl = profile.avatarUrl,
-                ),
-            )
+            synchronized(lifecycleLock) {
+                ensureCurrentGeneration(generation)
+                credentialStore.save(
+                    PersistedSteamCredential(
+                        accountName = accountName,
+                        refreshToken = refreshToken,
+                        personaName = profile.displayName,
+                        avatarUrl = profile.avatarUrl,
+                    ),
+                )
+            }
         }
     } catch (error: CancellationException) {
         throw error
@@ -467,6 +492,7 @@ private suspend fun SecureSteamSessionRepository.persistOptionalProfile(
 }
 
 internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInternal(generation: Long) {
+    credentialClearJob?.join()
     val credential = credentialMutex.withLock { credentialStore.load() }
     if (credential == null) {
         setStateIfCurrent(
@@ -537,7 +563,12 @@ internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInterna
                 }
                 throw lastFailure ?: IllegalStateException("Steam session restore failed")
             }
-        val promoted = promoteAuthenticatedSession(generation, restoredSession)
+        val promoted =
+            promoteAuthenticatedSession(
+                generation = generation,
+                steamSession = restoredSession,
+                credential = SteamContentCredential(credential.accountName, credential.refreshToken),
+            )
         if (!promoted) {
             restoredSession.close()
             throw CancellationException("Steam restore was superseded")
@@ -551,8 +582,10 @@ internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInterna
         if (resolvedCredential != credential) {
             try {
                 credentialMutex.withLock {
-                    ensureCurrentGeneration(generation)
-                    credentialStore.save(resolvedCredential)
+                    synchronized(lifecycleLock) {
+                        ensureCurrentGeneration(generation)
+                        credentialStore.save(resolvedCredential)
+                    }
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -635,7 +668,7 @@ internal suspend fun SecureSteamSessionRepository.logOn(
                 username = accountName,
                 accessToken = refreshToken,
                 shouldRememberPassword = true,
-                loginID = WALLPAPER_ENGINE_APP_ID,
+                loginID = PRIMARY_STEAM_LOGIN_ID,
                 machineName = DEVICE_FRIENDLY_NAME,
                 chatMode = ChatMode.NEW_STEAM_CHAT,
             ),
@@ -987,22 +1020,39 @@ internal fun SecureSteamSessionRepository.ensureCurrentGeneration(generation: Lo
 internal fun SecureSteamSessionRepository.detachAuthenticatedSession(generation: Long): SteamClientSession? =
     synchronized(lifecycleLock) {
         if (generation != sessionGeneration) return@synchronized null
+        activeContentCredential = null
         authenticatedSession.also { authenticatedSession = null }
     }
 
-internal fun SecureSteamSessionRepository.promoteAuthenticatedSession(
+internal suspend fun SecureSteamSessionRepository.promoteAuthenticatedSession(
     generation: Long,
     steamSession: SteamClientSession,
+    credential: SteamContentCredential,
+    persistedCredential: PersistedSteamCredential? = null,
 ): Boolean {
     var previousSession: SteamClientSession? = null
     val promoted =
-        synchronized(lifecycleLock) {
-            if (generation != sessionGeneration || !steamSession.tryMarkAuthenticated()) {
-                false
-            } else {
-                previousSession = authenticatedSession
-                authenticatedSession = steamSession
-                true
+        credentialMutex.withLock {
+            synchronized(lifecycleLock) {
+                if (generation != sessionGeneration || !steamSession.tryMarkAuthenticated()) {
+                    false
+                } else {
+                    persistedCredential?.let(credentialStore::save)
+                    previousSession = authenticatedSession
+                    authenticatedSession = steamSession
+                    activeContentCredential = credential
+                    stableSessionJob?.cancel()
+                    stableSessionJob =
+                        serviceScope.launch {
+                            delay(STABLE_SESSION_RESET_MS)
+                            synchronized(lifecycleLock) {
+                                if (authenticatedSession === steamSession && steamSession.isUsable) {
+                                    consecutiveDisconnects = 0
+                                }
+                            }
+                        }
+                    true
+                }
             }
         }
     if (promoted && previousSession !== steamSession) previousSession?.close()
@@ -1019,8 +1069,12 @@ internal fun SecureSteamSessionRepository.handleUnexpectedDisconnect(
                 val active = authenticatedSession
                 if (active?.id != sessionId || active.isExpectedClose) return@synchronized null
                 authenticatedSession = null
+                activeContentCredential = null
+                stableSessionJob?.cancel()
+                stableSessionJob = null
+                consecutiveDisconnects += 1
                 val generation = ++sessionGeneration
-                generation to active
+                Triple(generation, active, consecutiveDisconnects)
             } ?: return@launch
         invalidation.second.close()
         setStateIfCurrent(
@@ -1037,6 +1091,50 @@ internal fun SecureSteamSessionRepository.handleUnexpectedDisconnect(
             stage = "unexpected_disconnect",
             outcome = if (userInitiated) "client" else "network",
         )
+        scheduleAutomaticSessionRestore(invalidation.first, invalidation.third)
+    }
+}
+
+internal fun SecureSteamSessionRepository.scheduleAutomaticSessionRestore(
+    disconnectedGeneration: Long,
+    attempt: Int,
+) {
+    if (attempt > MAX_AUTOMATIC_RESTORE_ATTEMPTS) return
+    val delayMs = AUTOMATIC_RESTORE_DELAYS_MS[(attempt - 1).coerceIn(AUTOMATIC_RESTORE_DELAYS_MS.indices)]
+    val job =
+        serviceScope.launch {
+            delay(delayMs)
+            val restoreJob =
+                synchronized(lifecycleLock) {
+                    if (
+                        sessionGeneration != disconnectedGeneration ||
+                        authenticatedSession?.isUsable == true ||
+                        authenticationJob?.isActive == true ||
+                        mutableSession.value.phase != SteamSessionPhase.RESTORABLE
+                    ) {
+                        return@launch
+                    }
+                    val generation = ++sessionGeneration
+                    serviceScope
+                        .launch(start = CoroutineStart.LAZY) {
+                            try {
+                                restorePersistedSessionInternal(generation)
+                            } finally {
+                                clearAuthenticationJob(generation)
+                                if (
+                                    isCurrentGeneration(generation) &&
+                                    mutableSession.value.phase == SteamSessionPhase.RESTORABLE
+                                ) {
+                                    scheduleAutomaticSessionRestore(generation, attempt + 1)
+                                }
+                            }
+                        }.also { authenticationJob = it }
+                }
+            restoreJob.start()
+        }
+    synchronized(lifecycleLock) {
+        automaticRestoreJob?.cancel()
+        automaticRestoreJob = job
     }
 }
 
@@ -1231,11 +1329,13 @@ internal class SteamClientSession(
 }
 
 internal const val DEVICE_FRIENDLY_NAME = "WallHub Android"
+internal const val PRIMARY_STEAM_LOGIN_ID = 0x57484D31
 internal const val CONNECT_TIMEOUT_MS = 15_000L
 internal const val LOGON_TIMEOUT_MS = 30_000L
 internal const val ANONYMOUS_LOGON_TIMEOUT_MS = 20_000L
 internal const val RESTORE_TOTAL_TIMEOUT_MS = 60_000L
 internal const val RESTORE_ATTEMPTS = 2
+internal const val CONTENT_CREDENTIAL_RESTORE_TIMEOUT_MS = 30_000L
 internal const val RESTORE_RETRY_DELAY_MS = 1_000L
 internal const val AUTH_SESSION_BEGIN_TIMEOUT_MS = 30_000L
 internal const val AUTH_POLL_TIMEOUT_MS = 5 * 60_000L
@@ -1252,6 +1352,9 @@ internal const val MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES = 400
 internal const val MAX_PROFILE_BATCH_SIZE = 100
 internal const val PROFILE_RPC_TIMEOUT_MS = 5_000L
 internal const val PERSONA_RPC_TIMEOUT_MS = 5_000L
+internal const val MAX_AUTOMATIC_RESTORE_ATTEMPTS = 3
+internal const val STABLE_SESSION_RESET_MS = 60_000L
+internal val AUTOMATIC_RESTORE_DELAYS_MS = longArrayOf(1_000L, 3_000L, 10_000L)
 
 internal data class NormalizedWorkshopCommentRequest(
     val workshopId: Long,

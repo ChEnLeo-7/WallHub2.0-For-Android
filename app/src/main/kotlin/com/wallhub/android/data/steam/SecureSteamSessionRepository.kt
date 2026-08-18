@@ -41,12 +41,14 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -60,6 +62,12 @@ internal data class PersistedSteamCredential(
     val personaName: String? = null,
     val avatarUrl: String? = null,
 )
+
+internal inline fun selectSteamContentCredential(
+    activeCredential: SteamContentCredential?,
+    hasUsableSession: Boolean,
+    loadStoredCredential: () -> SteamContentCredential?,
+): SteamContentCredential? = activeCredential.takeIf { hasUsableSession } ?: loadStoredCredential()
 
 /**
  * Owns the live JavaSteam CM session. Passwords and Steam Guard codes only exist in the
@@ -99,10 +107,24 @@ class SecureSteamSessionRepository
         internal var authenticatedSession: SteamClientSession? = null
 
         @Volatile
+        internal var activeContentCredential: SteamContentCredential? = null
+
+        @Volatile
         internal var anonymousSession: SteamClientSession? = null
 
         @Volatile
         internal var authenticationJob: Job? = null
+
+        @Volatile
+        internal var credentialClearJob: Job? = null
+
+        @Volatile
+        internal var automaticRestoreJob: Job? = null
+
+        @Volatile
+        internal var stableSessionJob: Job? = null
+
+        internal var consecutiveDisconnects = 0
 
         @Volatile
         internal var pendingLogin: PendingLogin? = null
@@ -150,6 +172,8 @@ class SecureSteamSessionRepository
             val job =
                 synchronized(lifecycleLock) {
                     if (authenticatedSession?.isUsable == true || authenticationJob?.isActive == true) return
+                    automaticRestoreJob?.cancel()
+                    automaticRestoreJob = null
                     val generation = ++sessionGeneration
                     serviceScope
                         .launch(start = CoroutineStart.LAZY) {
@@ -210,51 +234,111 @@ class SecureSteamSessionRepository
                     val nextGeneration = ++sessionGeneration
                     val activeAuthentication = authenticationJob
                     authenticationJob = null
+                    automaticRestoreJob?.cancel()
+                    automaticRestoreJob = null
+                    stableSessionJob?.cancel()
+                    stableSessionJob = null
+                    consecutiveDisconnects = 0
                     pendingLogin = null
                     val active = authenticatedSession
                     authenticatedSession = null
+                    activeContentCredential = null
+                    val previousClear = credentialClearJob
+                    credentialClearJob =
+                        serviceScope.launch {
+                            previousClear?.join()
+                            credentialMutex.withLock { credentialStore.clear() }
+                        }
                     Triple(nextGeneration, activeAuthentication, active)
                 }
             authentication?.cancel()
             pendingCode.getAndSet(null)?.cancel(true)
             activeSession?.close()
-            serviceScope.launch {
-                credentialMutex.withLock {
-                    if (isCurrentGeneration(generation)) credentialStore.clear()
-                }
-                setStateIfCurrent(
-                    generation = generation,
-                    phase = SteamSessionPhase.SIGNED_OUT,
-                    message = applicationContext.getString(R.string.backend_steam_signed_out),
-                )
-            }
+            setStateIfCurrent(
+                generation = generation,
+                phase = SteamSessionPhase.SIGNED_OUT,
+                message = applicationContext.getString(R.string.backend_steam_signed_out),
+            )
         }
 
         override suspend fun loadContentCredential(): SteamContentCredential? =
             withContext(Dispatchers.IO) {
-                credentialMutex.withLock { credentialStore.load() }?.let { credential ->
-                    SteamContentCredential(
-                        accountName = credential.accountName,
-                        refreshToken = credential.refreshToken,
-                    )
+                val (activeCredential, hasUsableSession, generation) =
+                    synchronized(lifecycleLock) {
+                        Triple(
+                            activeContentCredential,
+                            authenticatedSession?.isUsable == true,
+                            sessionGeneration,
+                        )
+                    }
+                when (mutableSession.value.phase) {
+                    SteamSessionPhase.SIGNED_OUT -> null
+                    SteamSessionPhase.EXPIRED -> {
+                        credentialMutex.withLock {
+                            synchronized(lifecycleLock) {
+                                if (
+                                    generation == sessionGeneration &&
+                                    mutableSession.value.phase == SteamSessionPhase.EXPIRED
+                                ) {
+                                    credentialStore.clear()
+                                }
+                            }
+                        }
+                        null
+                    }
+                    else -> {
+                        // promoteAuthenticatedSession installs the usable session and
+                        // content credential before profile hydration flips the public
+                        // phase to SIGNED_IN. Prefer that authoritative active credential
+                        // during the short SIGNING_IN window instead of misclassifying a
+                        // logged-in user as anonymous.
+                        selectSteamContentCredential(activeCredential, hasUsableSession) {
+                            credentialMutex.withLock { credentialStore.load() }?.toContentCredential()
+                        }
+                    }
                 }
             }
+
+        override suspend fun restoreContentCredential(): SteamContentCredential? {
+            restorePersistedSession()
+            val restoreJob = synchronized(lifecycleLock) { authenticationJob }
+            withTimeoutOrNull(CONTENT_CREDENTIAL_RESTORE_TIMEOUT_MS) {
+                restoreJob?.join()
+            }
+            return if (session.value.phase == SteamSessionPhase.SIGNED_IN) loadContentCredential() else null
+        }
+
+        private fun PersistedSteamCredential.toContentCredential(): SteamContentCredential =
+            SteamContentCredential(
+                accountName = accountName,
+                refreshToken = refreshToken,
+            )
 
         override suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage? =
             withPublicSteamSession { steamSession ->
                 val service = steamSession.unified.createService(PublishedFile::class.java)
-                val response =
-                    awaitSteamRpc(
-                        steamSession = steamSession,
-                        operation = "public_query_files",
-                    ) {
-                        val rpcResponse = service.queryFiles(buildUnifiedWorkshopBrowseRequest(query)).await()
-                        check(rpcResponse.result == EResult.OK) {
-                            "Steam PublishedFile.QueryFiles returned ${rpcResponse.result}"
-                        }
-                        rpcResponse.body.build()
+                val page =
+                    if (query.creatorId != null) {
+                        val response =
+                            awaitSteamRpc(steamSession, "public_get_user_files") {
+                                val rpcResponse = service.getUserFiles(buildUnifiedWorkshopAuthorRequest(query)).await()
+                                check(rpcResponse.result == EResult.OK) {
+                                    "Steam PublishedFile.GetUserFiles returned ${rpcResponse.result}"
+                                }
+                                rpcResponse.body.build()
+                            }
+                        mapUnifiedWorkshopAuthorResponse(query, response)
+                    } else {
+                        val response =
+                            awaitSteamRpc(steamSession, "public_query_files") {
+                                val rpcResponse = service.queryFiles(buildUnifiedWorkshopBrowseRequest(query)).await()
+                                check(rpcResponse.result == EResult.OK) {
+                                    "Steam PublishedFile.QueryFiles returned ${rpcResponse.result}"
+                                }
+                                rpcResponse.body.build()
+                            }
+                        mapUnifiedWorkshopBrowseResponse(query, response)
                     }
-                val page = mapUnifiedWorkshopBrowseResponse(query, response)
                 if (!steamSession.isAuthenticated) return@withPublicSteamSession page
                 val profiles =
                     resolveSteamProfiles(

@@ -21,9 +21,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel: ShellViewModel = hiltViewModel()
             val preferences by viewModel.preferences.collectAsStateWithLifecycle()
+            val steamSession by viewModel.steamSession.collectAsStateWithLifecycle()
             preferences?.let { loadedPreferences ->
                 FormalWallHubApp(
                     preferences = loadedPreferences,
+                    steamSession = steamSession,
                     onSetupWizardCompleted = { viewModel.setSetupWizardCompleted(true) },
                 )
             }
