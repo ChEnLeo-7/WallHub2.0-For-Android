@@ -11,6 +11,7 @@ import com.wallhub.android.core.model.WorkshopCommentPage
 import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopPage
 import com.wallhub.android.core.model.WorkshopRepository
+import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.matchesSteamWallpaper
 import com.wallhub.android.core.model.workshopSearchIdOrNull
@@ -52,6 +53,19 @@ class CommunityWorkshopRepository
             withContext(Dispatchers.IO) {
                 val normalizedQuery = query.normalized()
                 val preferences = settingsRepository.preferences.first()
+                if (
+                    normalizedQuery.sort == WorkshopSort.FRIENDS_FAVORITES ||
+                    normalizedQuery.sort == WorkshopSort.FRIENDS_CREATED
+                ) {
+                    return@withContext unifiedWorkshopRepository.browsePublic(normalizedQuery)
+                        ?: error("A signed-in Steam session is required for friend Workshop activity")
+                }
+                if (
+                    preferences.steamWorkshopDataSource == SteamWorkshopDataSource.COMMUNITY_HTML &&
+                    (normalizedQuery.createdAfterEpochSeconds != null || normalizedQuery.createdBeforeEpochSeconds != null)
+                ) {
+                    unifiedWorkshopRepository.browsePublic(normalizedQuery)?.let { return@withContext it }
+                }
                 val steamApiKey = preferences.steamApiKey.trim()
                 when (preferences.steamWorkshopDataSource) {
                     SteamWorkshopDataSource.COMMUNITY_HTML -> browseViaCommunity(normalizedQuery)
@@ -89,7 +103,7 @@ class CommunityWorkshopRepository
                 when (preferences.steamWorkshopDataSource) {
                     SteamWorkshopDataSource.COMMUNITY_HTML -> {
                         val detail =
-                            getDetails(listOf(workshopId), steamApiKey).firstOrNull()
+                            getPublishedFileDetails(listOf(workshopId), steamApiKey).firstOrNull()
                                 ?: error("Steam did not return this Workshop item; it may be deleted or not publicly accessible")
                         val authorName = CommunityWorkshopParser.extractAuthorName(get(buildDetailUrl(workshopId)))
                         detail.copy(
@@ -108,7 +122,7 @@ class CommunityWorkshopRepository
 
                     SteamWorkshopDataSource.WEB_API -> {
                         val detail =
-                            getDetails(listOf(workshopId), steamApiKey).firstOrNull()
+                            getPublishedFileDetails(listOf(workshopId), steamApiKey).firstOrNull()
                                 ?: error("Steam Web API did not return this Workshop item")
                         enrichDetailAuthor(detail, steamApiKey)
                     }
@@ -168,6 +182,19 @@ class CommunityWorkshopRepository
                 }
             }
 
+        override suspend fun getDetails(workshopIds: List<Long>): List<WorkshopDetail> =
+            withContext(Dispatchers.IO) {
+                val ids = workshopIds.filter { it > 0L }.distinct()
+                if (ids.isEmpty()) return@withContext emptyList()
+                val preferences = settingsRepository.preferences.first()
+                val steamApiKey = preferences.steamApiKey.trim()
+                when (preferences.steamWorkshopDataSource) {
+                    SteamWorkshopDataSource.COMMUNITY_HTML -> getPublishedFileDetails(ids)
+                    SteamWorkshopDataSource.WEB_API -> getPublishedFileDetails(ids, steamApiKey).map { enrichDetailAuthor(it, steamApiKey) }
+                    SteamWorkshopDataSource.CM_WEBSOCKET -> unifiedWorkshopRepository.getPublicDetails(ids)
+                }
+            }
+
         private suspend fun resolveWorkshopOwnerId(
             workshopId: Long,
             source: SteamWorkshopDataSource,
@@ -181,7 +208,7 @@ class CommunityWorkshopRepository
                             ?.creatorId
                     SteamWorkshopDataSource.COMMUNITY_HTML,
                     SteamWorkshopDataSource.WEB_API,
-                    -> getDetails(listOf(workshopId), steamApiKey).firstOrNull()?.creatorId
+                    -> getPublishedFileDetails(listOf(workshopId), steamApiKey).firstOrNull()?.creatorId
                 }
             return creatorId?.filter(Char::isDigit)?.takeIf(String::isNotBlank)
                 ?: error("Failed to determine the author of this Workshop item")
@@ -354,6 +381,7 @@ class CommunityWorkshopRepository
                         val profile = item.creatorId?.let(profiles::get) ?: return@map item
                         item.copy(
                             author = profile.displayName,
+                            authorAvatarUrl = profile.avatarUrl,
                             authorPlaceholder = WorkshopAuthorPlaceholder.NONE,
                         )
                     },
@@ -371,6 +399,7 @@ class CommunityWorkshopRepository
                 summary =
                     detail.summary.copy(
                         author = profile.displayName,
+                        authorAvatarUrl = profile.avatarUrl,
                         authorPlaceholder = WorkshopAuthorPlaceholder.NONE,
                     ),
             )
@@ -481,13 +510,11 @@ class CommunityWorkshopRepository
                 )
             }
 
-            val detailMap = getDetails(ids).associateBy { it.summary.id }
+            val detailMap = getPublishedFileDetails(ids).associateBy { it.summary.id }
             val items =
                 ids
                     .mapNotNull(detailMap::get)
-                    .filter { item ->
-                        normalizedQuery.creatorId == null || item.creatorId == normalizedQuery.creatorId
-                    }
+                    .filter { item -> normalizedQuery.matchesSteamWallpaper(item.summary) }
             return WorkshopPage(
                 items = items.map(WorkshopDetail::summary),
                 page = normalizedQuery.page,
@@ -556,7 +583,7 @@ class CommunityWorkshopRepository
                 .toInt()
         }
 
-        private fun getDetails(
+        private fun getPublishedFileDetails(
             ids: List<Long>,
             steamApiKey: String = "",
         ): List<WorkshopDetail> {

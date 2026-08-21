@@ -17,10 +17,15 @@ import androidx.navigation.toRoute
 import com.wallhub.android.feature.detail.LocalVideoPlayerRoute
 import com.wallhub.android.feature.detail.OnlineVideoPlayerRoute
 import com.wallhub.android.feature.detail.WorkshopDetailRoute
+import com.wallhub.android.feature.discover.DiscoverRoute
+import com.wallhub.android.feature.discover.DiscoverResultsRoute
+import com.wallhub.android.feature.discover.DiscoverFollowingRoute
+import com.wallhub.android.feature.discover.DiscoverQueryEditorRoute
 import com.wallhub.android.feature.downloads.DownloadsRoute
 import com.wallhub.android.feature.home.HomeRoute
 import com.wallhub.android.feature.library.LibraryRoute
 import com.wallhub.android.feature.local.LocalWallpaperRoute
+import com.wallhub.android.feature.profile.ProfileRoute
 import com.wallhub.settings.SettingsRoute
 
 @Composable
@@ -28,6 +33,7 @@ internal fun WallHubNavHost(
     modifier: Modifier,
     navController: NavHostController,
     homeScrollRequest: Int,
+    discoverRefreshRequest: Int,
     onHomeContextMenuActiveChanged: (Boolean) -> Unit,
     animateTopLevelTransitions: Boolean,
 ) {
@@ -74,11 +80,70 @@ internal fun WallHubNavHost(
     ) {
         composable<HomeDestination> {
             HomeRoute(
-                onOpenSettings = openSettings,
                 onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
                 onSearchAuthor = navigateToAuthorSearch,
                 scrollToTopRequest = homeScrollRequest,
                 onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
+            )
+        }
+        // These routes intentionally have independent identities even while their feature screens are migrated.
+        // This lets state restoration and deep links distinguish the new surfaces from legacy pages.
+        composable<DiscoverDestination> {
+            DiscoverRoute(
+                onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
+                onOpenRail = { spec, resolvedTitle -> navController.navigate(spec.toResultsDestination(resolvedTitle)) },
+                onOpenFollowing = { navController.navigate(DiscoverFollowingDestination) },
+                onOpenFriendFavorites = {
+                    navController.navigate(friendResultsDestination(favorites = true))
+                },
+                onOpenFriendCreated = {
+                    navController.navigate(friendResultsDestination(favorites = false))
+                },
+                refreshRequest = discoverRefreshRequest,
+            )
+        }
+        composable<DiscoverFollowingDestination> {
+            DiscoverFollowingRoute(
+                onBack = { navController.popBackStack() },
+                onAddQuery = { navController.navigate(DiscoverQueryEditorDestination) },
+                onOpenQuery = { query ->
+                    if (query.id == "official:focus-creators" || query.id == "official:focus-collections") {
+                        navController.navigate(DiscoverDestination) {
+                            popUpTo(navController.graph.id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    } else {
+                        navController.navigate(query.toResultsDestination())
+                    }
+                },
+            )
+        }
+        composable<DiscoverQueryEditorDestination> {
+            DiscoverQueryEditorRoute(
+                onBack = { navController.popBackStack() },
+                onSaved = { query ->
+                    navController.popBackStack()
+                    navController.navigate(query.toResultsDestination())
+                },
+            )
+        }
+        composable<DiscoverResultsDestination> {
+            DiscoverResultsRoute(
+                onBack = { navController.popBackStack() },
+                onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
+                onSearchAuthor = navigateToAuthorSearch,
+            )
+        }
+        composable<ProfileDestination> {
+            ProfileRoute(
+                onOpenSettings = openSettings,
+                onOpenSubscriptions = { navController.navigate(LibraryCollectionDestination("SUBSCRIPTIONS")) },
+                onOpenFavorites = { navController.navigate(LibraryCollectionDestination("FAVORITES")) },
+                onOpenVoted = { navController.navigate(LibraryCollectionDestination("VOTED")) },
+                onOpenDownloads = { navController.navigate(DownloadsDestination) },
+                onOpenLocal = { navController.navigate(LocalDestination) },
+                onOpenLogin = { navController.navigate(SteamLoginDestination) },
             )
         }
         composable<AuthorSearchDestination> {
@@ -99,20 +164,31 @@ internal fun WallHubNavHost(
         }
         composable<DownloadsDestination> {
             DownloadsRoute(
-                onOpenSettings = openSettings,
+                onBack = { navController.popBackStack() },
                 onPlayVideo = { navController.navigate(LocalVideoPlayerDestination(it)) },
             )
         }
         composable<LibraryDestination> {
             LibraryRoute(
-                onOpenSettings = openSettings,
+                onBack = { navController.popBackStack() },
                 onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
                 onPlayVideo = { navController.navigate(OnlineVideoPlayerDestination(it)) },
                 onSearchAuthor = navigateToAuthorSearch,
                 onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
             )
         }
-        composable<LocalDestination> { LocalWallpaperRoute(onOpenSettings = openSettings) }
+        composable<LibraryCollectionDestination> { entry ->
+            val route = entry.toRoute<LibraryCollectionDestination>()
+            LibraryRoute(
+                initialCollection = route.collection,
+                onBack = { navController.popBackStack() },
+                onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
+                onPlayVideo = { navController.navigate(OnlineVideoPlayerDestination(it)) },
+                onSearchAuthor = navigateToAuthorSearch,
+                onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
+            )
+        }
+        composable<LocalDestination> { LocalWallpaperRoute(onBack = { navController.popBackStack() }) }
         composable<SettingsDestination> {
             SettingsRoute(
                 onBack = { navController.popBackStack() },

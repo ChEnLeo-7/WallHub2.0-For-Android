@@ -92,7 +92,7 @@ android {
         applicationId = "com.wallhub.android"
         targetSdk = 35
         versionCode = 35
-        versionName = "0.8.25"
+        versionName = "0.8.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         javaCompileOptions {

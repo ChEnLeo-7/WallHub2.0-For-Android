@@ -64,6 +64,8 @@ internal fun WorkshopSort.label(): String =
             WorkshopSort.TOP_RATED -> R.string.home_sort_top_rated
             WorkshopSort.MOST_VOTES -> R.string.home_sort_most_votes
             WorkshopSort.MOST_SUBSCRIBERS -> R.string.home_sort_most_subscribers
+            WorkshopSort.FRIENDS_FAVORITES -> R.string.discover_friend_favorites
+            WorkshopSort.FRIENDS_CREATED -> R.string.discover_friend_created
         },
     )
 

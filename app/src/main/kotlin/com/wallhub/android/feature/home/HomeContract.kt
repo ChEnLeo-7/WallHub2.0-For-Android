@@ -172,6 +172,7 @@ sealed interface HomeAction {
 
     data class ApplyFilters(
         val selection: HomeFilterSelection,
+        val exactPhrase: Boolean? = null,
     ) : HomeAction
 
     data class SelectViewMode(

@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -44,6 +45,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -62,9 +64,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -176,6 +182,8 @@ fun HomeScreen(
 ) {
     val focusManager = LocalFocusManager.current
     val gridState = rememberLazyGridState()
+    val filterDrawerState = rememberDrawerState(DrawerValue.Closed)
+    val filterDrawerScope = rememberCoroutineScope()
     var handledScrollToTopRequest by rememberSaveable { mutableIntStateOf(scrollToTopRequest) }
     var handledSearchToken by remember { mutableLongStateOf(state.successfulSearchToken) }
     var searchBoundsInRoot by remember { mutableStateOf<IntRect?>(null) }
@@ -205,25 +213,44 @@ fun HomeScreen(
                 gridState.firstVisibleItemScrollOffset > FILTER_COLLAPSE_OFFSET_PX
         }
     }
-    WallHubContextMenuLayer(
-        state = contextMenuGeometry,
-        onActiveChanged = onContextMenuActiveChanged,
-        modifier = Modifier.fillMaxSize(),
+    ModalNavigationDrawer(
+        drawerState = filterDrawerState,
+        gesturesEnabled = filterDrawerState.isOpen,
+        drawerContent = {
+            ModalDrawerSheet(
+                modifier = Modifier.fillMaxHeight().widthIn(max = 420.dp),
+            ) {
+                HomeFilterDrawer(
+                    state = state,
+                    isOpen = filterDrawerState.isOpen,
+                    onAction = onAction,
+                    onDismiss = { filterDrawerScope.launch { filterDrawerState.close() } },
+                )
+            }
+        },
     ) {
-        HomeScreenFrame(
-            state = state,
-            onAction = onAction,
-            onOpenSettings = onOpenSettings,
-            onBack = onBack,
-            gridState = gridState,
-            filtersCollapsed = filtersCollapsed,
-            searchBoundsInRoot = searchBoundsInRoot,
-            onSearchBoundsChanged = { searchBoundsInRoot = it },
-            focusManager = focusManager,
-            contextMenuGeometry = contextMenuGeometry,
-            onContextMenuOpen = contextMenuGeometry::open,
-            onContextMenuDismiss = contextMenuGeometry::dismiss,
-        )
+        WallHubContextMenuLayer(
+            state = contextMenuGeometry,
+            onActiveChanged = onContextMenuActiveChanged,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            HomeScreenFrame(
+                state = state,
+                onAction = onAction,
+                onOpenSettings = onOpenSettings,
+                onBack = onBack,
+                gridState = gridState,
+                filtersCollapsed = filtersCollapsed,
+                filtersOpen = filterDrawerState.isOpen,
+                onOpenFilters = { filterDrawerScope.launch { filterDrawerState.open() } },
+                searchBoundsInRoot = searchBoundsInRoot,
+                onSearchBoundsChanged = { searchBoundsInRoot = it },
+                focusManager = focusManager,
+                contextMenuGeometry = contextMenuGeometry,
+                onContextMenuOpen = contextMenuGeometry::open,
+                onContextMenuDismiss = contextMenuGeometry::dismiss,
+            )
+        }
     }
 }
 
@@ -240,6 +267,8 @@ internal fun HomeScreenFrame(
     onBack: (() -> Unit)?,
     gridState: LazyGridState,
     filtersCollapsed: Boolean,
+    filtersOpen: Boolean,
+    onOpenFilters: () -> Unit,
     searchBoundsInRoot: IntRect?,
     onSearchBoundsChanged: (IntRect) -> Unit,
     focusManager: androidx.compose.ui.focus.FocusManager,
@@ -276,6 +305,8 @@ internal fun HomeScreenFrame(
             onBack = onBack,
             gridState = gridState,
             filtersCollapsed = filtersCollapsed,
+            filtersOpen = filtersOpen,
+            onOpenFilters = onOpenFilters,
             onSearchBoundsChanged = onSearchBoundsChanged,
             contextMenuGeometry = contextMenuGeometry,
             contextMenuPreviewItemId = contextMenuGeometry.previewItemId,
@@ -293,6 +324,8 @@ internal fun HomeScreenBody(
     onBack: (() -> Unit)?,
     gridState: LazyGridState,
     filtersCollapsed: Boolean,
+    filtersOpen: Boolean,
+    onOpenFilters: () -> Unit,
     onSearchBoundsChanged: (IntRect) -> Unit,
     contextMenuGeometry: HomeContextMenuGeometry,
     contextMenuPreviewItemId: Long?,
@@ -300,7 +333,6 @@ internal fun HomeScreenBody(
     onContextMenuDismiss: (Long) -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var showFilters by remember { mutableStateOf(false) }
     val useFloatingSearch = state.homeSearchFab && onBack == null
     Box(modifier = Modifier.fillMaxSize()) {
         WallHubPageScaffold(
@@ -368,15 +400,9 @@ internal fun HomeScreenBody(
                         onSearchBoundsChanged = onSearchBoundsChanged,
                         onClear = { onAction(HomeAction.QueryChanged("")) },
                         onBack = onBack,
-                        showFilters = showFilters,
-                        onToggleFilters = { showFilters = !showFilters },
+                        showFilters = filtersOpen,
+                        onToggleFilters = onOpenFilters,
                     )
-                    AnimatedVisibility(visible = showFilters) {
-                        HomeFilterBar(
-                            state = state,
-                            onAction = onAction,
-                        )
-                    }
                 }
                 HomeResults(
                     state = state,
@@ -404,6 +430,12 @@ internal fun HomeScreenBody(
                     contextMenuGeometry = contextMenuGeometry,
                     onContextMenuOpen = onContextMenuOpen,
                     onContextMenuDismiss = onContextMenuDismiss,
+                    bottomContentPadding =
+                        if (useFloatingSearch) {
+                            HOME_FLOATING_SEARCH_SIZE + WallHubSpacing.lg
+                        } else {
+                            WallHubSpacing.xs
+                        },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -411,13 +443,12 @@ internal fun HomeScreenBody(
         if (useFloatingSearch) {
             HomeFloatingSearch(
                 state = state,
-                showFilters = showFilters,
+                showFilters = filtersOpen,
                 onQueryChanged = { onAction(HomeAction.QueryChanged(it)) },
                 onSubmitSearch = { onAction(HomeAction.SubmitSearch) },
                 onClear = { onAction(HomeAction.QueryChanged("")) },
-                onToggleFilters = { showFilters = !showFilters },
+                onToggleFilters = onOpenFilters,
                 onSearchBoundsChanged = onSearchBoundsChanged,
-                onAction = onAction,
                 modifier =
                     Modifier
                         .align(Alignment.BottomEnd)
@@ -457,7 +488,6 @@ private fun HomeFloatingSearch(
     onClear: () -> Unit,
     onToggleFilters: () -> Unit,
     onSearchBoundsChanged: (IntRect) -> Unit,
-    onAction: (HomeAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -488,13 +518,6 @@ private fun HomeFloatingSearch(
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
         ) {
-            AnimatedVisibility(
-                visible = expanded && showFilters,
-                enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
-                exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
-            ) {
-                HomeFilterBar(state = state, onAction = onAction)
-            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -867,6 +890,7 @@ internal fun HomeResults(
     contextMenuGeometry: HomeContextMenuGeometry,
     onContextMenuOpen: (HomeContextMenuTarget) -> Unit,
     onContextMenuDismiss: (Long) -> Unit,
+    bottomContentPadding: Dp = WallHubSpacing.xs,
     modifier: Modifier = Modifier,
 ) {
     val shouldAutoLoadMore by remember(gridState, state) {
@@ -983,8 +1007,10 @@ internal fun HomeResults(
                                 },
                         contentPadding =
                             PaddingValues(
-                                horizontal = HOME_GRID_HORIZONTAL_PADDING,
-                                vertical = WallHubSpacing.xs,
+                                start = HOME_GRID_HORIZONTAL_PADDING,
+                                top = WallHubSpacing.xs,
+                                end = HOME_GRID_HORIZONTAL_PADDING,
+                                bottom = bottomContentPadding,
                             ),
                         horizontalArrangement = Arrangement.spacedBy(HOME_GRID_ITEM_SPACING),
                         verticalArrangement = Arrangement.spacedBy(HOME_GRID_ITEM_SPACING),

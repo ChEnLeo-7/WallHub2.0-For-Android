@@ -14,6 +14,8 @@ import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
+import com.wallhub.android.core.model.SteamAppPlaytime
+import com.wallhub.android.core.model.SteamPlaytimeRepository
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
@@ -27,7 +29,9 @@ import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
 import `in`.dragonbra.javasteam.enums.EResult
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesPublishedfileSteamclient
+import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesPlayerSteamclient
 import `in`.dragonbra.javasteam.rpc.service.PublishedFile
+import `in`.dragonbra.javasteam.rpc.service.Player
 import `in`.dragonbra.javasteam.steam.CMClient
 import `in`.dragonbra.javasteam.util.log.LogListener
 import `in`.dragonbra.javasteam.util.log.LogManager
@@ -84,7 +88,8 @@ class SecureSteamSessionRepository
     ) : SteamSessionRepository,
         SteamContentCredentialProvider,
         AccountWorkshopRepository,
-        SteamUnifiedWorkshopRepository {
+        SteamUnifiedWorkshopRepository,
+        SteamPlaytimeRepository {
         internal val applicationContext = context.applicationContext
         internal val credentialStore = EncryptedSteamCredentialStore(applicationContext)
         internal val steamServerListProvider = SteamWebSocketServerListProvider()
@@ -133,7 +138,38 @@ class SecureSteamSessionRepository
             LogManager.addListener(javaSteamLogListener)
         }
 
-        override val session: StateFlow<SteamSessionState> = mutableSession.asStateFlow()
+    override val session: StateFlow<SteamSessionState> = mutableSession.asStateFlow()
+
+    override suspend fun getAppPlaytime(appId: Int): SteamAppPlaytime? =
+        withAuthenticatedSteamSession { steamSession ->
+            val steamId = steamSession.accountSteamId.await().convertToUInt64()
+            val response =
+                awaitSteamRpc(steamSession, "player_get_owned_games") {
+                    steamSession.unified
+                        .createService(Player::class.java)
+                        .getOwnedGames(
+                            SteammessagesPlayerSteamclient.CPlayer_GetOwnedGames_Request
+                                .newBuilder()
+                                .setSteamid(steamId)
+                                .setIncludeAppinfo(false)
+                                .setIncludePlayedFreeGames(true)
+                                .addAppidsFilter(appId)
+                                .build(),
+                        ).await()
+                        .body
+                        .build()
+                }
+            response.gamesList
+                .firstOrNull { game -> game.appid == appId }
+                ?.let { game ->
+                    SteamAppPlaytime(
+                        appId = game.appid,
+                        totalMinutes = game.playtimeForever,
+                        recentMinutes = game.playtime2Weeks,
+                        lastPlayedEpochSeconds = game.rtimeLastPlayed.takeIf { it > 0 }?.toLong(),
+                    )
+                }
+        }
 
         private fun createJavaSteamLogListener(): LogListener =
             object : LogListener {
@@ -351,6 +387,7 @@ class SecureSteamSessionRepository
                             val profile = item.creatorId?.toLongOrNull()?.let(profiles::get)
                             item.copy(
                                 author = profile?.displayName ?: item.author,
+                                authorAvatarUrl = profile?.avatarUrl ?: item.authorAvatarUrl,
                                 authorPlaceholder =
                                     if (profile == null) {
                                         item.authorPlaceholder
@@ -386,6 +423,38 @@ class SecureSteamSessionRepository
                         steamProfiles[detail.creator]
                     }
                 mapUnifiedWorkshopDetail(detail, profile)
+            }
+
+        override suspend fun getPublicDetails(workshopIds: List<Long>): List<WorkshopDetail> =
+            withPublicSteamSession { steamSession ->
+                val ids = workshopIds.filter { it > 0L }.distinct()
+                if (ids.isEmpty()) return@withPublicSteamSession emptyList()
+                val service = steamSession.unified.createService(PublishedFile::class.java)
+                val response =
+                    awaitSteamRpc(steamSession, "public_get_details_batch") {
+                        val rpcResponse = service.getDetails(buildUnifiedWorkshopDetailRequest(ids)).await()
+                        check(rpcResponse.result == EResult.OK) {
+                            "Steam PublishedFile.GetDetails returned ${rpcResponse.result}"
+                        }
+                        rpcResponse.body.build()
+                    }
+                val details = response.publishedfiledetailsList.filter { it.result == EResult.OK.code() }
+                val profiles = resolveSteamProfiles(steamSession, details.map { it.creator }.filter { it > 0L }.toSet())
+                details.map { detail -> mapUnifiedWorkshopDetail(detail, profiles[detail.creator]) }
+            }.orEmpty()
+
+        override suspend fun getPublicCollectionChildren(collectionId: Long): List<Long>? =
+            withPublicSteamSession { steamSession ->
+                val service = steamSession.unified.createService(PublishedFile::class.java)
+                val response =
+                    awaitSteamRpc(steamSession, "public_get_collection_children") {
+                        val rpcResponse = service.getDetails(buildUnifiedWorkshopDetailRequest(collectionId)).await()
+                        check(rpcResponse.result == EResult.OK) {
+                            "Steam PublishedFile.GetDetails returned ${rpcResponse.result}"
+                        }
+                        rpcResponse.body.build()
+                    }
+                mapUnifiedCollectionChildIds(collectionId, response)
             }
 
         override suspend fun getAuthenticatedComments(

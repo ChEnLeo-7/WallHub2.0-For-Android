@@ -51,6 +51,7 @@ fun FormalWallHubApp(
             }
         val isTopLevelDestination = currentTopLevelDestination != null
         var homeScrollRequest by rememberSaveable { mutableIntStateOf(0) }
+        var discoverRefreshRequest by rememberSaveable { mutableIntStateOf(0) }
         var homeContextMenuActive by remember { mutableStateOf(false) }
         val expiredSessionMessage = stringResource(R.string.app_saved_steam_session_expired)
         var expiredSessionReported by rememberSaveable { mutableStateOf(false) }
@@ -72,6 +73,9 @@ fun FormalWallHubApp(
             when {
                 destination == TopLevelDestination.HOME &&
                     currentTopLevelDestination == TopLevelDestination.HOME -> homeScrollRequest += 1
+
+                destination == TopLevelDestination.DISCOVER &&
+                    currentTopLevelDestination == TopLevelDestination.DISCOVER -> discoverRefreshRequest += 1
 
                 currentTopLevelDestination == destination -> Unit
 
@@ -100,6 +104,7 @@ fun FormalWallHubApp(
             onNavigateTo = navigateTo,
             navController = navController,
             homeScrollRequest = homeScrollRequest,
+            discoverRefreshRequest = discoverRefreshRequest,
         )
     }
 }

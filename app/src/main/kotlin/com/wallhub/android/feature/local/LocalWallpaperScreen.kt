@@ -133,6 +133,7 @@ import androidx.compose.material.icons.outlined.Settings
 @Composable
 fun LocalWallpaperRoute(
     onOpenSettings: () -> Unit = {},
+    onBack: () -> Unit = {},
     onScrollChromeCollapsedChanged: (Boolean) -> Unit = {},
     isPageActive: Boolean = true,
     viewModel: LocalWallpaperViewModel = hiltViewModel(),
@@ -153,6 +154,7 @@ fun LocalWallpaperRoute(
         onAction = viewModel::onAction,
         onScrollChromeCollapsedChanged = onScrollChromeCollapsedChanged,
         onOpenSettings = onOpenSettings,
+        onBack = onBack,
     )
 }
 
@@ -268,6 +270,7 @@ private fun LocalWallpaperScreen(
     onAction: (LocalWallpaperAction) -> Unit,
     onScrollChromeCollapsedChanged: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
+    onBack: () -> Unit,
 ) {
     val onChooseDirectory: () -> Unit = { onAction(LocalWallpaperAction.ChooseDirectory) }
     val onResetDirectory: () -> Unit = { onAction(LocalWallpaperAction.ResetDirectory) }
@@ -369,6 +372,8 @@ private fun LocalWallpaperScreen(
         LocalHeaderMode.WORKSPACE ->
             SettingsAppBarScaffold(
                 title = stringResource(R.string.navigation_local),
+                showBackButton = true,
+                onNavigateUp = onBack,
                 titleContent = {
                     WallHubToolbarSearchTitle(
                         title = stringResource(R.string.navigation_local),
@@ -393,13 +398,6 @@ private fun LocalWallpaperScreen(
                         onChooseDirectory = onChooseDirectory,
                         onResetDirectory = onResetDirectory,
                         onManageTags = { tagManagerVisible = true },
-                    )
-                    SettingsToolbarActionButton(
-                        imageVector = Icons.Outlined.Settings,
-                        contentDescription = stringResource(R.string.management_settings),
-                        onClick = onOpenSettings,
-                        buttonSize = 64.dp,
-                        containerSize = 48.dp,
                     )
                 },
                 content = pageContent,

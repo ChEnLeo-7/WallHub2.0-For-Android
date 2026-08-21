@@ -128,6 +128,18 @@ interface SteamSessionRepository {
     fun logout()
 }
 
+data class SteamAppPlaytime(
+    val appId: Int,
+    val totalMinutes: Int,
+    val recentMinutes: Int = 0,
+    val lastPlayedEpochSeconds: Long? = null,
+)
+
+/** Reads the signed-in account's Steam playtime through the authenticated CM session. */
+interface SteamPlaytimeRepository {
+    suspend fun getAppPlaytime(appId: Int): SteamAppPlaytime?
+}
+
 /** Data-layer port for short-lived Steam content sessions. Feature modules never use it. */
 interface SteamContentCredentialProvider {
     suspend fun loadContentCredential(): SteamContentCredential?
@@ -173,6 +185,12 @@ interface SteamUnifiedWorkshopRepository {
 
     suspend fun getPublicDetail(workshopId: Long): WorkshopDetail?
 
+    suspend fun getPublicDetails(workshopIds: List<Long>): List<WorkshopDetail> =
+        workshopIds.distinct().mapNotNull { getPublicDetail(it) }
+
+    /** Returns the ordered direct children of a Workshop collection, or null when CM is unavailable. */
+    suspend fun getPublicCollectionChildren(collectionId: Long): List<Long>? = null
+
     /** Returns null when no signed-in CM session is available for Community RPCs. */
     suspend fun getAuthenticatedComments(
         workshopId: Long,
@@ -188,6 +206,10 @@ interface WorkshopRepository {
 
     /** Reads a single public Workshop item and its metadata. */
     suspend fun getDetail(workshopId: Long): WorkshopDetail
+
+    /** Resolves multiple public Workshop records in one transport request when supported. */
+    suspend fun getDetails(workshopIds: List<Long>): List<WorkshopDetail> =
+        workshopIds.distinct().map { getDetail(it) }
 
     /** Reads one page of public comments for a Workshop item. */
     suspend fun getComments(

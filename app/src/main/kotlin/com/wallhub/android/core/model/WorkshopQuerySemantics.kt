@@ -60,6 +60,7 @@ fun WorkshopBrowseQuery.steamTagCriteria(): WorkshopSteamTagCriteria {
     val required = linkedSetOf("Wallpaper")
     val excluded = linkedSetOf("Preset")
     required += tags.map(String::trim).filter(String::isNotBlank)
+    excluded += excludedTags.map(String::trim).filter(String::isNotBlank)
     required += officialTags.map(String::trim).filter { it in WorkshopFilterCatalog.officialTags }
     excluded += excludedOfficialTags.map(String::trim).filter { it in WorkshopFilterCatalog.officialTags }
 
@@ -120,6 +121,24 @@ fun WorkshopBrowseQuery.steamTagCriteria(): WorkshopSteamTagCriteria {
     )
 }
 
+fun WorkshopBrowseQuery.normalizedRequiredTagGroups(): List<List<String>> =
+    requiredTagGroups
+        .asSequence()
+        .map { group -> group.map(String::trim).filter(String::isNotBlank).distinct().take(MAX_WORKSHOP_TAG_GROUP_SIZE) }
+        .filter(List<String>::isNotEmpty)
+        .distinct()
+        .take(MAX_WORKSHOP_TAG_GROUPS)
+        .toList()
+
+fun WorkshopBrowseQuery.normalizedCreatedRange(): LongRange? {
+    val start = createdAfterEpochSeconds?.coerceIn(0L, Int.MAX_VALUE.toLong())
+    val end = createdBeforeEpochSeconds?.coerceIn(0L, Int.MAX_VALUE.toLong())
+    if (start == null && end == null) return null
+    val normalizedStart = start ?: 0L
+    val normalizedEnd = end ?: Int.MAX_VALUE.toLong()
+    return if (normalizedStart <= normalizedEnd) normalizedStart..normalizedEnd else normalizedEnd..normalizedStart
+}
+
 fun WorkshopBrowseQuery.matchesSteamWallpaper(summary: WorkshopSummary): Boolean {
     val criteria = steamTagCriteria()
     val itemTags = summary.tags.map { it.trim().lowercase(Locale.ROOT) }.filter(String::isNotBlank).toSet()
@@ -127,6 +146,14 @@ fun WorkshopBrowseQuery.matchesSteamWallpaper(summary: WorkshopSummary): Boolean
     if (summary.type !in criteria.allowedTypes) return false
     val detailRequired = criteria.requiredTags.filterNot { it.equals("Wallpaper", ignoreCase = true) }
     if (!detailRequired.all { it.lowercase(Locale.ROOT) in itemTags }) return false
+    if (criteria.excludedTags.any { it.lowercase(Locale.ROOT) in itemTags }) return false
+    if (
+        normalizedRequiredTagGroups().any { group ->
+            group.none { tag -> tag.lowercase(Locale.ROOT) in itemTags }
+        }
+    ) {
+        return false
+    }
     if (!allowNsfw && itemTags.any { it in BLOCKED_WORKSHOP_TAGS_LOWERCASE }) return false
     val requestedCreator = creatorId?.trim().orEmpty()
     if (requestedCreator.isNotEmpty() && summary.creatorId != requestedCreator) return false
@@ -164,6 +191,8 @@ fun WorkshopSort.steamQueryType(): Int =
         WorkshopSort.TOP_RATED -> 0
         WorkshopSort.MOST_VOTES -> 11
         WorkshopSort.MOST_SUBSCRIBERS -> 9
+        WorkshopSort.FRIENDS_FAVORITES -> 4
+        WorkshopSort.FRIENDS_CREATED -> 5
     }
 
 fun String.validSteamAuthorIdOrNull(): Long? =
@@ -208,3 +237,5 @@ val STEAM_WORKSHOP_RESOLUTION_TAGS = WORKSHOP_RESOLUTION_TAG_MAP.values.toSet()
 
 const val MAX_WORKSHOP_DETAIL_SEARCH_TAGS = 12
 const val MAX_WORKSHOP_QUERY_TAGS = 48
+const val MAX_WORKSHOP_TAG_GROUPS = 12
+const val MAX_WORKSHOP_TAG_GROUP_SIZE = 12

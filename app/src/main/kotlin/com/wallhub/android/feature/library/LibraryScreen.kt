@@ -764,7 +764,9 @@ private const val LIBRARY_PAGE_SIZE = 16
 
 @Composable
 fun LibraryRoute(
+    initialCollection: String? = null,
     onOpenSettings: () -> Unit = {},
+    onBack: () -> Unit = {},
     onOpenDetail: (Long) -> Unit,
     onPlayVideo: (Long) -> Unit = {},
     onSearchAuthor: (String) -> Unit = {},
@@ -772,6 +774,11 @@ fun LibraryRoute(
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(initialCollection) {
+        initialCollection
+            ?.let { value -> LibraryCollectionTab.entries.firstOrNull { it.name == value } }
+            ?.let { viewModel.onAction(LibraryAction.SelectCollection(it)) }
+    }
     LibraryEffectHandler(
         viewModel = viewModel,
         onOpenDetail = onOpenDetail,
@@ -782,6 +789,7 @@ fun LibraryRoute(
         state = state,
         onAction = viewModel::onAction,
         onOpenSettings = onOpenSettings,
+        onBack = onBack,
         onContextMenuActiveChanged = onContextMenuActiveChanged,
     )
 }
@@ -830,11 +838,14 @@ fun LibraryScreen(
     state: LibraryUiState,
     onAction: (LibraryAction) -> Unit,
     onOpenSettings: () -> Unit = {},
+    onBack: () -> Unit = {},
     onContextMenuActiveChanged: (Boolean) -> Unit = {},
 ) {
     var searchToolbarExpanded by remember { mutableStateOf(false) }
     WallHubPageScaffold(
         title = stringResource(R.string.library_title),
+        showBackButton = true,
+        onNavigateUp = onBack,
         titleContent = {
             WallHubToolbarSearchTitle(
                 title = stringResource(R.string.library_title),
@@ -858,13 +869,6 @@ fun LibraryScreen(
             IconButton(onClick = { onAction(LibraryAction.Refresh) }) {
                 Icon(Icons.Outlined.Refresh, contentDescription = stringResource(R.string.library_refresh))
             }
-            SettingsToolbarActionButton(
-                imageVector = Icons.Outlined.Settings,
-                contentDescription = stringResource(R.string.management_settings),
-                onClick = onOpenSettings,
-                buttonSize = 64.dp,
-                containerSize = 48.dp,
-            )
         },
     ) { padding ->
         LibraryContent(

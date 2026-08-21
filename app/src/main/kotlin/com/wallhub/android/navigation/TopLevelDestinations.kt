@@ -5,14 +5,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.Explore
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.PersonOutline
 
 internal enum class TopLevelDestination(
     val target: WallHubDestination,
@@ -20,10 +18,9 @@ internal enum class TopLevelDestination(
     val icon: ImageVector,
     val selectedIcon: ImageVector,
 ) {
-    HOME(HomeDestination, R.string.navigation_discover, Icons.Outlined.Explore, Icons.Filled.Explore),
-    DOWNLOADS(DownloadsDestination, R.string.navigation_downloads, Icons.Outlined.Download, Icons.Filled.Download),
-    LIBRARY(LibraryDestination, R.string.navigation_library, Icons.Outlined.FavoriteBorder, Icons.Filled.Favorite),
-    LOCAL(LocalDestination, R.string.navigation_local, Icons.Outlined.FolderOpen, Icons.Filled.FolderOpen),
+    HOME(HomeDestination, R.string.navigation_home, Icons.Outlined.Home, Icons.Filled.Home),
+    DISCOVER(DiscoverDestination, R.string.navigation_discover, Icons.Outlined.Explore, Icons.Filled.Explore),
+    PROFILE(ProfileDestination, R.string.navigation_profile, Icons.Outlined.PersonOutline, Icons.Filled.Person),
 }
 
 internal fun NavDestination.isTopLevelDestinationRoute(): Boolean =

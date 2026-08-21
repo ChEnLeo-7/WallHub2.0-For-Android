@@ -8,6 +8,8 @@ import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.matchesSteamWallpaper
+import com.wallhub.android.core.model.normalizedCreatedRange
+import com.wallhub.android.core.model.normalizedRequiredTagGroups
 import com.wallhub.android.core.model.effectiveWorkshopRatings
 import com.wallhub.android.core.model.steamSearchText
 import com.wallhub.android.core.model.steamTagCriteria
@@ -53,6 +55,8 @@ internal fun buildBrowseUrl(query: WorkshopBrowseQuery): String {
             WorkshopSort.TOP_RATED -> "toprated"
             WorkshopSort.MOST_VOTES -> "mostvotes"
             WorkshopSort.MOST_SUBSCRIBERS -> "totaluniquesubscribers"
+            WorkshopSort.FRIENDS_FAVORITES -> "friendsfavorite"
+            WorkshopSort.FRIENDS_CREATED -> "friendscreated"
         }
     return Uri
         .Builder()
@@ -111,6 +115,20 @@ internal fun buildSteamApiBrowseUrl(
         input.put(
             "required_kv_tags",
             JSONArray().put(JSONObject().put("key", "app_workshop_eula_version").put("value", "3")),
+        )
+    }
+    normalized.normalizedRequiredTagGroups().takeIf(List<List<String>>::isNotEmpty)?.let { groups ->
+        input.put(
+            "taggroups",
+            JSONArray(groups.map { group -> JSONObject().put("tags", JSONArray(group)) }),
+        )
+    }
+    normalized.normalizedCreatedRange()?.let { range ->
+        input.put(
+            "date_range_created",
+            JSONObject()
+                .put("timestamp_start", range.first)
+                .put("timestamp_end", range.last),
         )
     }
     return Uri
@@ -174,12 +192,25 @@ internal fun WorkshopBrowseQuery.normalized(): WorkshopBrowseQuery =
                 .filter(String::isNotBlank)
                 .take(MAX_REQUIRED_TAGS)
                 .toSet(),
+        excludedTags =
+            excludedTags
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .take(MAX_REQUIRED_TAGS)
+                .toSet(),
+        requiredTagGroups =
+            requiredTagGroups
+                .map { group -> group.map(String::trim).filter(String::isNotBlank).take(MAX_REQUIRED_TAGS).toSet() }
+                .filter(Set<String>::isNotEmpty)
+                .take(MAX_REQUIRED_TAGS),
         genres = genres.map(String::trim).filter { it in COMMUNITY_GENRE_TAGS }.toSet(),
         officialTags = officialTags.map(String::trim).filter { it in OFFICIAL_TAGS }.toSet(),
         excludedOfficialTags = excludedOfficialTags.map(String::trim).filter { it in OFFICIAL_TAGS }.toSet(),
         resolutions = resolutions.map(String::trim).filter { it in RESOLUTION_TAGS }.toSet(),
         ratings = ratings.ifEmpty { setOf(com.wallhub.android.core.model.WorkshopRating.EVERYONE) },
         days = days.coerceIn(0, 365),
+        createdAfterEpochSeconds = createdAfterEpochSeconds?.coerceIn(0L, Int.MAX_VALUE.toLong()),
+        createdBeforeEpochSeconds = createdBeforeEpochSeconds?.coerceIn(0L, Int.MAX_VALUE.toLong()),
     )
 
 internal fun WorkshopBrowseQuery.matches(summary: WorkshopSummary): Boolean {

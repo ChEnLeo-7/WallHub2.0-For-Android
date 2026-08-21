@@ -45,6 +45,8 @@ enum class WorkshopSort {
     TOP_RATED,
     MOST_VOTES,
     MOST_SUBSCRIBERS,
+    FRIENDS_FAVORITES,
+    FRIENDS_CREATED,
 }
 
 data class WorkshopBrowseQuery(
@@ -55,6 +57,8 @@ data class WorkshopBrowseQuery(
     val type: WorkshopType? = null,
     val types: Set<WorkshopType> = emptySet(),
     val tags: Set<String> = emptySet(),
+    val excludedTags: Set<String> = emptySet(),
+    val requiredTagGroups: List<Set<String>> = emptyList(),
     val genres: Set<String> = emptySet(),
     val officialTags: Set<String> = emptySet(),
     val excludedOfficialTags: Set<String> = emptySet(),
@@ -65,6 +69,8 @@ data class WorkshopBrowseQuery(
     val sort: WorkshopSort = WorkshopSort.TRENDING,
     val allowNsfw: Boolean = false,
     val mobileCompatibleOnly: Boolean = false,
+    val createdAfterEpochSeconds: Long? = null,
+    val createdBeforeEpochSeconds: Long? = null,
     val language: Int = defaultSteamWorkshopLanguage(),
 )
 
@@ -106,6 +112,7 @@ data class WorkshopSummary(
     val title: String,
     val author: String,
     val creatorId: String? = null,
+    val authorAvatarUrl: String? = null,
     val previewUrl: String? = null,
     val type: WorkshopType = WorkshopType.UNKNOWN,
     val tags: List<String> = emptyList(),

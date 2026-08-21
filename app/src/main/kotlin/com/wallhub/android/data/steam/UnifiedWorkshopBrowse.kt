@@ -11,6 +11,8 @@ import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.core.model.matchesSteamWallpaper
+import com.wallhub.android.core.model.normalizedCreatedRange
+import com.wallhub.android.core.model.normalizedRequiredTagGroups
 import com.wallhub.android.core.model.workshopAuthorSearchOrNull
 import com.wallhub.android.core.model.workshopDetailTagSearch
 import com.wallhub.android.core.model.steamSearchText
@@ -52,6 +54,23 @@ internal fun buildUnifiedWorkshopBrowseRequest(
                         .newBuilder()
                         .setKey("app_workshop_eula_version")
                         .setValue("3")
+                        .build(),
+                )
+            }
+            normalized.normalizedRequiredTagGroups().forEach { group ->
+                addTaggroups(
+                    SteammessagesPublishedfileSteamclient.CPublishedFile_QueryFiles_Request.TagGroup
+                        .newBuilder()
+                        .addAllTags(group)
+                        .build(),
+                )
+            }
+            normalized.normalizedCreatedRange()?.let { range ->
+                setDateRangeCreated(
+                    SteammessagesPublishedfileSteamclient.CPublishedFile_QueryFiles_Request.DateRange
+                        .newBuilder()
+                        .setTimestampStart(range.first.toInt())
+                        .setTimestampEnd(range.last.toInt())
                         .build(),
                 )
             }
@@ -198,12 +217,25 @@ private fun WorkshopBrowseQuery.normalizedForUnifiedBrowse(): WorkshopBrowseQuer
                 .filter(String::isNotBlank)
                 .take(MAX_PUBLIC_WORKSHOP_TAGS)
                 .toSet(),
+        excludedTags =
+            excludedTags
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .take(MAX_PUBLIC_WORKSHOP_TAGS)
+                .toSet(),
+        requiredTagGroups =
+            requiredTagGroups
+                .map { group -> group.map(String::trim).filter(String::isNotBlank).take(MAX_PUBLIC_WORKSHOP_TAGS).toSet() }
+                .filter(Set<String>::isNotEmpty)
+                .take(MAX_PUBLIC_WORKSHOP_TAGS),
         genres = genres.map(String::trim).filter { it in WorkshopFilterCatalog.genres }.toSet(),
         officialTags = officialTags.map(String::trim).filter { it in WorkshopFilterCatalog.officialTags }.toSet(),
         excludedOfficialTags = excludedOfficialTags.map(String::trim).filter { it in WorkshopFilterCatalog.officialTags }.toSet(),
         resolutions = resolutions.map(String::trim).filter { it in WorkshopFilterCatalog.resolutions }.toSet(),
         ratings = ratings.ifEmpty { setOf(com.wallhub.android.core.model.WorkshopRating.EVERYONE) },
         days = days.coerceIn(0, 365),
+        createdAfterEpochSeconds = createdAfterEpochSeconds?.coerceIn(0L, Int.MAX_VALUE.toLong()),
+        createdBeforeEpochSeconds = createdBeforeEpochSeconds?.coerceIn(0L, Int.MAX_VALUE.toLong()),
     )
 
 private fun Int.toMaximumPage(pageSize: Int): Int {

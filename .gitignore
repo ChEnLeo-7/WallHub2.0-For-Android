@@ -2,6 +2,7 @@
 .kotlin/
 build/
 **/build/
+/build-logic/bin/
 local.properties
 .idea/
 *.iml
@@ -50,6 +51,11 @@ signing.properties
 !/app/src/test/kotlin/com/wallhub/android/feature/
 /app/src/test/kotlin/com/wallhub/android/feature/*
 !/app/src/test/kotlin/com/wallhub/android/feature/local/
+!/app/src/test/kotlin/com/wallhub/android/feature/discover/
+/app/src/test/kotlin/com/wallhub/android/feature/discover/*
+!/app/src/test/kotlin/com/wallhub/android/feature/discover/DiscoverQueryAdapterTest.kt
+!/app/src/test/kotlin/com/wallhub/android/feature/discover/DiscoverSamplingTest.kt
+!/app/src/test/kotlin/com/wallhub/android/feature/discover/OfficialDiscoverMetadataParserTest.kt
 /app/src/test/kotlin/com/wallhub/android/feature/local/*
 !/app/src/test/kotlin/com/wallhub/android/feature/local/LocalWallpaperViewModelTest.kt
 /app/src/test/kotlin/com/wallhub/android/data/steamaccess/*

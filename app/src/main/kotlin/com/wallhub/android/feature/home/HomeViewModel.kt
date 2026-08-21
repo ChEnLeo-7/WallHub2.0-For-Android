@@ -139,7 +139,7 @@ class HomeViewModel
                 HomeAction.SubmitSearch -> submitSearch()
                 HomeAction.RestoreUnsubmittedQuery -> restoreUnsubmittedQuery()
                 HomeAction.ToggleExactPhrase -> toggleExactPhrase()
-                is HomeAction.ApplyFilters -> applyFilters(action.selection)
+                is HomeAction.ApplyFilters -> applyFilters(action.selection, action.exactPhrase)
                 is HomeAction.SelectViewMode -> setViewMode(action.viewMode)
                 HomeAction.ResetAndRefresh -> resetAndRefresh()
                 else -> return false
@@ -216,18 +216,24 @@ class HomeViewModel
             refresh()
         }
 
-        private fun applyFilters(selection: HomeFilterSelection) {
+        private fun applyFilters(
+            selection: HomeFilterSelection,
+            exactPhrase: Boolean?,
+        ) {
             val current = mutableState.value
             val normalized = selection.normalized(current.matureContentEnabled)
-            if (normalized == current.filterSelection()) return
+            val resolvedExactPhrase = exactPhrase ?: current.exactPhrase
+            if (normalized == current.filterSelection() && resolvedExactPhrase == current.exactPhrase) return
             mutableState.value =
                 current.copy(
+                    exactPhrase = resolvedExactPhrase,
                     sort = normalized.sort,
                     days = normalized.days,
                     selectedTypes = normalized.types,
                     selectedRatings = normalized.ratings,
                     selectedGenres = normalized.genres,
                     selectedOfficialTags = normalized.officialTags,
+                    selectedExcludedOfficialTags = normalized.excludedOfficialTags,
                     selectedResolutions = normalized.resolutions,
                 )
             refresh()

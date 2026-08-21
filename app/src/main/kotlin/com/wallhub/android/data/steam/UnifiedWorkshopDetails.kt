@@ -5,6 +5,7 @@ import com.wallhub.android.core.model.WorkshopComment
 import com.wallhub.android.core.model.WorkshopCommentPage
 import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.data.steam.protobuf.CommunityMessages
+import `in`.dragonbra.javasteam.enums.EResult
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesPublishedfileSteamclient
 
 internal data class SteamProfile(
@@ -12,11 +13,15 @@ internal data class SteamProfile(
     val avatarUrl: String? = null,
 )
 
-internal fun buildUnifiedWorkshopDetailRequest(workshopId: Long): SteammessagesPublishedfileSteamclient.CPublishedFile_GetDetails_Request {
-    require(workshopId > 0L) { "Invalid Workshop item ID" }
+internal fun buildUnifiedWorkshopDetailRequest(workshopId: Long): SteammessagesPublishedfileSteamclient.CPublishedFile_GetDetails_Request =
+    buildUnifiedWorkshopDetailRequest(listOf(workshopId))
+
+internal fun buildUnifiedWorkshopDetailRequest(workshopIds: List<Long>): SteammessagesPublishedfileSteamclient.CPublishedFile_GetDetails_Request {
+    val ids = workshopIds.filter { it > 0L }.distinct()
+    require(ids.isNotEmpty()) { "At least one valid Workshop item ID is required" }
     return SteammessagesPublishedfileSteamclient.CPublishedFile_GetDetails_Request
         .newBuilder()
-        .addPublishedfileids(workshopId)
+        .addAllPublishedfileids(ids)
         .setIncludetags(true)
         .setIncludeadditionalpreviews(true)
         .setIncludechildren(true)
@@ -36,6 +41,7 @@ internal fun mapUnifiedWorkshopDetail(
         detail.toWorkshopSummary().let { source ->
             source.copy(
                 author = creatorProfile?.displayName.orEmpty(),
+                authorAvatarUrl = creatorProfile?.avatarUrl,
                 authorPlaceholder =
                     if (creatorProfile == null) {
                         WorkshopAuthorPlaceholder.CREATOR
@@ -63,6 +69,19 @@ internal fun mapUnifiedWorkshopDetail(
         creatorId = detail.creator.toString().takeIf { detail.creator > 0L },
     )
 }
+
+internal fun mapUnifiedCollectionChildIds(
+    collectionId: Long,
+    response: SteammessagesPublishedfileSteamclient.CPublishedFile_GetDetails_Response,
+): List<Long> =
+    response.publishedfiledetailsList
+        .firstOrNull { detail ->
+            detail.publishedfileid == collectionId && detail.result == EResult.OK.code()
+        }?.childrenList
+        .orEmpty()
+        .sortedBy { child -> child.sortorder }
+        .mapNotNull { child -> child.publishedfileid.takeIf { it > 0L } }
+        .distinct()
 
 internal fun buildCommunityCommentRequest(
     workshopId: Long,

@@ -9,8 +9,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,9 +33,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -40,10 +47,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -122,6 +131,7 @@ enum class DownloadFilter {
 data class DownloadsUiState(
     val filter: DownloadFilter = DownloadFilter.ALL,
     val selectedTypes: Set<WorkshopType> = FilterableWorkshopTypes,
+    val allTasks: List<DownloadTask> = emptyList(),
     val tasks: List<DownloadTask> = emptyList(),
 )
 
@@ -364,6 +374,7 @@ internal class DownloadsStateSource(
             DownloadsUiState(
                 filter = filter,
                 selectedTypes = types,
+                allTasks = tasks,
                 tasks = filterTasks(tasks, filter, types),
             )
         }
@@ -405,6 +416,7 @@ private const val DOWNLOAD_TYPE_FILTER_KEY = "downloads.typeFilter"
 @Composable
 fun DownloadsRoute(
     onOpenSettings: () -> Unit = {},
+    onBack: () -> Unit = {},
     onPlayVideo: (String) -> Unit = {},
     viewModel: DownloadsViewModel = hiltViewModel(),
 ) {
@@ -416,6 +428,7 @@ fun DownloadsRoute(
     DownloadsScreen(
         state = state,
         onAction = viewModel::onAction,
+        onBack = onBack,
         onOpenSettings = onOpenSettings,
     )
 }
@@ -475,9 +488,12 @@ fun DownloadsScreen(
     state: DownloadsUiState,
     onAction: (DownloadsAction) -> Unit,
     onOpenSettings: () -> Unit = {},
+    onBack: () -> Unit = {},
 ) {
     WallHubPageScaffold(
         title = stringResource(R.string.downloads_title),
+        showBackButton = true,
+        onNavigateUp = onBack,
         actions = {
             WorkshopTypeFilterMenu(
                 selectedTypes = state.selectedTypes,
@@ -501,13 +517,6 @@ fun DownloadsScreen(
                     contentDescription = stringResource(R.string.downloads_clear_completed),
                 )
             }
-            SettingsToolbarActionButton(
-                imageVector = Icons.Outlined.Settings,
-                contentDescription = stringResource(R.string.management_settings),
-                onClick = onOpenSettings,
-                buttonSize = 64.dp,
-                containerSize = 48.dp,
-            )
         },
     ) { padding ->
         DownloadsContent(
@@ -519,6 +528,7 @@ fun DownloadsScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DownloadsContent(
     state: DownloadsUiState,
@@ -530,19 +540,41 @@ fun DownloadsContent(
         modifier = modifier.fillMaxSize(),
     ) {
         if (showFilters) {
-            WallHubCapsuleFilter(
-                options = DownloadFilter.entries,
-                selected = state.filter,
-                onSelected = { filter -> onAction(DownloadsAction.SelectFilter(filter)) },
-                label = { filter -> Text(filter.label()) },
-                visibleOptionCount = 4,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xs),
-            )
-        }
-        if (state.tasks.isEmpty()) {
+            val selectedTab = if (state.filter == DownloadFilter.COMPLETED) 1 else 0
+            val pagerState = rememberPagerState(initialPage = selectedTab) { 2 }
+            LaunchedEffect(selectedTab) { if (pagerState.currentPage != selectedTab) pagerState.animateScrollToPage(selectedTab) }
+            LaunchedEffect(pagerState) {
+                snapshotFlow { pagerState.currentPage }.collect { page ->
+                    onAction(DownloadsAction.SelectFilter(if (page == 1) DownloadFilter.COMPLETED else DownloadFilter.DOWNLOADING))
+                }
+            }
+            PrimaryTabRow(
+                selectedTabIndex = pagerState.currentPage,
+                modifier = Modifier.fillMaxWidth(),
+                containerColor = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                CompositionLocalProvider(LocalRippleConfiguration provides null) {
+                    Tab(selected = pagerState.currentPage == 0, onClick = { onAction(DownloadsAction.SelectFilter(DownloadFilter.DOWNLOADING)) }, text = { Text(stringResource(R.string.downloads_tab_active)) })
+                    Tab(selected = pagerState.currentPage == 1, onClick = { onAction(DownloadsAction.SelectFilter(DownloadFilter.COMPLETED)) }, text = { Text(stringResource(R.string.downloads_tab_completed)) })
+                }
+            }
+            HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
+                val pageFilter = if (page == 1) DownloadFilter.COMPLETED else DownloadFilter.DOWNLOADING
+                val pageTasks = filterTasks(state.allTasks, pageFilter, state.selectedTypes)
+                if (pageTasks.isEmpty()) {
+                    WallHubEmptyState(icon = Icons.Outlined.Download, title = stringResource(R.string.downloads_empty), modifier = Modifier.fillMaxSize())
+                } else {
+                    ReorderableDownloadList(
+                        tasks = pageTasks,
+                        onAction = { taskId, action -> onAction(DownloadsAction.RequestTaskAction(taskId, action)) },
+                        onPlayVideo = { taskId -> onAction(DownloadsAction.PlayVideo(taskId)) },
+                        onReorder = { taskIds -> onAction(DownloadsAction.ReorderTasks(taskIds)) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        } else if (state.tasks.isEmpty()) {
             WallHubEmptyState(
                 icon = Icons.Outlined.Download,
                 title = stringResource(R.string.downloads_empty),

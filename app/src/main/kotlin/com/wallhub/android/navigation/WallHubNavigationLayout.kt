@@ -60,6 +60,7 @@ internal fun WallHubAdaptiveNavigationLayout(
     onNavigateTo: (TopLevelDestination) -> Unit,
     navController: NavHostController,
     homeScrollRequest: Int,
+    discoverRefreshRequest: Int,
 ) {
     when (windowWidthSizeClass) {
         WindowWidthSizeClass.MEDIUM -> {
@@ -92,6 +93,7 @@ internal fun WallHubAdaptiveNavigationLayout(
                     modifier = Modifier.fillMaxSize(),
                     navController = navController,
                     homeScrollRequest = homeScrollRequest,
+                    discoverRefreshRequest = discoverRefreshRequest,
                     onHomeContextMenuActiveChanged = onHomeContextMenuActiveChanged,
                     animateTopLevelTransitions = false,
                 )
@@ -133,6 +135,7 @@ internal fun WallHubAdaptiveNavigationLayout(
                         modifier = Modifier.fillMaxSize(),
                         navController = navController,
                         homeScrollRequest = homeScrollRequest,
+                        discoverRefreshRequest = discoverRefreshRequest,
                         onHomeContextMenuActiveChanged = onHomeContextMenuActiveChanged,
                         animateTopLevelTransitions = false,
                     )
@@ -142,6 +145,7 @@ internal fun WallHubAdaptiveNavigationLayout(
                     modifier = Modifier.fillMaxSize(),
                     navController = navController,
                     homeScrollRequest = homeScrollRequest,
+                    discoverRefreshRequest = discoverRefreshRequest,
                     onHomeContextMenuActiveChanged = onHomeContextMenuActiveChanged,
                     animateTopLevelTransitions = false,
                 )
@@ -206,6 +210,7 @@ internal fun WallHubAdaptiveNavigationLayout(
                             .consumeWindowInsets(padding),
                     navController = navController,
                     homeScrollRequest = homeScrollRequest,
+                    discoverRefreshRequest = discoverRefreshRequest,
                     onHomeContextMenuActiveChanged = onHomeContextMenuActiveChanged,
                     animateTopLevelTransitions = true,
                 )
