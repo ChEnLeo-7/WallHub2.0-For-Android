@@ -532,7 +532,19 @@ class SecureSteamSessionRepository
                 val hasClientFilter =
                     normalized.searchText.isNotEmpty() ||
                         normalized.type != null ||
-                        normalized.tags.isNotEmpty()
+                        normalized.types.isNotEmpty() ||
+                        normalized.tags.isNotEmpty() ||
+                        normalized.ratings.isNotEmpty() ||
+                        (
+                            normalized.genres.isNotEmpty() &&
+                                normalized.genres.size < com.wallhub.android.core.model.WorkshopFilterCatalog.genres.size
+                        ) ||
+                        normalized.officialTags.isNotEmpty() ||
+                        normalized.excludedOfficialTags.isNotEmpty() ||
+                        (
+                            normalized.resolutions.isNotEmpty() &&
+                                normalized.resolutions.size < com.wallhub.android.core.model.WorkshopFilterCatalog.resolutions.size
+                        )
                 if (!hasClientFilter) {
                     val response = loadSourcePage(normalized.page, normalized.pageSize)
                     val summaries =

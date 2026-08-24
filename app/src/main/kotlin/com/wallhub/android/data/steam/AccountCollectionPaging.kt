@@ -1,7 +1,9 @@
 package com.wallhub.android.data.steam
 
 import com.wallhub.android.core.model.AccountWorkshopQuery
+import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopSummary
+import com.wallhub.android.core.model.matchesSteamWallpaper
 
 internal data class AccountCollectionPageSelection<T>(
     val items: List<T>,
@@ -34,16 +36,36 @@ internal fun <T> selectAccountCollectionPage(
 }
 
 internal fun AccountWorkshopQuery.matchesAccountCollectionItem(summary: WorkshopSummary): Boolean {
-    if (type != null && summary.type != type) return false
-    if (tags.isNotEmpty()) {
-        val sourceTags = summary.tags.map(String::lowercase).toSet()
-        if (!tags.all { tag -> tag.lowercase() in sourceTags }) return false
-    }
+    val filterQuery =
+        WorkshopBrowseQuery(
+            searchText = searchText,
+            exactPhrase = exactPhrase,
+            type = type,
+            types = types,
+            tags = tags,
+            ratings = ratings.ifEmpty { setOf(com.wallhub.android.core.model.WorkshopRating.ALL) },
+            genres = genres,
+            officialTags = officialTags,
+            excludedOfficialTags = excludedOfficialTags,
+            resolutions = resolutions,
+            allowNsfw = true,
+        )
+    if (!filterQuery.matchesSteamWallpaper(summary)) return false
     val needle = searchText.trim().lowercase()
     if (needle.isEmpty()) return true
-    return needle in summary.title.lowercase() ||
-        needle in summary.author.lowercase() ||
-        needle in summary.id.toString() ||
-        summary.creatorId?.lowercase()?.contains(needle) == true ||
-        summary.tags.any { tag -> needle in tag.lowercase() }
+    val searchable =
+        buildList {
+            add(summary.title)
+            add(summary.author)
+            add(summary.id.toString())
+            summary.creatorId?.let(::add)
+            addAll(summary.tags)
+        }.map(String::lowercase)
+    return if (exactPhrase) {
+        searchable.any { value -> needle in value }
+    } else {
+        needle.split(Regex("\\s+")).filter(String::isNotBlank).all { token ->
+            searchable.any { value -> token in value }
+        }
+    }
 }

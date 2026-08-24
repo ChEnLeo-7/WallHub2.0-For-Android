@@ -69,6 +69,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.PlayArrow
 
@@ -105,11 +106,13 @@ internal fun LibraryContextMenuCard(
     authorDisplayName: String?,
     onAuthorDisplayNameRequested: () -> Unit,
     onDownload: () -> Unit,
+    removeActionLabel: String?,
+    onRemoveFromCollection: () -> Unit,
     onPlayVideo: () -> Unit,
     onCopyText: (String, String) -> Unit,
     onOpenSteam: () -> Unit,
     modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
+    content: @Composable (onShowActions: () -> Unit) -> Unit,
 ) {
     val previewLayer = rememberGraphicsLayer()
     val position = remember { LibraryCardPositionHolder() }
@@ -172,7 +175,10 @@ internal fun LibraryContextMenuCard(
         coordinator.dismiss(item.id)
     }
 
-    fun openMenuAt(touchPosition: Offset) {
+    fun openMenuAt(
+        touchPosition: Offset,
+        performHapticFeedback: Boolean = true,
+    ) {
         val captured =
             coordinator.captureTarget(
                 itemId = item.id,
@@ -185,11 +191,20 @@ internal fun LibraryContextMenuCard(
         target = captured
         touchPositionInWindow = captured.touchPositionInWindow
         onAuthorDisplayNameRequested()
-        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        if (performHapticFeedback) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         coordinator.open(captured)
         menuVisible = false
         menuMounted = true
         menuEntranceRequest++
+    }
+    fun openMenuAtCenter() {
+        val size = position.touchCoordinates?.size ?: return
+        if (size.width > 0 && size.height > 0) {
+            openMenuAt(
+                touchPosition = Offset(size.width / 2f, size.height / 2f),
+                performHapticFeedback = false,
+            )
+        }
     }
     val interactionModifier =
         Modifier
@@ -252,7 +267,7 @@ internal fun LibraryContextMenuCard(
                     }.onGloballyPositioned { position.touchCoordinates = it }
                     .then(interactionModifier),
             shape = shape,
-            content = content,
+            content = { content(::openMenuAtCenter) },
         )
         if (menuMounted) {
             Popup(
@@ -334,6 +349,16 @@ internal fun LibraryContextMenuCard(
                             onDownload()
                         },
                     )
+                    if (removeActionLabel != null) {
+                        LibraryContextMenuAction(
+                            text = removeActionLabel,
+                            icon = Icons.Outlined.Cancel,
+                            onClick = {
+                                dismissMenu()
+                                onRemoveFromCollection()
+                            },
+                        )
+                    }
                     if (item.type == com.wallhub.android.core.model.WorkshopType.VIDEO) {
                         LibraryContextMenuAction(
                             text = stringResource(R.string.library_open_video_details),

@@ -66,6 +66,10 @@ class DataStoreSettingsRepository
             store.setHomeSearchFab(enabled)
         }
 
+        override suspend fun setDiscoverResultsColumns(columns: Int) {
+            store.setDiscoverResultsColumns(columns)
+        }
+
         override suspend fun setDownloadPreferences(
             maxConcurrentDownloads: Int,
             chunkDownloadConcurrency: Int,

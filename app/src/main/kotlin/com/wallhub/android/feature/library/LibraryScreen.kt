@@ -2,6 +2,7 @@
 
 package com.wallhub.android.feature.library
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -31,30 +32,37 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -63,6 +71,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -80,6 +89,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
@@ -100,11 +110,8 @@ import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubToolbarSearchTitle
-import com.wallhub.android.core.designsystem.FilterableWorkshopTypes
-import com.wallhub.android.core.designsystem.WorkshopTypeFilterMenu
 import com.wallhub.android.core.designsystem.WallHubPaginationControl
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
-import com.wallhub.android.core.designsystem.WallHubCapsuleFilter
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.format.formatByteSize
@@ -113,15 +120,29 @@ import com.wallhub.android.core.designsystem.rememberWallHubDirectionalCollapseC
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
+import com.wallhub.android.core.model.DownloadRequest
+import com.wallhub.android.core.model.DownloadTaskRepository
+import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.HomePaginationMode
+import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopPage
+import com.wallhub.android.core.model.WorkshopRating
+import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.android.feature.home.DEFAULT_HOME_GENRE_SELECTION
+import com.wallhub.android.feature.home.DEFAULT_HOME_RATING_SELECTION
+import com.wallhub.android.feature.home.DEFAULT_HOME_RESOLUTION_SELECTION
+import com.wallhub.android.feature.home.HomeAction
+import com.wallhub.android.feature.home.HomeFilterDrawer
+import com.wallhub.android.feature.home.HomeFilterSelection
+import com.wallhub.android.feature.home.HomeUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -131,19 +152,21 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
-import org.uwuaosp.compose.settingslib.SettingsToolbarActionButton
 import java.util.Locale
 import javax.inject.Inject
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.HowToVote
 import androidx.compose.material.icons.outlined.ImageNotSupported
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.StarBorder
 
 enum class LibraryCollectionTab(
@@ -157,8 +180,15 @@ enum class LibraryCollectionTab(
 data class LibraryUiState(
     val session: SteamSessionState = SteamSessionState(),
     val collection: LibraryCollectionTab = LibraryCollectionTab.SUBSCRIPTIONS,
-    val selectedTypes: Set<WorkshopType> = FilterableWorkshopTypes,
+    val selectedTypes: Set<WorkshopType> = emptySet(),
+    val selectedRatings: Set<WorkshopRating> = DEFAULT_HOME_RATING_SELECTION,
+    val selectedGenres: Set<String> = DEFAULT_HOME_GENRE_SELECTION,
+    val selectedOfficialTags: Set<String> = emptySet(),
+    val selectedExcludedOfficialTags: Set<String> = emptySet(),
+    val selectedResolutions: Set<String> = DEFAULT_HOME_RESOLUTION_SELECTION,
     val searchQuery: String = "",
+    val exactPhrase: Boolean = false,
+    val matureContentEnabled: Boolean = false,
     val paginationMode: HomePaginationMode = HomePaginationMode.INFINITE_SCROLL,
     val items: List<WorkshopSummary> = emptyList(),
     val authorDisplayNames: Map<Long, String> = emptyMap(),
@@ -176,13 +206,39 @@ data class LibraryUiState(
     val searchAnimationItemIds: Set<Long> = emptySet(),
 )
 
+private fun LibraryUiState.filterSelection(): HomeFilterSelection =
+    HomeFilterSelection(
+        sort = WorkshopSort.TRENDING,
+        days = 30,
+        types = selectedTypes,
+        ratings = selectedRatings,
+        genres = selectedGenres,
+        officialTags = selectedOfficialTags,
+        excludedOfficialTags = selectedExcludedOfficialTags,
+        resolutions = selectedResolutions,
+    )
+
+private fun LibraryUiState.asHomeFilterUiState(): HomeUiState =
+    HomeUiState(
+        query = searchQuery,
+        exactPhrase = exactPhrase,
+        selectedTypes = selectedTypes,
+        selectedRatings = selectedRatings,
+        selectedGenres = selectedGenres,
+        selectedOfficialTags = selectedOfficialTags,
+        selectedExcludedOfficialTags = selectedExcludedOfficialTags,
+        selectedResolutions = selectedResolutions,
+        matureContentEnabled = matureContentEnabled,
+    )
+
 sealed interface LibraryAction {
     data class SelectCollection(
         val collection: LibraryCollectionTab,
     ) : LibraryAction
 
-    data class ToggleType(
-        val type: WorkshopType,
+    data class ApplyFilters(
+        val selection: HomeFilterSelection,
+        val exactPhrase: Boolean,
     ) : LibraryAction
 
     data class UpdateSearchQuery(
@@ -233,6 +289,10 @@ sealed interface LibraryAction {
     data class OpenSteam(
         val workshopId: Long,
     ) : LibraryAction
+
+    data class RemoveFromCollection(
+        val item: WorkshopSummary,
+    ) : LibraryAction
 }
 
 sealed interface LibraryEffect {
@@ -248,10 +308,6 @@ sealed interface LibraryEffect {
         val author: String,
     ) : LibraryEffect
 
-    data class Download(
-        val item: WorkshopSummary,
-    ) : LibraryEffect
-
     data class CopyText(
         val text: String,
         val message: String,
@@ -260,12 +316,23 @@ sealed interface LibraryEffect {
     data class OpenSteam(
         val workshopId: Long,
     ) : LibraryEffect
+
+    data class ShowMessage(
+        @StringRes val messageRes: Int,
+        val formatArgs: List<Any> = emptyList(),
+    ) : LibraryEffect
 }
 
 private data class LibraryQueryKey(
     val collection: LibraryCollectionTab,
     val selectedTypes: Set<WorkshopType>,
+    val selectedRatings: Set<WorkshopRating>,
+    val selectedGenres: Set<String>,
+    val selectedOfficialTags: Set<String>,
+    val selectedExcludedOfficialTags: Set<String>,
+    val selectedResolutions: Set<String>,
     val searchQuery: String,
+    val exactPhrase: Boolean,
     val paginationMode: HomePaginationMode,
 )
 
@@ -281,8 +348,11 @@ private data class LibraryCacheEntry(
 class LibraryViewModel
     @Inject
     constructor(
+        @ApplicationContext private val applicationContext: Context,
         private val steamSessionRepository: SteamSessionRepository,
         private val accountWorkshopRepository: AccountWorkshopRepository,
+        private val downloadTaskRepository: DownloadTaskRepository,
+        private val settingsRepository: SettingsRepository,
         private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
     ) : ViewModel() {
         private val mutableState = MutableStateFlow(savedStateHandle.libraryState())
@@ -292,6 +362,7 @@ class LibraryViewModel
         private var requestVersion = 0L
         private val cachedPages = mutableMapOf<LibraryQueryKey, LibraryCacheEntry>()
         private val authorNameRequests = mutableSetOf<Long>()
+        private val collectionMutationIds = mutableSetOf<Long>()
         private var activeAccountName: String? = null
         private var refreshWhenSignedIn = false
 
@@ -301,6 +372,17 @@ class LibraryViewModel
         init {
             viewModelScope.launch {
                 mutableState.collect { state -> savedStateHandle.saveLibraryState(state) }
+            }
+            viewModelScope.launch {
+                settingsRepository.preferences.collect { preferences ->
+                    val current = mutableState.value
+                    val normalized = current.filterSelection().normalized(preferences.matureContentEnabled)
+                    mutableState.value =
+                        current.copy(
+                            selectedRatings = normalized.ratings,
+                            matureContentEnabled = preferences.matureContentEnabled,
+                        )
+                }
             }
             viewModelScope.launch {
                 steamSessionRepository.session.collect { session ->
@@ -343,7 +425,7 @@ class LibraryViewModel
         private fun handleStateAction(action: LibraryAction) {
             when (action) {
                 is LibraryAction.SelectCollection -> selectCollection(action.collection)
-                is LibraryAction.ToggleType -> toggleType(action.type)
+                is LibraryAction.ApplyFilters -> applyFilters(action.selection, action.exactPhrase)
                 is LibraryAction.UpdateSearchQuery -> updateSearchQuery(action.query)
                 LibraryAction.SubmitSearch -> submitSearch()
                 is LibraryAction.SelectPaginationMode -> selectPaginationMode(action.mode)
@@ -352,6 +434,8 @@ class LibraryViewModel
                 LibraryAction.LoadNextPage -> loadNextPage()
                 is LibraryAction.SelectPage -> selectPage(action.page)
                 is LibraryAction.RequestAuthorDisplayName -> requestAuthorDisplayName(action.item)
+                is LibraryAction.Download -> enqueueDownload(action.item)
+                is LibraryAction.RemoveFromCollection -> removeFromCollection(action.item)
                 else -> Unit
             }
         }
@@ -367,14 +451,107 @@ class LibraryViewModel
             loadCurrentPage(forceRefresh = false, refreshing = false)
         }
 
-        private fun toggleType(type: WorkshopType) {
+        private fun applyFilters(
+            selection: HomeFilterSelection,
+            exactPhrase: Boolean,
+        ) {
+            val current = mutableState.value
+            val normalized = selection.normalized(current.matureContentEnabled)
+            if (
+                current.filterSelection() == normalized &&
+                current.exactPhrase == exactPhrase
+            ) {
+                return
+            }
             searchJob?.cancel()
-            val selectedTypes =
-                mutableState.value.selectedTypes.toMutableSet().apply {
-                    if (!add(type)) remove(type)
-                }
-            mutableState.value = mutableState.value.copy(selectedTypes = selectedTypes, currentPage = 1)
+            mutableState.value =
+                current.copy(
+                    selectedTypes = normalized.types,
+                    selectedRatings = normalized.ratings,
+                    selectedGenres = normalized.genres,
+                    selectedOfficialTags = normalized.officialTags,
+                    selectedExcludedOfficialTags = normalized.excludedOfficialTags,
+                    selectedResolutions = normalized.resolutions,
+                    exactPhrase = exactPhrase,
+                    currentPage = 1,
+                )
             loadCurrentPage(forceRefresh = false, refreshing = false)
+        }
+
+        private fun removeFromCollection(item: WorkshopSummary) {
+            val collection = mutableState.value.collection
+            if (collection == LibraryCollectionTab.VOTED || !collectionMutationIds.add(item.id)) return
+            viewModelScope.launch {
+                try {
+                    when (collection) {
+                        LibraryCollectionTab.SUBSCRIPTIONS -> accountWorkshopRepository.setSubscribed(item.id, false)
+                        LibraryCollectionTab.FAVORITES -> accountWorkshopRepository.setFavorited(item.id, false)
+                        LibraryCollectionTab.VOTED -> return@launch
+                    }
+                    cachedPages.keys
+                        .filter { key -> key.collection == collection }
+                        .forEach { key ->
+                            cachedPages[key] =
+                                requireNotNull(cachedPages[key]).let { cached ->
+                                    cached.copy(items = cached.items.filterNot { cachedItem -> cachedItem.id == item.id })
+                                }
+                        }
+                    mutableState.value =
+                        mutableState.value.let { state ->
+                            if (state.collection == collection) {
+                                state.copy(
+                                    items = state.items.filterNot { current -> current.id == item.id },
+                                    searchAnimationItemIds = state.searchAnimationItemIds - item.id,
+                                )
+                            } else {
+                                state
+                            }
+                        }
+                    emitEffect(
+                        LibraryEffect.ShowMessage(
+                            if (collection == LibraryCollectionTab.SUBSCRIPTIONS) {
+                                R.string.library_unsubscribed
+                            } else {
+                                R.string.library_removed_from_favorites
+                            },
+                        ),
+                    )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Throwable) {
+                    emitEffect(LibraryEffect.ShowMessage(R.string.library_remove_failed))
+                } finally {
+                    collectionMutationIds -= item.id
+                }
+            }
+        }
+
+        private fun enqueueDownload(item: WorkshopSummary) {
+            viewModelScope.launch {
+                runCatching {
+                    val preferences = settingsRepository.preferences.first()
+                    downloadTaskRepository.enqueue(
+                        DownloadRequest(
+                            workshopId = item.id,
+                            title = applicationContext.localizedTitle(item),
+                            type = item.type,
+                            previewUrl = item.previewUrl,
+                            expectedTotalBytes = item.fileSizeBytes ?: 0L,
+                            outputTreeUri = preferences.outputTreeUri,
+                            exportFormat = ExportFormat.AUTO,
+                        ),
+                    )
+                }.onSuccess { task ->
+                    emitEffect(
+                        LibraryEffect.ShowMessage(
+                            messageRes = R.string.home_added_to_download_queue,
+                            formatArgs = listOf(task.title),
+                        ),
+                    )
+                }.onFailure {
+                    emitEffect(LibraryEffect.ShowMessage(R.string.home_unable_to_queue_download))
+                }
+            }
         }
 
         private fun updateSearchQuery(query: String) {
@@ -427,7 +604,8 @@ class LibraryViewModel
             val state = mutableState.value
             if (
                 state.collection == LibraryCollectionTab.SUBSCRIPTIONS &&
-                state.selectedTypes == FilterableWorkshopTypes &&
+                state.filterSelection() == HomeFilterSelection.defaults() &&
+                !state.exactPhrase &&
                 state.paginationMode == HomePaginationMode.INFINITE_SCROLL
             ) {
                 return
@@ -435,7 +613,13 @@ class LibraryViewModel
             mutableState.value =
                 state.copy(
                     collection = LibraryCollectionTab.SUBSCRIPTIONS,
-                    selectedTypes = FilterableWorkshopTypes,
+                    selectedTypes = emptySet(),
+                    selectedRatings = DEFAULT_HOME_RATING_SELECTION,
+                    selectedGenres = DEFAULT_HOME_GENRE_SELECTION,
+                    selectedOfficialTags = emptySet(),
+                    selectedExcludedOfficialTags = emptySet(),
+                    selectedResolutions = DEFAULT_HOME_RESOLUTION_SELECTION,
+                    exactPhrase = false,
                     paginationMode = HomePaginationMode.INFINITE_SCROLL,
                     currentPage = 1,
                 )
@@ -578,8 +762,14 @@ class LibraryViewModel
                                 page = page,
                                 pageSize = LIBRARY_PAGE_SIZE,
                                 searchText = snapshot.searchQuery,
+                                exactPhrase = snapshot.exactPhrase,
                                 resolveTotalCount = snapshot.paginationMode == HomePaginationMode.PAGED,
-                                type = snapshot.selectedTypes.singleOrNull(),
+                                types = snapshot.selectedTypes,
+                                ratings = snapshot.selectedRatings,
+                                genres = snapshot.selectedGenres,
+                                officialTags = snapshot.selectedOfficialTags,
+                                excludedOfficialTags = snapshot.selectedExcludedOfficialTags,
+                                resolutions = snapshot.selectedResolutions,
                             )
                         val result = browseWithInitialSessionRetry(query, retry = !append && page == 1)
                         if (version != requestVersion) return@launch
@@ -636,10 +826,10 @@ class LibraryViewModel
             previous.copy(
                 items =
                     if (append) {
-                        (previous.items + items.filter { item -> item.type in previous.selectedTypes })
+                        (previous.items + items)
                             .distinctBy(WorkshopSummary::id)
                     } else {
-                        items.filter { item -> item.type in previous.selectedTypes }
+                        items
                     },
                 nextPage = page.nextLibraryPageOrLast(),
                 hasNextPage = hasNextPage,
@@ -676,7 +866,13 @@ class LibraryViewModel
             LibraryQueryKey(
                 collection = collection,
                 selectedTypes = selectedTypes,
+                selectedRatings = selectedRatings,
+                selectedGenres = selectedGenres,
+                selectedOfficialTags = selectedOfficialTags,
+                selectedExcludedOfficialTags = selectedExcludedOfficialTags,
+                selectedResolutions = selectedResolutions,
                 searchQuery = searchQuery.trim(),
+                exactPhrase = exactPhrase,
                 paginationMode = paginationMode,
             )
 
@@ -700,7 +896,13 @@ private fun SavedStateHandle.libraryState(): LibraryUiState =
     LibraryUiState(
         collection = libraryEnumValueOrDefault(get(LIBRARY_COLLECTION_KEY), LibraryCollectionTab.SUBSCRIPTIONS),
         selectedTypes = savedWorkshopTypes(LIBRARY_TYPE_FILTER_KEY),
+        selectedRatings = savedEnumSet(LIBRARY_RATING_FILTER_KEY, DEFAULT_HOME_RATING_SELECTION),
+        selectedGenres = savedStringSet(LIBRARY_GENRE_FILTER_KEY, DEFAULT_HOME_GENRE_SELECTION),
+        selectedOfficialTags = savedStringSet(LIBRARY_OFFICIAL_TAG_FILTER_KEY),
+        selectedExcludedOfficialTags = savedStringSet(LIBRARY_EXCLUDED_OFFICIAL_TAG_FILTER_KEY),
+        selectedResolutions = savedStringSet(LIBRARY_RESOLUTION_FILTER_KEY, DEFAULT_HOME_RESOLUTION_SELECTION),
         searchQuery = get<String>(LIBRARY_SEARCH_QUERY_KEY).orEmpty(),
+        exactPhrase = get<Boolean>(LIBRARY_EXACT_PHRASE_KEY) ?: false,
         paginationMode = libraryEnumValueOrDefault(get(LIBRARY_PAGINATION_MODE_KEY), HomePaginationMode.INFINITE_SCROLL),
         currentPage = (get<Int>(LIBRARY_CURRENT_PAGE_KEY) ?: 1).coerceAtLeast(1),
     )
@@ -708,7 +910,13 @@ private fun SavedStateHandle.libraryState(): LibraryUiState =
 private fun SavedStateHandle.saveLibraryState(state: LibraryUiState) {
     this[LIBRARY_COLLECTION_KEY] = state.collection.name
     this[LIBRARY_TYPE_FILTER_KEY] = ArrayList(state.selectedTypes.map(WorkshopType::name))
+    this[LIBRARY_RATING_FILTER_KEY] = ArrayList(state.selectedRatings.map(WorkshopRating::name))
+    this[LIBRARY_GENRE_FILTER_KEY] = ArrayList(state.selectedGenres)
+    this[LIBRARY_OFFICIAL_TAG_FILTER_KEY] = ArrayList(state.selectedOfficialTags)
+    this[LIBRARY_EXCLUDED_OFFICIAL_TAG_FILTER_KEY] = ArrayList(state.selectedExcludedOfficialTags)
+    this[LIBRARY_RESOLUTION_FILTER_KEY] = ArrayList(state.selectedResolutions)
     this[LIBRARY_SEARCH_QUERY_KEY] = state.searchQuery
+    this[LIBRARY_EXACT_PHRASE_KEY] = state.exactPhrase
     this[LIBRARY_PAGINATION_MODE_KEY] = state.paginationMode.name
     this[LIBRARY_CURRENT_PAGE_KEY] = state.currentPage
 }
@@ -727,12 +935,31 @@ private fun SavedStateHandle.savedWorkshopTypes(key: String): Set<WorkshopType> 
         "VIDEO" -> setOf(WorkshopType.VIDEO)
         "SCENE" -> setOf(WorkshopType.SCENE)
         "WEB" -> setOf(WorkshopType.WEB)
-        else -> FilterableWorkshopTypes
-    }
+        else -> emptySet()
+    }.takeUnless { it == LIBRARY_FILTER_TYPES }.orEmpty()
+
+private inline fun <reified T : Enum<T>> SavedStateHandle.savedEnumSet(
+    key: String,
+    default: Set<T>,
+): Set<T> =
+    get<ArrayList<String>>(key)
+        ?.mapNotNullTo(linkedSetOf()) { name -> enumValues<T>().firstOrNull { it.name == name } }
+        ?: default
+
+private fun SavedStateHandle.savedStringSet(
+    key: String,
+    default: Set<String> = emptySet(),
+): Set<String> = get<ArrayList<String>>(key)?.toSet() ?: default
 
 private const val LIBRARY_COLLECTION_KEY = "library.collection"
 private const val LIBRARY_TYPE_FILTER_KEY = "library.typeFilter"
+private const val LIBRARY_RATING_FILTER_KEY = "library.ratingFilter"
+private const val LIBRARY_GENRE_FILTER_KEY = "library.genreFilter"
+private const val LIBRARY_OFFICIAL_TAG_FILTER_KEY = "library.officialTagFilter"
+private const val LIBRARY_EXCLUDED_OFFICIAL_TAG_FILTER_KEY = "library.excludedOfficialTagFilter"
+private const val LIBRARY_RESOLUTION_FILTER_KEY = "library.resolutionFilter"
 private const val LIBRARY_SEARCH_QUERY_KEY = "library.searchQuery"
+private const val LIBRARY_EXACT_PHRASE_KEY = "library.exactPhrase"
 private const val LIBRARY_PAGINATION_MODE_KEY = "library.paginationMode"
 private const val LIBRARY_CURRENT_PAGE_KEY = "library.currentPage"
 
@@ -741,7 +968,6 @@ private fun LibraryAction.toEffect(): LibraryEffect? =
         is LibraryAction.OpenDetail -> LibraryEffect.OpenDetail(workshopId)
         is LibraryAction.PlayVideo -> LibraryEffect.PlayVideo(workshopId)
         is LibraryAction.SearchAuthor -> LibraryEffect.SearchAuthor(author)
-        is LibraryAction.Download -> LibraryEffect.Download(item)
         is LibraryAction.CopyText -> LibraryEffect.CopyText(text, message)
         is LibraryAction.OpenSteam -> LibraryEffect.OpenSteam(workshopId)
         else -> null
@@ -800,21 +1026,19 @@ fun LibraryEffectHandler(
     onOpenDetail: (Long) -> Unit,
     onPlayVideo: (Long) -> Unit = {},
     onSearchAuthor: (String) -> Unit = {},
-    onDownload: (WorkshopSummary) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val clipboard = LocalClipboardManager.current
     val currentOnOpenDetail by rememberUpdatedState(onOpenDetail)
     val currentOnPlayVideo by rememberUpdatedState(onPlayVideo)
     val currentOnSearchAuthor by rememberUpdatedState(onSearchAuthor)
-    val currentOnDownload by rememberUpdatedState(onDownload)
-    LaunchedEffect(viewModel, context) {
+    LaunchedEffect(viewModel, context, resources) {
         viewModel.effects.collect { effect ->
             when (effect) {
                 is LibraryEffect.OpenDetail -> currentOnOpenDetail(effect.workshopId)
                 is LibraryEffect.PlayVideo -> currentOnPlayVideo(effect.workshopId)
                 is LibraryEffect.SearchAuthor -> currentOnSearchAuthor(effect.author)
-                is LibraryEffect.Download -> currentOnDownload(effect.item)
                 is LibraryEffect.CopyText -> {
                     clipboard.setText(AnnotatedString(effect.text))
                     Toast.makeText(context.applicationContext, effect.message, Toast.LENGTH_SHORT).show()
@@ -828,6 +1052,12 @@ fun LibraryEffectHandler(
                     runCatching { context.startActivity(intent) }
                         .onFailure { currentOnOpenDetail(effect.workshopId) }
                 }
+                is LibraryEffect.ShowMessage ->
+                    Toast.makeText(
+                        context.applicationContext,
+                        resources.getString(effect.messageRes, *effect.formatArgs.toTypedArray()),
+                        Toast.LENGTH_SHORT,
+                    ).show()
             }
         }
     }
@@ -842,42 +1072,96 @@ fun LibraryScreen(
     onContextMenuActiveChanged: (Boolean) -> Unit = {},
 ) {
     var searchToolbarExpanded by remember { mutableStateOf(false) }
-    WallHubPageScaffold(
-        title = stringResource(R.string.library_title),
-        showBackButton = true,
-        onNavigateUp = onBack,
-        titleContent = {
-            WallHubToolbarSearchTitle(
-                title = stringResource(R.string.library_title),
-                query = state.searchQuery,
-                expanded = searchToolbarExpanded,
-                placeholder = stringResource(R.string.library_search_placeholder),
-                onQueryChanged = { onAction(LibraryAction.UpdateSearchQuery(it)) },
-                onSubmit = { onAction(LibraryAction.SubmitSearch) },
-                onExpand = { searchToolbarExpanded = true },
-                onCollapse = { searchToolbarExpanded = false },
-                enabled = state.session.phase == SteamSessionPhase.SIGNED_IN,
-            )
-        },
-        actions = {
-            WorkshopTypeFilterMenu(
-                selectedTypes = state.selectedTypes,
-                onTypeToggled = { onAction(LibraryAction.ToggleType(it)) },
-                contentDescription = stringResource(R.string.library_type_filter),
-                typeLabel = WorkshopType::libraryTypeLabel,
-            )
-            IconButton(onClick = { onAction(LibraryAction.Refresh) }) {
-                Icon(Icons.Outlined.Refresh, contentDescription = stringResource(R.string.library_refresh))
+    var pendingRemoval by remember { mutableStateOf<WorkshopSummary?>(null) }
+    val filterDrawerState = rememberDrawerState(DrawerValue.Closed)
+    val filterDrawerScope = rememberCoroutineScope()
+    ModalNavigationDrawer(
+        drawerState = filterDrawerState,
+        gesturesEnabled = filterDrawerState.isOpen,
+        drawerContent = {
+            ModalDrawerSheet(
+                modifier = Modifier.fillMaxHeight().widthIn(max = 420.dp),
+            ) {
+                HomeFilterDrawer(
+                    state = state.asHomeFilterUiState(),
+                    isOpen = filterDrawerState.isOpen,
+                    showSortAndTime = false,
+                    title = stringResource(R.string.management_library_filters),
+                    onAction = { action ->
+                        if (action is HomeAction.ApplyFilters) {
+                            onAction(
+                                LibraryAction.ApplyFilters(
+                                    selection = action.selection,
+                                    exactPhrase = action.exactPhrase ?: state.exactPhrase,
+                                ),
+                            )
+                        }
+                    },
+                    onDismiss = { filterDrawerScope.launch { filterDrawerState.close() } },
+                )
             }
         },
-    ) { padding ->
-        LibraryContent(
-            state = state,
-            onAction = onAction,
-            onContextMenuActiveChanged = onContextMenuActiveChanged,
-            showFilters = true,
-            showSearch = false,
-            modifier = Modifier.padding(padding),
+    ) {
+        WallHubPageScaffold(
+            title = state.collection.label(),
+            showBackButton = !searchToolbarExpanded,
+            onNavigateUp = onBack,
+            titleContent = {
+                WallHubToolbarSearchTitle(
+                    title = state.collection.label(),
+                    query = state.searchQuery,
+                    expanded = searchToolbarExpanded,
+                    placeholder = stringResource(R.string.library_search_placeholder),
+                    onQueryChanged = { onAction(LibraryAction.UpdateSearchQuery(it)) },
+                    onSubmit = { onAction(LibraryAction.SubmitSearch) },
+                    onExpand = { searchToolbarExpanded = true },
+                    onCollapse = { searchToolbarExpanded = false },
+                    enabled = state.session.phase == SteamSessionPhase.SIGNED_IN,
+                )
+            },
+            actions = {
+                IconButton(
+                    onClick = { filterDrawerScope.launch { filterDrawerState.open() } },
+                    enabled = state.session.phase == SteamSessionPhase.SIGNED_IN,
+                ) {
+                    Icon(Icons.Outlined.FilterAlt, contentDescription = stringResource(R.string.home_open_all_filters))
+                }
+                IconButton(onClick = { onAction(LibraryAction.Refresh) }) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = stringResource(R.string.library_refresh))
+                }
+            },
+        ) { padding ->
+            LibraryContent(
+                state = state,
+                onAction = onAction,
+                onRemoveFromCollection = { pendingRemoval = it },
+                onContextMenuActiveChanged = onContextMenuActiveChanged,
+                showSearch = false,
+                modifier = Modifier.padding(padding),
+            )
+        }
+    }
+    pendingRemoval?.let { item ->
+        AlertDialog(
+            onDismissRequest = { pendingRemoval = null },
+            icon = { Icon(state.collection.icon(), contentDescription = null) },
+            title = { Text(state.collection.removeDialogTitle()) },
+            text = { Text(stringResource(R.string.library_remove_confirmation, item.localizedTitle())) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingRemoval = null
+                        onAction(LibraryAction.RemoveFromCollection(item))
+                    },
+                ) {
+                    Text(state.collection.removeActionLabel())
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemoval = null }) {
+                    Text(stringResource(R.string.library_cancel))
+                }
+            },
         )
     }
 }
@@ -886,8 +1170,8 @@ fun LibraryScreen(
 fun LibraryContent(
     state: LibraryUiState,
     onAction: (LibraryAction) -> Unit,
+    onRemoveFromCollection: (WorkshopSummary) -> Unit,
     onContextMenuActiveChanged: (Boolean) -> Unit,
-    showFilters: Boolean,
     showSearch: Boolean = true,
     onScrollChromeCollapsedChanged: (Boolean) -> Unit = {},
     scrollToTopRequest: Int = 0,
@@ -926,6 +1210,12 @@ fun LibraryContent(
     LaunchedEffect(
         state.collection,
         state.selectedTypes,
+        state.selectedRatings,
+        state.selectedGenres,
+        state.selectedOfficialTags,
+        state.selectedExcludedOfficialTags,
+        state.selectedResolutions,
+        state.exactPhrase,
         state.searchQuery,
         state.paginationMode,
     ) {
@@ -974,16 +1264,6 @@ fun LibraryContent(
                     },
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                if (showFilters) {
-                    WallHubCapsuleFilter(
-                        options = LibraryCollectionTab.entries,
-                        selected = state.collection,
-                        onSelected = { onAction(LibraryAction.SelectCollection(it)) },
-                        label = { tab -> Text(tab.label()) },
-                        visibleOptionCount = LibraryCollectionTab.entries.size,
-                        modifier = Modifier.padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xs),
-                    )
-                }
                 AnimatedVisibility(
                     visible = showSearch && !scrollChromeCollapsed,
                     enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(tween(180)),
@@ -1021,6 +1301,7 @@ fun LibraryContent(
                     authorDisplayNames = state.authorDisplayNames,
                     onAuthorNameRequested = { onAction(LibraryAction.RequestAuthorDisplayName(it)) },
                     onDownload = { onAction(LibraryAction.Download(it)) },
+                    onRemoveFromCollection = onRemoveFromCollection,
                     onCopyText = { text, message -> onAction(LibraryAction.CopyText(text, message)) },
                     onOpenSteam = { onAction(LibraryAction.OpenSteam(it)) },
                     gridState = gridState,
@@ -1134,6 +1415,7 @@ private fun LibraryResults(
     authorDisplayNames: Map<Long, String>,
     onAuthorNameRequested: (WorkshopSummary) -> Unit,
     onDownload: (WorkshopSummary) -> Unit,
+    onRemoveFromCollection: (WorkshopSummary) -> Unit,
     onCopyText: (String, String) -> Unit,
     onOpenSteam: (Long) -> Unit,
     gridState: LazyGridState,
@@ -1177,6 +1459,7 @@ private fun LibraryResults(
             authorDisplayNames = authorDisplayNames,
             onAuthorNameRequested = onAuthorNameRequested,
             onDownload = onDownload,
+            onRemoveFromCollection = onRemoveFromCollection,
             onCopyText = onCopyText,
             onOpenSteam = onOpenSteam,
             gridState = gridState,
@@ -1209,6 +1492,7 @@ private fun LibraryResultsContent(
     authorDisplayNames: Map<Long, String>,
     onAuthorNameRequested: (WorkshopSummary) -> Unit,
     onDownload: (WorkshopSummary) -> Unit,
+    onRemoveFromCollection: (WorkshopSummary) -> Unit,
     onCopyText: (String, String) -> Unit,
     onOpenSteam: (Long) -> Unit,
     gridState: LazyGridState,
@@ -1247,7 +1531,7 @@ private fun LibraryResultsContent(
 
         state.items.isEmpty() -> {
             WallHubEmptyState(
-                icon = if (state.searchQuery.isNotBlank()) Icons.Outlined.Search else Icons.Outlined.BookmarkBorder,
+                icon = if (state.searchQuery.isNotBlank()) Icons.Outlined.Search else state.collection.icon(),
                 title =
                     if (state.searchQuery.isNotBlank()) {
                         stringResource(R.string.library_empty_search)
@@ -1302,12 +1586,14 @@ private fun LibraryResultsContent(
                     ) {
                         LibraryWorkshopCard(
                             item = item,
+                            collection = state.collection,
                             authorDisplayName = authorDisplayNames[item.id],
                             onClick = { onOpenDetail(item.id) },
                             onPlayVideo = { onPlayVideo(item.id) },
                             onSearchAuthor = { onSearchAuthor(item.creatorId ?: item.author) },
                             onAuthorNameRequested = { onAuthorNameRequested(item) },
                             onDownload = { onDownload(item) },
+                            onRemoveFromCollection = { onRemoveFromCollection(item) },
                             onCopyText = onCopyText,
                             onOpenSteam = { onOpenSteam(item.id) },
                             contextMenuCoordinator = contextMenuCoordinator,
@@ -1369,12 +1655,14 @@ private fun LibraryPagination(
 @Composable
 private fun LibraryWorkshopCard(
     item: WorkshopSummary,
+    collection: LibraryCollectionTab,
     authorDisplayName: String?,
     onClick: () -> Unit,
     onPlayVideo: () -> Unit,
     onSearchAuthor: () -> Unit,
     onAuthorNameRequested: () -> Unit,
     onDownload: () -> Unit,
+    onRemoveFromCollection: () -> Unit,
     onCopyText: (String, String) -> Unit,
     onOpenSteam: () -> Unit,
     contextMenuCoordinator: LibraryContextMenuCoordinator,
@@ -1388,17 +1676,19 @@ private fun LibraryWorkshopCard(
         authorDisplayName = authorDisplayName,
         onAuthorDisplayNameRequested = onAuthorNameRequested,
         onDownload = onDownload,
+        removeActionLabel = collection.removeActionLabelOrNull(),
+        onRemoveFromCollection = onRemoveFromCollection,
         onPlayVideo = onPlayVideo,
         onCopyText = onCopyText,
         onOpenSteam = onOpenSteam,
         modifier = Modifier.fillMaxWidth(),
-    ) {
+    ) { onShowActions ->
         Column {
             Box(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .aspectRatio(1f),
+                        .aspectRatio(16f / 10f),
             ) {
                 if (item.previewUrl != null) {
                     AsyncImage(
@@ -1435,6 +1725,25 @@ private fun LibraryWorkshopCard(
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = WallHubSpacing.xs, vertical = WallHubSpacing.xxs),
                     )
+                }
+                Surface(
+                    modifier =
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(WallHubSpacing.xs),
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                ) {
+                    IconButton(
+                        onClick = onShowActions,
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.MoreVert,
+                            contentDescription = stringResource(R.string.library_open_actions_menu),
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                 }
             }
             BoxWithConstraints(
@@ -1612,13 +1921,31 @@ private fun LibraryCollectionTab.label(): String =
         LibraryCollectionTab.VOTED -> stringResource(R.string.library_collection_voted)
     }
 
-@Composable
-private fun WorkshopType.libraryTypeLabel(): String =
+private fun LibraryCollectionTab.icon() =
     when (this) {
-        WorkshopType.VIDEO -> stringResource(R.string.library_type_video)
-        WorkshopType.SCENE -> stringResource(R.string.library_type_scene)
-        WorkshopType.WEB -> stringResource(R.string.library_type_web)
-        WorkshopType.UNKNOWN -> name
+        LibraryCollectionTab.SUBSCRIPTIONS -> Icons.Outlined.BookmarkBorder
+        LibraryCollectionTab.FAVORITES -> Icons.Outlined.StarBorder
+        LibraryCollectionTab.VOTED -> Icons.Outlined.HowToVote
+    }
+
+@Composable
+private fun LibraryCollectionTab.removeActionLabelOrNull(): String? =
+    when (this) {
+        LibraryCollectionTab.SUBSCRIPTIONS -> stringResource(R.string.library_unsubscribe)
+        LibraryCollectionTab.FAVORITES -> stringResource(R.string.library_remove_favorite)
+        LibraryCollectionTab.VOTED -> null
+    }
+
+@Composable
+private fun LibraryCollectionTab.removeActionLabel(): String =
+    requireNotNull(removeActionLabelOrNull())
+
+@Composable
+private fun LibraryCollectionTab.removeDialogTitle(): String =
+    when (this) {
+        LibraryCollectionTab.SUBSCRIPTIONS -> stringResource(R.string.library_unsubscribe_title)
+        LibraryCollectionTab.FAVORITES -> stringResource(R.string.library_remove_favorite_title)
+        LibraryCollectionTab.VOTED -> stringResource(R.string.library_collection_voted)
     }
 
 @Composable
@@ -1671,6 +1998,7 @@ private fun formatCompact(value: Long): String {
 }
 
 private val LIBRARY_CARD_TITLE_HEIGHT = WallHubSizeTokens.cardTitleHeight
+private val LIBRARY_FILTER_TYPES = setOf(WorkshopType.VIDEO, WorkshopType.SCENE, WorkshopType.WEB)
 private const val LIBRARY_AUTO_LOAD_MORE_THRESHOLD = 2
 private const val LIBRARY_SEARCH_REORDER_DURATION_MS = 280
 private const val LIBRARY_SEARCH_STAGGER_MS = 40

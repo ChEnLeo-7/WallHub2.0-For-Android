@@ -2,6 +2,9 @@
 
 package com.wallhub.android.feature.discover
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,8 +15,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -42,8 +47,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.carousel.CarouselDefaults
@@ -63,10 +68,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -457,37 +464,102 @@ private fun DiscoverContentMenu(
     onOpenFriendCreated: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val triggerColor by animateColorAsState(
+        targetValue =
+            if (expanded) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+        animationSpec = tween(DISCOVER_MENU_MOTION_MS),
+        label = "DiscoverContentMenuColor",
+    )
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(DISCOVER_MENU_MOTION_MS),
+        label = "DiscoverContentMenuArrow",
+    )
     Box {
-        TextButton(onClick = { expanded = true }) {
-            Icon(Icons.Outlined.Bookmarks, null)
-            Text(stringResource(R.string.discover_content_menu), modifier = Modifier.padding(start = 8.dp))
-            Icon(Icons.Outlined.KeyboardArrowDown, null)
+        Surface(
+            onClick = { expanded = !expanded },
+            shape = MaterialTheme.shapes.extraLarge,
+            color = triggerColor,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ) {
+            Row(
+                modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Outlined.Bookmarks,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    stringResource(R.string.discover_content_menu),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Icon(
+                    Icons.Outlined.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = arrowRotation },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            offset = DpOffset(0.dp, 8.dp),
+            modifier = Modifier.width(264.dp),
+            shape = MaterialTheme.shapes.extraLarge,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 3.dp,
+            shadowElevation = 6.dp,
+        ) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.discover_following)) },
-                leadingIcon = { Icon(Icons.Outlined.Bookmarks, null) },
+                leadingIcon = { DiscoverContentMenuIcon(Icons.Outlined.Bookmarks) },
                 onClick = {
                     expanded = false
                     onOpenFollowing()
                 },
+                modifier = Modifier.padding(horizontal = 8.dp).clip(MaterialTheme.shapes.large).heightIn(min = 56.dp),
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.discover_friend_favorites)) },
-                leadingIcon = { Icon(Icons.Outlined.FavoriteBorder, null) },
+                leadingIcon = { DiscoverContentMenuIcon(Icons.Outlined.FavoriteBorder) },
                 onClick = {
                     expanded = false
                     onOpenFriendFavorites()
                 },
+                modifier = Modifier.padding(horizontal = 8.dp).clip(MaterialTheme.shapes.large).heightIn(min = 56.dp),
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.discover_friend_created)) },
-                leadingIcon = { Icon(Icons.Outlined.Group, null) },
+                leadingIcon = { DiscoverContentMenuIcon(Icons.Outlined.Group) },
                 onClick = {
                     expanded = false
                     onOpenFriendCreated()
                 },
+                modifier = Modifier.padding(horizontal = 8.dp).clip(MaterialTheme.shapes.large).heightIn(min = 56.dp),
             )
+        }
+    }
+}
+
+@Composable
+private fun DiscoverContentMenuIcon(icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Surface(
+        modifier = Modifier.size(32.dp),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -509,3 +581,4 @@ private fun DiscoverTooltipIconButton(
 }
 
 private const val DISCOVER_CARD_TEXT_SCRIM_ALPHA = 0.56f
+private const val DISCOVER_MENU_MOTION_MS = 180

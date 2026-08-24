@@ -109,6 +109,12 @@ class AppPreferencesStore(
         }
     }
 
+    suspend fun setDiscoverResultsColumns(columns: Int) {
+        applicationContext.dataStore.edit { preferences ->
+            preferences[Keys.discoverResultsColumns] = columns.coerceIn(1, 2)
+        }
+    }
+
     suspend fun setHomePaginationMode(mode: HomePaginationMode) {
         applicationContext.dataStore.edit { preferences ->
             preferences[Keys.homePaginationMode] = mode.name
@@ -296,6 +302,7 @@ class AppPreferencesStore(
             homeColumns = (preferences[Keys.homeColumns] ?: 2).coerceIn(1, 4),
             homeFilterMultiSelect = preferences[Keys.homeFilterMultiSelect] ?: true,
             homeSearchFab = preferences[Keys.homeSearchFab] ?: true,
+            discoverResultsColumns = (preferences[Keys.discoverResultsColumns] ?: 2).coerceIn(1, 2),
             homeCardAction = preferences.enumValue(Keys.homeCardAction, HomeCardAction.DOWNLOAD),
             homePaginationMode =
                 preferences.enumValue(
@@ -351,6 +358,7 @@ class AppPreferencesStore(
         val homeColumns = intPreferencesKey("home_columns")
         val homeFilterMultiSelect = booleanPreferencesKey("home_filter_multi_select")
         val homeSearchFab = booleanPreferencesKey("home_search_fab")
+        val discoverResultsColumns = intPreferencesKey("discover_results_columns")
         val homeCardAction = stringPreferencesKey("home_card_action")
         val homePaginationMode = stringPreferencesKey("home_pagination_mode")
         val matureContentEnabled = booleanPreferencesKey("mature_content_enabled")

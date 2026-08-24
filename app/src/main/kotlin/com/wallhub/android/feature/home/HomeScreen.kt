@@ -32,7 +32,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,7 +49,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -182,6 +181,11 @@ fun HomeScreen(
 ) {
     val focusManager = LocalFocusManager.current
     val gridState = rememberLazyGridState()
+    val layoutMotionState =
+        rememberHomeGlobalLayoutMotionState(
+            horizontalSpacing = HOME_GRID_ITEM_SPACING,
+            verticalSpacing = HOME_GRID_ITEM_SPACING,
+        )
     val filterDrawerState = rememberDrawerState(DrawerValue.Closed)
     val filterDrawerScope = rememberCoroutineScope()
     var handledScrollToTopRequest by rememberSaveable { mutableIntStateOf(scrollToTopRequest) }
@@ -240,6 +244,7 @@ fun HomeScreen(
                 onOpenSettings = onOpenSettings,
                 onBack = onBack,
                 gridState = gridState,
+                layoutMotionState = layoutMotionState,
                 filtersCollapsed = filtersCollapsed,
                 filtersOpen = filterDrawerState.isOpen,
                 onOpenFilters = { filterDrawerScope.launch { filterDrawerState.open() } },
@@ -266,6 +271,7 @@ internal fun HomeScreenFrame(
     onOpenSettings: (() -> Unit)?,
     onBack: (() -> Unit)?,
     gridState: LazyGridState,
+    layoutMotionState: HomeGlobalLayoutMotionState,
     filtersCollapsed: Boolean,
     filtersOpen: Boolean,
     onOpenFilters: () -> Unit,
@@ -304,6 +310,7 @@ internal fun HomeScreenFrame(
             onOpenSettings = onOpenSettings,
             onBack = onBack,
             gridState = gridState,
+            layoutMotionState = layoutMotionState,
             filtersCollapsed = filtersCollapsed,
             filtersOpen = filtersOpen,
             onOpenFilters = onOpenFilters,
@@ -323,6 +330,7 @@ internal fun HomeScreenBody(
     onOpenSettings: (() -> Unit)?,
     onBack: (() -> Unit)?,
     gridState: LazyGridState,
+    layoutMotionState: HomeGlobalLayoutMotionState,
     filtersCollapsed: Boolean,
     filtersOpen: Boolean,
     onOpenFilters: () -> Unit,
@@ -371,7 +379,17 @@ internal fun HomeScreenBody(
             actions = {
                 HomeViewModeToggle(
                     selected = state.viewMode,
-                    onViewModeSelected = { onAction(HomeAction.SelectViewMode(it)) },
+                    onViewModeSelected = { targetMode ->
+                        val transitionStarted =
+                            layoutMotionState.request(
+                                sourceKey = HomeCardLayoutKey.resolve(state.viewMode, state.columns),
+                                targetKey = HomeCardLayoutKey.resolve(targetMode, state.columns),
+                                visibleIndices = gridState.layoutInfo.visibleItemsInfo.map { item -> item.index },
+                            )
+                        if (transitionStarted || !layoutMotionState.isRunning) {
+                            onAction(HomeAction.SelectViewMode(targetMode))
+                        }
+                    },
                     gridContentDescription = stringResource(R.string.home_grid_view),
                     listContentDescription = stringResource(R.string.home_list_view),
                 )
@@ -426,6 +444,7 @@ internal fun HomeScreenBody(
                     onOpenSteam = { onAction(HomeAction.OpenSteam(it)) },
                     onAuthorNameRequested = { onAction(HomeAction.RequestAuthorDisplayName(it)) },
                     gridState = gridState,
+                    layoutMotionState = layoutMotionState,
                     contextMenuPreviewItemId = contextMenuPreviewItemId,
                     contextMenuGeometry = contextMenuGeometry,
                     onContextMenuOpen = onContextMenuOpen,
@@ -748,6 +767,7 @@ internal fun HomeFlatCard(
     shape: Shape = MaterialTheme.shapes.medium,
     color: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    clipContent: Boolean = true,
     enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
@@ -762,8 +782,13 @@ internal fun HomeFlatCard(
         Box(
             modifier =
                 modifier
-                    .clip(shape)
-                    .background(color)
+                    .then(
+                        if (clipContent) {
+                            Modifier.clip(shape).background(color)
+                        } else {
+                            Modifier.background(color, shape)
+                        },
+                    )
                     .then(clickableModifier),
             content = content,
         )
@@ -886,6 +911,7 @@ internal fun HomeResults(
     onOpenSteam: (Long) -> Unit,
     onAuthorNameRequested: (WorkshopSummary) -> Unit,
     gridState: LazyGridState,
+    layoutMotionState: HomeGlobalLayoutMotionState,
     contextMenuPreviewItemId: Long?,
     contextMenuGeometry: HomeContextMenuGeometry,
     onContextMenuOpen: (HomeContextMenuTarget) -> Unit,
@@ -1015,16 +1041,18 @@ internal fun HomeResults(
                         horizontalArrangement = Arrangement.spacedBy(HOME_GRID_ITEM_SPACING),
                         verticalArrangement = Arrangement.spacedBy(HOME_GRID_ITEM_SPACING),
                     ) {
-                        items(
+                        itemsIndexed(
                             items = state.items,
-                            key = WorkshopSummary::id,
-                            contentType = { item -> item.type },
-                        ) { item ->
+                            key = { _, item -> item.id },
+                            contentType = { _, item -> item.type },
+                        ) { index, item ->
                             WorkshopCard(
                                 modifier = Modifier,
                                 item = item,
                                 authorDisplayName = state.authorDisplayNames[item.id],
                                 layoutKey = layoutKey,
+                                layoutMotionState = layoutMotionState,
+                                layoutIndex = index,
                                 gridShowFileSize = state.columns < 3,
                                 gridShowFavorites = state.columns < 4,
                                 gridStatisticsAvailableWidth = gridStatisticsAvailableWidth,
@@ -1096,6 +1124,8 @@ internal fun WorkshopCard(
     item: WorkshopSummary,
     authorDisplayName: String?,
     layoutKey: HomeCardLayoutKey,
+    layoutMotionState: HomeGlobalLayoutMotionState? = null,
+    layoutIndex: Int = 0,
     gridShowFileSize: Boolean,
     gridShowFavorites: Boolean,
     gridStatisticsAvailableWidth: Dp,
@@ -1118,6 +1148,8 @@ internal fun WorkshopCard(
     val layoutMotion =
         rememberHomeViewCardLayoutMotion(
             layoutKey = layoutKey,
+            globalState = layoutMotionState,
+            globalIndex = layoutIndex,
         )
     val contextMenuPreviewLayer = rememberGraphicsLayer()
     val cardPosition = remember { HomeCardPositionHolder() }
@@ -1284,61 +1316,20 @@ internal fun WorkshopCard(
                     .onGloballyPositioned { cardPosition.touchCoordinates = it }
                     .then(interactionModifier),
             shape = layoutMotion.cardShape(),
+            clipContent = layoutMotion.shouldClipCardContent(),
         ) {
-            if (listMode) {
-                WorkshopListCardContent(
-                    item = item,
-                    action = action,
-                    showFileSize = true,
-                    showFavorites = true,
-                    statisticsAvailableWidth = listStatisticsAvailableWidth,
-                    layoutMotion = layoutMotion,
-                    onPrimaryAction = onPrimaryAction,
-                )
-            } else {
-                Column {
-                    WorkshopCoverFrame(
-                        item = item,
-                        coverShape = layoutMotion.coverShape(),
-                        typeTagModifier = layoutMotion.mediaContentScaleCompensationModifier(),
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f)
-                                .zIndex(HOME_CARD_PREVIEW_Z_INDEX)
-                                .then(layoutMotion.mediaModifier()),
-                    )
-                    WorkshopCardCopy(
-                        item = item,
-                        compact = false,
-                        twoColumnGrid = twoColumnGrid,
-                        showFileSize = gridShowFileSize,
-                        showFavorites = gridShowFavorites,
-                        statisticsAvailableWidth = gridStatisticsAvailableWidth,
-                        titleModifier = layoutMotion.titleModifier(),
-                        metadataModifier = layoutMotion.metadataModifier(),
-                        modifier =
-                            Modifier
-                                .padding(
-                                    start = WallHubSpacing.compact,
-                                    top = if (twoColumnGrid) TWO_COLUMN_CARD_COPY_TOP_PADDING else WallHubSpacing.compact,
-                                    end = WallHubSpacing.compact,
-                                ),
-                    )
-                    WorkshopGridCardAction(
-                        action = action,
-                        layoutMotion = layoutMotion,
-                        onPrimaryAction = onPrimaryAction,
-                        modifier =
-                            Modifier.padding(
-                                start = WallHubSpacing.compact,
-                                top = if (twoColumnGrid) TWO_COLUMN_CARD_ACTION_TOP_PADDING else LIST_CARD_ACTION_TOP_PADDING,
-                                end = WallHubSpacing.compact,
-                                bottom = WallHubSpacing.compact,
-                            ),
-                    )
-                }
-            }
+            WorkshopAdaptiveCardContent(
+                item = item,
+                action = action,
+                listMode = listMode,
+                twoColumnGrid = twoColumnGrid,
+                gridShowFileSize = gridShowFileSize,
+                gridShowFavorites = gridShowFavorites,
+                gridStatisticsAvailableWidth = gridStatisticsAvailableWidth,
+                listStatisticsAvailableWidth = listStatisticsAvailableWidth,
+                layoutMotion = layoutMotion,
+                onPrimaryAction = onPrimaryAction,
+            )
         }
         if (contextMenuMounted) {
             Popup(

@@ -36,6 +36,8 @@ interface SettingsRepository {
 
     suspend fun setHomeSearchFab(enabled: Boolean) = Unit
 
+    suspend fun setDiscoverResultsColumns(columns: Int) = Unit
+
     suspend fun setDownloadPreferences(
         maxConcurrentDownloads: Int,
         chunkDownloadConcurrency: Int,

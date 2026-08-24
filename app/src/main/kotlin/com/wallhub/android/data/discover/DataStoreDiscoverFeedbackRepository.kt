@@ -16,6 +16,7 @@ import com.wallhub.android.core.model.DiscoverSavedQuery
 import com.wallhub.android.core.model.DiscoverSavedQueryCategory
 import com.wallhub.android.core.model.DiscoverSavedQueryRepository
 import com.wallhub.android.core.model.DiscoverSavedQuerySource
+import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.core.model.toDiscoverFeedbackWeight
@@ -195,6 +196,9 @@ private fun encodeSavedQuery(query: DiscoverSavedQuery): String =
         .put("excludedOfficialTags", JSONArray(query.excludedOfficialTags.toList()))
         .put("requiredTagGroups", JSONArray(query.requiredTagGroups.map { JSONArray(it.toList()) }))
         .put("types", JSONArray(query.types.map(WorkshopType::name)))
+        .put("ratings", JSONArray(query.ratings.map(WorkshopRating::name)))
+        .put("genres", JSONArray(query.genres.toList()))
+        .put("resolutions", JSONArray(query.resolutions.toList()))
         .put("sort", query.sort.name)
         .put("days", query.days)
         .put("exactPhrase", query.exactPhrase)
@@ -222,6 +226,9 @@ private fun decodeSavedQuery(encoded: String): DiscoverSavedQuery? =
             excludedOfficialTags = json.optStringSet("excludedOfficialTags"),
             requiredTagGroups = json.optJSONArray("requiredTagGroups").toStringSetList(),
             types = json.optStringSet("types").mapNotNullTo(linkedSetOf()) { runCatching { WorkshopType.valueOf(it) }.getOrNull() },
+            ratings = json.optStringSet("ratings").mapNotNullTo(linkedSetOf()) { runCatching { WorkshopRating.valueOf(it) }.getOrNull() },
+            genres = json.optStringSet("genres"),
+            resolutions = json.optStringSet("resolutions"),
             sort = runCatching { WorkshopSort.valueOf(json.optString("sort")) }.getOrDefault(WorkshopSort.TRENDING),
             days = json.optInt("days", 30),
             exactPhrase = json.optBoolean("exactPhrase"),

@@ -36,12 +36,14 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -59,60 +61,155 @@ import androidx.compose.material.icons.outlined.ImageNotSupported
 import androidx.compose.material.icons.outlined.StarBorder
 
 @Composable
-internal fun WorkshopListCardContent(
+internal fun WorkshopAdaptiveCardContent(
     item: WorkshopSummary,
     action: HomeCardAction,
-    showFileSize: Boolean,
-    showFavorites: Boolean,
-    statisticsAvailableWidth: Dp,
+    listMode: Boolean,
+    twoColumnGrid: Boolean,
+    gridShowFileSize: Boolean,
+    gridShowFavorites: Boolean,
+    gridStatisticsAvailableWidth: Dp,
+    listStatisticsAvailableWidth: Dp,
     layoutMotion: HomeViewCardLayoutMotion,
     onPrimaryAction: () -> Unit,
 ) {
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = LIST_CARD_MEDIA_SIZE),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        WorkshopCoverFrame(
-            item = item,
-            coverShape = layoutMotion.coverShape(),
-            typeTagModifier = layoutMotion.mediaContentScaleCompensationModifier(),
-            modifier =
-                Modifier
-                    .size(LIST_CARD_MEDIA_SIZE)
-                    .zIndex(HOME_CARD_PREVIEW_Z_INDEX)
-                    .then(layoutMotion.mediaModifier()),
-        )
-        WorkshopCardCopy(
-            item = item,
-            compact = true,
-            twoColumnGrid = false,
-            showFileSize = showFileSize,
-            showFavorites = showFavorites,
-            statisticsAvailableWidth = statisticsAvailableWidth,
-            titleModifier = layoutMotion.titleModifier(),
-            metadataModifier = layoutMotion.metadataModifier(),
-            modifier =
-                Modifier
-                    .weight(1f)
-                    .padding(start = WallHubSpacing.sm, top = WallHubSpacing.xs, end = WallHubSpacing.xs, bottom = WallHubSpacing.xs),
-        )
-        WorkshopCardActionButton(
-            action = action,
-            shape = layoutMotion.actionShape(),
-            contentModifier = layoutMotion.actionContentModifier(),
-            labelVisibility = layoutMotion.actionLabelVisibility(),
-            onPrimaryAction = onPrimaryAction,
-            modifier =
-                Modifier
-                    .padding(end = WallHubSpacing.compact)
-                    .size(LIST_CARD_ACTION_SIZE)
-                    .then(layoutMotion.actionModifier()),
-        )
+    val density = LocalDensity.current
+    val listMediaSizePx = with(density) { LIST_CARD_MEDIA_SIZE.roundToPx() }
+    val listActionSlotWidthPx =
+        with(density) {
+            (LIST_CARD_ACTION_SIZE + LIST_CARD_ACTION_END_PADDING).roundToPx()
+    }
+    Layout(
+        content = {
+            WorkshopCoverFrame(
+                item = item,
+                coverShape = layoutMotion.coverShape(),
+                typeTagModifier = layoutMotion.mediaContentScaleCompensationModifier(),
+                modifier =
+                    Modifier
+                        .zIndex(HOME_CARD_PREVIEW_Z_INDEX)
+                        .then(layoutMotion.mediaModifier()),
+            )
+            WorkshopCardCopy(
+                item = item,
+                compact = listMode,
+                twoColumnGrid = twoColumnGrid,
+                showFileSize = if (listMode) true else gridShowFileSize,
+                showFavorites = if (listMode) true else gridShowFavorites,
+                statisticsAvailableWidth =
+                    if (listMode) {
+                        listStatisticsAvailableWidth
+                    } else {
+                        gridStatisticsAvailableWidth
+                    },
+                titleModifier = layoutMotion.titleModifier(),
+                metadataModifier = layoutMotion.metadataModifier(),
+                modifier =
+                    Modifier
+                        .zIndex(layoutMotion.copyZIndex())
+                        .then(
+                            if (listMode) {
+                                Modifier.padding(
+                                    start = WallHubSpacing.sm,
+                                    top = WallHubSpacing.xs,
+                                    end = WallHubSpacing.xs,
+                                    bottom = WallHubSpacing.xs,
+                                )
+                            } else {
+                                Modifier.padding(
+                                    start = WallHubSpacing.compact,
+                                    top = if (twoColumnGrid) TWO_COLUMN_CARD_COPY_TOP_PADDING else WallHubSpacing.compact,
+                                    end = WallHubSpacing.compact,
+                                )
+                            },
+                        ),
+            )
+            WorkshopCardActionButton(
+                action = action,
+                shape = layoutMotion.actionShape(),
+                contentModifier = layoutMotion.actionContentModifier(),
+                labelVisibility = layoutMotion.actionLabelVisibility(),
+                onPrimaryAction = onPrimaryAction,
+                modifier =
+                    Modifier
+                        .then(
+                            if (listMode) {
+                                Modifier
+                                    .padding(end = LIST_CARD_ACTION_END_PADDING)
+                                    .size(LIST_CARD_ACTION_SIZE)
+                            } else {
+                                Modifier
+                                    .padding(
+                                        start = WallHubSpacing.compact,
+                                        top = if (twoColumnGrid) TWO_COLUMN_CARD_ACTION_TOP_PADDING else LIST_CARD_ACTION_TOP_PADDING,
+                                        end = WallHubSpacing.compact,
+                                        bottom = WallHubSpacing.compact,
+                                    ).fillMaxWidth()
+                                    .height(CARD_ACTION_HEIGHT)
+                            },
+                        ).then(layoutMotion.actionModifier()),
+            )
+        },
+    ) { measurables, constraints ->
+        check(measurables.size == HOME_CARD_LAYOUT_SLOT_COUNT)
+        val width = constraints.maxWidth
+        if (listMode) {
+            val cover = measurables[HOME_CARD_COVER_SLOT].measure(Constraints.fixed(listMediaSizePx, listMediaSizePx))
+            val actionSlotWidth = listActionSlotWidthPx.coerceAtMost((width - cover.width).coerceAtLeast(0))
+            val action =
+                measurables[HOME_CARD_ACTION_SLOT].measure(
+                    Constraints(
+                        minWidth = 0,
+                        maxWidth = actionSlotWidth,
+                        minHeight = 0,
+                        maxHeight = listMediaSizePx,
+                    ),
+                )
+            val copyWidth = (width - cover.width - action.width).coerceAtLeast(0)
+            val copy =
+                measurables[HOME_CARD_COPY_SLOT].measure(
+                    Constraints(
+                        minWidth = copyWidth,
+                        maxWidth = copyWidth,
+                        minHeight = 0,
+                        maxHeight = Constraints.Infinity,
+                    ),
+                )
+            val height =
+                maxOf(listMediaSizePx, copy.height, action.height)
+                    .coerceIn(constraints.minHeight, constraints.maxHeight)
+            layout(width, height) {
+                cover.placeRelative(0, (height - cover.height) / 2)
+                copy.placeRelative(cover.width, (height - copy.height) / 2)
+                action.placeRelative(width - action.width, (height - action.height) / 2)
+            }
+        } else {
+            val cover = measurables[HOME_CARD_COVER_SLOT].measure(Constraints.fixed(width, width))
+            val childWidthConstraints =
+                Constraints(
+                    minWidth = width,
+                    maxWidth = width,
+                    minHeight = 0,
+                    maxHeight = Constraints.Infinity,
+                )
+            val copy = measurables[HOME_CARD_COPY_SLOT].measure(childWidthConstraints)
+            val action = measurables[HOME_CARD_ACTION_SLOT].measure(childWidthConstraints)
+            val height =
+                (cover.height + copy.height + action.height)
+                    .coerceIn(constraints.minHeight, constraints.maxHeight)
+            layout(width, height) {
+                cover.placeRelative(0, 0)
+                copy.placeRelative(0, cover.height)
+                action.placeRelative(0, cover.height + copy.height)
+            }
+        }
     }
 }
+
+private const val HOME_CARD_COVER_SLOT = 0
+private const val HOME_CARD_COPY_SLOT = 1
+private const val HOME_CARD_ACTION_SLOT = 2
+private const val HOME_CARD_LAYOUT_SLOT_COUNT = 3
 
 @Composable
 internal fun WorkshopCoverFrame(
@@ -350,27 +447,6 @@ internal fun WorkshopCardStatisticsItems(
             overflow = overflow,
         )
     }
-}
-
-@Composable
-internal fun WorkshopGridCardAction(
-    action: HomeCardAction,
-    layoutMotion: HomeViewCardLayoutMotion,
-    onPrimaryAction: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    WorkshopCardActionButton(
-        action = action,
-        shape = layoutMotion.actionShape(),
-        contentModifier = layoutMotion.actionContentModifier(),
-        labelVisibility = layoutMotion.actionLabelVisibility(),
-        onPrimaryAction = onPrimaryAction,
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .height(CARD_ACTION_HEIGHT)
-                .then(layoutMotion.actionModifier()),
-    )
 }
 
 @Composable

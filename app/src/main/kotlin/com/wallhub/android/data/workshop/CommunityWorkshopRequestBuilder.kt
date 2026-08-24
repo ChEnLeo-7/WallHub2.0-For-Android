@@ -34,6 +34,12 @@ internal fun buildDetailUrl(workshopId: Long): String =
 
 internal fun buildBrowseUrl(query: WorkshopBrowseQuery): String {
     val normalized = query.normalized()
+    require(
+        normalized.sort != WorkshopSort.FRIENDS_FAVORITES &&
+            normalized.sort != WorkshopSort.FRIENDS_CREATED,
+    ) {
+        "Steam friend activity requires the signed-in Unified/CM query path"
+    }
     query.creatorId?.let { creatorId ->
         return Uri
             .Builder()
@@ -89,6 +95,12 @@ internal fun buildSteamApiBrowseUrl(
     steamApiKey: String,
 ): String {
     val normalized = query.normalized()
+    require(
+        normalized.sort != WorkshopSort.FRIENDS_FAVORITES &&
+            normalized.sort != WorkshopSort.FRIENDS_CREATED,
+    ) {
+        "Steam friend activity requires the signed-in Unified/CM query path"
+    }
     val criteria = normalized.steamTagCriteria()
     val input = JSONObject()
         .put("query_type", normalized.sort.steamQueryType())

@@ -13,6 +13,9 @@ import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.WORKSHOP_COMMENT_MAX_LENGTH
 import com.wallhub.android.core.model.WorkshopInteraction
+import com.wallhub.android.core.model.WorkshopFilterCatalog
+import com.wallhub.android.core.model.WorkshopRating
+import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.data.downloads.applyDownloadProxy
 import com.wallhub.android.data.security.AndroidKeystoreEncryptedStringStore
 import com.wallhub.android.data.security.EncryptedStringReadResult
@@ -300,12 +303,18 @@ internal fun AccountWorkshopQuery.normalized(): AccountWorkshopQuery =
         page = page.coerceAtLeast(1),
         pageSize = pageSize.coerceIn(1, MAX_ACCOUNT_WORKSHOP_PAGE_SIZE),
         searchText = searchText.trim().take(MAX_ACCOUNT_WORKSHOP_SEARCH_LENGTH),
+        types = types.filter { it != WorkshopType.UNKNOWN }.toSet(),
         tags =
             tags
                 .map(String::trim)
                 .filter(String::isNotBlank)
                 .take(MAX_ACCOUNT_WORKSHOP_TAGS)
                 .toSet(),
+        ratings = ratings.filter { it != WorkshopRating.ALL }.toSet(),
+        genres = genres.intersect(WorkshopFilterCatalog.genres.toSet()),
+        officialTags = officialTags.intersect(WorkshopFilterCatalog.officialTags.toSet()),
+        excludedOfficialTags = excludedOfficialTags.intersect(WorkshopFilterCatalog.officialTags.toSet()),
+        resolutions = resolutions.intersect(WorkshopFilterCatalog.resolutions.toSet()),
     )
 
 internal fun AccountWorkshopCollection.steamListType(): String =

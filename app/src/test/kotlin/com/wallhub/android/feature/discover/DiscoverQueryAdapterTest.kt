@@ -1,12 +1,20 @@
 package com.wallhub.android.feature.discover
 
+import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.SteamWorkshopDataSource
+import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopSort
+import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.core.model.steamSearchText
+import com.wallhub.android.data.workshop.buildBrowseUrl
+import com.wallhub.android.data.workshop.buildSteamApiBrowseUrl
 import com.wallhub.android.feature.discover.model.OfficialDiscoverCategory
 import com.wallhub.android.feature.discover.model.OfficialDiscoverDescriptor
+import com.wallhub.android.friendResultsDestination
+import com.wallhub.android.feature.home.HomeFilterSelection
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -106,6 +114,70 @@ class DiscoverQueryAdapterTest {
         assertFalse(recent.query?.mobileCompatibleOnly ?: true)
         assertTrue(mobile.query?.mobileCompatibleOnly == true)
         assertEquals(listOf(setOf("Scene", "Video")), mobile.query?.requiredTagGroups)
+    }
+
+    @Test
+    fun `friend favorites use PC query semantics and current content preference`() {
+        val destination = friendResultsDestination(favorites = true)
+
+        val restricted = destination.toWorkshopQuery(page = 1, matureContentEnabled = false)
+        val unrestricted = destination.toWorkshopQuery(page = 2, matureContentEnabled = true)
+
+        assertEquals(WorkshopSort.FRIENDS_FAVORITES, restricted.sort)
+        assertEquals(setOf(WorkshopRating.EVERYONE, WorkshopRating.QUESTIONABLE), restricted.ratings)
+        assertFalse(restricted.allowNsfw)
+        assertEquals(1, restricted.page)
+        assertEquals(WorkshopSort.FRIENDS_FAVORITES, unrestricted.sort)
+        assertEquals(
+            setOf(WorkshopRating.EVERYONE, WorkshopRating.QUESTIONABLE, WorkshopRating.MATURE),
+            unrestricted.ratings,
+        )
+        assertTrue(unrestricted.allowNsfw)
+        assertEquals(2, unrestricted.page)
+    }
+
+    @Test
+    fun `friend filters preserve friend sort while applying detailed criteria`() {
+        val destination = friendResultsDestination(favorites = true)
+        val filters =
+            HomeFilterSelection(
+                sort = WorkshopSort.MOST_RECENT,
+                days = 365,
+                types = setOf(WorkshopType.VIDEO),
+                ratings = setOf(WorkshopRating.EVERYONE),
+                genres = setOf("Anime"),
+                officialTags = setOf("Audio responsive"),
+                excludedOfficialTags = setOf("Customizable"),
+                resolutions = setOf("1920 x 1080"),
+            )
+
+        val query =
+            destination.toWorkshopQuery(
+                page = 3,
+                matureContentEnabled = false,
+                filterSelection = filters,
+                exactPhraseOverride = true,
+            )
+
+        assertEquals(WorkshopSort.FRIENDS_FAVORITES, query.sort)
+        assertEquals(0, query.days)
+        assertEquals(setOf(WorkshopType.VIDEO), query.types)
+        assertEquals(setOf(WorkshopRating.EVERYONE), query.ratings)
+        assertEquals(setOf("Anime"), query.genres)
+        assertEquals(setOf("Audio responsive"), query.officialTags)
+        assertEquals(setOf("Customizable"), query.excludedOfficialTags)
+        assertEquals(setOf("1920 x 1080"), query.resolutions)
+        assertTrue(query.exactPhrase)
+    }
+
+    @Test
+    fun `friend activity cannot fall back to unsigned browse sources`() {
+        val query = WorkshopBrowseQuery(sort = WorkshopSort.FRIENDS_FAVORITES)
+
+        assertFailsWith<IllegalArgumentException> { buildBrowseUrl(query) }
+        assertFailsWith<IllegalArgumentException> {
+            buildSteamApiBrowseUrl(query, steamApiKey = "test-key")
+        }
     }
 
     private fun descriptor(

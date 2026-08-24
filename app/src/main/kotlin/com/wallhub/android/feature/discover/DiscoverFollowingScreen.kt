@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,12 +20,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.PersonSearch
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -31,14 +35,18 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +71,10 @@ import com.wallhub.android.core.model.DiscoverSavedQueryRepository
 import com.wallhub.android.core.model.DiscoverSavedQuerySource
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.WorkshopSort
+import com.wallhub.android.feature.home.HomeAction
+import com.wallhub.android.feature.home.HomeFilterDrawer
+import com.wallhub.android.feature.home.HomeFilterSelection
+import com.wallhub.android.feature.home.HomeUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.security.MessageDigest
 import javax.inject.Inject
@@ -70,6 +82,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -174,6 +187,10 @@ class DiscoverQueryEditorViewModel
         private val repository: DiscoverSavedQueryRepository,
         private val settingsRepository: SettingsRepository,
     ) : ViewModel() {
+        val matureContentEnabled =
+            settingsRepository.preferences
+                .map { preferences -> preferences.matureContentEnabled }
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
         private val effectChannel = Channel<DiscoverQueryEditorEffect>(Channel.BUFFERED)
         private val effects: Flow<DiscoverQueryEditorEffect> = effectChannel.receiveAsFlow()
 
@@ -188,11 +205,26 @@ class DiscoverQueryEditorViewModel
             sort: DiscoverCustomSort,
             input: String,
             title: String,
+            filters: HomeFilterSelection,
+            exactPhrase: Boolean,
         ) {
             val normalized = input.trim()
             viewModelScope.launch {
                 val preferences = settingsRepository.preferences.first()
-                val identity = "${category.name}|${sort.name}|$normalized"
+                val normalizedFilters = filters.normalized(preferences.matureContentEnabled)
+                val identity =
+                    listOf(
+                        category.name,
+                        sort.name,
+                        normalized,
+                        normalizedFilters.types.sortedBy { it.name }.joinToString(",") { it.name },
+                        normalizedFilters.ratings.sortedBy { it.name }.joinToString(",") { it.name },
+                        normalizedFilters.genres.sorted().joinToString(","),
+                        normalizedFilters.officialTags.sorted().joinToString(","),
+                        normalizedFilters.excludedOfficialTags.sorted().joinToString(","),
+                        normalizedFilters.resolutions.sorted().joinToString(","),
+                        exactPhrase.toString(),
+                    ).joinToString("|")
                 val query =
                     DiscoverSavedQuery(
                         id = "custom:${identity.sha256().take(24)}",
@@ -203,9 +235,15 @@ class DiscoverQueryEditorViewModel
                         searchText = normalized.takeIf { category == DiscoverSavedQueryCategory.KEYWORD }.orEmpty(),
                         creatorId = normalized.takeIf { category == DiscoverSavedQueryCategory.CREATOR },
                         collectionId = normalized.toLongOrNull().takeIf { category == DiscoverSavedQueryCategory.COLLECTION },
+                        types = normalizedFilters.types,
+                        ratings = normalizedFilters.ratings,
+                        genres = normalizedFilters.genres,
+                        officialTags = normalizedFilters.officialTags,
+                        excludedOfficialTags = normalizedFilters.excludedOfficialTags,
+                        resolutions = normalizedFilters.resolutions,
                         sort = sort.sort,
                         days = sort.days,
-                        exactPhrase = false,
+                        exactPhrase = exactPhrase,
                         allowNsfw = preferences.matureContentEnabled,
                     )
                 repository.upsert(query)
@@ -238,70 +276,113 @@ fun DiscoverQueryEditorRoute(
     var category by remember { mutableStateOf(DiscoverSavedQueryCategory.KEYWORD) }
     var sort by remember { mutableStateOf(DiscoverCustomSort.TREND_YEAR) }
     var input by remember { mutableStateOf("") }
+    var filters by remember { mutableStateOf(HomeFilterSelection.defaults()) }
+    var exactPhrase by remember { mutableStateOf(false) }
+    val matureContentEnabled by viewModel.matureContentEnabled.collectAsStateWithLifecycle()
+    val filterDrawerState = rememberDrawerState(DrawerValue.Closed)
+    val filterDrawerScope = rememberCoroutineScope()
     val creatorPrefix = stringResource(R.string.discover_query_category_creator)
     val collectionPrefix = stringResource(R.string.discover_query_category_collection)
     LaunchedEffect(viewModel) { viewModel.observeSaved { onSaved(it) } }
     val valid =
         input.trim().isNotEmpty() &&
             (category == DiscoverSavedQueryCategory.KEYWORD || input.trim().all(Char::isDigit))
-    WallHubPageScaffold(
-        title = stringResource(R.string.discover_create_query),
-        showBackButton = true,
-        onNavigateUp = onBack,
-    ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            Text(stringResource(R.string.discover_query_category), style = MaterialTheme.typography.titleSmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DiscoverSavedQueryCategory.entries.filter { it != DiscoverSavedQueryCategory.TOPIC }.forEach { item ->
-                    FilterChip(
-                        selected = category == item,
-                        onClick = {
-                            category = item
-                            sort = item.sortOptions().first()
-                        },
-                        label = { Text(stringResource(item.labelRes())) },
-                        leadingIcon = { Icon(item.icon(), null, modifier = Modifier.size(18.dp)) },
-                    )
-                }
-            }
-            if (category != DiscoverSavedQueryCategory.COLLECTION) {
-                DiscoverSortMenu(
-                    options = category.sortOptions(),
-                    selected = sort,
-                    onSelected = { sort = it },
+    ModalNavigationDrawer(
+        drawerState = filterDrawerState,
+        gesturesEnabled = filterDrawerState.isOpen,
+        drawerContent = {
+            ModalDrawerSheet(modifier = Modifier.fillMaxHeight().widthIn(max = 420.dp)) {
+                HomeFilterDrawer(
+                    state =
+                        HomeUiState(
+                            exactPhrase = exactPhrase,
+                            selectedTypes = filters.types,
+                            selectedRatings = filters.ratings,
+                            selectedGenres = filters.genres,
+                            selectedOfficialTags = filters.officialTags,
+                            selectedExcludedOfficialTags = filters.excludedOfficialTags,
+                            selectedResolutions = filters.resolutions,
+                            matureContentEnabled = matureContentEnabled,
+                        ),
+                    isOpen = filterDrawerState.isOpen,
+                    showSortAndTime = false,
+                    showExactPhrase = category == DiscoverSavedQueryCategory.KEYWORD,
+                    title = stringResource(R.string.discover_query_filters),
+                    onAction = { action ->
+                        if (action is HomeAction.ApplyFilters) {
+                            filters = action.selection
+                            exactPhrase = action.exactPhrase ?: exactPhrase
+                        }
+                    },
+                    onDismiss = { filterDrawerScope.launch { filterDrawerState.close() } },
                 )
             }
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                label = { Text(stringResource(category.inputLabelRes())) },
-                supportingText = {
-                    if (input.isNotBlank() && !valid) Text(stringResource(R.string.discover_query_numeric_error))
-                },
-                isError = input.isNotBlank() && !valid,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = if (category == DiscoverSavedQueryCategory.KEYWORD) KeyboardType.Text else KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onBack) { Text(stringResource(android.R.string.cancel)) }
-                Button(
-                    enabled = valid,
-                    onClick = {
-                        val title =
-                            when (category) {
-                                DiscoverSavedQueryCategory.KEYWORD -> input.trim()
-                                DiscoverSavedQueryCategory.CREATOR -> "$creatorPrefix ${input.trim()}"
-                                DiscoverSavedQueryCategory.COLLECTION -> "$collectionPrefix ${input.trim()}"
-                                DiscoverSavedQueryCategory.TOPIC -> input.trim()
-                            }
-                        viewModel.save(category, sort, input, title)
+        },
+    ) {
+        WallHubPageScaffold(
+            title = stringResource(R.string.discover_create_query),
+            showBackButton = true,
+            onNavigateUp = onBack,
+            actions = {
+                IconButton(onClick = { filterDrawerScope.launch { filterDrawerState.open() } }) {
+                    Icon(Icons.Outlined.FilterAlt, stringResource(R.string.home_open_all_filters))
+                }
+            },
+        ) { padding ->
+            Column(
+                modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp, vertical = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                Text(stringResource(R.string.discover_query_category), style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DiscoverSavedQueryCategory.entries.filter { it != DiscoverSavedQueryCategory.TOPIC }.forEach { item ->
+                        FilterChip(
+                            selected = category == item,
+                            onClick = {
+                                category = item
+                                sort = item.sortOptions().first()
+                            },
+                            label = { Text(stringResource(item.labelRes())) },
+                            leadingIcon = { Icon(item.icon(), null, modifier = Modifier.size(18.dp)) },
+                        )
+                    }
+                }
+                if (category != DiscoverSavedQueryCategory.COLLECTION) {
+                    DiscoverSortMenu(
+                        options = category.sortOptions(),
+                        selected = sort,
+                        onSelected = { sort = it },
+                    )
+                }
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    label = { Text(stringResource(category.inputLabelRes())) },
+                    supportingText = {
+                        if (input.isNotBlank() && !valid) Text(stringResource(R.string.discover_query_numeric_error))
                     },
-                    modifier = Modifier.padding(start = 8.dp),
-                ) { Text(stringResource(android.R.string.ok)) }
+                    isError = input.isNotBlank() && !valid,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = if (category == DiscoverSavedQueryCategory.KEYWORD) KeyboardType.Text else KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onBack) { Text(stringResource(android.R.string.cancel)) }
+                    Button(
+                        enabled = valid,
+                        onClick = {
+                            val title =
+                                when (category) {
+                                    DiscoverSavedQueryCategory.KEYWORD -> input.trim()
+                                    DiscoverSavedQueryCategory.CREATOR -> "$creatorPrefix ${input.trim()}"
+                                    DiscoverSavedQueryCategory.COLLECTION -> "$collectionPrefix ${input.trim()}"
+                                    DiscoverSavedQueryCategory.TOPIC -> input.trim()
+                                }
+                            viewModel.save(category, sort, input, title, filters, exactPhrase)
+                        },
+                        modifier = Modifier.padding(start = 8.dp),
+                    ) { Text(stringResource(android.R.string.ok)) }
+                }
             }
         }
     }

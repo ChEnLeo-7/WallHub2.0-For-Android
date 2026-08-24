@@ -131,6 +131,7 @@ data class AppPreferences(
     val homeColumns: Int = 2,
     val homeFilterMultiSelect: Boolean = true,
     val homeSearchFab: Boolean = true,
+    val discoverResultsColumns: Int = 2,
     val homeCardAction: HomeCardAction = HomeCardAction.DOWNLOAD,
     val homePaginationMode: HomePaginationMode = HomePaginationMode.INFINITE_SCROLL,
     val matureContentEnabled: Boolean = false,
@@ -163,6 +164,7 @@ data class AppPreferences(
             "localManagementDirectoryLabel=$localManagementDirectoryLabel, " +
             "localWallpaperViewMode=$localWallpaperViewMode, homePageSize=$homePageSize, " +
             "homeColumns=$homeColumns, homeFilterMultiSelect=$homeFilterMultiSelect, homeSearchFab=$homeSearchFab, " +
+            "discoverResultsColumns=$discoverResultsColumns, " +
             "homeCardAction=$homeCardAction, homePaginationMode=$homePaginationMode, " +
             "matureContentEnabled=$matureContentEnabled, maxConcurrentDownloads=$maxConcurrentDownloads, " +
             "chunkDownloadConcurrency=$chunkDownloadConcurrency, downloadProxyUrl=$downloadProxyUrl, " +

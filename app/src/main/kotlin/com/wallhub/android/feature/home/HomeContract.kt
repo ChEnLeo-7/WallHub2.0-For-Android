@@ -83,7 +83,7 @@ data class HomeFilterSelection(
             (if (types.isNotEmpty()) 1 else 0) +
             (if (ratings != DEFAULT_HOME_RATING_SELECTION) 1 else 0) +
             (if (genres != DEFAULT_HOME_GENRE_SELECTION) 1 else 0) +
-            (if (officialTags.isNotEmpty()) 1 else 0) +
+            (if (officialTags.isNotEmpty() || excludedOfficialTags.isNotEmpty()) 1 else 0) +
             (if (resolutions != DEFAULT_HOME_RESOLUTION_SELECTION) 1 else 0)
 
     companion object {

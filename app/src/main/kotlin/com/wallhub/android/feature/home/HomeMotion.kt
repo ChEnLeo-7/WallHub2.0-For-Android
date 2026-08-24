@@ -362,11 +362,13 @@ internal class HomeCardProjectionGroupState(
 @Composable
 internal fun rememberHomeViewCardLayoutMotion(
     layoutKey: HomeCardLayoutKey,
+    globalState: HomeGlobalLayoutMotionState? = null,
+    globalIndex: Int = 0,
 ): HomeViewCardLayoutMotion {
-    val motion = remember { HomeViewCardLayoutMotion(layoutKey) }
+    val motion = remember(globalState, globalIndex) { HomeViewCardLayoutMotion(layoutKey, globalState, globalIndex) }
     motion.updateLayout(layoutKey)
 
-    HomeProjectionGroupEffect(motion)
+    if (!motion.usesGlobalMotion) HomeProjectionGroupEffect(motion)
 
     return motion
 }
@@ -398,6 +400,8 @@ internal class HomeCardProjectionSlot(
 
 internal class HomeViewCardLayoutMotion(
     initialLayoutKey: HomeCardLayoutKey,
+    private val globalState: HomeGlobalLayoutMotionState? = null,
+    private val globalIndex: Int = 0,
 ) {
     private val transactions = HomeLayoutTransactionState(initialLayoutKey)
     private val projectionGroup = HomeCardProjectionGroupState()
@@ -418,9 +422,12 @@ internal class HomeViewCardLayoutMotion(
         get() = projectionGroup.activeRun
     val pendingGroupStage: HomeCardProjectionGroupStage?
         get() = projectionGroup.pendingStage
+    val usesGlobalMotion: Boolean
+        get() = globalState != null
 
     fun updateLayout(value: HomeCardLayoutKey) {
         transactions.request(value)
+        if (globalState != null) return
         val pendingStage = projectionGroup.pendingStage
         if (
             pendingStage != null &&
@@ -442,6 +449,13 @@ internal class HomeViewCardLayoutMotion(
     }
 
     fun cardModifier(onPositioned: (Offset) -> Unit = {}): Modifier {
+        globalState?.let { state ->
+            return state.participantModifier(
+                index = globalIndex,
+                participant = HomeCardProjectionParticipant.CARD,
+                onPositioned = onPositioned,
+            )
+        }
         val callbackKey = layoutKey
         val callbackRequestId = transactions.requestId
         val cardSlot = slot(HomeCardProjectionParticipant.CARD)
@@ -477,12 +491,14 @@ internal class HomeViewCardLayoutMotion(
     }
 
     fun mediaModifier(): Modifier =
-        projectionModifier(
-            participant = HomeCardProjectionParticipant.MEDIA,
-            parentParticipant = HomeCardProjectionParticipant.CARD,
-        )
+        globalState?.participantModifier(globalIndex, HomeCardProjectionParticipant.MEDIA)
+            ?: projectionModifier(
+                participant = HomeCardProjectionParticipant.MEDIA,
+                parentParticipant = HomeCardProjectionParticipant.CARD,
+            )
 
     fun mediaContentScaleCompensationModifier(): Modifier {
+        globalState?.let { state -> return state.mediaContentScaleCompensationModifier(globalIndex) }
         val mediaSlot = slot(HomeCardProjectionParticipant.MEDIA)
         if (
             !projectionGroup.requiresGraphicsLayer &&
@@ -499,26 +515,30 @@ internal class HomeViewCardLayoutMotion(
     }
 
     fun titleModifier(): Modifier =
-        projectionModifier(
-            participant = HomeCardProjectionParticipant.TITLE,
-            parentParticipant = HomeCardProjectionParticipant.CARD,
-        )
+        globalState?.participantModifier(globalIndex, HomeCardProjectionParticipant.TITLE)
+            ?: projectionModifier(
+                participant = HomeCardProjectionParticipant.TITLE,
+                parentParticipant = HomeCardProjectionParticipant.CARD,
+            )
 
     fun metadataModifier(): Modifier =
-        projectionModifier(
-            participant = HomeCardProjectionParticipant.METADATA,
-            parentParticipant = HomeCardProjectionParticipant.CARD,
-        )
+        globalState?.participantModifier(globalIndex, HomeCardProjectionParticipant.METADATA)
+            ?: projectionModifier(
+                participant = HomeCardProjectionParticipant.METADATA,
+                parentParticipant = HomeCardProjectionParticipant.CARD,
+            )
 
     fun actionModifier(): Modifier =
-        projectionModifier(
-            participant = HomeCardProjectionParticipant.ACTION,
-            // Grid buttons and the list action have different aspect ratios. Project
-            // both dimensions so the control changes size continuously with the card.
-            parentParticipant = HomeCardProjectionParticipant.CARD,
-        )
+        globalState?.participantModifier(globalIndex, HomeCardProjectionParticipant.ACTION)
+            ?: projectionModifier(
+                participant = HomeCardProjectionParticipant.ACTION,
+                // Grid buttons and the list action have different aspect ratios. Project
+                // both dimensions so the control changes size continuously with the card.
+                parentParticipant = HomeCardProjectionParticipant.CARD,
+            )
 
     fun actionContentModifier(): Modifier {
+        globalState?.let { state -> return state.actionContentModifier(globalIndex) }
         val actionSlot = slot(HomeCardProjectionParticipant.ACTION)
         if (
             !projectionGroup.requiresGraphicsLayer &&
@@ -536,20 +556,29 @@ internal class HomeViewCardLayoutMotion(
     }
 
     fun actionLabelVisibility(): Float {
+        globalState?.let { state -> return state.actionLabelVisibility(layoutKey.listMode) }
         return actionLabelFrom + (actionLabelTo - actionLabelFrom) * projectionGroup.progress
     }
 
     fun cardShape(): Shape =
-        HomeCoverCorners.forCard().toProjectedShape(
-            transform = projectionGroup.currentTransform(HomeCardProjectionParticipant.CARD),
-        )
+        globalState?.cardShape(globalIndex)
+            ?: HomeCoverCorners.forCard().toProjectedShape(
+                transform = projectionGroup.currentTransform(HomeCardProjectionParticipant.CARD),
+            )
+
+    fun shouldClipCardContent(): Boolean = globalState?.isRunning != true
+
+    fun copyZIndex(): Float = if (globalState?.isRunning == true) HOME_CARD_PREVIEW_Z_INDEX + 1f else 0f
 
     fun coverShape(): Shape =
-        currentCoverCorners().toProjectedShape(
-            transform = projectionGroup.currentTransform(HomeCardProjectionParticipant.MEDIA),
-        )
+        globalState?.coverShape(globalIndex, layoutKey.listMode)
+            ?: currentCoverCorners().toProjectedShape(
+                transform = projectionGroup.currentTransform(HomeCardProjectionParticipant.MEDIA),
+            )
 
-    fun actionShape(): Shape = RoundedCornerShape(currentActionCorners().radius)
+    fun actionShape(): Shape =
+        globalState?.actionShape(layoutKey.listMode)
+            ?: RoundedCornerShape(currentActionCorners().radius)
 
     private fun projectionModifier(
         participant: HomeCardProjectionParticipant,

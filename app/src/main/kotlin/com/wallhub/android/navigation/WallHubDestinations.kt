@@ -31,11 +31,15 @@ internal data class DiscoverResultsDestination(
     val excludedOfficialTags: String = "",
     val requiredTagGroups: String = "",
     val types: String = "",
+    val ratings: String = "",
+    val genres: String = "",
+    val resolutions: String = "",
     val sort: String = "TRENDING",
     val days: Int = 30,
     val exactPhrase: Boolean = false,
     val allowNsfw: Boolean = false,
     val mobileCompatibleOnly: Boolean = false,
+    val filtersEnabled: Boolean = false,
     val createdAfterEpochSeconds: Long? = null,
     val createdBeforeEpochSeconds: Long? = null,
 ) : WallHubDestination
@@ -103,6 +107,9 @@ internal fun DiscoverRailSpec.toResultsDestination(resolvedTitle: String? = null
                 group.joinToString(DISCOVER_VALUE_SEPARATOR)
             },
         types = query?.types.orEmpty().joinToString(DISCOVER_VALUE_SEPARATOR) { it.name },
+        ratings = query?.ratings.orEmpty().joinToString(DISCOVER_VALUE_SEPARATOR) { it.name },
+        genres = query?.genres.orEmpty().joinToString(DISCOVER_VALUE_SEPARATOR),
+        resolutions = query?.resolutions.orEmpty().joinToString(DISCOVER_VALUE_SEPARATOR),
         sort = query?.sort?.name ?: "TRENDING",
         days = query?.days ?: 30,
         exactPhrase = query?.exactPhrase == true,
@@ -133,11 +140,15 @@ internal fun DiscoverSavedQuery.toResultsDestination(): DiscoverResultsDestinati
         excludedOfficialTags = excludedOfficialTags.joinToString(DISCOVER_VALUE_SEPARATOR),
         requiredTagGroups = requiredTagGroups.joinToString(DISCOVER_GROUP_SEPARATOR) { it.joinToString(DISCOVER_VALUE_SEPARATOR) },
         types = types.joinToString(DISCOVER_VALUE_SEPARATOR) { it.name },
+        ratings = ratings.joinToString(DISCOVER_VALUE_SEPARATOR) { it.name },
+        genres = genres.joinToString(DISCOVER_VALUE_SEPARATOR),
+        resolutions = resolutions.joinToString(DISCOVER_VALUE_SEPARATOR),
         sort = sort.name,
         days = days,
         exactPhrase = exactPhrase,
         allowNsfw = allowNsfw,
         mobileCompatibleOnly = mobileCompatibleOnly,
+        filtersEnabled = true,
     )
 
 internal fun friendResultsDestination(favorites: Boolean): DiscoverResultsDestination =
@@ -147,6 +158,7 @@ internal fun friendResultsDestination(favorites: Boolean): DiscoverResultsDestin
         semantic = if (favorites) "friends_favorites" else "friends_created",
         sort = if (favorites) WorkshopSort.FRIENDS_FAVORITES.name else WorkshopSort.FRIENDS_CREATED.name,
         days = 0,
+        filtersEnabled = true,
     )
 
 internal const val DISCOVER_VALUE_SEPARATOR = "|"

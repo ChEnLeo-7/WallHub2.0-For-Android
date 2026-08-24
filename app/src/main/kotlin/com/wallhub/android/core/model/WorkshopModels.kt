@@ -82,9 +82,16 @@ data class AccountWorkshopQuery(
     val page: Int = 1,
     val pageSize: Int = 24,
     val searchText: String = "",
+    val exactPhrase: Boolean = false,
     val resolveTotalCount: Boolean = false,
     val type: WorkshopType? = null,
+    val types: Set<WorkshopType> = emptySet(),
     val tags: Set<String> = emptySet(),
+    val ratings: Set<WorkshopRating> = emptySet(),
+    val genres: Set<String> = emptySet(),
+    val officialTags: Set<String> = emptySet(),
+    val excludedOfficialTags: Set<String> = emptySet(),
+    val resolutions: Set<String> = emptySet(),
 )
 
 data class WorkshopPage(

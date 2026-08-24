@@ -3,8 +3,13 @@
 package com.wallhub.android.feature.home
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -77,6 +82,9 @@ internal fun HomeFilterDrawer(
     isOpen: Boolean,
     onAction: (HomeAction) -> Unit,
     onDismiss: () -> Unit,
+    showSortAndTime: Boolean = true,
+    showExactPhrase: Boolean = true,
+    title: String? = null,
     modifier: Modifier = Modifier,
 ) {
     var draft by remember { mutableStateOf(state.filterSelection()) }
@@ -98,7 +106,7 @@ internal fun HomeFilterDrawer(
             Icon(Icons.Outlined.FilterAlt, null, tint = MaterialTheme.colorScheme.primary)
             Column(modifier = Modifier.weight(1f).padding(horizontal = WallHubSpacing.sm)) {
                 Text(
-                    text = stringResource(R.string.home_filter_drawer_title),
+                    text = title ?: stringResource(R.string.home_filter_drawer_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -117,39 +125,41 @@ internal fun HomeFilterDrawer(
             modifier = Modifier.weight(1f),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = WallHubSpacing.xs),
         ) {
-            item {
-                FilterSection(
-                    title = stringResource(R.string.home_filter_sort),
-                    summary = draft.sort.label(),
-                    icon = Icons.Outlined.FilterList,
-                    initiallyExpanded = true,
-                ) {
-                    TwoColumnFilterOptions(
-                        options = WorkshopSort.entries.filterNot {
-                            it == WorkshopSort.FRIENDS_FAVORITES || it == WorkshopSort.FRIENDS_CREATED
-                        },
-                        selected = { it == draft.sort },
-                        label = { it.label() },
-                        onClick = { sort ->
-                            draft = draft.copy(sort = sort, days = if (sort == WorkshopSort.TRENDING) draft.days else 0)
-                        },
-                    )
-                }
-            }
-            if (draft.sort == WorkshopSort.TRENDING) {
+            if (showSortAndTime) {
                 item {
                     FilterSection(
-                        title = stringResource(R.string.home_filter_time),
-                        summary = draft.days.label(),
-                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.home_filter_sort),
+                        summary = draft.sort.label(),
+                        icon = Icons.Outlined.FilterList,
                         initiallyExpanded = true,
                     ) {
                         TwoColumnFilterOptions(
-                            options = timeRangeOptions(draft.days),
-                            selected = { it.first == draft.days },
-                            label = { it.second },
-                            onClick = { draft = draft.copy(days = it.first) },
+                            options = WorkshopSort.entries.filterNot {
+                                it == WorkshopSort.FRIENDS_FAVORITES || it == WorkshopSort.FRIENDS_CREATED
+                            },
+                            selected = { it == draft.sort },
+                            label = { it.label() },
+                            onClick = { sort ->
+                                draft = draft.copy(sort = sort, days = if (sort == WorkshopSort.TRENDING) draft.days else 0)
+                            },
                         )
+                    }
+                }
+                if (draft.sort == WorkshopSort.TRENDING) {
+                    item {
+                        FilterSection(
+                            title = stringResource(R.string.home_filter_time),
+                            summary = draft.days.label(),
+                            icon = Icons.Outlined.Schedule,
+                            initiallyExpanded = true,
+                        ) {
+                            TwoColumnFilterOptions(
+                                options = timeRangeOptions(draft.days),
+                                selected = { it.first == draft.days },
+                                label = { it.second },
+                                onClick = { draft = draft.copy(days = it.first) },
+                            )
+                        }
                     }
                 }
             }
@@ -279,35 +289,40 @@ internal fun HomeFilterDrawer(
                     }
                 }
             }
-            item {
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .toggleable(
-                                value = exactPhrase,
-                                role = Role.Switch,
-                                onValueChange = { exactPhrase = it },
-                            ).padding(horizontal = FILTER_DRAWER_HORIZONTAL_PADDING, vertical = WallHubSpacing.sm),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Outlined.Tune, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        text = stringResource(R.string.home_exact_phrase),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f).padding(horizontal = WallHubSpacing.sm),
-                    )
-                    Switch(checked = exactPhrase, onCheckedChange = null)
+            if (showExactPhrase) {
+                item {
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .toggleable(
+                                    value = exactPhrase,
+                                    role = Role.Switch,
+                                    onValueChange = { exactPhrase = it },
+                                ).padding(horizontal = FILTER_DRAWER_HORIZONTAL_PADDING, vertical = WallHubSpacing.sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Outlined.Tune, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = stringResource(R.string.home_exact_phrase),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f).padding(horizontal = WallHubSpacing.sm),
+                        )
+                        Switch(checked = exactPhrase, onCheckedChange = null)
+                    }
                 }
             }
         }
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 3.dp,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            tonalElevation = 1.dp,
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(WallHubSpacing.md),
-                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = WallHubSpacing.sm, vertical = WallHubSpacing.xxxs),
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(
@@ -315,7 +330,7 @@ internal fun HomeFilterDrawer(
                         draft = HomeFilterSelection.defaults()
                         exactPhrase = false
                     },
-                    modifier = Modifier.heightIn(min = WallHubSizeTokens.minimumTouchTarget),
+                    modifier = Modifier.heightIn(min = FILTER_ACTION_MIN_HEIGHT),
                 ) {
                     Text(stringResource(R.string.home_reset))
                 }
@@ -325,7 +340,7 @@ internal fun HomeFilterDrawer(
                         onAction(HomeAction.ApplyFilters(draft, exactPhrase))
                         onDismiss()
                     },
-                    modifier = Modifier.heightIn(min = WallHubSizeTokens.minimumTouchTarget),
+                    modifier = Modifier.heightIn(min = FILTER_ACTION_MIN_HEIGHT),
                 ) {
                     Text(stringResource(R.string.home_filter_apply))
                 }
@@ -343,8 +358,14 @@ private fun FilterSection(
     content: @Composable () -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
-    val rotation by animateFloatAsState(if (expanded) 180f else 0f, label = "FilterSectionArrow")
-    Column(modifier = Modifier.fillMaxWidth().animateContentSize()) {
+    val motionDuration = if (expanded) FILTER_EXPAND_DURATION_MS else FILTER_COLLAPSE_DURATION_MS
+    val motionEasing = if (expanded) FILTER_EXPAND_EASING else FILTER_COLLAPSE_EASING
+    val rotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(durationMillis = motionDuration, easing = motionEasing),
+        label = "FilterSectionArrow",
+    )
+    Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier =
                 Modifier
@@ -370,7 +391,19 @@ private fun FilterSection(
                 modifier = Modifier.graphicsLayer { rotationZ = rotation },
             )
         }
-        AnimatedVisibility(visible = expanded) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter =
+                expandVertically(
+                    animationSpec = tween(FILTER_EXPAND_DURATION_MS, easing = FILTER_EXPAND_EASING),
+                    expandFrom = Alignment.Top,
+                ) + fadeIn(tween(FILTER_CONTENT_FADE_IN_MS, easing = FILTER_EXPAND_EASING)),
+            exit =
+                shrinkVertically(
+                    animationSpec = tween(FILTER_COLLAPSE_DURATION_MS, easing = FILTER_COLLAPSE_EASING),
+                    shrinkTowards = Alignment.Top,
+                ) + fadeOut(tween(FILTER_CONTENT_FADE_OUT_MS, easing = FILTER_COLLAPSE_EASING)),
+        ) {
             Column(
                 modifier =
                     Modifier
@@ -481,3 +514,10 @@ private fun selectionSummary(
 private val typesForFilter = linkedSetOf(WorkshopType.SCENE, WorkshopType.VIDEO, WorkshopType.WEB)
 private val FILTER_DRAWER_HORIZONTAL_PADDING = WallHubSpacing.md
 private val FILTER_OPTION_GAP = WallHubSpacing.xs
+private val FILTER_ACTION_MIN_HEIGHT = 40.dp
+private const val FILTER_EXPAND_DURATION_MS = 280
+private const val FILTER_COLLAPSE_DURATION_MS = 220
+private const val FILTER_CONTENT_FADE_IN_MS = 220
+private const val FILTER_CONTENT_FADE_OUT_MS = 160
+private val FILTER_EXPAND_EASING = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+private val FILTER_COLLAPSE_EASING = CubicBezierEasing(0.2f, 0f, 0f, 1f)

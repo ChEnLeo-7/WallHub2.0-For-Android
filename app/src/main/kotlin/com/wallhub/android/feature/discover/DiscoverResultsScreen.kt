@@ -9,30 +9,49 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -75,9 +94,21 @@ import com.wallhub.android.core.model.DownloadTaskRepository
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.WorkshopRepository
+import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.android.core.model.matchesSteamWallpaper
+import com.wallhub.android.feature.home.DEFAULT_HOME_GENRE_SELECTION
+import com.wallhub.android.feature.home.DEFAULT_HOME_RESOLUTION_SELECTION
+import com.wallhub.android.feature.home.HomeAction
+import com.wallhub.android.feature.home.HomeCardLayoutKey
+import com.wallhub.android.feature.home.HomeCardProjectionParticipant
+import com.wallhub.android.feature.home.HomeFilterDrawer
+import com.wallhub.android.feature.home.HomeFilterSelection
+import com.wallhub.android.feature.home.HomeUiState
+import com.wallhub.android.feature.home.HomeViewMode
+import com.wallhub.android.feature.home.rememberHomeGlobalLayoutMotionState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -98,11 +129,19 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.ViewAgenda
 
 data class DiscoverResultsState(
     val items: List<WorkshopSummary> = emptyList(),
+    val resultColumns: Int = DISCOVER_RESULTS_GRID_COLUMNS,
+    val filterSelection: HomeFilterSelection = HomeFilterSelection.defaults(),
+    val exactPhrase: Boolean = false,
+    val matureContentEnabled: Boolean = false,
+    val initialized: Boolean = false,
     val isLoading: Boolean = false,
     val page: Int = 0,
     val hasMore: Boolean = true,
@@ -136,31 +175,100 @@ class DiscoverResultsViewModel
         val effects: Flow<DiscoverResultsEffect> = effectChannel.receiveAsFlow()
 
         init {
-            loadNextPage()
+            viewModelScope.launch {
+                settingsRepository.preferences
+                    .map { preferences -> preferences.discoverResultsColumns.coerceIn(1, 2) }
+                    .distinctUntilChanged()
+                    .collect { columns ->
+                        mutableState.value = mutableState.value.copy(resultColumns = columns)
+                    }
+            }
+            viewModelScope.launch {
+                val preferences = settingsRepository.preferences.first()
+                mutableState.value =
+                    mutableState.value.copy(
+                        filterSelection = destination.initialFilterSelection(preferences.matureContentEnabled),
+                        exactPhrase = destination.exactPhrase,
+                        matureContentEnabled = preferences.matureContentEnabled,
+                        initialized = true,
+                    )
+                loadNextPage()
+            }
         }
 
         fun retry() {
-            if (mutableState.value.items.isEmpty()) {
-                mutableState.value = DiscoverResultsState()
+            val current = mutableState.value
+            if (!current.initialized) return
+            if (current.items.isEmpty()) {
+                mutableState.value = current.copy(page = 0, hasMore = true, isLoading = false, error = null)
             }
             loadNextPage()
         }
 
+        fun applyFilters(
+            selection: HomeFilterSelection,
+            exactPhrase: Boolean,
+        ) {
+            val current = mutableState.value
+            val normalized = selection.normalized(current.matureContentEnabled)
+            val effective =
+                if (destination.supportsResultSortFiltering()) {
+                    normalized
+                } else {
+                    normalized.copy(
+                        sort = current.filterSelection.sort,
+                        days = current.filterSelection.days,
+                    )
+                }
+            if (current.filterSelection == effective && current.exactPhrase == exactPhrase) return
+            loadJob?.cancel()
+            mutableState.value =
+                current.copy(
+                    items = emptyList(),
+                    filterSelection = effective,
+                    exactPhrase = exactPhrase,
+                    isLoading = false,
+                    page = 0,
+                    hasMore = true,
+                    error = null,
+                )
+            loadNextPage()
+        }
+
+        fun setResultColumns(columns: Int) {
+            val normalized = columns.coerceIn(1, 2)
+            if (mutableState.value.resultColumns == normalized) return
+            mutableState.value = mutableState.value.copy(resultColumns = normalized)
+            viewModelScope.launch { settingsRepository.setDiscoverResultsColumns(normalized) }
+        }
+
         fun loadNextPage() {
             val current = mutableState.value
-            if (current.isLoading || !current.hasMore) return
+            if (!current.initialized || current.isLoading || !current.hasMore) return
             val nextPage = current.page + 1
             loadJob =
                 viewModelScope.launch {
                     mutableState.value = current.copy(isLoading = true, error = null)
                     try {
+                        val browseQuery =
+                            destination.toWorkshopQuery(
+                                page = nextPage,
+                                matureContentEnabled = current.matureContentEnabled,
+                                filterSelection = current.filterSelection,
+                                exactPhraseOverride = current.exactPhrase,
+                            )
                         val result =
                             destination.collectionId?.let { collectionId ->
                                 collectionResolver.browse(collectionId, nextPage, RESULTS_PAGE_SIZE)
                             } ?: networkBudget.withPermit {
-                                workshopRepository.browse(destination.toWorkshopQuery(nextPage))
+                                workshopRepository.browse(browseQuery)
                             }
-                        val filtered = destination.filterRequiredTagGroups(result.items)
+                        val filtered =
+                            destination
+                                .filterRequiredTagGroups(result.items)
+                                .let { items ->
+                                    if (destination.collectionId == null) items else items.filter(browseQuery::matchesSteamWallpaper)
+                                }
                         mutableState.value =
                             mutableState.value.copy(
                                 items = (mutableState.value.items + filtered).distinctBy(WorkshopSummary::id),
@@ -219,6 +327,12 @@ fun DiscoverResultsRoute(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val gridState = rememberLazyGridState()
+    val layoutMotionState =
+        rememberHomeGlobalLayoutMotionState(
+            horizontalSpacing = DISCOVER_RESULTS_GRID_SPACING,
+            verticalSpacing = DISCOVER_RESULTS_GRID_SPACING,
+            participants = DISCOVER_RESULTS_MOTION_PARTICIPANTS,
+        )
     val contextMenuState = rememberWallHubContextMenuState()
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -226,6 +340,8 @@ fun DiscoverResultsRoute(
     val currentOpenDetail by rememberUpdatedState(onOpenDetail)
     val currentSearchAuthor by rememberUpdatedState(onSearchAuthor)
     var pendingDownload by remember { mutableStateOf<WorkshopSummary?>(null) }
+    val filterDrawerState = rememberDrawerState(DrawerValue.Closed)
+    val filterDrawerScope = rememberCoroutineScope()
     val storagePermissionLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             val item = pendingDownload ?: return@rememberLauncherForActivityResult
@@ -254,16 +370,61 @@ fun DiscoverResultsRoute(
             .distinctUntilChanged()
             .collect { nearEnd -> if (nearEnd) viewModel.loadNextPage() }
     }
-    WallHubContextMenuLayer(
-        state = contextMenuState,
-        onActiveChanged = {},
-        modifier = Modifier.fillMaxSize(),
+    ModalNavigationDrawer(
+        drawerState = filterDrawerState,
+        gesturesEnabled = filterDrawerState.isOpen,
+        drawerContent = {
+            ModalDrawerSheet(modifier = Modifier.fillMaxHeight().widthIn(max = 420.dp)) {
+                HomeFilterDrawer(
+                    state = state.asHomeFilterUiState(viewModel.destination),
+                    isOpen = filterDrawerState.isOpen,
+                    showSortAndTime = viewModel.destination.supportsResultSortFiltering(),
+                    showExactPhrase = viewModel.destination.searchText.isNotBlank(),
+                    title = stringResource(R.string.discover_result_filters),
+                    onAction = { action ->
+                        if (action is HomeAction.ApplyFilters) {
+                            viewModel.applyFilters(
+                                selection = action.selection,
+                                exactPhrase = action.exactPhrase ?: state.exactPhrase,
+                            )
+                        }
+                    },
+                    onDismiss = { filterDrawerScope.launch { filterDrawerState.close() } },
+                )
+            }
+        },
     ) {
-        WallHubPageScaffold(
-            title = discoverResultsTitle(viewModel.destination, state.items.firstOrNull()?.author),
-            showBackButton = true,
-            onNavigateUp = onBack,
-        ) { padding ->
+        WallHubContextMenuLayer(
+            state = contextMenuState,
+            onActiveChanged = {},
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            WallHubPageScaffold(
+                title = discoverResultsTitle(viewModel.destination, state.items.firstOrNull()?.author),
+                showBackButton = true,
+                onNavigateUp = onBack,
+                actions = {
+                    if (viewModel.destination.filtersEnabled) {
+                        IconButton(onClick = { filterDrawerScope.launch { filterDrawerState.open() } }) {
+                            Icon(Icons.Outlined.FilterAlt, stringResource(R.string.home_open_all_filters))
+                        }
+                    }
+                    DiscoverResultsViewModeToggle(
+                        columns = state.resultColumns,
+                        onColumnsChanged = { targetColumns ->
+                            val transitionStarted =
+                                layoutMotionState.request(
+                                    sourceKey = HomeCardLayoutKey.resolve(HomeViewMode.GRID, state.resultColumns),
+                                    targetKey = HomeCardLayoutKey.resolve(HomeViewMode.GRID, targetColumns),
+                                    visibleIndices = gridState.layoutInfo.visibleItemsInfo.map { item -> item.index },
+                                )
+                            if (transitionStarted || !layoutMotionState.isRunning) {
+                                viewModel.setResultColumns(targetColumns)
+                            }
+                        },
+                    )
+                },
+            ) { padding ->
             when {
                 state.items.isEmpty() && state.isLoading ->
                     Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
@@ -286,9 +447,9 @@ fun DiscoverResultsRoute(
                         onAction = viewModel::retry,
                         modifier = Modifier.fillMaxSize().padding(padding),
                     )
-                else ->
+                else -> {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(180.dp),
+                        columns = GridCells.Fixed(state.resultColumns),
                         state = gridState,
                         modifier =
                             Modifier
@@ -296,10 +457,10 @@ fun DiscoverResultsRoute(
                                 .padding(padding)
                                 .onGloballyPositioned { contextMenuState.gridCoordinates = it },
                         contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(DISCOVER_RESULTS_GRID_SPACING),
+                        verticalArrangement = Arrangement.spacedBy(DISCOVER_RESULTS_GRID_SPACING),
                     ) {
-                        items(state.items, key = WorkshopSummary::id) { item ->
+                        itemsIndexed(state.items, key = { _, item -> item.id }) { index, item ->
                             val itemTitle = item.localizedTitle()
                             val itemAuthor = item.localizedAuthor()
                             WallHubContextMenuCard(
@@ -382,20 +543,46 @@ fun DiscoverResultsRoute(
                             ) {
                                 Card(
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = MaterialTheme.shapes.medium,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .then(
+                                                layoutMotionState.participantModifier(
+                                                    index = index,
+                                                    participant = HomeCardProjectionParticipant.CARD,
+                                                ),
+                                            ),
                                 ) {
                                     AsyncImage(
                                         model = item.previewUrl,
                                         contentDescription = itemTitle,
                                         contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .aspectRatio(16f / 9f)
+                                                .then(
+                                                    layoutMotionState.participantModifier(
+                                                        index = index,
+                                                        participant = HomeCardProjectionParticipant.MEDIA,
+                                                    ),
+                                                ),
                                     )
                                     Text(
                                         itemTitle,
                                         style = MaterialTheme.typography.titleSmall,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp),
+                                        modifier =
+                                            Modifier
+                                                .padding(start = 12.dp, end = 12.dp, top = 10.dp)
+                                                .then(
+                                                    layoutMotionState.participantModifier(
+                                                        index = index,
+                                                        participant = HomeCardProjectionParticipant.TITLE,
+                                                    ),
+                                                ),
                                     )
                                     Text(
                                         itemAuthor,
@@ -403,7 +590,15 @@ fun DiscoverResultsRoute(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 10.dp),
+                                        modifier =
+                                            Modifier
+                                                .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 10.dp)
+                                                .then(
+                                                    layoutMotionState.participantModifier(
+                                                        index = index,
+                                                        participant = HomeCardProjectionParticipant.METADATA,
+                                                    ),
+                                                ),
                                     )
                                 }
                             }
@@ -416,8 +611,106 @@ fun DiscoverResultsRoute(
                             }
                         }
                     }
+                }
+            }
             }
         }
+    }
+}
+
+private val DISCOVER_RESULTS_MOTION_PARTICIPANTS =
+    setOf(
+        HomeCardProjectionParticipant.CARD,
+        HomeCardProjectionParticipant.MEDIA,
+        HomeCardProjectionParticipant.TITLE,
+        HomeCardProjectionParticipant.METADATA,
+    )
+
+@Composable
+private fun DiscoverResultsViewModeToggle(
+    columns: Int,
+    onColumnsChanged: (Int) -> Unit,
+) {
+    val indicatorOffset by animateDpAsState(
+        targetValue =
+            if (columns == DISCOVER_RESULTS_LARGE_COLUMNS) {
+                DISCOVER_RESULTS_TOGGLE_INSET
+            } else {
+                DISCOVER_RESULTS_TOGGLE_INSET + DISCOVER_RESULTS_TOGGLE_BUTTON_SIZE
+            },
+        animationSpec = tween(DISCOVER_RESULTS_TOGGLE_MOTION_MS),
+        label = "DiscoverResultsViewIndicator",
+    )
+    Box(
+        modifier = Modifier.height(64.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(100.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            Box(
+                modifier =
+                    Modifier
+                        .width(DISCOVER_RESULTS_TOGGLE_WIDTH)
+                        .height(DISCOVER_RESULTS_TOGGLE_HEIGHT),
+            ) {
+                Surface(
+                    modifier =
+                        Modifier
+                            .offset(x = indicatorOffset, y = DISCOVER_RESULTS_TOGGLE_INSET)
+                            .size(DISCOVER_RESULTS_TOGGLE_BUTTON_SIZE),
+                    shape = RoundedCornerShape(100.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                ) {}
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(DISCOVER_RESULTS_TOGGLE_INSET),
+                ) {
+                    DiscoverResultsViewModeButton(
+                        selected = columns == DISCOVER_RESULTS_LARGE_COLUMNS,
+                        icon = Icons.Outlined.ViewAgenda,
+                        contentDescription = stringResource(R.string.discover_results_large_view),
+                        onClick = { onColumnsChanged(DISCOVER_RESULTS_LARGE_COLUMNS) },
+                    )
+                    DiscoverResultsViewModeButton(
+                        selected = columns == DISCOVER_RESULTS_GRID_COLUMNS,
+                        icon = Icons.Outlined.GridView,
+                        contentDescription = stringResource(R.string.discover_results_grid_view),
+                        onClick = { onColumnsChanged(DISCOVER_RESULTS_GRID_COLUMNS) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiscoverResultsViewModeButton(
+    selected: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    val tint by animateColorAsState(
+        targetValue =
+            if (selected) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        animationSpec = tween(DISCOVER_RESULTS_TOGGLE_MOTION_MS),
+        label = "DiscoverResultsViewIcon",
+    )
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.size(DISCOVER_RESULTS_TOGGLE_BUTTON_SIZE),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(24.dp),
+        )
     }
 }
 
@@ -450,25 +743,86 @@ private fun discoverResultsTitle(
         else -> stringResource(R.string.discover_rail_keyword, destination.titleArgument.orEmpty())
     }
 
-private fun DiscoverResultsDestination.toWorkshopQuery(page: Int): WorkshopBrowseQuery =
-    WorkshopBrowseQuery(
+internal fun DiscoverResultsDestination.toWorkshopQuery(
+    page: Int,
+    matureContentEnabled: Boolean? = null,
+    filterSelection: HomeFilterSelection? = null,
+    exactPhraseOverride: Boolean? = null,
+): WorkshopBrowseQuery {
+    val resolvedSort = WorkshopSort.entries.firstOrNull { it.name == sort } ?: WorkshopSort.TRENDING
+    val usePcFriendActivitySemantics = usesPcFriendActivitySemantics()
+    val resolvedMatureContent = matureContentEnabled ?: allowNsfw
+    val filters = filterSelection ?: initialFilterSelection(resolvedMatureContent)
+    return WorkshopBrowseQuery(
         page = page,
         pageSize = RESULTS_PAGE_SIZE,
         searchText = searchText,
         creatorId = creatorId,
-        types = types.splitValues().mapNotNullTo(linkedSetOf()) { name -> WorkshopType.entries.firstOrNull { it.name == name } },
+        types = filters.types,
         tags = tags.splitValues().toSet(),
         excludedTags = excludedTags.splitValues().toSet(),
-        officialTags = officialTags.splitValues().toSet(),
-        excludedOfficialTags = excludedOfficialTags.splitValues().toSet(),
+        genres = filters.genres,
+        officialTags = filters.officialTags,
+        excludedOfficialTags = filters.excludedOfficialTags,
+        resolutions = filters.resolutions,
         requiredTagGroups = requiredTagGroups.splitGroups(),
-        days = days,
-        exactPhrase = exactPhrase,
-        sort = WorkshopSort.entries.firstOrNull { it.name == sort } ?: WorkshopSort.TRENDING,
-        allowNsfw = allowNsfw,
+        ratings = filters.ratings,
+        days = if (usePcFriendActivitySemantics) days else filters.days,
+        exactPhrase = exactPhraseOverride ?: exactPhrase,
+        sort = if (usePcFriendActivitySemantics) resolvedSort else filters.sort,
+        allowNsfw = resolvedMatureContent,
         mobileCompatibleOnly = mobileCompatibleOnly,
         createdAfterEpochSeconds = createdAfterEpochSeconds,
         createdBeforeEpochSeconds = createdBeforeEpochSeconds,
+    )
+}
+
+internal fun DiscoverResultsDestination.usesPcFriendActivitySemantics(): Boolean =
+    sort == WorkshopSort.FRIENDS_FAVORITES.name || sort == WorkshopSort.FRIENDS_CREATED.name
+
+internal fun DiscoverResultsDestination.supportsResultSortFiltering(): Boolean =
+    collectionId == null && !usesPcFriendActivitySemantics()
+
+internal fun DiscoverResultsDestination.initialFilterSelection(matureContentEnabled: Boolean): HomeFilterSelection {
+    val resolvedSort = WorkshopSort.entries.firstOrNull { it.name == sort } ?: WorkshopSort.TRENDING
+    val resolvedTypes =
+        types.splitValues().mapNotNullTo(linkedSetOf()) { name -> WorkshopType.entries.firstOrNull { it.name == name } }
+    val resolvedRatings =
+        ratings.splitValues().mapNotNullTo(linkedSetOf()) { name -> WorkshopRating.entries.firstOrNull { it.name == name } }
+            .ifEmpty {
+                if (usesPcFriendActivitySemantics()) {
+                    WorkshopRating.entries
+                        .filterTo(linkedSetOf()) { rating ->
+                            rating != WorkshopRating.ALL && (matureContentEnabled || rating != WorkshopRating.MATURE)
+                        }
+                } else {
+                    setOf(WorkshopRating.EVERYONE)
+                }
+            }
+    return HomeFilterSelection(
+        sort = resolvedSort,
+        days = days,
+        types = resolvedTypes,
+        ratings = resolvedRatings,
+        genres = genres.splitValues().toSet().ifEmpty { DEFAULT_HOME_GENRE_SELECTION },
+        officialTags = officialTags.splitValues().toSet(),
+        excludedOfficialTags = excludedOfficialTags.splitValues().toSet(),
+        resolutions = resolutions.splitValues().toSet().ifEmpty { DEFAULT_HOME_RESOLUTION_SELECTION },
+    ).normalized(matureContentEnabled)
+}
+
+private fun DiscoverResultsState.asHomeFilterUiState(destination: DiscoverResultsDestination): HomeUiState =
+    HomeUiState(
+        exactPhrase = exactPhrase,
+        selectedTypes = filterSelection.types,
+        selectedRatings = filterSelection.ratings,
+        selectedGenres = filterSelection.genres,
+        selectedOfficialTags = filterSelection.officialTags,
+        selectedExcludedOfficialTags = filterSelection.excludedOfficialTags,
+        selectedResolutions = filterSelection.resolutions,
+        sort = filterSelection.sort.takeIf { destination.supportsResultSortFiltering() } ?: WorkshopSort.TRENDING,
+        days = filterSelection.days,
+        matureContentEnabled = matureContentEnabled,
     )
 
 private fun DiscoverResultsDestination.filterRequiredTagGroups(items: List<WorkshopSummary>): List<WorkshopSummary> {
@@ -487,3 +841,11 @@ private fun String.splitGroups(): List<Set<String>> =
     split(DISCOVER_GROUP_SEPARATOR).map(String::splitValues).filter(List<String>::isNotEmpty).map(List<String>::toSet)
 
 private const val RESULTS_PAGE_SIZE = 20
+private const val DISCOVER_RESULTS_LARGE_COLUMNS = 1
+private const val DISCOVER_RESULTS_GRID_COLUMNS = 2
+private val DISCOVER_RESULTS_TOGGLE_INSET = 3.dp
+private val DISCOVER_RESULTS_TOGGLE_BUTTON_SIZE = 42.dp
+private val DISCOVER_RESULTS_TOGGLE_HEIGHT = 48.dp
+private val DISCOVER_RESULTS_TOGGLE_WIDTH = 90.dp
+private const val DISCOVER_RESULTS_TOGGLE_MOTION_MS = 220
+private val DISCOVER_RESULTS_GRID_SPACING = 12.dp
