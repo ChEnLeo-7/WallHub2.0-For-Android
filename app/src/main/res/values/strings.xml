@@ -618,6 +618,7 @@
     <string name='detail_hold_double_speed'>Playing at %1$s speed...</string>
     <string name='detail_post_comment'>Post comment</string>
     <string name='detail_preparing_video'>Preparing video…</string>
+    <string name='detail_buffering_video_seconds'>Buffering %1$d / %2$d seconds…</string>
     <string name='detail_preview_image'>Preview of %1$s</string>
     <string name='detail_project_id'>Project ID</string>
     <string name='detail_project_id_copied'>Project ID copied: %1$d</string>

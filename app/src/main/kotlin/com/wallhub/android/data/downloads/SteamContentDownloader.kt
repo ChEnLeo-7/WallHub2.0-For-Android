@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.RandomAccessFile
 import java.util.ArrayDeque
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.min
 import `in`.dragonbra.javasteam.util.Adler32 as SteamAdler32
 
@@ -214,12 +215,19 @@ internal fun findVerifiedChunkOffsets(
     return verifiedOffsets
 }
 
-internal data class StreamChunkRequest(
+internal class StreamChunkRequest(
     val id: Long,
     val deferred: Deferred<ByteArray>,
     val job: Job,
-    var priority: SteamStreamChunkPriority,
-)
+    private val priorityState: AtomicReference<SteamStreamChunkPriority>,
+) {
+    val priority: SteamStreamChunkPriority
+        get() = priorityState.get()
+
+    fun promote() {
+        priorityState.set(SteamStreamChunkPriority.FOREGROUND)
+    }
+}
 
 internal class SteamContentDownloader {
     suspend fun download(
@@ -293,7 +301,7 @@ internal class SteamContentDownloader {
             Log.i(
                 STEAM_CONTENT_LOG_TAG,
                 "Steam CDN chunkConcurrency=${options.chunkConcurrency}, " +
-                    "pool=${access.servers.take(CDN_PARALLEL_SERVER_COUNT).joinToString { server ->
+                    "pool=${access.servers.take(MAX_CDN_ATTEMPTS).joinToString { server ->
                         resolveCdnRequestHost(server.vHost, server.host) ?: "unknown"
                     }}",
             )

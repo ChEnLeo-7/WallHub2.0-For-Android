@@ -22,7 +22,7 @@ internal class SteamVideoStreamCache(
         (limitBytes * CACHE_PREFETCH_PERCENT / 100L)
             .coerceIn(
                 minimumValue = minOf(limitBytes, STREAM_MIN_CACHE_LIMIT_BYTES),
-                maximumValue = STEAM_STREAM_MAX_AHEAD_BYTES,
+                maximumValue = limitBytes,
             )
     private val rootDirectory = rootDirectory.canonicalFile
     private val cacheDirectory = File(this.rootDirectory, namespace)
@@ -71,6 +71,39 @@ internal class SteamVideoStreamCache(
     }
 
     /**
+     * Spools an encrypted response to disk so a completed network request never has
+     * to occupy a decode slot or retain its byte array before the next request starts.
+     */
+    suspend fun stageEncrypted(
+        requestId: Long,
+        chunkOffset: Long,
+        data: ByteArray,
+    ): SteamEncryptedChunkSpool {
+        state.mutex.withLock {
+            ensureCacheDirectory()
+            initializeState()
+        }
+        val file = File(cacheDirectory, "$SPOOL_PREFIX$requestId-$chunkOffset$SPOOL_SUFFIX")
+        try {
+            file.outputStream().use { output ->
+                output.write(data)
+                output.flush()
+            }
+            return SteamEncryptedChunkSpool(file, data.size)
+        } catch (error: Throwable) {
+            file.delete()
+            throw error
+        }
+    }
+
+    fun readStaged(spool: SteamEncryptedChunkSpool): ByteArray {
+        check(spool.file.isFile && spool.file.length() == spool.length.toLong()) {
+            "Steam encrypted chunk spool is incomplete"
+        }
+        return spool.file.readBytes()
+    }
+
+    /**
      * Commits a payload already authenticated by DepotChunk.process().
      */
     suspend fun commitVerified(
@@ -93,14 +126,15 @@ internal class SteamVideoStreamCache(
                     output.write(data)
                     output.flush()
                 }
-                state.mutex.withLock {
+                val evictionVictims = state.mutex.withLock {
                     val replacedLength = file.takeIf(File::isFile)?.length() ?: 0L
                     moveReplacing(partial, file)
                     state.totalBytes += file.length() - replacedLength
                     touch(file)
                     verifiedFiles += file.absolutePath
-                    evictIfNeeded()
+                    selectEvictionVictimsLocked()
                 }
+                deleteEvictionVictims(evictionVictims)
             } finally {
                 partial.delete()
             }
@@ -127,11 +161,14 @@ internal class SteamVideoStreamCache(
         return valid
     }
 
-    private fun evictIfNeeded() {
-        if (state.totalBytes <= limitBytes) return
+    private fun selectEvictionVictimsLocked(): List<EvictionVictim> {
+        if (state.totalBytes <= limitBytes) return emptyList()
 
-        val lowWaterBytes = (limitBytes * CACHE_LOW_WATER_PERCENT / 100L).coerceAtLeast(0L)
-        while (state.totalBytes > lowWaterBytes && state.accessQueue.isNotEmpty()) {
+        // Evict only the current overflow. The former 80% low-water sweep deleted
+        // roughly one hundred 1 MiB chunks while holding the metadata lock and
+        // periodically stopped the entire network/decode pipeline for many seconds.
+        val victims = mutableListOf<EvictionVictim>()
+        while (state.totalBytes > limitBytes && state.accessQueue.isNotEmpty()) {
             val entry = state.accessQueue.remove()
             val file = entry.file
             if (state.currentEntries[file.absolutePath]?.sequence != entry.sequence) continue
@@ -140,7 +177,23 @@ internal class SteamVideoStreamCache(
                 continue
             }
             verifiedFiles.remove(file.absolutePath)
-            deleteTracked(file)
+            state.currentEntries.remove(file.absolutePath)
+            state.totalBytes = (state.totalBytes - entry.length).coerceAtLeast(0L)
+            victims += EvictionVictim(file, entry.length)
+        }
+        return victims
+    }
+
+    private suspend fun deleteEvictionVictims(victims: List<EvictionVictim>) {
+        if (victims.isEmpty()) return
+        val failed = victims.filterNot { victim -> !victim.file.isFile || victim.file.delete() }
+        if (failed.isEmpty()) return
+        state.mutex.withLock {
+            failed.forEach { victim ->
+                if (!victim.file.isFile || victim.file.absolutePath in state.currentEntries) return@forEach
+                state.totalBytes += victim.file.length()
+                addAccessEntry(victim.file, victim.file.lastModified())
+            }
         }
     }
 
@@ -156,7 +209,7 @@ internal class SteamVideoStreamCache(
             }
         }
         state.initialized = true
-        evictIfNeeded()
+        selectEvictionVictimsLocked().forEach { victim -> victim.file.delete() }
     }
 
     private fun ensureCacheDirectory() {
@@ -231,6 +284,11 @@ internal class SteamVideoStreamCache(
         val sequence: Long,
     )
 
+    private data class EvictionVictim(
+        val file: File,
+        val length: Long,
+    )
+
     private class RootState(
         val mutex: Mutex = Mutex(),
         val accessQueue: PriorityQueue<AccessEntry> = PriorityQueue(compareBy(AccessEntry::lastModified)),
@@ -243,8 +301,12 @@ internal class SteamVideoStreamCache(
     internal companion object {
         private const val CHUNK_SUFFIX = ".chunk"
         private const val PARTIAL_SUFFIX = ".part"
-        private const val CACHE_LOW_WATER_PERCENT = 80L
-        private const val CACHE_PREFETCH_PERCENT = 60L
+        private const val SPOOL_PREFIX = "encrypted-"
+        private const val SPOOL_SUFFIX = ".spool.part"
+        // Keep one eviction-band of headroom for older videos and chunk-boundary
+        // overshoot. With the default 512 MiB cache this leaves 409.6 MiB, enough
+        // for the playback window of a high-bitrate source without restoring the old 256 MiB cap.
+        private const val CACHE_PREFETCH_PERCENT = 80L
         private const val CHECKSUM_BUFFER_SIZE = 64 * 1024
         private const val MIN_QUEUE_COMPACT_SIZE = 64
         private val statesLock = Any()
@@ -279,5 +341,14 @@ internal class SteamVideoStreamCache(
                 clearedBytes
             }
         }
+    }
+}
+
+internal data class SteamEncryptedChunkSpool(
+    val file: File,
+    val length: Int,
+) {
+    fun delete() {
+        file.delete()
     }
 }

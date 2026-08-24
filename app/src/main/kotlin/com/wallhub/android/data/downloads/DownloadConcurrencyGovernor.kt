@@ -120,6 +120,7 @@ internal class DownloadMemoryBudget private constructor(
 ) {
     private val mutex = Mutex()
     private val waiters = ArrayDeque<Waiter>()
+    private val promotedRequests = mutableSetOf<Long>()
     private var availableBytes = capacityBytes
 
     constructor(maxHeapBytes: Long) : this(downloadMemoryCapacityBytes(maxHeapBytes), true)
@@ -127,14 +128,36 @@ internal class DownloadMemoryBudget private constructor(
     suspend fun <T> withPermit(
         requestedBytes: Long,
         priority: SteamStreamChunkPriority = SteamStreamChunkPriority.PREFETCH,
+        requestId: Long? = null,
+        order: Long = Long.MAX_VALUE,
         block: suspend () -> T,
     ): T {
-        val reservation = acquire(requestedBytes, priority)
+        val reservation =
+            try {
+                acquire(requestedBytes, priority, requestId, order)
+            } catch (error: Throwable) {
+                requestId?.let { id -> mutex.withLock { promotedRequests.remove(id) } }
+                throw error
+            }
         return try {
             block()
         } finally {
-            withContext(NonCancellable) { reservation.release() }
+            withContext(NonCancellable) {
+                reservation.release()
+                requestId?.let { id -> mutex.withLock { promotedRequests.remove(id) } }
+            }
         }
+    }
+
+    /** Promotes an in-flight stream request across the memory/decode queue as well as the network queue. */
+    suspend fun promote(requestId: Long) {
+        val signals = mutableListOf<CompletableDeferred<Unit>>()
+        mutex.withLock {
+            promotedRequests += requestId
+            waiters.firstOrNull { waiter -> waiter.requestId == requestId }?.priority = SteamStreamChunkPriority.FOREGROUND
+            dispatchWaitersLocked(signals)
+        }
+        signals.forEach { signal -> signal.complete(Unit) }
     }
 
     suspend fun <T> withExclusivePermit(block: suspend () -> T): T = withPermit(capacityBytes, block = block)
@@ -142,6 +165,8 @@ internal class DownloadMemoryBudget private constructor(
     private suspend fun acquire(
         requestedBytes: Long,
         priority: SteamStreamChunkPriority,
+        requestId: Long?,
+        order: Long,
     ): Reservation {
         require(requestedBytes in 1L..capacityBytes) {
             "Requested memory $requestedBytes exceeds budget capacity $capacityBytes"
@@ -149,11 +174,17 @@ internal class DownloadMemoryBudget private constructor(
         val bytes = requestedBytes
         val waiter =
             mutex.withLock {
+                val effectivePriority =
+                    if (requestId != null && requestId in promotedRequests) {
+                        SteamStreamChunkPriority.FOREGROUND
+                    } else {
+                        priority
+                    }
                 if (waiters.isEmpty() && availableBytes >= bytes) {
                     availableBytes -= bytes
                     null
                 } else {
-                    Waiter(bytes, priority, CompletableDeferred()).also(waiters::addLast)
+                    Waiter(bytes, effectivePriority, requestId, order, CompletableDeferred()).also(waiters::addLast)
                 }
             }
         if (waiter == null) return Reservation(this, bytes)
@@ -173,23 +204,28 @@ internal class DownloadMemoryBudget private constructor(
         val signals = mutableListOf<CompletableDeferred<Unit>>()
         mutex.withLock {
             availableBytes = (availableBytes + bytes).coerceAtMost(capacityBytes)
-            while (waiters.isNotEmpty()) {
-                val next =
-                    waiters
-                        .withIndex()
-                        .minWithOrNull(
-                            compareBy<IndexedValue<Waiter>> { it.value.priority }
-                                .thenBy { it.index },
-                        )
-                        ?.value
-                        ?: break
-                if (availableBytes < next.bytes) break
-                waiters.remove(next)
-                availableBytes -= next.bytes
-                signals += next.signal
-            }
+            dispatchWaitersLocked(signals)
         }
         signals.forEach { it.complete(Unit) }
+    }
+
+    private fun dispatchWaitersLocked(signals: MutableList<CompletableDeferred<Unit>>) {
+        while (waiters.isNotEmpty()) {
+            val next =
+                waiters
+                    .withIndex()
+                    .minWithOrNull(
+                        compareBy<IndexedValue<Waiter>> { it.value.priority }
+                            .thenBy { it.value.order }
+                            .thenBy { it.index },
+                    )
+                    ?.value
+                    ?: break
+            if (availableBytes < next.bytes) break
+            waiters.remove(next)
+            availableBytes -= next.bytes
+            signals += next.signal
+        }
     }
 
     internal class Reservation(
@@ -207,7 +243,9 @@ internal class DownloadMemoryBudget private constructor(
 
     private data class Waiter(
         val bytes: Long,
-        val priority: SteamStreamChunkPriority,
+        var priority: SteamStreamChunkPriority,
+        val requestId: Long?,
+        val order: Long,
         val signal: CompletableDeferred<Unit>,
     )
 

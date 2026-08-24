@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -61,6 +62,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.wallhub.android.R
@@ -73,10 +75,12 @@ import com.wallhub.android.core.model.WorkshopVideoStreamSession
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.IOException
@@ -233,6 +237,8 @@ fun OnlineVideoPlayerScreen(
                 when {
                     state.isLoading -> {
                         PlayerLoadingIndicator(
+                            availableDurationMs = 0L,
+                            targetDurationMs = 0L,
                             modifier =
                                 Modifier
                                     .fillMaxSize()
@@ -316,8 +322,10 @@ internal fun createSteamChunkPlayer(
                     STREAM_MAX_BUFFER_MS,
                     STREAM_BUFFER_FOR_PLAYBACK_MS,
                     STREAM_BUFFER_FOR_REBUFFER_MS,
-                ).setTargetBufferBytes(STREAM_TARGET_BUFFER_BYTES)
-                .setPrioritizeTimeOverSizeThresholds(false)
+                ).setTargetBufferBytes(steamPlayerTargetBufferBytes(Runtime.getRuntime().maxMemory()))
+                // A fixed byte threshold represented only ~1.34 seconds for Workshop
+                // item 3423261668. Preserve a real time buffer for high-bitrate files.
+                .setPrioritizeTimeOverSizeThresholds(true)
                 .build(),
         ).build()
         .also { player ->
@@ -330,6 +338,8 @@ internal fun createSteamChunkPlayer(
             player.setMediaSource(mediaSource)
             if (startPositionMs > 0L) player.seekTo(startPositionMs)
             player.prepare()
+            // Start as soon as Media3 has its small decode-ready window. Steam
+            // continues filling the larger disk buffer while playback advances.
             player.playWhenReady = true
         }
 
@@ -340,6 +350,7 @@ private fun rememberSteamChunkPlaybackState(
     onFirstFrameRendered: () -> Unit,
     releasePlayerWhenDisposed: Boolean,
 ): SteamChunkPlayback {
+    val bufferState by stream.playbackBufferState.collectAsStateWithLifecycle()
     var renderedFirstFrame by remember(stream, player) {
         mutableStateOf(player.videoSize.width > 0 && player.videoSize.height > 0)
     }
@@ -365,28 +376,67 @@ private fun rememberSteamChunkPlaybackState(
                     playbackError = error.toDetailUiText(R.string.detail_online_playback_failed)
                 }
 
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    Log.d(
+                        STREAM_PLAYER_LOG_TAG,
+                        "state=$playbackState positionMs=${player.currentPosition} " +
+                            "bufferedMs=${(player.bufferedPosition - player.currentPosition).coerceAtLeast(0L)}",
+                    )
+                }
+
+                override fun onPositionDiscontinuity(
+                    oldPosition: Player.PositionInfo,
+                    newPosition: Player.PositionInfo,
+                    reason: Int,
+                ) {
+                    player.reportPlaybackDemand(stream)
+                }
+
                 override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) {
-                    stream.updatePlaybackDemand(playbackParameters.speed, player.duration)
+                    player.reportPlaybackDemand(stream)
                 }
 
                 override fun onTimelineChanged(
                     timeline: Timeline,
                     reason: Int,
                 ) {
-                    stream.updatePlaybackDemand(player.playbackParameters.speed, player.duration)
+                    player.reportPlaybackDemand(stream)
+                }
+            }
+        val analyticsListener =
+            object : AnalyticsListener {
+                override fun onDroppedVideoFrames(
+                    eventTime: AnalyticsListener.EventTime,
+                    droppedFrames: Int,
+                    elapsedMs: Long,
+                ) {
+                    Log.w(
+                        STREAM_PLAYER_LOG_TAG,
+                        "droppedFrames=$droppedFrames elapsedMs=$elapsedMs " +
+                            "positionMs=${player.currentPosition}",
+                    )
                 }
             }
         player.addListener(listener)
-        stream.updatePlaybackDemand(player.playbackParameters.speed, player.duration)
+        player.addAnalyticsListener(analyticsListener)
+        player.reportPlaybackDemand(stream)
         onDispose {
             player.removeListener(listener)
+            player.removeAnalyticsListener(analyticsListener)
             if (releasePlayerWhenDisposed) player.release()
+        }
+    }
+    LaunchedEffect(player, stream) {
+        while (isActive) {
+            player.reportPlaybackDemand(stream)
+            delay(STREAM_DEMAND_REPORT_INTERVAL_MS)
         }
     }
     return SteamChunkPlayback(
         player = player,
         renderedFirstFrame = renderedFirstFrame,
         error = playbackError,
+        bufferState = bufferState,
     )
 }
 
@@ -394,7 +444,17 @@ internal data class SteamChunkPlayback(
     val player: ExoPlayer,
     val renderedFirstFrame: Boolean,
     val error: DetailUiText?,
+    val bufferState: com.wallhub.android.core.model.WorkshopVideoBufferState,
 )
+
+private fun ExoPlayer.reportPlaybackDemand(stream: WorkshopVideoStreamSession) {
+    stream.updatePlaybackDemand(
+        playbackSpeed = playbackParameters.speed,
+        playbackPositionMs = currentPosition,
+        bufferedPositionMs = bufferedPosition,
+        durationMs = duration,
+    )
+}
 
 @Composable
 internal fun SteamChunkVideoPlayer(
@@ -409,6 +469,7 @@ internal fun SteamChunkVideoPlayer(
             player = playback.player,
             fullscreen = fullscreen,
             onFullscreenChange = onFullscreenChange,
+            externalBufferedPositionMs = playback.bufferState.bufferedPositionMs,
             modifier = Modifier.fillMaxSize(),
         )
         AnimatedVisibility(
@@ -427,7 +488,11 @@ internal fun SteamChunkVideoPlayer(
                     ),
             modifier = Modifier.fillMaxSize(),
         ) {
-            PlayerLoadingIndicator(modifier = Modifier.fillMaxSize())
+            PlayerLoadingIndicator(
+                availableDurationMs = playback.bufferState.availableDurationMs,
+                targetDurationMs = playback.bufferState.targetDurationMs,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
         playback.error?.let { error ->
             Surface(
@@ -451,12 +516,25 @@ internal fun SteamChunkVideoPlayer(
 }
 
 @Composable
-private fun PlayerLoadingIndicator(modifier: Modifier = Modifier) {
+private fun PlayerLoadingIndicator(
+    availableDurationMs: Long,
+    targetDurationMs: Long,
+    modifier: Modifier = Modifier,
+) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator(modifier = Modifier.size(WallHubSizeTokens.compactIconButton))
             Text(
-                text = stringResource(R.string.detail_preparing_video),
+                text =
+                    if (targetDurationMs > 0L) {
+                        stringResource(
+                            R.string.detail_buffering_video_seconds,
+                            (availableDurationMs / 1_000L).coerceAtLeast(0L),
+                            (targetDurationMs / 1_000L).coerceAtLeast(1L),
+                        )
+                    } else {
+                        stringResource(R.string.detail_preparing_video)
+                    },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = WallHubSpacing.sm),
@@ -596,9 +674,20 @@ private class SteamChunkDataSource(
     }
 }
 
-private const val STREAM_MIN_BUFFER_MS = 8_000
-private const val STREAM_MAX_BUFFER_MS = 30_000
-private const val STREAM_BUFFER_FOR_PLAYBACK_MS = 1_000
-private const val STREAM_BUFFER_FOR_REBUFFER_MS = 2_000
-private const val STREAM_TARGET_BUFFER_BYTES = 16 * 1024 * 1024
+internal fun steamPlayerTargetBufferBytes(maxHeapBytes: Long): Int =
+    (maxHeapBytes / STREAM_BUFFER_HEAP_DIVISOR)
+        .coerceIn(STREAM_TARGET_BUFFER_MIN_BYTES, STREAM_TARGET_BUFFER_MAX_BYTES)
+        .toInt()
+
+// Media3 only keeps a small decode-ready window in the managed heap. The larger
+// playback safety window lives in the decrypted Steam chunk disk cache.
+private const val STREAM_MIN_BUFFER_MS = 4_000
+private const val STREAM_MAX_BUFFER_MS = 8_000
+private const val STREAM_BUFFER_FOR_PLAYBACK_MS = 2_000
+private const val STREAM_BUFFER_FOR_REBUFFER_MS = 4_000
+private const val STREAM_BUFFER_HEAP_DIVISOR = 5L
+private const val STREAM_TARGET_BUFFER_MIN_BYTES = 48L * 1024L * 1024L
+private const val STREAM_TARGET_BUFFER_MAX_BYTES = 96L * 1024L * 1024L
 private const val STREAM_LOAD_RETRY_COUNT = 5
+private const val STREAM_DEMAND_REPORT_INTERVAL_MS = 500L
+private const val STREAM_PLAYER_LOG_TAG = "WallHubStreamPlayer"

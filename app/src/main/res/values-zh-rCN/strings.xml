@@ -591,6 +591,7 @@
     <string name='detail_hold_double_speed'>正在以 %1$s 倍速播放...</string>
     <string name='detail_post_comment'>发表评论</string>
     <string name='detail_preparing_video'>正在准备视频…</string>
+    <string name='detail_buffering_video_seconds'>正在缓冲 %1$d / %2$d 秒…</string>
     <string name='detail_preview_image'>%1$s 预览图</string>
     <string name='detail_project_id'>项目 ID</string>
     <string name='detail_project_id_copied'>已复制项目 ID：%1$d</string>

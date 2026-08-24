@@ -2,6 +2,7 @@ package com.wallhub.android.data.downloads
 
 import android.util.Log
 import com.wallhub.android.core.model.SteamContentCredential
+import com.wallhub.android.core.model.WorkshopVideoBufferState
 import `in`.dragonbra.javasteam.enums.EOSType
 import `in`.dragonbra.javasteam.enums.EResult
 import `in`.dragonbra.javasteam.steam.cdn.DepotChunk
@@ -41,6 +42,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -59,11 +62,11 @@ import java.io.FileInputStream
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -151,11 +154,21 @@ internal class SteamContentVideoStream internal constructor(
     private val inFlightLock = Any()
     private val inFlightChunks = mutableMapOf<Long, StreamChunkRequest>()
     private val nextChunkRequestId = AtomicLong(0L)
+    private val stagedRequestCount = AtomicInteger(0)
     private val prefetchLock = Any()
     private val prefetchGeneration = AtomicLong(0L)
     private val lastReadEnd = AtomicLong(-1L)
     private val dynamicAheadBytes = AtomicLong(STEAM_STREAM_AHEAD_BYTES)
+    private val dynamicLowWaterBytes = AtomicLong(STEAM_STREAM_LOW_WATER_BYTES)
     private val latestReadPosition = AtomicLong(0L)
+    private val lastBufferMetricsLogAtMs = AtomicLong(0L)
+    private val byteRateEstimator = SteamStreamByteRateEstimator(contentLength)
+    private val latestPlaybackClock = AtomicReference(SteamStreamPlaybackClock())
+    private val latestEstimatedBytesPerMillisecond = AtomicReference(0.0)
+    private val contiguousBufferTracker = SteamContiguousBufferTracker(chunks)
+    private val mutablePlaybackBufferState = MutableStateFlow(WorkshopVideoBufferState())
+
+    override val playbackBufferState = mutablePlaybackBufferState.asStateFlow()
 
     @Volatile
     private var latestCdnHost: String? =
@@ -168,18 +181,65 @@ internal class SteamContentVideoStream internal constructor(
 
     override fun updatePlaybackDemand(
         playbackSpeed: Float,
+        playbackPositionMs: Long,
+        bufferedPositionMs: Long,
         durationMs: Long,
     ) {
-        val targetBytes =
-            steamStreamDynamicAheadBytes(
+        latestPlaybackClock.set(
+            SteamStreamPlaybackClock(
+                playbackPositionMs = playbackPositionMs,
+                bufferedPositionMs = bufferedPositionMs,
+                durationMs = durationMs,
+            ),
+        )
+        val estimatedBytesPerMillisecond =
+            byteRateEstimator.update(
+                readPosition = latestReadPosition.get(),
+                playbackPositionMs = playbackPositionMs,
+                bufferedPositionMs = bufferedPositionMs,
+                durationMs = durationMs,
+            )
+        latestEstimatedBytesPerMillisecond.set(estimatedBytesPerMillisecond)
+        val window =
+            steamStreamTimeBufferWindow(
                 contentLength = contentLength,
                 durationMs = durationMs,
-                playbackSpeed = playbackSpeed,
                 maximumAheadBytes = streamCache.prefetchCapacityBytes,
+                observedBytesPerMillisecond = estimatedBytesPerMillisecond,
             )
-        if (dynamicAheadBytes.getAndSet(targetBytes) != targetBytes) {
-            val afterExclusive = lastReadEnd.get() + 1L
-            if (afterExclusive > 0L) scheduleAheadPrefetch(afterExclusive)
+        val mediaBufferedMs = (bufferedPositionMs - playbackPositionMs).coerceAtLeast(0L)
+        val mediaBufferedBytes =
+            kotlin.math.ceil(estimatedBytesPerMillisecond * mediaBufferedMs.toDouble())
+                .toLong()
+                .coerceAtLeast(0L)
+        val diskTargetBytes = (window.targetBytes - mediaBufferedBytes).coerceAtLeast(1L)
+        val diskLowWaterBytes =
+            (window.lowWaterBytes - mediaBufferedBytes).coerceIn(1L, diskTargetBytes)
+        // Media3 and the verified disk range form one logical buffer. Subtract
+        // Media3's decode-ready bytes so the displayed/refill watermarks remain
+        // 15 seconds and 8 seconds in total rather than stacking both layers.
+        dynamicLowWaterBytes.set(diskLowWaterBytes)
+        dynamicAheadBytes.set(diskTargetBytes)
+        // A periodic playback report also retries a failed/paused refill. The range
+        // calculator remains the sole 10-second low-water gate.
+        val afterExclusive = lastReadEnd.get() + 1L
+        if (afterExclusive > 0L) scheduleAheadPrefetch(afterExclusive)
+        publishPlaybackBufferState()
+        val nowMs = System.currentTimeMillis()
+        val previousLogAtMs = lastBufferMetricsLogAtMs.get()
+        if (nowMs - previousLogAtMs >= STEAM_STREAM_BUFFER_LOG_INTERVAL_MS &&
+            lastBufferMetricsLogAtMs.compareAndSet(previousLogAtMs, nowMs)
+        ) {
+            Log.d(
+                STEAM_CONTENT_LOG_TAG,
+                "Steam stream playbackPositionMs=$playbackPositionMs, mediaBufferedMs=$mediaBufferedMs, " +
+                    "contiguousAvailableMs=${playbackBufferState.value.availableDurationMs}, " +
+                    "targetReached=${playbackBufferState.value.targetReached}, " +
+                    "diskTargetBytes=${window.targetBytes}, " +
+                    "diskLowWaterBytes=${window.lowWaterBytes}, " +
+                    "estimatedMbps=${"%.1f".format(estimatedBytesPerMillisecond * 8_000.0 / 1_000_000.0)}, " +
+                    "speed=$playbackSpeed, durationMs=$durationMs",
+            )
         }
     }
 
@@ -188,6 +248,9 @@ internal class SteamContentVideoStream internal constructor(
 
     @Volatile
     private var aheadBufferedEndInclusive = -1L
+
+    @Volatile
+    private var refillActive = true
 
     private val prefetchFrontier = StreamPrefetchFrontier()
     private val transferMetrics = SteamChunkTransferMetrics()
@@ -268,7 +331,10 @@ internal class SteamContentVideoStream internal constructor(
         length: Int,
         priority: SteamStreamChunkPriority,
     ): ByteArray {
-        streamCache.readSlice(chunk.offset, chunk.uncompressedLength, chunk.checksum, offset, length)?.let { return it }
+        streamCache.readSlice(chunk.offset, chunk.uncompressedLength, chunk.checksum, offset, length)?.let { cached ->
+            onVerifiedChunkCached(chunk)
+            return cached
+        }
         val downloaded = withSteamCdnRecovery {
             requestChunk(chunk, priority).await()
         }
@@ -285,27 +351,29 @@ internal class SteamContentVideoStream internal constructor(
             val existing = inFlightChunks[chunk.offset]
             if (existing != null) {
                 if (priority == SteamStreamChunkPriority.FOREGROUND) {
-                    existing.priority = SteamStreamChunkPriority.FOREGROUND
+                    existing.promote()
                 }
                 reusedRequest = existing
                 return@synchronized existing.deferred
             }
             val requestId = nextChunkRequestId.incrementAndGet()
             val result = CompletableDeferred<ByteArray>()
+            val priorityState = AtomicReference(priority)
             val request =
                 fetchScope.launch(start = CoroutineStart.LAZY) {
                     var metricsRequestStarted = false
+                    var stagedEncrypted: SteamEncryptedChunkSpool? = null
                     try {
                         val downloaded =
                             run {
-                                val startedAtNanos = System.nanoTime()
-                                transferMetrics.requestStarted()
-                                metricsRequestStarted = true
                                 // The exact user setting governs active CDN requests. Release
                                 // the network permit as soon as the compressed payload arrives;
                                 // high-memory LZMA work must not reduce network concurrency.
-                                val encrypted =
-                                    networkScheduler.withPermit(priority, requestId) {
+                                var encryptedPayload: ByteArray? =
+                                    networkScheduler.withPermit(priorityState.get(), requestId) {
+                                        val startedAtNanos = System.nanoTime()
+                                        transferMetrics.requestStarted()
+                                        metricsRequestStarted = true
                                         downloadEncryptedChunk(
                                             cdnClient = cdnClient,
                                             servers = access.servers,
@@ -317,39 +385,77 @@ internal class SteamContentVideoStream internal constructor(
                                             onSuccess = { server ->
                                                 latestCdnHost = resolveCdnRequestHost(server.vHost, server.host)
                                             },
-                                        )
+                                        ).also {
+                                            transferMetrics
+                                                .requestCompleted(chunk.compressedLength, startedAtNanos)
+                                                ?.let { metrics ->
+                                                    Log.d(
+                                                        STEAM_CONTENT_LOG_TAG,
+                                                        "Steam stream chunks=${metrics.completedChunks}, " +
+                                                            "aggregate=${"%.1f".format(metrics.aggregateMbps)}Mbps, " +
+                                                            "active=${metrics.activeRequests}, peak=${metrics.peakActiveRequests}, " +
+                                                            "staged=${stagedRequestCount.get()}, " +
+                                                            "configuredConcurrency=$prefetchConcurrency",
+                                                    )
+                                                }
+                                            metricsRequestStarted = false
+                                        }
                                     }
-                                transferMetrics
-                                    .requestCompleted(chunk.compressedLength, startedAtNanos)
-                                    ?.let { metrics ->
-                                        Log.d(
-                                            STEAM_CONTENT_LOG_TAG,
-                                            "Steam stream chunks=${metrics.completedChunks}, " +
-                                                "aggregate=${"%.1f".format(metrics.aggregateMbps)}Mbps, " +
-                                                "active=${metrics.activeRequests}, peak=${metrics.peakActiveRequests}, " +
-                                                "configuredConcurrency=$prefetchConcurrency",
+                                if (priorityState.get() == SteamStreamChunkPriority.PREFETCH) {
+                                    stagedEncrypted =
+                                        streamCache.stageEncrypted(
+                                            requestId = requestId,
+                                            chunkOffset = chunk.offset,
+                                            data = checkNotNull(encryptedPayload),
                                         )
-                                    }
-                                metricsRequestStarted = false
+                                    stagedRequestCount.incrementAndGet()
+                                    // Do not retain the network array while waiting in the
+                                    // decode queue; the encrypted spool is bounded by the
+                                    // requested playback range and removed after processing.
+                                    encryptedPayload = null
+                                }
                                 val memoryReservation = estimatedSteamChunkPeakMemoryBytes(
                                     chunk.compressedLength,
                                     chunk.uncompressedLength,
                                 ).coerceAtLeast(STEAM_STREAM_MIN_REQUEST_MEMORY_BYTES)
                                     .coerceAtMost(steamStreamMemoryBudgetBytes(Runtime.getRuntime().maxMemory()))
-                                memoryScheduler.withPermit(memoryReservation, priority) {
-                                val payload = withContext(decodeDispatcher) {
-                                    decodeDepotChunk(chunk, encrypted, access.depotKey)
-                                }
-                                // Keep the memory reservation until the verified payload has
-                                // reached disk; otherwise completed chunks can accumulate while
-                                // slow storage serializes cache writes.
-                                streamCache.commitVerified(chunk.offset, chunk.checksum, payload)
-                                payload
+                                memoryScheduler.withPermit(
+                                    requestedBytes = memoryReservation,
+                                    priority = priorityState.get(),
+                                    requestId = requestId,
+                                    order = chunk.offset,
+                                ) {
+                                    val payload = withContext(decodeDispatcher) {
+                                        val encryptedForDecode =
+                                            encryptedPayload
+                                                ?: streamCache.readStaged(checkNotNull(stagedEncrypted))
+                                        decodeDepotChunk(chunk, encryptedForDecode, access.depotKey)
+                                    }
+                                    // A promoted foreground reader can consume authenticated
+                                    // bytes immediately. Pure prefetch remains pending until the
+                                    // chunk is durably available to the contiguous disk buffer.
+                                    if (priorityState.get() == SteamStreamChunkPriority.FOREGROUND) {
+                                        result.complete(payload)
+                                    }
+                                    try {
+                                        streamCache.commitVerified(chunk.offset, chunk.checksum, payload)
+                                        onVerifiedChunkCached(chunk)
+                                    } catch (error: CancellationException) {
+                                        throw error
+                                    } catch (error: VirtualMachineError) {
+                                        throw error
+                                    } catch (error: Throwable) {
+                                        Log.w(STEAM_CONTENT_LOG_TAG, "Steam stream cache commit failed at ${chunk.offset}", error)
+                                        if (priorityState.get() == SteamStreamChunkPriority.PREFETCH) {
+                                            throw IOException("Steam stream cache commit failed at ${chunk.offset}", error)
+                                        }
+                                    }
+                                    payload
                                 }
                             }
                         // DepotChunk.process authenticated the payload and the cache commit
                         // completed while its memory reservation was still held.
-                        result.complete(downloaded)
+                        if (!result.isCompleted) result.complete(downloaded)
                     } catch (error: Throwable) {
                         if (metricsRequestStarted) transferMetrics.requestFailed()
                         synchronized(inFlightLock) {
@@ -360,6 +466,10 @@ internal class SteamContentVideoStream internal constructor(
                         result.completeExceptionally(error)
                         if (error is CancellationException || error is VirtualMachineError) throw error
                     } finally {
+                        stagedEncrypted?.let { spool ->
+                            spool.delete()
+                            stagedRequestCount.decrementAndGet()
+                        }
                         synchronized(inFlightLock) {
                             if (inFlightChunks[chunk.offset]?.id == requestId) {
                                 inFlightChunks.remove(chunk.offset)
@@ -372,13 +482,16 @@ internal class SteamContentVideoStream internal constructor(
                     id = requestId,
                     deferred = result,
                     job = request,
-                    priority = priority,
+                    priorityState = priorityState,
                 )
             request.start()
             result
         }
         if (priority == SteamStreamChunkPriority.FOREGROUND) {
-            reusedRequest?.let { networkScheduler.promote(it.id) }
+            reusedRequest?.let { request ->
+                networkScheduler.promote(request.id)
+                memoryScheduler.promote(request.id)
+            }
         }
         return deferred
     }
@@ -388,20 +501,30 @@ internal class SteamContentVideoStream internal constructor(
         val generation = prefetchGeneration.get()
         synchronized(prefetchLock) {
             if (aheadPrefetchJob?.isActive == true) return
+            val targetAheadBytes = dynamicAheadBytes.get()
+            val lowWaterBytes = dynamicLowWaterBytes.get().coerceAtMost(targetAheadBytes)
+            val remainingAheadBytes =
+                (aheadBufferedEndInclusive - afterExclusive + 1L).coerceAtLeast(0L)
+            if (!refillActive && remainingAheadBytes < lowWaterBytes) refillActive = true
+            if (!refillActive) return
             val range =
                 steamStreamRefillRange(
                     contentLength = contentLength,
                     consumedPosition = afterExclusive,
                     bufferedEndInclusive = aheadBufferedEndInclusive,
-                    targetAheadBytes = dynamicAheadBytes.get(),
-                ) ?: return
+                    targetAheadBytes = targetAheadBytes,
+                    // Once a refill starts, target itself becomes the stop line;
+                    // crossing back above 8 seconds must not end a 15-second fill.
+                    lowWaterBytes = targetAheadBytes,
+                )
+            if (range == null) {
+                refillActive = false
+                return
+            }
             aheadPrefetchJob =
                 fetchScope.launch {
                     val completed = prefetchRange(range, generation)
                     synchronized(prefetchLock) {
-                        if (completed && generation == prefetchGeneration.get()) {
-                            aheadBufferedEndInclusive = max(aheadBufferedEndInclusive, range.endInclusive)
-                        }
                         aheadPrefetchJob = null
                     }
                     if (completed && generation == prefetchGeneration.get()) {
@@ -433,8 +556,11 @@ internal class SteamContentVideoStream internal constructor(
             aheadPrefetchJob?.cancel()
             aheadPrefetchJob = null
             aheadBufferedEndInclusive = position - 1L
+            refillActive = true
             prefetchFrontier.reset()
+            contiguousBufferTracker.reset(position)
         }
+        publishPlaybackBufferState()
     }
 
     private suspend fun prefetchRange(
@@ -453,32 +579,27 @@ internal class SteamContentVideoStream internal constructor(
         if (selectedChunks.isEmpty()) return@coroutineScope true
         val failed = java.util.concurrent.atomic.AtomicBoolean(false)
         try {
-            val queue = Channel<PlannedStreamChunk>(prefetchConcurrency)
-            launch {
-                try {
-                    selectedChunks.forEach { chunk ->
-                        if (closed || generation != prefetchGeneration.get()) return@launch
-                        queue.send(chunk)
-                    }
-                } finally {
-                    queue.close()
-                }
-            }
-            repeat(min(prefetchConcurrency, selectedChunks.size)) {
-                launch {
-                    for (plannedChunk in queue) {
-                        if (closed || generation != prefetchGeneration.get()) break
-                        val chunk = plannedChunk.chunk
-                        try {
-                            loadChunkSlice(chunk, 0, 0, SteamStreamChunkPriority.PREFETCH)
-                            prefetchFrontier.complete(chunk.offset)
-                        } catch (error: Throwable) {
-                            failed.set(true)
-                            if (plannedChunk.ownsPlan) prefetchFrontier.fail(chunk.offset)
-                            if (error is CancellationException || error is VirtualMachineError) throw error
+            // Launch the playback range as independently staged requests. Network
+            // concurrency remains fixed by networkScheduler, while requests that
+            // already downloaded may wait for decode/cache without consuming one of
+            // those network slots. Batching bounds coroutine metadata for manifests
+            // containing unusually tiny chunks; staged bytes remain range-bounded.
+            selectedChunks.chunked(STEAM_STREAM_MAX_STAGED_REQUESTS).forEach { batch ->
+                batch
+                    .map { plannedChunk ->
+                        async {
+                            if (closed || generation != prefetchGeneration.get()) return@async
+                            val chunk = plannedChunk.chunk
+                            try {
+                                loadChunkSlice(chunk, 0, 0, SteamStreamChunkPriority.PREFETCH)
+                                prefetchFrontier.complete(chunk.offset)
+                            } catch (error: Throwable) {
+                                failed.set(true)
+                                if (plannedChunk.ownsPlan) prefetchFrontier.fail(chunk.offset)
+                                if (error is CancellationException || error is VirtualMachineError) throw error
+                            }
                         }
-                    }
-                }
+                    }.awaitAll()
             }
         } finally {
             selectedChunks.filter(PlannedStreamChunk::ownsPlan).forEach { planned ->
@@ -488,6 +609,85 @@ internal class SteamContentVideoStream internal constructor(
         !failed.get() && generation == prefetchGeneration.get()
     }
 
+    private fun onVerifiedChunkCached(chunk: ChunkData) {
+        aheadBufferedEndInclusive = contiguousBufferTracker.markCompleted(chunk)
+        publishPlaybackBufferState()
+    }
+
+    private fun publishPlaybackBufferState() {
+        val clock = latestPlaybackClock.get()
+        if (clock.durationMs <= 0L) {
+            mutablePlaybackBufferState.value = WorkshopVideoBufferState()
+            return
+        }
+        val averageBytesPerMillisecond = averageBytesPerMillisecond(contentLength, clock.durationMs)
+        if (averageBytesPerMillisecond <= 0.0) return
+        val mediaBufferedMs = (clock.bufferedPositionMs - clock.playbackPositionMs).coerceAtLeast(0L)
+        val contiguousEndInclusive = contiguousBufferTracker.bufferedEndInclusive()
+        val diskAheadBytes =
+            (contiguousEndInclusive - latestReadPosition.get() + 1L).coerceAtLeast(0L)
+        val diskAheadMs = (diskAheadBytes / averageBytesPerMillisecond).toLong().coerceAtLeast(0L)
+        val remainingDurationMs = (clock.durationMs - clock.playbackPositionMs).coerceAtLeast(0L)
+        val availableDurationMs =
+            (mediaBufferedMs + diskAheadMs).coerceIn(0L, remainingDurationMs)
+        val cacheCapacityDurationMs =
+            (streamCache.prefetchCapacityBytes / averageBytesPerMillisecond).toLong().coerceAtLeast(1L)
+        val targetDurationMs =
+            min(STEAM_STREAM_TARGET_BUFFER_MS, min(cacheCapacityDurationMs, remainingDurationMs))
+        val lowWaterDurationMs = min(STEAM_STREAM_LOW_WATER_BUFFER_MS, targetDurationMs)
+        mutablePlaybackBufferState.value =
+            WorkshopVideoBufferState(
+                bufferedPositionMs =
+                    (clock.playbackPositionMs + availableDurationMs)
+                        .coerceAtMost(clock.durationMs),
+                availableDurationMs = availableDurationMs,
+                targetDurationMs = targetDurationMs,
+                lowWaterDurationMs = lowWaterDurationMs,
+                targetReached =
+                    availableDurationMs + STEAM_STREAM_BUFFER_READY_TOLERANCE_MS >= targetDurationMs,
+            )
+    }
+
+}
+
+internal data class SteamStreamPlaybackClock(
+    val playbackPositionMs: Long = 0L,
+    val bufferedPositionMs: Long = 0L,
+    val durationMs: Long = 0L,
+)
+
+/** Advances only when every preceding Steam chunk from the current seek point is verified. */
+internal class SteamContiguousBufferTracker(
+    private val chunks: List<ChunkData>,
+) {
+    private val completedOffsets = mutableSetOf<Long>()
+    private var nextChunkIndex = 0
+    private var startPosition = 0L
+    private var endInclusive = -1L
+
+    @Synchronized
+    fun reset(position: Long) {
+        completedOffsets.clear()
+        startPosition = position.coerceAtLeast(0L)
+        endInclusive = startPosition - 1L
+        nextChunkIndex = firstSteamStreamChunkIndex(chunks, startPosition)
+    }
+
+    @Synchronized
+    fun markCompleted(chunk: ChunkData): Long {
+        completedOffsets += chunk.offset
+        while (nextChunkIndex < chunks.size) {
+            val next = chunks[nextChunkIndex]
+            if (next.offset !in completedOffsets) break
+            completedOffsets.remove(next.offset)
+            endInclusive = max(endInclusive, next.offset + next.uncompressedLength - 1L)
+            nextChunkIndex += 1
+        }
+        return endInclusive
+    }
+
+    @Synchronized
+    fun bufferedEndInclusive(): Long = endInclusive
 }
 
 internal data class PlannedStreamChunk(
@@ -507,14 +707,14 @@ internal data class SteamChunkTransferSnapshot(
  */
 internal class SteamChunkTransferMetrics {
     private var completedChunks = 0L
-    private var completedBytes = 0L
-    private var windowStartedAtNanos = 0L
+    private val streamStartedAtNanos = System.nanoTime()
+    private val rollingSamples = ArrayDeque<SteamChunkTransferSample>()
+    private var rollingBytes = 0L
     private var activeRequests = 0
     private var peakActiveRequests = 0
 
     @Synchronized
     fun requestStarted() {
-        if (activeRequests == 0 && completedChunks == 0L) windowStartedAtNanos = System.nanoTime()
         activeRequests += 1
         peakActiveRequests = max(peakActiveRequests, activeRequests)
     }
@@ -526,13 +726,23 @@ internal class SteamChunkTransferMetrics {
     ): SteamChunkTransferSnapshot? {
         activeRequests = (activeRequests - 1).coerceAtLeast(0)
         if (compressedBytes <= 0) return null
-        completedBytes += compressedBytes
+        val completedAtNanos = System.nanoTime()
+        rollingSamples.addLast(SteamChunkTransferSample(completedAtNanos, compressedBytes))
+        rollingBytes += compressedBytes
+        val cutoffNanos = completedAtNanos - STREAM_METRICS_WINDOW_NANOS
+        while (rollingSamples.firstOrNull()?.completedAtNanos?.let { it < cutoffNanos } == true) {
+            rollingBytes -= rollingSamples.removeFirst().bytes
+        }
         completedChunks += 1L
         return if (completedChunks % STREAM_METRICS_LOG_INTERVAL_CHUNKS == 0L) {
-            val elapsedNanos = (System.nanoTime() - windowStartedAtNanos).coerceAtLeast(1L)
+            val elapsedNanos =
+                min(
+                    STREAM_METRICS_WINDOW_NANOS,
+                    completedAtNanos - streamStartedAtNanos,
+                ).coerceAtLeast(1L)
             SteamChunkTransferSnapshot(
                 completedChunks = completedChunks,
-                aggregateMbps = completedBytes.toDouble() * 8_000.0 / elapsedNanos.toDouble(),
+                aggregateMbps = rollingBytes.toDouble() * 8_000.0 / elapsedNanos.toDouble(),
                 activeRequests = activeRequests,
                 peakActiveRequests = peakActiveRequests,
             )
@@ -690,6 +900,8 @@ internal suspend fun downloadEncryptedChunk(
         currentCoroutineContext().ensureActive()
         checkDownloadControl(control)
         var hasToken = false
+        val attemptStartedAtNanos = System.nanoTime()
+        selector.recordStart(server)
         try {
             val encrypted = ByteArray(chunk.compressedLength)
             val token = authTokens.get(server)
@@ -705,14 +917,21 @@ internal suspend fun downloadEncryptedChunk(
                     token,
                 )
             check(downloadedBytes == encrypted.size) { "Steam chunk compressed length mismatch" }
-            selector.recordSuccess(server)
+            selector.recordSuccess(
+                server = server,
+                bytes = encrypted.size,
+                elapsedNanos = System.nanoTime() - attemptStartedAtNanos,
+            )
             onSuccess?.invoke(server)
             return encrypted
         } catch (error: CancellationException) {
+            selector.recordCancelled(server)
             throw error
         } catch (error: SteamDownloadCancelledException) {
+            selector.recordCancelled(server)
             throw error
         } catch (error: VirtualMachineError) {
+            selector.recordCancelled(server)
             throw error
         } catch (error: Throwable) {
             selector.recordFailure(server)
@@ -1238,27 +1457,78 @@ internal data class ManifestFilePlan(
 }
 
 internal class CdnServerSelector {
-    private val nextPrimaryIndex = AtomicInteger()
-    private val failedHosts = ConcurrentHashMap<String, Long>()
+    private val nextTieBreakerIndex = AtomicInteger()
+    private val failedHosts = mutableMapOf<String, Long>()
+    private val performance = mutableMapOf<String, CdnHostPerformance>()
 
+    @Synchronized
     fun candidates(servers: List<Server>): List<Server> {
         if (servers.size < 2) return servers
         val now = System.currentTimeMillis()
         val available = servers.filterNot { server -> isPenalized(server, now) }
         val failed = servers.filter { server -> isPenalized(server, now) }
         if (available.size < 2) return available + failed
-        val primaryCount = minOf(CDN_PARALLEL_SERVER_COUNT, available.size)
-        val primary = available.take(primaryCount)
-        val start = Math.floorMod(nextPrimaryIndex.getAndIncrement(), primaryCount)
-        return primary.drop(start) + primary.take(start) + available.drop(primaryCount) + failed
+        val start = Math.floorMod(nextTieBreakerIndex.getAndIncrement(), available.size)
+        val rotated = available.drop(start) + available.take(start)
+        val bestKnownBytesPerSecond =
+            performance.values.maxOfOrNull(CdnHostPerformance::bytesPerSecond)?.takeIf { it > 0.0 }
+                ?: CDN_UNSAMPLED_BASELINE_BYTES_PER_SECOND
+        val ranked =
+            rotated
+                .withIndex()
+                .sortedWith(
+                    compareByDescending<IndexedValue<Server>> { indexed ->
+                        val stats = performance[indexed.value.selectorKey()]
+                        val estimated =
+                            stats?.bytesPerSecond?.takeIf { stats.samples > 0 }
+                                ?: bestKnownBytesPerSecond * CDN_UNSAMPLED_EXPLORATION_MULTIPLIER
+                        estimated / ((stats?.activeRequests ?: 0) + 1).toDouble()
+                    }.thenBy(IndexedValue<Server>::index),
+                ).map(IndexedValue<Server>::value)
+        return ranked + failed
     }
 
+    @Synchronized
+    fun recordStart(server: Server) {
+        performance.getOrPut(server.selectorKey(), ::CdnHostPerformance).activeRequests += 1
+    }
+
+    @Synchronized
     fun recordFailure(server: Server) {
+        performance[server.selectorKey()]?.let { stats ->
+            stats.activeRequests = (stats.activeRequests - 1).coerceAtLeast(0)
+        }
         failedHosts[server.selectorKey()] = System.currentTimeMillis() + CDN_FAILURE_COOLDOWN_MS
     }
 
-    fun recordSuccess(server: Server) {
-        failedHosts.remove(server.selectorKey())
+    @Synchronized
+    fun recordCancelled(server: Server) {
+        performance[server.selectorKey()]?.let { stats ->
+            stats.activeRequests = (stats.activeRequests - 1).coerceAtLeast(0)
+        }
+    }
+
+    @Synchronized
+    fun recordSuccess(
+        server: Server,
+        bytes: Int,
+        elapsedNanos: Long,
+    ) {
+        val key = server.selectorKey()
+        val stats = performance.getOrPut(key, ::CdnHostPerformance)
+        stats.activeRequests = (stats.activeRequests - 1).coerceAtLeast(0)
+        if (bytes > 0 && elapsedNanos > 0L) {
+            val sampleBytesPerSecond = bytes.toDouble() * 1_000_000_000.0 / elapsedNanos.toDouble()
+            stats.bytesPerSecond =
+                if (stats.samples == 0) {
+                    sampleBytesPerSecond
+                } else {
+                    stats.bytesPerSecond * (1.0 - CDN_THROUGHPUT_SAMPLE_WEIGHT) +
+                        sampleBytesPerSecond * CDN_THROUGHPUT_SAMPLE_WEIGHT
+                }
+            stats.samples += 1
+        }
+        failedHosts.remove(key)
     }
 
     private fun isPenalized(server: Server, now: Long): Boolean {
@@ -1275,8 +1545,22 @@ internal class CdnServerSelector {
 
     private companion object {
         const val CDN_FAILURE_COOLDOWN_MS = 30_000L
+        const val CDN_UNSAMPLED_BASELINE_BYTES_PER_SECOND = 1_000_000.0
+        const val CDN_UNSAMPLED_EXPLORATION_MULTIPLIER = 2.0
+        const val CDN_THROUGHPUT_SAMPLE_WEIGHT = 0.25
     }
 }
+
+private data class SteamChunkTransferSample(
+    val completedAtNanos: Long,
+    val bytes: Int,
+)
+
+private class CdnHostPerformance(
+    var activeRequests: Int = 0,
+    var bytesPerSecond: Double = 0.0,
+    var samples: Int = 0,
+)
 
 internal class CdnAuthTokenProvider(
     private val content: SteamContent,
@@ -1547,7 +1831,6 @@ internal const val CDN_CONNECT_TIMEOUT_MS = 20_000L
 internal const val CDN_READ_TIMEOUT_MS = 60_000L
 internal const val CDN_WRITE_TIMEOUT_MS = 20_000L
 internal const val CDN_KEEP_ALIVE_MINUTES = 5L
-internal const val CDN_PARALLEL_SERVER_COUNT = 4
 internal const val CDN_TRANSFER_MAX_ATTEMPTS = 3
 private val CDN_TRANSFER_RETRY_DELAYS_MS = longArrayOf(1_000L, 3_000L)
 internal const val STEAM_CONTENT_LOG_TAG = "WallHubDownload"
@@ -1599,20 +1882,115 @@ internal fun steamStreamAheadPrefetchRange(
         length = aheadBytes,
     )
 
-internal fun steamStreamDynamicAheadBytes(
+internal data class SteamStreamTimeBufferWindow(
+    val targetBytes: Long,
+    val lowWaterBytes: Long,
+)
+
+/** Tracks the local byte-to-media-time relationship so VBR peaks never receive less
+ * disk headroom than the whole-file average. Large playback discontinuities reset the
+ * sample baseline instead of being mistaken for a bitrate spike. */
+internal class SteamStreamByteRateEstimator(
+    private val contentLength: Long,
+) {
+    private var lastReadPosition = -1L
+    private var lastPlaybackPositionMs = -1L
+    private var lastBufferedPositionMs = -1L
+    private var smoothedBytesPerMillisecond: Double? = null
+
+    @Synchronized
+    fun update(
+        readPosition: Long,
+        playbackPositionMs: Long,
+        bufferedPositionMs: Long,
+        durationMs: Long,
+    ): Double {
+        val average = averageBytesPerMillisecond(contentLength, durationMs)
+        if (average <= 0.0) return 0.0
+        val playbackDiscontinuity =
+            lastPlaybackPositionMs >= 0L &&
+                (playbackPositionMs < lastPlaybackPositionMs ||
+                    playbackPositionMs - lastPlaybackPositionMs > STEAM_STREAM_ESTIMATOR_SEEK_THRESHOLD_MS)
+        val readDiscontinuity = lastReadPosition >= 0L && readPosition < lastReadPosition
+        val bufferDiscontinuity = lastBufferedPositionMs >= 0L && bufferedPositionMs < lastBufferedPositionMs
+        if (playbackDiscontinuity || readDiscontinuity || bufferDiscontinuity) {
+            lastReadPosition = readPosition
+            lastPlaybackPositionMs = playbackPositionMs
+            lastBufferedPositionMs = bufferedPositionMs
+            smoothedBytesPerMillisecond = null
+            return average
+        }
+
+        if (lastReadPosition >= 0L && lastBufferedPositionMs >= 0L) {
+            val deltaBytes = readPosition - lastReadPosition
+            val deltaBufferedMs = bufferedPositionMs - lastBufferedPositionMs
+            if (deltaBytes > 0L && deltaBufferedMs > 0L) {
+                val sample =
+                    (deltaBytes.toDouble() / deltaBufferedMs.toDouble())
+                        .coerceIn(
+                            average * STEAM_STREAM_ESTIMATOR_MIN_RATIO,
+                            average * STEAM_STREAM_ESTIMATOR_MAX_RATIO,
+                        )
+                smoothedBytesPerMillisecond =
+                    smoothedBytesPerMillisecond?.let { previous ->
+                        previous * (1.0 - STEAM_STREAM_ESTIMATOR_SAMPLE_WEIGHT) +
+                            sample * STEAM_STREAM_ESTIMATOR_SAMPLE_WEIGHT
+                    } ?: sample
+                lastReadPosition = readPosition
+                lastBufferedPositionMs = bufferedPositionMs
+            }
+        } else {
+            lastReadPosition = readPosition
+            lastBufferedPositionMs = bufferedPositionMs
+        }
+        lastPlaybackPositionMs = playbackPositionMs
+        return max(average, smoothedBytesPerMillisecond ?: average)
+    }
+}
+
+private fun averageBytesPerMillisecond(
     contentLength: Long,
     durationMs: Long,
-    playbackSpeed: Float,
-    maximumAheadBytes: Long = STEAM_STREAM_MAX_AHEAD_BYTES,
-): Long {
+): Double =
+    if (contentLength > 0L && durationMs > 0L) {
+        contentLength.toDouble() / durationMs.toDouble()
+    } else {
+        0.0
+    }
+
+/**
+ * Converts the product's time-based buffering policy to a Steam byte range only at
+ * the transport boundary. This prevents a fixed byte budget from collapsing to a
+ * few seconds on high-bitrate Workshop videos.
+ */
+internal fun steamStreamTimeBufferWindow(
+    contentLength: Long,
+    durationMs: Long,
+    maximumAheadBytes: Long,
+    targetBufferMs: Long = STEAM_STREAM_TARGET_BUFFER_MS,
+    lowWaterBufferMs: Long = STEAM_STREAM_LOW_WATER_BUFFER_MS,
+    observedBytesPerMillisecond: Double = 0.0,
+): SteamStreamTimeBufferWindow {
     val maximum = maximumAheadBytes.coerceAtLeast(1L)
-    val minimum = min(STEAM_STREAM_AHEAD_BYTES, maximum)
-    if (contentLength <= 0L || durationMs <= 0L) return minimum
-    val normalizedSpeed = playbackSpeed.coerceIn(0.5f, STEAM_STREAM_MAX_DYNAMIC_SPEED)
-    val bytesPerSecond = contentLength.toDouble() * 1000.0 / durationMs.toDouble()
-    return (bytesPerSecond * STEAM_STREAM_DYNAMIC_BUFFER_SECONDS * normalizedSpeed)
-        .toLong()
-        .coerceIn(minimum, maximum)
+    val fallbackTarget = min(STEAM_STREAM_AHEAD_BYTES, maximum)
+    val fallbackLowWater = min(STEAM_STREAM_LOW_WATER_BYTES, fallbackTarget)
+    if (contentLength <= 0L || durationMs <= 0L || targetBufferMs <= 0L || lowWaterBufferMs <= 0L) {
+        return SteamStreamTimeBufferWindow(fallbackTarget, fallbackLowWater)
+    }
+    val bytesPerMillisecond =
+        max(
+            contentLength.toDouble() / durationMs.toDouble(),
+            observedBytesPerMillisecond.takeIf { it.isFinite() && it > 0.0 } ?: 0.0,
+        )
+    val targetBytes =
+        kotlin.math.ceil(bytesPerMillisecond * targetBufferMs)
+            .toLong()
+            .coerceIn(1L, maximum)
+    val lowWaterBytes =
+        kotlin.math.ceil(bytesPerMillisecond * lowWaterBufferMs)
+            .toLong()
+            .coerceIn(1L, targetBytes)
+    return SteamStreamTimeBufferWindow(targetBytes, lowWaterBytes)
 }
 
 internal fun steamStreamRefillRange(
@@ -1620,11 +1998,17 @@ internal fun steamStreamRefillRange(
     consumedPosition: Long,
     bufferedEndInclusive: Long,
     targetAheadBytes: Long,
+    lowWaterBytes: Long,
 ): SteamStreamByteRange? {
-    if (contentLength <= 0L || consumedPosition !in 0 until contentLength || targetAheadBytes <= 0L) return null
+    if (contentLength <= 0L ||
+        consumedPosition !in 0 until contentLength ||
+        targetAheadBytes <= 0L ||
+        lowWaterBytes <= 0L
+    ) {
+        return null
+    }
     val remainingBytes = (bufferedEndInclusive - consumedPosition + 1L).coerceAtLeast(0L)
-    val lowWaterBytes = max(STEAM_STREAM_MIN_REFILL_BYTES, targetAheadBytes / 2L)
-    if (remainingBytes > lowWaterBytes) return null
+    if (remainingBytes >= lowWaterBytes.coerceAtMost(targetAheadBytes)) return null
     val start = max(consumedPosition, bufferedEndInclusive + 1L)
     val endInclusive = min(contentLength - 1L, consumedPosition + targetAheadBytes - 1L)
     return if (start <= endInclusive) SteamStreamByteRange(start, endInclusive) else null
@@ -1644,25 +2028,33 @@ internal fun steamStreamRange(
 
 internal const val STEAM_STREAM_MEBIBYTE = 1024L * 1024L
 internal const val STEAM_STREAM_AHEAD_BYTES = 64L * STEAM_STREAM_MEBIBYTE
-internal const val STEAM_STREAM_MAX_AHEAD_BYTES = 256L * STEAM_STREAM_MEBIBYTE
-internal const val STEAM_STREAM_DYNAMIC_BUFFER_SECONDS = 90L
-internal const val STEAM_STREAM_MAX_DYNAMIC_SPEED = 3f
-internal const val STEAM_STREAM_MIN_REFILL_BYTES = 16L * STEAM_STREAM_MEBIBYTE
+internal const val STEAM_STREAM_LOW_WATER_BYTES = 16L * STEAM_STREAM_MEBIBYTE
+internal const val STEAM_STREAM_TARGET_BUFFER_MS = 15_000L
+internal const val STEAM_STREAM_LOW_WATER_BUFFER_MS = 8_000L
+private const val STEAM_STREAM_BUFFER_READY_TOLERANCE_MS = 250L
 internal const val STEAM_STREAM_MAX_PARALLEL_CHUNKS = 48
 // Keep at most ~48 MiB of compressed + decoded chunk payloads resident. This is
 // independent of request concurrency and prevents 64 MiB chunks from multiplying
 // into an app-wide OOM on devices with a 192 MiB heap.
 internal const val STEAM_STREAM_MEMORY_HEAP_DIVISOR = 4L
 internal const val STEAM_STREAM_MEMORY_MIN_BYTES = 24L * 1024L * 1024L
-internal const val STEAM_STREAM_MEMORY_MAX_BYTES = 64L * 1024L * 1024L
+internal const val STEAM_STREAM_MEMORY_MAX_BYTES = 96L * 1024L * 1024L
 // SteamKit's ResponseBody.bytes() and XZ/LZMA decoder allocate backing arrays and
 // dictionaries that are not represented by manifest compressed/uncompressed sizes.
-// Reserve enough hidden-decoder headroom so a 192 MiB heap runs at most two heavy
-// decode requests while retaining the user's configured concurrency as queue limit.
-internal const val STEAM_STREAM_MIN_REQUEST_MEMORY_BYTES = 24L * 1024L * 1024L
-internal const val STEAM_STREAM_DECODE_THREADS = 2
+// Reserve the 8 MiB VZip ThreadLocal window plus payload copies per decode. Four
+// fixed workers remain within a 48 MiB stream budget on a 192 MiB app heap while
+// the independently spooled network stage keeps the exact user request concurrency.
+internal const val STEAM_STREAM_MIN_REQUEST_MEMORY_BYTES = 12L * 1024L * 1024L
+internal const val STEAM_STREAM_DECODE_THREADS = 4
+internal const val STEAM_STREAM_MAX_STAGED_REQUESTS = 8_192
 internal const val STREAM_SEEK_RESET_BYTES = 2L * STEAM_STREAM_MEBIBYTE
 private const val STREAM_METRICS_LOG_INTERVAL_CHUNKS = 16L
+private const val STREAM_METRICS_WINDOW_NANOS = 5_000_000_000L
+private const val STEAM_STREAM_BUFFER_LOG_INTERVAL_MS = 5_000L
+private const val STEAM_STREAM_ESTIMATOR_SEEK_THRESHOLD_MS = 5_000L
+private const val STEAM_STREAM_ESTIMATOR_MIN_RATIO = 0.5
+private const val STEAM_STREAM_ESTIMATOR_MAX_RATIO = 4.0
+private const val STEAM_STREAM_ESTIMATOR_SAMPLE_WEIGHT = 0.25
 
 internal fun isSmallFilePipelineCandidate(
     fileSize: Long,

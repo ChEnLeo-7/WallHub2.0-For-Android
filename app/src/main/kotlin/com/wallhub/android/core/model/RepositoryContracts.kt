@@ -1,6 +1,7 @@
 package com.wallhub.android.core.model
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.Closeable
 
@@ -150,6 +151,18 @@ interface SteamContentCredentialProvider {
     suspend fun restoreContentCredential(): SteamContentCredential? = loadContentCredential()
 }
 
+data class WorkshopVideoBufferState(
+    /** Absolute media timeline position covered by Media3 plus contiguous verified Depot chunks. */
+    val bufferedPositionMs: Long = 0L,
+    val availableDurationMs: Long = 0L,
+    val targetDurationMs: Long = 15_000L,
+    val lowWaterDurationMs: Long = 8_000L,
+    val targetReached: Boolean = false,
+)
+
+private val EmptyWorkshopVideoBufferState: StateFlow<WorkshopVideoBufferState> =
+    MutableStateFlow(WorkshopVideoBufferState())
+
 /** A seekable video stream backed by Steam Depot chunks instead of a completed download. */
 interface WorkshopVideoStreamSession : Closeable {
     val title: String
@@ -161,9 +174,19 @@ interface WorkshopVideoStreamSession : Closeable {
     val currentCdnHost: String?
         get() = null
 
-    /** Updates buffering demand after Media3 learns the duration or playback speed changes. */
+    /** Live contiguous buffer state used for playback gating and secondary progress. */
+    val playbackBufferState: StateFlow<WorkshopVideoBufferState>
+        get() = EmptyWorkshopVideoBufferState
+
+    /**
+     * Reports Media3's live playback clock to the Depot prefetcher. The transport uses the
+     * media timeline as its source of truth and only converts time to byte ranges at the Steam
+     * chunk boundary.
+     */
     fun updatePlaybackDemand(
         playbackSpeed: Float,
+        playbackPositionMs: Long,
+        bufferedPositionMs: Long,
         durationMs: Long,
     ) = Unit
 
