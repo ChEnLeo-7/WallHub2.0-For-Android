@@ -129,7 +129,7 @@ android {
                 if (hasReleaseSigning) {
                     signingConfigs.getByName("releaseSigning")
                 } else {
-                    null
+                    signingConfigs.getByName("debug")
                 }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
