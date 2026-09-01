@@ -1027,13 +1027,14 @@ internal fun SecureSteamSessionRepository.hydrateCachedOwnProfile(
                 ?: return@launch
         val profile =
             steamProfiles[steamId]
-                ?: steamSession.friends.personaName
+                ?: steamSession.friends
+                    .getPersonaName()
                     .trim()
                     .takeIf(String::isNotBlank)
                     ?.let { displayName ->
                         SteamProfile(
                             displayName = displayName,
-                            avatarUrl = steamSession.friends.personaAvatar.toSteamAvatarUrl(),
+                            avatarUrl = steamSession.friends.getPersonaAvatar().toSteamAvatarUrl(),
                         )
                     }
                 ?: return@launch
