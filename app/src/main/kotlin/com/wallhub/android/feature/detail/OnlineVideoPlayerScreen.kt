@@ -61,6 +61,7 @@ import androidx.media3.common.Timeline
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -315,6 +316,7 @@ internal fun createSteamChunkPlayer(
             DefaultRenderersFactory(context.applicationContext)
                 .setEnableDecoderFallback(true),
         )
+        .setLoadControl(createSteamStreamingLoadControl())
         .build()
         .also { player ->
             val mediaItem = MediaItem.fromUri(Uri.parse("steamchunk://${stream.fileName}"))
@@ -330,6 +332,18 @@ internal fun createSteamChunkPlayer(
             // continues filling the larger disk buffer while playback advances.
             player.playWhenReady = true
         }
+
+internal fun createSteamStreamingLoadControl(): DefaultLoadControl =
+    DefaultLoadControl
+        .Builder()
+        .setBufferDurationsMsForStreaming(
+            STREAM_MIN_BUFFER_MS,
+            STREAM_MAX_BUFFER_MS,
+            STREAM_BUFFER_FOR_PLAYBACK_MS,
+            STREAM_BUFFER_AFTER_REBUFFER_MS,
+        )
+        .setPrioritizeTimeOverSizeThresholdsForStreaming(true)
+        .build()
 
 @Composable
 private fun rememberSteamChunkPlaybackState(
@@ -351,10 +365,21 @@ private fun rememberSteamChunkPlaybackState(
     var firstFrameCallbackDelivered by remember(stream, player) { mutableStateOf(false) }
     val onFirstFrameRenderedState by rememberUpdatedState(onFirstFrameRendered)
     DisposableEffect(player, stream) {
+        val playbackCreatedAtMs = android.os.SystemClock.elapsedRealtime()
+        var playbackStarted = renderedFirstFrame
+        var rebufferStartedAtMs = 0L
+        var rebufferCount = 0
+        var totalRebufferMs = 0L
         val listener =
             object : Player.Listener {
                 override fun onRenderedFirstFrame() {
                     renderedFirstFrame = true
+                    playbackStarted = true
+                    Log.i(
+                        STREAM_PLAYER_LOG_TAG,
+                        "firstFrameMs=${android.os.SystemClock.elapsedRealtime() - playbackCreatedAtMs} " +
+                            "positionMs=${player.currentPosition}",
+                    )
                     if (!firstFrameCallbackDelivered) {
                         firstFrameCallbackDelivered = true
                         onFirstFrameRenderedState()
@@ -366,10 +391,35 @@ private fun rememberSteamChunkPlaybackState(
                 }
 
                 override fun onPlaybackStateChanged(playbackState: Int) {
+                    val nowMs = android.os.SystemClock.elapsedRealtime()
+                    val bufferedMs = (player.bufferedPosition - player.currentPosition).coerceAtLeast(0L)
+                    when {
+                        playbackState == Player.STATE_BUFFERING && playbackStarted && rebufferStartedAtMs == 0L -> {
+                            rebufferStartedAtMs = nowMs
+                            rebufferCount += 1
+                            Log.i(
+                                STREAM_PLAYER_LOG_TAG,
+                                "rebufferStart count=$rebufferCount positionMs=${player.currentPosition} " +
+                                    "bufferedMs=$bufferedMs",
+                            )
+                        }
+
+                        playbackState == Player.STATE_READY && rebufferStartedAtMs > 0L -> {
+                            val rebufferMs = nowMs - rebufferStartedAtMs
+                            totalRebufferMs += rebufferMs
+                            rebufferStartedAtMs = 0L
+                            Log.i(
+                                STREAM_PLAYER_LOG_TAG,
+                                "rebufferRecovered count=$rebufferCount rebufferMs=$rebufferMs " +
+                                    "totalRebufferMs=$totalRebufferMs positionMs=${player.currentPosition} " +
+                                    "bufferedMs=$bufferedMs",
+                            )
+                        }
+                    }
                     Log.d(
                         STREAM_PLAYER_LOG_TAG,
-                        "state=$playbackState positionMs=${player.currentPosition} " +
-                            "bufferedMs=${(player.bufferedPosition - player.currentPosition).coerceAtLeast(0L)}",
+                        "state=$playbackState positionMs=${player.currentPosition} bufferedMs=$bufferedMs " +
+                            "rebufferCount=$rebufferCount totalRebufferMs=$totalRebufferMs",
                     )
                 }
 
@@ -412,6 +462,13 @@ private fun rememberSteamChunkPlaybackState(
         onDispose {
             player.removeListener(listener)
             player.removeAnalyticsListener(analyticsListener)
+            val unfinishedRebufferMs =
+                rebufferStartedAtMs.takeIf { it > 0L }?.let { android.os.SystemClock.elapsedRealtime() - it } ?: 0L
+            Log.i(
+                STREAM_PLAYER_LOG_TAG,
+                "sessionEnd rebufferCount=$rebufferCount totalRebufferMs=${totalRebufferMs + unfinishedRebufferMs} " +
+                    "positionMs=${player.currentPosition}",
+            )
             if (releasePlayerWhenDisposed) player.release()
         }
     }
@@ -726,3 +783,7 @@ private class SteamChunkDataSource(
 private const val STREAM_LOAD_RETRY_COUNT = 5
 private const val STREAM_DEMAND_REPORT_INTERVAL_MS = 500L
 private const val STREAM_PLAYER_LOG_TAG = "WallHubStreamPlayer"
+private const val STREAM_MIN_BUFFER_MS = 12_000
+private const val STREAM_MAX_BUFFER_MS = 30_000
+private const val STREAM_BUFFER_FOR_PLAYBACK_MS = 1_000
+private const val STREAM_BUFFER_AFTER_REBUFFER_MS = 8_000
