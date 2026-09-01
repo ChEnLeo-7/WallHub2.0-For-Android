@@ -1029,8 +1029,8 @@ internal fun SecureSteamSessionRepository.hydrateCachedOwnProfile(
             steamProfiles[steamId]
                 ?: steamSession.friends
                     .getPersonaName()
-                    .trim()
-                    .takeIf(String::isNotBlank)
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
                     ?.let { displayName ->
                         SteamProfile(
                             displayName = displayName,
