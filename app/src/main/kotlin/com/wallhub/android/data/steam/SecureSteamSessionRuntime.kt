@@ -1034,7 +1034,7 @@ internal fun SecureSteamSessionRepository.hydrateCachedOwnProfile(
                     ?.let { displayName ->
                         SteamProfile(
                             displayName = displayName,
-                            avatarUrl = steamSession.friends.getPersonaAvatar().toSteamAvatarUrl(),
+                            avatarUrl = steamSession.friends.getPersonaAvatar()?.toSteamAvatarUrl(),
                         )
                     }
                 ?: return@launch
