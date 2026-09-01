@@ -31,7 +31,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.wallhub.android.R
@@ -39,60 +38,18 @@ import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
-import com.wallhub.android.core.model.SteamPlaytimeRepository
-import com.wallhub.android.core.model.AccountWorkshopCollection
-import com.wallhub.android.core.model.AccountWorkshopQuery
-import com.wallhub.android.core.model.AccountWorkshopRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-data class ProfileCounts(
-    val subscriptions: Int = 0,
-    val favorites: Int = 0,
-    val voted: Int = 0,
-)
-
 @HiltViewModel
-class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionRepository, private val accountRepository: AccountWorkshopRepository, private val playtimeRepository: SteamPlaytimeRepository) : ViewModel() {
+class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionRepository) : ViewModel() {
     val session: StateFlow<SteamSessionState> = sessionRepository.session
-    private val _counts = MutableStateFlow(ProfileCounts())
-    val counts: StateFlow<ProfileCounts> = _counts
-    private val _runtimeHours = MutableStateFlow<Int?>(null)
-    val runtimeHours: StateFlow<Int?> = _runtimeHours
-    init {
-        viewModelScope.launch {
-            var loadedAccount: String? = null
-            session.collect { current ->
-                when {
-                    current.phase == SteamSessionPhase.SIGNED_IN && current.accountName != loadedAccount -> {
-                        loadedAccount = current.accountName
-                        val subscriptions = runCatching { accountRepository.browseCollection(AccountWorkshopQuery(AccountWorkshopCollection.SUBSCRIPTIONS, pageSize = 1, resolveTotalCount = true)).totalCount ?: 0 }.getOrDefault(0)
-                        val favorites = runCatching { accountRepository.browseCollection(AccountWorkshopQuery(AccountWorkshopCollection.FAVORITES, pageSize = 1, resolveTotalCount = true)).totalCount ?: 0 }.getOrDefault(0)
-                        val voted = runCatching { accountRepository.browseCollection(AccountWorkshopQuery(AccountWorkshopCollection.VOTED, pageSize = 1, resolveTotalCount = true)).totalCount ?: 0 }.getOrDefault(0)
-                        _counts.value = ProfileCounts(subscriptions, favorites, voted)
-                        _runtimeHours.value = runCatching { playtimeRepository.getAppPlaytime(WALLPAPER_ENGINE_APP_ID)?.totalMinutes?.div(60) }.getOrNull()
-                    }
-                    current.phase != SteamSessionPhase.SIGNED_IN -> {
-                        loadedAccount = null
-                        _counts.value = ProfileCounts()
-                        _runtimeHours.value = null
-                    }
-                }
-            }
-        }
-    }
 }
-
-private const val WALLPAPER_ENGINE_APP_ID = 431960
 
 @Composable
 fun ProfileRoute(onOpenSettings: () -> Unit, onOpenSubscriptions: () -> Unit, onOpenFavorites: () -> Unit, onOpenVoted: () -> Unit, onOpenDownloads: () -> Unit, onOpenLocal: () -> Unit, onOpenLogin: () -> Unit, viewModel: ProfileViewModel = hiltViewModel()) {
     val session by viewModel.session.collectAsStateWithLifecycle()
-    val counts by viewModel.counts.collectAsStateWithLifecycle()
-    val runtimeHours by viewModel.runtimeHours.collectAsStateWithLifecycle()
     WallHubPageScaffold(title = stringResource(R.string.navigation_profile), actions = {
         IconButton(onClick = onOpenSettings) { Icon(Icons.Outlined.Settings, stringResource(R.string.management_settings)) }
     }) { padding ->
@@ -105,8 +62,7 @@ fun ProfileRoute(onOpenSettings: () -> Unit, onOpenSubscriptions: () -> Unit, on
                         Text(
                             stringResource(
                                 R.string.profile_runtime_summary,
-                                runtimeHours?.let { stringResource(R.string.profile_hours_format, it) }
-                                    ?: stringResource(R.string.profile_runtime_unknown),
+                                stringResource(R.string.profile_runtime_unknown),
                             ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -118,9 +74,9 @@ fun ProfileRoute(onOpenSettings: () -> Unit, onOpenSubscriptions: () -> Unit, on
             }
             item {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ProfileStatCard(stringResource(R.string.profile_subscriptions), counts.subscriptions.toString(), onOpenSubscriptions, Modifier.weight(1f))
-                    ProfileStatCard(stringResource(R.string.profile_favorites), counts.favorites.toString(), onOpenFavorites, Modifier.weight(1f))
-                    ProfileStatCard(stringResource(R.string.profile_voted), counts.voted.toString(), onOpenVoted, Modifier.weight(1f))
+                    ProfileStatCard(stringResource(R.string.profile_subscriptions), "-", onOpenSubscriptions, Modifier.weight(1f))
+                    ProfileStatCard(stringResource(R.string.profile_favorites), "-", onOpenFavorites, Modifier.weight(1f))
+                    ProfileStatCard(stringResource(R.string.profile_voted), "-", onOpenVoted, Modifier.weight(1f))
                 }
             }
             item { ProfileEntryCard(stringResource(R.string.profile_downloads), stringResource(R.string.profile_download_hint), onOpenDownloads, Icons.Outlined.Download) }

@@ -406,11 +406,10 @@ class LibraryViewModel
                     val accountChanged =
                         activeAccountName != null &&
                             !activeAccountName.equals(session.accountName, ignoreCase = true)
-                    val becameSignedIn = previous.session.phase != SteamSessionPhase.SIGNED_IN
                     if (accountChanged) clearCache()
                     activeAccountName = session.accountName
                     mutableState.value = previous.copy(session = session)
-                    if (becameSignedIn || accountChanged || refreshWhenSignedIn) {
+                    if (accountChanged || refreshWhenSignedIn) {
                         refreshWhenSignedIn = false
                         loadCurrentPage(forceRefresh = true, refreshing = false)
                     }
