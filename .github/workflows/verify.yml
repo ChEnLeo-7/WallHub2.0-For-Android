@@ -29,12 +29,12 @@ jobs:
         run: yes | sdkmanager "platforms;android-36" "build-tools;35.0.0"
       - name: Generate reviewed Detekt baseline
         run: |
+          chmod +x gradlew
           workers="$(nproc)"
           ./gradlew --no-daemon --parallel --build-cache --max-workers="$workers" \
             :app:detektBaseline
       - name: Verify Android application
         run: |
-          chmod +x gradlew
           workers="$(nproc)"
           printf 'Gradle workers: %s\n' "$workers"
           ./gradlew --no-daemon --parallel --build-cache --max-workers="$workers" \
