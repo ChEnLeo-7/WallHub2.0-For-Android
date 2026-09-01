@@ -23,12 +23,52 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK packages
         run: yes | sdkmanager "platforms;android-36" "build-tools;35.0.0"
+      - name: Require Release signing secrets
+        env:
+          WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
+          WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
+          WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
+          WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for variable in \
+            WALLHUB_RELEASE_KEYSTORE_BASE64 \
+            WALLHUB_RELEASE_STORE_PASSWORD \
+            WALLHUB_RELEASE_KEY_ALIAS \
+            WALLHUB_RELEASE_KEY_PASSWORD; do
+            if [ -z "${!variable}" ]; then
+              echo "::error::Missing GitHub Actions secret: $variable"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - name: Restore Release signing keystore
+        env:
+          WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
+          WALLHUB_RELEASE_STORE_FILE: ${{ runner.temp }}/wallhub-release.keystore
+        run: |
+          printf '%s' "$WALLHUB_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$WALLHUB_RELEASE_STORE_FILE"
+          test -s "$WALLHUB_RELEASE_STORE_FILE"
+          chmod 600 "$WALLHUB_RELEASE_STORE_FILE"
       - name: Assemble Debug APK
+        env:
+          WALLHUB_RELEASE_STORE_FILE: ${{ runner.temp }}/wallhub-release.keystore
+          WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
+          WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
+          WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
           workers="$(nproc)"
           printf 'Gradle workers: %s\n' "$workers"
           ./gradlew --no-daemon --parallel --build-cache --max-workers="$workers" :app:assembleDebug
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks "$WALLHUB_RELEASE_STORE_FILE" \
+            --ks-pass env:WALLHUB_RELEASE_STORE_PASSWORD \
+            --ks-key-alias "$WALLHUB_RELEASE_KEY_ALIAS" \
+            --key-pass env:WALLHUB_RELEASE_KEY_PASSWORD \
+            app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            --print-certs app/build/outputs/apk/debug/app-debug.apk
       - name: Package Debug APK
         run: |
           mkdir -p artifact
