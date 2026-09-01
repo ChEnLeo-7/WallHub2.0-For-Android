@@ -6,8 +6,10 @@
 -keep class in.dragonbra.javasteam.generated.** { *; }
 -keep class in.dragonbra.javasteam.rpc.** { *; }
 -keep class in.dragonbra.javasteam.steam.handlers.**.callback.** { *; }
-# SpongyCastle registers cipher implementations by class name at runtime.
--keep class org.spongycastle.** { *; }
+# SpongyCastle registers the provider and RSA cipher implementations by class name.
+-keep class org.spongycastle.jce.provider.BouncyCastleProvider { *; }
+-keep class org.spongycastle.jce.provider.BouncyCastleProvider$* { *; }
+-keep class org.spongycastle.jcajce.provider.asymmetric.rsa.** { *; }
 # WallHub accesses JavaSteam's configured OkHttp client for streaming chunk reads.
 -keepclassmembers class in.dragonbra.javasteam.steam.cdn.Client {
     okhttp3.OkHttpClient httpClient;
