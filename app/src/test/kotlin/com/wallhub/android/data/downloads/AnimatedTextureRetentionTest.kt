@@ -82,9 +82,9 @@ class AnimatedTextureRetentionTest {
         ByteArrayOutputStream().use { output ->
             output.writeCString("TEXV0005")
             output.writeCString("TEXI0001")
-            listOf(0, 0, 4096, 4096, 4096, 4096, 0).forEach(output::writeIntLe)
+            listOf(0, 0, 4096, 4096, 4096, 4096, 0).forEach { output.writeIntLe(it) }
             output.writeCString("TEXB0004")
-            listOf(1, -1, 0, 0).forEach(output::writeIntLe)
+            listOf(1, -1, 0, 0).forEach { output.writeIntLe(it) }
             output.toByteArray()
         }
 
@@ -92,9 +92,9 @@ class AnimatedTextureRetentionTest {
         ByteArrayOutputStream().use { output ->
             output.writeCString("TEXV0005")
             output.writeCString("TEXI0001")
-            listOf(0, 0, 1, 1, 1, 1, 0).forEach(output::writeIntLe)
+            listOf(0, 0, 1, 1, 1, 1, 0).forEach { output.writeIntLe(it) }
             output.writeCString("TEXB0004")
-            listOf(1, -1, 0, 1, 1, 1, 0, 8, 8).forEach(output::writeIntLe)
+            listOf(1, -1, 0, 1, 1, 1, 0, 8, 8).forEach { output.writeIntLe(it) }
             output.write(ByteArray(8) { it.toByte() })
             output.toByteArray()
         }
@@ -103,9 +103,9 @@ class AnimatedTextureRetentionTest {
         ByteArrayOutputStream().use { output ->
             output.writeCString("TEXV0005")
             output.writeCString("TEXI0001")
-            listOf(0, 4, 1, 1, 1, 1, 0).forEach(output::writeIntLe)
+            listOf(0, 4, 1, 1, 1, 1, 0).forEach { output.writeIntLe(it) }
             output.writeCString("TEXB0004")
-            listOf(1, -1, 0, 1, 1, 1, 0, 4, 4).forEach(output::writeIntLe)
+            listOf(1, -1, 0, 1, 1, 1, 0, 4, 4).forEach { output.writeIntLe(it) }
             output.write(byteArrayOf(1, 2, 3, -1))
             output.toByteArray()
         }
@@ -114,11 +114,11 @@ class AnimatedTextureRetentionTest {
         ByteArrayOutputStream().use { output ->
             output.writeCString("TEXV0005")
             output.writeCString("TEXI0001")
-            listOf(0, 0, 1, 1, 1, 1, 0).forEach(output::writeIntLe)
+            listOf(0, 0, 1, 1, 1, 1, 0).forEach { output.writeIntLe(it) }
             output.writeCString("TEXB0004")
-            listOf(1, -1, 0, 2).forEach(output::writeIntLe)
+            listOf(1, -1, 0, 2).forEach { output.writeIntLe(it) }
             repeat(2) {
-                listOf(1, 1, 0, 4, 4).forEach(output::writeIntLe)
+                listOf(1, 1, 0, 4, 4).forEach { output.writeIntLe(it) }
                 output.write(byteArrayOf(1, 2, 3, -1))
             }
             output.toByteArray()
