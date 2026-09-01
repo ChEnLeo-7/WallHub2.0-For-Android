@@ -323,11 +323,8 @@ class SecureSteamSessionRepository
                         null
                     }
                     else -> {
-                        // promoteAuthenticatedSession installs the usable session and
-                        // content credential before profile hydration flips the public
-                        // phase to SIGNED_IN. Prefer that authoritative active credential
-                        // during the short SIGNING_IN window instead of misclassifying a
-                        // logged-in user as anonymous.
+                        // Session promotion installs the authoritative content credential
+                        // before the public state changes to SIGNED_IN.
                         selectSteamContentCredential(activeCredential, hasUsableSession) {
                             credentialMutex.withLock { credentialStore.load() }?.toContentCredential()
                         }

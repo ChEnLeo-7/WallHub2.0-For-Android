@@ -386,15 +386,18 @@ internal suspend fun SecureSteamSessionRepository.loginInternal(
                     ),
             )
         if (!promoted) throw CancellationException("Steam login was superseded")
-        setStateIfCurrent(
-            generation = generation,
-            phase = SteamSessionPhase.SIGNED_IN,
-            message = applicationContext.getString(R.string.backend_steam_login_success),
-            accountName = authenticatedName,
-            personaName = previousState?.personaName,
-            avatarUrl = previousState?.avatarUrl,
-            hasStoredSession = true,
-        )
+        if (
+            publishSignedInIfCurrent(
+                generation = generation,
+                steamSession = steamSession,
+                message = applicationContext.getString(R.string.backend_steam_login_success),
+                accountName = authenticatedName,
+                personaName = previousState?.personaName,
+                avatarUrl = previousState?.avatarUrl,
+            )
+        ) {
+            hydrateCachedOwnProfile(generation, steamSession)
+        }
     } catch (error: CancellationException) {
         throw error
     } catch (error: Throwable) {
@@ -425,15 +428,20 @@ internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInterna
     }
     val currentSession = authenticatedSession
     if (currentSession?.isUsable == true) {
-        setStateIfCurrent(
-            generation = generation,
-            phase = SteamSessionPhase.SIGNED_IN,
-            message = applicationContext.getString(R.string.backend_steam_session_restored),
-            accountName = credential.accountName,
-            personaName = credential.personaName,
-            avatarUrl = credential.avatarUrl,
-            hasStoredSession = true,
-        )
+        if (
+            publishSignedInIfCurrent(
+                generation = generation,
+                steamSession = currentSession,
+                message = applicationContext.getString(R.string.backend_steam_session_restored),
+                accountName = credential.accountName,
+                personaName = credential.personaName,
+                avatarUrl = credential.avatarUrl,
+            )
+        ) {
+            hydrateCachedOwnProfile(generation, currentSession)
+        } else if (!currentSession.isUsable) {
+            handleUnexpectedDisconnect(currentSession.id, userInitiated = false)
+        }
         return
     }
     detachAuthenticatedSession(generation)?.close()
@@ -494,22 +502,20 @@ internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInterna
             restoredSession.close()
             throw CancellationException("Steam restore was superseded")
         }
-        if (!restoredSession.isUsable) {
-            handleUnexpectedDisconnect(restoredSession.id, userInitiated = false)
-            return
-        }
         if (
-            setStateIfCurrent(
+            publishSignedInIfCurrent(
                 generation = generation,
-                phase = SteamSessionPhase.SIGNED_IN,
+                steamSession = restoredSession,
                 message = applicationContext.getString(R.string.backend_steam_session_restored),
                 accountName = credential.accountName,
                 personaName = credential.personaName,
                 avatarUrl = credential.avatarUrl,
-                hasStoredSession = true,
             )
         ) {
             recordSessionEvent(generation, "restore_success")
+            hydrateCachedOwnProfile(generation, restoredSession)
+        } else if (!restoredSession.isUsable) {
+            handleUnexpectedDisconnect(restoredSession.id, userInitiated = false)
         }
     } catch (error: SteamLogonRejectedException) {
         setStateIfCurrent(
@@ -821,6 +827,15 @@ internal fun SecureSteamSessionRepository.createSteamSession(
                 )
             steamProfiles[steamId] = profile
             pendingPersonaProfiles.remove(steamId)?.complete(profile)
+            serviceScope.launch {
+                val ownSteamId =
+                    runCatching { accountSteamId.await().convertToUInt64() }
+                        .getOrNull()
+                        ?: return@launch
+                if (steamId == ownSteamId) {
+                    persistOwnProfileIfCurrent(generation, sessionId, profile)
+                }
+            }
         }
     val callbackJob = launchCallbackPump(callbackScope, callbackManager, generation)
     return SteamClientSession(
@@ -967,6 +982,130 @@ internal suspend fun SecureSteamSessionRepository.promoteAuthenticatedSession(
     return promoted
 }
 
+internal fun SecureSteamSessionRepository.publishSignedInIfCurrent(
+    generation: Long,
+    steamSession: SteamClientSession,
+    message: String,
+    accountName: String,
+    personaName: String?,
+    avatarUrl: String?,
+): Boolean {
+    val state =
+        synchronized(lifecycleLock) {
+            if (
+                !matchesCurrentUsableSession(
+                    expectedGeneration = generation,
+                    currentGeneration = sessionGeneration,
+                    expectedSessionId = steamSession.id,
+                    activeSessionId = authenticatedSession?.id,
+                    sessionUsable = steamSession.isUsable,
+                )
+            ) {
+                return@synchronized null
+            }
+            SteamSessionState(
+                phase = SteamSessionPhase.SIGNED_IN,
+                accountName = accountName,
+                personaName = personaName,
+                avatarUrl = avatarUrl,
+                message = message,
+                hasStoredSession = true,
+            ).also { mutableSession.value = it }
+        } ?: return false
+    recordState(state, generation)
+    return true
+}
+
+internal fun SecureSteamSessionRepository.hydrateCachedOwnProfile(
+    generation: Long,
+    steamSession: SteamClientSession,
+) {
+    serviceScope.launch {
+        val steamId =
+            runCatching { steamSession.accountSteamId.await().convertToUInt64() }
+                .getOrNull()
+                ?: return@launch
+        val profile =
+            steamProfiles[steamId]
+                ?: steamSession.friends.personaName
+                    .trim()
+                    .takeIf(String::isNotBlank)
+                    ?.let { displayName ->
+                        SteamProfile(
+                            displayName = displayName,
+                            avatarUrl = steamSession.friends.personaAvatar.toSteamAvatarUrl(),
+                        )
+                    }
+                ?: return@launch
+        persistOwnProfileIfCurrent(generation, steamSession.id, profile)
+    }
+}
+
+internal suspend fun SecureSteamSessionRepository.persistOwnProfileIfCurrent(
+    generation: Long,
+    sessionId: Long,
+    profile: SteamProfile,
+) {
+    val state =
+        credentialMutex.withLock {
+            synchronized(lifecycleLock) {
+                val active = authenticatedSession
+                if (
+                    !matchesCurrentUsableSession(
+                        expectedGeneration = generation,
+                        currentGeneration = sessionGeneration,
+                        expectedSessionId = sessionId,
+                        activeSessionId = active?.id,
+                        sessionUsable = active?.isUsable == true,
+                    )
+                ) {
+                    return@synchronized null
+                }
+                val current = mutableSession.value
+                val credential = credentialStore.load() ?: return@synchronized null
+                if (!credential.accountName.equals(current.accountName, ignoreCase = true)) {
+                    return@synchronized null
+                }
+                val avatarUrl = profile.avatarUrl ?: current.avatarUrl
+                val profiledCredential =
+                    credential.copy(
+                        personaName = profile.displayName,
+                        avatarUrl = avatarUrl,
+                    )
+                if (
+                    profiledCredential == credential &&
+                    current.personaName == profile.displayName &&
+                    current.avatarUrl == avatarUrl
+                ) {
+                    return@synchronized null
+                }
+                try {
+                    credentialStore.save(profiledCredential)
+                } catch (_: RuntimeException) {
+                    return@synchronized null
+                }
+                current
+                    .copy(
+                        personaName = profile.displayName,
+                        avatarUrl = avatarUrl,
+                        updatedAt = System.currentTimeMillis(),
+                    ).also { mutableSession.value = it }
+            }
+        } ?: return
+    recordState(state, generation)
+}
+
+internal fun matchesCurrentUsableSession(
+    expectedGeneration: Long,
+    currentGeneration: Long,
+    expectedSessionId: Long,
+    activeSessionId: Long?,
+    sessionUsable: Boolean,
+): Boolean =
+    expectedGeneration == currentGeneration &&
+        expectedSessionId == activeSessionId &&
+        sessionUsable
+
 internal fun SecureSteamSessionRepository.handleUnexpectedDisconnect(
     sessionId: Long,
     userInitiated: Boolean,
@@ -997,7 +1136,7 @@ internal fun SecureSteamSessionRepository.handleUnexpectedDisconnect(
         recordSessionEvent(
             generation = invalidation.first,
             stage = "unexpected_disconnect",
-            outcome = if (userInitiated) "client" else "network",
+            outcome = "user_initiated_flag=$userInitiated",
         )
         scheduleAutomaticSessionRestore(invalidation.first, invalidation.third)
     }
