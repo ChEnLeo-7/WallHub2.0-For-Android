@@ -10,6 +10,11 @@
 -keep class org.spongycastle.jcajce.provider.asymmetric.RSA { *; }
 -keep class org.spongycastle.jcajce.provider.asymmetric.RSA$Mappings { *; }
 -keep class org.spongycastle.jcajce.provider.asymmetric.rsa.** { *; }
+# JavaSteam decrypts Steam depot manifests through dynamically registered AES ciphers.
+-keep class org.spongycastle.jcajce.provider.symmetric.AES { *; }
+-keep class org.spongycastle.jcajce.provider.symmetric.AES$Mappings { *; }
+-keep class org.spongycastle.jcajce.provider.symmetric.AES$* { *; }
+-keep class org.spongycastle.jcajce.provider.symmetric.util.** { *; }
 # WallHub accesses JavaSteam's configured OkHttp client for streaming chunk reads.
 -keepclassmembers class in.dragonbra.javasteam.steam.cdn.Client {
     okhttp3.OkHttpClient httpClient;
