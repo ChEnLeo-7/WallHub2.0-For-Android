@@ -27,10 +27,23 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK packages
         run: yes | sdkmanager "platforms;android-36" "build-tools;35.0.0"
+      - name: Generate reviewed Detekt baseline
+        run: |
+          workers="$(nproc)"
+          ./gradlew --no-daemon --parallel --build-cache --max-workers="$workers" \
+            :app:detektBaseline
       - name: Verify Android application
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon --max-workers=1 :app:testDebugUnitTest :app:verifyLintSourceWarningBudget detekt ktlintCheck dependencyUpdates :app:assembleDebug
+          workers="$(nproc)"
+          printf 'Gradle workers: %s\n' "$workers"
+          ./gradlew --no-daemon --parallel --build-cache --max-workers="$workers" \
+            :app:testDebugUnitTest \
+            :app:verifyLintSourceWarningBudget \
+            detekt \
+            ktlintCheck \
+            dependencyUpdates \
+            :app:assembleDebug
       - name: Require Release signing secrets
         if: github.event_name != 'pull_request'
         env:
@@ -67,7 +80,11 @@ jobs:
           WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
           WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
           WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease -Pwallhub.requireReleaseSigning=true
+        run: |
+          workers="$(nproc)"
+          ./gradlew --no-daemon --parallel --build-cache --max-workers="$workers" \
+            :app:assembleRelease \
+            -Pwallhub.requireReleaseSigning=true
       - name: Verify Release APK size
         if: github.event_name != 'pull_request'
         run: |
