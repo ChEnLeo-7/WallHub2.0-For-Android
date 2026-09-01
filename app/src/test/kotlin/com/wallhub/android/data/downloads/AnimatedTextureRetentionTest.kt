@@ -98,7 +98,6 @@ class AnimatedTextureRetentionTest {
             output.write(ByteArray(8) { it.toByte() })
             output.toByteArray()
         }
-    }
 
     private fun animatedRgbaTex(): ByteArray =
         ByteArrayOutputStream().use { output ->
