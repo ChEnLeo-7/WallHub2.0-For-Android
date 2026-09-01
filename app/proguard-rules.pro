@@ -3,6 +3,7 @@
 
 # JavaSteam resolves generated protobuf/RPC types and callbacks dynamically.
 -keep class in.dragonbra.javasteam.protobufs.** { *; }
+-keep class in.dragonbra.javasteam.generated.** { *; }
 -keep class in.dragonbra.javasteam.rpc.** { *; }
 -keep class in.dragonbra.javasteam.steam.handlers.**.callback.** { *; }
 # WallHub accesses JavaSteam's configured OkHttp client for streaming chunk reads.
