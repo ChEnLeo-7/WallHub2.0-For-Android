@@ -260,22 +260,32 @@ tasks.register("verifyLintSourceWarningBudget") {
                 .newDocumentBuilder()
                 .parse(report)
         val issues = document.getElementsByTagName("issue")
-        val warningCount =
-            (0 until issues.length).count { index ->
+        val warningIds =
+            (0 until issues.length).mapNotNull { index ->
                 val issue = issues.item(index) as org.w3c.dom.Element
-                if (issue.getAttribute("severity") != "Warning") return@count false
-                if (issue.getAttribute("id") in dependencyUpgradeLintIssues) return@count false
+                if (issue.getAttribute("severity") != "Warning") return@mapNotNull null
+                if (issue.getAttribute("id") in dependencyUpgradeLintIssues) return@mapNotNull null
                 val locations = issue.getElementsByTagName("location")
-                (0 until locations.length).any { locationIndex ->
-                    val location = locations.item(locationIndex) as org.w3c.dom.Element
-                    location
-                        .getAttribute("file")
-                        .replace('\\', '/')
-                        .contains("/src/main/")
-                }
+                val affectsMainSource =
+                    (0 until locations.length).any { locationIndex ->
+                        val location = locations.item(locationIndex) as org.w3c.dom.Element
+                        location
+                            .getAttribute("file")
+                            .replace('\\', '/')
+                            .contains("/src/main/")
+                    }
+                issue.getAttribute("id").takeIf { affectsMainSource }
             }
+        val warningCount = warningIds.size
+        val warningSummary =
+            warningIds
+                .groupingBy { it }
+                .eachCount()
+                .entries
+                .sortedByDescending { it.value }
+                .joinToString { (id, count) -> "$id=$count" }
         check(warningCount <= lintSourceWarningBudget) {
-            "Main-source Lint warnings increased to $warningCount (budget: $lintSourceWarningBudget)."
+            "Main-source Lint warnings increased to $warningCount (budget: $lintSourceWarningBudget): $warningSummary"
         }
         logger.lifecycle("Main-source Lint warnings: $warningCount/$lintSourceWarningBudget")
     }
