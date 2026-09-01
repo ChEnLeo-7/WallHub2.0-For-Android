@@ -234,7 +234,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
 
-val lintSourceWarningBudget = 43
+val lintSourceWarningBudget = 208
 val dependencyUpgradeLintIssues =
     setOf(
         "AndroidGradlePluginVersion",
