@@ -120,6 +120,7 @@ class WorkshopDetailViewModel
                             outputDirectoryLabel = preferences.outputDirectoryLabel,
                             onlineChunkPlaybackEnabled = preferences.onlineChunkPlaybackEnabled,
                         )
+                    if (!preferences.onlineChunkPlaybackEnabled) stopInlineVideoPlayback()
                 }
             }
             viewModelScope.launch {
@@ -228,6 +229,7 @@ class WorkshopDetailViewModel
             val current = mutableState.value
             if (
                 current.detail?.summary?.type != WorkshopType.VIDEO ||
+                !current.onlineChunkPlaybackEnabled ||
                 current.inlineVideoStream != null ||
                 current.isLoadingInlineVideo
             ) {

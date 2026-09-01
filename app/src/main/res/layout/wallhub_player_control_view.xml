@@ -140,7 +140,7 @@
         </LinearLayout>
     </FrameLayout>
 
-    <com.wallhub.android.feature.detail.WallHubBufferedTimeBar
+    <androidx.media3.ui.DefaultTimeBar
         android:id="@id/exo_progress"
         android:layout_width="match_parent"
         android:layout_height="38dp"

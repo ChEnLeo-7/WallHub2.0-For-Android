@@ -3,9 +3,12 @@ package com.wallhub.android.data.downloads
 import android.util.Log
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.core.model.WorkshopVideoBufferState
+import com.wallhub.android.core.model.WorkshopVideoFullCacheState
+import com.wallhub.android.core.model.WorkshopVideoFullCacheStatus
 import `in`.dragonbra.javasteam.enums.EOSType
 import `in`.dragonbra.javasteam.enums.EResult
 import `in`.dragonbra.javasteam.steam.cdn.DepotChunk
+import `in`.dragonbra.javasteam.steam.cdn.ClientLancache
 import `in`.dragonbra.javasteam.steam.cdn.Server
 import `in`.dragonbra.javasteam.steam.handlers.steamapps.SteamApps
 import `in`.dragonbra.javasteam.steam.handlers.steamcontent.SteamContent
@@ -22,6 +25,7 @@ import `in`.dragonbra.javasteam.steam.steamclient.configuration.SteamConfigurati
 import `in`.dragonbra.javasteam.types.ChunkData
 import `in`.dragonbra.javasteam.types.DepotManifest
 import `in`.dragonbra.javasteam.types.FileData
+import `in`.dragonbra.javasteam.util.SteamKitWebRequestException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -42,6 +46,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -49,13 +54,17 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.ConnectionPool
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.Dispatcher
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.BufferedOutputStream
 import java.io.Closeable
 import java.io.File
 import java.io.FileInputStream
@@ -72,6 +81,8 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import `in`.dragonbra.javasteam.steam.cdn.Client as SteamCdnClient
 
 internal suspend fun resolveContentAccess(
@@ -135,40 +146,61 @@ internal class SteamContentVideoStream internal constructor(
     private val access: SteamContentAccess,
     private val depotId: Int,
 ) : com.wallhub.android.core.model.WorkshopVideoStreamSession {
+    private val cdnHttpClient = cdnClient.streamingHttpClient()
     private val selector = CdnServerSelector()
-    // Keep the configured request count, but cap aggregate in-memory decoded payloads so
-    // large Steam chunks cannot exhaust the app heap on high-concurrency devices.
-    private val networkScheduler = ForegroundFirstPermitPool(prefetchConcurrency)
-    private val memoryScheduler =
+    private val adaptiveBufferPolicy =
+        SteamStreamAdaptiveBufferPolicy(
+            contentLength = contentLength,
+            cacheBudgetBytes = streamCache.prefetchCapacityBytes,
+        )
+    // Match Webview's maxParallel: one permit covers the complete chunk lifecycle,
+    // rather than only the HTTP request portion.
+    private val pipelineConcurrencyScheduler = ForegroundFirstPermitPool(prefetchConcurrency)
+    private val pipelineBudgetBytes = steamStreamMemoryBudgetBytes(Runtime.getRuntime().maxMemory())
+    private val pipelineScheduler =
         DownloadMemoryBudget.withFixedCapacity(
-            steamStreamMemoryBudgetBytes(Runtime.getRuntime().maxMemory()),
+            pipelineBudgetBytes,
         )
     private val fetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     // JavaSteam VZipUtil retains an 8 MiB ThreadLocal window per decoder thread.
     // A dedicated bounded pool prevents Dispatchers.IO workers from each retaining
     // their own window while network task concurrency remains exactly user-configured.
+    private val decodeThreadCount =
+        steamStreamDecodeThreads(
+            configuredConcurrency = prefetchConcurrency,
+            availableProcessors = Runtime.getRuntime().availableProcessors(),
+        )
     private val decodeDispatcher =
-        Executors.newFixedThreadPool(STEAM_STREAM_DECODE_THREADS) { runnable ->
+        Executors.newFixedThreadPool(decodeThreadCount) { runnable ->
             Thread(runnable, "WallHub-Steam-Decode").apply { isDaemon = true }
         }.asCoroutineDispatcher()
     private val inFlightLock = Any()
     private val inFlightChunks = mutableMapOf<Long, StreamChunkRequest>()
     private val nextChunkRequestId = AtomicLong(0L)
-    private val stagedRequestCount = AtomicInteger(0)
     private val prefetchLock = Any()
     private val prefetchGeneration = AtomicLong(0L)
     private val lastReadEnd = AtomicLong(-1L)
-    private val dynamicAheadBytes = AtomicLong(STEAM_STREAM_AHEAD_BYTES)
-    private val dynamicLowWaterBytes = AtomicLong(STEAM_STREAM_LOW_WATER_BYTES)
+    private val dynamicAheadBytes = AtomicLong(STREAM_INITIAL_BUFFER_BYTES)
+    private val dynamicTargetDurationMs = AtomicLong(0L)
     private val latestReadPosition = AtomicLong(0L)
     private val lastBufferMetricsLogAtMs = AtomicLong(0L)
-    private val byteRateEstimator = SteamStreamByteRateEstimator(contentLength)
     private val latestPlaybackClock = AtomicReference(SteamStreamPlaybackClock())
-    private val latestEstimatedBytesPerMillisecond = AtomicReference(0.0)
+    private val latestAdaptiveDecision =
+        AtomicReference(
+            SteamAdaptiveBufferDecision(
+                targetDurationMs = 0L,
+                targetBytes = STREAM_INITIAL_BUFFER_BYTES,
+                requiredBytesPerSecond = 0.0,
+                safeThroughputBytesPerSecond = 0.0,
+                bandwidthLimited = false,
+            ),
+        )
     private val contiguousBufferTracker = SteamContiguousBufferTracker(chunks)
     private val mutablePlaybackBufferState = MutableStateFlow(WorkshopVideoBufferState())
+    private val mutableFullCacheState = MutableStateFlow(WorkshopVideoFullCacheState(totalBytes = contentLength))
 
     override val playbackBufferState = mutablePlaybackBufferState.asStateFlow()
+    override val fullCacheState = mutableFullCacheState.asStateFlow()
 
     @Volatile
     private var latestCdnHost: String? =
@@ -187,41 +219,31 @@ internal class SteamContentVideoStream internal constructor(
     ) {
         latestPlaybackClock.set(
             SteamStreamPlaybackClock(
+                playbackSpeed = playbackSpeed.coerceAtLeast(STEAM_STREAM_MIN_PLAYBACK_SPEED),
                 playbackPositionMs = playbackPositionMs,
                 bufferedPositionMs = bufferedPositionMs,
                 durationMs = durationMs,
             ),
         )
-        val estimatedBytesPerMillisecond =
-            byteRateEstimator.update(
+        val decision =
+            adaptiveBufferPolicy.evaluate(
                 readPosition = latestReadPosition.get(),
                 playbackPositionMs = playbackPositionMs,
                 bufferedPositionMs = bufferedPositionMs,
                 durationMs = durationMs,
+                playbackSpeed = playbackSpeed,
             )
-        latestEstimatedBytesPerMillisecond.set(estimatedBytesPerMillisecond)
-        val window =
-            steamStreamTimeBufferWindow(
-                contentLength = contentLength,
-                durationMs = durationMs,
-                maximumAheadBytes = streamCache.prefetchCapacityBytes,
-                observedBytesPerMillisecond = estimatedBytesPerMillisecond,
-            )
+        latestAdaptiveDecision.set(decision)
         val mediaBufferedMs = (bufferedPositionMs - playbackPositionMs).coerceAtLeast(0L)
+        val averageBytesPerMillisecond =
+            if (contentLength > 0L && durationMs > 0L) contentLength.toDouble() / durationMs.toDouble() else 0.0
         val mediaBufferedBytes =
-            kotlin.math.ceil(estimatedBytesPerMillisecond * mediaBufferedMs.toDouble())
+            kotlin.math.ceil(averageBytesPerMillisecond * mediaBufferedMs.toDouble())
                 .toLong()
                 .coerceAtLeast(0L)
-        val diskTargetBytes = (window.targetBytes - mediaBufferedBytes).coerceAtLeast(1L)
-        val diskLowWaterBytes =
-            (window.lowWaterBytes - mediaBufferedBytes).coerceIn(1L, diskTargetBytes)
-        // Media3 and the verified disk range form one logical buffer. Subtract
-        // Media3's decode-ready bytes so the displayed/refill watermarks remain
-        // 15 seconds and 8 seconds in total rather than stacking both layers.
-        dynamicLowWaterBytes.set(diskLowWaterBytes)
+        val diskTargetBytes = (decision.targetBytes - mediaBufferedBytes).coerceAtLeast(1L)
         dynamicAheadBytes.set(diskTargetBytes)
-        // A periodic playback report also retries a failed/paused refill. The range
-        // calculator remains the sole 10-second low-water gate.
+        dynamicTargetDurationMs.set(decision.targetDurationMs)
         val afterExclusive = lastReadEnd.get() + 1L
         if (afterExclusive > 0L) scheduleAheadPrefetch(afterExclusive)
         publishPlaybackBufferState()
@@ -235,9 +257,10 @@ internal class SteamContentVideoStream internal constructor(
                 "Steam stream playbackPositionMs=$playbackPositionMs, mediaBufferedMs=$mediaBufferedMs, " +
                     "contiguousAvailableMs=${playbackBufferState.value.availableDurationMs}, " +
                     "targetReached=${playbackBufferState.value.targetReached}, " +
-                    "diskTargetBytes=${window.targetBytes}, " +
-                    "diskLowWaterBytes=${window.lowWaterBytes}, " +
-                    "estimatedMbps=${"%.1f".format(estimatedBytesPerMillisecond * 8_000.0 / 1_000_000.0)}, " +
+                    "targetBytes=${decision.targetBytes}, " +
+                    "requiredMbps=${"%.1f".format(decision.requiredBytesPerSecond * 8.0 / 1_000_000.0)}, " +
+                    "safeMbps=${"%.1f".format(decision.safeThroughputBytesPerSecond * 8.0 / 1_000_000.0)}, " +
+                    "bandwidthLimited=${decision.bandwidthLimited}, " +
                     "speed=$playbackSpeed, durationMs=$durationMs",
             )
         }
@@ -247,10 +270,16 @@ internal class SteamContentVideoStream internal constructor(
     private var aheadPrefetchJob: Job? = null
 
     @Volatile
-    private var aheadBufferedEndInclusive = -1L
+    private var initialPrefetchJob: Job? = null
 
     @Volatile
-    private var refillActive = true
+    private var fullCacheJob: Job? = null
+
+    @Volatile
+    private var fullCachePinned = false
+
+    @Volatile
+    private var aheadBufferedEndInclusive = -1L
 
     private val prefetchFrontier = StreamPrefetchFrontier()
     private val transferMetrics = SteamChunkTransferMetrics()
@@ -259,21 +288,29 @@ internal class SteamContentVideoStream internal constructor(
     private var closed = false
 
     init {
+        streamCache.setEvictionListener(::onCacheChunkEvicted)
         Log.i(
             STEAM_CONTENT_LOG_TAG,
-            "Steam stream fixedChunkConcurrency=$prefetchConcurrency; scheduling follows the user setting",
+            "Steam stream fixedChunkConcurrency=$prefetchConcurrency, " +
+                "decodeThreads=$decodeThreadCount; adaptive buffering follows range demand and measured throughput",
         )
+        scheduleInitialPrefetch()
     }
 
     override suspend fun readAt(
         position: Long,
+        destination: ByteArray,
+        destinationOffset: Int,
         length: Int,
-    ): ByteArray =
+    ): Int =
         withContext(Dispatchers.IO) {
             check(!closed) { "SteamKit streaming session is closed" }
             require(position >= 0L) { "Invalid streaming read position" }
             require(length >= 0) { "Invalid streaming read length" }
-            if (length == 0 || position >= contentLength) return@withContext ByteArray(0)
+            require(destinationOffset >= 0 && destinationOffset <= destination.size - length) {
+                "Invalid streaming read destination"
+            }
+            if (length == 0 || position >= contentLength) return@withContext 0
 
             val requestedLength = min(length.toLong(), contentLength - position).toInt()
             val endExclusive = position + requestedLength
@@ -281,8 +318,7 @@ internal class SteamContentVideoStream internal constructor(
             // Fill the remaining user-configured request slots immediately instead of
             // waiting for the foreground chunk to finish before starting prefetch.
             scheduleAheadPrefetch(endExclusive)
-            val result = ByteArray(requestedLength)
-            var destinationOffset = 0
+            var written = 0
             var chunkIndex = firstSteamStreamChunkIndex(chunks, position)
             while (chunkIndex < chunks.size) {
                 val chunk = chunks[chunkIndex]
@@ -292,24 +328,22 @@ internal class SteamContentVideoStream internal constructor(
                 val sourceStart = max(position, chunkStart) - chunkStart
                 val sourceEnd = min(endExclusive, chunkEnd) - chunkStart
                 val copiedLength = (sourceEnd - sourceStart).toInt()
-                val data = loadChunkSlice(
+                loadChunkSliceInto(
                     chunk = chunk,
-                    offset = sourceStart.toInt(),
+                    sourceOffset = sourceStart.toInt(),
+                    destination = destination,
+                    destinationOffset = destinationOffset + written,
                     length = copiedLength,
                     priority = SteamStreamChunkPriority.FOREGROUND,
                 )
-                data.copyInto(
-                    destination = result,
-                    destinationOffset = destinationOffset,
-                )
-                destinationOffset += copiedLength
+                written += copiedLength
                 chunkIndex += 1
             }
-            check(destinationOffset == requestedLength) { "Steam video chunk has missing data" }
+            check(written == requestedLength) { "Steam video chunk has missing data" }
             lastReadEnd.set(endExclusive - 1L)
             latestReadPosition.set(endExclusive)
             scheduleAheadPrefetch(endExclusive)
-            result
+            written
         }
 
     override fun close() {
@@ -319,144 +353,161 @@ internal class SteamContentVideoStream internal constructor(
             aheadPrefetchJob?.cancel()
             aheadPrefetchJob = null
         }
+        initialPrefetchJob?.cancel()
+        fullCacheJob?.cancel()
         fetchScope.cancel()
         decodeDispatcher.close()
+        streamCache.close()
         runCatching { cdnClient.close() }
         session.close()
     }
 
-    private suspend fun loadChunkSlice(
+    private suspend fun loadChunkSliceInto(
         chunk: ChunkData,
-        offset: Int,
+        sourceOffset: Int,
+        destination: ByteArray,
+        destinationOffset: Int,
         length: Int,
         priority: SteamStreamChunkPriority,
-    ): ByteArray {
-        streamCache.readSlice(chunk.offset, chunk.uncompressedLength, chunk.checksum, offset, length)?.let { cached ->
+    ) {
+        if (
+            streamCache.readSliceInto(
+                chunkOffset = chunk.offset,
+                chunkLength = chunk.uncompressedLength,
+                expectedChecksum = chunk.checksum,
+                sourceOffset = sourceOffset,
+                destination = destination,
+                destinationOffset = destinationOffset,
+                length = length,
+            )
+        ) {
             onVerifiedChunkCached(chunk)
-            return cached
+            return
         }
         val downloaded = withSteamCdnRecovery {
-            requestChunk(chunk, priority).await()
+            requestChunk(chunk, priority).deferred.await()
         }
-        if (length == 0) return ByteArray(0)
-        return downloaded.copyOfRange(offset, offset + length)
+        if (length == 0) return
+        if (downloaded != null) {
+            downloaded.copyInto(destination, destinationOffset, sourceOffset, sourceOffset + length)
+            return
+        }
+        check(
+            streamCache.readSliceInto(
+                chunkOffset = chunk.offset,
+                chunkLength = chunk.uncompressedLength,
+                expectedChecksum = chunk.checksum,
+                sourceOffset = sourceOffset,
+                destination = destination,
+                destinationOffset = destinationOffset,
+                length = length,
+            ),
+        ) { "Steam video chunk was committed but is unavailable" }
     }
 
     private suspend fun requestChunk(
         chunk: ChunkData,
         priority: SteamStreamChunkPriority,
-    ): Deferred<ByteArray> {
+    ): StreamChunkRequest {
+        if (priority == SteamStreamChunkPriority.FOREGROUND) {
+            val matchingRequest = synchronized(inFlightLock) { inFlightChunks[chunk.offset] }
+            if (matchingRequest == null) preemptBlockingPrefetch()
+        }
         var reusedRequest: StreamChunkRequest? = null
-        val deferred = synchronized(inFlightLock) {
+        val chunkRequest = synchronized(inFlightLock) {
             val existing = inFlightChunks[chunk.offset]
             if (existing != null) {
                 if (priority == SteamStreamChunkPriority.FOREGROUND) {
                     existing.promote()
                 }
                 reusedRequest = existing
-                return@synchronized existing.deferred
+                return@synchronized existing
             }
             val requestId = nextChunkRequestId.incrementAndGet()
-            val result = CompletableDeferred<ByteArray>()
+            val result = CompletableDeferred<ByteArray?>()
+            val networkCompleted = CompletableDeferred<Unit>()
             val priorityState = AtomicReference(priority)
             val request =
                 fetchScope.launch(start = CoroutineStart.LAZY) {
                     var metricsRequestStarted = false
-                    var stagedEncrypted: SteamEncryptedChunkSpool? = null
                     try {
-                        val downloaded =
-                            run {
-                                // The exact user setting governs active CDN requests. Release
-                                // the network permit as soon as the compressed payload arrives;
-                                // high-memory LZMA work must not reduce network concurrency.
+                        val pipelineBytes =
+                            steamStreamChunkPipelineBytes(chunk.compressedLength, chunk.uncompressedLength)
+                                .coerceAtMost(pipelineBudgetBytes)
+                        pipelineConcurrencyScheduler.withPermit(priorityState.get(), requestId) {
+                            pipelineScheduler.withPermit(
+                                requestedBytes = pipelineBytes,
+                                priority = priorityState.get(),
+                                requestId = requestId,
+                                order = chunk.offset,
+                            ) {
+                                val startedAtNanos = System.nanoTime()
+                                transferMetrics.requestStarted()
+                                metricsRequestStarted = true
                                 var encryptedPayload: ByteArray? =
-                                    networkScheduler.withPermit(priorityState.get(), requestId) {
-                                        val startedAtNanos = System.nanoTime()
-                                        transferMetrics.requestStarted()
-                                        metricsRequestStarted = true
-                                        downloadEncryptedChunk(
-                                            cdnClient = cdnClient,
-                                            servers = access.servers,
-                                            depotId = depotId,
-                                            chunk = chunk,
-                                            authTokens = access.authTokens,
-                                            selector = selector,
-                                            control = { SteamDownloadControl.CONTINUE },
-                                            onSuccess = { server ->
-                                                latestCdnHost = resolveCdnRequestHost(server.vHost, server.host)
-                                            },
-                                        ).also {
-                                            transferMetrics
-                                                .requestCompleted(chunk.compressedLength, startedAtNanos)
-                                                ?.let { metrics ->
-                                                    Log.d(
-                                                        STEAM_CONTENT_LOG_TAG,
-                                                        "Steam stream chunks=${metrics.completedChunks}, " +
-                                                            "aggregate=${"%.1f".format(metrics.aggregateMbps)}Mbps, " +
-                                                            "active=${metrics.activeRequests}, peak=${metrics.peakActiveRequests}, " +
-                                                            "staged=${stagedRequestCount.get()}, " +
-                                                            "configuredConcurrency=$prefetchConcurrency",
-                                                    )
-                                                }
-                                            metricsRequestStarted = false
-                                        }
-                                    }
-                                if (priorityState.get() == SteamStreamChunkPriority.PREFETCH) {
-                                    stagedEncrypted =
-                                        streamCache.stageEncrypted(
-                                            requestId = requestId,
-                                            chunkOffset = chunk.offset,
-                                            data = checkNotNull(encryptedPayload),
+                                    downloadEncryptedChunk(
+                                        cdnClient = cdnClient,
+                                        httpClient = cdnHttpClient,
+                                        servers = access.servers,
+                                        depotId = depotId,
+                                        chunk = chunk,
+                                        authTokens = access.authTokens,
+                                        selector = selector,
+                                        control = { SteamDownloadControl.CONTINUE },
+                                        onSuccess = { server ->
+                                            latestCdnHost = resolveCdnRequestHost(server.vHost, server.host)
+                                        },
+                                    )
+                                val elapsedNanos = System.nanoTime() - startedAtNanos
+                                adaptiveBufferPolicy.recordTransfer(
+                                    deliveredBytes = chunk.uncompressedLength,
+                                    elapsedNanos = elapsedNanos,
+                                    completedAtNanos = System.nanoTime(),
+                                )
+                                transferMetrics
+                                    .requestCompleted(chunk.compressedLength, startedAtNanos)
+                                    ?.let { metrics ->
+                                        Log.d(
+                                            STEAM_CONTENT_LOG_TAG,
+                                            "Steam stream chunks=${metrics.completedChunks}, " +
+                                                "aggregate=${"%.1f".format(metrics.aggregateMbps)}Mbps, " +
+                                                "active=${metrics.activeRequests}, peak=${metrics.peakActiveRequests}, " +
+                                                "configuredConcurrency=$prefetchConcurrency",
                                         )
-                                    stagedRequestCount.incrementAndGet()
-                                    // Do not retain the network array while waiting in the
-                                    // decode queue; the encrypted spool is bounded by the
-                                    // requested playback range and removed after processing.
-                                    encryptedPayload = null
+                                    }
+                                metricsRequestStarted = false
+                                networkCompleted.complete(Unit)
+                                val payload = withContext(decodeDispatcher) {
+                                    decodeDepotChunk(
+                                        chunk,
+                                        checkNotNull(encryptedPayload),
+                                        access.depotKey,
+                                    )
                                 }
-                                val memoryReservation = estimatedSteamChunkPeakMemoryBytes(
-                                    chunk.compressedLength,
-                                    chunk.uncompressedLength,
-                                ).coerceAtLeast(STEAM_STREAM_MIN_REQUEST_MEMORY_BYTES)
-                                    .coerceAtMost(steamStreamMemoryBudgetBytes(Runtime.getRuntime().maxMemory()))
-                                memoryScheduler.withPermit(
-                                    requestedBytes = memoryReservation,
-                                    priority = priorityState.get(),
-                                    requestId = requestId,
-                                    order = chunk.offset,
-                                ) {
-                                    val payload = withContext(decodeDispatcher) {
-                                        val encryptedForDecode =
-                                            encryptedPayload
-                                                ?: streamCache.readStaged(checkNotNull(stagedEncrypted))
-                                        decodeDepotChunk(chunk, encryptedForDecode, access.depotKey)
+                                encryptedPayload = null
+                                if (priorityState.get() == SteamStreamChunkPriority.FOREGROUND) {
+                                    result.complete(payload)
+                                }
+                                try {
+                                    streamCache.commitVerified(chunk.offset, chunk.checksum, payload)
+                                    onVerifiedChunkCached(chunk)
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (error: VirtualMachineError) {
+                                    throw error
+                                } catch (error: Throwable) {
+                                    Log.w(STEAM_CONTENT_LOG_TAG, "Steam stream cache commit failed at ${chunk.offset}", error)
+                                    if (priorityState.get() == SteamStreamChunkPriority.PREFETCH) {
+                                        throw IOException("Steam stream cache commit failed at ${chunk.offset}", error)
                                     }
-                                    // A promoted foreground reader can consume authenticated
-                                    // bytes immediately. Pure prefetch remains pending until the
-                                    // chunk is durably available to the contiguous disk buffer.
-                                    if (priorityState.get() == SteamStreamChunkPriority.FOREGROUND) {
-                                        result.complete(payload)
-                                    }
-                                    try {
-                                        streamCache.commitVerified(chunk.offset, chunk.checksum, payload)
-                                        onVerifiedChunkCached(chunk)
-                                    } catch (error: CancellationException) {
-                                        throw error
-                                    } catch (error: VirtualMachineError) {
-                                        throw error
-                                    } catch (error: Throwable) {
-                                        Log.w(STEAM_CONTENT_LOG_TAG, "Steam stream cache commit failed at ${chunk.offset}", error)
-                                        if (priorityState.get() == SteamStreamChunkPriority.PREFETCH) {
-                                            throw IOException("Steam stream cache commit failed at ${chunk.offset}", error)
-                                        }
-                                    }
-                                    payload
                                 }
                             }
-                        // DepotChunk.process authenticated the payload and the cache commit
-                        // completed while its memory reservation was still held.
-                        if (!result.isCompleted) result.complete(downloaded)
+                        }
+                        // Prefetch consumers only need availability; retaining the decoded
+                        // payload in Deferred objects quickly exhausts a small Android heap.
+                        if (!result.isCompleted) result.complete(null)
                     } catch (error: Throwable) {
+                        networkCompleted.completeExceptionally(error)
                         if (metricsRequestStarted) transferMetrics.requestFailed()
                         synchronized(inFlightLock) {
                             if (inFlightChunks[chunk.offset]?.id == requestId) {
@@ -466,10 +517,6 @@ internal class SteamContentVideoStream internal constructor(
                         result.completeExceptionally(error)
                         if (error is CancellationException || error is VirtualMachineError) throw error
                     } finally {
-                        stagedEncrypted?.let { spool ->
-                            spool.delete()
-                            stagedRequestCount.decrementAndGet()
-                        }
                         synchronized(inFlightLock) {
                             if (inFlightChunks[chunk.offset]?.id == requestId) {
                                 inFlightChunks.remove(chunk.offset)
@@ -477,50 +524,63 @@ internal class SteamContentVideoStream internal constructor(
                         }
                     }
                 }
-            inFlightChunks[chunk.offset] =
+            val streamRequest =
                 StreamChunkRequest(
                     id = requestId,
                     deferred = result,
+                    networkCompleted = networkCompleted,
                     job = request,
                     priorityState = priorityState,
                 )
+            inFlightChunks[chunk.offset] = streamRequest
             request.start()
-            result
+            streamRequest
         }
         if (priority == SteamStreamChunkPriority.FOREGROUND) {
             reusedRequest?.let { request ->
-                networkScheduler.promote(request.id)
-                memoryScheduler.promote(request.id)
+                pipelineConcurrencyScheduler.promote(request.id)
+                pipelineScheduler.promote(request.id)
             }
         }
-        return deferred
+        return chunkRequest
+    }
+
+    /**
+     * Webview cancels speculative work when it occupies the connection needed by a new Range.
+     * Do the same here, but only for a prefetch that currently owns a network permit; queued
+     * work is already ordered behind foreground demand and decoded/committing work no longer
+     * blocks the CDN connection.
+     */
+    private suspend fun preemptBlockingPrefetch() {
+        val requestId = pipelineConcurrencyScheduler.activePrefetchRequestId() ?: return
+        val blockingRequest =
+            synchronized(inFlightLock) {
+                inFlightChunks.values.firstOrNull { request ->
+                    request.id == requestId && request.priority == SteamStreamChunkPriority.PREFETCH
+                }
+            } ?: return
+        Log.d(STEAM_CONTENT_LOG_TAG, "Steam stream foreground preempting prefetch request=$requestId")
+        blockingRequest.job.cancel(CancellationException("Foreground Steam stream demand"))
     }
 
     private fun scheduleAheadPrefetch(afterExclusive: Long) {
         if (closed || afterExclusive >= contentLength) return
         val generation = prefetchGeneration.get()
+        val targetAheadBytes = dynamicAheadBytes.get()
+        protectPlaybackWindow(afterExclusive, targetAheadBytes)
         synchronized(prefetchLock) {
             if (aheadPrefetchJob?.isActive == true) return
-            val targetAheadBytes = dynamicAheadBytes.get()
-            val lowWaterBytes = dynamicLowWaterBytes.get().coerceAtMost(targetAheadBytes)
             val remainingAheadBytes =
                 (aheadBufferedEndInclusive - afterExclusive + 1L).coerceAtLeast(0L)
-            if (!refillActive && remainingAheadBytes < lowWaterBytes) refillActive = true
-            if (!refillActive) return
+            if (remainingAheadBytes >= targetAheadBytes) return
             val range =
-                steamStreamRefillRange(
+                steamStreamMissingRange(
                     contentLength = contentLength,
                     consumedPosition = afterExclusive,
                     bufferedEndInclusive = aheadBufferedEndInclusive,
                     targetAheadBytes = targetAheadBytes,
-                    // Once a refill starts, target itself becomes the stop line;
-                    // crossing back above 8 seconds must not end a 15-second fill.
-                    lowWaterBytes = targetAheadBytes,
                 )
-            if (range == null) {
-                refillActive = false
-                return
-            }
+            if (range == null) return
             aheadPrefetchJob =
                 fetchScope.launch {
                     val completed = prefetchRange(range, generation)
@@ -552,11 +612,12 @@ internal class SteamContentVideoStream internal constructor(
                     }
             }
         stalePrefetchJobs.forEach(Job::cancel)
+        initialPrefetchJob?.cancel()
+        initialPrefetchJob = null
         synchronized(prefetchLock) {
             aheadPrefetchJob?.cancel()
             aheadPrefetchJob = null
             aheadBufferedEndInclusive = position - 1L
-            refillActive = true
             prefetchFrontier.reset()
             contiguousBufferTracker.reset(position)
         }
@@ -567,41 +628,86 @@ internal class SteamContentVideoStream internal constructor(
         range: SteamStreamByteRange,
         generation: Long,
     ): Boolean = coroutineScope {
-        val selectedChunks = chunks.mapNotNull { chunk ->
-                val chunkEnd = chunk.offset + chunk.uncompressedLength - 1L
-                if (chunkEnd < range.start || chunk.offset > range.endInclusive) return@mapNotNull null
+        val selectedChunks = steamStreamChunksInRange(chunks, range.start, range.endInclusive).mapNotNull { chunk ->
                 when (prefetchFrontier.plan(chunk.offset)) {
                     StreamPrefetchPlan.COMPLETE -> null
                     StreamPrefetchPlan.NEW -> PlannedStreamChunk(chunk, ownsPlan = true)
                     StreamPrefetchPlan.IN_FLIGHT -> PlannedStreamChunk(chunk, ownsPlan = false)
                 }
-            }
+        }
         if (selectedChunks.isEmpty()) return@coroutineScope true
         val failed = java.util.concurrent.atomic.AtomicBoolean(false)
-        try {
-            // Launch the playback range as independently staged requests. Network
-            // concurrency remains fixed by networkScheduler, while requests that
-            // already downloaded may wait for decode/cache without consuming one of
-            // those network slots. Batching bounds coroutine metadata for manifests
-            // containing unusually tiny chunks; staged bytes remain range-bounded.
-            selectedChunks.chunked(STEAM_STREAM_MAX_STAGED_REQUESTS).forEach { batch ->
-                batch
-                    .map { plannedChunk ->
-                        async {
-                            if (closed || generation != prefetchGeneration.get()) return@async
-                            val chunk = plannedChunk.chunk
-                            try {
-                                loadChunkSlice(chunk, 0, 0, SteamStreamChunkPriority.PREFETCH)
-                                prefetchFrontier.complete(chunk.offset)
-                            } catch (error: Throwable) {
-                                failed.set(true)
-                                if (plannedChunk.ownsPlan) prefetchFrontier.fail(chunk.offset)
-                                if (error is CancellationException || error is VirtualMachineError) throw error
+        // Keep the complete download -> decrypt -> decompress -> commit pipeline bounded.
+        // Replacing a task as soon as its network stage finishes creates an unbounded staged
+        // queue on fast links and leaves the foreground waiting for the next decoded chunk.
+        val completedStages = Channel<Long>(Channel.UNLIMITED)
+        val jobs = mutableListOf<Deferred<Unit>>()
+        var nextChunkIndex = 0
+        var inFlightBytes = 0L
+
+        fun launchChunk(plannedChunk: PlannedStreamChunk) {
+            val chunk = plannedChunk.chunk
+            val pipelineBytes =
+                steamStreamChunkPipelineBytes(
+                    compressedBytes = chunk.compressedLength,
+                    uncompressedBytes = chunk.uncompressedLength,
+                )
+            jobs +=
+                async {
+                    try {
+                        if (closed || generation != prefetchGeneration.get()) return@async
+                        val cached =
+                            streamCache.readSlice(
+                                chunkOffset = chunk.offset,
+                                chunkLength = chunk.uncompressedLength,
+                                expectedChecksum = chunk.checksum,
+                                offset = 0,
+                                length = 0,
+                            )
+                        if (cached != null) {
+                            onVerifiedChunkCached(chunk)
+                        } else {
+                            withSteamCdnRecovery {
+                                val request = requestChunk(chunk, SteamStreamChunkPriority.PREFETCH)
+                                request.deferred.await()
                             }
                         }
-                    }.awaitAll()
+                        prefetchFrontier.complete(chunk.offset)
+                    } catch (error: Throwable) {
+                        failed.set(true)
+                        if (plannedChunk.ownsPlan) prefetchFrontier.fail(chunk.offset)
+                        if (error is CancellationException || error is VirtualMachineError) throw error
+                    } finally {
+                        completedStages.trySend(pipelineBytes)
+                    }
+                }
+        }
+        try {
+            fun canLaunch(bytes: Long): Boolean =
+                nextChunkIndex < selectedChunks.size &&
+                    (inFlightBytes == 0L || inFlightBytes + bytes <= pipelineBudgetBytes)
+
+            // Match Webview's bounded in-flight byte window. A single chunk larger than
+            // the budget is still allowed so an unusually large manifest cannot deadlock.
+            while (nextChunkIndex < selectedChunks.size) {
+                val next = selectedChunks[nextChunkIndex].chunk
+                val nextBytes = steamStreamChunkPipelineBytes(next.compressedLength, next.uncompressedLength)
+                if (!canLaunch(nextBytes)) break
+                launchChunk(selectedChunks[nextChunkIndex++])
+                inFlightBytes += nextBytes
             }
+            while (nextChunkIndex < selectedChunks.size) {
+                inFlightBytes -= completedStages.receive()
+                val next = selectedChunks[nextChunkIndex].chunk
+                val nextBytes = steamStreamChunkPipelineBytes(next.compressedLength, next.uncompressedLength)
+                if (canLaunch(nextBytes)) {
+                    launchChunk(selectedChunks[nextChunkIndex++])
+                    inFlightBytes += nextBytes
+                }
+            }
+            jobs.awaitAll()
         } finally {
+            completedStages.close()
             selectedChunks.filter(PlannedStreamChunk::ownsPlan).forEach { planned ->
                 prefetchFrontier.fail(planned.chunk.offset)
             }
@@ -610,8 +716,44 @@ internal class SteamContentVideoStream internal constructor(
     }
 
     private fun onVerifiedChunkCached(chunk: ChunkData) {
-        aheadBufferedEndInclusive = contiguousBufferTracker.markCompleted(chunk)
+        val completedEndInclusive = contiguousBufferTracker.markCompleted(chunk)
+        synchronized(prefetchLock) {
+            aheadBufferedEndInclusive = max(aheadBufferedEndInclusive, completedEndInclusive)
+        }
         publishPlaybackBufferState()
+    }
+
+    private fun protectPlaybackWindow(
+        consumedPosition: Long,
+        targetAheadBytes: Long,
+    ) {
+        if (contentLength <= 0L || consumedPosition !in 0 until contentLength) {
+            streamCache.protectChunkOffsets(emptySet())
+            return
+        }
+        val endInclusive = min(contentLength - 1L, consumedPosition + targetAheadBytes.coerceAtLeast(1L) - 1L)
+        val protectedOffsets =
+            if (fullCachePinned) {
+                chunks.map(ChunkData::offset)
+            } else {
+                steamStreamChunksInRange(chunks, consumedPosition, endInclusive).map(ChunkData::offset)
+            }
+        streamCache.protectChunkOffsets(protectedOffsets)
+    }
+
+    private fun onCacheChunkEvicted(chunkOffset: Long) {
+        val readPosition = latestReadPosition.get()
+        if (chunkOffset < readPosition || chunkOffset > contiguousBufferTracker.bufferedEndInclusive()) return
+        prefetchGeneration.incrementAndGet()
+        synchronized(prefetchLock) {
+            aheadPrefetchJob?.cancel()
+            aheadPrefetchJob = null
+            aheadBufferedEndInclusive = readPosition - 1L
+            prefetchFrontier.reset()
+            contiguousBufferTracker.reset(readPosition)
+        }
+        publishPlaybackBufferState()
+        scheduleAheadPrefetch(readPosition)
     }
 
     private fun publishPlaybackBufferState() {
@@ -620,37 +762,144 @@ internal class SteamContentVideoStream internal constructor(
             mutablePlaybackBufferState.value = WorkshopVideoBufferState()
             return
         }
-        val averageBytesPerMillisecond = averageBytesPerMillisecond(contentLength, clock.durationMs)
-        if (averageBytesPerMillisecond <= 0.0) return
+        val decision = latestAdaptiveDecision.get()
+        val speed = clock.playbackSpeed.coerceAtLeast(STEAM_STREAM_MIN_PLAYBACK_SPEED).toDouble()
+        val bytesPerMillisecond =
+            max(
+                averageBytesPerMillisecond(contentLength, clock.durationMs),
+                decision.requiredBytesPerSecond / speed / 1_000.0,
+            )
+        if (bytesPerMillisecond <= 0.0) return
         val mediaBufferedMs = (clock.bufferedPositionMs - clock.playbackPositionMs).coerceAtLeast(0L)
         val contiguousEndInclusive = contiguousBufferTracker.bufferedEndInclusive()
         val diskAheadBytes =
             (contiguousEndInclusive - latestReadPosition.get() + 1L).coerceAtLeast(0L)
-        val diskAheadMs = (diskAheadBytes / averageBytesPerMillisecond).toLong().coerceAtLeast(0L)
-        val remainingDurationMs = (clock.durationMs - clock.playbackPositionMs).coerceAtLeast(0L)
-        val availableDurationMs =
-            (mediaBufferedMs + diskAheadMs).coerceIn(0L, remainingDurationMs)
+        val diskAheadMediaMs = (diskAheadBytes / bytesPerMillisecond).toLong().coerceAtLeast(0L)
+        val remainingMediaDurationMs = (clock.durationMs - clock.playbackPositionMs).coerceAtLeast(0L)
+        val availableMediaDurationMs =
+            (mediaBufferedMs + diskAheadMediaMs).coerceIn(0L, remainingMediaDurationMs)
+        val availableDurationMs = (availableMediaDurationMs / speed).toLong().coerceAtLeast(0L)
+        val remainingDurationMs = (remainingMediaDurationMs / speed).toLong().coerceAtLeast(0L)
         val cacheCapacityDurationMs =
-            (streamCache.prefetchCapacityBytes / averageBytesPerMillisecond).toLong().coerceAtLeast(1L)
+            (streamCache.prefetchCapacityBytes / bytesPerMillisecond / speed).toLong().coerceAtLeast(1L)
         val targetDurationMs =
-            min(STEAM_STREAM_TARGET_BUFFER_MS, min(cacheCapacityDurationMs, remainingDurationMs))
-        val lowWaterDurationMs = min(STEAM_STREAM_LOW_WATER_BUFFER_MS, targetDurationMs)
+            min(dynamicTargetDurationMs.get(), min(cacheCapacityDurationMs, remainingDurationMs))
         mutablePlaybackBufferState.value =
             WorkshopVideoBufferState(
                 bufferedPositionMs =
-                    (clock.playbackPositionMs + availableDurationMs)
+                    (clock.playbackPositionMs + availableMediaDurationMs)
                         .coerceAtMost(clock.durationMs),
                 availableDurationMs = availableDurationMs,
                 targetDurationMs = targetDurationMs,
-                lowWaterDurationMs = lowWaterDurationMs,
                 targetReached =
                     availableDurationMs + STEAM_STREAM_BUFFER_READY_TOLERANCE_MS >= targetDurationMs,
+                bandwidthLimited = decision.bandwidthLimited,
             )
+    }
+
+    private fun scheduleInitialPrefetch() {
+        val generation = prefetchGeneration.get()
+        val plan = steamInitialPrefetchPlan(contentLength)
+        initialPrefetchJob =
+            fetchScope.launch {
+                plan.first?.let { first ->
+                    if (closed || generation != prefetchGeneration.get()) return@launch
+                    prefetchRange(first, generation)
+                }
+                if (closed || generation != prefetchGeneration.get()) return@launch
+                // Once the header is usable, tail metadata must not delay contiguous
+                // startup bytes. Both ranges share the same foreground-first scheduler.
+                coroutineScope {
+                    listOfNotNull(plan.tail, plan.initial)
+                        .map { range -> async { prefetchRange(range, generation) } }
+                        .awaitAll()
+                }
+            }
+    }
+
+    override fun startFullCache() {
+        if (closed || fullCacheJob?.isActive == true || fullCachePinned) return
+        if (contentLength > streamCache.prefetchCapacityBytes) {
+            mutableFullCacheState.value =
+                WorkshopVideoFullCacheState(
+                    status = WorkshopVideoFullCacheStatus.ERROR,
+                    totalBytes = contentLength,
+                    errorCode = "STREAM_FULL_CACHE_LIMIT",
+                )
+            return
+        }
+        fullCachePinned = true
+        streamCache.protectChunkOffsets(chunks.map(ChunkData::offset))
+        mutableFullCacheState.value =
+            WorkshopVideoFullCacheState(
+                status = WorkshopVideoFullCacheStatus.CACHING,
+                totalBytes = contentLength,
+            )
+        fullCacheJob =
+            fetchScope.launch {
+                var cachedBytes = 0L
+                try {
+                    chunks.forEach { chunk ->
+                        currentCoroutineContext().ensureActive()
+                        val cached =
+                            streamCache.readSlice(
+                                chunkOffset = chunk.offset,
+                                chunkLength = chunk.uncompressedLength,
+                                expectedChecksum = chunk.checksum,
+                                offset = 0,
+                                length = 0,
+                            ) != null
+                        if (!cached) requestChunk(chunk, SteamStreamChunkPriority.PREFETCH).deferred.await()
+                        cachedBytes += chunk.uncompressedLength.toLong()
+                        mutableFullCacheState.value =
+                            WorkshopVideoFullCacheState(
+                                status = WorkshopVideoFullCacheStatus.CACHING,
+                                cachedBytes = min(cachedBytes, contentLength),
+                                totalBytes = contentLength,
+                            )
+                    }
+                    mutableFullCacheState.value =
+                        WorkshopVideoFullCacheState(
+                            status = WorkshopVideoFullCacheStatus.COMPLETE,
+                            cachedBytes = contentLength,
+                            totalBytes = contentLength,
+                        )
+                } catch (error: CancellationException) {
+                    if (!closed) {
+                        fullCachePinned = false
+                        mutableFullCacheState.value =
+                            WorkshopVideoFullCacheState(
+                                status = WorkshopVideoFullCacheStatus.CANCELLED,
+                                cachedBytes = min(cachedBytes, contentLength),
+                                totalBytes = contentLength,
+                            )
+                        protectPlaybackWindow(latestReadPosition.get(), dynamicAheadBytes.get())
+                    }
+                    throw error
+                } catch (error: Throwable) {
+                    fullCachePinned = false
+                    mutableFullCacheState.value =
+                        WorkshopVideoFullCacheState(
+                            status = WorkshopVideoFullCacheStatus.ERROR,
+                            cachedBytes = min(cachedBytes, contentLength),
+                            totalBytes = contentLength,
+                            errorCode = "STREAM_FULL_CACHE_FAILED",
+                        )
+                    protectPlaybackWindow(latestReadPosition.get(), dynamicAheadBytes.get())
+                }
+            }
+    }
+
+    override fun cancelFullCache() {
+        if (mutableFullCacheState.value.status != WorkshopVideoFullCacheStatus.CACHING) return
+        fullCacheJob?.cancel()
+        fullCacheJob = null
     }
 
 }
 
 internal data class SteamStreamPlaybackClock(
+    val playbackSpeed: Float = 1f,
     val playbackPositionMs: Long = 0L,
     val bufferedPositionMs: Long = 0L,
     val durationMs: Long = 0L,
@@ -807,6 +1056,25 @@ internal fun firstSteamStreamChunkIndex(
     return low
 }
 
+internal fun steamStreamChunksInRange(
+    chunks: List<ChunkData>,
+    start: Long,
+    endInclusive: Long,
+): List<ChunkData> {
+    if (chunks.isEmpty() || start < 0L || endInclusive < start) return emptyList()
+    val firstIndex = firstSteamStreamChunkIndex(chunks, start)
+    if (firstIndex >= chunks.size) return emptyList()
+    val selected = ArrayList<ChunkData>()
+    var index = firstIndex
+    while (index < chunks.size) {
+        val chunk = chunks[index]
+        if (chunk.offset > endInclusive) break
+        selected += chunk
+        index += 1
+    }
+    return selected
+}
+
 internal suspend fun downloadManifest(
     cdnClient: SteamCdnClient,
     servers: List<Server>,
@@ -859,6 +1127,7 @@ internal suspend fun downloadManifest(
 
 internal suspend fun downloadChunk(
     cdnClient: SteamCdnClient,
+    httpClient: OkHttpClient? = null,
     servers: List<Server>,
     depotId: Int,
     chunk: ChunkData,
@@ -878,6 +1147,7 @@ internal suspend fun downloadChunk(
             selector = selector,
             control = control,
             onSuccess = onSuccess,
+            httpClient = httpClient,
         )
     return decodeDepotChunk(chunk, encrypted, depotKey)
 }
@@ -891,6 +1161,7 @@ internal suspend fun downloadEncryptedChunk(
     selector: CdnServerSelector,
     control: suspend () -> SteamDownloadControl,
     onSuccess: ((Server) -> Unit)? = null,
+    httpClient: OkHttpClient? = null,
 ): ByteArray {
     validateManifestChunk(chunk)
     var lastError: Throwable? = null
@@ -906,7 +1177,21 @@ internal suspend fun downloadEncryptedChunk(
             val encrypted = ByteArray(chunk.compressedLength)
             val token = authTokens.get(server)
             hasToken = token != null
-            val downloadedBytes =
+            val downloadedBytes = if (httpClient != null) {
+                // JavaSteam 1.8.0 implements downloadDepotChunk with ResponseBody.bytes(),
+                // which allocates a second full response array for every concurrent request.
+                // Stream directly into the caller-owned destination instead.
+                downloadEncryptedChunkStreaming(
+                    httpClient = httpClient,
+                    server = server,
+                    depotId = depotId,
+                    chunk = chunk,
+                    cdnAuthToken = token,
+                    destination = encrypted,
+                ) {
+                    checkDownloadControl(control)
+                }
+            } else {
                 cdnClient.downloadDepotChunk(
                     depotId,
                     chunk,
@@ -916,6 +1201,7 @@ internal suspend fun downloadEncryptedChunk(
                     null,
                     token,
                 )
+            }
             check(downloadedBytes == encrypted.size) { "Steam chunk compressed length mismatch" }
             selector.recordSuccess(
                 server = server,
@@ -946,6 +1232,243 @@ internal suspend fun downloadEncryptedChunk(
         cause = lastError,
         recoverable = errors.isNotEmpty() && errors.all(::hasIoCause),
     )
+}
+
+internal suspend fun downloadEncryptedChunkToSpool(
+    httpClient: OkHttpClient,
+    servers: List<Server>,
+    depotId: Int,
+    chunk: ChunkData,
+    destination: File,
+    authTokens: CdnAuthTokenProvider,
+    selector: CdnServerSelector,
+    control: suspend () -> SteamDownloadControl,
+    onSuccess: ((Server) -> Unit)? = null,
+): Int {
+    validateManifestChunk(chunk)
+    var lastError: Throwable? = null
+    val errors = mutableListOf<Throwable>()
+    val failures = mutableListOf<String>()
+    selector.candidates(servers.take(MAX_CDN_ATTEMPTS)).forEach { server ->
+        currentCoroutineContext().ensureActive()
+        checkDownloadControl(control)
+        var hasToken = false
+        val attemptStartedAtNanos = System.nanoTime()
+        selector.recordStart(server)
+        try {
+            val token = authTokens.get(server)
+            hasToken = token != null
+            val downloadedBytes =
+                downloadEncryptedChunkStreamingToFile(
+                    httpClient = httpClient,
+                    server = server,
+                    depotId = depotId,
+                    chunk = chunk,
+                    cdnAuthToken = token,
+                    destination = destination,
+                )
+            selector.recordSuccess(server, downloadedBytes, System.nanoTime() - attemptStartedAtNanos)
+            onSuccess?.invoke(server)
+            return downloadedBytes
+        } catch (error: CancellationException) {
+            selector.recordCancelled(server)
+            throw error
+        } catch (error: SteamDownloadCancelledException) {
+            selector.recordCancelled(server)
+            throw error
+        } catch (error: VirtualMachineError) {
+            selector.recordCancelled(server)
+            throw error
+        } catch (error: Throwable) {
+            destination.delete()
+            selector.recordFailure(server)
+            lastError = error
+            errors += error
+            failures += describeServer(server, hasToken) + "：" +
+                (error.message ?: error.javaClass.simpleName)
+        }
+    }
+    throw SteamCdnTransferException(
+        message = buildCdnError("chunk", failures, lastError),
+        cause = lastError,
+        recoverable = errors.isNotEmpty() && errors.all(::hasIoCause),
+    )
+}
+
+/**
+ * Downloads one encrypted Steam depot chunk without buffering the complete HTTP response.
+ * JavaSteam 1.8.0's implementation calls ResponseBody.bytes(), which duplicates the
+ * destination buffer for every in-flight request and can exhaust the Android heap.
+ */
+private suspend fun downloadEncryptedChunkStreaming(
+    httpClient: OkHttpClient,
+    server: Server,
+    depotId: Int,
+    chunk: ChunkData,
+    cdnAuthToken: String?,
+    destination: ByteArray,
+    beforeRead: suspend () -> Unit,
+): Int {
+    val chunkId = requireNotNull(chunk.chunkID) { "Chunk must have a ChunkID." }
+    require(destination.size == chunk.compressedLength) {
+        "Steam chunk destination must match compressed length"
+    }
+    val chunkIdHex = chunkId.joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    val command = "depot/$depotId/chunk/$chunkIdHex"
+    val request =
+        if (ClientLancache.useLanCacheServer) {
+            ClientLancache.buildLancacheRequest(server, command, cdnAuthToken)
+        } else {
+            Request.Builder()
+                .url(buildSteamCdnCommand(server, command, cdnAuthToken))
+                .build()
+        }
+    val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
+    response.use { resp ->
+        if (!resp.isSuccessful) {
+            throw SteamKitWebRequestException(
+                "Steam CDN returned ${resp.code} (${resp.message})",
+                resp,
+            )
+        }
+        val expected =
+            resp.body.contentLength().takeIf { it > 0L }?.toInt()
+                ?: chunk.compressedLength
+        check(expected == chunk.compressedLength) {
+            "Steam chunk Content-Length mismatch: $expected != ${chunk.compressedLength}"
+        }
+        var offset = 0
+        resp.body.byteStream().use { input ->
+            while (offset < expected) {
+                beforeRead()
+                val count = input.read(destination, offset, expected - offset)
+                if (count < 0) break
+                if (count == 0) continue
+                offset += count
+            }
+        }
+        check(offset == expected) {
+            "Steam chunk length mismatch after streaming: $offset != $expected"
+        }
+        return offset
+    }
+}
+
+private suspend fun downloadEncryptedChunkStreamingToFile(
+    httpClient: OkHttpClient,
+    server: Server,
+    depotId: Int,
+    chunk: ChunkData,
+    cdnAuthToken: String?,
+    destination: File,
+): Int = suspendCancellableCoroutine { continuation ->
+    val chunkId = requireNotNull(chunk.chunkID) { "Chunk must have a ChunkID." }
+    val chunkIdHex = chunkId.joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    val command = "depot/$depotId/chunk/$chunkIdHex"
+    val request =
+        if (ClientLancache.useLanCacheServer) {
+            ClientLancache.buildLancacheRequest(server, command, cdnAuthToken)
+        } else {
+            Request.Builder().url(buildSteamCdnCommand(server, command, cdnAuthToken)).build()
+        }
+    val call = httpClient.newCall(request)
+    continuation.invokeOnCancellation {
+        call.cancel()
+        destination.delete()
+    }
+    call.enqueue(
+        object : Callback {
+            override fun onFailure(
+                call: Call,
+                e: IOException,
+            ) {
+                destination.delete()
+                if (continuation.isActive) continuation.resumeWithException(e)
+            }
+
+            override fun onResponse(
+                call: Call,
+                response: Response,
+            ) {
+                try {
+                    response.use { resp ->
+                        if (!resp.isSuccessful) {
+                            throw SteamKitWebRequestException(
+                                "Steam CDN returned ${resp.code} (${resp.message})",
+                                resp,
+                            )
+                        }
+                        val expected =
+                            resp.body.contentLength().takeIf { it > 0L }
+                                ?: chunk.compressedLength.toLong()
+                        check(expected == chunk.compressedLength.toLong()) {
+                            "Steam chunk Content-Length mismatch: $expected != ${chunk.compressedLength}"
+                        }
+                        destination.parentFile?.mkdirs()
+                        var written = 0L
+                        val transferBuffer = ByteArray(STEAM_STREAM_NETWORK_COPY_BUFFER_BYTES)
+                        resp.body.byteStream().use { input ->
+                            BufferedOutputStream(
+                                destination.outputStream(),
+                                STEAM_STREAM_NETWORK_COPY_BUFFER_BYTES,
+                            ).use { output ->
+                                while (written < expected) {
+                                    if (!continuation.isActive) throw CancellationException("Steam chunk request cancelled")
+                                    val count =
+                                        input.read(
+                                            transferBuffer,
+                                            0,
+                                            min(transferBuffer.size.toLong(), expected - written).toInt(),
+                                        )
+                                    if (count < 0) break
+                                    if (count == 0) continue
+                                    output.write(transferBuffer, 0, count)
+                                    written += count
+                                }
+                            }
+                        }
+                        check(written == expected && destination.length() == expected) {
+                            "Steam chunk length mismatch after streaming: $written != $expected"
+                        }
+                        if (continuation.isActive) continuation.resume(written.toInt())
+                    }
+                } catch (error: Throwable) {
+                    destination.delete()
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                }
+            }
+        },
+    )
+}
+
+/** Returns the OkHttp client configured by createCdnClient (proxy, TLS and dispatcher). */
+internal fun SteamCdnClient.streamingHttpClient(): OkHttpClient =
+    javaClass.getDeclaredField("httpClient").let { field ->
+        field.isAccessible = true
+        field.get(this) as OkHttpClient
+    }
+
+private fun buildSteamCdnCommand(
+    server: Server,
+    command: String,
+    query: String?,
+): HttpUrl {
+    val scheme = if (server.protocol == Server.ConnectionProtocol.HTTP) "http" else "https"
+    val builder =
+        HttpUrl.Builder()
+            .scheme(scheme)
+            .host(server.vHost ?: server.host ?: "")
+            .port(server.port)
+            .addPathSegments(command.trimStart('/'))
+    query?.trimStart('?')?.takeIf { it.isNotEmpty() }?.split('&')?.forEach { parameter ->
+        val keyValue = parameter.split('=', limit = 2)
+        if (keyValue.size == 2) {
+            builder.addQueryParameter(keyValue[0], keyValue[1])
+        } else if (keyValue[0].isNotEmpty()) {
+            builder.addQueryParameter(keyValue[0], "")
+        }
+    }
+    return builder.build()
 }
 
 internal fun decodeDepotChunk(
@@ -1003,6 +1526,7 @@ internal suspend fun downloadFilePlans(
     plans: List<ManifestFilePlan>,
     destinationDirectory: File,
     cdnClient: SteamCdnClient,
+    httpClient: OkHttpClient? = null,
     servers: List<Server>,
     depotId: Int,
     depotKey: ByteArray,
@@ -1038,6 +1562,7 @@ internal suspend fun downloadFilePlans(
                         plan = plan,
                         destinationDirectory = destinationDirectory,
                         cdnClient = cdnClient,
+                        httpClient = httpClient,
                         servers = servers,
                         depotId = depotId,
                         depotKey = depotKey,
@@ -1057,6 +1582,7 @@ internal suspend fun downloadFilePlan(
     plan: ManifestFilePlan,
     destinationDirectory: File,
     cdnClient: SteamCdnClient,
+    httpClient: OkHttpClient? = null,
     servers: List<Server>,
     depotId: Int,
     depotKey: ByteArray,
@@ -1106,6 +1632,7 @@ internal suspend fun downloadFilePlan(
             chunks = plan.chunks.filterNot { it.offset in verifiedOffsets },
             output = output,
             cdnClient = cdnClient,
+            httpClient = httpClient,
             servers = servers,
             depotId = depotId,
             depotKey = depotKey,
@@ -1138,6 +1665,7 @@ internal suspend fun downloadChunksContinuously(
     chunks: List<ChunkData>,
     output: RandomAccessFile,
     cdnClient: SteamCdnClient,
+    httpClient: OkHttpClient? = null,
     servers: List<Server>,
     depotId: Int,
     depotKey: ByteArray,
@@ -1165,6 +1693,7 @@ internal suspend fun downloadChunksContinuously(
                 checkDownloadControl(control)
                 val data = downloadChunk(
                     cdnClient = cdnClient,
+                    httpClient = httpClient,
                     servers = servers,
                     depotId = depotId,
                     chunk = chunk,
@@ -1865,88 +2394,55 @@ internal fun steamStreamPrefetchConcurrency(
     @Suppress("UNUSED_PARAMETER") maxHeapBytes: Long = Runtime.getRuntime().maxMemory(),
 ): Int = configuredConcurrency.coerceIn(1, STEAM_STREAM_MAX_PARALLEL_CHUNKS)
 
-internal fun steamStreamMemoryBudgetBytes(maxHeapBytes: Long): Long =
-    (maxHeapBytes / STEAM_STREAM_MEMORY_HEAP_DIVISOR).coerceIn(
-        STEAM_STREAM_MEMORY_MIN_BYTES,
-        STEAM_STREAM_MEMORY_MAX_BYTES,
-    )
-
-internal fun steamStreamAheadPrefetchRange(
-    contentLength: Long,
-    afterExclusive: Long,
-    aheadBytes: Long = STEAM_STREAM_AHEAD_BYTES,
-): SteamStreamByteRange? =
-    steamStreamRange(
-        contentLength = contentLength,
-        start = afterExclusive,
-        length = aheadBytes,
-    )
-
-internal data class SteamStreamTimeBufferWindow(
-    val targetBytes: Long,
-    val lowWaterBytes: Long,
-)
-
-/** Tracks the local byte-to-media-time relationship so VBR peaks never receive less
- * disk headroom than the whole-file average. Large playback discontinuities reset the
- * sample baseline instead of being mistaken for a bitrate spike. */
-internal class SteamStreamByteRateEstimator(
-    private val contentLength: Long,
-) {
-    private var lastReadPosition = -1L
-    private var lastPlaybackPositionMs = -1L
-    private var lastBufferedPositionMs = -1L
-    private var smoothedBytesPerMillisecond: Double? = null
-
-    @Synchronized
-    fun update(
-        readPosition: Long,
-        playbackPositionMs: Long,
-        bufferedPositionMs: Long,
-        durationMs: Long,
-    ): Double {
-        val average = averageBytesPerMillisecond(contentLength, durationMs)
-        if (average <= 0.0) return 0.0
-        val playbackDiscontinuity =
-            lastPlaybackPositionMs >= 0L &&
-                (playbackPositionMs < lastPlaybackPositionMs ||
-                    playbackPositionMs - lastPlaybackPositionMs > STEAM_STREAM_ESTIMATOR_SEEK_THRESHOLD_MS)
-        val readDiscontinuity = lastReadPosition >= 0L && readPosition < lastReadPosition
-        val bufferDiscontinuity = lastBufferedPositionMs >= 0L && bufferedPositionMs < lastBufferedPositionMs
-        if (playbackDiscontinuity || readDiscontinuity || bufferDiscontinuity) {
-            lastReadPosition = readPosition
-            lastPlaybackPositionMs = playbackPositionMs
-            lastBufferedPositionMs = bufferedPositionMs
-            smoothedBytesPerMillisecond = null
-            return average
-        }
-
-        if (lastReadPosition >= 0L && lastBufferedPositionMs >= 0L) {
-            val deltaBytes = readPosition - lastReadPosition
-            val deltaBufferedMs = bufferedPositionMs - lastBufferedPositionMs
-            if (deltaBytes > 0L && deltaBufferedMs > 0L) {
-                val sample =
-                    (deltaBytes.toDouble() / deltaBufferedMs.toDouble())
-                        .coerceIn(
-                            average * STEAM_STREAM_ESTIMATOR_MIN_RATIO,
-                            average * STEAM_STREAM_ESTIMATOR_MAX_RATIO,
-                        )
-                smoothedBytesPerMillisecond =
-                    smoothedBytesPerMillisecond?.let { previous ->
-                        previous * (1.0 - STEAM_STREAM_ESTIMATOR_SAMPLE_WEIGHT) +
-                            sample * STEAM_STREAM_ESTIMATOR_SAMPLE_WEIGHT
-                    } ?: sample
-                lastReadPosition = readPosition
-                lastBufferedPositionMs = bufferedPositionMs
-            }
-        } else {
-            lastReadPosition = readPosition
-            lastBufferedPositionMs = bufferedPositionMs
-        }
-        lastPlaybackPositionMs = playbackPositionMs
-        return max(average, smoothedBytesPerMillisecond ?: average)
+internal fun steamStreamStagingWindowBytes(
+    compressedLengths: List<Int>,
+    concurrency: Int,
+): Long {
+    if (compressedLengths.isEmpty()) return 0L
+    require(compressedLengths.all { it >= 0 }) { "Steam chunk compressed length must not be negative" }
+    val windowSize = concurrency.coerceIn(1, compressedLengths.size)
+    var current = compressedLengths.take(windowSize).sumOf(Int::toLong)
+    var peak = current
+    for (index in windowSize until compressedLengths.size) {
+        current += compressedLengths[index].toLong() - compressedLengths[index - windowSize].toLong()
+        peak = max(peak, current)
     }
+    return peak
 }
+
+internal fun steamStreamStagingPipelineBytes(
+    compressedLengths: List<Int>,
+    concurrency: Int,
+): Long =
+    steamStreamStagingWindowBytes(compressedLengths, concurrency)
+        .let { windowBytes ->
+            if (windowBytes > Long.MAX_VALUE / STEAM_STREAM_STAGING_PIPELINE_WINDOWS) {
+                Long.MAX_VALUE
+            } else {
+                windowBytes * STEAM_STREAM_STAGING_PIPELINE_WINDOWS
+            }
+        }
+
+internal fun steamStreamChunkPipelineBytes(
+    @Suppress("UNUSED_PARAMETER") compressedBytes: Int,
+    uncompressedBytes: Int,
+): Long {
+    require(uncompressedBytes >= 0) { "Uncompressed Steam chunk size must not be negative" }
+    return uncompressedBytes.toLong().coerceAtLeast(1L)
+}
+
+internal fun steamStreamMemoryBudgetBytes(
+    @Suppress("UNUSED_PARAMETER") maxHeapBytes: Long,
+): Long = STEAM_STREAM_DEFAULT_CHUNK_BUFFER_BYTES
+
+internal fun steamStreamDecodeThreads(
+    configuredConcurrency: Int,
+    availableProcessors: Int,
+): Int =
+    min(
+        configuredConcurrency.coerceIn(1, STEAM_STREAM_MAX_PARALLEL_CHUNKS),
+        min(availableProcessors.coerceAtLeast(1), STEAM_STREAM_MAX_DECODE_THREADS),
+    )
 
 private fun averageBytesPerMillisecond(
     contentLength: Long,
@@ -1958,57 +2454,20 @@ private fun averageBytesPerMillisecond(
         0.0
     }
 
-/**
- * Converts the product's time-based buffering policy to a Steam byte range only at
- * the transport boundary. This prevents a fixed byte budget from collapsing to a
- * few seconds on high-bitrate Workshop videos.
- */
-internal fun steamStreamTimeBufferWindow(
-    contentLength: Long,
-    durationMs: Long,
-    maximumAheadBytes: Long,
-    targetBufferMs: Long = STEAM_STREAM_TARGET_BUFFER_MS,
-    lowWaterBufferMs: Long = STEAM_STREAM_LOW_WATER_BUFFER_MS,
-    observedBytesPerMillisecond: Double = 0.0,
-): SteamStreamTimeBufferWindow {
-    val maximum = maximumAheadBytes.coerceAtLeast(1L)
-    val fallbackTarget = min(STEAM_STREAM_AHEAD_BYTES, maximum)
-    val fallbackLowWater = min(STEAM_STREAM_LOW_WATER_BYTES, fallbackTarget)
-    if (contentLength <= 0L || durationMs <= 0L || targetBufferMs <= 0L || lowWaterBufferMs <= 0L) {
-        return SteamStreamTimeBufferWindow(fallbackTarget, fallbackLowWater)
-    }
-    val bytesPerMillisecond =
-        max(
-            contentLength.toDouble() / durationMs.toDouble(),
-            observedBytesPerMillisecond.takeIf { it.isFinite() && it > 0.0 } ?: 0.0,
-        )
-    val targetBytes =
-        kotlin.math.ceil(bytesPerMillisecond * targetBufferMs)
-            .toLong()
-            .coerceIn(1L, maximum)
-    val lowWaterBytes =
-        kotlin.math.ceil(bytesPerMillisecond * lowWaterBufferMs)
-            .toLong()
-            .coerceIn(1L, targetBytes)
-    return SteamStreamTimeBufferWindow(targetBytes, lowWaterBytes)
-}
-
-internal fun steamStreamRefillRange(
+internal fun steamStreamMissingRange(
     contentLength: Long,
     consumedPosition: Long,
     bufferedEndInclusive: Long,
     targetAheadBytes: Long,
-    lowWaterBytes: Long,
 ): SteamStreamByteRange? {
     if (contentLength <= 0L ||
         consumedPosition !in 0 until contentLength ||
-        targetAheadBytes <= 0L ||
-        lowWaterBytes <= 0L
+        targetAheadBytes <= 0L
     ) {
         return null
     }
     val remainingBytes = (bufferedEndInclusive - consumedPosition + 1L).coerceAtLeast(0L)
-    if (remainingBytes >= lowWaterBytes.coerceAtMost(targetAheadBytes)) return null
+    if (remainingBytes >= targetAheadBytes) return null
     val start = max(consumedPosition, bufferedEndInclusive + 1L)
     val endInclusive = min(contentLength - 1L, consumedPosition + targetAheadBytes - 1L)
     return if (start <= endInclusive) SteamStreamByteRange(start, endInclusive) else null
@@ -2027,34 +2486,17 @@ internal fun steamStreamRange(
 }
 
 internal const val STEAM_STREAM_MEBIBYTE = 1024L * 1024L
-internal const val STEAM_STREAM_AHEAD_BYTES = 64L * STEAM_STREAM_MEBIBYTE
-internal const val STEAM_STREAM_LOW_WATER_BYTES = 16L * STEAM_STREAM_MEBIBYTE
-internal const val STEAM_STREAM_TARGET_BUFFER_MS = 15_000L
-internal const val STEAM_STREAM_LOW_WATER_BUFFER_MS = 8_000L
 private const val STEAM_STREAM_BUFFER_READY_TOLERANCE_MS = 250L
-internal const val STEAM_STREAM_MAX_PARALLEL_CHUNKS = 48
-// Keep at most ~48 MiB of compressed + decoded chunk payloads resident. This is
-// independent of request concurrency and prevents 64 MiB chunks from multiplying
-// into an app-wide OOM on devices with a 192 MiB heap.
-internal const val STEAM_STREAM_MEMORY_HEAP_DIVISOR = 4L
-internal const val STEAM_STREAM_MEMORY_MIN_BYTES = 24L * 1024L * 1024L
-internal const val STEAM_STREAM_MEMORY_MAX_BYTES = 96L * 1024L * 1024L
-// SteamKit's ResponseBody.bytes() and XZ/LZMA decoder allocate backing arrays and
-// dictionaries that are not represented by manifest compressed/uncompressed sizes.
-// Reserve the 8 MiB VZip ThreadLocal window plus payload copies per decode. Four
-// fixed workers remain within a 48 MiB stream budget on a 192 MiB app heap while
-// the independently spooled network stage keeps the exact user request concurrency.
-internal const val STEAM_STREAM_MIN_REQUEST_MEMORY_BYTES = 12L * 1024L * 1024L
-internal const val STEAM_STREAM_DECODE_THREADS = 4
-internal const val STEAM_STREAM_MAX_STAGED_REQUESTS = 8_192
+internal const val STEAM_STREAM_MAX_PARALLEL_CHUNKS = 32
+internal const val STEAM_STREAM_DEFAULT_CHUNK_BUFFER_BYTES = 64L * 1024L * 1024L
+internal const val STEAM_STREAM_MAX_DECODE_THREADS = 8
+private const val STEAM_STREAM_NETWORK_COPY_BUFFER_BYTES = 64 * 1024
+private const val STEAM_STREAM_STAGING_PIPELINE_WINDOWS = 2L
 internal const val STREAM_SEEK_RESET_BYTES = 2L * STEAM_STREAM_MEBIBYTE
 private const val STREAM_METRICS_LOG_INTERVAL_CHUNKS = 16L
 private const val STREAM_METRICS_WINDOW_NANOS = 5_000_000_000L
 private const val STEAM_STREAM_BUFFER_LOG_INTERVAL_MS = 5_000L
-private const val STEAM_STREAM_ESTIMATOR_SEEK_THRESHOLD_MS = 5_000L
-private const val STEAM_STREAM_ESTIMATOR_MIN_RATIO = 0.5
-private const val STEAM_STREAM_ESTIMATOR_MAX_RATIO = 4.0
-private const val STEAM_STREAM_ESTIMATOR_SAMPLE_WEIGHT = 0.25
+private const val STEAM_STREAM_MIN_PLAYBACK_SPEED = 0.1f
 
 internal fun isSmallFilePipelineCandidate(
     fileSize: Long,

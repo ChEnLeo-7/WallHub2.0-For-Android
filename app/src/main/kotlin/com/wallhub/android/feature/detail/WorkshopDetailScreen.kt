@@ -224,6 +224,7 @@ fun WorkshopDetailScreen(
                             onToggleSubscription = onToggleSubscription,
                             onToggleFavorite = onToggleFavorite,
                             inlineVideoPlayback = inlinePlayback,
+                            inlineVideoPlaybackEnabled = state.onlineChunkPlaybackEnabled,
                             isLoadingInlineVideo = state.isLoadingInlineVideo,
                             inlineVideoError = state.inlineVideoError,
                             onStartInlineVideo = onStartInlineVideo,
@@ -306,6 +307,7 @@ internal fun WorkshopDetailPagerContent(
     onToggleSubscription: () -> Unit,
     onToggleFavorite: () -> Unit,
     inlineVideoPlayback: SteamChunkPlayback?,
+    inlineVideoPlaybackEnabled: Boolean,
     isLoadingInlineVideo: Boolean,
     inlineVideoError: DetailUiText?,
     onStartInlineVideo: () -> Unit,
@@ -394,6 +396,7 @@ internal fun WorkshopDetailPagerContent(
         onHeaderHeightChanged = { headerHeightPx = it },
         onCoverHeightChanged = { coverHeightPx = it },
         inlineVideoPlayback = inlineVideoPlayback,
+        inlineVideoPlaybackEnabled = inlineVideoPlaybackEnabled,
         isLoadingInlineVideo = isLoadingInlineVideo,
         inlineVideoError = inlineVideoError,
         onStartInlineVideo = onStartInlineVideo,
@@ -458,6 +461,7 @@ internal fun WorkshopDetailPane(
     onHeaderHeightChanged: (Int) -> Unit,
     onCoverHeightChanged: (Int) -> Unit,
     inlineVideoPlayback: SteamChunkPlayback?,
+    inlineVideoPlaybackEnabled: Boolean,
     isLoadingInlineVideo: Boolean,
     inlineVideoError: DetailUiText?,
     onStartInlineVideo: () -> Unit,
@@ -545,6 +549,7 @@ internal fun WorkshopDetailPane(
                 onHeaderHeightChanged = onHeaderHeightChanged,
                 onCoverHeightChanged = onCoverHeightChanged,
                 inlineVideoPlayback = inlineVideoPlayback,
+                inlineVideoPlaybackEnabled = inlineVideoPlaybackEnabled,
                 isLoadingInlineVideo = isLoadingInlineVideo,
                 inlineVideoError = inlineVideoError,
                 onStartInlineVideo = onStartInlineVideo,
@@ -605,6 +610,7 @@ internal fun WorkshopDetailCollapsibleHeader(
     onHeaderHeightChanged: (Int) -> Unit,
     onCoverHeightChanged: (Int) -> Unit,
     inlineVideoPlayback: SteamChunkPlayback?,
+    inlineVideoPlaybackEnabled: Boolean,
     isLoadingInlineVideo: Boolean,
     inlineVideoError: DetailUiText?,
     onStartInlineVideo: () -> Unit,
@@ -622,6 +628,7 @@ internal fun WorkshopDetailCollapsibleHeader(
             previewUrl = summary.previewUrl,
             type = summary.type,
             playback = inlineVideoPlayback,
+            playbackEnabled = inlineVideoPlaybackEnabled,
             isLoadingInlineVideo = isLoadingInlineVideo,
             inlineVideoError = inlineVideoError,
             onStartInlineVideo = onStartInlineVideo,
@@ -769,6 +776,7 @@ internal fun DetailCover(
     previewUrl: String?,
     type: WorkshopType,
     playback: SteamChunkPlayback?,
+    playbackEnabled: Boolean,
     isLoadingInlineVideo: Boolean,
     inlineVideoError: DetailUiText?,
     onStartInlineVideo: () -> Unit,
@@ -831,7 +839,7 @@ internal fun DetailCover(
                 )
             }
         }
-        if (type == WorkshopType.VIDEO && playback == null) {
+        if (playbackEnabled && type == WorkshopType.VIDEO && playback == null) {
             Box(
                 modifier =
                     Modifier

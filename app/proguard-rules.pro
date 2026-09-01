@@ -5,6 +5,10 @@
 -keep class in.dragonbra.javasteam.protobufs.** { *; }
 -keep class in.dragonbra.javasteam.rpc.** { *; }
 -keep class in.dragonbra.javasteam.steam.handlers.**.callback.** { *; }
+# WallHub accesses JavaSteam's configured OkHttp client for streaming chunk reads.
+-keepclassmembers class in.dragonbra.javasteam.steam.cdn.Client {
+    okhttp3.OkHttpClient httpClient;
+}
 
 # Navigation route serializers are generated from these annotations.
 -if @kotlinx.serialization.Serializable class **

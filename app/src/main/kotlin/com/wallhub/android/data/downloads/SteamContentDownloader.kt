@@ -84,6 +84,7 @@ internal class ForegroundFirstPermitPool(
     private val foregroundWaiters = ArrayDeque<PermitWaiter>()
     private val prefetchWaiters = ArrayDeque<PermitWaiter>()
     private val promotedRequests = mutableSetOf<Long>()
+    private val activeRequests = linkedMapOf<Long, SteamStreamChunkPriority>()
     private var availablePermits = this.maxPermits
 
     suspend fun <T> withPermit(
@@ -96,7 +97,7 @@ internal class ForegroundFirstPermitPool(
             return block()
         } finally {
             withContext(NonCancellable) {
-                release()
+                release(requestId)
                 requestId?.let { id -> mutex.withLock { promotedRequests.remove(id) } }
             }
         }
@@ -105,12 +106,21 @@ internal class ForegroundFirstPermitPool(
     suspend fun promote(requestId: Long) {
         mutex.withLock {
             promotedRequests += requestId
+            if (activeRequests[requestId] == SteamStreamChunkPriority.PREFETCH) {
+                activeRequests[requestId] = SteamStreamChunkPriority.FOREGROUND
+            }
             val waiter = prefetchWaiters.firstOrNull { it.requestId == requestId } ?: return@withLock
             prefetchWaiters.remove(waiter)
             foregroundWaiters.addLast(waiter)
             dispatchWaiterIfPossible()
         }
     }
+
+    /** Returns an active speculative request that a blocked foreground read may preempt. */
+    suspend fun activePrefetchRequestId(): Long? =
+        mutex.withLock {
+            activeRequests.entries.firstOrNull { it.value == SteamStreamChunkPriority.PREFETCH }?.key
+        }
 
     private suspend fun acquire(
         priority: SteamStreamChunkPriority,
@@ -132,9 +142,10 @@ internal class ForegroundFirstPermitPool(
                     }
                 if (canAcquire) {
                     availablePermits -= 1
+                    requestId?.let { id -> activeRequests[id] = effectivePriority }
                     null
                 } else {
-                    PermitWaiter(requestId, CompletableDeferred()).also { queued ->
+                    PermitWaiter(requestId, effectivePriority, CompletableDeferred()).also { queued ->
                         when (effectivePriority) {
                             SteamStreamChunkPriority.FOREGROUND -> foregroundWaiters.addLast(queued)
                             SteamStreamChunkPriority.PREFETCH -> prefetchWaiters.addLast(queued)
@@ -151,14 +162,15 @@ internal class ForegroundFirstPermitPool(
                     mutex.withLock {
                         foregroundWaiters.remove(waiter) || prefetchWaiters.remove(waiter)
                     }
-                if (!removedFromQueue) release()
+                if (!removedFromQueue) release(requestId)
             }
             throw error
         }
     }
 
-    private suspend fun release() {
+    private suspend fun release(requestId: Long?) {
         mutex.withLock {
+            requestId?.let(activeRequests::remove)
             availablePermits = min(maxPermits, availablePermits + 1)
             dispatchWaiterIfPossible()
         }
@@ -170,6 +182,7 @@ internal class ForegroundFirstPermitPool(
             if (foreground != null) {
                 if (foreground.signal.complete(Unit)) {
                     availablePermits -= 1
+                    foreground.requestId?.let { id -> activeRequests[id] = SteamStreamChunkPriority.FOREGROUND }
                     return
                 }
                 continue
@@ -177,6 +190,7 @@ internal class ForegroundFirstPermitPool(
             val prefetch = prefetchWaiters.pollFirst() ?: return
             if (prefetch.signal.complete(Unit)) {
                 availablePermits -= 1
+                prefetch.requestId?.let { id -> activeRequests[id] = prefetch.priority }
                 return
             }
         }
@@ -184,6 +198,7 @@ internal class ForegroundFirstPermitPool(
 
     private data class PermitWaiter(
         val requestId: Long?,
+        val priority: SteamStreamChunkPriority,
         val signal: CompletableDeferred<Unit>,
     )
 }
@@ -217,7 +232,10 @@ internal fun findVerifiedChunkOffsets(
 
 internal class StreamChunkRequest(
     val id: Long,
-    val deferred: Deferred<ByteArray>,
+    // Pure prefetch completes with null after the bytes are committed to disk,
+    // so completed requests never retain decoded chunk arrays.
+    val deferred: Deferred<ByteArray?>,
+    val networkCompleted: Deferred<Unit>,
     val job: Job,
     private val priorityState: AtomicReference<SteamStreamChunkPriority>,
 ) {
@@ -369,6 +387,7 @@ internal class SteamContentDownloader {
                 plans = filePlans,
                 destinationDirectory = destinationDirectory,
                 cdnClient = cdnClient,
+                httpClient = cdnClient.streamingHttpClient(),
                 servers = access.servers,
                 depotId = target.depotId,
                 depotKey = access.depotKey,
@@ -433,18 +452,20 @@ internal class SteamContentDownloader {
                         .filter { it.fileName.videoFileExtension() in VIDEO_FILE_EXTENSIONS }
                         .maxByOrNull(FileData::totalSize)
                         ?: error("No streamable video file found in the Steam depot")
+                val orderedVideoChunks = orderChunksByOffset(videoFile.chunks)
                 cacheRootDirectory.mkdirs()
                 check(cacheRootDirectory.isDirectory) { "Failed to create streaming cache root directory" }
                 SteamContentVideoStream(
                     title = target.title,
                     fileName = videoFile.fileName,
                     contentLength = videoFile.totalSize,
-                    chunks = orderChunksByOffset(videoFile.chunks),
+                    chunks = orderedVideoChunks,
                     streamCache =
                         SteamVideoStreamCache(
                             rootDirectory = cacheRootDirectory,
                             namespace = "${target.publishedFileId}-${target.contentManifestId}",
                             limitBytes = cacheLimitBytes.coerceAtLeast(STREAM_MIN_CACHE_LIMIT_BYTES),
+                            stagingEnabled = false,
                         ),
                     prefetchConcurrency = steamStreamPrefetchConcurrency(normalizedOptions.chunkConcurrency),
                     cdnClient = cdnClient,

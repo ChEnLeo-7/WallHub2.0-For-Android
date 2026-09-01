@@ -21,9 +21,11 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -59,7 +61,6 @@ import androidx.media3.common.Timeline
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
-import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -72,6 +73,8 @@ import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamSession
+import com.wallhub.android.core.model.WorkshopVideoFullCacheState
+import com.wallhub.android.core.model.WorkshopVideoFullCacheStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -237,8 +240,6 @@ fun OnlineVideoPlayerScreen(
                 when {
                     state.isLoading -> {
                         PlayerLoadingIndicator(
-                            availableDurationMs = 0L,
-                            targetDurationMs = 0L,
                             modifier =
                                 Modifier
                                     .fillMaxSize()
@@ -314,20 +315,7 @@ internal fun createSteamChunkPlayer(
             DefaultRenderersFactory(context.applicationContext)
                 .setEnableDecoderFallback(true),
         )
-        .setLoadControl(
-            DefaultLoadControl
-                .Builder()
-                .setBufferDurationsMs(
-                    STREAM_MIN_BUFFER_MS,
-                    STREAM_MAX_BUFFER_MS,
-                    STREAM_BUFFER_FOR_PLAYBACK_MS,
-                    STREAM_BUFFER_FOR_REBUFFER_MS,
-                ).setTargetBufferBytes(steamPlayerTargetBufferBytes(Runtime.getRuntime().maxMemory()))
-                // A fixed byte threshold represented only ~1.34 seconds for Workshop
-                // item 3423261668. Preserve a real time buffer for high-bitrate files.
-                .setPrioritizeTimeOverSizeThresholds(true)
-                .build(),
-        ).build()
+        .build()
         .also { player ->
             val mediaItem = MediaItem.fromUri(Uri.parse("steamchunk://${stream.fileName}"))
             val mediaSource =
@@ -351,6 +339,7 @@ private fun rememberSteamChunkPlaybackState(
     releasePlayerWhenDisposed: Boolean,
 ): SteamChunkPlayback {
     val bufferState by stream.playbackBufferState.collectAsStateWithLifecycle()
+    val fullCacheState by stream.fullCacheState.collectAsStateWithLifecycle()
     var renderedFirstFrame by remember(stream, player) {
         mutableStateOf(player.videoSize.width > 0 && player.videoSize.height > 0)
     }
@@ -437,6 +426,8 @@ private fun rememberSteamChunkPlaybackState(
         renderedFirstFrame = renderedFirstFrame,
         error = playbackError,
         bufferState = bufferState,
+        fullCacheState = fullCacheState,
+        onCancelCompleteFileCache = stream::cancelFullCache,
     )
 }
 
@@ -445,6 +436,8 @@ internal data class SteamChunkPlayback(
     val renderedFirstFrame: Boolean,
     val error: DetailUiText?,
     val bufferState: com.wallhub.android.core.model.WorkshopVideoBufferState,
+    val fullCacheState: WorkshopVideoFullCacheState,
+    val onCancelCompleteFileCache: () -> Unit,
 )
 
 private fun ExoPlayer.reportPlaybackDemand(stream: WorkshopVideoStreamSession) {
@@ -469,7 +462,6 @@ internal fun SteamChunkVideoPlayer(
             player = playback.player,
             fullscreen = fullscreen,
             onFullscreenChange = onFullscreenChange,
-            externalBufferedPositionMs = playback.bufferState.bufferedPositionMs,
             modifier = Modifier.fillMaxSize(),
         )
         AnimatedVisibility(
@@ -489,11 +481,14 @@ internal fun SteamChunkVideoPlayer(
             modifier = Modifier.fillMaxSize(),
         ) {
             PlayerLoadingIndicator(
-                availableDurationMs = playback.bufferState.availableDurationMs,
-                targetDurationMs = playback.bufferState.targetDurationMs,
                 modifier = Modifier.fillMaxSize(),
             )
         }
+        SteamFullCacheBanner(
+            playback = playback,
+            visible = playback.error == null,
+            modifier = Modifier.align(Alignment.TopCenter).padding(WallHubSpacing.md),
+        )
         playback.error?.let { error ->
             Surface(
                 modifier = Modifier.align(Alignment.Center),
@@ -516,25 +511,73 @@ internal fun SteamChunkVideoPlayer(
 }
 
 @Composable
+private fun SteamFullCacheBanner(
+    playback: SteamChunkPlayback,
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val fullCache = playback.fullCacheState
+    val show =
+        fullCache.status in
+            setOf(
+                WorkshopVideoFullCacheStatus.CACHING,
+                WorkshopVideoFullCacheStatus.COMPLETE,
+                WorkshopVideoFullCacheStatus.ERROR,
+            )
+    if (!visible || !show) return
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Column(modifier = Modifier.padding(WallHubSpacing.md)) {
+            Text(text = fullCacheMessage(fullCache), style = MaterialTheme.typography.bodySmall)
+            when {
+                fullCache.status == WorkshopVideoFullCacheStatus.CACHING -> {
+                    val progress =
+                        if (fullCache.totalBytes > 0L) {
+                            (fullCache.cachedBytes.toFloat() / fullCache.totalBytes.toFloat()).coerceIn(0f, 1f)
+                        } else {
+                            0f
+                        }
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth().padding(top = WallHubSpacing.sm),
+                    )
+                    TextButton(onClick = playback.onCancelCompleteFileCache) {
+                        Text(stringResource(R.string.settings_action_cancel))
+                    }
+                }
+
+            }
+        }
+    }
+}
+
+@Composable
+private fun fullCacheMessage(state: WorkshopVideoFullCacheState): String =
+    when (state.status) {
+        WorkshopVideoFullCacheStatus.CACHING -> stringResource(R.string.detail_caching_complete_video)
+        WorkshopVideoFullCacheStatus.COMPLETE -> stringResource(R.string.detail_complete_video_cached)
+        WorkshopVideoFullCacheStatus.ERROR ->
+            if (state.errorCode == "STREAM_FULL_CACHE_LIMIT") {
+                stringResource(R.string.detail_complete_video_cache_limit)
+            } else {
+                stringResource(R.string.detail_complete_video_cache_failed)
+            }
+        else -> ""
+    }
+
+@Composable
 private fun PlayerLoadingIndicator(
-    availableDurationMs: Long,
-    targetDurationMs: Long,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator(modifier = Modifier.size(WallHubSizeTokens.compactIconButton))
             Text(
-                text =
-                    if (targetDurationMs > 0L) {
-                        stringResource(
-                            R.string.detail_buffering_video_seconds,
-                            (availableDurationMs / 1_000L).coerceAtLeast(0L),
-                            (targetDurationMs / 1_000L).coerceAtLeast(1L),
-                        )
-                    } else {
-                        stringResource(R.string.detail_preparing_video)
-                    },
+                text = stringResource(R.string.detail_preparing_video),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = WallHubSpacing.sm),
@@ -638,9 +681,16 @@ private class SteamChunkDataSource(
         if (length == 0) return 0
         if (bytesRemaining == 0L) return C.RESULT_END_OF_INPUT
         val requestedLength = min(length.toLong(), min(bytesRemaining, STREAM_READ_WINDOW_BYTES)).toInt()
-        val data =
+        val read =
             try {
-                runBlocking { stream.readAt(readPosition, requestedLength) }
+                runBlocking {
+                    stream.readAt(
+                        position = readPosition,
+                        destination = buffer,
+                        destinationOffset = offset,
+                        length = requestedLength,
+                    )
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: IOException) {
@@ -651,12 +701,11 @@ private class SteamChunkDataSource(
                 // Media3 retries IO failures; preserve the underlying cause for diagnostics.
                 throw IOException("Steam video chunk read failed", error)
             }
-        if (data.isEmpty()) return C.RESULT_END_OF_INPUT
-        data.copyInto(buffer, destinationOffset = offset)
-        readPosition += data.size
-        bytesRemaining -= data.size
-        bytesTransferred(data.size)
-        return data.size
+        if (read == 0) return C.RESULT_END_OF_INPUT
+        readPosition += read
+        bytesRemaining -= read
+        bytesTransferred(read)
+        return read
     }
 
     override fun getUri(): Uri? = currentUri
@@ -674,20 +723,6 @@ private class SteamChunkDataSource(
     }
 }
 
-internal fun steamPlayerTargetBufferBytes(maxHeapBytes: Long): Int =
-    (maxHeapBytes / STREAM_BUFFER_HEAP_DIVISOR)
-        .coerceIn(STREAM_TARGET_BUFFER_MIN_BYTES, STREAM_TARGET_BUFFER_MAX_BYTES)
-        .toInt()
-
-// Media3 only keeps a small decode-ready window in the managed heap. The larger
-// playback safety window lives in the decrypted Steam chunk disk cache.
-private const val STREAM_MIN_BUFFER_MS = 4_000
-private const val STREAM_MAX_BUFFER_MS = 8_000
-private const val STREAM_BUFFER_FOR_PLAYBACK_MS = 2_000
-private const val STREAM_BUFFER_FOR_REBUFFER_MS = 4_000
-private const val STREAM_BUFFER_HEAP_DIVISOR = 5L
-private const val STREAM_TARGET_BUFFER_MIN_BYTES = 48L * 1024L * 1024L
-private const val STREAM_TARGET_BUFFER_MAX_BYTES = 96L * 1024L * 1024L
 private const val STREAM_LOAD_RETRY_COUNT = 5
 private const val STREAM_DEMAND_REPORT_INTERVAL_MS = 500L
 private const val STREAM_PLAYER_LOG_TAG = "WallHubStreamPlayer"

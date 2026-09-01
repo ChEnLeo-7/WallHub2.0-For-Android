@@ -59,12 +59,10 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
-import androidx.media3.ui.DefaultTimeBar
 import androidx.media3.ui.PlayerView
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import kotlin.math.abs
-import kotlin.math.max
 import kotlin.math.roundToInt
 import android.graphics.Color as AndroidColor
 
@@ -78,7 +76,6 @@ internal fun ComposeMedia3Player(
     fullscreen: Boolean,
     onFullscreenChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
-    externalBufferedPositionMs: Long = 0L,
 ) {
     var holdDoubleSpeedActive by remember(player) { mutableStateOf(false) }
     var holdSpeedFrame by remember(player) { mutableStateOf<Bitmap?>(null) }
@@ -110,7 +107,6 @@ internal fun ComposeMedia3Player(
                         WallHubPlayerControlsBinder(this).also { binder ->
                             setTag(R.id.wallhub_playback_speed, binder)
                             binder.bind(player)
-                            binder.updateExternalBufferedPosition(externalBufferedPositionMs)
                         }
                     }
             },
@@ -119,7 +115,6 @@ internal fun ComposeMedia3Player(
                 view.useController = true
                 (view.getTag(R.id.wallhub_playback_speed) as? WallHubPlayerControlsBinder)?.apply {
                     bind(player)
-                    updateExternalBufferedPosition(externalBufferedPositionMs)
                 }
                 view.setFullscreenButtonState(fullscreen)
                 view.setFullscreenButtonClickListener { requestedFullscreen ->
@@ -206,8 +201,6 @@ private class WallHubPlayerControlsBinder(
     private val speedButton = playerView.findViewById<TextView>(R.id.wallhub_playback_speed)
     private val muteButton = playerView.findViewById<ImageButton>(R.id.wallhub_mute)
     private val volumeBar = playerView.findViewById<SeekBar>(R.id.wallhub_volume)
-    private val progressBar =
-        playerView.findViewById<WallHubBufferedTimeBar>(androidx.media3.ui.R.id.exo_progress)
     private var boundPlayer: Player? = null
     private var lastAudibleVolume = 1f
     private var speedPopup: PopupWindow? = null
@@ -240,10 +233,6 @@ private class WallHubPlayerControlsBinder(
         restoreControllerTimeout()
         boundPlayer?.removeListener(this)
         boundPlayer = null
-    }
-
-    fun updateExternalBufferedPosition(positionMs: Long) {
-        progressBar?.setExternalBufferedPosition(positionMs.coerceAtLeast(0L))
     }
 
     override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
@@ -405,26 +394,6 @@ private class WallHubPlayerControlsBinder(
         if (widthPx <= 0) return
         val widthDp = widthPx / playerView.resources.displayMetrics.density
         volumeBar?.visibility = if (widthDp >= VOLUME_BAR_MIN_WIDTH_DP) View.VISIBLE else View.GONE
-    }
-}
-
-/** Keeps PlayerControlView's Media3 buffer while allowing the verified Depot cache
- * to extend secondary progress without retaining those bytes in the managed heap. */
-internal class WallHubBufferedTimeBar @JvmOverloads constructor(
-    context: Context,
-    attrs: AttributeSet? = null,
-) : DefaultTimeBar(context, attrs) {
-    private var media3BufferedPositionMs = 0L
-    private var externalBufferedPositionMs = 0L
-
-    override fun setBufferedPosition(bufferedPosition: Long) {
-        media3BufferedPositionMs = bufferedPosition.coerceAtLeast(0L)
-        super.setBufferedPosition(max(media3BufferedPositionMs, externalBufferedPositionMs))
-    }
-
-    fun setExternalBufferedPosition(bufferedPositionMs: Long) {
-        externalBufferedPositionMs = bufferedPositionMs.coerceAtLeast(0L)
-        super.setBufferedPosition(max(media3BufferedPositionMs, externalBufferedPositionMs))
     }
 }
 

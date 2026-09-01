@@ -155,13 +155,30 @@ data class WorkshopVideoBufferState(
     /** Absolute media timeline position covered by Media3 plus contiguous verified Depot chunks. */
     val bufferedPositionMs: Long = 0L,
     val availableDurationMs: Long = 0L,
-    val targetDurationMs: Long = 15_000L,
-    val lowWaterDurationMs: Long = 8_000L,
+    val targetDurationMs: Long = 0L,
     val targetReached: Boolean = false,
+    val bandwidthLimited: Boolean = false,
+)
+
+enum class WorkshopVideoFullCacheStatus {
+    IDLE,
+    CACHING,
+    COMPLETE,
+    CANCELLED,
+    ERROR,
+}
+
+data class WorkshopVideoFullCacheState(
+    val status: WorkshopVideoFullCacheStatus = WorkshopVideoFullCacheStatus.IDLE,
+    val cachedBytes: Long = 0L,
+    val totalBytes: Long = 0L,
+    val errorCode: String? = null,
 )
 
 private val EmptyWorkshopVideoBufferState: StateFlow<WorkshopVideoBufferState> =
     MutableStateFlow(WorkshopVideoBufferState())
+private val EmptyWorkshopVideoFullCacheState: StateFlow<WorkshopVideoFullCacheState> =
+    MutableStateFlow(WorkshopVideoFullCacheState())
 
 /** A seekable video stream backed by Steam Depot chunks instead of a completed download. */
 interface WorkshopVideoStreamSession : Closeable {
@@ -178,6 +195,9 @@ interface WorkshopVideoStreamSession : Closeable {
     val playbackBufferState: StateFlow<WorkshopVideoBufferState>
         get() = EmptyWorkshopVideoBufferState
 
+    val fullCacheState: StateFlow<WorkshopVideoFullCacheState>
+        get() = EmptyWorkshopVideoFullCacheState
+
     /**
      * Reports Media3's live playback clock to the Depot prefetcher. The transport uses the
      * media timeline as its source of truth and only converts time to byte ranges at the Steam
@@ -192,8 +212,14 @@ interface WorkshopVideoStreamSession : Closeable {
 
     suspend fun readAt(
         position: Long,
+        destination: ByteArray,
+        destinationOffset: Int,
         length: Int,
-    ): ByteArray
+    ): Int
+
+    fun startFullCache() = Unit
+
+    fun cancelFullCache() = Unit
 }
 
 interface WorkshopVideoStreamRepository {
