@@ -168,10 +168,10 @@ internal class DownloadMemoryBudget private constructor(
         requestId: Long?,
         order: Long,
     ): Reservation {
-        require(requestedBytes in 1L..capacityBytes) {
-            "Requested memory $requestedBytes exceeds budget capacity $capacityBytes"
-        }
-        val bytes = requestedBytes
+        require(requestedBytes > 0L) { "Requested memory must be positive" }
+        // Match the stream worker: a single oversized chunk may run, but only
+        // while it owns the complete budget so the pipeline cannot deadlock.
+        val bytes = requestedBytes.coerceAtMost(capacityBytes)
         val waiter =
             mutex.withLock {
                 val effectivePriority =

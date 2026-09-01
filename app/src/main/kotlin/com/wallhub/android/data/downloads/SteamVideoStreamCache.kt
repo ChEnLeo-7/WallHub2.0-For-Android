@@ -635,17 +635,29 @@ internal class SteamVideoStreamCache(
             val files = root.walkTopDown().filter(File::isFile).toList()
             files.forEach { file ->
                 val path = file.absolutePath
-                if (state.protectedPathsByOwner.values.any { path in it } || state.activeTemporaryFiles.containsKey(path)) {
+                val protectedPath =
+                    if (file.name.endsWith("$CHUNK_SUFFIX$MARKER_SUFFIX")) {
+                        path.removeSuffix(MARKER_SUFFIX)
+                    } else {
+                        path
+                    }
+                if (
+                    state.protectedPathsByOwner.values.any { protectedPath in it } ||
+                    state.activeTemporaryFiles.containsKey(path)
+                ) {
                     return@forEach
                 }
                 val lock = state.chunkLocks.computeIfAbsent(path) { Mutex() }
                 var deleted = false
                 var length = 0L
                 lock.withLock {
-                    if (state.protectedPathsByOwner.values.any { path in it } || state.activeTemporaryFiles.containsKey(path)) {
+                    if (
+                        state.protectedPathsByOwner.values.any { protectedPath in it } ||
+                        state.activeTemporaryFiles.containsKey(path)
+                    ) {
                         return@withLock
                     }
-                    length = file.length()
+                    length = if (file.name.endsWith(MARKER_SUFFIX)) 0L else file.length()
                     deleted = !file.isFile || file.delete()
                     if (deleted) {
                         state.mutex.withLock {
