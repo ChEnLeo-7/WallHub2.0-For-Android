@@ -118,7 +118,7 @@ class HybridDepotDownloaderTest {
             rust.verifyError = IllegalStateException("native engine panicked")
             val kotlin = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_VERIFICATION))
             var nowMs = 0L
-            val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics()) { 0L } { nowMs }
+            val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics()) { nowMs }
 
             repeat(HybridDepotDownloader.MAX_RUST_CONSECUTIVE_FAILURES) {
                 hybrid.verifyChunk(ByteArray(8), 1)
