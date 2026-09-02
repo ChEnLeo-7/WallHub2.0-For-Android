@@ -33,6 +33,21 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.0.12077973"
           bash scripts/build-rust.sh
+      - name: Build kSteam into Maven Local
+        env:
+          KSTEAM_PINNED_SHA: e751f788670a973aed2c4304adc983fafe14c260
+        run: |
+          git clone --depth 1 https://github.com/iTaysonLab/kSteam.git /tmp/ksteam
+          cd /tmp/ksteam
+          if [[ "$(git rev-parse HEAD)" != "$KSTEAM_PINNED_SHA" ]]; then
+            git fetch --depth 1 origin "$KSTEAM_PINNED_SHA"
+            git checkout --quiet FETCH_HEAD
+          fi
+          test "$(git rev-parse HEAD)" = "$KSTEAM_PINNED_SHA"
+          git submodule update --init --depth 1
+          yes | sdkmanager --licenses >/dev/null || true
+          chmod +x gradlew
+          ./gradlew --no-daemon publishToMavenLocal
       - name: Require Release signing secrets
         env:
           WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}

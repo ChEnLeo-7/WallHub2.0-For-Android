@@ -209,6 +209,8 @@ dependencies {
     }
     implementation(libs.javax.inject)
     implementation(libs.json)
+    // kSteam protocol engine (hybrid migration Phase B). JavaSteam remains the active engine.
+    implementation(libs.ksteam.core)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.jdk8)

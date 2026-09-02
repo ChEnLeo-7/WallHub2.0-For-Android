@@ -39,3 +39,9 @@
 
 - Update: Upgraded Kotlin 2.1.21 -> 2.3.20 (kSteam's toolchain) and aligned kotlinx-coroutines to 1.10.2. Snapshot `archive/wallhub-source-20260902T223744Z-pre-kotlin-2.3-upgrade.tar.gz` taken before the change.
 - Verification: full CI (verify.yml) plus debug APK build on the upgrade commit.
+
+### kSteam migration Phase B-1: engine source build and shadow client
+
+- Update: CI now clones kSteam at a pinned SHA (e751f78, with the SteamDatabase protobufs submodule), publishes it to Maven Local, and the app consumes `bruhcollective.itaysonlab.ksteam:core:r50`. `settings.gradle.kts` resolves `mavenLocal()`.
+- Update: Added `KSteamProtocolClient` implementing the engine-neutral protocol seam: session core (start/login/Steam Guard/refresh-token restore, pause-resume lifecycle) wired to kSteam; Workshop browse/collections/comments/interactions/playtime degrade gracefully with diagnostics (shadow mode). Added `KsteamEncryptedPersistenceDriver` (Keystore-encrypted kSteam session storage).
+- Verification: full CI on the landing commit; runtime behavior unchanged (JavaSteam remains the active engine).
