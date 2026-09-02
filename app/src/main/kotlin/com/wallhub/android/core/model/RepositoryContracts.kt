@@ -115,6 +115,12 @@ interface SteamSessionRepository {
     /** Begins a refresh-token restore on the repository-owned session scope. */
     fun restorePersistedSession()
 
+    /** Re-checks or restores the saved session when the application returns to the foreground. */
+    fun onAppForegrounded() = restorePersistedSession()
+
+    /** Records that the process entered the background without clearing the saved session. */
+    fun onAppBackgrounded() = Unit
+
     /** Starts an interactive credential login. The password is not persisted. */
     fun login(
         accountName: String,

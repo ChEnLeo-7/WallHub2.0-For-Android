@@ -983,6 +983,7 @@
     <string name='backend_steam_restore_timeout'>Steam session restoration timed out. Check your network and try again.</string>
     <string name='backend_steam_restoring_session'>Restoring the saved Steam session…</string>
     <string name='backend_steam_session_restored'>Steam session restored.</string>
+    <string name='backend_steam_session_storage_unavailable'>The saved Steam session could not be read. Sign in again to replace it.</string>
     <string name='backend_steam_signed_in_account'>signed-in Steam account %1$s</string>
     <string name='backend_steam_signed_out'>Signed out of Steam and removed the saved local session.</string>
     <string name='backend_steam_switching_to_guard'>Switching to a Steam Guard code…</string>

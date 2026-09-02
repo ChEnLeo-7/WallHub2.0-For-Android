@@ -2,6 +2,7 @@ package com.wallhub.android.data.security
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.nio.charset.StandardCharsets
@@ -50,7 +51,7 @@ internal class AndroidKeystoreEncryptedStringStore(
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(
                 Cipher.DECRYPT_MODE,
-                getOrCreateKey(),
+                getExistingKey() ?: error("Encrypted value key is missing"),
                 GCMParameterSpec(GCM_TAG_LENGTH_BITS, Base64.decode(initializationVector, Base64.NO_WRAP)),
             )
             EncryptedStringReadResult.Value(
@@ -66,16 +67,12 @@ internal class AndroidKeystoreEncryptedStringStore(
 
     @Synchronized
     override fun write(value: String) {
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
-        val encrypted = cipher.doFinal(value.toByteArray(StandardCharsets.UTF_8))
-        check(
-            preferences
-                .edit()
-                .putString(KEY_CIPHERTEXT, Base64.encodeToString(encrypted, Base64.NO_WRAP))
-                .putString(KEY_INITIALIZATION_VECTOR, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
-                .commit(),
-        ) { "Unable to persist encrypted value" }
+        try {
+            writeWithKey(value, getOrCreateKey())
+        } catch (_: KeyPermanentlyInvalidatedException) {
+            deleteKey()
+            writeWithKey(value, getOrCreateKey())
+        }
     }
 
     @Synchronized
@@ -83,9 +80,13 @@ internal class AndroidKeystoreEncryptedStringStore(
         check(preferences.edit().clear().commit()) { "Unable to clear encrypted value" }
     }
 
-    private fun getOrCreateKey(): SecretKey {
+    private fun getExistingKey(): SecretKey? {
         val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
-        (keyStore.getKey(keyAlias, null) as? SecretKey)?.let { return it }
+        return keyStore.getKey(keyAlias, null) as? SecretKey
+    }
+
+    private fun getOrCreateKey(): SecretKey {
+        getExistingKey()?.let { return it }
         return KeyGenerator
             .getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEY_STORE)
             .apply {
@@ -101,6 +102,27 @@ internal class AndroidKeystoreEncryptedStringStore(
                         .build(),
                 )
             }.generateKey()
+    }
+
+    private fun writeWithKey(
+        value: String,
+        key: SecretKey,
+    ) {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        val encrypted = cipher.doFinal(value.toByteArray(StandardCharsets.UTF_8))
+        check(
+            preferences
+                .edit()
+                .putString(KEY_CIPHERTEXT, Base64.encodeToString(encrypted, Base64.NO_WRAP))
+                .putString(KEY_INITIALIZATION_VECTOR, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
+                .commit(),
+        ) { "Unable to persist encrypted value" }
+    }
+
+    private fun deleteKey() {
+        val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
+        if (keyStore.containsAlias(keyAlias)) keyStore.deleteEntry(keyAlias)
     }
 
     private companion object {

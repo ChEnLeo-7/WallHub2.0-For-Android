@@ -1,6 +1,7 @@
 package com.wallhub.android.data.steam
 
 import android.content.Context
+import android.os.SystemClock
 import com.wallhub.android.R
 import com.wallhub.android.core.database.AppPreferencesStore
 import com.wallhub.android.core.model.AccountWorkshopQuery
@@ -129,6 +130,8 @@ class SecureSteamSessionRepository
         @Volatile
         internal var stableSessionJob: Job? = null
 
+        internal var backgroundedAtElapsedRealtime: Long? = null
+
         internal var consecutiveDisconnects = 0
 
         @Volatile
@@ -139,6 +142,58 @@ class SecureSteamSessionRepository
         }
 
     override val session: StateFlow<SteamSessionState> = mutableSession.asStateFlow()
+
+    override fun onAppBackgrounded() {
+        synchronized(lifecycleLock) {
+            if (backgroundedAtElapsedRealtime == null) {
+                backgroundedAtElapsedRealtime = SystemClock.elapsedRealtime()
+            }
+        }
+    }
+
+    override fun onAppForegrounded() {
+        var sessionToClose: SteamClientSession? = null
+        var shouldRestore = false
+        var restoreGeneration = 0L
+        synchronized(lifecycleLock) {
+            val nowMillis = SystemClock.elapsedRealtime()
+            val backgroundedAt = backgroundedAtElapsedRealtime
+            backgroundedAtElapsedRealtime = null
+            if (authenticationJob?.isCompleted == false) return@synchronized
+            val current = mutableSession.value
+            val activeSession = authenticatedSession
+            shouldRestore =
+                shouldRefreshSessionOnForeground(
+                    phase = current.phase,
+                    hasStoredSession = current.hasStoredSession,
+                    sessionUsable = activeSession?.isUsable == true,
+                    backgroundedAtElapsedRealtime = backgroundedAt,
+                    nowElapsedRealtime = nowMillis,
+                )
+            if (shouldRestore) {
+                val shouldCloseSession =
+                    current.phase == SteamSessionPhase.RESTORABLE ||
+                        activeSession?.isUsable != true ||
+                        backgroundedAt?.let {
+                            nowMillis - it >= FOREGROUND_SESSION_REFRESH_AFTER_BACKGROUND_MS
+                        } == true
+                sessionToClose = activeSession.takeIf { shouldCloseSession }
+                if (sessionToClose != null) {
+                    authenticatedSession = null
+                    activeContentCredential = null
+                    stableSessionJob?.cancel()
+                    stableSessionJob = null
+                    sessionGeneration += 1
+                }
+                restoreGeneration = sessionGeneration
+            }
+        }
+        sessionToClose?.close()
+        if (shouldRestore) {
+            recordSessionEvent(restoreGeneration, "foreground_restore_requested")
+            restorePersistedSession()
+        }
+    }
 
     override suspend fun getAppPlaytime(appId: Int): SteamAppPlaytime? =
         withAuthenticatedSteamSession { steamSession ->
@@ -205,22 +260,22 @@ class SecureSteamSessionRepository
             }
 
         override fun restorePersistedSession() {
-            val job =
-                synchronized(lifecycleLock) {
-                    if (authenticatedSession?.isUsable == true || authenticationJob?.isActive == true) return
-                    automaticRestoreJob?.cancel()
-                    automaticRestoreJob = null
-                    val generation = ++sessionGeneration
-                    serviceScope
-                        .launch(start = CoroutineStart.LAZY) {
-                            try {
-                                restorePersistedSessionInternal(generation)
-                            } finally {
-                                clearAuthenticationJob(generation)
-                            }
-                        }.also { authenticationJob = it }
-                }
-            job.start()
+            synchronized(lifecycleLock) {
+                if (authenticatedSession?.isUsable == true || authenticationJob?.isCompleted == false) return
+                automaticRestoreJob?.cancel()
+                automaticRestoreJob = null
+                val generation = ++sessionGeneration
+                val job =
+                    serviceScope.launch(start = CoroutineStart.LAZY) {
+                        try {
+                            restorePersistedSessionInternal(generation)
+                        } finally {
+                            clearAuthenticationJob(generation)
+                        }
+                    }
+                authenticationJob = job
+                job.start()
+            }
         }
 
         override fun login(
@@ -299,29 +354,16 @@ class SecureSteamSessionRepository
 
         override suspend fun loadContentCredential(): SteamContentCredential? =
             withContext(Dispatchers.IO) {
-                val (activeCredential, hasUsableSession, generation) =
+                val (activeCredential, hasUsableSession) =
                     synchronized(lifecycleLock) {
-                        Triple(
+                        Pair(
                             activeContentCredential,
                             authenticatedSession?.isUsable == true,
-                            sessionGeneration,
                         )
                     }
                 when (mutableSession.value.phase) {
                     SteamSessionPhase.SIGNED_OUT -> null
-                    SteamSessionPhase.EXPIRED -> {
-                        credentialMutex.withLock {
-                            synchronized(lifecycleLock) {
-                                if (
-                                    generation == sessionGeneration &&
-                                    mutableSession.value.phase == SteamSessionPhase.EXPIRED
-                                ) {
-                                    credentialStore.clear()
-                                }
-                            }
-                        }
-                        null
-                    }
+                    SteamSessionPhase.EXPIRED -> null
                     else -> {
                         // Session promotion installs the authoritative content credential
                         // before the public state changes to SIGNED_IN.
@@ -333,6 +375,7 @@ class SecureSteamSessionRepository
             }
 
         override suspend fun restoreContentCredential(): SteamContentCredential? {
+            if (session.value.phase == SteamSessionPhase.EXPIRED) return null
             restorePersistedSession()
             val restoreJob = synchronized(lifecycleLock) { authenticationJob }
             withTimeoutOrNull(CONTENT_CREDENTIAL_RESTORE_TIMEOUT_MS) {

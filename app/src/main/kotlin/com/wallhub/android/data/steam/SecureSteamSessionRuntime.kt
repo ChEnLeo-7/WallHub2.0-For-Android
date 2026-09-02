@@ -19,6 +19,7 @@ import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.data.downloads.applyDownloadProxy
 import com.wallhub.android.data.security.AndroidKeystoreEncryptedStringStore
 import com.wallhub.android.data.security.EncryptedStringReadResult
+import com.wallhub.android.data.security.EncryptedStringStore
 import `in`.dragonbra.javasteam.enums.EClientPersonaStateFlag
 import `in`.dragonbra.javasteam.enums.EOSType
 import `in`.dragonbra.javasteam.enums.EResult
@@ -76,9 +77,9 @@ internal suspend fun <T> SecureSteamSessionRepository.withPublicSteamSession(blo
 
 internal suspend fun SecureSteamSessionRepository.acquirePublicSteamSession(): SteamClientSession? {
     authenticatedSession?.takeIf { session -> session.isUsable }?.let { return it }
-    if (authenticationJob?.isActive == true) {
+    if (authenticationJob?.isCompleted == false) {
         withTimeoutOrNull(PUBLIC_BROWSE_SESSION_WAIT_MS) {
-            while (authenticatedSession?.isUsable != true && authenticationJob?.isActive == true) {
+            while (authenticatedSession?.isUsable != true && authenticationJob?.isCompleted == false) {
                 delay(PUBLIC_BROWSE_SESSION_POLL_MS)
             }
         }
@@ -114,6 +115,22 @@ internal suspend fun SecureSteamSessionRepository.acquirePublicSteamSession(): S
             null
         }
     }
+}
+
+internal fun shouldRefreshSessionOnForeground(
+    phase: SteamSessionPhase,
+    hasStoredSession: Boolean,
+    sessionUsable: Boolean,
+    backgroundedAtElapsedRealtime: Long?,
+    nowElapsedRealtime: Long,
+): Boolean {
+    if (!hasStoredSession) return false
+    if (phase == SteamSessionPhase.RESTORABLE) return true
+    if (phase == SteamSessionPhase.SIGNED_IN && !sessionUsable) return true
+    if (phase != SteamSessionPhase.SIGNED_IN) return false
+    val backgroundedAt = backgroundedAtElapsedRealtime ?: return false
+    return nowElapsedRealtime >= backgroundedAt &&
+        nowElapsedRealtime - backgroundedAt >= FOREGROUND_SESSION_REFRESH_AFTER_BACKGROUND_MS
 }
 
 internal suspend fun SecureSteamSessionRepository.resolveSteamProfiles(
@@ -319,7 +336,9 @@ internal suspend fun SecureSteamSessionRepository.loginInternal(
     val previousState = mutableSession.value.takeIf { it.accountName == login.accountName }
     val hadStoredCredential =
         try {
-            credentialMutex.withLock { credentialStore.load() != null }
+            credentialMutex.withLock {
+                credentialStore.read() !is SteamCredentialReadResult.Missing
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {
@@ -418,16 +437,67 @@ internal suspend fun SecureSteamSessionRepository.loginInternal(
 }
 
 internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInternal(generation: Long) {
-    credentialClearJob?.join()
-    val credential = credentialMutex.withLock { credentialStore.load() }
-    if (credential == null) {
+    try {
+        credentialClearJob?.join()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
         setStateIfCurrent(
             generation = generation,
-            phase = SteamSessionPhase.SIGNED_OUT,
-            message = applicationContext.getString(R.string.backend_steam_no_saved_session),
+            phase = SteamSessionPhase.FAILED,
+            message = applicationContext.getString(R.string.backend_steam_session_storage_unavailable),
+            accountName = mutableSession.value.accountName,
+            personaName = mutableSession.value.personaName,
+            avatarUrl = mutableSession.value.avatarUrl,
+            hasStoredSession = true,
+        )
+        recordSessionEvent(
+            generation = generation,
+            stage = "credential_clear_wait_failure",
+            outcome = error.javaClass.simpleName,
         )
         return
     }
+    val credentialResult =
+        try {
+            credentialMutex.withLock { credentialStore.read() }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            SteamCredentialReadResult.Unreadable(error)
+        }
+    val credential =
+        when (credentialResult) {
+            SteamCredentialReadResult.Missing -> {
+                setStateIfCurrent(
+                    generation = generation,
+                    phase = SteamSessionPhase.SIGNED_OUT,
+                    message = applicationContext.getString(R.string.backend_steam_no_saved_session),
+                )
+                return
+            }
+
+            is SteamCredentialReadResult.Unreadable -> {
+                val current = mutableSession.value
+                setStateIfCurrent(
+                    generation = generation,
+                    phase = SteamSessionPhase.FAILED,
+                    message = applicationContext.getString(R.string.backend_steam_session_storage_unavailable),
+                    accountName = current.accountName,
+                    personaName = current.personaName,
+                    avatarUrl = current.avatarUrl,
+                    hasStoredSession = true,
+                )
+                recordSessionEvent(
+                    generation = generation,
+                    stage = "credential_read_failure",
+                    outcome = credentialResult.cause.javaClass.simpleName,
+                )
+                return
+            }
+
+            is SteamCredentialReadResult.Value -> credentialResult.credential
+        }
     val currentSession = authenticatedSession
     if (currentSession?.isUsable == true) {
         if (
@@ -449,8 +519,8 @@ internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInterna
     detachAuthenticatedSession(generation)?.close()
 
     recordSessionEvent(generation, "restore_start")
-    val configuration = createCurrentSteamConfiguration(generation)
     try {
+        val configuration = createCurrentSteamConfiguration(generation)
         val restoredSession =
             withTimeout(RESTORE_TOTAL_TIMEOUT_MS) {
                 var lastFailure: Throwable? = null
@@ -1187,33 +1257,33 @@ internal fun SecureSteamSessionRepository.scheduleAutomaticSessionRestore(
     val job =
         serviceScope.launch {
             delay(delayMs)
-            val restoreJob =
-                synchronized(lifecycleLock) {
-                    if (
-                        sessionGeneration != disconnectedGeneration ||
-                        authenticatedSession?.isUsable == true ||
-                        authenticationJob?.isActive == true ||
-                        mutableSession.value.phase != SteamSessionPhase.RESTORABLE
-                    ) {
-                        return@launch
-                    }
-                    val generation = ++sessionGeneration
-                    serviceScope
-                        .launch(start = CoroutineStart.LAZY) {
-                            try {
-                                restorePersistedSessionInternal(generation)
-                            } finally {
-                                clearAuthenticationJob(generation)
-                                if (
-                                    isCurrentGeneration(generation) &&
-                                    mutableSession.value.phase == SteamSessionPhase.RESTORABLE
-                                ) {
-                                    scheduleAutomaticSessionRestore(generation, attempt + 1)
-                                }
-                            }
-                        }.also { authenticationJob = it }
+            synchronized(lifecycleLock) {
+                if (
+                    sessionGeneration != disconnectedGeneration ||
+                    authenticatedSession?.isUsable == true ||
+                    authenticationJob?.isCompleted == false ||
+                    mutableSession.value.phase != SteamSessionPhase.RESTORABLE
+                ) {
+                    return@launch
                 }
-            restoreJob.start()
+                val generation = ++sessionGeneration
+                val restoreJob =
+                    serviceScope.launch(start = CoroutineStart.LAZY) {
+                        try {
+                            restorePersistedSessionInternal(generation)
+                        } finally {
+                            clearAuthenticationJob(generation)
+                            if (
+                                isCurrentGeneration(generation) &&
+                                mutableSession.value.phase == SteamSessionPhase.RESTORABLE
+                            ) {
+                                scheduleAutomaticSessionRestore(generation, attempt + 1)
+                            }
+                        }
+                    }
+                authenticationJob = restoreJob
+                restoreJob.start()
+            }
         }
     synchronized(lifecycleLock) {
         automaticRestoreJob?.cancel()
@@ -1435,6 +1505,7 @@ internal const val MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES = 400
 internal const val PERSONA_RPC_TIMEOUT_MS = 5_000L
 internal const val MAX_AUTOMATIC_RESTORE_ATTEMPTS = 3
 internal const val STABLE_SESSION_RESET_MS = 60_000L
+internal const val FOREGROUND_SESSION_REFRESH_AFTER_BACKGROUND_MS = 2 * 60_000L
 internal val AUTOMATIC_RESTORE_DELAYS_MS = longArrayOf(1_000L, 3_000L, 10_000L)
 
 internal data class NormalizedWorkshopCommentRequest(
@@ -1472,33 +1543,32 @@ internal fun ByteArray.toSteamAvatarUrl(): String? {
 }
 
 internal class EncryptedSteamCredentialStore(
-    context: Context,
+    private val encryptedStore: EncryptedStringStore,
 ) {
-    private val encryptedStore =
+    constructor(context: Context) : this(
         AndroidKeystoreEncryptedStringStore(
             context = context,
             preferencesName = PREFERENCES_NAME,
             keyAlias = KEY_ALIAS,
-        )
+        ),
+    )
 
     @Synchronized
-    fun load(): PersistedSteamCredential? {
-        val payload =
-            when (val result = encryptedStore.read()) {
-                EncryptedStringReadResult.Missing -> return null
-                is EncryptedStringReadResult.Value -> result.value
-                is EncryptedStringReadResult.Unreadable -> {
-                    encryptedStore.clear()
-                    return null
-                }
-            }
-        return try {
-            decodeSteamCredential(payload)
-        } catch (_: IllegalArgumentException) {
-            clear()
-            null
+    fun read(): SteamCredentialReadResult =
+        when (val result = encryptedStore.read()) {
+            EncryptedStringReadResult.Missing -> SteamCredentialReadResult.Missing
+            is EncryptedStringReadResult.Unreadable -> SteamCredentialReadResult.Unreadable(result.cause)
+            is EncryptedStringReadResult.Value ->
+                runCatching { decodeSteamCredential(result.value) }
+                    .fold(
+                        onSuccess = { credential -> SteamCredentialReadResult.Value(credential) },
+                        onFailure = { error -> SteamCredentialReadResult.Unreadable(error) },
+                    )
         }
-    }
+
+    @Synchronized
+    fun load(): PersistedSteamCredential? =
+        (read() as? SteamCredentialReadResult.Value)?.credential
 
     @Synchronized
     fun save(credential: PersistedSteamCredential) {
@@ -1516,6 +1586,18 @@ internal class EncryptedSteamCredentialStore(
         const val PREFERENCES_NAME = "wallhub_formal_steam_session"
         const val KEY_ALIAS = "wallhub_formal_steam_refresh_token"
     }
+}
+
+internal sealed interface SteamCredentialReadResult {
+    data object Missing : SteamCredentialReadResult
+
+    data class Value(
+        val credential: PersistedSteamCredential,
+    ) : SteamCredentialReadResult
+
+    data class Unreadable(
+        val cause: Throwable,
+    ) : SteamCredentialReadResult
 }
 
 private fun String.encodeRecordField(): String =
