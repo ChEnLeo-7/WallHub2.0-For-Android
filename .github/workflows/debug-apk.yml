@@ -77,6 +77,33 @@ jobs:
               for name in stubs:
                   handle.write("message %s {}\n" % name)
           print("stubbed %d missing proto types -> %s" % (len(stubs), out))
+          files = [os.path.join(dp, f) for dp, _, fs in os.walk(root) for f in fs if f.endswith(".proto")]
+          owner = {}
+          for p in files:
+              with open(p, encoding="utf-8", errors="ignore") as handle:
+                  for name in re.findall(r"^\s*(?:message|enum)\s+([A-Za-z][A-Za-z0-9_]*)", handle.read(), re.M):
+                      owner.setdefault(name, p)
+          repaired = 0
+          for p in files:
+              with open(p, encoding="utf-8", errors="ignore") as handle:
+                  text2 = handle.read()
+              body = re.sub(r"^\s*(?:message|enum|service|extend)\s+([A-Za-z][A-Za-z0-9_]*)", "", text2, flags=re.M)
+              needed = set()
+              for reference in re.findall(r"\.\s*([A-Za-z][A-Za-z0-9_]*)\b", body):
+                  target = owner.get(reference)
+                  if target is not None and target != p:
+                      needed.add(os.path.relpath(target, root).replace(os.sep, "/"))
+              existing = set(re.findall(r'import\s+"([^"]+)"', text2))
+              to_add = sorted(needed - existing)
+              if not to_add:
+                  continue
+              lines = text2.splitlines(keepends=True)
+              insert_at = next((index + 1 for index, line in enumerate(lines) if line.startswith("syntax")), 0)
+              lines[insert_at:insert_at] = ['import "%s";\n' % path2 for path2 in to_add]
+              with open(p, "w", encoding="utf-8") as handle:
+                  handle.writelines(lines)
+              repaired += len(to_add)
+          print("repaired %d missing proto imports" % repaired)
           PYSTUB
           ./gradlew --no-daemon publishToMavenLocal
       - name: Require Release signing secrets
