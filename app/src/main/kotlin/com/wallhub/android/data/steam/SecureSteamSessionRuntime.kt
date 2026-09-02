@@ -19,6 +19,7 @@ import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.data.downloads.applyDownloadProxy
 import com.wallhub.android.data.security.AndroidKeystoreEncryptedStringStore
 import com.wallhub.android.data.security.EncryptedStringReadResult
+import `in`.dragonbra.javasteam.enums.EClientPersonaStateFlag
 import `in`.dragonbra.javasteam.enums.EOSType
 import `in`.dragonbra.javasteam.enums.EResult
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesPublishedfileSteamclient
@@ -61,6 +62,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.Closeable
 import java.util.Base64
+import java.util.EnumSet
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -818,13 +820,14 @@ internal fun SecureSteamSessionRepository.createSteamSession(
     subscriptions +=
         callbackManager.subscribe(PersonaStateCallback::class.java) { callback ->
             val steamId = callback.friendId.convertToUInt64()
-            val displayName = callback.playerName.trim()
-            if (steamId <= 0L || displayName.isBlank()) return@subscribe
+            if (steamId <= 0L) return@subscribe
             val profile =
-                SteamProfile(
-                    displayName = displayName,
-                    avatarUrl = callback.avatarHash.toSteamAvatarUrl(),
-                )
+                mergeSteamProfile(
+                    current = steamProfiles[steamId],
+                    callbackDisplayName = callback.playerName,
+                    callbackAvatarUrl = callback.avatarHash.toSteamAvatarUrl(),
+                    statusFlags = callback.statusFlags,
+                ) ?: return@subscribe
             steamProfiles[steamId] = profile
             pendingPersonaProfiles.remove(steamId)?.complete(profile)
             serviceScope.launch {
@@ -1025,7 +1028,7 @@ internal fun SecureSteamSessionRepository.hydrateCachedOwnProfile(
             runCatching { steamSession.accountSteamId.await().convertToUInt64() }
                 .getOrNull()
                 ?: return@launch
-        val profile =
+        val cachedProfile =
             steamProfiles[steamId]
                 ?: steamSession.friends
                     .getPersonaName()
@@ -1037,10 +1040,42 @@ internal fun SecureSteamSessionRepository.hydrateCachedOwnProfile(
                             avatarUrl = steamSession.friends.getPersonaAvatar()?.toSteamAvatarUrl(),
                         )
                     }
-                ?: return@launch
-        persistOwnProfileIfCurrent(generation, steamSession.id, profile)
+        if (cachedProfile != null) {
+            steamProfiles[steamId] = cachedProfile
+            persistOwnProfileIfCurrent(generation, steamSession.id, cachedProfile)
+        }
+        steamSession.friends.requestFriendInfo(
+            SteamID(steamId),
+            steamProfileRequestFlags(),
+        )
     }
 }
+
+internal fun mergeSteamProfile(
+    current: SteamProfile?,
+    callbackDisplayName: String,
+    callbackAvatarUrl: String?,
+    statusFlags: Set<EClientPersonaStateFlag>,
+): SteamProfile? {
+    val displayName =
+        callbackDisplayName
+            .trim()
+            .takeIf { EClientPersonaStateFlag.PlayerName in statusFlags && it.isNotBlank() }
+            ?: current?.displayName
+            ?: return null
+    val avatarUrl =
+        callbackAvatarUrl.takeIf { EClientPersonaStateFlag.Presence in statusFlags }
+            ?: current?.avatarUrl
+    return SteamProfile(displayName = displayName, avatarUrl = avatarUrl)
+}
+
+internal fun steamProfileRequestFlags(): Int =
+    EClientPersonaStateFlag.code(
+        EnumSet.of(
+            EClientPersonaStateFlag.PlayerName,
+            EClientPersonaStateFlag.Presence,
+        ),
+    )
 
 internal suspend fun SecureSteamSessionRepository.persistOwnProfileIfCurrent(
     generation: Long,
