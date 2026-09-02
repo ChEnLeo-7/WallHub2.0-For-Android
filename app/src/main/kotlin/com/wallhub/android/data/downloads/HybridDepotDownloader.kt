@@ -39,11 +39,11 @@ class HybridDepotDownloader internal constructor(
     @Volatile
     private var lastRustFailureElapsedRealtime: Long = 0L
 
-    override suspend fun verifyChunk(
-        data: ByteArray,
-        expectedChecksum: Int,
-    ): Boolean {
-        if (rustUsable()) {
+        override suspend fun verifyChunk(
+            data: ByteArray,
+            expectedChecksum: Int,
+        ): Boolean {
+            if (rustUsable(DepotDownloaderCapability.CHUNK_VERIFICATION)) {
             runCatching { rustEngine.verifyChunk(data, expectedChecksum) }
                 .onSuccess { verified ->
                     if (verified) recordRustSuccess()
@@ -54,12 +54,12 @@ class HybridDepotDownloader internal constructor(
         return kotlinEngine.verifyChunk(data, expectedChecksum)
     }
 
-    override suspend fun decodeChunk(
-        chunk: DepotChunkSpec,
-        encrypted: ByteArray,
-        depotKey: ByteArray,
-    ): Result<ByteArray> {
-        if (rustUsable()) {
+        override suspend fun decodeChunk(
+            chunk: DepotChunkSpec,
+            encrypted: ByteArray,
+            depotKey: ByteArray,
+        ): Result<ByteArray> {
+            if (rustUsable(DepotDownloaderCapability.CHUNK_DECODE)) {
             runCatching { rustEngine.decodeChunk(chunk, encrypted, depotKey) }
                 .onSuccess { decoded ->
                     if (decoded.isSuccess) recordRustSuccess()
@@ -76,7 +76,7 @@ class HybridDepotDownloader internal constructor(
         depotKey: ByteArray,
         chunk: DepotChunkSpec,
     ): Result<ByteArray> {
-        if (rustUsable()) {
+        if (rustUsable(DepotDownloaderCapability.CHUNK_DOWNLOAD)) {
             runCatching { rustEngine.downloadAndDecodeChunk(url, depotKey, chunk) }
                 .onSuccess { decoded ->
                     if (decoded.isSuccess) recordRustSuccess()
@@ -89,8 +89,8 @@ class HybridDepotDownloader internal constructor(
         )
     }
 
-    private fun rustUsable(): Boolean =
-        DepotDownloaderCapability.CHUNK_DECODE in rustEngine.capabilities &&
+    private fun rustUsable(capability: DepotDownloaderCapability): Boolean =
+        capability in rustEngine.capabilities &&
             (consecutiveRustFailures < MAX_RUST_CONSECUTIVE_FAILURES ||
                 elapsedRealtimeMillis() - lastRustFailureElapsedRealtime >= RUST_REPROBE_MS)
 
