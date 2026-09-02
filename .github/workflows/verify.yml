@@ -48,6 +48,9 @@ jobs:
           git submodule update --init --depth 1
           yes | sdkmanager --licenses >/dev/null || true
           chmod +x gradlew
+          # Regenerate the vendored Wire protos from the pinned Protobufs submodule:
+          # kSteam r50's committed proto tree is inconsistent with its own submodule pin.
+          ./gradlew --no-daemon :proto-common:upgradeProtoFiles
           ./gradlew --no-daemon publishToMavenLocal
       - name: Generate reviewed Detekt baseline
         run: |
