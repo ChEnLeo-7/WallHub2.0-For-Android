@@ -24,9 +24,11 @@ class KotlinDepotDownloaderTest {
         runTest {
             val downloader = KotlinDepotDownloader()
             val payload = "123456789".toByteArray(Charsets.US_ASCII)
+            val corrupted =
+                payload.copyOf().also { bytes -> bytes[0] = (bytes[0] + 1).toByte() }
 
             assertFalse(downloader.verifyChunk(payload, SteamAdler32.calculate(payload) + 1))
-            assertFalse(downloader.verifyChunk(ByteArray(0), 0))
+            assertFalse(downloader.verifyChunk(corrupted, SteamAdler32.calculate(payload)))
         }
 
     @Test

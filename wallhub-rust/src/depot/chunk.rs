@@ -85,7 +85,7 @@ pub fn decrypt_depot_chunk(
             actual: decompressed.len(),
         });
     }
-    let actual = verify::adler32(&decompressed);
+    let actual = verify::steam_adler32(&decompressed);
     if actual != expected_checksum {
         return Err(DepotChunkError::ChecksumMismatch {
             expected: expected_checksum,
@@ -148,7 +148,7 @@ mod tests {
         let payload: Vec<u8> = (0..64 * 1024usize)
             .map(|index| (index * 13 % 256) as u8)
             .collect();
-        let checksum = verify::adler32(&payload);
+        let checksum = verify::steam_adler32(&payload);
         let encrypted = encrypt_like_steam(&key, &payload);
 
         let restored = decrypt_depot_chunk(&encrypted, &key, checksum, payload.len())
@@ -160,7 +160,7 @@ mod tests {
     fn rejects_a_wrong_depot_key() {
         let key = [0x11u8; 32];
         let payload = vec![9u8; 2048];
-        let checksum = verify::adler32(&payload);
+        let checksum = verify::steam_adler32(&payload);
         let encrypted = encrypt_like_steam(&key, &payload);
 
         assert!(matches!(
@@ -179,7 +179,7 @@ mod tests {
             decrypt_depot_chunk(
                 &encrypted,
                 &key,
-                verify::adler32(&payload) + 1,
+                verify::steam_adler32(&payload) + 1,
                 payload.len()
             ),
             Err(DepotChunkError::ChecksumMismatch { .. })
