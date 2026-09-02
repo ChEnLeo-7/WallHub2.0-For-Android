@@ -17,6 +17,7 @@ import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SteamAppPlaytime
 import com.wallhub.android.core.model.SteamPlaytimeRepository
+import com.wallhub.android.core.model.SteamProtocolClient
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
@@ -90,7 +91,8 @@ class SecureSteamSessionRepository
         SteamContentCredentialProvider,
         AccountWorkshopRepository,
         SteamUnifiedWorkshopRepository,
-        SteamPlaytimeRepository {
+        SteamPlaytimeRepository,
+        SteamProtocolClient {
         internal val applicationContext = context.applicationContext
         internal val credentialStore = EncryptedSteamCredentialStore(applicationContext)
         internal val steamServerListProvider = SteamWebSocketServerListProvider()

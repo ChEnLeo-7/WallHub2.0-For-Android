@@ -2,6 +2,7 @@ package com.wallhub.android
 
 import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.AppUpdateRepository
+import com.wallhub.android.core.model.DepotDownloader
 import com.wallhub.android.core.model.DiagnosticExportRepository
 import com.wallhub.android.core.model.DiagnosticRepository
 import com.wallhub.android.core.model.DownloadTaskRepository
@@ -12,12 +13,14 @@ import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamPlaytimeRepository
+import com.wallhub.android.core.model.SteamProtocolClient
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.WorkshopRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.data.diagnostics.FileDiagnosticRepository
 import com.wallhub.android.data.discover.HttpOfficialDiscoverMetadataRepository
 import com.wallhub.android.data.downloads.LocalWallpaperFileRepository
+import com.wallhub.android.data.downloads.KotlinDepotDownloader
 import com.wallhub.android.data.downloads.RoomDownloadTaskRepository
 import com.wallhub.android.data.downloads.SteamWorkshopVideoStreamRepository
 import com.wallhub.android.data.settings.DataStoreSettingsRepository
@@ -52,6 +55,19 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindSteamSessionRepository(repository: SecureSteamSessionRepository): SteamSessionRepository
+
+    /**
+     * Hybrid migration Phase 1: exposes the JavaSteam session as the engine-neutral protocol
+     * seam. The singleton instance is shared with every individual contract binding above.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindSteamProtocolClient(repository: SecureSteamSessionRepository): SteamProtocolClient
+
+    /** Hybrid migration Phase 1: Kotlin (JavaSteam) depot engine as the default depot seam. */
+    @Binds
+    @Singleton
+    abstract fun bindDepotDownloader(downloader: KotlinDepotDownloader): DepotDownloader
 
     @Binds
     @Singleton

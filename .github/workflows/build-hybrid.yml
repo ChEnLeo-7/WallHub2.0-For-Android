@@ -1,0 +1,40 @@
+name: Build Hybrid Rust Core
+
+on:
+  push:
+    branches: [feature/ksteam-rust-hybrid]
+  workflow_dispatch:
+
+jobs:
+  rust-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Format check
+        run: cargo fmt --check
+        working-directory: wallhub-rust
+
+      - name: Clippy
+        run: cargo clippy --locked -- -D warnings
+        working-directory: wallhub-rust
+
+      - name: Test
+        run: cargo test --locked
+        working-directory: wallhub-rust
+
+      - name: Release build
+        run: cargo build --release --locked
+        working-directory: wallhub-rust
+
+      - name: Upload Rust artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallhub-rust-core
+          path: wallhub-rust/target/release/libwallhub_rust.rlib
+          if-no-files-found: error

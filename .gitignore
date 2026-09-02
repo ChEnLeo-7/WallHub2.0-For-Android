@@ -49,6 +49,7 @@ signing.properties
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/ScenePackageResolutionTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamCdnHttpsTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamStreamingCacheRegressionTest.kt
+!/app/src/test/kotlin/com/wallhub/android/data/downloads/KotlinDepotDownloaderTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/
 /app/src/test/kotlin/com/wallhub/android/feature/*
 !/app/src/test/kotlin/com/wallhub/android/feature/local/
