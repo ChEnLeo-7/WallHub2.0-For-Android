@@ -17,7 +17,7 @@ import javax.inject.Singleton
  * path keeps verification and decoding moving.
  */
 @Singleton
-class HybridDepotDownloader private constructor(
+class HybridDepotDownloader internal constructor(
     private val kotlinEngine: DepotDownloader,
     private val rustEngine: DepotDownloader,
     private val diagnostics: DiagnosticRepository,
