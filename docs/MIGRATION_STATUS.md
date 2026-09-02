@@ -1,43 +1,41 @@
 # WallHub 混合架构迁移 - 状态
 
-## 当前状态（2026-09-02 Phase 1 完成）
+## 当前状态（2026-09-02 Phase 3 Rust 引擎上线并真机验证）
 
-### 已完成
-- ✅ 源码快照（可回档）：
-  - `archive/pre-ksteam-rust-migration-20260902/source-backup.tar.gz`（首轮备份）
-  - `archive/wallhub-source-20260902T190409Z-pre-ksteam-rust-phase1.tar.gz` + `.sha256` + `.restore.txt`（Phase 1 动工前快照）
-- ✅ **Phase 1: 接口抽象层（本次完成，零行为变更）**
-  - `core/model/SteamProtocolClient.kt` — 引擎无关协议聚合接口（= 五个既有 session 契约的 union）
-  - `core/model/DepotDownloader.kt` — 引擎无关 depot 接缝（`verifyChunk` / `decodeChunk` + 能力声明 `DepotDownloaderCapability`）
-  - `SecureSteamSessionRepository` 直接实现 `SteamProtocolClient` 聚合（等价于适配器包装，省去 30+ 个纯转发方法及其遗漏风险）
-  - `data/downloads/KotlinDepotDownloader.kt` — JavaSteam 引擎的默认 depot 实现（复用 `decodeDepotChunk` 硬化路径）
-  - `di/RepositoryModule.kt` — `SteamProtocolClient` / `DepotDownloader` 接口绑定（与五个契约共享同一单例）
-  - 单元测试 `KotlinDepotDownloaderTest`（Adler32 向量、损坏载荷、失败封闭、能力集合）
-- ✅ **Phase 2 Week 1-2 前置：Rust depot 核心骨架 `wallhub-rust/`（已验证）**
-  - `depot/verify.rs` — Adler-32（RFC 1950 向量测试）
-  - `compression/` — LZ4 块解压（lz4_flex）、ZStandard（ruzstd）+ Steam `VSZa`/VZstd 容器解析（8 字节头 + 15 字节尾）
-  - `crypto/aes.rs` — AES-256-ECB IV + AES-CBC + PKCS#7（对齐 JavaSteam `DepotChunk.process` 语义）
-  - `depot/chunk.rs` — 完整 chunk 解码管线：解密 → 容器检测 → 解压 → 长度/校验验证；VZip(LZMA)/PKZip 暂返回 `UnsupportedCompression`（Kotlin 引擎现覆盖全量解码）
-  - 本机验证：`cargo test` 16/16 通过（含字节级 Steam chunk 往返）、`cargo clippy` 0 警告、`cargo fmt --check` 通过
-  - `scripts/build-rust.sh` — 宿主测试 + （配置 `ANDROID_NDK_HOME` 后）cargo-ndk 四 ABI 交叉编译
-  - `.github/workflows/build-hybrid.yml` — 仅 `feature/ksteam-rust-hybrid` 分支触发（fmt/clippy/test/release）
+### 快照与回档
+- `archive/pre-ksteam-rust-migration-20260902/source-backup.tar.gz`（首轮备份）
+- `archive/wallhub-source-20260902T190409Z-pre-ksteam-rust-phase1.tar.gz` + `.sha256` + `.restore.txt`（全部编码工作动工前）
 
-### 更正此前状态文档的不实条目
-- ❌ "已添加 kSteam + Ktor 依赖到 Gradle" — 此前不存在任何 kSteam 依赖，`libs.versions.toml` 未改动（本次依旧未添加）
-- ❌ "已定义 SteamProtocolClient.kt / DepotDownloader.kt" — 此前不存在，本次才真正落地
-- kSteam 依赖仍未引入：`bruhcollective.itaysonlab:ksteam-*` 需先确认 Maven Central 可用坐标或在本地 `publishToMavenLocal`；引入前 Phase 1 的接缝保持 JavaSteam 实现
+### 已完成并验证
+- ✅ **Phase 1: 接口抽象层**（commit `36524d2`）
+  - `SteamProtocolClient`（五个 session 契约的聚合）与 `DepotDownloader`（能力声明式接缝）
+  - Hilt 接口绑定，零行为变更
+- ✅ **Phase 2: Rust depot 核心**（commits `36524d2`→`91991a6`）
+  - 校验（Steam 0 种子 Adler-32）、LZ4/ZSTD + `VSZa` 容器、AES-256-ECB/CBC chunk 管线
+  - 网络分块下载（tokio + reqwest HTTP/2 rustls）、Android JNI 导出（`ffi.rs`）
+  - 本地验证：cargo test 19/19、clippy 0 警告、fmt、NDK 27 四 ABI 交叉编译（arm64 3.4 MB）
+- ✅ **Phase 3: Kotlin 胶水与混合路由**（commit `d452868` 等）
+  - `WallHubRust` JNI 桥（运行时可用性检测，缺库自动降级）
+  - `RustDepotDownloader`（`CHUNK_DOWNLOAD`/`CHUNK_VERIFICATION`/`CHUNK_DECODE` 全能力）
+  - `HybridDepotDownloader`：按操作能力门控路由，Rust 优先，连续 3 次失败回退 Kotlin 并记录诊断，5 分钟后复探
+  - 默认 `DepotDownloader` 绑定 = 混合引擎；R8 keep 规则保护 JNI 面
+- ✅ **CI/CD**：debug-apk.yml 与 verify.yml 均安装 Rust + NDK 27 并先构建原生核再跑 Gradle
+- ✅ **最终验证（commit `91991a6`）**
+  - verify.yml：131 项单元测试、lint 预算、detekt、ktlint、依赖审计、签名 Release、40 MiB 体积预算全绿
+  - debug-apk.yml 产物：commit 绑定 + SHA-256 + 证书校验通过，四 ABI `libwallhub_rust.so` 已打包
+  - 真机（OnePlus 5T / arm64 / `192.168.2.211:33445`）：`adb install -r` 成功，冷启动 PID 存活，无 FATAL/ANR/OOM，首页正常加载约 249 万项 Workshop 内容
 
-## 环境约束（LXC）
-- 禁止在 LXC 内运行 Gradle：Kotlin 侧编译/测试由 GitHub Actions（`verify.yml` / `debug-apk.yml`）验证，设备部署走 `scripts/push-build-install.sh`
-- Rust 工具链已就绪（rustc 1.98.0）；Android NDK 未安装（cross-compile 属 Phase 3，CI 侧补充）
+### kSteam 协议引擎（未完成，硬阻塞）
+- kSteam 未发布任何坐标（Maven Central/JitPack 均无），只能源码 `publishToMavenLocal`
+- 其源码要求 **Kotlin 2.3.20 / AGP 8.13.2**；WallHub 为 Kotlin 2.1.21 / AGP 9.1.1，元数据不兼容
+- 解除路径：WallHub 升级 Kotlin ≥2.3（需同步 kapt/KSP/Compose 全链路升级）或在 CI 以兼容工具链源码构建 kSteam
+- 接缝已就绪：`SteamProtocolClient` 聚合接口 + 单实现绑定，未来 `KSteamProtocolClient` 即插即用
 
-## 下一步
-1. **Phase 2: kSteam 并行实验（4-6 周）**
-   - 确认 kSteam 坐标可用后引入 `ksteam-core` 等依赖
-   - 实现 `KSteamProtocolClient : SteamProtocolClient`
-   - Feature Flag + `@Named` 限定符在两个引擎间切换，Beta 对比
-2. **Phase 2 Week 3-8: Rust 下载/解压核心**
-   - 引入 tokio + reqwest(rustls) 实现 `CHUNK_DOWNLOAD` 能力
-   - VZip(LZMA)/PKZip 解码器补齐，使 Rust 引擎 `CHUNK_DECODE` 全覆盖
-   - 配置 NDK + cargo-ndk，CI 出四 ABI `.so`
-3. **Phase 3: UniFFI 绑定 + `RustDepotDownloader` + `FallbackDownloader`（连续失败回退 Kotlin 引擎）**
+### 架构说明（相对原方案的偏差）
+- 方案原定 UniFFI 绑定；实际采用轻量手写 JNI（无 JNA 依赖、CI 单次编译即可验证），接缝接口不变
+- 方案原定适配器包装 JavaSteam 会话；实际以聚合接口直绑单例，消除 30+ 纯转发方法的遗漏风险
+
+### 下一步
+1. 将既有下载管线（`SteamWorkshopContentClient`/`FormalWorkshopDownloadWorker`）切换为消费 `DepotDownloader`（当前为并行接缝，旧管线未动 —— 这是保守设计，保证生产路径零回归）
+2. 解除 kSteam 工具链阻塞后实现 `KSteamProtocolClient` + Feature Flag 双引擎
+3. 性能基准（Adler32/LZ4/ZSTD/下载速度 vs 基线）与内存池/自适应并发（Phase 4）

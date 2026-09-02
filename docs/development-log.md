@@ -28,3 +28,9 @@
 - Update: New Kotlin JNI bridge `WallHubRust` (runtime availability detection), `RustDepotDownloader`, and `HybridDepotDownloader` routing engine (Rust preferred, Kotlin fallback after 3 consecutive failures with 5-minute re-probe) bound as the default `DepotDownloader`.
 - Update: CI (debug-apk.yml, verify.yml) now installs Rust + NDK 27 and builds the native core before Gradle; R8 keep rules protect the JNI surface.
 - Verification: cargo test 19/19, clippy clean, fmt clean, four-ABI cross-compile locally; Android verification via GitHub Actions on the deployment commit.
+
+### Final hybrid migration delivery (commit 91991a6)
+
+- Update: Full Phase 2+3 delivery verified end to end. Rust depot core (verification, VSZa/zstd decode, AES chunk crypto, HTTP/2 chunk download) cross-compiled for four ABIs in CI and packaged into the debug APK.
+- Update: HybridDepotDownloader bound as the default depot engine; per-capability routing with Kotlin fallback and diagnostics. Existing download pipeline intentionally left on its proven path until pipeline migration (next step).
+- Verification: verify.yml green (131 unit tests, lint budget, detekt, ktlint, signed release, 40 MiB budget). Debug artifact commit-bound, SHA-256 and certificate verified. OnePlus 5T (arm64) install + cold start: live PID, zero FATAL/ANR/OOM, Home feed rendered ~2.49M Workshop items.
