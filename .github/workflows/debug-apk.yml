@@ -32,7 +32,7 @@ jobs:
       - name: Build Rust depot core
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.0.12077973"
-          scripts/build-rust.sh
+          bash scripts/build-rust.sh
       - name: Require Release signing secrets
         env:
           WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}

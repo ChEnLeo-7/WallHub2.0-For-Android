@@ -33,7 +33,7 @@ jobs:
       - name: Build Rust depot core
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.0.12077973"
-          scripts/build-rust.sh
+          bash scripts/build-rust.sh
       - name: Generate reviewed Detekt baseline
         run: |
           chmod +x gradlew
