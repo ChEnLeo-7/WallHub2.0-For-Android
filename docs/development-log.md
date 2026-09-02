@@ -34,3 +34,8 @@
 - Update: Full Phase 2+3 delivery verified end to end. Rust depot core (verification, VSZa/zstd decode, AES chunk crypto, HTTP/2 chunk download) cross-compiled for four ABIs in CI and packaged into the debug APK.
 - Update: HybridDepotDownloader bound as the default depot engine; per-capability routing with Kotlin fallback and diagnostics. Existing download pipeline intentionally left on its proven path until pipeline migration (next step).
 - Verification: verify.yml green (131 unit tests, lint budget, detekt, ktlint, signed release, 40 MiB budget). Debug artifact commit-bound, SHA-256 and certificate verified. OnePlus 5T (arm64) install + cold start: live PID, zero FATAL/ANR/OOM, Home feed rendered ~2.49M Workshop items.
+
+### kSteam migration Phase A: Kotlin 2.3.20 toolchain
+
+- Update: Upgraded Kotlin 2.1.21 -> 2.3.20 (kSteam's toolchain) and aligned kotlinx-coroutines to 1.10.2. Snapshot `archive/wallhub-source-20260902T223744Z-pre-kotlin-2.3-upgrade.tar.gz` taken before the change.
+- Verification: full CI (verify.yml) plus debug APK build on the upgrade commit.
