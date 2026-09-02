@@ -132,11 +132,12 @@ class HybridDepotDownloaderTest {
             assertEquals(rustCallsAfterWarmup, rust.calls)
             assertEquals(kotlinCallsAfterWarmup + 1, kotlin.calls)
 
-            // After the reprobe window elapses the Rust engine is retried first.
+            // After the reprobe window elapses the Rust engine is retried first; when the
+            // retry fails again the Kotlin engine still serves the request.
             nowMs += HybridDepotDownloader.RUST_REPROBE_MS
             hybrid.verifyChunk(ByteArray(8), 1)
             assertEquals(rustCallsAfterWarmup + 1, rust.calls)
-            assertEquals(kotlinCallsAfterWarmup + 1, kotlin.calls)
+            assertEquals(kotlinCallsAfterWarmup + 2, kotlin.calls)
         }
 
     @Test
