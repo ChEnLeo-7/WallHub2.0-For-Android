@@ -59,7 +59,7 @@ class HybridDepotDownloaderTest {
         runTest {
             val rust = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_DECODE, DepotDownloaderCapability.CHUNK_VERIFICATION))
             val kotlin = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_VERIFICATION))
-            val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics())
+            val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics()) { 0L }
 
             assertTrue(hybrid.verifyChunk(ByteArray(8), 1))
             assertEquals(1, rust.calls)
@@ -87,7 +87,7 @@ class HybridDepotDownloaderTest {
         runTest {
             val rust = FakeEngine(emptySet())
             val kotlin = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_VERIFICATION, DepotDownloaderCapability.CHUNK_DECODE))
-            val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics())
+            val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics()) { 0L }
 
             assertTrue(hybrid.verifyChunk(ByteArray(8), 1))
             assertEquals(0, rust.calls)
@@ -99,7 +99,7 @@ class HybridDepotDownloaderTest {
     fun `capabilities are the union of both engines`() {
         val rust = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_DOWNLOAD, DepotDownloaderCapability.CHUNK_DECODE))
         val kotlin = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_VERIFICATION))
-        val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics())
+        val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics()) { 0L }
 
         assertEquals(
             setOf(
@@ -118,7 +118,7 @@ class HybridDepotDownloaderTest {
             rust.verifyError = IllegalStateException("native engine panicked")
             val kotlin = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_VERIFICATION))
             var nowMs = 0L
-            val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics()) { nowMs }
+            val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics()) { 0L } { nowMs }
 
             repeat(HybridDepotDownloader.MAX_RUST_CONSECUTIVE_FAILURES) {
                 hybrid.verifyChunk(ByteArray(8), 1)
@@ -146,7 +146,7 @@ class HybridDepotDownloaderTest {
             val rust = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_DECODE))
             rust.decodeResult = Result.success(payload)
             val kotlin = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_DECODE))
-            val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics())
+            val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics()) { 0L }
             val spec = DepotChunkSpec(checksum = 3, offset = 0L, compressedLength = 8, uncompressedLength = 16)
 
             val result = hybrid.decodeChunk(spec, ByteArray(8), ByteArray(32))
