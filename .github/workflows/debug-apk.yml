@@ -54,57 +54,67 @@ jobs:
           # outside kSteam's webui-only pipeline. Generate root-scope stub messages for
           # every unresolvable reference so Wire codegen (and kSteam's hand-written
           # SteamGrpcClients, which touches every service) stays intact.
-          python3 - <<'PYSTUB'
-          import os, re
+          python3 - <<'PYFIX'
+          import os, re, subprocess
+
           root = "proto-common/src/commonMain/proto"
-          files = [os.path.join(dp, f) for dp, _, fs in os.walk(root) for f in fs if f.endswith(".proto")]
-          defined = set()
-          for p in files:
-              with open(p, encoding="utf-8", errors="ignore") as handle:
-                  defined |= set(re.findall(r"^\s*(?:message|enum)\s+([A-Za-z][A-Za-z0-9_]*)", handle.read(), re.M))
-          missing = set()
-          for p in files:
-              with open(p, encoding="utf-8", errors="ignore") as handle:
-                  body = re.sub(r"^\s*(?:message|enum|service|extend)\s+([A-Za-z][A-Za-z0-9_]*)", "", handle.read(), flags=re.M)
-              for reference in re.findall(r"\b([A-Z][A-Za-z0-9_]{2,})\b", body):
-                  if reference not in defined and not reference.startswith(("google", "steam")):
-                      missing.add(reference)
-          stubs = sorted(missing)
-          out = os.path.join(root, "webui", "zz_ci_stubs.proto")
-          with open(out, "w", encoding="utf-8") as handle:
-              handle.write("// CI-generated stubs for SteamDatabase types outside kSteam's webui pipeline.\n")
-              handle.write('syntax = "proto2";\n\n')
-              for name in stubs:
-                  handle.write("message %s {}\n" % name)
-          print("stubbed %d missing proto types -> %s" % (len(stubs), out))
-          files = [os.path.join(dp, f) for dp, _, fs in os.walk(root) for f in fs if f.endswith(".proto")]
-          owner = {}
-          for p in files:
-              with open(p, encoding="utf-8", errors="ignore") as handle:
-                  for name in re.findall(r"^\s*(?:message|enum)\s+([A-Za-z][A-Za-z0-9_]*)", handle.read(), re.M):
-                      owner.setdefault(name, p)
-          repaired = 0
-          for p in files:
-              with open(p, encoding="utf-8", errors="ignore") as handle:
-                  text2 = handle.read()
-              body = re.sub(r"^\s*(?:message|enum|service|extend)\s+([A-Za-z][A-Za-z0-9_]*)", "", text2, flags=re.M)
-              needed = set()
-              for reference in re.findall(r"\b([A-Z][A-Za-z0-9_]{2,})\b", body):
-                  target = owner.get(reference)
-                  if target is not None and target != p:
-                      needed.add(os.path.relpath(target, root).replace(os.sep, "/"))
-              existing = set(re.findall(r'import\s+"([^"]+)"', text2))
-              to_add = sorted(needed - existing)
-              if not to_add:
-                  continue
-              lines = text2.splitlines(keepends=True)
-              insert_at = next((index + 1 for index, line in enumerate(lines) if line.startswith("syntax")), 0)
-              lines[insert_at:insert_at] = ['import "%s";\n' % path2 for path2 in to_add]
-              with open(p, "w", encoding="utf-8") as handle:
-                  handle.writelines(lines)
-              repaired += len(to_add)
-          print("repaired %d missing proto imports" % repaired)
-          PYSTUB
+
+          def proto_files():
+              found = []
+              for base, _, names in os.walk(root):
+                  for name in names:
+                      if name.endswith(".proto"):
+                          found.append(os.path.join(base, name))
+              return found
+
+          stub_path = os.path.join(root, "webui", "zz_ci_stubs.proto")
+
+          def existing_stubs():
+              if not os.path.exists(stub_path):
+                  return set()
+              with open(stub_path, encoding="utf-8", errors="ignore") as handle:
+                  return set(re.findall(r"^message ([A-Za-z][A-Za-z0-9_]*) \{", handle.read(), re.M))
+
+          def fix_once():
+              proc = subprocess.run(
+                  ["./gradlew", "--no-daemon", ":proto-common:generateCommonMainProtos"],
+                  capture_output=True,
+                  text=True,
+              )
+              output = proc.stdout + proc.stderr
+              changed = 0
+              for target, source in re.findall(r"([\w/]+\.proto) needs to import ([\w/]+\.proto)", output):
+                  path = os.path.join(root, target)
+                  with open(path, encoding="utf-8", errors="ignore") as handle:
+                      text = handle.read()
+                  if ('import "%s";' % source) in text:
+                      continue
+                  lines = text.splitlines(keepends=True)
+                  at = next((index + 1 for index, line in enumerate(lines) if line.startswith("syntax")), 0)
+                  lines[at:at] = ['import "%s";\n' % source]
+                  with open(path, "w", encoding="utf-8") as handle:
+                      handle.writelines(lines)
+                  changed += 1
+              stubbed = existing_stubs()
+              fresh = sorted(set(re.findall(r"unable to resolve \.([A-Za-z][A-Za-z0-9_]*)", output)) - stubbed)
+              if fresh:
+                  with open(stub_path, "a", encoding="utf-8") as handle:
+                      if not stubbed:
+                          handle.write("// CI-generated stubs for SteamDatabase types outside kSteam's webui pipeline.\n")
+                          handle.write('syntax = "proto2";\n\n')
+                      for name in fresh:
+                          handle.write("message %s {}\n" % name)
+                  changed += 1
+              return proc.returncode == 0, changed
+
+          for attempt in range(8):
+              ok, changed = fix_once()
+              print("proto repair attempt %d: ok=%s fixes=%d" % (attempt, ok, changed))
+              if ok:
+                  break
+              if changed == 0:
+                  raise SystemExit("kSteam proto repair did not converge; inspect gradle output above")
+          PYFIX
           ./gradlew --no-daemon publishToMavenLocal
       - name: Require Release signing secrets
         env:
