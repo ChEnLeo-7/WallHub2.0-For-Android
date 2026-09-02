@@ -21,3 +21,10 @@
 - Update: Added the verified Rust depot core `wallhub-rust/` (Adler-32, LZ4/ZSTD + Steam `VSZa` container decoding, AES-256-ECB/CBC chunk crypto) with 16 passing host tests, `scripts/build-rust.sh`, and a feature-branch-only `build-hybrid.yml` workflow.
 - Fix: Corrected `docs/MIGRATION_STATUS.md` claims that kSteam dependencies and interface files already existed; they were landed in this change instead.
 - Verification: Fresh restorable snapshot `archive/wallhub-source-20260902T190409Z-pre-ksteam-rust-phase1.tar.gz` (SHA-256 recorded). Kotlin verification via GitHub Actions on the deployment commit; Rust verification locally (cargo test/clippy/fmt).
+
+### Rust depot engine wiring (hybrid Phase 3)
+
+- Update: Added network chunk download (tokio + reqwest HTTP/2, rustls) and Android JNI exports to `wallhub-rust`; verified release cross-compiles for all four ABIs with NDK 27 (arm64 3.4 MB).
+- Update: New Kotlin JNI bridge `WallHubRust` (runtime availability detection), `RustDepotDownloader`, and `HybridDepotDownloader` routing engine (Rust preferred, Kotlin fallback after 3 consecutive failures with 5-minute re-probe) bound as the default `DepotDownloader`.
+- Update: CI (debug-apk.yml, verify.yml) now installs Rust + NDK 27 and builds the native core before Gradle; R8 keep rules protect the JNI surface.
+- Verification: cargo test 19/19, clippy clean, fmt clean, four-ABI cross-compile locally; Android verification via GitHub Actions on the deployment commit.

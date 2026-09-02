@@ -3,6 +3,8 @@
 build/
 **/build/
 /build-logic/bin/
+# wallhub-rust cross-compilation output (built by scripts/build-rust.sh in CI/local)
+/app/src/main/jniLibs/
 local.properties
 .idea/
 *.iml

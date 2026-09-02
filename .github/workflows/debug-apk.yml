@@ -23,6 +23,16 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK packages
         run: yes | sdkmanager "platforms;android-36" "build-tools;35.0.0"
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - name: Install Android NDK
+        run: sdkmanager --install "ndk;27.0.12077973" >/dev/null
+      - name: Build Rust depot core
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.0.12077973"
+          scripts/build-rust.sh
       - name: Require Release signing secrets
         env:
           WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}

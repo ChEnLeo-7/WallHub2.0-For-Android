@@ -1,15 +1,16 @@
 #!/bin/bash
-# Builds the wallhub-rust depot core (kSteam + Rust hybrid migration, Phase 2).
+# Builds the wallhub-rust depot core (kSteam + Rust hybrid migration, Phase 2/3).
 #
 # Phase-appropriate behavior:
 #   * Always: host build + unit tests (no NDK required).
 #   * When ANDROID_NDK_HOME is set: cross-compiles release .so libraries for the four
-#     Android ABIs into app/src/main/jniLibs/ for UniFFI consumption (Phase 3).
+#     Android ABIs into app/src/main/jniLibs/ for the JNI bridge (WallHubRust.kt).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CRATE_DIR="$SCRIPT_DIR/../wallhub-rust"
 JNI_LIBS="$SCRIPT_DIR/../app/src/main/jniLibs"
+MIN_SDK_API=26
 
 cd "$CRATE_DIR"
 
@@ -21,12 +22,49 @@ if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
     exit 0
 fi
 
-command -v cargo-ndk >/dev/null 2>&1 || {
-    echo "==> Installing cargo-ndk"
-    cargo install cargo-ndk --locked
+TOOLCHAIN_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+[[ -x "$TOOLCHAIN_BIN/llvm-ar" ]] || {
+    echo "ERROR: NDK toolchain not found under $TOOLCHAIN_BIN" >&2
+    exit 1
 }
 
-echo "==> Cross-compiling Android libraries with cargo-ndk"
-cargo ndk -o "$JNI_LIBS" --platform 26 build --release
+rustup target add \
+    aarch64-linux-android \
+    armv7-linux-androideabi \
+    i686-linux-android \
+    x86_64-linux-android
 
-echo "==> Done. Libraries written to $JNI_LIBS"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN_BIN/aarch64-linux-android${MIN_SDK_API}-clang"
+export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$TOOLCHAIN_BIN/armv7a-linux-androideabi${MIN_SDK_API}-clang"
+export CARGO_TARGET_I686_LINUX_ANDROID_LINKER="$TOOLCHAIN_BIN/i686-linux-android${MIN_SDK_API}-clang"
+export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$TOOLCHAIN_BIN/x86_64-linux-android${MIN_SDK_API}-clang"
+export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
+export CC_armv7_linux_androideabi="$CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER"
+export CC_i686_linux_android="$CARGO_TARGET_I686_LINUX_ANDROID_LINKER"
+export CC_x86_64_linux_android="$CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER"
+export AR_aarch64_linux_android="$TOOLCHAIN_BIN/llvm-ar"
+export AR_armv7_linux_androideabi="$TOOLCHAIN_BIN/llvm-ar"
+export AR_i686_linux_android="$TOOLCHAIN_BIN/llvm-ar"
+export AR_x86_64_linux_android="$TOOLCHAIN_BIN/llvm-ar"
+
+for TARGET in aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android; do
+    echo "==> Building release for $TARGET"
+    cargo build --release --locked --target "$TARGET" 2>/dev/null || cargo build --release --target "$TARGET"
+done
+
+declare -A ABI_BY_TARGET=(
+    [aarch64-linux-android]=arm64-v8a
+    [armv7-linux-androideabi]=armeabi-v7a
+    [i686-linux-android]=x86
+    [x86_64-linux-android]=x86_64
+)
+
+for TARGET in "${!ABI_BY_TARGET[@]}"; do
+    ABI="${ABI_BY_TARGET[$TARGET]}"
+    DEST="$JNI_LIBS/$ABI"
+    mkdir -p "$DEST"
+    cp "target/$TARGET/release/libwallhub_rust.so" "$DEST/"
+    echo "==> Installed $DEST/libwallhub_rust.so"
+done
+
+echo "==> Done."

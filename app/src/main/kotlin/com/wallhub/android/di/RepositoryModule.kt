@@ -19,6 +19,7 @@ import com.wallhub.android.core.model.WorkshopRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.data.diagnostics.FileDiagnosticRepository
 import com.wallhub.android.data.discover.HttpOfficialDiscoverMetadataRepository
+import com.wallhub.android.data.downloads.HybridDepotDownloader
 import com.wallhub.android.data.downloads.LocalWallpaperFileRepository
 import com.wallhub.android.data.downloads.KotlinDepotDownloader
 import com.wallhub.android.data.downloads.RoomDownloadTaskRepository
@@ -64,10 +65,10 @@ abstract class RepositoryModule {
     @Singleton
     abstract fun bindSteamProtocolClient(repository: SecureSteamSessionRepository): SteamProtocolClient
 
-    /** Hybrid migration Phase 1: Kotlin (JavaSteam) depot engine as the default depot seam. */
+    /** Hybrid migration Phase 3: hybrid routing engine as the default depot seam. */
     @Binds
     @Singleton
-    abstract fun bindDepotDownloader(downloader: KotlinDepotDownloader): DepotDownloader
+    abstract fun bindDepotDownloader(downloader: HybridDepotDownloader): DepotDownloader
 
     @Binds
     @Singleton

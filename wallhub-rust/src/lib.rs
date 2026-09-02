@@ -9,6 +9,8 @@
 pub mod compression;
 pub mod crypto;
 pub mod depot;
+pub mod ffi;
+pub mod net;
 
 /// Semantic version of the Rust engine, surfaced to the Kotlin side once bindings land.
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");

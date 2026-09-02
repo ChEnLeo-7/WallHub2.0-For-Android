@@ -26,3 +26,8 @@
 -keepclassmembers class ** {
     *** Companion;
 }
+
+# wallhub-rust resolves these native methods from libwallhub_rust.so; R8 must not rename them.
+-keepclasseswithmembernames class com.wallhub.android.data.downloads.WallHubRust {
+    native <methods>;
+}
