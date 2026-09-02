@@ -51,6 +51,10 @@ jobs:
           # Regenerate the vendored Wire protos from the pinned Protobufs submodule:
           # kSteam r50's committed proto tree is inconsistent with its own submodule pin.
           ./gradlew --no-daemon :proto-common:upgradeProtoFiles
+          # Prune fringe services whose types live outside kSteam's webui-only proto
+          # pipeline (SteamDatabase layout drift); nothing else references them.
+          rm -f proto-common/src/commonMain/proto/webui/service_accountscore.proto \
+                proto-common/src/commonMain/proto/webui/service_steamgpt*.proto
           ./gradlew --no-daemon publishToMavenLocal
       - name: Generate reviewed Detekt baseline
         run: |
