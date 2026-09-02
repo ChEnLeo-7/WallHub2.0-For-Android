@@ -56,8 +56,7 @@ class RustDepotDownloader
                 }
             }
 
-        /** One-shot CDN chunk download + decode; fails with [Result] on any network or crypto error. */
-        suspend fun downloadAndDecodeChunk(
+        override suspend fun downloadAndDecodeChunk(
             url: String,
             depotKey: ByteArray,
             chunk: DepotChunkSpec,

@@ -27,6 +27,20 @@ interface DepotDownloader {
         encrypted: ByteArray,
         depotKey: ByteArray,
     ): Result<ByteArray>
+
+    /**
+     * Downloads one CDN chunk and decodes it inside the engine (single FFI crossing).
+     * Only engines declaring [DepotDownloaderCapability.CHUNK_DOWNLOAD] implement this;
+     * the default always fails so hybrid routing skips them.
+     */
+    suspend fun downloadAndDecodeChunk(
+        url: String,
+        depotKey: ByteArray,
+        chunk: DepotChunkSpec,
+    ): Result<ByteArray> =
+        Result.failure(
+            UnsupportedOperationException("Chunk download is not supported by this engine"),
+        )
 }
 
 /** Manifest chunk metadata, engine-neutral equivalent of the JavaSteam chunk record. */

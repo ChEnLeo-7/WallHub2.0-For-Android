@@ -71,7 +71,7 @@ class HybridDepotDownloader private constructor(
     }
 
     /** One-shot CDN chunk download + decode; only the Rust engine owns network chunk fetch. */
-    suspend fun downloadAndDecodeChunk(
+    override suspend fun downloadAndDecodeChunk(
         url: String,
         depotKey: ByteArray,
         chunk: DepotChunkSpec,
