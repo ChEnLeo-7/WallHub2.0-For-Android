@@ -66,7 +66,7 @@ jobs:
           for p in files:
               with open(p, encoding="utf-8", errors="ignore") as handle:
                   body = re.sub(r"^\s*(?:message|enum|service|extend)\s+([A-Za-z][A-Za-z0-9_]*)", "", handle.read(), flags=re.M)
-              for reference in re.findall(r"\.\s*([A-Za-z][A-Za-z0-9_]*)\b", body):
+              for reference in re.findall(r"\b([A-Z][A-Za-z0-9_]{2,})\b", body):
                   if reference not in defined and not reference.startswith(("google", "steam")):
                       missing.add(reference)
           stubs = sorted(missing)
@@ -89,7 +89,7 @@ jobs:
                   text2 = handle.read()
               body = re.sub(r"^\s*(?:message|enum|service|extend)\s+([A-Za-z][A-Za-z0-9_]*)", "", text2, flags=re.M)
               needed = set()
-              for reference in re.findall(r"\.\s*([A-Za-z][A-Za-z0-9_]*)\b", body):
+              for reference in re.findall(r"\b([A-Z][A-Za-z0-9_]{2,})\b", body):
                   target = owner.get(reference)
                   if target is not None and target != p:
                       needed.add(os.path.relpath(target, root).replace(os.sep, "/"))
