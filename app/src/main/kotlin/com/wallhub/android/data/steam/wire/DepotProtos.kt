@@ -21,7 +21,7 @@ class CMsgClientGetDepotDecryptionKey(
 ) {
     companion object {
         val ADAPTER: ProtoAdapter<CMsgClientGetDepotDecryptionKey> =
-            object : ProtoAdapter<CMsgClientGetDepotDecryptionKey>() {
+            object : ProtoAdapter<CMsgClientGetDepotDecryptionKey>(FieldEncoding.LENGTH_DELIMITED, CMsgClientGetDepotDecryptionKey::class) {
                 override fun encodedSize(value: CMsgClientGetDepotDecryptionKey): Int {
                     val buffer = Buffer()
                     encode(buffer, value)
@@ -55,6 +55,7 @@ class CMsgClientGetDepotDecryptionKey(
                     return CMsgClientGetDepotDecryptionKey(depot_id = depotId, app_id = appId)
                 }
             }
+                override fun redact(value: CMsgClientGetDepotDecryptionKey): CMsgClientGetDepotDecryptionKey = value
     }
 }
 
@@ -65,7 +66,7 @@ class CMsgClientGetDepotDecryptionKeyResponse(
 ) {
     companion object {
         val ADAPTER: ProtoAdapter<CMsgClientGetDepotDecryptionKeyResponse> =
-            object : ProtoAdapter<CMsgClientGetDepotDecryptionKeyResponse>() {
+            object : ProtoAdapter<CMsgClientGetDepotDecryptionKeyResponse>(FieldEncoding.LENGTH_DELIMITED, CMsgClientGetDepotDecryptionKeyResponse::class) {
                 override fun encodedSize(value: CMsgClientGetDepotDecryptionKeyResponse): Int {
                     val buffer = Buffer()
                     encode(buffer, value)
@@ -109,6 +110,7 @@ class CMsgClientGetDepotDecryptionKeyResponse(
                     )
                 }
             }
+                override fun redact(value: CMsgClientGetDepotDecryptionKeyResponse): CMsgClientGetDepotDecryptionKeyResponse = value
     }
 }
 
@@ -135,7 +137,7 @@ class ContentManifestPayload(
 
     companion object {
         val ADAPTER: ProtoAdapter<ContentManifestPayload> =
-            object : ProtoAdapter<ContentManifestPayload>() {
+            object : ProtoAdapter<ContentManifestPayload>(FieldEncoding.LENGTH_DELIMITED, ContentManifestPayload::class) {
                 override fun encodedSize(value: ContentManifestPayload): Int {
                     val buffer = Buffer()
                     encode(buffer, value)
@@ -163,9 +165,10 @@ class ContentManifestPayload(
                     return ContentManifestPayload(mappings)
                 }
             }
+                override fun redact(value: ContentManifestPayload): ContentManifestPayload = value
     }
 
-    private object FileMappingAdapter : ProtoAdapter<FileMapping>() {
+    private object FileMappingAdapter : ProtoAdapter<FileMapping>(FieldEncoding.LENGTH_DELIMITED, FileMapping::class) {
         override fun encodedSize(value: FileMapping): Int {
             val buffer = Buffer()
             encode(buffer, value)
@@ -236,9 +239,11 @@ class ContentManifestPayload(
                 linktarget = linktarget,
             )
         }
+
+        override fun redact(value: FileMapping): FileMapping = value
     }
 
-    private object ChunkDataAdapter : ProtoAdapter<ChunkData>() {
+    private object ChunkDataAdapter : ProtoAdapter<ChunkData>(FieldEncoding.LENGTH_DELIMITED, ChunkData::class) {
         override fun encodedSize(value: ChunkData): Int {
             val buffer = Buffer()
             encode(buffer, value)
@@ -295,6 +300,8 @@ class ContentManifestPayload(
                 cb_compressed = cbCompressed,
             )
         }
+
+        override fun redact(value: ChunkData): ChunkData = value
     }
 }
 
@@ -311,7 +318,7 @@ class ContentManifestMetadata(
 ) {
     companion object {
         val ADAPTER: ProtoAdapter<ContentManifestMetadata> =
-            object : ProtoAdapter<ContentManifestMetadata>() {
+            object : ProtoAdapter<ContentManifestMetadata>(FieldEncoding.LENGTH_DELIMITED, ContentManifestMetadata::class) {
                 override fun encodedSize(value: ContentManifestMetadata): Int {
                     val buffer = Buffer()
                     encode(buffer, value)
@@ -396,6 +403,8 @@ class ContentManifestMetadata(
                         crc_clear = crcClear,
                     )
                 }
+
+                override fun redact(value: ContentManifestMetadata): ContentManifestMetadata = value
             }
     }
 }

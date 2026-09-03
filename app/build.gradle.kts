@@ -200,6 +200,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.jdk8)
     implementation(libs.kotlinx.serialization.core)
+    implementation(libs.lz4.java)
     implementation(libs.markdown.renderer.m3)
     implementation(libs.material)
     implementation(libs.okhttp.android)

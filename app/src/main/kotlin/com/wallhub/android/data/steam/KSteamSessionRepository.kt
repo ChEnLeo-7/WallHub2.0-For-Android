@@ -41,6 +41,7 @@ import com.wallhub.android.core.model.WorkshopCommentPage
 import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopFilterCatalog
 import com.wallhub.android.core.model.WorkshopPage
+import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.data.steam.wire.CMsgClientGetDepotDecryptionKey
 import com.wallhub.android.data.steam.wire.CMsgClientGetDepotDecryptionKeyResponse
 import com.wallhub.android.core.model.AccountWorkshopRepository
@@ -177,7 +178,7 @@ class KSteamSessionRepository
 
         private fun observeEngine(client: SteamClient): Job =
             scope.launch {
-                combine(client.clientAuthState, client.connectionStatus) { auth, cmState -> auth to cmState }
+                combine(client.account.clientAuthState, client.connectionStatus) { auth, cmState -> auth to cmState }
                     .collect { (auth, cmState) -> reconcileState(client, auth, cmState) }
             }
 
@@ -462,7 +463,7 @@ class KSteamSessionRepository
         private suspend fun awaitRestorationOutcome(client: SteamClient) {
             val outcome =
                 withTimeoutOrNull(RESTORE_TOTAL_TIMEOUT_MS) {
-                    client.clientAuthState.first { state -> state is AuthorizationState.Success }
+                    client.account.clientAuthState.first { state -> state is AuthorizationState.Success }
                     mutableSession.first { it.phase != SteamSessionPhase.SIGNING_IN }
                     mutableSession.value.phase
                 }
@@ -565,7 +566,7 @@ class KSteamSessionRepository
             }
             scope.launch {
                 val accepted =
-                    runCatching { engine?.account?.updateCurrentSessionWithCode(code.trim()) }.getOrDefault(false)
+                    runCatching { engine?.account?.updateCurrentSessionWithCode(code.trim()) ?: false }.getOrDefault(false)
                 if (accepted) {
                     publishPhase(
                         phase = SteamSessionPhase.SIGNING_IN,
@@ -654,7 +655,7 @@ class KSteamSessionRepository
                             SystemClock.elapsedRealtime() - backgroundedAt >= FOREGROUND_SESSION_REFRESH_AFTER_BACKGROUND_MS
                     if (stale &&
                         client.account.hasSavedDataForAtLeastOneAccount() &&
-                        client.clientAuthState.value !is AuthorizationState.Success
+                        client.account.clientAuthState.value !is AuthorizationState.Success
                     ) {
                         restorePersistedSession()
                     }
@@ -762,7 +763,7 @@ class KSteamSessionRepository
          */
         internal suspend fun steamContentClient(authenticated: Boolean): SteamClient? {
             if (authenticated) {
-                engine?.takeIf { it.clientAuthState.value is AuthorizationState.Success }?.let { return it }
+                engine?.takeIf { it.account.clientAuthState.value is AuthorizationState.Success }?.let { return it }
             }
             return anonymousClient()
         }
@@ -817,7 +818,7 @@ class KSteamSessionRepository
                                 protocol_version = EnvironmentConstants.PROTOCOL_VERSION,
                                 client_package_version = KSTEAM_CLIENT_PACKAGE_VERSION,
                                 client_language = client.language.vdfName,
-                                client_os_type = client.deviceInfo.osType.encoded,
+                                client_os_type = EOSType.k_eAndroidUnknown.encoded,
                                 should_remember_password = true,
                                 qos_level = 2,
                                 machine_id = client.configuration.machineId.decodeHex(),
@@ -866,7 +867,7 @@ class KSteamSessionRepository
         // ------------------------------------------------------------------
 
         private suspend fun acquireWorkshopClient(): SteamClient? {
-            engine?.takeIf { it.clientAuthState.value is AuthorizationState.Success }?.let { return it }
+            engine?.takeIf { it.account.clientAuthState.value is AuthorizationState.Success }?.let { return it }
             return anonymousClient()
         }
 
@@ -981,7 +982,7 @@ class KSteamSessionRepository
         ): WorkshopCommentPage? =
             withContext(Dispatchers.IO) {
                 val client =
-                    engine?.takeIf { it.clientAuthState.value is AuthorizationState.Success }
+                    engine?.takeIf { it.account.clientAuthState.value is AuthorizationState.Success }
                         ?: return@withContext null
                 try {
                     val response =
@@ -1016,7 +1017,7 @@ class KSteamSessionRepository
 
         private suspend fun requireSignedInClient(): SteamClient {
             val client =
-                engine?.takeIf { it.clientAuthState.value is AuthorizationState.Success }
+                engine?.takeIf { it.account.clientAuthState.value is AuthorizationState.Success }
             if (client != null) return client
             error(mutableSession.value.message ?: "Restore the Steam login before using the personal library")
         }

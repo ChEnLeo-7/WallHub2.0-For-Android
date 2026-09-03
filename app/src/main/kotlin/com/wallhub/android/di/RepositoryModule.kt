@@ -21,7 +21,6 @@ import com.wallhub.android.data.diagnostics.FileDiagnosticRepository
 import com.wallhub.android.data.discover.HttpOfficialDiscoverMetadataRepository
 import com.wallhub.android.data.downloads.HybridDepotDownloader
 import com.wallhub.android.data.downloads.LocalWallpaperFileRepository
-import com.wallhub.android.data.downloads.KotlinDepotDownloader
 import com.wallhub.android.data.downloads.RoomDownloadTaskRepository
 import com.wallhub.android.data.downloads.SteamWorkshopVideoStreamRepository
 import com.wallhub.android.data.settings.DataStoreSettingsRepository

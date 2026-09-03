@@ -5,6 +5,7 @@ import bruhcollective.itaysonlab.ksteam.SteamClient
 import bruhcollective.itaysonlab.ksteam.models.account.AuthorizationState
 import com.wallhub.android.core.model.DepotChunkSpec
 import com.wallhub.android.core.model.DepotFileFlag
+import com.wallhub.android.core.model.DepotDownloader
 import com.wallhub.android.core.model.DepotFileSpec
 import com.wallhub.android.core.model.DepotManifestSpec
 import com.wallhub.android.core.model.SteamContentCredential
@@ -46,6 +47,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
@@ -88,7 +90,7 @@ internal suspend fun openContentSession(
     return KSteamContentSession(
         repository = repository,
         client = client,
-        isAuthenticated = credential != null && client.clientAuthState.value is AuthorizationState.Success,
+        isAuthenticated = credential != null && client.account.clientAuthState.value is AuthorizationState.Success,
     )
 }
 
@@ -1321,27 +1323,17 @@ private suspend fun downloadEncryptedChunkStreaming(
     destination: ByteArray,
     beforeRead: suspend () -> Unit,
 ): Int {
-    val chunkId = requireNotNull(chunk.chunkID) { "Chunk must have a ChunkID." }
+    val chunkId = requireNotNull(chunk.chunkId) { "Chunk must have a ChunkID." }
     require(destination.size == chunk.compressedLength) {
         "Steam chunk destination must match compressed length"
     }
     val chunkIdHex = chunkId.joinToString("") { "%02x".format(it.toInt() and 0xff) }
     val command = "depot/$depotId/chunk/$chunkIdHex"
-    val request =
-        if (ClientLancache.useLanCacheServer) {
-            ClientLancache.buildLancacheRequest(server, command, cdnAuthToken)
-        } else {
-            Request.Builder()
-                .url(buildSteamCdnCommand(server, command, cdnAuthToken))
-                .build()
-        }
+    val request = Request.Builder().url(buildSteamCdnCommand(server, command, cdnAuthToken)).build()
     val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
     response.use { resp ->
         if (!resp.isSuccessful) {
-            throw SteamCdnHttpException(
-                "Steam CDN returned ${resp.code} (${resp.message})",
-                resp,
-            )
+            throw SteamCdnHttpException("Steam CDN returned ${resp.code} (${resp.message})")
         }
         val expected =
             resp.body.contentLength().takeIf { it > 0L }?.toInt()
@@ -1374,15 +1366,10 @@ private suspend fun downloadEncryptedChunkStreamingToFile(
     cdnAuthToken: String?,
     destination: File,
 ): Int = suspendCancellableCoroutine { continuation ->
-    val chunkId = requireNotNull(chunk.chunkID) { "Chunk must have a ChunkID." }
+    val chunkId = requireNotNull(chunk.chunkId) { "Chunk must have a ChunkID." }
     val chunkIdHex = chunkId.joinToString("") { "%02x".format(it.toInt() and 0xff) }
     val command = "depot/$depotId/chunk/$chunkIdHex"
-    val request =
-        if (ClientLancache.useLanCacheServer) {
-            ClientLancache.buildLancacheRequest(server, command, cdnAuthToken)
-        } else {
-            Request.Builder().url(buildSteamCdnCommand(server, command, cdnAuthToken)).build()
-        }
+    val request = Request.Builder().url(buildSteamCdnCommand(server, command, cdnAuthToken)).build()
     val call = httpClient.newCall(request)
     continuation.invokeOnCancellation {
         call.cancel()
@@ -1405,10 +1392,7 @@ private suspend fun downloadEncryptedChunkStreamingToFile(
                 try {
                     response.use { resp ->
                         if (!resp.isSuccessful) {
-                            throw SteamCdnHttpException(
-                                "Steam CDN returned ${resp.code} (${resp.message})",
-                                resp,
-                            )
+                            throw SteamCdnHttpException("Steam CDN returned ${resp.code} (${resp.message})")
                         }
                         val expected =
                             resp.body.contentLength().takeIf { it > 0L }
@@ -1634,6 +1618,7 @@ internal suspend fun downloadFilePlan(
             depotKey = depotKey,
             authTokens = authTokens,
             selector = selector,
+            depotDownloader = depotDownloader,
             chunkConcurrency = chunkConcurrency,
             control = control,
             onChunkWritten = { decodedChunk ->
@@ -1998,7 +1983,9 @@ internal class CdnAuthTokenProvider(
                     }
                 pendingTokens[cacheKey] ?: callbackScope
                     .async {
-                        client.steamCdnAuthToken(appId = appId, depotId = depotId, hostName = requestHost)
+                        val (token, expiresAtMs) =
+                            client.steamCdnAuthToken(appId = appId, depotId = depotId, hostName = requestHost)
+                        CachedCdnAuthToken(token = token, expiresAtMs = expiresAtMs)
                     }.also { request -> pendingTokens[cacheKey] = request }
             }
         cachedToken?.let { return it }

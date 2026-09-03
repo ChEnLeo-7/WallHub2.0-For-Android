@@ -3,6 +3,7 @@ package com.wallhub.android.data.downloads
 import android.util.Log
 import com.wallhub.android.core.model.DepotChunkSpec
 import com.wallhub.android.core.model.DepotFileFlag
+import com.wallhub.android.core.model.DepotDownloader
 import com.wallhub.android.core.model.DepotFileSpec
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.data.steam.KSteamSessionRepository
@@ -249,7 +250,7 @@ internal class StreamChunkRequest(
 }
 
 @Singleton
-internal class SteamContentDownloader
+class SteamContentDownloader
     @Inject
     constructor(
         private val sessionRepository: KSteamSessionRepository,

@@ -53,7 +53,7 @@ internal fun buildUnifiedWorkshopBrowseRequest(query: WorkshopBrowseQuery): CPub
                 listOf(
                     CPublishedFile_QueryFiles_Request_KVTag(
                         key = "app_workshop_eula_version",
-                        value = "3",
+                        value_ = "3",
                     ),
                 )
             } else {
