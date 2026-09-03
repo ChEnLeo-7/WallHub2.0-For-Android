@@ -105,15 +105,19 @@ jobs:
                       for name in fresh:
                           handle.write("message %s {}\n" % name)
                   changed += 1
-              return proc.returncode == 0, changed
+              return proc.returncode == 0, changed, output
 
           for attempt in range(8):
-              ok, changed = fix_once()
+              ok, changed, output = fix_once()
               print("proto repair attempt %d: ok=%s fixes=%d" % (attempt, ok, changed))
+              if not ok:
+                  for line in output.splitlines():
+                      if re.search(r"error|unable to resolve|needs to import|What went wrong|> ", line):
+                          print("GRADLE:", line.strip()[:300])
               if ok:
                   break
               if changed == 0:
-                  raise SystemExit("kSteam proto repair did not converge; inspect gradle output above")
+                  raise SystemExit("kSteam proto repair did not converge; see GRADLE lines above")
           PYFIX
           ./gradlew --no-daemon publishToMavenLocal
       - name: Require Release signing secrets
