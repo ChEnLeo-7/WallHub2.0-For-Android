@@ -2,6 +2,7 @@ package com.wallhub.android.data.downloads
 
 import android.content.Context
 import android.util.Log
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
@@ -14,6 +15,7 @@ import androidx.work.workDataOf
 import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -43,7 +45,8 @@ class WorkManagerDownloadWorkScheduler
                             .Builder()
                             .setRequiredNetworkType(NetworkType.CONNECTED)
                             .build(),
-                    ).setInputData(workDataOf(FormalWorkshopDownloadWorker.KEY_TASK_ID to taskId))
+                    )
+                    .setBackoffCriteria(BackoffPolicy.LINEAR, 10_000L, TimeUnit.MILLISECONDS)
                     .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                     .addTag(FORMAL_DOWNLOAD_TAG)
                     .build()

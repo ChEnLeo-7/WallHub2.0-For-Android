@@ -372,6 +372,7 @@ class FormalWorkshopDownloadWorker
                         "Formal Steam download worker cancelled taskId=$taskId",
                         error,
                     )
+                    var retryable = false
                     withContext(kotlinx.coroutines.NonCancellable) {
                         val cancellationRequested =
                             taskDao.find(taskId)?.requestedAction == DownloadAction.CANCEL.name
@@ -388,6 +389,10 @@ class FormalWorkshopDownloadWorker
                                 message = applicationContext.getString(R.string.backend_download_cancelled_cleaned),
                             )
                         } else {
+                            // The system (or the ROM's job policy) stopped the worker; keep
+                            // the partial staging directory and let WorkManager retry the
+                            // run so the task cannot get stuck as QUEUED forever.
+                            retryable = true
                             persist(
                                 task,
                                 status = DownloadStatus.QUEUED,
@@ -395,7 +400,11 @@ class FormalWorkshopDownloadWorker
                             )
                         }
                     }
-                    throw error
+                    if (retryable) {
+                        Result.retry()
+                    } else {
+                        throw error
+                    }
                 } catch (error: Throwable) {
                     Log.e(
                         DOWNLOAD_LOG_TAG,
