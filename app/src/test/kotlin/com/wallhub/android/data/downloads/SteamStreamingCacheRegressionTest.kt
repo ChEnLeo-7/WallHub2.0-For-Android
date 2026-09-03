@@ -102,20 +102,17 @@ class SteamStreamingCacheRegressionTest {
         }
 
     @Test
-    fun `encrypted staging reservations apply byte backpressure`() =
+    fun `committed chunk is not immediately evicted when it exceeds the cache limit`() =
         runTest {
-            val root = Files.createTempDirectory("steam-stream-staging-gate-test").toFile()
-            val cache = SteamVideoStreamCache(root, "video-a", 1_000L)
+            val root = Files.createTempDirectory("steam-stream-commit-eviction-test").toFile()
+            val cache = SteamVideoStreamCache(root, "video-a", 300L)
             try {
-                val first = cache.reserveEncrypted(150)
-                val waiting =
-                    async(start = CoroutineStart.UNDISPATCHED) {
-                        cache.reserveEncrypted(100)
-                    }
+                val data = ByteArray(400) { 5 }
+                val checksum = steamAdler32(data)
 
-                assertFalse(waiting.isCompleted)
-                first.release()
-                waiting.await().release()
+                cache.commit(0L, checksum, data)
+
+                assertContentEquals(data, cache.readSlice(0L, data.size, checksum, 0, data.size))
             } finally {
                 cache.close()
                 root.deleteRecursively()
@@ -130,9 +127,6 @@ class SteamStreamingCacheRegressionTest {
                 rootDirectory = root,
                 namespace = "video-a",
                 limitBytes = 1_000L,
-                maximumEncryptedChunkBytes = 800L,
-                minimumStagingCapacityBytes = 1_000L,
-                stagingEnabled = false,
             )
         try {
             assertEquals(1_000L, cache.prefetchCapacityBytes)
@@ -195,22 +189,35 @@ class SteamStreamingCacheRegressionTest {
     }
 
     @Test
-    fun `staging capacity covers one full user concurrency window`() {
-        assertEquals(70L, steamStreamStagingWindowBytes(listOf(10, 20, 30, 40), concurrency = 2))
-        assertEquals(100L, steamStreamStagingWindowBytes(listOf(10, 20, 30, 40), concurrency = 48))
-        assertEquals(140L, steamStreamStagingPipelineBytes(listOf(10, 20, 30, 40), concurrency = 2))
-    }
-
-    @Test
-    fun `stream chunk pipeline budget matches Webview uncompressed byte accounting`() {
+    fun `stream chunk pipeline budget includes encrypted and decoded peak buffers`() {
         assertEquals(
-            1L * 1024L * 1024L,
+            4L * 1024L * 1024L,
             steamStreamChunkPipelineBytes(1 * 1024 * 1024, 1 * 1024 * 1024),
         )
         assertEquals(
-            8L * 1024L * 1024L,
+            24L * 1024L * 1024L,
             steamStreamChunkPipelineBytes(4 * 1024 * 1024, 8 * 1024 * 1024),
         )
+    }
+
+    @Test
+    fun `stream memory budget scales with heap and remains bounded`() {
+        val mib = 1024L * 1024L
+
+        assertEquals(16L * mib, steamStreamMemoryBudgetBytes(32L * mib))
+        assertEquals(48L * mib, steamStreamMemoryBudgetBytes(192L * mib))
+        assertEquals(64L * mib, steamStreamMemoryBudgetBytes(512L * mib))
+    }
+
+    @Test
+    fun `eviction invalidation wins over stale prefetch completion`() {
+        val frontier = StreamPrefetchFrontier()
+
+        assertEquals(StreamPrefetchPlan.NEW, frontier.plan(10L))
+        frontier.invalidate(10L)
+        frontier.complete(10L)
+
+        assertEquals(StreamPrefetchPlan.NEW, frontier.plan(10L))
     }
 
     @Test

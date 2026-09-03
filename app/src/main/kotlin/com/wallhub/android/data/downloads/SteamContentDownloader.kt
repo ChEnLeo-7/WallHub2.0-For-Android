@@ -237,7 +237,6 @@ internal class StreamChunkRequest(
     // Pure prefetch completes with null after the bytes are committed to disk,
     // so completed requests never retain decoded chunk arrays.
     val deferred: Deferred<ByteArray?>,
-    val networkCompleted: Deferred<Unit>,
     val job: Job,
     private val priorityState: AtomicReference<SteamStreamChunkPriority>,
 ) {
@@ -466,7 +465,6 @@ internal class SteamContentDownloader
                             rootDirectory = cacheRootDirectory,
                             namespace = "${target.publishedFileId}-${target.contentManifestId}",
                             limitBytes = cacheLimitBytes.coerceAtLeast(STREAM_MIN_CACHE_LIMIT_BYTES),
-                            stagingEnabled = false,
                         ),
                     prefetchConcurrency = steamStreamPrefetchConcurrency(normalizedOptions.chunkConcurrency),
                     httpClient = httpClient,

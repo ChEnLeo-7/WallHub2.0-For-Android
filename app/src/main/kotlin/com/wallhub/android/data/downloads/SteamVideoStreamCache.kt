@@ -1,10 +1,7 @@
 package com.wallhub.android.data.downloads
 
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.file.AtomicMoveNotSupportedException
@@ -12,7 +9,6 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.PriorityQueue
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.UUID
 import java.util.zip.Adler32
 
@@ -20,18 +16,12 @@ internal class SteamVideoStreamCache(
     rootDirectory: File,
     namespace: String,
     private val limitBytes: Long,
-    maximumEncryptedChunkBytes: Long = 0L,
-    minimumStagingCapacityBytes: Long = 0L,
-    stagingEnabled: Boolean = true,
 ) {
-    private val stagingCapacityBytes =
-        if (stagingEnabled) {
-            streamStagingCapacityBytes(limitBytes, maximumEncryptedChunkBytes, minimumStagingCapacityBytes)
-        } else {
-            0L
-        }
-    val prefetchCapacityBytes: Long =
-        (limitBytes - stagingCapacityBytes).coerceAtLeast(1L)
+    init {
+        require(limitBytes > 0L) { "Streaming cache limit must be positive" }
+    }
+
+    val prefetchCapacityBytes: Long = limitBytes
     private val rootDirectory = rootDirectory.canonicalFile
     private val cacheDirectory = File(this.rootDirectory, namespace)
     private val state = stateFor(this.rootDirectory)
@@ -64,12 +54,17 @@ internal class SteamVideoStreamCache(
     }
 
     fun protectChunkOffsets(offsets: Collection<Long>) {
-        state.protectedPathsByOwner[ownerId] = offsets.mapTo(mutableSetOf()) { chunkFile(it).absolutePath }
+        val protectedPaths = offsets.mapTo(mutableSetOf()) { chunkFile(it).absolutePath }
+        synchronized(state.protectionLock) {
+            state.protectedPathsByOwner[ownerId] = protectedPaths
+        }
     }
 
     fun close() {
         evictionListener = null
-        state.protectedPathsByOwner.remove(ownerId)
+        synchronized(state.protectionLock) {
+            state.protectedPathsByOwner.remove(ownerId)
+        }
         state.evictionObservers.remove(ownerId)
     }
 
@@ -139,112 +134,6 @@ internal class SteamVideoStreamCache(
     }
 
     /**
-     * Spools an encrypted response to disk so a completed network request never has
-     * to occupy a decode slot or retain its byte array before the next request starts.
-     */
-    suspend fun reserveEncrypted(length: Int): SteamEncryptedChunkReservation {
-        require(length >= 0) { "Steam encrypted chunk reservation must not be negative" }
-        if (length == 0) return SteamEncryptedChunkReservation(0) {}
-        require(length.toLong() <= stagingCapacityBytes) {
-            "Steam encrypted chunk exceeds staging capacity: $length > $stagingCapacityBytes"
-        }
-        prepareCache()
-        val waiter =
-            state.mutex.withLock {
-                if (state.stagedWaiters.isEmpty() && canReserveStagedBytes(length.toLong(), stagingCapacityBytes)) {
-                    state.stagedBytes += length
-                    null
-                } else {
-                    StagedWaiter(
-                        bytes = length.toLong(),
-                        capacityBytes = stagingCapacityBytes,
-                        signal = CompletableDeferred(),
-                    ).also(state.stagedWaiters::addLast)
-                }
-            }
-        if (waiter != null) {
-            try {
-                waiter.signal.await()
-            } catch (error: Throwable) {
-                withContext(NonCancellable) {
-                    val signals = mutableListOf<CompletableDeferred<Unit>>()
-                    val removed =
-                        state.mutex.withLock {
-                            state.stagedWaiters.remove(waiter).also { didRemove ->
-                                if (didRemove) dispatchStagedWaitersLocked(signals)
-                            }
-                        }
-                    signals.forEach { signal -> signal.complete(Unit) }
-                    if (!removed) releaseStagedBytes(waiter.bytes)
-                }
-                throw error
-            }
-        }
-        val reservation = SteamEncryptedChunkReservation(length) { bytes -> releaseStagedBytes(bytes.toLong()) }
-        try {
-            evictOverflow()
-            return reservation
-        } catch (error: Throwable) {
-            withContext(NonCancellable) { reservation.release() }
-            throw error
-        }
-    }
-
-    suspend fun stageEncrypted(
-        reservation: SteamEncryptedChunkReservation,
-        requestId: Long,
-        chunkOffset: Long,
-        data: ByteArray,
-    ): SteamEncryptedChunkSpool {
-        check(reservation.length == data.size) { "Steam encrypted chunk reservation length mismatch" }
-        prepareCache()
-        val file = File(cacheDirectory, "$SPOOL_PREFIX$requestId-$chunkOffset$SPOOL_SUFFIX")
-        state.activeTemporaryFiles[file.absolutePath] = data.size.toLong()
-        try {
-            file.outputStream().use { output ->
-                output.write(data)
-                output.flush()
-            }
-            return SteamEncryptedChunkSpool(file, data.size, reservation) {
-                state.activeTemporaryFiles.remove(file.absolutePath)
-            }
-        } catch (error: Throwable) {
-            file.delete()
-            state.activeTemporaryFiles.remove(file.absolutePath)
-            withContext(NonCancellable) { reservation.release() }
-            throw error
-        }
-    }
-
-    /** Creates an empty, reserved spool that the HTTP response can stream into directly. */
-    suspend fun createEncryptedSpool(
-        reservation: SteamEncryptedChunkReservation,
-        requestId: Long,
-        chunkOffset: Long,
-    ): SteamEncryptedChunkSpool {
-        prepareCache()
-        val file = File(cacheDirectory, "$SPOOL_PREFIX$requestId-$chunkOffset$SPOOL_SUFFIX")
-        state.activeTemporaryFiles[file.absolutePath] = reservation.length.toLong()
-        return try {
-            if (file.exists()) check(file.delete()) { "Failed to reset Steam encrypted chunk spool" }
-            SteamEncryptedChunkSpool(file, reservation.length, reservation) {
-                state.activeTemporaryFiles.remove(file.absolutePath)
-            }
-        } catch (error: Throwable) {
-            state.activeTemporaryFiles.remove(file.absolutePath)
-            withContext(NonCancellable) { reservation.release() }
-            throw error
-        }
-    }
-
-    fun readStaged(spool: SteamEncryptedChunkSpool): ByteArray {
-        check(spool.file.isFile && spool.file.length() == spool.length.toLong()) {
-            "Steam encrypted chunk spool is incomplete"
-        }
-        return spool.file.readBytes()
-    }
-
-    /**
      * Commits a payload already authenticated by DepotChunk.process().
      */
     suspend fun commitVerified(
@@ -254,9 +143,16 @@ internal class SteamVideoStreamCache(
     ) {
         prepareCache()
         val file = chunkFile(chunkOffset)
-        val evictionVictims =
+        val path = file.absolutePath
+        state.mutex.withLock {
+            state.activeChunkWrites[path] = (state.activeChunkWrites[path] ?: 0) + 1
+            if (state.evictionClaims.remove(path) != null) {
+                state.currentEntries[path]?.let { state.accessQueue += it }
+            }
+        }
+        try {
             chunkLock(file).withLock {
-                if (isValid(file, data.size, expectedChecksum)) return@withLock emptyList()
+                if (isValid(file, data.size, expectedChecksum)) return@withLock
                 val partial = File(cacheDirectory, "${file.name}.${UUID.randomUUID()}.part")
                 state.activeTemporaryFiles[partial.absolutePath] = data.size.toLong()
                 try {
@@ -274,14 +170,19 @@ internal class SteamVideoStreamCache(
                         writeVerificationMarker(file, data.size, expectedChecksum)
                         verifiedFiles += file.absolutePath
                         verifiedChecksums[file.absolutePath] = CacheVerification(data.size, expectedChecksum)
-                        selectEvictionVictimsLocked(limitBytes)
                     }
                 } finally {
                     partial.delete()
                     state.activeTemporaryFiles.remove(partial.absolutePath)
                 }
             }
-        deleteEvictionVictims(evictionVictims)
+            evictOverflow(excludedPaths = setOf(path))
+        } finally {
+            state.mutex.withLock {
+                val remaining = (state.activeChunkWrites[path] ?: 1) - 1
+                if (remaining > 0) state.activeChunkWrites[path] = remaining else state.activeChunkWrites.remove(path)
+            }
+        }
     }
 
     private suspend fun isValid(
@@ -321,33 +222,33 @@ internal class SteamVideoStreamCache(
         }
     }
 
-    private fun selectEvictionVictimsLocked(maximumBytes: Long): List<EvictionVictim> {
-        if (state.totalBytes + state.stagedBytes <= maximumBytes) return emptyList()
+    private fun selectEvictionVictimsLocked(
+        maximumBytes: Long,
+        excludedPaths: Set<String> = emptySet(),
+    ): List<EvictionVictim> {
+        if (state.totalBytes <= maximumBytes) return emptyList()
 
         // Evict only the current overflow. The former 80% low-water sweep deleted
         // roughly one hundred 1 MiB chunks while holding the metadata lock and
         // periodically stopped the entire network/decode pipeline for many seconds.
         val victims = mutableListOf<EvictionVictim>()
         val protectedEntries = mutableListOf<AccessEntry>()
-        while (state.totalBytes + state.stagedBytes > maximumBytes && state.accessQueue.isNotEmpty()) {
+        var projectedBytes = state.totalBytes
+        while (projectedBytes > maximumBytes && state.accessQueue.isNotEmpty()) {
             val entry = state.accessQueue.remove()
             val file = entry.file
             if (state.currentEntries[file.absolutePath]?.sequence != entry.sequence) continue
-            if (!file.isFile || file.length() != entry.length) {
-                state.currentEntries.remove(file.absolutePath)
-                state.totalBytes = (state.totalBytes - entry.length).coerceAtLeast(0L)
-                continue
-            }
-            if (isProtected(file)) {
+            if (
+                file.absolutePath in excludedPaths ||
+                state.activeChunkWrites.containsKey(file.absolutePath) ||
+                isProtected(file)
+            ) {
                 protectedEntries += entry
                 continue
             }
-            verifiedFiles.remove(file.absolutePath)
-            verifiedChecksums.remove(file.absolutePath)
-            state.currentEntries.remove(file.absolutePath)
-            state.totalBytes = (state.totalBytes - entry.length).coerceAtLeast(0L)
             state.evictionClaims[file.absolutePath] = entry.sequence
             victims += EvictionVictim(file, entry.length, entry.sequence)
+            projectedBytes = (projectedBytes - entry.length).coerceAtLeast(0L)
         }
         state.accessQueue.addAll(protectedEntries)
         return victims
@@ -358,34 +259,35 @@ internal class SteamVideoStreamCache(
         victims.forEach { victim ->
             var evicted = false
             chunkLock(victim.file).withLock {
-                val canDelete =
-                    state.mutex.withLock {
-                        val claimed = state.evictionClaims[victim.file.absolutePath] == victim.sequence
-                        if (!claimed) {
-                            false
-                        } else if (isProtected(victim.file) || victim.file.absolutePath in state.currentEntries) {
-                            state.evictionClaims.remove(victim.file.absolutePath)
-                            val current = state.currentEntries[victim.file.absolutePath]
-                            if (current != null) {
-                                state.totalBytes += current.length
-                            } else if (victim.file.isFile) {
-                                state.totalBytes += victim.file.length()
+                state.mutex.withLock {
+                    synchronized(state.protectionLock) {
+                        val path = victim.file.absolutePath
+                        val current = state.currentEntries[path]
+                        val claimValid =
+                            state.evictionClaims[path] == victim.sequence &&
+                                current?.sequence == victim.sequence
+                        if (
+                            claimValid &&
+                            current != null &&
+                            !state.activeChunkWrites.containsKey(path) &&
+                            !isProtectedPathLocked(path)
+                        ) {
+                            evicted = !victim.file.isFile || victim.file.delete()
+                            if (evicted) {
+                                state.currentEntries.remove(path)
+                                state.totalBytes = (state.totalBytes - current.length).coerceAtLeast(0L)
+                                verifiedFiles.remove(path)
+                                verifiedChecksums.remove(path)
+                                markerFile(victim.file).delete()
+                            } else {
+                                val actualLength = victim.file.length()
+                                state.totalBytes += actualLength - current.length
                                 addAccessEntry(victim.file, victim.file.lastModified())
                             }
-                            false
-                        } else {
-                            true
+                        } else if (current != null) {
+                            state.accessQueue += current
                         }
-                    }
-                if (canDelete) {
-                    evicted = !victim.file.isFile || victim.file.delete()
-                    if (evicted) markerFile(victim.file).delete()
-                    state.mutex.withLock {
-                        state.evictionClaims.remove(victim.file.absolutePath)
-                        if (!evicted && victim.file.isFile && victim.file.absolutePath !in state.currentEntries) {
-                            state.totalBytes += victim.file.length()
-                            addAccessEntry(victim.file, victim.file.lastModified())
-                        }
+                        state.evictionClaims.remove(path)
                     }
                 }
             }
@@ -402,18 +304,14 @@ internal class SteamVideoStreamCache(
 
     private suspend fun prepareCache() {
         ensureCacheReady()
-        val victims =
-            state.mutex.withLock {
-                ensureCacheDirectory()
-                initializeState()
-                selectEvictionVictimsLocked(limitBytes)
-            }
-        deleteEvictionVictims(victims)
+        evictOverflow()
     }
 
-    private suspend fun evictOverflow() {
-        val victims = state.mutex.withLock { selectEvictionVictimsLocked(limitBytes) }
-        deleteEvictionVictims(victims)
+    private suspend fun evictOverflow(excludedPaths: Set<String> = emptySet()) {
+        state.evictionMutex.withLock {
+            val victims = state.mutex.withLock { selectEvictionVictimsLocked(limitBytes, excludedPaths) }
+            deleteEvictionVictims(victims)
+        }
     }
 
     private fun initializeState() {
@@ -424,7 +322,10 @@ internal class SteamVideoStreamCache(
                     state.totalBytes += file.length()
                     addAccessEntry(file, file.lastModified())
                 }
-                if (file.name.endsWith(PARTIAL_SUFFIX)) file.delete()
+                if (file.name.endsWith(PARTIAL_SUFFIX)) {
+                    file.delete()
+                    state.activeTemporaryFiles.remove(file.absolutePath)
+                }
             }
             state.initialized = true
         }
@@ -447,8 +348,10 @@ internal class SteamVideoStreamCache(
 
     private fun touch(file: File) {
         val timestamp = System.currentTimeMillis()
-        val previous = state.currentEntries[file.absolutePath]
-        if (previous != null && timestamp - previous.lastModified < TOUCH_INTERVAL_MS) return
+        val path = file.absolutePath
+        val previous = state.currentEntries[path]
+        val cancelledClaim = state.evictionClaims.remove(path) != null
+        if (!cancelledClaim && previous != null && timestamp - previous.lastModified < TOUCH_INTERVAL_MS) return
         file.setLastModified(timestamp)
         addAccessEntry(file, file.lastModified())
         val compactThreshold = (state.currentEntries.size * 2).coerceAtLeast(MIN_QUEUE_COMPACT_SIZE)
@@ -468,16 +371,18 @@ internal class SteamVideoStreamCache(
     }
 
     private fun deleteTracked(file: File) {
-        val trackedLength = state.currentEntries.remove(file.absolutePath)?.length ?: 0L
-        if (!file.isFile) {
-            state.totalBytes = (state.totalBytes - trackedLength).coerceAtLeast(0L)
-            return
-        }
-        val length = file.length()
-        if (file.delete()) state.totalBytes = (state.totalBytes - length).coerceAtLeast(0L)
+        val path = file.absolutePath
+        val trackedLength = state.currentEntries.remove(path)?.length ?: 0L
+        state.totalBytes = (state.totalBytes - trackedLength).coerceAtLeast(0L)
+        val deleted = !file.isFile || file.delete()
         markerFile(file).delete()
-        verifiedFiles.remove(file.absolutePath)
-        verifiedChecksums.remove(file.absolutePath)
+        verifiedFiles.remove(path)
+        verifiedChecksums.remove(path)
+        state.evictionClaims.remove(path)
+        if (!deleted && file.isFile) {
+            state.totalBytes += file.length()
+            addAccessEntry(file, file.lastModified())
+        }
     }
 
     private fun chunkFile(chunkOffset: Long): File = File(cacheDirectory, "$chunkOffset$CHUNK_SUFFIX")
@@ -491,11 +396,13 @@ internal class SteamVideoStreamCache(
     ) {
         val marker = markerFile(file)
         val partial = File(cacheDirectory, "${marker.name}.${UUID.randomUUID()}$PARTIAL_SUFFIX")
+        state.activeTemporaryFiles[partial.absolutePath] = 0L
         try {
             partial.writeText("$length:$checksum", Charsets.US_ASCII)
             moveReplacing(partial, marker)
         } finally {
             partial.delete()
+            state.activeTemporaryFiles.remove(partial.absolutePath)
         }
     }
 
@@ -505,36 +412,22 @@ internal class SteamVideoStreamCache(
             CacheVerification(parts[0].toInt(), parts[1].toInt())
         }.getOrNull()
 
-    private fun chunkLock(file: File): Mutex = state.chunkLocks.computeIfAbsent(file.absolutePath) { Mutex() }
+    private fun chunkLock(file: File): Mutex {
+        val index = (file.absolutePath.hashCode() and Int.MAX_VALUE) % CHUNK_LOCK_STRIPES
+        return state.chunkLocks[index]
+    }
 
     private fun isProtected(file: File): Boolean =
-        state.protectedPathsByOwner.values.any { protectedPaths -> file.absolutePath in protectedPaths }
+        synchronized(state.protectionLock) {
+            isProtectedPathLocked(file.absolutePath)
+        }
+
+    private fun isProtectedPathLocked(path: String): Boolean =
+        state.protectedPathsByOwner.values.any { protectedPaths -> path in protectedPaths }
 
     private fun notifyEvicted(file: File) {
         state.evictionObservers.values.forEach { observer -> runCatching { observer(file) } }
     }
-
-    private suspend fun releaseStagedBytes(bytes: Long) {
-        val signals = mutableListOf<CompletableDeferred<Unit>>()
-        state.mutex.withLock {
-            state.stagedBytes = (state.stagedBytes - bytes).coerceAtLeast(0L)
-            dispatchStagedWaitersLocked(signals)
-        }
-        signals.forEach { signal -> signal.complete(Unit) }
-    }
-
-    private fun dispatchStagedWaitersLocked(signals: MutableList<CompletableDeferred<Unit>>) {
-        while (state.stagedWaiters.isNotEmpty()) {
-            val waiter = state.stagedWaiters.first()
-            if (!canReserveStagedBytes(waiter.bytes, waiter.capacityBytes)) break
-            state.stagedWaiters.removeFirst()
-            state.stagedBytes += waiter.bytes
-            signals += waiter.signal
-        }
-    }
-
-    private fun canReserveStagedBytes(bytes: Long, capacityBytes: Long): Boolean =
-        state.stagedBytes + bytes <= capacityBytes
 
     private fun calculateChecksum(file: File): Int {
         val checksum = Adler32()
@@ -583,33 +476,26 @@ internal class SteamVideoStreamCache(
         val sequence: Long,
     )
 
-    private data class StagedWaiter(
-        val bytes: Long,
-        val capacityBytes: Long,
-        val signal: CompletableDeferred<Unit>,
-    )
-
     private class RootState(
         val mutex: Mutex = Mutex(),
+        val evictionMutex: Mutex = Mutex(),
+        val protectionLock: Any = Any(),
         val accessQueue: PriorityQueue<AccessEntry> = PriorityQueue(compareBy(AccessEntry::lastModified)),
         val currentEntries: MutableMap<String, AccessEntry> = mutableMapOf(),
         val evictionClaims: MutableMap<String, Long> = mutableMapOf(),
-        val chunkLocks: ConcurrentHashMap<String, Mutex> = ConcurrentHashMap(),
-        val protectedPathsByOwner: ConcurrentHashMap<String, Set<String>> = ConcurrentHashMap(),
+        val chunkLocks: Array<Mutex> = Array(CHUNK_LOCK_STRIPES) { Mutex() },
+        val protectedPathsByOwner: MutableMap<String, Set<String>> = mutableMapOf(),
         val evictionObservers: ConcurrentHashMap<String, (File) -> Unit> = ConcurrentHashMap(),
         val activeTemporaryFiles: ConcurrentHashMap<String, Long> = ConcurrentHashMap(),
-        val stagedWaiters: ArrayDeque<StagedWaiter> = ArrayDeque(),
+        val activeChunkWrites: MutableMap<String, Int> = mutableMapOf(),
         var initialized: Boolean = false,
         var totalBytes: Long = 0L,
-        var stagedBytes: Long = 0L,
         var accessSequence: Long = 0L,
     )
 
     internal companion object {
         private const val CHUNK_SUFFIX = ".chunk"
         private const val PARTIAL_SUFFIX = ".part"
-        private const val SPOOL_PREFIX = "encrypted-"
-        private const val SPOOL_SUFFIX = ".spool.part"
         private const val MARKER_SUFFIX = ".verified"
         // Keep one eviction-band of headroom for older videos and chunk-boundary
         // overshoot. With the default 512 MiB cache this leaves 409.6 MiB, enough
@@ -617,7 +503,7 @@ internal class SteamVideoStreamCache(
         private const val CHECKSUM_BUFFER_SIZE = 64 * 1024
         private const val MIN_QUEUE_COMPACT_SIZE = 64
         private const val TOUCH_INTERVAL_MS = 2_000L
-        private const val STAGING_RESERVE_PERCENT = 20L
+        private const val CHUNK_LOCK_STRIPES = 64
         private val statesLock = Any()
         private val states = mutableMapOf<String, RootState>()
 
@@ -631,89 +517,48 @@ internal class SteamVideoStreamCache(
             val state = stateFor(root)
             if (!root.isDirectory) return 0L
             var clearedBytes = 0L
-            val files = root.walkTopDown().filter(File::isFile).toList()
-            files.forEach { file ->
-                val path = file.absolutePath
-                val protectedPath =
-                    if (file.name.endsWith("$CHUNK_SUFFIX$MARKER_SUFFIX")) {
-                        path.removeSuffix(MARKER_SUFFIX)
-                    } else {
-                        path
-                    }
-                if (
-                    state.protectedPathsByOwner.values.any { protectedPath in it } ||
-                    state.activeTemporaryFiles.containsKey(path)
-                ) {
-                    return@forEach
-                }
-                val lock = state.chunkLocks.computeIfAbsent(path) { Mutex() }
-                var deleted = false
-                var length = 0L
-                lock.withLock {
-                    if (
-                        state.protectedPathsByOwner.values.any { protectedPath in it } ||
-                        state.activeTemporaryFiles.containsKey(path)
-                    ) {
-                        return@withLock
-                    }
-                    length = if (file.name.endsWith(MARKER_SUFFIX)) 0L else file.length()
-                    deleted = !file.isFile || file.delete()
-                    if (deleted) {
+            val evictedFiles = mutableListOf<File>()
+            state.evictionMutex.withLock {
+                val files = root.walkTopDown().filter(File::isFile).toList()
+                files.forEach { file ->
+                    val path = file.absolutePath
+                    val protectedPath =
+                        if (file.name.endsWith("$CHUNK_SUFFIX$MARKER_SUFFIX")) {
+                            path.removeSuffix(MARKER_SUFFIX)
+                        } else {
+                            path
+                        }
+                    val lockIndex = (protectedPath.hashCode() and Int.MAX_VALUE) % CHUNK_LOCK_STRIPES
+                    state.chunkLocks[lockIndex].withLock {
                         state.mutex.withLock {
-                            state.currentEntries.remove(path)?.let { entry ->
-                                state.totalBytes = (state.totalBytes - entry.length).coerceAtLeast(0L)
+                            synchronized(state.protectionLock) {
+                                val protected =
+                                    state.protectedPathsByOwner.values.any { protectedPath in it } ||
+                                        state.activeChunkWrites.containsKey(protectedPath) ||
+                                        state.activeTemporaryFiles.containsKey(path)
+                                if (!protected) {
+                                    val length = if (file.name.endsWith(MARKER_SUFFIX)) 0L else file.length()
+                                    val deleted = !file.isFile || file.delete()
+                                    if (deleted) {
+                                        state.currentEntries.remove(path)?.let { entry ->
+                                            state.totalBytes = (state.totalBytes - entry.length).coerceAtLeast(0L)
+                                        }
+                                        state.evictionClaims.remove(path)
+                                        clearedBytes += length
+                                        evictedFiles += file
+                                    }
+                                }
                             }
-                            state.evictionClaims.remove(path)
                         }
                     }
                 }
-                if (deleted) {
-                    clearedBytes += length
-                    state.evictionObservers.values.forEach { observer -> runCatching { observer(file) } }
-                }
+                root.walkBottomUp().filter { it.isDirectory && it != root }.forEach(File::delete)
             }
-            root.walkBottomUp().filter { it.isDirectory && it != root }.forEach(File::delete)
+            evictedFiles.forEach { file ->
+                state.evictionObservers.values.forEach { observer -> runCatching { observer(file) } }
+            }
             return clearedBytes
         }
 
-        private fun streamStagingCapacityBytes(
-            limitBytes: Long,
-            maximumEncryptedChunkBytes: Long,
-            minimumStagingCapacityBytes: Long,
-        ): Long {
-            return maxOf(
-                limitBytes * STAGING_RESERVE_PERCENT / 100L,
-                maximumEncryptedChunkBytes.coerceAtLeast(0L),
-                minimumStagingCapacityBytes.coerceAtLeast(0L),
-            )
-                .coerceIn(1L, limitBytes.coerceAtLeast(1L))
-        }
-    }
-}
-
-internal class SteamEncryptedChunkReservation(
-    val length: Int,
-    private val onRelease: suspend (Int) -> Unit,
-) {
-    private val released = AtomicBoolean(false)
-
-    suspend fun release() {
-        if (released.compareAndSet(false, true)) onRelease(length)
-    }
-}
-
-internal class SteamEncryptedChunkSpool(
-    val file: File,
-    val length: Int,
-    private val reservation: SteamEncryptedChunkReservation,
-    private val onDeleted: () -> Unit,
-) {
-    suspend fun delete() {
-        try {
-            file.delete()
-        } finally {
-            onDeleted()
-            reservation.release()
-        }
     }
 }

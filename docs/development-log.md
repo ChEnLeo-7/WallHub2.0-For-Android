@@ -1,5 +1,14 @@
 # Development Log
 
+## 2026-09-03
+
+### Online video stream cache consistency
+
+- Update: Simplified the decoded video cache by removing the unused encrypted staging/spool subsystem and bounding stream pipeline concurrency by the encrypted-plus-decoded chunk memory peak.
+- Fix: Serialized root eviction, protected active writes and playback windows, bounded per-chunk locks, corrected cache byte accounting, and made foreground reads refetch chunks that disappear after commit.
+- Fix: Cache eviction now invalidates prefetch completion state, stale prefetch jobs cannot clear newer jobs, and coroutine cancellation closes the active OkHttp chunk request.
+- Verification: Added regression coverage for protected eviction, manual clear, commit self-eviction, stale prefetch completion, and stream memory budgeting. Release build and installation are required before manual playback testing.
+
 ## 2026-09-02
 
 ### Steam profile avatar

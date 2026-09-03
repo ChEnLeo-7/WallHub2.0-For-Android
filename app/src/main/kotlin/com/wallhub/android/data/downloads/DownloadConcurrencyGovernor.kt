@@ -263,10 +263,7 @@ internal fun downloadMemoryCapacityBytes(maxHeapBytes: Long): Long =
         maximumValue = DOWNLOAD_MEMORY_MAX_BYTES,
     )
 
-/**
- * JavaSteam temporarily retains the destination array, ResponseBody byte array, Okio
- * segments and the decompressed result for a depot chunk.
- */
+/** Accounts for managed and native buffers retained while a depot chunk is decoded and verified. */
 internal fun estimatedSteamChunkPeakMemoryBytes(
     compressedBytes: Int,
     uncompressedBytes: Int,
