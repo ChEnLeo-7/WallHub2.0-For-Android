@@ -11,14 +11,21 @@ pluginManagement {
     }
 }
 
+val usePatchedKSteam = providers.gradleProperty("wallhub.usePatchedKSteam").orNull == "true"
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        if (usePatchedKSteam) {
+            // The Debug Action patches the pinned kSteam source and publishes it locally.
+            mavenLocal()
+        }
         // Vendored kSteam engine artifacts (built once by the "Build kSteam" CI step and
         // refreshed on demand) so offline LAN workers can resolve kSteam without MavenLocal.
         maven { url = uri("$rootDir/ksteam-maven/repository") }
-        // Resolves the CI-published kSteam engine (see "Build kSteam" workflow steps).
-        mavenLocal()
+        if (!usePatchedKSteam) {
+            mavenLocal()
+        }
         google()
         mavenCentral()
         maven(url = "https://maven.aliyun.com/repository/google")

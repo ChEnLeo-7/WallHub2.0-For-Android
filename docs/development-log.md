@@ -2,6 +2,12 @@
 
 ## 2026-09-03
 
+### Password-only Steam login
+
+- Fix: Credential sessions with no manual Steam Guard method now continue through kSteam auth polling instead of being shown as a phone-confirmation request.
+- Fix: Steam's explicit no-guard response is handled as password-only login; a standalone machine-token challenge is reported clearly instead of hanging.
+- Verification: Added confirmation-state regression coverage; the Debug APK is to be built by GitHub Actions and checked on the connected ADB device for login, download, and online chunked playback.
+
 ### Online video stream cache consistency
 
 - Update: Simplified the decoded video cache by removing the unused encrypted staging/spool subsystem and bounding stream pipeline concurrency by the encrypted-plus-decoded chunk memory peak.

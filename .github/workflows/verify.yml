@@ -45,6 +45,7 @@ jobs:
             git checkout --quiet FETCH_HEAD
           fi
           test "$(git rev-parse HEAD)" = "$KSTEAM_PINNED_SHA"
+          python3 "$GITHUB_WORKSPACE/scripts/patch-ksteam-auth-flow.py"
           git submodule update --init --depth 1
           yes | sdkmanager --licenses >/dev/null || true
           chmod +x gradlew
@@ -127,12 +128,14 @@ jobs:
           chmod +x gradlew
           workers="$(nproc)"
           ./gradlew --no-daemon --parallel --build-cache --max-workers="$workers" \
+            -Pwallhub.usePatchedKSteam=true \
             :app:detektBaseline
       - name: Verify Android application
         run: |
           workers="$(nproc)"
           printf 'Gradle workers: %s\n' "$workers"
           ./gradlew --no-daemon --parallel --build-cache --max-workers="$workers" \
+            -Pwallhub.usePatchedKSteam=true \
             :app:testDebugUnitTest \
             :app:verifyLintSourceWarningBudget \
             detekt \
@@ -178,6 +181,7 @@ jobs:
         run: |
           workers="$(nproc)"
           ./gradlew --no-daemon --parallel --build-cache --max-workers="$workers" \
+            -Pwallhub.usePatchedKSteam=true \
             :app:assembleRelease \
             -Pwallhub.requireReleaseSigning=true
       - name: Verify Release APK size

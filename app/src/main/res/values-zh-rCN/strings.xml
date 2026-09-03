@@ -919,6 +919,7 @@
     <string name='backend_steam_enter_guard_code'>请输入 Steam Guard 手机验证码</string>
     <string name='backend_steam_guard_code_incorrect'>Steam Guard 验证码错误，请重新查看手机</string>
     <string name='backend_steam_login_failed'>Steam 登录验证失败：%1$s</string>
+    <string name='backend_steam_machine_token_unsupported'>此 Steam 登录需要机器令牌，WallHub 当前没有可用令牌。请先在可信 Steam 客户端中登录。</string>
     <string name='backend_steam_login_success'>Steam 登录成功，已加密保存本机登录状态。</string>
     <string name='backend_steam_no_guard_request'>当前没有等待中的 Steam Guard 验证请求</string>
     <string name='backend_steam_no_manual_login'>当前没有可切换为令牌码的登录请求，请重新输入账号和密码。</string>

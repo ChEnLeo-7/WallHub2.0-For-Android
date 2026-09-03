@@ -277,32 +277,27 @@ class KSteamSessionRepository
 
                 auth is AuthorizationState.AwaitingTwoFactor -> {
                     val methods = auth.supportedConfirmationMethods
-                    val requiresCode =
-                        methods.contains(AuthorizationState.AwaitingTwoFactor.ConfirmationMethod.DeviceCode) ||
-                            methods.contains(AuthorizationState.AwaitingTwoFactor.ConfirmationMethod.EmailCode)
-                    val awaitingDevice =
-                        methods.contains(AuthorizationState.AwaitingTwoFactor.ConfirmationMethod.DeviceConfirmation) ||
-                            methods.contains(AuthorizationState.AwaitingTwoFactor.ConfirmationMethod.EmailConfirmation)
+                    val phase = steamLoginPhaseForConfirmations(methods)
                     val previous = mutableSession.value
                     val next =
                         SteamSessionState(
-                            phase =
-                                if (awaitingDevice && !requiresCode) {
-                                    SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION
-                                } else {
-                                    SteamSessionPhase.WAITING_FOR_CODE
-                                },
+                            phase = phase,
                             accountName = pendingAccountName.get() ?: previous.accountName,
                             personaName = previous.personaName,
                             avatarUrl = previous.avatarUrl,
                             message =
-                                if (requiresCode) {
-                                    applicationContext.getString(R.string.backend_steam_enter_guard_code)
-                                } else {
-                                    applicationContext.getString(R.string.backend_steam_confirm_mobile)
+                                when (phase) {
+                                    SteamSessionPhase.WAITING_FOR_CODE ->
+                                        applicationContext.getString(R.string.backend_steam_enter_guard_code)
+                                    SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION ->
+                                        applicationContext.getString(R.string.backend_steam_confirm_mobile)
+                                    SteamSessionPhase.FAILED ->
+                                        applicationContext.getString(R.string.backend_steam_machine_token_unsupported)
+                                    else ->
+                                        applicationContext.getString(R.string.backend_steam_requesting_login)
                                 },
-                            requiresCode = requiresCode,
-                            awaitingDeviceConfirmation = awaitingDevice,
+                            requiresCode = phase == SteamSessionPhase.WAITING_FOR_CODE,
+                            awaitingDeviceConfirmation = phase == SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
                             hasStoredSession = previous.hasStoredSession,
                         )
                     mutableSession.value = next
@@ -1504,3 +1499,21 @@ class KSteamSessionRepository
 
 internal fun Throwable.displayMessage(): String =
     message?.takeIf(String::isNotBlank) ?: javaClass.simpleName
+
+internal fun steamLoginPhaseForConfirmations(
+    methods: Collection<AuthorizationState.AwaitingTwoFactor.ConfirmationMethod>,
+): SteamSessionPhase {
+    val requiresCode =
+        methods.contains(AuthorizationState.AwaitingTwoFactor.ConfirmationMethod.DeviceCode) ||
+            methods.contains(AuthorizationState.AwaitingTwoFactor.ConfirmationMethod.EmailCode)
+    val awaitingDevice =
+        methods.contains(AuthorizationState.AwaitingTwoFactor.ConfirmationMethod.DeviceConfirmation) ||
+            methods.contains(AuthorizationState.AwaitingTwoFactor.ConfirmationMethod.EmailConfirmation)
+    val requiresMachineToken =
+        methods.contains(AuthorizationState.AwaitingTwoFactor.ConfirmationMethod.MachineToken)
+    return when {
+        requiresCode -> SteamSessionPhase.WAITING_FOR_CODE
+        awaitingDevice -> SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION
+        requiresMachineToken -> SteamSessionPhase.FAILED
+        else -> SteamSessionPhase.SIGNING_IN
+    }
