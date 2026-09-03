@@ -387,6 +387,7 @@ class FormalWorkshopDownloadWorker
                     Log.e(
                         DOWNLOAD_LOG_TAG,
                         "Formal Steam download worker failed taskId=$taskId, type=${error.javaClass.name}",
+                        error,
                     )
                     persist(
                         task,
