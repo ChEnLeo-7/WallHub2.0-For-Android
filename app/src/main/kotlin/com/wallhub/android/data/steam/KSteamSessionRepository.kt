@@ -7,6 +7,7 @@ import bruhcollective.itaysonlab.ksteam.SteamClient
 import bruhcollective.itaysonlab.ksteam.handlers.Logger
 import bruhcollective.itaysonlab.ksteam.kSteam
 import bruhcollective.itaysonlab.ksteam.messages.SteamPacket
+import bruhcollective.itaysonlab.ksteam.messages.SteamPacketHeader
 import bruhcollective.itaysonlab.ksteam.models.SteamId
 import bruhcollective.itaysonlab.ksteam.models.account.AuthorizationState
 import bruhcollective.itaysonlab.ksteam.models.account.SteamAccountAuthorization
@@ -844,14 +845,16 @@ class KSteamSessionRepository
             depotId: Int,
             appId: Int,
         ): ByteArray {
-            val response =
-                client.awaitProto(
-                    SteamPacket.newProto(
-                        messageId = EMsg.k_EMsgClientGetDepotDecryptionKey,
-                        payload = CMsgClientGetDepotDecryptionKey(depot_id = depotId, app_id = appId),
-                    ),
-                    CMsgClientGetDepotDecryptionKeyResponse.ADAPTER,
+            val requestPacket =
+                SteamPacket(
+                    messageId = EMsg.k_EMsgClientGetDepotDecryptionKey,
+                    header = SteamPacketHeader.Protobuf(),
+                    payload =
+                        CMsgClientGetDepotDecryptionKey.ADAPTER
+                            .encodeByteString(CMsgClientGetDepotDecryptionKey(depot_id = depotId, app_id = appId))
+                            .toByteArray(),
                 )
+            val response = client.awaitProto(requestPacket, CMsgClientGetDepotDecryptionKeyResponse.ADAPTER)
             check(response.eresult == EResult.OK.encoded) {
                 "Steam did not provide depot key $depotId: EResult ${response.eresult}"
             }

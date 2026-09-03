@@ -8,7 +8,6 @@ plugins {
     alias(libs.plugins.android.legacy.kapt)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
-    alias(libs.plugins.wire)
 }
 
 val releaseStoreFile = providers.environmentVariable("WALLHUB_RELEASE_STORE_FILE").orNull
@@ -152,18 +151,6 @@ android {
     }
     sourceSets.named("androidTest") {
         kotlin.directories += "src/androidTest/kotlin"
-    }
-}
-
-// Steam depot protocol messages consumed with kSteam's Wire transport. Lives outside
-// src/main/proto so it cannot collide with removed protoc tooling.
-wire {
-    sourcePath {
-        srcDir("src/wire/proto")
-    }
-    kotlin {
-        rpcCallStyle = "suspending"
-        rpcRole = "none"
     }
 }
 
