@@ -250,7 +250,7 @@ internal class StreamChunkRequest(
 }
 
 @Singleton
-class SteamContentDownloader
+internal class SteamContentDownloader
     @Inject
     constructor(
         private val sessionRepository: KSteamSessionRepository,

@@ -54,8 +54,9 @@ class CMsgClientGetDepotDecryptionKey(
                     }
                     return CMsgClientGetDepotDecryptionKey(depot_id = depotId, app_id = appId)
                 }
-            }
+
                 override fun redact(value: CMsgClientGetDepotDecryptionKey): CMsgClientGetDepotDecryptionKey = value
+            }
     }
 }
 
@@ -109,8 +110,9 @@ class CMsgClientGetDepotDecryptionKeyResponse(
                         depot_encryption_key = depotKey,
                     )
                 }
-            }
+
                 override fun redact(value: CMsgClientGetDepotDecryptionKeyResponse): CMsgClientGetDepotDecryptionKeyResponse = value
+            }
     }
 }
 
@@ -164,8 +166,9 @@ class ContentManifestPayload(
                     }
                     return ContentManifestPayload(mappings)
                 }
-            }
+
                 override fun redact(value: ContentManifestPayload): ContentManifestPayload = value
+            }
     }
 
     private object FileMappingAdapter : ProtoAdapter<FileMapping>(FieldEncoding.LENGTH_DELIMITED, FileMapping::class) {

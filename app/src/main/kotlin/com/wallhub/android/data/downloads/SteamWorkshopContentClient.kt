@@ -54,7 +54,7 @@ internal class FormalSteamWorkshopContentGateway(
 }
 
 @Singleton
-class SteamWorkshopContentClient private constructor(
+internal class SteamWorkshopContentClient private constructor(
     private val gateway: WorkshopContentGateway,
     @Suppress("UNUSED_PARAMETER") marker: Unit,
 ) {

@@ -74,7 +74,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import okio.ByteString.Companion.decodeHex
 import okio.ByteString.Companion.toByteString
-import okio.toPath
+import okio.Path.Companion.toPath
 import steam.enums.EAuthTokenPlatformType
 import steam.webui.common.CMsgClientLogon
 import steam.webui.common.CMsgClientLogonResponse

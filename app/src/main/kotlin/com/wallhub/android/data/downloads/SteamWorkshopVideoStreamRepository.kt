@@ -16,7 +16,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class SteamWorkshopVideoStreamRepository
+internal class SteamWorkshopVideoStreamRepository
     @Inject
     constructor(
         @ApplicationContext private val context: Context,
