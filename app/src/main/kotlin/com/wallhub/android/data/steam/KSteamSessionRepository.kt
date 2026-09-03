@@ -160,7 +160,7 @@ class KSteamSessionRepository
 
         private fun buildClient(rootDirectory: File): SteamClient =
             kSteam {
-                rootFolder = rootDirectory.toPath()
+                rootFolder = rootDirectory.absolutePath.toPath()
                 deviceInfo = deviceInformation()
                 loggingVerbosity = Logger.Verbosity.Warning
                 persistenceDriver = KsteamEncryptedPersistenceDriver(applicationContext)
@@ -774,7 +774,7 @@ class KSteamSessionRepository
                 val created =
                     runCatching {
                         kSteam {
-                            rootFolder = File(applicationContext.cacheDir, "ksteam-anonymous").toPath()
+                            rootFolder = File(applicationContext.cacheDir, "ksteam-anonymous").absolutePath.toPath()
                             deviceInfo = deviceInformation()
                             loggingVerbosity = Logger.Verbosity.Warning
                             persistenceDriver = MemoryPersistenceDriver
