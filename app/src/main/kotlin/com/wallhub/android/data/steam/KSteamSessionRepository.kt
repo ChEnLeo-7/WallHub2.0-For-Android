@@ -1517,3 +1517,4 @@ internal fun steamLoginPhaseForConfirmations(
         requiresMachineToken -> SteamSessionPhase.FAILED
         else -> SteamSessionPhase.SIGNING_IN
     }
+}
