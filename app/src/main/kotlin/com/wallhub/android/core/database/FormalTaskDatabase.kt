@@ -82,6 +82,12 @@ interface FormalTaskRecordDao {
     @Query("SELECT * FROM formal_task_records WHERE taskId = :taskId LIMIT 1")
     suspend fun find(taskId: String): FormalTaskRecordEntity?
 
+    @Query(
+        "SELECT * FROM formal_task_records WHERE status IN ('QUEUED') " +
+            "ORDER BY queuePosition ASC LIMIT 1",
+    )
+    suspend fun findOldestQueued(): FormalTaskRecordEntity?
+
     @Query("SELECT * FROM formal_task_records")
     suspend fun listAll(): List<FormalTaskRecordEntity>
 

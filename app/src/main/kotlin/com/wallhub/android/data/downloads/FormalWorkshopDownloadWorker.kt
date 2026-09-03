@@ -103,7 +103,17 @@ class FormalWorkshopDownloadWorker
     ) : CoroutineWorker(appContext, params) {
         override suspend fun doWork(): Result =
             withContext(Dispatchers.IO) {
-                val taskId = inputData.getString(KEY_TASK_ID)
+                // Some Android 16 ROM deliveries of the expedited job arrive with the
+                // WorkManager input data stripped; fall back to the oldest queued task
+                // so the download can still proceed.
+                var taskId = inputData.getString(KEY_TASK_ID)
+                if (taskId == null) {
+                    taskId = taskDao.findOldestQueued()?.taskId
+                    Log.w(
+                        DOWNLOAD_LOG_TAG,
+                        "doWork input data empty; adopting queued task=$taskId",
+                    )
+                }
                 if (taskId == null) {
                     Log.w(DOWNLOAD_LOG_TAG, "doWork missing input data; keys=${inputData.keyValueMap.keys}")
                     return@withContext Result.failure()
