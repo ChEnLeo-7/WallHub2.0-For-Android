@@ -1,0 +1,201 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "bruhcollective.itaysonlab.ksteam",
+    "module": "core",
+    "version": "r50",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.13"
+    }
+  },
+  "variants": [
+    {
+      "name": "metadataApiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.platform.type": "common"
+      },
+      "dependencies": [
+        {
+          "group": "bruhcollective.itaysonlab",
+          "module": "kotlinx-vdf",
+          "version": {
+            "requires": "r50"
+          }
+        },
+        {
+          "group": "bruhcollective.itaysonlab.ksteam",
+          "module": "proto-common",
+          "version": {
+            "requires": "r50"
+          }
+        },
+        {
+          "group": "com.squareup.wire",
+          "module": "wire-runtime",
+          "version": {
+            "requires": "5.5.1"
+          }
+        },
+        {
+          "group": "com.squareup.wire",
+          "module": "wire-grpc-client",
+          "version": {
+            "requires": "5.5.1"
+          },
+          "excludes": [
+            {
+              "group": "com.squareup.okhttp3",
+              "module": "okhttp"
+            }
+          ]
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.3.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "core-metadata-r50.jar",
+          "url": "core-r50.jar",
+          "size": 884,
+          "sha512": "1fa653d9e717cb3ae49e19df06e545bd708617c023067f24f336e5a4fad1b2fbdcc4c39538d6232aac6c13603a1bbfb5b66271d04c2638d3ba59a5cdf11326e6",
+          "sha256": "f87e8cf7dba4259ea87e7e42c24937508b80629943c423b8d02240efedea028b",
+          "sha1": "df796970631846044a0336916d8ef0a98d61f8cc",
+          "md5": "3eded02ef30c1dc3a2cfca1e000f7397"
+        }
+      ]
+    },
+    {
+      "name": "metadataSourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.platform.type": "common"
+      },
+      "files": [
+        {
+          "name": "core-kotlin-r50-sources.jar",
+          "url": "core-r50-sources.jar",
+          "size": 79143,
+          "sha512": "32707bde123f0532c9cb1a1eedb43c65a962d581f1d030bdf9433e6579316009f7f06368655687c89625bac9067c4a595dda4cc5df34976e5733ab630504197c",
+          "sha256": "677210a692c8db7c415610a1e01ef0fc987834df40fdb48c5a4f0464a24457bc",
+          "sha1": "d296ebf5a83e3e68aca70ffd1f678153f9607627",
+          "md5": "34af4cb37294b55bd8deb889ef2c0e78"
+        }
+      ]
+    },
+    {
+      "name": "releaseApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "available-at": {
+        "url": "../../core-android/r50/core-android-r50.module",
+        "group": "bruhcollective.itaysonlab.ksteam",
+        "module": "core-android",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "releaseRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "available-at": {
+        "url": "../../core-android/r50/core-android-r50.module",
+        "group": "bruhcollective.itaysonlab.ksteam",
+        "module": "core-android",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "releaseSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "available-at": {
+        "url": "../../core-android/r50/core-android-r50.module",
+        "group": "bruhcollective.itaysonlab.ksteam",
+        "module": "core-android",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../core-jvm/r50/core-jvm-r50.module",
+        "group": "bruhcollective.itaysonlab.ksteam",
+        "module": "core-jvm",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../core-jvm/r50/core-jvm-r50.module",
+        "group": "bruhcollective.itaysonlab.ksteam",
+        "module": "core-jvm",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../core-jvm/r50/core-jvm-r50.module",
+        "group": "bruhcollective.itaysonlab.ksteam",
+        "module": "core-jvm",
+        "version": "r50"
+      }
+    }
+  ]
+}

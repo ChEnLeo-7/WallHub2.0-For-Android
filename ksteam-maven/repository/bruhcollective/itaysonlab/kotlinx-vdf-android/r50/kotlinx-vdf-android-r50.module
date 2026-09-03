@@ -1,0 +1,204 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../kotlinx-vdf/r50/kotlinx-vdf-r50.module",
+    "group": "bruhcollective.itaysonlab",
+    "module": "kotlinx-vdf",
+    "version": "r50",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.13"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.3.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "kotlinx-vdf-release.aar",
+          "url": "kotlinx-vdf-android-r50.aar",
+          "size": 40562,
+          "sha512": "99c7a5b8d88001bde5e3749dcf68619efa3aae0a3b49639916e6b1c14a590b65dd15384f785c239e78a720967212374afe1390fb5ef4c99885531a86e6df1abd",
+          "sha256": "1f2908fc3c9e5a1d5224b0586635df1044984ef9351ecbe6a995ef2e47c7f1f9",
+          "sha1": "026b51bcd8785ea4dab1e13d5a66574ee48f111b",
+          "md5": "2b931de040bfc09795e87c2ad5ba9b38"
+        }
+      ]
+    },
+    {
+      "name": "releaseRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.3.20"
+          },
+          "excludes": [
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-test",
+          "excludes": [
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-serialization-core",
+          "version": {
+            "requires": "1.10.0"
+          },
+          "excludes": [
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        },
+        {
+          "group": "com.squareup.okio",
+          "module": "okio",
+          "version": {
+            "requires": "3.17.0"
+          },
+          "excludes": [
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        },
+        {
+          "group": "de.cketti.unicode",
+          "module": "kotlin-codepoints-deluxe",
+          "version": {
+            "requires": "0.6.1"
+          },
+          "excludes": [
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        }
+      ],
+      "dependencyConstraints": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-test",
+          "version": {
+            "requires": "2.3.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "kotlinx-vdf-release.aar",
+          "url": "kotlinx-vdf-android-r50.aar",
+          "size": 40562,
+          "sha512": "99c7a5b8d88001bde5e3749dcf68619efa3aae0a3b49639916e6b1c14a590b65dd15384f785c239e78a720967212374afe1390fb5ef4c99885531a86e6df1abd",
+          "sha256": "1f2908fc3c9e5a1d5224b0586635df1044984ef9351ecbe6a995ef2e47c7f1f9",
+          "sha1": "026b51bcd8785ea4dab1e13d5a66574ee48f111b",
+          "md5": "2b931de040bfc09795e87c2ad5ba9b38"
+        }
+      ]
+    },
+    {
+      "name": "releaseSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "files": [
+        {
+          "name": "kotlinx-vdf-android-r50-sources.jar",
+          "url": "kotlinx-vdf-android-r50-sources.jar",
+          "size": 8029,
+          "sha512": "259388748baa459c65f51285542e2a218486f507af1035bc76e835a8460291291d65c4890c201dfad3d25f57698be0867f0301fe91a000c89ddf0e3f09993421",
+          "sha256": "01bbf7d83ff66b5f2520a9fd67952956d424d23c52a5446397495b975f4871e9",
+          "sha1": "bb459e67526b856fec11ff397ec1a393413c9a16",
+          "md5": "f0f5cc50586a8d43d10114a7b6aba2b2"
+        }
+      ]
+    }
+  ]
+}

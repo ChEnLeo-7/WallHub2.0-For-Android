@@ -1,0 +1,151 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../core-persistence/r50/core-persistence-r50.module",
+    "group": "bruhcollective.itaysonlab.ksteam",
+    "module": "core-persistence",
+    "version": "r50",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.13"
+    }
+  },
+  "variants": [
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "bruhcollective.itaysonlab.ksteam",
+          "module": "core",
+          "version": {
+            "requires": "r50"
+          }
+        },
+        {
+          "group": "bruhcollective.itaysonlab.ksteam",
+          "module": "proto-common",
+          "version": {
+            "requires": "r50"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.3.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "core-persistence-jvm-r50.jar",
+          "url": "core-persistence-jvm-r50.jar",
+          "size": 7821,
+          "sha512": "7dbb73217fed5f590f77e3cab323fc5c5cb2fe3906c413e9ecc68ce027ce513087b9b0e17841abf46c7f45b3082b6c5dec68e4dd5626cfb5534f2a89f65bf02d",
+          "sha256": "09acf601b9141b2dc2d5cc11b228f8a2df47db891a1da98986e63998db2364e0",
+          "sha1": "f6fa4fa507877d036c216aaa5bf099515a621eb0",
+          "md5": "bbbc2366d7ebc0caa6bdafadeecd3c63"
+        }
+      ]
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "bruhcollective.itaysonlab.ksteam",
+          "module": "core",
+          "version": {
+            "requires": "r50"
+          }
+        },
+        {
+          "group": "bruhcollective.itaysonlab.ksteam",
+          "module": "proto-common",
+          "version": {
+            "requires": "r50"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.3.20"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-serialization-json",
+          "version": {
+            "requires": "1.10.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-serialization-json-okio",
+          "version": {
+            "requires": "1.10.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-datetime",
+          "version": {
+            "requires": "0.7.1"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "core-persistence-jvm-r50.jar",
+          "url": "core-persistence-jvm-r50.jar",
+          "size": 7821,
+          "sha512": "7dbb73217fed5f590f77e3cab323fc5c5cb2fe3906c413e9ecc68ce027ce513087b9b0e17841abf46c7f45b3082b6c5dec68e4dd5626cfb5534f2a89f65bf02d",
+          "sha256": "09acf601b9141b2dc2d5cc11b228f8a2df47db891a1da98986e63998db2364e0",
+          "sha1": "f6fa4fa507877d036c216aaa5bf099515a621eb0",
+          "md5": "bbbc2366d7ebc0caa6bdafadeecd3c63"
+        }
+      ]
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "files": [
+        {
+          "name": "core-persistence-jvm-r50-sources.jar",
+          "url": "core-persistence-jvm-r50-sources.jar",
+          "size": 2211,
+          "sha512": "d87952351f1f3d182f79799f7a1463f7e1dd990d2b107a8b79e024cd0136464e9fe57a453fa98f65b322878b93222afb94cda3dc8b340467b8cec63a524a0b49",
+          "sha256": "2e31c8d36ab09cf9dfe94f59bf1d38937f1b9ad6eaff972ccffc4601ecc75a58",
+          "sha1": "3ea8fee375d301ba54735f4d64b000c4fef2c810",
+          "md5": "9df6dce8fc912290fbc55d869aa04147"
+        }
+      ]
+    }
+  ]
+}

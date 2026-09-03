@@ -1,0 +1,200 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../proto-common/r50/proto-common-r50.module",
+    "group": "bruhcollective.itaysonlab.ksteam",
+    "module": "proto-common",
+    "version": "r50",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.13"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "dependencies": [
+        {
+          "group": "com.squareup.wire",
+          "module": "wire-grpc-client",
+          "version": {
+            "requires": "5.5.1"
+          },
+          "excludes": [
+            {
+              "group": "com.squareup.okhttp3",
+              "module": "okhttp"
+            }
+          ]
+        },
+        {
+          "group": "com.squareup.wire",
+          "module": "wire-runtime",
+          "version": {
+            "requires": "5.5.1"
+          },
+          "excludes": [
+            {
+              "group": "com.squareup.okhttp3",
+              "module": "okhttp"
+            }
+          ]
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.3.20"
+          },
+          "excludes": [
+            {
+              "group": "com.squareup.okhttp3",
+              "module": "okhttp"
+            }
+          ]
+        }
+      ],
+      "files": [
+        {
+          "name": "proto-common-release.aar",
+          "url": "proto-common-android-r50.aar",
+          "size": 20608585,
+          "sha512": "487c14fc393dabd9d8de0a7e6f3a38cb7ad5ae11c4181ebefd86ab8574378075c31923a2892782c21eefe62bb2edb7e95c61473aeff71229f89769a446f61ce9",
+          "sha256": "08c5f366b78bfa2b2dbde84b75b376b573710b29187a711a813682ac4fd18bd4",
+          "sha1": "4a2e2590768efe3da20e14314b462cb155553c2c",
+          "md5": "641df0abd7e98e295f6a641268f2f500"
+        }
+      ]
+    },
+    {
+      "name": "releaseRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "dependencies": [
+        {
+          "group": "com.squareup.wire",
+          "module": "wire-grpc-client",
+          "version": {
+            "requires": "5.5.1"
+          },
+          "excludes": [
+            {
+              "group": "com.squareup.okhttp3",
+              "module": "okhttp"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        },
+        {
+          "group": "com.squareup.wire",
+          "module": "wire-runtime",
+          "version": {
+            "requires": "5.5.1"
+          },
+          "excludes": [
+            {
+              "group": "com.squareup.okhttp3",
+              "module": "okhttp"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.3.20"
+          },
+          "excludes": [
+            {
+              "group": "com.squareup.okhttp3",
+              "module": "okhttp"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        }
+      ],
+      "files": [
+        {
+          "name": "proto-common-release.aar",
+          "url": "proto-common-android-r50.aar",
+          "size": 20608585,
+          "sha512": "487c14fc393dabd9d8de0a7e6f3a38cb7ad5ae11c4181ebefd86ab8574378075c31923a2892782c21eefe62bb2edb7e95c61473aeff71229f89769a446f61ce9",
+          "sha256": "08c5f366b78bfa2b2dbde84b75b376b573710b29187a711a813682ac4fd18bd4",
+          "sha1": "4a2e2590768efe3da20e14314b462cb155553c2c",
+          "md5": "641df0abd7e98e295f6a641268f2f500"
+        }
+      ]
+    },
+    {
+      "name": "releaseSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "files": [
+        {
+          "name": "proto-common-android-r50-sources.jar",
+          "url": "proto-common-android-r50-sources.jar",
+          "size": 5922729,
+          "sha512": "5610b9efdb3860dd0357decf3efa18505d79397e3a4e57831a814c97d1bfcaaeba94a0f5b2b76d978447cb67ec244d2984986dd5f0396c452471447e71be3bb4",
+          "sha256": "2617e8c78c68160c0e72831b51bc59e745c8141d93b7f014694d78527e183cf9",
+          "sha1": "7ff3478881a79ad3afd1b0105c1ab96eb0ad9f00",
+          "md5": "4fd0d302bca839569df57b63c251ebe9"
+        }
+      ]
+    }
+  ]
+}

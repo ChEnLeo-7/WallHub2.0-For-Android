@@ -1,0 +1,187 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "bruhcollective.itaysonlab.ksteam",
+    "module": "proto-common",
+    "version": "r50",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.13"
+    }
+  },
+  "variants": [
+    {
+      "name": "metadataApiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.platform.type": "common"
+      },
+      "dependencies": [
+        {
+          "group": "com.squareup.wire",
+          "module": "wire-grpc-client",
+          "version": {
+            "requires": "5.5.1"
+          },
+          "excludes": [
+            {
+              "group": "com.squareup.okhttp3",
+              "module": "okhttp"
+            }
+          ]
+        },
+        {
+          "group": "com.squareup.wire",
+          "module": "wire-runtime",
+          "version": {
+            "requires": "5.5.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.3.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "proto-common-metadata-r50.jar",
+          "url": "proto-common-r50.jar",
+          "size": 713,
+          "sha512": "59ecc81feec73580d960337252d77d52b1fae5329649bad1a597fcb03b834f99cc24bb7e4db655ba2cc985213154311eb8b4e0896d76367db3bed77e683941e8",
+          "sha256": "1571ee760f8db6d6d6cd9928db8adbeba3c732ec5b2cf74326f25c790ebbc442",
+          "sha1": "9db71469c95767cc45fa368440499c3a83a2bd5b",
+          "md5": "2afacbe5ad18c79fcc1e5675e96f732b"
+        }
+      ]
+    },
+    {
+      "name": "metadataSourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.platform.type": "common"
+      },
+      "files": [
+        {
+          "name": "proto-common-kotlin-r50-sources.jar",
+          "url": "proto-common-r50-sources.jar",
+          "size": 5922729,
+          "sha512": "5610b9efdb3860dd0357decf3efa18505d79397e3a4e57831a814c97d1bfcaaeba94a0f5b2b76d978447cb67ec244d2984986dd5f0396c452471447e71be3bb4",
+          "sha256": "2617e8c78c68160c0e72831b51bc59e745c8141d93b7f014694d78527e183cf9",
+          "sha1": "7ff3478881a79ad3afd1b0105c1ab96eb0ad9f00",
+          "md5": "4fd0d302bca839569df57b63c251ebe9"
+        }
+      ]
+    },
+    {
+      "name": "releaseApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "available-at": {
+        "url": "../../proto-common-android/r50/proto-common-android-r50.module",
+        "group": "bruhcollective.itaysonlab.ksteam",
+        "module": "proto-common-android",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "releaseRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "available-at": {
+        "url": "../../proto-common-android/r50/proto-common-android-r50.module",
+        "group": "bruhcollective.itaysonlab.ksteam",
+        "module": "proto-common-android",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "releaseSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "available-at": {
+        "url": "../../proto-common-android/r50/proto-common-android-r50.module",
+        "group": "bruhcollective.itaysonlab.ksteam",
+        "module": "proto-common-android",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../proto-common-jvm/r50/proto-common-jvm-r50.module",
+        "group": "bruhcollective.itaysonlab.ksteam",
+        "module": "proto-common-jvm",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../proto-common-jvm/r50/proto-common-jvm-r50.module",
+        "group": "bruhcollective.itaysonlab.ksteam",
+        "module": "proto-common-jvm",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../proto-common-jvm/r50/proto-common-jvm-r50.module",
+        "group": "bruhcollective.itaysonlab.ksteam",
+        "module": "proto-common-jvm",
+        "version": "r50"
+      }
+    }
+  ]
+}

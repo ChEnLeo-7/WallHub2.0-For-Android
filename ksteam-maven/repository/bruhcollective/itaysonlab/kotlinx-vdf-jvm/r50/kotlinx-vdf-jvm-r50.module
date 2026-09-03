@@ -1,0 +1,136 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../kotlinx-vdf/r50/kotlinx-vdf-r50.module",
+    "group": "bruhcollective.itaysonlab",
+    "module": "kotlinx-vdf",
+    "version": "r50",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.13"
+    }
+  },
+  "variants": [
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.3.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "kotlinx-vdf-jvm-r50.jar",
+          "url": "kotlinx-vdf-jvm-r50.jar",
+          "size": 45080,
+          "sha512": "1e65dcaa35c298995848541754ef063571c64b84c21bd093da769c668dff4dcaec3cc54e260f59a4dddb31b3b9c95bae4c16ce78c80eb2e51333be2a70dc3fbd",
+          "sha256": "435b4e467c94225d485c979ed50ad330ad3ea21147dd89a417e220b76d69eda3",
+          "sha1": "e35f19d609ef37bc18b7fd599941865809659705",
+          "md5": "225d04fe0c945a4fe24ad78e487b6627"
+        }
+      ]
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.3.20"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-test"
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-serialization-core",
+          "version": {
+            "requires": "1.10.0"
+          }
+        },
+        {
+          "group": "com.squareup.okio",
+          "module": "okio",
+          "version": {
+            "requires": "3.17.0"
+          }
+        },
+        {
+          "group": "de.cketti.unicode",
+          "module": "kotlin-codepoints-deluxe",
+          "version": {
+            "requires": "0.6.1"
+          }
+        }
+      ],
+      "dependencyConstraints": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-test",
+          "version": {
+            "requires": "2.3.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "kotlinx-vdf-jvm-r50.jar",
+          "url": "kotlinx-vdf-jvm-r50.jar",
+          "size": 45080,
+          "sha512": "1e65dcaa35c298995848541754ef063571c64b84c21bd093da769c668dff4dcaec3cc54e260f59a4dddb31b3b9c95bae4c16ce78c80eb2e51333be2a70dc3fbd",
+          "sha256": "435b4e467c94225d485c979ed50ad330ad3ea21147dd89a417e220b76d69eda3",
+          "sha1": "e35f19d609ef37bc18b7fd599941865809659705",
+          "md5": "225d04fe0c945a4fe24ad78e487b6627"
+        }
+      ]
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "files": [
+        {
+          "name": "kotlinx-vdf-jvm-r50-sources.jar",
+          "url": "kotlinx-vdf-jvm-r50-sources.jar",
+          "size": 8029,
+          "sha512": "259388748baa459c65f51285542e2a218486f507af1035bc76e835a8460291291d65c4890c201dfad3d25f57698be0867f0301fe91a000c89ddf0e3f09993421",
+          "sha256": "01bbf7d83ff66b5f2520a9fd67952956d424d23c52a5446397495b975f4871e9",
+          "sha1": "bb459e67526b856fec11ff397ec1a393413c9a16",
+          "md5": "f0f5cc50586a8d43d10114a7b6aba2b2"
+        }
+      ]
+    }
+  ]
+}

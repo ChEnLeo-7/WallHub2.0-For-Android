@@ -1,0 +1,167 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "bruhcollective.itaysonlab",
+    "module": "kotlinx-vdf",
+    "version": "r50",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.13"
+    }
+  },
+  "variants": [
+    {
+      "name": "metadataApiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.platform.type": "common"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.3.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "kotlinx-vdf-metadata-r50.jar",
+          "url": "kotlinx-vdf-r50.jar",
+          "size": 749,
+          "sha512": "2d4f003750d7e0d72ad7b4731860664a33804693ab2f50707e0a930b40a1df8dd5e319bfcd02fd4179e1adf20a87dc75f13a52aede987186a0785036f12d581e",
+          "sha256": "eab71e827a8fef2dfc58577b7cecb291827fe337923faac9bf0d952d5b92d125",
+          "sha1": "222dfb88428b83827791f49616604b78de7181af",
+          "md5": "6b23a9943ab04ca347da767ad9da2923"
+        }
+      ]
+    },
+    {
+      "name": "metadataSourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.platform.type": "common"
+      },
+      "files": [
+        {
+          "name": "kotlinx-vdf-kotlin-r50-sources.jar",
+          "url": "kotlinx-vdf-r50-sources.jar",
+          "size": 8029,
+          "sha512": "259388748baa459c65f51285542e2a218486f507af1035bc76e835a8460291291d65c4890c201dfad3d25f57698be0867f0301fe91a000c89ddf0e3f09993421",
+          "sha256": "01bbf7d83ff66b5f2520a9fd67952956d424d23c52a5446397495b975f4871e9",
+          "sha1": "bb459e67526b856fec11ff397ec1a393413c9a16",
+          "md5": "f0f5cc50586a8d43d10114a7b6aba2b2"
+        }
+      ]
+    },
+    {
+      "name": "releaseApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "available-at": {
+        "url": "../../kotlinx-vdf-android/r50/kotlinx-vdf-android-r50.module",
+        "group": "bruhcollective.itaysonlab",
+        "module": "kotlinx-vdf-android",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "releaseRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "available-at": {
+        "url": "../../kotlinx-vdf-android/r50/kotlinx-vdf-android-r50.module",
+        "group": "bruhcollective.itaysonlab",
+        "module": "kotlinx-vdf-android",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "releaseSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "available-at": {
+        "url": "../../kotlinx-vdf-android/r50/kotlinx-vdf-android-r50.module",
+        "group": "bruhcollective.itaysonlab",
+        "module": "kotlinx-vdf-android",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlinx-vdf-jvm/r50/kotlinx-vdf-jvm-r50.module",
+        "group": "bruhcollective.itaysonlab",
+        "module": "kotlinx-vdf-jvm",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlinx-vdf-jvm/r50/kotlinx-vdf-jvm-r50.module",
+        "group": "bruhcollective.itaysonlab",
+        "module": "kotlinx-vdf-jvm",
+        "version": "r50"
+      }
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlinx-vdf-jvm/r50/kotlinx-vdf-jvm-r50.module",
+        "group": "bruhcollective.itaysonlab",
+        "module": "kotlinx-vdf-jvm",
+        "version": "r50"
+      }
+    }
+  ]
+}

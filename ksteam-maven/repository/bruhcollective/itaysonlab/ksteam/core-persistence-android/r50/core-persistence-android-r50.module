@@ -1,0 +1,254 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../core-persistence/r50/core-persistence-r50.module",
+    "group": "bruhcollective.itaysonlab.ksteam",
+    "module": "core-persistence",
+    "version": "r50",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.13"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "dependencies": [
+        {
+          "group": "bruhcollective.itaysonlab.ksteam",
+          "module": "core",
+          "version": {
+            "requires": "r50"
+          }
+        },
+        {
+          "group": "bruhcollective.itaysonlab.ksteam",
+          "module": "proto-common",
+          "version": {
+            "requires": "r50"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.3.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "core-persistence-release.aar",
+          "url": "core-persistence-android-r50.aar",
+          "size": 14437,
+          "sha512": "c50eb06515203b7322b97d2ba9df63f9f59a1a3d319b61489fba3cc2ff0757278beb7aa1ac792f6a00c4536738cad5ba0e8db430f70e4f30f4b1e245032192bd",
+          "sha256": "61e317fe57005e19dd7d34c12e1530ccff3104df67fe5a0b11f437a80c93924d",
+          "sha1": "7209d6020af7a178e3f23771dfe251c62e2d73b7",
+          "md5": "6bc3fcaaafdf1827a9aefe92a1c7c6c7"
+        }
+      ]
+    },
+    {
+      "name": "releaseRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.security",
+          "module": "security-crypto-ktx",
+          "version": {
+            "requires": "1.1.0"
+          },
+          "excludes": [
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        },
+        {
+          "group": "bruhcollective.itaysonlab.ksteam",
+          "module": "core",
+          "version": {
+            "requires": "r50"
+          },
+          "excludes": [
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        },
+        {
+          "group": "bruhcollective.itaysonlab.ksteam",
+          "module": "proto-common",
+          "version": {
+            "requires": "r50"
+          },
+          "excludes": [
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.3.20"
+          },
+          "excludes": [
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-serialization-json",
+          "version": {
+            "requires": "1.10.0"
+          },
+          "excludes": [
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-serialization-json-okio",
+          "version": {
+            "requires": "1.10.0"
+          },
+          "excludes": [
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-datetime",
+          "version": {
+            "requires": "0.7.1"
+          },
+          "excludes": [
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-stdlib-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-common"
+            },
+            {
+              "group": "org.jetbrains.kotlin",
+              "module": "kotlin-test-annotations-common"
+            }
+          ]
+        }
+      ],
+      "files": [
+        {
+          "name": "core-persistence-release.aar",
+          "url": "core-persistence-android-r50.aar",
+          "size": 14437,
+          "sha512": "c50eb06515203b7322b97d2ba9df63f9f59a1a3d319b61489fba3cc2ff0757278beb7aa1ac792f6a00c4536738cad5ba0e8db430f70e4f30f4b1e245032192bd",
+          "sha256": "61e317fe57005e19dd7d34c12e1530ccff3104df67fe5a0b11f437a80c93924d",
+          "sha1": "7209d6020af7a178e3f23771dfe251c62e2d73b7",
+          "md5": "6bc3fcaaafdf1827a9aefe92a1c7c6c7"
+        }
+      ]
+    },
+    {
+      "name": "releaseSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "files": [
+        {
+          "name": "core-persistence-android-r50-sources.jar",
+          "url": "core-persistence-android-r50-sources.jar",
+          "size": 4846,
+          "sha512": "f8e6df7e9f58552355da7e35d4e5826927450e1473d694487034472b278826013342b9c390e7063bdf61ddaede8b79976db63bb27fbded83810b7297e6c849cd",
+          "sha256": "058145c101a03949f8357ef98c4df4a887e06a69b4ad499449eba1662f7efcdf",
+          "sha1": "4ceb425b2de5972560fc88afa6e237c0e268ba36",
+          "md5": "1b8b785b6f5d4a065cb9b4040b810f22"
+        }
+      ]
+    }
+  ]
+}

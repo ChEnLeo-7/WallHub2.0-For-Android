@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>bruhcollective.itaysonlab</groupId>
+  <artifactId>kotlinx-vdf</artifactId>
+  <versioning>
+    <latest>r50</latest>
+    <release>r50</release>
+    <versions>
+      <version>r50</version>
+    </versions>
+    <lastUpdated>20260903041049</lastUpdated>
+  </versioning>
+</metadata>
