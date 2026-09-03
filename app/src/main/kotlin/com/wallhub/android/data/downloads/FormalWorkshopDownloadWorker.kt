@@ -129,6 +129,7 @@ class FormalWorkshopDownloadWorker
                 var stagingDirectory: File? = null
                 try {
                     setForeground(createForegroundInfo())
+                    Log.i(DOWNLOAD_LOG_TAG, "Foreground set for taskId=$taskId")
                     val downloadPreferences = settingsRepository.preferences.first()
                     task =
                         persist(
@@ -255,6 +256,13 @@ class FormalWorkshopDownloadWorker
                                 val enteringDownloadPhase =
                                     progress.phase == SteamDownloadPhase.DOWNLOADING &&
                                         previousPhase != SteamDownloadPhase.DOWNLOADING
+                                if (progress.phase != previousPhase) {
+                                    Log.i(
+                                        DOWNLOAD_LOG_TAG,
+                                        "taskId=$taskId phase ${previousPhase} -> ${progress.phase} " +
+                                            "(${progress.completedBytes}/${progress.totalBytes} bytes)",
+                                    )
+                                }
                                 val shouldPersist =
                                     progress.phase != previousPhase ||
                                         now - lastPersistedAt >= PROGRESS_PERSIST_INTERVAL_MS ||
@@ -359,6 +367,11 @@ class FormalWorkshopDownloadWorker
                     )
                     Result.success()
                 } catch (error: CancellationException) {
+                    Log.w(
+                        DOWNLOAD_LOG_TAG,
+                        "Formal Steam download worker cancelled taskId=$taskId",
+                        error,
+                    )
                     withContext(kotlinx.coroutines.NonCancellable) {
                         val cancellationRequested =
                             taskDao.find(taskId)?.requestedAction == DownloadAction.CANCEL.name

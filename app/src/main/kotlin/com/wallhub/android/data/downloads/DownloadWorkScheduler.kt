@@ -1,6 +1,7 @@
 package com.wallhub.android.data.downloads
 
 import android.content.Context
+import android.util.Log
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
@@ -54,6 +55,11 @@ class WorkManagerDownloadWorkScheduler
         }
 
         override fun cancel(taskId: String) {
+            Log.w(
+                "WallHubDownloadScheduler",
+                "cancel($taskId) requested",
+                Exception("cancel trace"),
+            )
             WorkManager.getInstance(context).cancelUniqueWork(
                 FormalWorkshopDownloadWorker.UNIQUE_DOWNLOAD_WORK_PREFIX + taskId,
             )
