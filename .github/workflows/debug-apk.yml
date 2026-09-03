@@ -77,7 +77,7 @@ jobs:
 
           def fix_once():
               proc = subprocess.run(
-                  ["./gradlew", "--no-daemon", ":proto-common:generateCommonMainProtos"],
+                  ["./gradlew", "--no-daemon", ":proto-common:generateCommonMainProtos", "--stacktrace"],
                   capture_output=True,
                   text=True,
               )
@@ -111,9 +111,10 @@ jobs:
               ok, changed, output = fix_once()
               print("proto repair attempt %d: ok=%s fixes=%d" % (attempt, ok, changed))
               if not ok:
-                  for line in output.splitlines():
-                      if re.search(r"error|unable to resolve|needs to import|What went wrong|> ", line):
-                          print("GRADLE:", line.strip()[:300])
+                  tail = output.splitlines()
+                  for index, line in enumerate(tail):
+                      if re.search(r"error|unable to resolve|needs to import|What went wrong|Caused by|For input string|\.proto", line):
+                          print("GRADLE:", line.strip()[:400])
               if ok:
                   break
               if changed == 0:
