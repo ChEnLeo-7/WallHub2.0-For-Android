@@ -103,8 +103,17 @@ class FormalWorkshopDownloadWorker
     ) : CoroutineWorker(appContext, params) {
         override suspend fun doWork(): Result =
             withContext(Dispatchers.IO) {
-                val taskId = inputData.getString(KEY_TASK_ID) ?: return@withContext Result.failure()
-                var task = taskDao.find(taskId) ?: return@withContext Result.failure()
+                val taskId = inputData.getString(KEY_TASK_ID)
+                if (taskId == null) {
+                    Log.w(DOWNLOAD_LOG_TAG, "doWork missing input data; keys=${inputData.keyValueMap.keys}")
+                    return@withContext Result.failure()
+                }
+                val found = taskDao.find(taskId)
+                if (found == null) {
+                    Log.w(DOWNLOAD_LOG_TAG, "doWork task record missing taskId=$taskId")
+                    return@withContext Result.failure()
+                }
+                var task: FormalTaskRecordEntity = found
                 Log.i(DOWNLOAD_LOG_TAG, "Started formal Steam download worker taskId=$taskId")
                 if (task.status in setOf(DownloadStatus.COMPLETED.name, DownloadStatus.CANCELLED.name)) {
                     return@withContext Result.success()
