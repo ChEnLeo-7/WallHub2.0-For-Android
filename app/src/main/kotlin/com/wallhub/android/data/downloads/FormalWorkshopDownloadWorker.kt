@@ -147,8 +147,10 @@ class FormalWorkshopDownloadWorker
                 ActiveFormalWorkshopDownloadWorkers.markActive(taskId)
                 var stagingDirectory: File? = null
                 try {
-                    setForeground(createForegroundInfo())
-                    Log.i(DOWNLOAD_LOG_TAG, "Foreground set for taskId=$taskId")
+                    // No setForeground() here: this ROM treats the WorkManager FGS as
+                    // typeless and force-stops it after ~4 seconds, which cancelled the
+                    // worker mid-run. A plain JobScheduler job survives; Result.retry()
+                    // covers any residual system stops.
                     val downloadPreferences = settingsRepository.preferences.first()
                     task =
                         persist(
