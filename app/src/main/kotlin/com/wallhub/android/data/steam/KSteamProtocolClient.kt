@@ -11,6 +11,7 @@ import bruhcollective.itaysonlab.ksteam.models.enums.EOSType
 import bruhcollective.itaysonlab.ksteam.persistence.KsteamPersistenceDriver
 import bruhcollective.itaysonlab.ksteam.platform.DeviceInformation
 import com.wallhub.android.core.model.AccountWorkshopQuery
+import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.DiagnosticEvent
 import com.wallhub.android.core.model.DiagnosticLevel
 import com.wallhub.android.core.model.DiagnosticRepository
@@ -165,7 +166,7 @@ class KSteamProtocolClient
                 try {
                     val client = obtainEngine()
                     ensureConnected(client)
-                    if (client.account.hasSavedDataForAtLeastOneAccount()) {
+                    if (client.account.hasSavedDataForAtLeastOneAccount() == true) {
                         mutableSession.value = mutableSession.value.copy(phase = SteamSessionPhase.SIGNING_IN)
                         val restored = client.account.trySignInSavedDefault()
                         if (!restored) {
