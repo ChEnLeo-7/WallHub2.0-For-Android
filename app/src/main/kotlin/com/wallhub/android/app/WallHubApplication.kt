@@ -33,7 +33,7 @@ class WallHubApplication :
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     @Inject
-    lateinit var workerFactory: WallHubDownloadWorkerFactory
+    internal lateinit var workerFactory: WallHubDownloadWorkerFactory
 
     @Inject
     lateinit var steamHttpClientFactory: SteamHttpClientFactory
