@@ -12,7 +12,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import `in`.dragonbra.javasteam.util.Adler32 as SteamAdler32
+import com.wallhub.android.data.downloads.steamAdler32
 
 class SteamStreamingCacheRegressionTest {
     @Test
@@ -55,20 +55,20 @@ class SteamStreamingCacheRegressionTest {
                 val first = ByteArray(400) { 1 }
                 val ahead = ByteArray(400) { 2 }
                 val refill = ByteArray(400) { 3 }
-                cache.commit(0L, SteamAdler32.calculate(first), first)
+                cache.commit(0L, steamAdler32(first), first)
                 Thread.sleep(5L)
-                cache.commit(400L, SteamAdler32.calculate(ahead), ahead)
+                cache.commit(400L, steamAdler32(ahead), ahead)
                 cache.protectChunkOffsets(listOf(400L))
                 Thread.sleep(5L)
-                cache.readSlice(0L, first.size, SteamAdler32.calculate(first), 0, 16)
+                cache.readSlice(0L, first.size, steamAdler32(first), 0, 16)
                 Thread.sleep(5L)
 
-                cache.commit(800L, SteamAdler32.calculate(refill), refill)
+                cache.commit(800L, steamAdler32(refill), refill)
 
                 assertTrue(root.resolve("video-a/400.chunk").isFile)
                 assertContentEquals(
                     ahead.copyOfRange(0, 16),
-                    cache.readSlice(400L, ahead.size, SteamAdler32.calculate(ahead), 0, 16),
+                    cache.readSlice(400L, ahead.size, steamAdler32(ahead), 0, 16),
                 )
                 assertTrue(
                     root.walkTopDown().filter { it.isFile && it.name.endsWith(".chunk") }.sumOf(File::length) <= 1_000L,
@@ -86,7 +86,7 @@ class SteamStreamingCacheRegressionTest {
             val cache = SteamVideoStreamCache(root, "video-a", 4_096L)
             try {
                 val data = ByteArray(1_024) { 4 }
-                cache.commit(0L, SteamAdler32.calculate(data), data)
+                cache.commit(0L, steamAdler32(data), data)
                 cache.protectChunkOffsets(listOf(0L))
 
                 assertEquals(0L, SteamVideoStreamCache.clearRoot(root))

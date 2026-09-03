@@ -1,52 +1,58 @@
 package com.wallhub.android.data.steam
 
-import `in`.dragonbra.javasteam.enums.EClientPersonaStateFlag
-import java.util.EnumSet
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 class SteamPersonaProfileTest {
     @Test
-    fun `profile request includes player name and avatar presence`() {
-        val flags = EClientPersonaStateFlag.from(steamProfileRequestFlags())
+    fun `avatar hash converts into the steam avatar CDN url`() {
+        val hash =
+            byteArrayOf(
+                0xde.toByte(),
+                0xad.toByte(),
+                0xbe.toByte(),
+                0xef.toByte(),
+            )
 
-        assertEquals(
-            EnumSet.of(
-                EClientPersonaStateFlag.PlayerName,
-                EClientPersonaStateFlag.Presence,
-            ),
-            flags,
+        val url = hash.toSteamAvatarUrl()
+
+        assertEquals("https://avatars.fastly.steamstatic.com/deadbef_medium.jpg", url)
+    }
+
+    @Test
+    fun `blank and zeroed avatar hashes resolve to no url`() {
+        assertNull(ByteArray(0).toSteamAvatarUrl())
+        assertNull(ByteArray(8).toSteamAvatarUrl())
+    }
+
+    @Test
+    fun `profile resolution keeps display name and optional avatar`() {
+        val profile = SteamProfile(displayName = "Current name", avatarUrl = "https://example.com/avatar.jpg")
+
+        assertNotNull(profile)
+        assertEquals("Current name", profile.displayName)
+        assertEquals("https://example.com/avatar.jpg", profile.avatarUrl)
+    }
+
+    @Test
+    fun `refresh token jwt sub yields the account steam id`() {
+        // sub = 76561197960287930
+        val payload = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+            """{"sub":"76561197960287930"}""".toByteArray(Charsets.UTF_8),
         )
+        val token = "header.$payload.signature"
+
+        val steamId = steamIdFromRefreshToken(token)
+
+        assertNotNull(steamId)
+        assertEquals(76561197960287930L, steamId.longId)
     }
 
     @Test
-    fun `name-only callback preserves cached avatar`() {
-        val profile =
-            mergeSteamProfile(
-                current = SteamProfile(displayName = "Old name", avatarUrl = "https://example.com/avatar.jpg"),
-                callbackDisplayName = "Current name",
-                callbackAvatarUrl = null,
-                statusFlags = setOf(EClientPersonaStateFlag.PlayerName),
-            )
-
-        assertNotNull(profile)
-        assertEquals("Current name", profile.displayName)
-        assertEquals("https://example.com/avatar.jpg", profile.avatarUrl)
-    }
-
-    @Test
-    fun `presence callback enriches cached profile without a repeated name`() {
-        val profile =
-            mergeSteamProfile(
-                current = SteamProfile(displayName = "Current name"),
-                callbackDisplayName = "",
-                callbackAvatarUrl = "https://example.com/avatar.jpg",
-                statusFlags = setOf(EClientPersonaStateFlag.Presence),
-            )
-
-        assertNotNull(profile)
-        assertEquals("Current name", profile.displayName)
-        assertEquals("https://example.com/avatar.jpg", profile.avatarUrl)
+    fun `malformed refresh tokens resolve to no steam id`() {
+        assertNull(steamIdFromRefreshToken("not-a-jwt"))
+        assertNull(steamIdFromRefreshToken("header.!!!invalid!!!.signature"))
     }
 }

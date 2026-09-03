@@ -8,7 +8,7 @@ plugins {
     alias(libs.plugins.android.legacy.kapt)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
-    alias(libs.plugins.protobuf)
+    alias(libs.plugins.wire)
 }
 
 val releaseStoreFile = providers.environmentVariable("WALLHUB_RELEASE_STORE_FILE").orNull
@@ -155,20 +155,15 @@ android {
     }
 }
 
-val protobufVersion =
-    libs.versions.protobuf.java
-        .get()
-
-protobuf {
-    protoc {
-        artifact = "com.google.protobuf:protoc:$protobufVersion"
+// Steam depot protocol messages consumed with kSteam's Wire transport. Lives outside
+// src/main/proto so it cannot collide with removed protoc tooling.
+wire {
+    sourcePath {
+        srcDir("src/wire/proto")
     }
-    generateProtoTasks {
-        all().configureEach {
-            builtins {
-                create("java")
-            }
-        }
+    kotlin {
+        rpcCallStyle = "suspending"
+        rpcRole = "none"
     }
 }
 
@@ -204,24 +199,18 @@ dependencies {
     implementation(libs.coil.gif)
     implementation(libs.haze)
     implementation(libs.hilt.android)
-    implementation(libs.javasteam) {
-        exclude(group = "com.squareup.okhttp3", module = "okhttp-jvm")
-    }
     implementation(libs.javax.inject)
     implementation(libs.json)
-    // kSteam protocol engine (hybrid migration Phase B). JavaSteam remains the active engine.
+    // kSteam protocol engine: the sole Steam client implementation after the JavaSteam removal.
     implementation(libs.ksteam.core)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.jdk8)
     implementation(libs.kotlinx.serialization.core)
-    implementation(libs.lz4.java)
     implementation(libs.markdown.renderer.m3)
     implementation(libs.material)
     implementation(libs.okhttp.android)
-    implementation(libs.protobuf.java)
     implementation(libs.spongycastle.prov)
-    implementation(libs.xz)
     implementation("com.github.luben:zstd-jni:${libs.versions.zstd.get()}@aar")
 
     kapt(libs.hilt.compiler)

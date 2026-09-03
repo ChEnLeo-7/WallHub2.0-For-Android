@@ -1,10 +1,11 @@
 package com.wallhub.android.data.downloads
 
 import android.util.Log
+import com.wallhub.android.core.model.DepotChunkSpec
+import com.wallhub.android.core.model.DepotFileFlag
+import com.wallhub.android.core.model.DepotFileSpec
 import com.wallhub.android.core.model.SteamContentCredential
-import `in`.dragonbra.javasteam.enums.EDepotFileFlag
-import `in`.dragonbra.javasteam.types.ChunkData
-import `in`.dragonbra.javasteam.types.FileData
+import com.wallhub.android.data.steam.KSteamSessionRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
@@ -13,7 +14,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.future.await
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -21,8 +21,9 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicReference
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlin.math.min
-import `in`.dragonbra.javasteam.util.Adler32 as SteamAdler32
 
 internal enum class SteamDownloadPhase {
     CONNECTING,
@@ -65,7 +66,7 @@ internal fun resolveCdnRequestHost(
 
 internal fun normalizeCdnAuthToken(token: String): String = token.trim().removePrefix("?")
 
-internal fun orderChunksByOffset(chunks: List<ChunkData>): List<ChunkData> = chunks.sortedBy { it.offset }
+internal fun orderChunksByOffset(chunks: List<DepotChunkSpec>): List<DepotChunkSpec> = chunks.sortedBy { it.offset }
 
 internal enum class SteamStreamChunkPriority {
     FOREGROUND,
@@ -205,7 +206,7 @@ internal class ForegroundFirstPermitPool(
 
 internal fun findVerifiedChunkOffsets(
     file: File,
-    chunks: List<ChunkData>,
+    chunks: List<DepotChunkSpec>,
 ): Set<Long> {
     if (!file.isFile) return emptySet()
     val verifiedOffsets = mutableSetOf<Long>()
@@ -222,7 +223,7 @@ internal fun findVerifiedChunkOffsets(
             if (buffer.size != length) buffer = ByteArray(length)
             input.seek(chunk.offset)
             input.readFully(buffer, 0, length)
-            if (SteamAdler32.calculate(buffer) == chunk.checksum) {
+            if (steamAdler32(buffer) == chunk.checksum) {
                 verifiedOffsets += chunk.offset
             }
         }
@@ -247,7 +248,13 @@ internal class StreamChunkRequest(
     }
 }
 
-internal class SteamContentDownloader {
+@Singleton
+internal class SteamContentDownloader
+    @Inject
+    constructor(
+        private val sessionRepository: KSteamSessionRepository,
+        private val depotDownloader: DepotDownloader,
+    ) {
     suspend fun download(
         target: WorkshopContentTarget,
         destinationDirectory: File,
@@ -307,10 +314,10 @@ internal class SteamContentDownloader {
     ): SteamContentDownloadResult {
         onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.CONNECTING))
         val session =
-            openContentSession(credential) {
+            openContentSession(sessionRepository, credential) {
                 onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.AUTHENTICATING))
             }
-        val cdnClient = createCdnClient(options)
+        val httpClient = createCdnHttpClient(options)
         try {
             checkDownloadControl(control)
             onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
@@ -325,7 +332,7 @@ internal class SteamContentDownloader {
             )
             val manifest =
                 downloadManifest(
-                    cdnClient = cdnClient,
+                    httpClient = httpClient,
                     servers = access.servers,
                     depotId = target.depotId,
                     manifestId = target.contentManifestId,
@@ -334,14 +341,11 @@ internal class SteamContentDownloader {
                     authTokens = access.authTokens,
                     control = control,
                 )
-            check(!manifest.filenamesEncrypted || manifest.decryptFilenames(access.depotKey)) {
-                "Failed to decrypt file names in the Steam manifest"
-            }
             check(manifest.files.size <= MAX_MANIFEST_FILE_COUNT) {
                 "Steam manifest file count ${manifest.files.size} exceeds limit $MAX_MANIFEST_FILE_COUNT"
             }
 
-            val files = manifest.files.filterNot { it.flags.contains(EDepotFileFlag.Directory) }
+            val files = manifest.files.filterNot { it.flags.contains(DepotFileFlag.Directory) }
             Log.i(
                 STEAM_CONTENT_LOG_TAG,
                 "Steam manifest files=${manifest.files.size}, downloadable=${files.size}, " +
@@ -353,14 +357,14 @@ internal class SteamContentDownloader {
                     currentCoroutineContext().ensureActive()
                     checkDownloadControl(control)
                     if (
-                        manifestFile.flags.contains(EDepotFileFlag.Directory) &&
+                        manifestFile.flags.contains(DepotFileFlag.Directory) &&
                         (manifestFile.fileName.isBlank() || manifestFile.fileName == ".")
                     ) {
                         return@mapNotNull null
                     }
                     WorkshopStagingPath.resolve(destinationDirectory, manifestFile.fileName)
-                    if (manifestFile.flags.contains(EDepotFileFlag.Directory)) return@mapNotNull null
-                    check(!manifestFile.flags.contains(EDepotFileFlag.Symlink)) {
+                    if (manifestFile.flags.contains(DepotFileFlag.Directory)) return@mapNotNull null
+                    check(!manifestFile.flags.contains(DepotFileFlag.Symlink)) {
                         "Steam manifest symbolic links are not supported: ${manifestFile.fileName}"
                     }
                     ManifestFilePlan(
@@ -377,7 +381,7 @@ internal class SteamContentDownloader {
                     totalFiles = files.size,
                     onProgress = onProgress,
                 )
-            manifest.files.filter { it.flags.contains(EDepotFileFlag.Directory) }.forEach { directory ->
+            manifest.files.filter { it.flags.contains(DepotFileFlag.Directory) }.forEach { directory ->
                 if (directory.fileName.isBlank() || directory.fileName == ".") return@forEach
                 val destination = WorkshopStagingPath.resolve(destinationDirectory, directory.fileName)
                 destination.mkdirs()
@@ -386,13 +390,13 @@ internal class SteamContentDownloader {
             downloadFilePlans(
                 plans = filePlans,
                 destinationDirectory = destinationDirectory,
-                cdnClient = cdnClient,
-                httpClient = cdnClient.streamingHttpClient(),
+                httpClient = httpClient,
                 servers = access.servers,
                 depotId = target.depotId,
                 depotKey = access.depotKey,
                 authTokens = access.authTokens,
                 selector = selector,
+                depotDownloader = depotDownloader,
                 chunkConcurrency = options.chunkConcurrency,
                 control = control,
                 progressReporter = progressReporter,
@@ -406,8 +410,7 @@ internal class SteamContentDownloader {
                 usedAuthenticatedSession = credential != null,
             )
         } finally {
-            runCatching { cdnClient.close() }
-            session.close()
+            runCatching { httpClient.dispatcher.executorService.shutdown() }
         }
     }
 
@@ -422,13 +425,13 @@ internal class SteamContentDownloader {
             require(target.appId > 0) { "Invalid Steam App ID" }
             require(target.contentManifestId > 0L) { "Invalid Steam manifest ID" }
             val normalizedOptions = options.normalized()
-            val session = openContentSession(credential) {}
-            val cdnClient = createCdnClient(normalizedOptions)
+            val session = openContentSession(sessionRepository, credential) {}
+            val httpClient = createCdnHttpClient(normalizedOptions)
             try {
                 val access = resolveContentAccess(session, target)
                 val manifest =
                     downloadManifest(
-                        cdnClient = cdnClient,
+                        httpClient = httpClient,
                         servers = access.servers,
                         depotId = target.depotId,
                         manifestId = target.contentManifestId,
@@ -437,20 +440,17 @@ internal class SteamContentDownloader {
                         authTokens = access.authTokens,
                         control = { SteamDownloadControl.CONTINUE },
                     )
-                check(!manifest.filenamesEncrypted || manifest.decryptFilenames(access.depotKey)) {
-                    "Failed to decrypt video file names in the Steam manifest"
-                }
                 check(manifest.files.size <= MAX_MANIFEST_FILE_COUNT) {
                     "Steam manifest file count ${manifest.files.size} exceeds limit $MAX_MANIFEST_FILE_COUNT"
                 }
-                validateManifestFiles(manifest.files.filterNot { it.flags.contains(EDepotFileFlag.Directory) })
+                validateManifestFiles(manifest.files.filterNot { it.flags.contains(DepotFileFlag.Directory) })
                 val videoFile =
                     manifest.files
                         .asSequence()
-                        .filterNot { it.flags.contains(EDepotFileFlag.Directory) }
-                        .filterNot { it.flags.contains(EDepotFileFlag.Symlink) }
+                        .filterNot { it.flags.contains(DepotFileFlag.Directory) }
+                        .filterNot { it.flags.contains(DepotFileFlag.Symlink) }
                         .filter { it.fileName.videoFileExtension() in VIDEO_FILE_EXTENSIONS }
-                        .maxByOrNull(FileData::totalSize)
+                        .maxByOrNull(DepotFileSpec::totalSize)
                         ?: error("No streamable video file found in the Steam depot")
                 val orderedVideoChunks = orderChunksByOffset(videoFile.chunks)
                 cacheRootDirectory.mkdirs()
@@ -468,14 +468,14 @@ internal class SteamContentDownloader {
                             stagingEnabled = false,
                         ),
                     prefetchConcurrency = steamStreamPrefetchConcurrency(normalizedOptions.chunkConcurrency),
-                    cdnClient = cdnClient,
+                    httpClient = httpClient,
                     session = session,
                     access = access,
                     depotId = target.depotId,
+                    depotDownloader = depotDownloader,
                 )
             } catch (error: Throwable) {
-                runCatching { cdnClient.close() }
-                session.close()
+                runCatching { httpClient.dispatcher.executorService.shutdown() }
                 throw error
             }
         }

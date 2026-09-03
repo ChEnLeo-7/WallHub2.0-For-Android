@@ -18,103 +18,96 @@ import com.wallhub.android.core.model.workshopDetailTagSearch
 import com.wallhub.android.core.model.steamSearchText
 import com.wallhub.android.core.model.steamTagCriteria
 import com.wallhub.android.core.model.steamQueryType
-import `in`.dragonbra.javasteam.enums.EResult
-import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesPublishedfileSteamclient
+import steam.webui.publishedfile.CPublishedFile_QueryFiles_Request
+import steam.webui.publishedfile.CPublishedFile_QueryFiles_Request_DateRange
+import steam.webui.publishedfile.CPublishedFile_QueryFiles_Request_KVTag
+import steam.webui.publishedfile.CPublishedFile_QueryFiles_Request_TagGroup
+import steam.webui.publishedfile.CPublishedFile_GetUserFiles_Request
+import steam.webui.publishedfile.CPublishedFile_QueryFiles_Response
+import steam.webui.publishedfile.CPublishedFile_GetUserFiles_Response
+import steam.webui.publishedfile.PublishedFileDetails
 
-internal fun buildUnifiedWorkshopBrowseRequest(
-    query: WorkshopBrowseQuery,
-): SteammessagesPublishedfileSteamclient.CPublishedFile_QueryFiles_Request {
+internal fun buildUnifiedWorkshopBrowseRequest(query: WorkshopBrowseQuery): CPublishedFile_QueryFiles_Request {
     val normalized = query.normalizedForUnifiedBrowse()
     val criteria = normalized.steamTagCriteria()
-    return SteammessagesPublishedfileSteamclient.CPublishedFile_QueryFiles_Request
-        .newBuilder()
-        .setQueryType(normalized.sort.steamQueryType())
-        .setPage(normalized.page)
-        .setNumperpage(normalized.pageSize)
-        .setCreatorAppid(WALLPAPER_ENGINE_APP_ID)
-        .setAppid(WALLPAPER_ENGINE_APP_ID)
-        .setFiletype(0)
-        .setMatchAllTags(true)
-        .setReturnTags(true)
-        .setReturnPreviews(true)
-        .setReturnShortDescription(true)
-        .setReturnMetadata(true)
-        .setReturnDetails(true)
-        .apply {
-            normalized.steamSearchText().takeIf(String::isNotBlank)?.let(::setSearchText)
-            if (normalized.sort == WorkshopSort.TRENDING && normalized.days > 0) {
-                setDays(normalized.days)
-            }
-            setLanguage(normalized.language)
-            addAllRequiredtags(criteria.requiredTags)
-            addAllExcludedtags(criteria.excludedTags)
+    return CPublishedFile_QueryFiles_Request(
+        query_type = normalized.sort.steamQueryType(),
+        page = normalized.page,
+        numperpage = normalized.pageSize,
+        creator_appid = WALLPAPER_ENGINE_APP_ID,
+        appid = WALLPAPER_ENGINE_APP_ID,
+        filetype = 0,
+        match_all_tags = true,
+        return_tags = true,
+        return_previews = true,
+        return_short_description = true,
+        return_metadata = true,
+        return_details = true,
+        search_text = normalized.steamSearchText().takeIf(String::isNotBlank),
+        days = if (normalized.sort == WorkshopSort.TRENDING) normalized.days else 0,
+        language = normalized.language,
+        requiredtags = criteria.requiredTags,
+        excludedtags = criteria.excludedTags,
+        required_kv_tags =
             if (normalized.mobileCompatibleOnly) {
-                addRequiredKvTags(
-                    SteammessagesPublishedfileSteamclient.CPublishedFile_QueryFiles_Request.KVTag
-                        .newBuilder()
-                        .setKey("app_workshop_eula_version")
-                        .setValue("3")
-                        .build(),
+                listOf(
+                    CPublishedFile_QueryFiles_Request_KVTag(
+                        key = "app_workshop_eula_version",
+                        value = "3",
+                    ),
                 )
-            }
-            normalized.normalizedRequiredTagGroups().forEach { group ->
-                addTaggroups(
-                    SteammessagesPublishedfileSteamclient.CPublishedFile_QueryFiles_Request.TagGroup
-                        .newBuilder()
-                        .addAllTags(group)
-                        .build(),
-                )
-            }
+            } else {
+                emptyList()
+            },
+        taggroups =
+            normalized.normalizedRequiredTagGroups().map { group ->
+                CPublishedFile_QueryFiles_Request_TagGroup(tags = group.toList())
+            },
+        date_range_created =
             normalized.normalizedCreatedRange()?.let { range ->
-                setDateRangeCreated(
-                    SteammessagesPublishedfileSteamclient.CPublishedFile_QueryFiles_Request.DateRange
-                        .newBuilder()
-                        .setTimestampStart(range.first.toInt())
-                        .setTimestampEnd(range.last.toInt())
-                        .build(),
+                CPublishedFile_QueryFiles_Request_DateRange(
+                    timestamp_start = range.first.toInt(),
+                    timestamp_end = range.last.toInt(),
                 )
-            }
-        }.build()
+            },
+    )
 }
 
-internal fun buildUnifiedWorkshopAuthorRequest(
-    query: WorkshopBrowseQuery,
-): SteammessagesPublishedfileSteamclient.CPublishedFile_GetUserFiles_Request {
+internal fun buildUnifiedWorkshopAuthorRequest(query: WorkshopBrowseQuery): CPublishedFile_GetUserFiles_Request {
     val normalized = query.normalizedForUnifiedBrowse()
     val criteria = normalized.steamTagCriteria()
-    return SteammessagesPublishedfileSteamclient.CPublishedFile_GetUserFiles_Request
-        .newBuilder()
-        .setSteamid(normalized.creatorId?.toLongOrNull() ?: 0L)
-        .setAppid(WALLPAPER_ENGINE_APP_ID)
-        .setPage(normalized.page)
-        .setNumperpage(normalized.pageSize)
-        .setType("myfiles")
-        .setSortmethod("lastupdated")
-        .setLanguage(normalized.language)
-        .setReturnTags(true)
-        .setReturnPreviews(true)
-        .setReturnShortDescription(true)
-        .setReturnMetadata(true)
-        .setReturnVoteData(true)
-        .addAllRequiredtags(criteria.requiredTags)
-        .addAllExcludedtags(criteria.excludedTags)
-        .build()
+    return CPublishedFile_GetUserFiles_Request(
+        steamid = normalized.creatorId?.toLongOrNull() ?: 0L,
+        appid = WALLPAPER_ENGINE_APP_ID,
+        page = normalized.page,
+        numperpage = normalized.pageSize,
+        type = "myfiles",
+        sortmethod = "lastupdated",
+        language = normalized.language,
+        return_tags = true,
+        return_previews = true,
+        return_short_description = true,
+        return_metadata = true,
+        return_vote_data = true,
+        requiredtags = criteria.requiredTags,
+        excludedtags = criteria.excludedTags,
+    )
 }
 
 internal fun mapUnifiedWorkshopBrowseResponse(
     query: WorkshopBrowseQuery,
-    response: SteammessagesPublishedfileSteamclient.CPublishedFile_QueryFiles_Response,
+    response: CPublishedFile_QueryFiles_Response,
 ): WorkshopPage {
     val normalized = query.normalizedForUnifiedBrowse()
     val items =
-        response.publishedfiledetailsList
+        response.publishedfiledetails
             .asSequence()
-            .filter { detail -> detail.result == EResult.OK.code() }
+            .filter { detail -> detail.result == ERESULT_OK }
             .map { detail -> detail.toWorkshopSummary() }
             .filter(normalized::matchesSteamWallpaper)
             .take(normalized.pageSize)
             .toList()
-    val total = response.total.takeIf { response.hasTotal() && it >= 0 }
+    val total = response.total?.takeIf { it >= 0 }
     val totalPages = total?.toMaximumPage(normalized.pageSize)
     return WorkshopPage(
         items = items,
@@ -123,7 +116,7 @@ internal fun mapUnifiedWorkshopBrowseResponse(
             if (total != null) {
                 normalized.page.toLong() * normalized.pageSize.toLong() < total.toLong()
             } else {
-                response.publishedfiledetailsCount >= normalized.pageSize
+                response.publishedfiledetails.size >= normalized.pageSize
             },
         totalCount = total,
         totalPages = totalPages,
@@ -132,18 +125,18 @@ internal fun mapUnifiedWorkshopBrowseResponse(
 
 internal fun mapUnifiedWorkshopAuthorResponse(
     query: WorkshopBrowseQuery,
-    response: SteammessagesPublishedfileSteamclient.CPublishedFile_GetUserFiles_Response,
+    response: CPublishedFile_GetUserFiles_Response,
 ): WorkshopPage {
     val normalized = query.normalizedForUnifiedBrowse()
     val items =
-        response.publishedfiledetailsList
+        response.publishedfiledetails
             .asSequence()
-            .filter { detail -> detail.result == EResult.OK.code() }
+            .filter { detail -> detail.result == ERESULT_OK }
             .map { detail -> detail.toWorkshopSummary() }
             .filter(normalized::matchesSteamWallpaper)
             .take(normalized.pageSize)
             .toList()
-    val total = response.total.takeIf { response.hasTotal() && it >= 0 }
+    val total = response.total?.takeIf { it >= 0 }
     return WorkshopPage(
         items = items,
         page = normalized.page,
@@ -151,17 +144,17 @@ internal fun mapUnifiedWorkshopAuthorResponse(
             if (total != null) {
                 normalized.page.toLong() * normalized.pageSize.toLong() < total.toLong()
             } else {
-                response.publishedfiledetailsCount >= normalized.pageSize
+                response.publishedfiledetails.size >= normalized.pageSize
             },
         totalCount = total,
         totalPages = total?.toMaximumPage(normalized.pageSize),
     )
 }
 
-internal fun SteammessagesPublishedfileSteamclient.PublishedFileDetails.toWorkshopSummary(
+internal fun PublishedFileDetails.toWorkshopSummary(
     collection: AccountWorkshopCollection? = null,
 ): WorkshopSummary {
-    val sourceTags = tagsList.mapNotNull { tag -> tag.tag.trim().takeIf(String::isNotBlank) }
+    val sourceTags = tags.mapNotNull { tag -> tag.tag.orEmpty().trim().takeIf(String::isNotBlank) }
     val type =
         when {
             sourceTags.any { it.equals("Video", ignoreCase = true) } -> WorkshopType.VIDEO
@@ -171,22 +164,23 @@ internal fun SteammessagesPublishedfileSteamclient.PublishedFileDetails.toWorksh
             }
             else -> WorkshopType.UNKNOWN
         }
+    val id = publishedfileid ?: 0L
     return WorkshopSummary(
-        id = publishedfileid,
-        title = title,
+        id = id,
+        title = title.orEmpty(),
         author = "",
-        creatorId = creator.toString(),
-        previewUrl = previewUrl.takeIf(String::isNotBlank),
+        creatorId = (creator ?: 0L).toString(),
+        previewUrl = preview_url.orEmpty().takeIf(String::isNotBlank),
         type = type,
         tags = sourceTags,
         subscriptions =
-            subscriptions.toLong().takeIf { it > 0L }
-                ?: lifetimeSubscriptions.toLong().takeIf { it > 0L },
+            (subscriptions ?: 0).toLong().takeIf { it > 0L }
+                ?: (lifetime_subscriptions ?: 0).toLong().takeIf { it > 0L },
         favorites =
-            favorited.toLong().takeIf { it > 0L }
-                ?: lifetimeFavorited.toLong().takeIf { it > 0L },
-        views = views.toLong().takeIf { it > 0L },
-        fileSizeBytes = fileSize.takeIf { it > 0L },
+            (favorited ?: 0).toLong().takeIf { it > 0L }
+                ?: (lifetime_favorited ?: 0).toLong().takeIf { it > 0L },
+        views = (views ?: 0).toLong().takeIf { it > 0L },
+        fileSizeBytes = (file_size ?: 0L).takeIf { it > 0L },
         subscriptionState =
             if (collection == AccountWorkshopCollection.SUBSCRIPTIONS) {
                 SubscriptionState.SUBSCRIBED
@@ -199,8 +193,25 @@ internal fun SteammessagesPublishedfileSteamclient.PublishedFileDetails.toWorksh
             } else {
                 FavoriteState.UNKNOWN
             },
-        isTitlePlaceholder = title.isBlank(),
+        isTitlePlaceholder = title.orEmpty().isBlank(),
         authorPlaceholder = WorkshopAuthorPlaceholder.USER_WITH_ID,
+    )
+}
+
+internal fun decorateWithProfile(
+    item: WorkshopSummary,
+    profiles: Map<Long, SteamProfile>,
+): WorkshopSummary {
+    val profile = item.creatorId?.toLongOrNull()?.let(profiles::get)
+    return item.copy(
+        author = profile?.displayName ?: item.author,
+        authorAvatarUrl = profile?.avatarUrl ?: item.authorAvatarUrl,
+        authorPlaceholder =
+            if (profile == null) {
+                item.authorPlaceholder
+            } else {
+                WorkshopAuthorPlaceholder.NONE
+            },
     )
 }
 
@@ -245,6 +256,8 @@ private fun Int.toMaximumPage(pageSize: Int): Int {
         .toInt()
 }
 
+internal const val ERESULT_OK = 1
+internal const val WALLPAPER_ENGINE_APP_ID = 431960
 private const val MAX_PUBLIC_WORKSHOP_PAGE_SIZE = 50
 private const val MAX_PUBLIC_WORKSHOP_TAGS = 48
 private const val MAX_PUBLIC_WORKSHOP_SEARCH_LENGTH = 128

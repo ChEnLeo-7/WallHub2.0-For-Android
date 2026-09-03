@@ -1,0 +1,53 @@
+syntax = "proto2";
+package wallhub.steam.depot;
+option java_package = "com.wallhub.android.data.steam.wire";
+
+// Depot decryption key exchange (legacy CM message, EMsg 5438/5439).
+// Field numbers follow SteamDatabase steammessages_clientserver_2.proto.
+message CMsgClientGetDepotDecryptionKey {
+  optional uint32 depot_id = 1;
+  optional uint32 app_id = 2;
+}
+
+message CMsgClientGetDepotDecryptionKeyResponse {
+  optional int32 eresult = 1 [default = 2];
+  optional uint32 depot_id = 2;
+  optional bytes depot_encryption_key = 3;
+}
+
+// Depot manifest sections (SteamDatabase content_manifest.proto). The CDN ships a
+// zip whose entry is a magic-delimited sequence of these messages; the signature
+// section is not needed for downloading.
+message ContentManifestPayload {
+  message FileMapping {
+    message ChunkData {
+      optional bytes sha = 1;
+      optional fixed32 crc = 2;
+      optional uint64 offset = 3;
+      optional uint32 cb_original = 4;
+      optional uint32 cb_compressed = 5;
+    }
+
+    optional string filename = 1;
+    optional uint64 size = 2;
+    optional uint32 flags = 3;
+    optional bytes sha_filename = 4;
+    optional bytes sha_content = 5;
+    repeated ChunkData chunks = 6;
+    optional string linktarget = 7;
+  }
+
+  repeated FileMapping mappings = 1;
+}
+
+message ContentManifestMetadata {
+  optional uint32 depot_id = 1;
+  optional uint64 gid_manifest = 2;
+  optional uint32 creation_time = 3;
+  optional bool filenames_encrypted = 4;
+  optional uint64 cb_disk_original = 5;
+  optional uint64 cb_disk_compressed = 6;
+  optional uint32 unique_chunks = 7;
+  optional uint32 crc_encrypted = 8;
+  optional uint32 crc_clear = 9;
+}

@@ -1,31 +1,17 @@
 package com.wallhub.android.data.downloads
 
 import android.util.Log
+import bruhcollective.itaysonlab.ksteam.SteamClient
+import bruhcollective.itaysonlab.ksteam.models.account.AuthorizationState
+import com.wallhub.android.core.model.DepotChunkSpec
+import com.wallhub.android.core.model.DepotFileFlag
+import com.wallhub.android.core.model.DepotFileSpec
+import com.wallhub.android.core.model.DepotManifestSpec
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.core.model.WorkshopVideoBufferState
+import com.wallhub.android.data.steam.KSteamSessionRepository
 import com.wallhub.android.core.model.WorkshopVideoFullCacheState
 import com.wallhub.android.core.model.WorkshopVideoFullCacheStatus
-import `in`.dragonbra.javasteam.enums.EOSType
-import `in`.dragonbra.javasteam.enums.EResult
-import `in`.dragonbra.javasteam.steam.cdn.DepotChunk
-import `in`.dragonbra.javasteam.steam.cdn.ClientLancache
-import `in`.dragonbra.javasteam.steam.cdn.Server
-import `in`.dragonbra.javasteam.steam.handlers.steamapps.SteamApps
-import `in`.dragonbra.javasteam.steam.handlers.steamcontent.SteamContent
-import `in`.dragonbra.javasteam.steam.handlers.steamuser.AnonymousLogOnDetails
-import `in`.dragonbra.javasteam.steam.handlers.steamuser.ChatMode
-import `in`.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails
-import `in`.dragonbra.javasteam.steam.handlers.steamuser.SteamUser
-import `in`.dragonbra.javasteam.steam.handlers.steamuser.callback.LoggedOnCallback
-import `in`.dragonbra.javasteam.steam.steamclient.SteamClient
-import `in`.dragonbra.javasteam.steam.steamclient.callbackmgr.CallbackManager
-import `in`.dragonbra.javasteam.steam.steamclient.callbacks.ConnectedCallback
-import `in`.dragonbra.javasteam.steam.steamclient.callbacks.DisconnectedCallback
-import `in`.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration
-import `in`.dragonbra.javasteam.types.ChunkData
-import `in`.dragonbra.javasteam.types.DepotManifest
-import `in`.dragonbra.javasteam.types.FileData
-import `in`.dragonbra.javasteam.util.SteamKitWebRequestException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -43,7 +29,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.future.await
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -52,7 +37,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import okhttp3.ConnectionPool
 import okhttp3.Call
 import okhttp3.Callback
@@ -61,11 +45,8 @@ import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import okhttp3.ResponseBody.Companion.toResponseBody
 import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 import java.io.BufferedOutputStream
-import java.io.Closeable
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
@@ -76,48 +57,77 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
-import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
-import java.util.zip.ZipOutputStream
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import `in`.dragonbra.javasteam.steam.cdn.Client as SteamCdnClient
+
+internal class KSteamContentSession(
+    val repository: KSteamSessionRepository,
+    val client: SteamClient,
+    val isAuthenticated: Boolean,
+)
+
+/**
+ * Opens a depot-capable CM session: the signed-in kSteam engine when [credential] is present,
+ * otherwise the shared anonymous CM client. Both support signed service calls and the raw
+ * depot-key exchange, so anonymous public-depot downloads keep working.
+ */
+internal suspend fun openContentSession(
+    repository: KSteamSessionRepository,
+    credential: SteamContentCredential?,
+    onAuthenticating: suspend () -> Unit = {},
+): KSteamContentSession {
+    if (credential != null) {
+        onAuthenticating()
+    }
+    val client =
+        repository.steamContentClient(authenticated = credential != null)
+            ?: error("Steam content session is unavailable")
+    return KSteamContentSession(
+        repository = repository,
+        client = client,
+        isAuthenticated = credential != null && client.clientAuthState.value is AuthorizationState.Success,
+    )
+}
 
 internal suspend fun resolveContentAccess(
-    session: SteamContentSession,
+    session: KSteamContentSession,
     target: WorkshopContentTarget,
 ): SteamContentAccess {
-    val depotKey = session.apps.getDepotDecryptionKey(target.depotId, target.appId).await()
-    if (depotKey.result != EResult.OK) throw SteamDepotAccessException(target.depotId, depotKey.result)
+    val client = session.client
+    val depotKey =
+        try {
+            session.repository.steamDepotDecryptionKey(
+                client = client,
+                depotId = target.depotId,
+                appId = target.appId,
+            )
+        } catch (error: IllegalStateException) {
+            throw SteamDepotAccessException(target.depotId, error.message ?: "unavailable")
+        }
     val servers =
-        session.content
-            .getServersForSteamPipe(null, CDN_SERVER_LIMIT, session.callbackScope)
-            .await()
-            .filter { resolveCdnRequestHost(it.vHost, it.host) != null }
+        client
+            .steamCdnServers(cellId = client.configuration.cellId, maxServers = CDN_SERVER_LIMIT)
+            .filter { server -> resolveCdnRequestHost(server.vHost, server.host) != null }
             .let(::prioritizeCdnServers)
     check(servers.isNotEmpty()) { "Steam returned no available CDN servers" }
     val requestCode =
-        session.content
-            .getManifestRequestCode(
-                target.depotId,
-                target.appId,
-                target.contentManifestId,
-                "public",
-                null,
-                session.callbackScope,
-            ).await()
+        client.steamManifestRequestCode(
+            depotId = target.depotId,
+            appId = target.appId,
+            manifestId = target.contentManifestId,
+        )
     return SteamContentAccess(
-        depotKey = depotKey.depotKey,
+        depotKey = depotKey,
         manifestRequestCode = requestCode,
         servers = servers,
         authTokens =
             CdnAuthTokenProvider(
-                content = session.content,
+                client = client,
                 appId = target.appId,
                 depotId = target.depotId,
-                callbackScope = session.callbackScope,
                 enabled = session.isAuthenticated,
             ),
     )
@@ -125,28 +135,28 @@ internal suspend fun resolveContentAccess(
 
 internal class SteamDepotAccessException(
     depotId: Int,
-    val result: EResult,
-) : IllegalStateException("Steam did not provide depot key $depotId: $result")
+    detail: String,
+) : IllegalStateException("Steam did not provide depot key $depotId: $detail")
 
-internal fun prioritizeCdnServers(servers: List<Server>): List<Server> {
+internal fun prioritizeCdnServers(servers: List<CdnServer>): List<CdnServer> {
     val ranked = servers.sortedBy { it.weightedLoad }
-    val secure = ranked.filter { it.protocol == Server.ConnectionProtocol.HTTPS }
-    return secure + ranked.filterNot { it.protocol == Server.ConnectionProtocol.HTTPS }
+    return ranked.filter { it.https } + ranked.filterNot { it.https }
 }
 
 internal class SteamContentVideoStream internal constructor(
     override val title: String,
     override val fileName: String,
     override val contentLength: Long,
-    private val chunks: List<ChunkData>,
+    private val chunks: List<DepotChunkSpec>,
     private val streamCache: SteamVideoStreamCache,
     private val prefetchConcurrency: Int,
-    private val cdnClient: SteamCdnClient,
-    private val session: SteamContentSession,
+    private val httpClient: OkHttpClient,
+    private val session: KSteamContentSession,
     private val access: SteamContentAccess,
     private val depotId: Int,
+    private val depotDownloader: DepotDownloader,
 ) : com.wallhub.android.core.model.WorkshopVideoStreamSession {
-    private val cdnHttpClient = cdnClient.streamingHttpClient()
+    private val cdnHttpClient = httpClient
     private val selector = CdnServerSelector()
     private val adaptiveBufferPolicy =
         SteamStreamAdaptiveBufferPolicy(
@@ -358,12 +368,10 @@ internal class SteamContentVideoStream internal constructor(
         fetchScope.cancel()
         decodeDispatcher.close()
         streamCache.close()
-        runCatching { cdnClient.close() }
-        session.close()
     }
 
     private suspend fun loadChunkSliceInto(
-        chunk: ChunkData,
+        chunk: DepotChunkSpec,
         sourceOffset: Int,
         destination: ByteArray,
         destinationOffset: Int,
@@ -406,7 +414,7 @@ internal class SteamContentVideoStream internal constructor(
     }
 
     private suspend fun requestChunk(
-        chunk: ChunkData,
+        chunk: DepotChunkSpec,
         priority: SteamStreamChunkPriority,
     ): StreamChunkRequest {
         if (priority == SteamStreamChunkPriority.FOREGROUND) {
@@ -446,7 +454,6 @@ internal class SteamContentVideoStream internal constructor(
                                 metricsRequestStarted = true
                                 var encryptedPayload: ByteArray? =
                                     downloadEncryptedChunk(
-                                        cdnClient = cdnClient,
                                         httpClient = cdnHttpClient,
                                         servers = access.servers,
                                         depotId = depotId,
@@ -478,11 +485,11 @@ internal class SteamContentVideoStream internal constructor(
                                 metricsRequestStarted = false
                                 networkCompleted.complete(Unit)
                                 val payload = withContext(decodeDispatcher) {
-                                    decodeDepotChunk(
+                                    depotDownloader.decodeChunk(
                                         chunk,
                                         checkNotNull(encryptedPayload),
                                         access.depotKey,
-                                    )
+                                    ).getOrThrow()
                                 }
                                 encryptedPayload = null
                                 if (priorityState.get() == SteamStreamChunkPriority.FOREGROUND) {
@@ -715,7 +722,7 @@ internal class SteamContentVideoStream internal constructor(
         !failed.get() && generation == prefetchGeneration.get()
     }
 
-    private fun onVerifiedChunkCached(chunk: ChunkData) {
+    private fun onVerifiedChunkCached(chunk: DepotChunkSpec) {
         val completedEndInclusive = contiguousBufferTracker.markCompleted(chunk)
         synchronized(prefetchLock) {
             aheadBufferedEndInclusive = max(aheadBufferedEndInclusive, completedEndInclusive)
@@ -734,9 +741,9 @@ internal class SteamContentVideoStream internal constructor(
         val endInclusive = min(contentLength - 1L, consumedPosition + targetAheadBytes.coerceAtLeast(1L) - 1L)
         val protectedOffsets =
             if (fullCachePinned) {
-                chunks.map(ChunkData::offset)
+                chunks.map(DepotChunkSpec::offset)
             } else {
-                steamStreamChunksInRange(chunks, consumedPosition, endInclusive).map(ChunkData::offset)
+                steamStreamChunksInRange(chunks, consumedPosition, endInclusive).map(DepotChunkSpec::offset)
             }
         streamCache.protectChunkOffsets(protectedOffsets)
     }
@@ -829,7 +836,7 @@ internal class SteamContentVideoStream internal constructor(
             return
         }
         fullCachePinned = true
-        streamCache.protectChunkOffsets(chunks.map(ChunkData::offset))
+        streamCache.protectChunkOffsets(chunks.map(DepotChunkSpec::offset))
         mutableFullCacheState.value =
             WorkshopVideoFullCacheState(
                 status = WorkshopVideoFullCacheStatus.CACHING,
@@ -907,7 +914,7 @@ internal data class SteamStreamPlaybackClock(
 
 /** Advances only when every preceding Steam chunk from the current seek point is verified. */
 internal class SteamContiguousBufferTracker(
-    private val chunks: List<ChunkData>,
+    private val chunks: List<DepotChunkSpec>,
 ) {
     private val completedOffsets = mutableSetOf<Long>()
     private var nextChunkIndex = 0
@@ -923,7 +930,7 @@ internal class SteamContiguousBufferTracker(
     }
 
     @Synchronized
-    fun markCompleted(chunk: ChunkData): Long {
+    fun markCompleted(chunk: DepotChunkSpec): Long {
         completedOffsets += chunk.offset
         while (nextChunkIndex < chunks.size) {
             val next = chunks[nextChunkIndex]
@@ -940,7 +947,7 @@ internal class SteamContiguousBufferTracker(
 }
 
 internal data class PlannedStreamChunk(
-    val chunk: ChunkData,
+    val chunk: DepotChunkSpec,
     val ownsPlan: Boolean,
 )
 
@@ -1043,7 +1050,7 @@ internal class StreamPrefetchFrontier {
 }
 
 internal fun firstSteamStreamChunkIndex(
-    chunks: List<ChunkData>,
+    chunks: List<DepotChunkSpec>,
     position: Long,
 ): Int {
     var low = 0
@@ -1057,14 +1064,14 @@ internal fun firstSteamStreamChunkIndex(
 }
 
 internal fun steamStreamChunksInRange(
-    chunks: List<ChunkData>,
+    chunks: List<DepotChunkSpec>,
     start: Long,
     endInclusive: Long,
-): List<ChunkData> {
+): List<DepotChunkSpec> {
     if (chunks.isEmpty() || start < 0L || endInclusive < start) return emptyList()
     val firstIndex = firstSteamStreamChunkIndex(chunks, start)
     if (firstIndex >= chunks.size) return emptyList()
-    val selected = ArrayList<ChunkData>()
+    val selected = ArrayList<DepotChunkSpec>()
     var index = firstIndex
     while (index < chunks.size) {
         val chunk = chunks[index]
@@ -1076,15 +1083,15 @@ internal fun steamStreamChunksInRange(
 }
 
 internal suspend fun downloadManifest(
-    cdnClient: SteamCdnClient,
-    servers: List<Server>,
+    httpClient: OkHttpClient,
+    servers: List<CdnServer>,
     depotId: Int,
     manifestId: Long,
     requestCode: Long,
     depotKey: ByteArray,
     authTokens: CdnAuthTokenProvider,
     control: suspend () -> SteamDownloadControl,
-): DepotManifest {
+): DepotManifestSpec {
     var lastError: Throwable? = null
     val errors = mutableListOf<Throwable>()
     val failures = mutableListOf<String>()
@@ -1095,16 +1102,35 @@ internal suspend fun downloadManifest(
         try {
             val token = authTokens.get(server)
             hasToken = token != null
-            return cdnClient
-                .downloadManifestFuture(
-                    depotId,
-                    manifestId,
-                    requestCode,
-                    server,
-                    depotKey,
-                    null,
-                    token,
-                ).await()
+            val request =
+                Request
+                    .Builder()
+                    .url(
+                        buildSteamCdnCommand(
+                            server = server,
+                            command = server.depotManifestUrl(depotId, manifestId, requestCode),
+                            query = token,
+                        ),
+                    ).build()
+            val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
+            response.use { resp ->
+                if (!resp.isSuccessful) {
+                    throw SteamCdnHttpException("Steam CDN returned ${resp.code} for the depot manifest")
+                }
+                val compressed =
+                    resp.body.byteStream().use { stream -> stream.readBytesBounded(MAX_MANIFEST_RESPONSE_BYTES) }
+                check(compressed.isNotEmpty()) { "Steam manifest response is empty" }
+                val manifestData =
+                    ZipInputStream(ByteArrayInputStream(compressed)).use { archive ->
+                        requireNotNull(archive.nextEntry) { "Steam manifest response ZIP is empty" }
+                        archive.readBytesBounded(MAX_MANIFEST_DECOMPRESSED_BYTES)
+                    }
+                val manifest = parseDepotManifest(manifestData)
+                check(!manifest.filenamesEncrypted || manifest.decryptFilenames(depotKey)) {
+                    "Failed to decrypt file names in the Steam manifest"
+                }
+                return manifest
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (error: SteamDownloadCancelledException) {
@@ -1114,7 +1140,7 @@ internal suspend fun downloadManifest(
         } catch (error: Throwable) {
             lastError = error
             errors += error
-            failures += describeServer(server, hasToken) + "：" +
+            failures += describeServer(server, hasToken) + "\uFF1A" +
                 (error.message ?: error.javaClass.simpleName)
         }
     }
@@ -1126,20 +1152,20 @@ internal suspend fun downloadManifest(
 }
 
 internal suspend fun downloadChunk(
-    cdnClient: SteamCdnClient,
-    httpClient: OkHttpClient? = null,
-    servers: List<Server>,
+    httpClient: OkHttpClient,
+    servers: List<CdnServer>,
     depotId: Int,
-    chunk: ChunkData,
+    chunk: DepotChunkSpec,
     depotKey: ByteArray,
     authTokens: CdnAuthTokenProvider,
     selector: CdnServerSelector,
+    depotDownloader: DepotDownloader,
     control: suspend () -> SteamDownloadControl,
-    onSuccess: ((Server) -> Unit)? = null,
+    onSuccess: ((CdnServer) -> Unit)? = null,
 ): ByteArray {
     val encrypted =
         downloadEncryptedChunk(
-            cdnClient = cdnClient,
+            httpClient = httpClient,
             servers = servers,
             depotId = depotId,
             chunk = chunk,
@@ -1147,21 +1173,19 @@ internal suspend fun downloadChunk(
             selector = selector,
             control = control,
             onSuccess = onSuccess,
-            httpClient = httpClient,
         )
-    return decodeDepotChunk(chunk, encrypted, depotKey)
+    return depotDownloader.decodeChunk(chunk, encrypted, depotKey).getOrThrow()
 }
 
 internal suspend fun downloadEncryptedChunk(
-    cdnClient: SteamCdnClient,
-    servers: List<Server>,
+    httpClient: OkHttpClient,
+    servers: List<CdnServer>,
     depotId: Int,
-    chunk: ChunkData,
+    chunk: DepotChunkSpec,
     authTokens: CdnAuthTokenProvider,
     selector: CdnServerSelector,
     control: suspend () -> SteamDownloadControl,
-    onSuccess: ((Server) -> Unit)? = null,
-    httpClient: OkHttpClient? = null,
+    onSuccess: ((CdnServer) -> Unit)? = null,
 ): ByteArray {
     validateManifestChunk(chunk)
     var lastError: Throwable? = null
@@ -1177,10 +1201,9 @@ internal suspend fun downloadEncryptedChunk(
             val encrypted = ByteArray(chunk.compressedLength)
             val token = authTokens.get(server)
             hasToken = token != null
-            val downloadedBytes = if (httpClient != null) {
-                // JavaSteam 1.8.0 implements downloadDepotChunk with ResponseBody.bytes(),
-                // which allocates a second full response array for every concurrent request.
-                // Stream directly into the caller-owned destination instead.
+            // Streaming into the caller-owned destination avoids duplicating the response
+            // buffer for every concurrent chunk request on a constrained Android heap.
+            val downloadedBytes =
                 downloadEncryptedChunkStreaming(
                     httpClient = httpClient,
                     server = server,
@@ -1191,17 +1214,6 @@ internal suspend fun downloadEncryptedChunk(
                 ) {
                     checkDownloadControl(control)
                 }
-            } else {
-                cdnClient.downloadDepotChunk(
-                    depotId,
-                    chunk,
-                    server,
-                    encrypted,
-                    null,
-                    null,
-                    token,
-                )
-            }
             check(downloadedBytes == encrypted.size) { "Steam chunk compressed length mismatch" }
             selector.recordSuccess(
                 server = server,
@@ -1236,14 +1248,14 @@ internal suspend fun downloadEncryptedChunk(
 
 internal suspend fun downloadEncryptedChunkToSpool(
     httpClient: OkHttpClient,
-    servers: List<Server>,
+    servers: List<CdnServer>,
     depotId: Int,
-    chunk: ChunkData,
+    chunk: DepotChunkSpec,
     destination: File,
     authTokens: CdnAuthTokenProvider,
     selector: CdnServerSelector,
     control: suspend () -> SteamDownloadControl,
-    onSuccess: ((Server) -> Unit)? = null,
+    onSuccess: ((CdnServer) -> Unit)? = null,
 ): Int {
     validateManifestChunk(chunk)
     var lastError: Throwable? = null
@@ -1302,9 +1314,9 @@ internal suspend fun downloadEncryptedChunkToSpool(
  */
 private suspend fun downloadEncryptedChunkStreaming(
     httpClient: OkHttpClient,
-    server: Server,
+    server: CdnServer,
     depotId: Int,
-    chunk: ChunkData,
+    chunk: DepotChunkSpec,
     cdnAuthToken: String?,
     destination: ByteArray,
     beforeRead: suspend () -> Unit,
@@ -1326,7 +1338,7 @@ private suspend fun downloadEncryptedChunkStreaming(
     val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
     response.use { resp ->
         if (!resp.isSuccessful) {
-            throw SteamKitWebRequestException(
+            throw SteamCdnHttpException(
                 "Steam CDN returned ${resp.code} (${resp.message})",
                 resp,
             )
@@ -1356,9 +1368,9 @@ private suspend fun downloadEncryptedChunkStreaming(
 
 private suspend fun downloadEncryptedChunkStreamingToFile(
     httpClient: OkHttpClient,
-    server: Server,
+    server: CdnServer,
     depotId: Int,
-    chunk: ChunkData,
+    chunk: DepotChunkSpec,
     cdnAuthToken: String?,
     destination: File,
 ): Int = suspendCancellableCoroutine { continuation ->
@@ -1393,7 +1405,7 @@ private suspend fun downloadEncryptedChunkStreamingToFile(
                 try {
                     response.use { resp ->
                         if (!resp.isSuccessful) {
-                            throw SteamKitWebRequestException(
+                            throw SteamCdnHttpException(
                                 "Steam CDN returned ${resp.code} (${resp.message})",
                                 resp,
                             )
@@ -1442,18 +1454,12 @@ private suspend fun downloadEncryptedChunkStreamingToFile(
 }
 
 /** Returns the OkHttp client configured by createCdnClient (proxy, TLS and dispatcher). */
-internal fun SteamCdnClient.streamingHttpClient(): OkHttpClient =
-    javaClass.getDeclaredField("httpClient").let { field ->
-        field.isAccessible = true
-        field.get(this) as OkHttpClient
-    }
-
 private fun buildSteamCdnCommand(
-    server: Server,
+    server: CdnServer,
     command: String,
     query: String?,
 ): HttpUrl {
-    val scheme = if (server.protocol == Server.ConnectionProtocol.HTTP) "http" else "https"
+    val scheme = if (server.https) "https" else "http"
     val builder =
         HttpUrl.Builder()
             .scheme(scheme)
@@ -1471,16 +1477,7 @@ private fun buildSteamCdnCommand(
     return builder.build()
 }
 
-internal fun decodeDepotChunk(
-    chunk: ChunkData,
-    encrypted: ByteArray,
-    depotKey: ByteArray,
-): ByteArray {
-    val decoded = ByteArray(chunk.uncompressedLength)
-    val written = DepotChunk.process(chunk, encrypted, decoded, depotKey)
-    check(written == decoded.size) { "Steam chunk decompressed length mismatch" }
-    return decoded
-}
+internal class SteamCdnHttpException(message: String) : IOException(message)
 
 internal class SteamCdnTransferException(
     message: String,
@@ -1525,13 +1522,13 @@ internal suspend fun <T> withSteamCdnRecovery(
 internal suspend fun downloadFilePlans(
     plans: List<ManifestFilePlan>,
     destinationDirectory: File,
-    cdnClient: SteamCdnClient,
-    httpClient: OkHttpClient? = null,
-    servers: List<Server>,
+    httpClient: OkHttpClient,
+    servers: List<CdnServer>,
     depotId: Int,
     depotKey: ByteArray,
     authTokens: CdnAuthTokenProvider,
     selector: CdnServerSelector,
+    depotDownloader: DepotDownloader,
     chunkConcurrency: Int,
     control: suspend () -> SteamDownloadControl,
     progressReporter: DownloadProgressReporter,
@@ -1561,13 +1558,13 @@ internal suspend fun downloadFilePlans(
                     downloadFilePlan(
                         plan = plan,
                         destinationDirectory = destinationDirectory,
-                        cdnClient = cdnClient,
                         httpClient = httpClient,
                         servers = servers,
                         depotId = depotId,
                         depotKey = depotKey,
                         authTokens = authTokens,
                         selector = selector,
+                        depotDownloader = depotDownloader,
                         chunkConcurrency = perFileConcurrency,
                         control = control,
                         progressReporter = progressReporter,
@@ -1581,13 +1578,13 @@ internal suspend fun downloadFilePlans(
 internal suspend fun downloadFilePlan(
     plan: ManifestFilePlan,
     destinationDirectory: File,
-    cdnClient: SteamCdnClient,
-    httpClient: OkHttpClient? = null,
-    servers: List<Server>,
+    httpClient: OkHttpClient,
+    servers: List<CdnServer>,
     depotId: Int,
     depotKey: ByteArray,
     authTokens: CdnAuthTokenProvider,
     selector: CdnServerSelector,
+    depotDownloader: DepotDownloader,
     chunkConcurrency: Int,
     control: suspend () -> SteamDownloadControl,
     progressReporter: DownloadProgressReporter,
@@ -1631,7 +1628,6 @@ internal suspend fun downloadFilePlan(
         downloadChunksContinuously(
             chunks = plan.chunks.filterNot { it.offset in verifiedOffsets },
             output = output,
-            cdnClient = cdnClient,
             httpClient = httpClient,
             servers = servers,
             depotId = depotId,
@@ -1662,21 +1658,21 @@ internal suspend fun downloadFilePlan(
 }
 
 internal suspend fun downloadChunksContinuously(
-    chunks: List<ChunkData>,
+    chunks: List<DepotChunkSpec>,
     output: RandomAccessFile,
-    cdnClient: SteamCdnClient,
-    httpClient: OkHttpClient? = null,
-    servers: List<Server>,
+    httpClient: OkHttpClient,
+    servers: List<CdnServer>,
     depotId: Int,
     depotKey: ByteArray,
     authTokens: CdnAuthTokenProvider,
     selector: CdnServerSelector,
+    depotDownloader: DepotDownloader,
     chunkConcurrency: Int,
     control: suspend () -> SteamDownloadControl,
     onChunkWritten: suspend (ByteArray) -> Unit,
 ) = coroutineScope {
     if (chunks.isEmpty()) return@coroutineScope
-    val queue = Channel<ChunkData>(chunkConcurrency)
+    val queue = Channel<DepotChunkSpec>(chunkConcurrency)
     val completed = Channel<DownloadedChunk>(chunkConcurrency)
     launch {
         chunks.forEach { chunk ->
@@ -1692,7 +1688,6 @@ internal suspend fun downloadChunksContinuously(
                 currentCoroutineContext().ensureActive()
                 checkDownloadControl(control)
                 val data = downloadChunk(
-                    cdnClient = cdnClient,
                     httpClient = httpClient,
                     servers = servers,
                     depotId = depotId,
@@ -1700,6 +1695,7 @@ internal suspend fun downloadChunksContinuously(
                     depotKey = depotKey,
                     authTokens = authTokens,
                     selector = selector,
+                    depotDownloader = depotDownloader,
                     control = control,
                 )
                 val written = CompletableDeferred<Unit>()
@@ -1718,7 +1714,7 @@ internal suspend fun downloadChunksContinuously(
 }
 
 internal fun verifyFileHash(
-    file: FileData,
+    file: DepotFileSpec,
     calculatedHash: ByteArray,
 ) {
     if (file.fileHash.isNotEmpty()) {
@@ -1730,8 +1726,8 @@ internal fun verifyFileHash(
 
 internal fun isCompletedFile(
     file: File,
-    manifestFile: FileData,
-    chunks: List<ChunkData>,
+    manifestFile: DepotFileSpec,
+    chunks: List<DepotChunkSpec>,
 ): Boolean {
     if (!file.isFile || file.length() != manifestFile.totalSize) return false
     val verified = findVerifiedChunkOffsets(file, chunks)
@@ -1762,7 +1758,7 @@ internal fun calculateFileHash(file: File): ByteArray {
     return digest.digest()
 }
 
-internal fun createCdnClient(options: SteamContentDownloadOptions): SteamCdnClient {
+internal fun createCdnHttpClient(options: SteamContentDownloadOptions): OkHttpClient {
     val dispatcher =
         Dispatcher().apply {
             maxRequests = options.chunkConcurrency * 2
@@ -1785,21 +1781,12 @@ internal fun createCdnClient(options: SteamContentDownloadOptions): SteamCdnClie
             .addInterceptor { chain ->
                 val request = chain.request()
                 val secureUrl = request.url.upgradeSteamCdnUrl()
-                val response = chain.proceed(
+                chain.proceed(
                     if (secureUrl == request.url) request else request.newBuilder().url(secureUrl).build(),
                 )
-                if (request.url.isSteamManifestRequest()) response.withBoundedManifestBody() else response
             }
     httpClientBuilder.applyDownloadProxy(options.proxyUrl)
-    val httpClient = httpClientBuilder.build()
-    return SteamCdnClient(
-        SteamClient(
-            SteamConfiguration.create { configuration ->
-                configuration.withConnectionTimeout(CONNECT_TIMEOUT_MS)
-                configuration.withHttpClient(httpClient)
-            },
-        ),
-    )
+    return httpClientBuilder.build()
 }
 
 internal fun HttpUrl.upgradeSteamCdnUrl(): HttpUrl =
@@ -1808,34 +1795,6 @@ internal fun HttpUrl.upgradeSteamCdnUrl(): HttpUrl =
     } else {
         this
     }
-
-internal fun HttpUrl.isSteamManifestRequest(): Boolean =
-    encodedPathSegments.any { it.equals("manifest", ignoreCase = true) }
-
-internal fun Response.withBoundedManifestBody(): Response {
-    if (!isSuccessful) {
-        body.close()
-        return newBuilder().body(ByteArray(0).toResponseBody(null)).build()
-    }
-    val responseBody = body
-    val compressed = responseBody.byteStream().use { it.readBytesBounded(MAX_MANIFEST_RESPONSE_BYTES) }
-    val manifest =
-        ZipInputStream(ByteArrayInputStream(compressed)).use { archive ->
-            requireNotNull(archive.nextEntry) { "Steam manifest response ZIP is empty" }
-            archive.readBytesBounded(MAX_MANIFEST_DECOMPRESSED_BYTES)
-        }
-    val sanitized =
-        ByteArrayOutputStream().use { bytes ->
-            ZipOutputStream(bytes).use { archive ->
-                archive.putNextEntry(ZipEntry("manifest.bin"))
-                archive.write(manifest)
-                archive.closeEntry()
-            }
-            bytes.toByteArray()
-        }
-    responseBody.close()
-    return newBuilder().body(sanitized.toResponseBody(responseBody.contentType())).build()
-}
 
 internal fun java.io.InputStream.readBytesBounded(maxBytes: Int): ByteArray {
     require(maxBytes > 0) { "Invalid response byte limit: $maxBytes" }
@@ -1854,7 +1813,7 @@ internal fun java.io.InputStream.readBytesBounded(maxBytes: Int): ByteArray {
 }
 
 internal fun describeServer(
-    server: Server,
+    server: CdnServer,
     hasToken: Boolean,
 ): String {
     val requestHost = resolveCdnRequestHost(server.vHost, server.host) ?: "unknown CDN"
@@ -1881,94 +1840,10 @@ internal fun buildCdnError(
             .joinToString(prefix = "Steam CDN $kind download failed: ", separator = "; ")
     }
 
-internal suspend fun openContentSession(
-    credential: SteamContentCredential?,
-    onAuthenticating: suspend () -> Unit,
-): SteamContentSession {
-    val configuration =
-        SteamConfiguration.create { config ->
-            config.withConnectionTimeout(CONNECT_TIMEOUT_MS)
-        }
-    val client = SteamClient(configuration)
-    val callbackManager = CallbackManager(client)
-    val user = client.getHandler(SteamUser::class.java) ?: error("SteamUser handler unavailable")
-    val apps = client.getHandler(SteamApps::class.java) ?: error("SteamApps handler unavailable")
-    val content = client.getHandler(SteamContent::class.java) ?: error("SteamContent handler unavailable")
-    val connected = CompletableDeferred<Unit>()
-    val loggedOn = CompletableDeferred<Unit>()
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    val subscriptions = mutableListOf<Closeable>()
-    val sessionLabel = if (credential == null) "Anonymous Steam content session" else "Authenticated Steam content session"
-    subscriptions +=
-        callbackManager.subscribe(ConnectedCallback::class.java) {
-            connected.complete(Unit)
-        }
-    subscriptions +=
-        callbackManager.subscribe(DisconnectedCallback::class.java) {
-            val failure = IllegalStateException("$sessionLabel disconnected")
-            if (!connected.isCompleted) connected.completeExceptionally(failure)
-            if (!loggedOn.isCompleted) loggedOn.completeExceptionally(failure)
-        }
-    subscriptions +=
-        callbackManager.subscribe(LoggedOnCallback::class.java) { callback ->
-            if (callback.result == EResult.OK) {
-                loggedOn.complete(Unit)
-            } else {
-                loggedOn.completeExceptionally(
-                    IllegalStateException("$sessionLabel login failed: ${callback.result}"),
-                )
-            }
-        }
-    val callbackJob =
-        scope.launch {
-            while (isActive) {
-                runCatching { callbackManager.runWaitCallbacks(1_000L) }
-                delay(1)
-            }
-        }
-    try {
-        client.connect()
-        withTimeout(CONNECT_TIMEOUT_MS) { connected.await() }
-        if (credential == null) {
-            user.logOnAnonymous(AnonymousLogOnDetails(null, EOSType.AndroidUnknown, "schinese"))
-        } else {
-            onAuthenticating()
-            user.logOn(
-                LogOnDetails(
-                    username = credential.accountName,
-                    accessToken = credential.refreshToken,
-                    shouldRememberPassword = true,
-                    loginID = nextContentSteamLoginId(),
-                    machineName = "WallHub Android Download Worker",
-                    chatMode = ChatMode.NEW_STEAM_CHAT,
-                ),
-            )
-        }
-        withTimeout(LOGON_TIMEOUT_MS) { loggedOn.await() }
-        return SteamContentSession(
-            client = client,
-            user = user,
-            apps = apps,
-            content = content,
-            isAuthenticated = credential != null,
-            callbackScope = scope,
-            callbackJob = callbackJob,
-            subscriptions = subscriptions,
-        )
-    } catch (error: Throwable) {
-        callbackJob.cancel()
-        subscriptions.forEach { subscription -> runCatching { subscription.close() } }
-        runCatching { user.logOff() }
-        runCatching { client.disconnect() }
-        scope.cancel()
-        throw error
-    }
-}
-
 internal data class SteamContentAccess(
     val depotKey: ByteArray,
     val manifestRequestCode: Long,
-    val servers: List<Server>,
+    val servers: List<CdnServer>,
     val authTokens: CdnAuthTokenProvider,
 )
 
@@ -1979,8 +1854,8 @@ internal data class DownloadedChunk(
 )
 
 internal data class ManifestFilePlan(
-    val file: FileData,
-    val chunks: List<ChunkData>,
+    val file: DepotFileSpec,
+    val chunks: List<DepotChunkSpec>,
 ) {
     fun isSmallFilePipelineCandidate(): Boolean = isSmallFilePipelineCandidate(file.totalSize, chunks.size)
 }
@@ -1991,7 +1866,7 @@ internal class CdnServerSelector {
     private val performance = mutableMapOf<String, CdnHostPerformance>()
 
     @Synchronized
-    fun candidates(servers: List<Server>): List<Server> {
+    fun candidates(servers: List<CdnServer>): List<CdnServer> {
         if (servers.size < 2) return servers
         val now = System.currentTimeMillis()
         val available = servers.filterNot { server -> isPenalized(server, now) }
@@ -2006,24 +1881,24 @@ internal class CdnServerSelector {
             rotated
                 .withIndex()
                 .sortedWith(
-                    compareByDescending<IndexedValue<Server>> { indexed ->
+                    compareByDescending<IndexedValue<CdnServer>> { indexed ->
                         val stats = performance[indexed.value.selectorKey()]
                         val estimated =
                             stats?.bytesPerSecond?.takeIf { stats.samples > 0 }
                                 ?: bestKnownBytesPerSecond * CDN_UNSAMPLED_EXPLORATION_MULTIPLIER
                         estimated / ((stats?.activeRequests ?: 0) + 1).toDouble()
-                    }.thenBy(IndexedValue<Server>::index),
-                ).map(IndexedValue<Server>::value)
+                    }.thenBy(IndexedValue<CdnServer>::index),
+                ).map(IndexedValue<CdnServer>::value)
         return ranked + failed
     }
 
     @Synchronized
-    fun recordStart(server: Server) {
+    fun recordStart(server: CdnServer) {
         performance.getOrPut(server.selectorKey(), ::CdnHostPerformance).activeRequests += 1
     }
 
     @Synchronized
-    fun recordFailure(server: Server) {
+    fun recordFailure(server: CdnServer) {
         performance[server.selectorKey()]?.let { stats ->
             stats.activeRequests = (stats.activeRequests - 1).coerceAtLeast(0)
         }
@@ -2031,7 +1906,7 @@ internal class CdnServerSelector {
     }
 
     @Synchronized
-    fun recordCancelled(server: Server) {
+    fun recordCancelled(server: CdnServer) {
         performance[server.selectorKey()]?.let { stats ->
             stats.activeRequests = (stats.activeRequests - 1).coerceAtLeast(0)
         }
@@ -2039,7 +1914,7 @@ internal class CdnServerSelector {
 
     @Synchronized
     fun recordSuccess(
-        server: Server,
+        server: CdnServer,
         bytes: Int,
         elapsedNanos: Long,
     ) {
@@ -2060,7 +1935,7 @@ internal class CdnServerSelector {
         failedHosts.remove(key)
     }
 
-    private fun isPenalized(server: Server, now: Long): Boolean {
+    private fun isPenalized(server: CdnServer, now: Long): Boolean {
         val key = server.selectorKey()
         val expiry = failedHosts[key] ?: return false
         if (expiry <= now) {
@@ -2070,7 +1945,7 @@ internal class CdnServerSelector {
         return true
     }
 
-    private fun Server.selectorKey(): String = (resolveCdnRequestHost(vHost, host) ?: host.orEmpty()).lowercase()
+    private fun CdnServer.selectorKey(): String = (resolveCdnRequestHost(vHost, host) ?: host.orEmpty()).lowercase()
 
     private companion object {
         const val CDN_FAILURE_COOLDOWN_MS = 30_000L
@@ -2092,17 +1967,22 @@ private class CdnHostPerformance(
 )
 
 internal class CdnAuthTokenProvider(
-    private val content: SteamContent,
+    private val client: SteamClient,
     private val appId: Int,
     private val depotId: Int,
-    private val callbackScope: CoroutineScope,
     private val enabled: Boolean,
 ) {
+    private data class CachedCdnAuthToken(
+        val token: String,
+        val expiresAtMs: Long,
+    )
+
     private val cachedTokens = mutableMapOf<String, CachedCdnAuthToken>()
     private val pendingTokens = mutableMapOf<String, kotlinx.coroutines.Deferred<CachedCdnAuthToken>>()
     private val mutex = Mutex()
+    private val callbackScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    suspend fun get(server: Server): String? {
+    suspend fun get(server: CdnServer): String? {
         if (!enabled) return null
         val requestHost = resolveCdnRequestHost(server.vHost, server.host) ?: return null
         val cacheKey = requestHost.lowercase()
@@ -2118,17 +1998,7 @@ internal class CdnAuthTokenProvider(
                     }
                 pendingTokens[cacheKey] ?: callbackScope
                     .async {
-                        val response =
-                            content
-                                .getCDNAuthToken(appId, depotId, requestHost, callbackScope)
-                                .await()
-                        check(response.result == EResult.OK) { "Steam CDN authorization failed: ${response.result}" }
-                        CachedCdnAuthToken(
-                            token =
-                                normalizeCdnAuthToken(response.token).takeIf(String::isNotBlank)
-                                    ?: error("Steam returned no CDN authorization token"),
-                            expiresAtMs = response.expiration?.time ?: Long.MAX_VALUE,
-                        )
+                        client.steamCdnAuthToken(appId = appId, depotId = depotId, hostName = requestHost)
                     }.also { request -> pendingTokens[cacheKey] = request }
             }
         cachedToken?.let { return it }
@@ -2147,30 +2017,6 @@ internal class CdnAuthTokenProvider(
             throw error
         }
     }
-
-    private data class CachedCdnAuthToken(
-        val token: String,
-        val expiresAtMs: Long,
-    )
-}
-
-internal data class SteamContentSession(
-    val client: SteamClient,
-    val user: SteamUser,
-    val apps: SteamApps,
-    val content: SteamContent,
-    val isAuthenticated: Boolean,
-    val callbackScope: CoroutineScope,
-    val callbackJob: Job,
-    val subscriptions: List<Closeable>,
-) {
-    fun close() {
-        callbackJob.cancel()
-        subscriptions.forEach { subscription -> runCatching { subscription.close() } }
-        runCatching { user.logOff() }
-        runCatching { client.disconnect() }
-        callbackScope.cancel()
-    }
 }
 
 internal fun String.videoFileExtension(): String {
@@ -2179,13 +2025,6 @@ internal fun String.videoFileExtension(): String {
 }
 
 internal const val WALLPAPER_ENGINE_APP_ID = 431960
-internal const val CONTENT_STEAM_LOGIN_ID_BASE = 0x57484300
-private val nextContentLoginId = AtomicInteger(CONTENT_STEAM_LOGIN_ID_BASE)
-
-internal fun nextContentSteamLoginId(): Int = nextContentLoginId.updateAndGet { current ->
-    if (current == Int.MAX_VALUE) CONTENT_STEAM_LOGIN_ID_BASE else current + 1
-}
-
 internal data class ManifestChunkBoundary(
     val offset: Long,
     val compressedLength: Long,
@@ -2252,7 +2091,7 @@ internal fun validateManifestBoundaries(files: List<ManifestFileBoundary>): Long
 internal fun validateManifestFilePlans(plans: List<ManifestFilePlan>): Long =
     validateManifestFiles(plans.map(ManifestFilePlan::file))
 
-internal fun validateManifestFiles(files: List<FileData>): Long =
+internal fun validateManifestFiles(files: List<DepotFileSpec>): Long =
     validateManifestBoundaries(
         files.map { file ->
             ManifestFileBoundary(
@@ -2264,7 +2103,7 @@ internal fun validateManifestFiles(files: List<FileData>): Long =
         },
     )
 
-internal fun validateManifestChunk(chunk: ChunkData) {
+internal fun validateManifestChunk(chunk: DepotChunkSpec) {
     val boundary = manifestChunkBoundary(chunk)
     require(boundary.compressedLength in 0..MAX_MANIFEST_CHUNK_BYTES) {
         "Steam manifest compressed chunk length is invalid: ${boundary.compressedLength}"
@@ -2274,7 +2113,7 @@ internal fun validateManifestChunk(chunk: ChunkData) {
     }
 }
 
-private fun manifestChunkBoundary(chunk: ChunkData): ManifestChunkBoundary =
+private fun manifestChunkBoundary(chunk: DepotChunkSpec): ManifestChunkBoundary =
     ManifestChunkBoundary(
         offset = chunk.offset,
         compressedLength = chunk.compressedLength.toLong(),

@@ -1,19 +1,11 @@
 package com.wallhub.android.data.steamaccess
 
-import com.wallhub.android.data.steam.OkHttpSteamWebSocketConnection
-import com.wallhub.android.data.steam.SteamWebSocketServerListProvider
-import com.wallhub.android.data.steam.createSteamConfiguration
-import com.wallhub.android.data.steam.createSteamDirectoryClient
-import com.wallhub.android.data.steam.steamWebSocketUrl
-import `in`.dragonbra.javasteam.networking.steam3.ProtocolTypes
-import `in`.dragonbra.javasteam.steam.discovery.ServerRecord
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.ProxySelector
 import java.net.SocketAddress
 import java.net.URI
-import java.util.EnumSet
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -97,46 +89,5 @@ class SteamAccessRoutesTest {
 
         assertEquals(listOf(expected), selector.safeSelect(URI("https://cmp1-sea1.steamserver.net")))
         assertEquals(listOf(Proxy.NO_PROXY), null.safeSelect(URI("https://cmp1-sea1.steamserver.net")))
-    }
-
-    @Test
-    fun `configuration uses application okhttp client for CM websockets`() {
-        val configuration =
-            createSteamConfiguration(
-                directoryClient = createSteamDirectoryClient(),
-                serverListProvider = SteamWebSocketServerListProvider(),
-            )
-
-        val connection =
-            configuration.connectionFactory.createConnection(
-                configuration,
-                EnumSet.of(ProtocolTypes.WEB_SOCKET),
-            )
-
-        assertTrue(connection is OkHttpSteamWebSocketConnection)
-    }
-
-    @Test
-    fun `CM websocket URL keeps discovered host port and path`() {
-        val endpoint = InetSocketAddress.createUnresolved("cmp1-sea1.steamserver.net", 443)
-
-        assertEquals(
-            "https://cmp1-sea1.steamserver.net/cmsocket/",
-            steamWebSocketUrl(endpoint).toString(),
-        )
-    }
-
-    @Test
-    fun `server cache keeps websocket endpoints only`() {
-        val provider = SteamWebSocketServerListProvider()
-        provider.updateServerList(
-            listOf(
-                ServerRecord.createWebSocketServer("cmp1-sea1.steamserver.net:443"),
-                ServerRecord.createServer("127.0.0.1", 27017, ProtocolTypes.TCP),
-            ),
-        )
-
-        assertEquals(1, provider.fetchServerList().size)
-        assertEquals("cmp1-sea1.steamserver.net", provider.fetchServerList().single().host)
     }
 }

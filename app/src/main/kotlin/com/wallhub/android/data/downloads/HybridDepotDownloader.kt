@@ -11,27 +11,23 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Hybrid migration Phase 3 routing engine: prefers the Rust depot core for every capability
- * it declares and falls back to the Kotlin engine on any failure. A failing Rust engine is
- * re-probed after [RUST_REPROBE_MS] so transient native issues self-heal while the Kotlin
- * path keeps verification and decoding moving.
+ * Depot engine routing after the JavaSteam removal: the Rust depot core owns every
+ * capability (chunk download, verification, decode). A failing engine is re-probed after
+ * [RUST_REPROBE_MS] so transient native issues self-heal instead of failing permanently.
  */
 @Singleton
 class HybridDepotDownloader internal constructor(
-    private val kotlinEngine: DepotDownloader,
     private val rustEngine: DepotDownloader,
     private val diagnostics: DiagnosticRepository,
     private val elapsedRealtimeMillis: () -> Long,
 ) : DepotDownloader {
     @Inject
     constructor(
-        kotlinEngine: KotlinDepotDownloader,
         rustEngine: RustDepotDownloader,
         diagnostics: DiagnosticRepository,
-    ) : this(kotlinEngine, rustEngine, diagnostics, SystemClock::elapsedRealtime)
+    ) : this(rustEngine, diagnostics, SystemClock::elapsedRealtime)
 
-    override val capabilities: Set<DepotDownloaderCapability> =
-        rustEngine.capabilities + kotlinEngine.capabilities
+    override val capabilities: Set<DepotDownloaderCapability> = rustEngine.capabilities
 
     @Volatile
     private var consecutiveRustFailures: Int = 0
@@ -39,11 +35,11 @@ class HybridDepotDownloader internal constructor(
     @Volatile
     private var lastRustFailureElapsedRealtime: Long = 0L
 
-        override suspend fun verifyChunk(
-            data: ByteArray,
-            expectedChecksum: Int,
-        ): Boolean {
-            if (rustUsable(DepotDownloaderCapability.CHUNK_VERIFICATION)) {
+    override suspend fun verifyChunk(
+        data: ByteArray,
+        expectedChecksum: Int,
+    ): Boolean {
+        if (rustUsable(DepotDownloaderCapability.CHUNK_VERIFICATION)) {
             runCatching { rustEngine.verifyChunk(data, expectedChecksum) }
                 .onSuccess { verified ->
                     if (verified) recordRustSuccess()
@@ -51,15 +47,15 @@ class HybridDepotDownloader internal constructor(
                 }
                 .onFailure { error -> recordRustFailure("verifyChunk", error) }
         }
-        return kotlinEngine.verifyChunk(data, expectedChecksum)
+        error("Rust depot engine is unavailable for chunk verification")
     }
 
-        override suspend fun decodeChunk(
-            chunk: DepotChunkSpec,
-            encrypted: ByteArray,
-            depotKey: ByteArray,
-        ): Result<ByteArray> {
-            if (rustUsable(DepotDownloaderCapability.CHUNK_DECODE)) {
+    override suspend fun decodeChunk(
+        chunk: DepotChunkSpec,
+        encrypted: ByteArray,
+        depotKey: ByteArray,
+    ): Result<ByteArray> {
+        if (rustUsable(DepotDownloaderCapability.CHUNK_DECODE)) {
             runCatching { rustEngine.decodeChunk(chunk, encrypted, depotKey) }
                 .onSuccess { decoded ->
                     if (decoded.isSuccess) recordRustSuccess()
@@ -67,7 +63,9 @@ class HybridDepotDownloader internal constructor(
                 }
                 .onFailure { error -> recordRustFailure("decodeChunk", error) }
         }
-        return kotlinEngine.decodeChunk(chunk, encrypted, depotKey)
+        return Result.failure(
+            IllegalStateException("Rust depot engine is not usable for chunk decode"),
+        )
     }
 
     /** One-shot CDN chunk download + decode; only the Rust engine owns network chunk fetch. */
@@ -108,7 +106,7 @@ class HybridDepotDownloader internal constructor(
             DiagnosticEvent(
                 source = "HybridDepotDownloader",
                 level = DiagnosticLevel.WARNING,
-                message = "Rust depot engine failure ($operation, consecutive=$consecutiveRustFailures); using Kotlin engine",
+                message = "Rust depot engine failure ($operation, consecutive=$consecutiveRustFailures)",
                 attributes = mapOf("error" to (error.message ?: error.javaClass.simpleName)),
             ),
         )

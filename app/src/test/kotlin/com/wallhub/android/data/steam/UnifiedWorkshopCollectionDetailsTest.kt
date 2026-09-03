@@ -1,7 +1,8 @@
 package com.wallhub.android.data.steam
 
-import `in`.dragonbra.javasteam.enums.EResult
-import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesPublishedfileSteamclient
+import steam.webui.publishedfile.CPublishedFile_GetDetails_Response
+import steam.webui.publishedfile.PublishedFileDetails
+import steam.webui.publishedfile.PublishedFileDetails_Child
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -10,20 +11,18 @@ class UnifiedWorkshopCollectionDetailsTest {
     fun collectionChildrenPreserveSteamSortOrderAndRemoveDuplicates() {
         val collectionId = 1_884_277_090L
         val detail =
-            SteammessagesPublishedfileSteamclient.PublishedFileDetails
-                .newBuilder()
-                .setPublishedfileid(collectionId)
-                .setResult(EResult.OK.code())
-                .addChildren(child(id = 30L, order = 2))
-                .addChildren(child(id = 10L, order = 0))
-                .addChildren(child(id = 20L, order = 1))
-                .addChildren(child(id = 10L, order = 3))
-                .build()
-        val response =
-            SteammessagesPublishedfileSteamclient.CPublishedFile_GetDetails_Response
-                .newBuilder()
-                .addPublishedfiledetails(detail)
-                .build()
+            PublishedFileDetails(
+                publishedfileid = collectionId,
+                result = ERESULT_OK,
+                children =
+                    listOf(
+                        child(id = 30L, order = 2),
+                        child(id = 10L, order = 0),
+                        child(id = 20L, order = 1),
+                        child(id = 10L, order = 3),
+                    ),
+            )
+        val response = CPublishedFile_GetDetails_Response(publishedfiledetails = listOf(detail))
 
         assertEquals(listOf(10L, 20L, 30L), mapUnifiedCollectionChildIds(collectionId, response))
     }
@@ -31,9 +30,8 @@ class UnifiedWorkshopCollectionDetailsTest {
     private fun child(
         id: Long,
         order: Int,
-    ) = SteammessagesPublishedfileSteamclient.PublishedFileDetails.Child
-        .newBuilder()
-        .setPublishedfileid(id)
-        .setSortorder(order)
-        .build()
+    ) = PublishedFileDetails_Child(
+        publishedfileid = id,
+        sortorder = order,
+    )
 }

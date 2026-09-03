@@ -15,7 +15,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.UUID
 import java.util.zip.Adler32
-import `in`.dragonbra.javasteam.util.Adler32 as SteamAdler32
 
 internal class SteamVideoStreamCache(
     rootDirectory: File,
@@ -135,7 +134,7 @@ internal class SteamVideoStreamCache(
         expectedChecksum: Int,
         data: ByteArray,
     ) {
-        check(SteamAdler32.calculate(data) == expectedChecksum) { "Steam video chunk checksum mismatch" }
+        check(steamAdler32(data) == expectedChecksum) { "Steam video chunk checksum mismatch" }
         commitVerified(chunkOffset, expectedChecksum, data)
     }
 

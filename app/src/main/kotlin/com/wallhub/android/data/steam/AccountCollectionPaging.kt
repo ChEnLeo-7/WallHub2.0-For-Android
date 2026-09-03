@@ -1,14 +1,44 @@
 package com.wallhub.android.data.steam
 
+import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.WorkshopBrowseQuery
+import com.wallhub.android.core.model.WorkshopFilterCatalog
+import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopSummary
+import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.core.model.matchesSteamWallpaper
 
 internal data class AccountCollectionPageSelection<T>(
     val items: List<T>,
     val hasNextPage: Boolean,
 )
+
+internal fun AccountWorkshopQuery.normalized(): AccountWorkshopQuery =
+    copy(
+        page = page.coerceAtLeast(1),
+        pageSize = pageSize.coerceIn(1, MAX_ACCOUNT_WORKSHOP_PAGE_SIZE),
+        searchText = searchText.trim().take(MAX_ACCOUNT_WORKSHOP_SEARCH_LENGTH),
+        types = types.filter { it != WorkshopType.UNKNOWN }.toSet(),
+        tags =
+            tags
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .take(MAX_ACCOUNT_WORKSHOP_TAGS)
+                .toSet(),
+        ratings = ratings.filter { it != WorkshopRating.ALL }.toSet(),
+        genres = genres.intersect(WorkshopFilterCatalog.genres.toSet()),
+        officialTags = officialTags.intersect(WorkshopFilterCatalog.officialTags.toSet()),
+        excludedOfficialTags = excludedOfficialTags.intersect(WorkshopFilterCatalog.officialTags.toSet()),
+        resolutions = resolutions.intersect(WorkshopFilterCatalog.resolutions.toSet()),
+    )
+
+internal fun AccountWorkshopCollection.steamListType(): String =
+    when (this) {
+        AccountWorkshopCollection.SUBSCRIPTIONS -> "mysubscriptions"
+        AccountWorkshopCollection.FAVORITES -> "myfavorites"
+        AccountWorkshopCollection.VOTED -> "myvotes"
+    }
 
 /**
  * Slices already-matched Steam collection entries into the page requested by the UI. The source
@@ -69,3 +99,8 @@ internal fun AccountWorkshopQuery.matchesAccountCollectionItem(summary: Workshop
         }
     }
 }
+
+internal const val MAX_ACCOUNT_WORKSHOP_PAGE_SIZE = 50
+internal const val MAX_ACCOUNT_WORKSHOP_TAGS = 6
+internal const val MAX_ACCOUNT_WORKSHOP_SEARCH_LENGTH = 120
+internal const val MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES = 400

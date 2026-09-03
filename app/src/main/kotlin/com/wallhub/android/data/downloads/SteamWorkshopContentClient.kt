@@ -25,6 +25,7 @@ internal interface WorkshopContentGateway {
 
 internal class FormalSteamWorkshopContentGateway(
     private val httpClientFactory: SteamHttpClientFactory,
+    private val contentDownloader: SteamContentDownloader,
 ) : WorkshopContentGateway {
     override suspend fun fetchContentTarget(
         publishedFileId: Long,
@@ -42,7 +43,7 @@ internal class FormalSteamWorkshopContentGateway(
         control: suspend () -> SteamDownloadControl,
         onProgress: suspend (SteamDownloadProgress) -> Unit,
     ): SteamContentDownloadResult =
-        SteamContentDownloader().download(
+        contentDownloader.download(
             target = target,
             destinationDirectory = destinationDirectory,
             credential = credential,
@@ -60,7 +61,8 @@ class SteamWorkshopContentClient private constructor(
     @Inject
     constructor(
         httpClientFactory: SteamHttpClientFactory,
-    ) : this(FormalSteamWorkshopContentGateway(httpClientFactory), Unit)
+        contentDownloader: SteamContentDownloader,
+    ) : this(FormalSteamWorkshopContentGateway(httpClientFactory, contentDownloader), Unit)
 
     internal constructor(
         gateway: WorkshopContentGateway,

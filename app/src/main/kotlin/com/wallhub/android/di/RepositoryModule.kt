@@ -25,7 +25,7 @@ import com.wallhub.android.data.downloads.KotlinDepotDownloader
 import com.wallhub.android.data.downloads.RoomDownloadTaskRepository
 import com.wallhub.android.data.downloads.SteamWorkshopVideoStreamRepository
 import com.wallhub.android.data.settings.DataStoreSettingsRepository
-import com.wallhub.android.data.steam.SecureSteamSessionRepository
+import com.wallhub.android.data.steam.KSteamSessionRepository
 import com.wallhub.android.data.steamaccess.SteamAccessManager
 import com.wallhub.android.data.update.GitHubAppUpdateRepository
 import com.wallhub.android.data.workshop.CommunityWorkshopRepository
@@ -55,28 +55,28 @@ abstract class RepositoryModule {
 
     @Binds
     @Singleton
-    abstract fun bindSteamSessionRepository(repository: SecureSteamSessionRepository): SteamSessionRepository
+    abstract fun bindSteamSessionRepository(repository: KSteamSessionRepository): SteamSessionRepository
 
     /**
-     * Hybrid migration Phase 1: exposes the JavaSteam session as the engine-neutral protocol
-     * seam. The singleton instance is shared with every individual contract binding above.
+     * Exposes the kSteam session as the engine-neutral protocol seam. The singleton instance
+     * is shared with every individual contract binding above.
      */
     @Binds
     @Singleton
-    abstract fun bindSteamProtocolClient(repository: SecureSteamSessionRepository): SteamProtocolClient
+    abstract fun bindSteamProtocolClient(repository: KSteamSessionRepository): SteamProtocolClient
 
-    /** Hybrid migration Phase 3: hybrid routing engine as the default depot seam. */
+    /** Hybrid depot routing engine (Rust core) as the default depot seam. */
     @Binds
     @Singleton
     abstract fun bindDepotDownloader(downloader: HybridDepotDownloader): DepotDownloader
 
     @Binds
     @Singleton
-    abstract fun bindSteamPlaytimeRepository(repository: SecureSteamSessionRepository): SteamPlaytimeRepository
+    abstract fun bindSteamPlaytimeRepository(repository: KSteamSessionRepository): SteamPlaytimeRepository
 
     @Binds
     @Singleton
-    abstract fun bindSteamContentCredentialProvider(repository: SecureSteamSessionRepository): SteamContentCredentialProvider
+    abstract fun bindSteamContentCredentialProvider(repository: KSteamSessionRepository): SteamContentCredentialProvider
 
     @Binds
     @Singleton
@@ -84,11 +84,11 @@ abstract class RepositoryModule {
 
     @Binds
     @Singleton
-    abstract fun bindAccountWorkshopRepository(repository: SecureSteamSessionRepository): AccountWorkshopRepository
+    abstract fun bindAccountWorkshopRepository(repository: KSteamSessionRepository): AccountWorkshopRepository
 
     @Binds
     @Singleton
-    abstract fun bindSteamUnifiedWorkshopRepository(repository: SecureSteamSessionRepository): SteamUnifiedWorkshopRepository
+    abstract fun bindSteamUnifiedWorkshopRepository(repository: KSteamSessionRepository): SteamUnifiedWorkshopRepository
 
     @Binds
     @Singleton

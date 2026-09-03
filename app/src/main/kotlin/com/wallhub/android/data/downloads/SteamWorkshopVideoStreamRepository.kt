@@ -23,6 +23,7 @@ class SteamWorkshopVideoStreamRepository
         private val credentialProvider: SteamContentCredentialProvider,
         private val settingsRepository: SettingsRepository,
         private val steamHttpClientFactory: SteamHttpClientFactory,
+        private val contentDownloader: SteamContentDownloader,
     ) : WorkshopVideoStreamRepository {
         private val cacheRootDirectory: File
             get() = File(context.cacheDir, STREAM_CACHE_DIRECTORY)
@@ -42,7 +43,7 @@ class SteamWorkshopVideoStreamRepository
                     var lastError: Throwable? = null
                     repeat(VIDEO_STREAM_OPEN_ATTEMPTS) { attempt ->
                         try {
-                            return@withContext SteamContentDownloader().openVideoStream(
+                            return@withContext contentDownloader.openVideoStream(
                                 target = target,
                                 credential =
                                     if (attempt == 0) {
@@ -59,10 +60,9 @@ class SteamWorkshopVideoStreamRepository
                                 cacheLimitBytes = preferences.mediaCacheLimitMb.toLong() * 1024L * 1024L,
                             ).also { openedStream = it }
                         } catch (error: SteamDepotAccessException) {
+                            // A restored credential can unlock the depot on the retry pass.
                             lastError = error
-                            if (error.result != `in`.dragonbra.javasteam.enums.EResult.AccessDenied ||
-                                attempt + 1 >= VIDEO_STREAM_OPEN_ATTEMPTS
-                            ) {
+                            if (attempt + 1 >= VIDEO_STREAM_OPEN_ATTEMPTS) {
                                 throw error
                             }
                             delay(VIDEO_STREAM_RETRY_DELAY_MS)
