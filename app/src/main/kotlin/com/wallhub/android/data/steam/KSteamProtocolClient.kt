@@ -48,7 +48,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import okio.toPath
+import okio.Path.Companion.toOkioPath
 
 /**
  * kSteam-backed implementation of the engine-neutral [SteamProtocolClient] seam
@@ -97,7 +97,7 @@ class KSteamProtocolClient
                 engine?.let { return it }
                 val created =
                     kSteam {
-                        rootFolder = File(applicationContext.filesDir, "ksteam").toPath()
+                        rootFolder = File(applicationContext.filesDir, "ksteam").toOkioPath()
                         deviceInfo =
                             DeviceInformation(
                                 osType = EOSType.k_eAndroidUnknown,
@@ -110,7 +110,9 @@ class KSteamProtocolClient
                     }
                 authCollector =
                     scope.launch {
-                        created.clientAuthState.collect { state -> onAuthorizationState(state) }
+                        created.account.clientAuthState.collect { state ->
+                            onAuthorizationState(state, created.account.hasSavedDataForAtLeastOneAccount())
+                        }
                     }
                 engine = created
                 created
@@ -125,14 +127,17 @@ class KSteamProtocolClient
             engineConnected = true
         }
 
-        private fun onAuthorizationState(state: AuthorizationState) {
+        private fun onAuthorizationState(
+            state: AuthorizationState,
+            hasStoredSession: Boolean,
+        ) {
             val accountName = pendingAccountName.get()
             val nextState =
                 when (state) {
                     AuthorizationState.Unauthorized ->
                         SteamSessionState(
                             phase = SteamSessionPhase.SIGNED_OUT,
-                            hasStoredSession = engine?.account?.hasSavedDataForAtLeastOneAccount() == true,
+                            hasStoredSession = hasStoredSession,
                         )
 
                     AuthorizationState.Success ->

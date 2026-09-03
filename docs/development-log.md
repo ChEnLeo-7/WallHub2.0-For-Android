@@ -45,3 +45,9 @@
 - Update: CI now clones kSteam at a pinned SHA (e751f78, with the SteamDatabase protobufs submodule), publishes it to Maven Local, and the app consumes `bruhcollective.itaysonlab.ksteam:core:r50`. `settings.gradle.kts` resolves `mavenLocal()`.
 - Update: Added `KSteamProtocolClient` implementing the engine-neutral protocol seam: session core (start/login/Steam Guard/refresh-token restore, pause-resume lifecycle) wired to kSteam; Workshop browse/collections/comments/interactions/playtime degrade gracefully with diagnostics (shadow mode). Added `KsteamEncryptedPersistenceDriver` (Keystore-encrypted kSteam session storage).
 - Verification: full CI on the landing commit; runtime behavior unchanged (JavaSteam remains the active engine).
+
+### kSteam migration Phase B-1: engine source build green
+
+- Fix: kSteam's HEAD protobufs sync broke its own vendored proto tree; pinned the last known-good revision (c6ca6ef) and added a Wire-diagnostic-driven repair loop (missing imports + stub messages) that converges before publishToMavenLocal.
+- Fix: Aligned KSteamProtocolClient/KsteamEncryptedPersistenceDriver with the r50 API (okio path conversion, Account-bound auth state flow, secure per-SteamId persistence members).
+- Verification: kSteam publishToMavenLocal green in CI; app compilation landing next.

@@ -1,8 +1,10 @@
 package com.wallhub.android.data.steam
 
 import android.content.Context
+import bruhcollective.itaysonlab.ksteam.models.SteamId
 import bruhcollective.itaysonlab.ksteam.persistence.KsteamPersistenceDriver
 import com.wallhub.android.data.security.AndroidKeystoreEncryptedStringStore
+import com.wallhub.android.data.security.EncryptedStringReadResult
 import org.json.JSONObject
 
 /**
@@ -24,7 +26,7 @@ internal class KsteamEncryptedPersistenceDriver private constructor(
     private val entries = JSONObject(readPayload())
 
     @Synchronized
-    override fun getString(key: String): String? = entries.optString(key, "")
+    override fun getString(key: String): String? = entries.optString(key, "").takeIf(String::isNotEmpty)
 
     @Synchronized
     override fun getLong(key: String): Long = entries.optLong(key, 0L)
@@ -68,9 +70,65 @@ internal class KsteamEncryptedPersistenceDriver private constructor(
         persist()
     }
 
+    @Synchronized
+    override fun secureGetSteamIds(): List<SteamId> =
+        entries
+            .keys()
+            .asSequence()
+            .filter { it.startsWith(SECURE_KEY_PREFIX) }
+            .map { it.removePrefix(SECURE_KEY_PREFIX).substringBefore(':') }
+            .distinct()
+            .map { SteamId(it.toULong()) }
+            .toList()
+
+    @Synchronized
+    override fun secureGet(
+        id: SteamId,
+        key: String,
+    ): String? = entries.optString(secureKey(id, key), "").takeIf(String::isNotEmpty)
+
+    @Synchronized
+    override fun secureSet(
+        id: SteamId,
+        key: String,
+        value: String,
+    ) {
+        entries.put(secureKey(id, key), value)
+        persist()
+    }
+
+    @Synchronized
+    override fun secureSet(
+        id: SteamId,
+        vararg pairs: Pair<String, String>,
+    ) {
+        pairs.forEach { (key, value) -> entries.put(secureKey(id, key), value) }
+        persist()
+    }
+
+    @Synchronized
+    override fun secureDelete(
+        id: SteamId,
+        vararg key: String,
+    ) {
+        key.forEach { entries.remove(secureKey(id, it)) }
+        persist()
+    }
+
+    @Synchronized
+    override fun secureContainsKey(
+        id: SteamId,
+        key: String,
+    ): Boolean = entries.has(secureKey(id, key))
+
+    private fun secureKey(
+        id: SteamId,
+        key: String,
+    ): String = "$SECURE_KEY_PREFIX${id.id}:$key"
+
     private fun readPayload(): String =
         when (val result = encryptedStore.read()) {
-            is com.wallhub.android.data.security.EncryptedStringReadResult.Value -> result.value
+            is EncryptedStringReadResult.Value -> result.value
             else -> "{}"
         }
 
@@ -81,5 +139,6 @@ internal class KsteamEncryptedPersistenceDriver private constructor(
     private companion object {
         const val PREFERENCES_NAME = "wallhub_ksteam_session"
         const val KEY_ALIAS = "wallhub_ksteam_session_payload"
+        const val SECURE_KEY_PREFIX = "secure:"
     }
 }
