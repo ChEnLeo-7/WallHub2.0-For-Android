@@ -189,7 +189,11 @@ dependencies {
     implementation(libs.javax.inject)
     implementation(libs.json)
     // kSteam protocol engine: the sole Steam client implementation after the JavaSteam removal.
-    implementation(libs.ksteam.core)
+    // kSteam's published POM still carries wire-grpc-client's okhttp 4.x; the app provides
+    // okhttp 5.x (okhttp-android), so drop the legacy artifact here.
+    implementation(libs.ksteam.core) {
+        exclude(group = "com.squareup.okhttp3", module = "okhttp")
+    }
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.jdk8)
