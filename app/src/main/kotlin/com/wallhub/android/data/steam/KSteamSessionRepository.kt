@@ -65,6 +65,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -779,6 +780,15 @@ class KSteamSessionRepository
         internal suspend fun steamContentClient(authenticated: Boolean): SteamClient? {
             if (authenticated) {
                 engine?.takeIf { it.account.clientAuthState.value is AuthorizationState.Success }?.let { return it }
+                // The signed-in engine may briefly leave the Success state while kSteam
+                // transparently re-connects its CM transport; wait a short window for it
+                // before falling back to the anonymous client, whose CM list is far less
+                // reliable (no cell id -> arbitrary global endpoints).
+                withTimeoutOrNull(CONTENT_SESSION_WAIT_TIMEOUT_MS) {
+                    (engine?.account?.clientAuthState ?: kotlinx.coroutines.flow.flowOf(null))
+                        .first { it is AuthorizationState.Success }
+                }
+                engine?.takeIf { it.account.clientAuthState.value is AuthorizationState.Success }?.let { return it }
             }
             return anonymousClient()
         }
@@ -786,6 +796,10 @@ class KSteamSessionRepository
         private suspend fun anonymousClient(): SteamClient? =
             anonymousMutex.withLock {
                 anonymousEngineRef.get()?.let { return it }
+                // Reuse the signed-in engine's cell id so Steam's CM directory returns
+                // nearby, reachable servers; a zero cell id yields arbitrary global
+                // endpoints that are frequently unroutable (NoRouteToHost).
+                val inheritedCellId = engine?.configuration?.cellId ?: 0
                 val created =
                     runCatching {
                         kSteam {
@@ -795,23 +809,30 @@ class KSteamSessionRepository
                             persistenceDriver = MemoryPersistenceDriver
                         }
                     }.getOrNull() ?: return null
-                try {
-                    created.start()
-                    withTimeout(ANONYMOUS_CONNECT_TIMEOUT_MS) {
-                        created.connectionStatus.first { it.hasActiveServerConnection }
-                    }
-                    sendAnonymousLogon(created)
-                    anonymousEngineRef.set(created)
-                    recordSessionEvent(0, "anonymous_logon_success")
-                    created
-                } catch (error: CancellationException) {
-                    runCatching { created.stop() }
-                    throw error
-                } catch (error: Throwable) {
-                    runCatching { created.stop() }
-                    recordSessionEvent(0, "anonymous_logon_failure", outcome = error.javaClass.simpleName)
-                    null
+                if (inheritedCellId != 0) {
+                    runCatching { created.configuration.cellId = inheritedCellId }
                 }
+                repeat(ANONYMOUS_CONNECT_ATTEMPTS) { attempt ->
+                    try {
+                        created.start()
+                        withTimeout(ANONYMOUS_CONNECT_TIMEOUT_MS) {
+                            created.connectionStatus.first { it.hasActiveServerConnection }
+                        }
+                        sendAnonymousLogon(created)
+                        anonymousEngineRef.set(created)
+                        recordSessionEvent(0, "anonymous_logon_success")
+                        return created
+                    } catch (error: CancellationException) {
+                        runCatching { created.stop() }
+                        throw error
+                    } catch (error: Throwable) {
+                        runCatching { created.stop() }
+                        recordSessionEvent(0, "anonymous_logon_failure", outcome = error.javaClass.simpleName)
+                        if (attempt == ANONYMOUS_CONNECT_ATTEMPTS - 1) return null
+                        delay(ANONYMOUS_RETRY_DELAY_MS)
+                    }
+                }
+                null
             }
 
         /**
@@ -1470,6 +1491,9 @@ class KSteamSessionRepository
 
         internal companion object {
             const val ANONYMOUS_CONNECT_TIMEOUT_MS = 20_000L
+            const val ANONYMOUS_CONNECT_ATTEMPTS = 3
+            const val ANONYMOUS_RETRY_DELAY_MS = 2_000L
+            const val CONTENT_SESSION_WAIT_TIMEOUT_MS = 12_000L
             const val RESTORE_TOTAL_TIMEOUT_MS = 60_000L
             const val CONTENT_CREDENTIAL_RESTORE_TIMEOUT_MS = 30_000L
             const val STEAM_RPC_TIMEOUT_MS = 25_000L
