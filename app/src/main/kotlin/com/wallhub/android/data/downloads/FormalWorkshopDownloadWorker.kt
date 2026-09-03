@@ -597,6 +597,8 @@ class FormalWorkshopDownloadWorker
                 }
             }
 
+        override suspend fun getForegroundInfo(): ForegroundInfo = createForegroundInfo()
+
         private fun createForegroundInfo(): ForegroundInfo {
             val manager = applicationContext.getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(
