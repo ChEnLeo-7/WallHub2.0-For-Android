@@ -150,6 +150,9 @@ class KSteamSessionRepository
         private var engineObserver: Job? = null
 
         @Volatile
+        private var engineStarted: Boolean = false
+
+        @Volatile
         private var backgroundedAtElapsedRealtime: Long? = null
 
         override val session: StateFlow<SteamSessionState> = mutableSession.asStateFlow()
@@ -183,6 +186,12 @@ class KSteamSessionRepository
             }
 
         private suspend fun startEngine(client: SteamClient) {
+            // start() refreshes the CM server list before connecting; resume() must never
+            // run before it or CMList.getEndpoint() throws on the empty list.
+            if (!engineStarted) {
+                client.start()
+                engineStarted = true
+            }
             withTimeout(ANONYMOUS_CONNECT_TIMEOUT_MS) {
                 client.connectionStatus.first { it.hasActiveServerConnection }
             }
@@ -616,7 +625,10 @@ class KSteamSessionRepository
                 engineMutex.withLock {
                     engineObserver?.cancel()
                     engineObserver = null
-                    runCatching { engine?.stop() }
+                    if (engineStarted) {
+                        runCatching { engine?.stop() }
+                        engineStarted = false
+                    }
                     engine = null
                 }
                 steamProfiles.clear()
@@ -637,7 +649,10 @@ class KSteamSessionRepository
                 }
             }
             scope.launch {
-                runCatching { engine?.pause() }
+                runCatching {
+                    val client = engine ?: return@launch
+                    if (engineStarted) client.pause()
+                }
             }
         }
 
@@ -649,7 +664,7 @@ class KSteamSessionRepository
             scope.launch {
                 runCatching {
                     val client = engine ?: return@launch
-                    client.resume()
+                    if (engineStarted) client.resume() else startEngine(client)
                     val stale =
                         backgroundedAt != null &&
                             SystemClock.elapsedRealtime() - backgroundedAt >= FOREGROUND_SESSION_REFRESH_AFTER_BACKGROUND_MS
