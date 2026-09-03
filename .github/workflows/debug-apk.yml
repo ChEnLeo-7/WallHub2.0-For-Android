@@ -121,6 +121,12 @@ jobs:
                   raise SystemExit("kSteam proto repair did not converge; see GRADLE lines above")
           PYFIX
           ./gradlew --no-daemon publishToMavenLocal
+      - name: Upload kSteam MavenLocal artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ksteam-maven-local
+          path: ~/.m2/repository/bruhcollective
+          retention-days: 7
       - name: Require Release signing secrets
         env:
           WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
