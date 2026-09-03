@@ -36,7 +36,7 @@ jobs:
           bash scripts/build-rust.sh
       - name: Build kSteam into Maven Local
         env:
-          KSTEAM_PINNED_SHA: e751f788670a973aed2c4304adc983fafe14c260
+          KSTEAM_PINNED_SHA: c6ca6ef389d65c5223b2af9bf422ac830a0a2f32
         run: |
           git clone --depth 1 https://github.com/iTaysonLab/kSteam.git /tmp/ksteam
           cd /tmp/ksteam
