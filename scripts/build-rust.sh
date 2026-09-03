@@ -45,7 +45,9 @@ case "$(uname -s)" in
 esac
 
 TOOLCHAIN_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$HOST_TAG/bin"
-[[ -x "$TOOLCHAIN_BIN/aarch64-linux-android${MIN_SDK_API}-clang$LINKER_SUFFIX" ]] || {
+# Use -f rather than -x: MSYS2/Git Bash does not report the execute bit for
+# NDK's .cmd wrappers on NTFS, and cargo runs them through cmd.exe anyway.
+[[ -f "$TOOLCHAIN_BIN/aarch64-linux-android${MIN_SDK_API}-clang$LINKER_SUFFIX" ]] || {
     echo "ERROR: NDK toolchain not found under $TOOLCHAIN_BIN" >&2
     exit 1
 }
