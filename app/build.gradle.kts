@@ -154,6 +154,12 @@ android {
     }
 }
 
+configurations.all {
+    resolutionStrategy {
+        force("com.squareup.okhttp3:okhttp:5.3.2")
+    }
+}
+
 dependencies {
     implementation(project(":uwu-sdk"))
     implementation(platform(libs.androidx.compose.bom))
@@ -189,11 +195,7 @@ dependencies {
     implementation(libs.javax.inject)
     implementation(libs.json)
     // kSteam protocol engine: the sole Steam client implementation after the JavaSteam removal.
-    // kSteam's published POM still carries wire-grpc-client's okhttp 4.x; the app provides
-    // okhttp 5.x (okhttp-android), so drop the legacy artifact here.
-    implementation(libs.ksteam.core) {
-        exclude(group = "com.squareup.okhttp3", module = "okhttp")
-    }
+    implementation(libs.ksteam.core)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.jdk8)
