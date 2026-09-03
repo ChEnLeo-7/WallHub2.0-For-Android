@@ -91,7 +91,7 @@ class WorkManagerConversionWorkScheduler
     }
 
 @Singleton
-class WallHubDownloadWorkerFactory
+internal class WallHubDownloadWorkerFactory
     @Inject
     constructor(
         private val taskDao: FormalTaskRecordDao,
