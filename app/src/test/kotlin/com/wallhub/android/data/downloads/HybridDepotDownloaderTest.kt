@@ -8,10 +8,18 @@ import com.wallhub.android.core.model.DiagnosticRepository
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class HybridDepotDownloaderTest {
+    private suspend fun assertVerifyFails(hybrid: HybridDepotDownloader) {
+        try {
+            hybrid.verifyChunk(ByteArray(8), 1)
+            throw AssertionError("Expected Rust verification to fail")
+        } catch (_: IllegalStateException) {
+            // The hybrid engine reports unavailable verification as a hard failure.
+        }
+    }
+
     private class RecordingDiagnostics : DiagnosticRepository {
         val events = mutableListOf<DiagnosticEvent>()
 
@@ -58,55 +66,44 @@ class HybridDepotDownloaderTest {
     fun `rust engine is preferred while healthy`() =
         runTest {
             val rust = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_DECODE, DepotDownloaderCapability.CHUNK_VERIFICATION))
-            val kotlin = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_VERIFICATION))
-            val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics()) { 0L }
+            val hybrid = HybridDepotDownloader(rust, RecordingDiagnostics()) { 0L }
 
             assertTrue(hybrid.verifyChunk(ByteArray(8), 1))
             assertEquals(1, rust.calls)
-            assertEquals(0, kotlin.calls)
         }
 
     @Test
-    fun `rust failure falls back to the kotlin engine and is diagnosed`() =
+    fun `rust failure is diagnosed`() =
         runTest {
             val rust = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_VERIFICATION))
             rust.verifyError = IllegalStateException("native engine panicked")
-            val kotlin = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_VERIFICATION))
             val diagnostics = RecordingDiagnostics()
-            val hybrid = HybridDepotDownloader(kotlin, rust, diagnostics) { 0L }
+            val hybrid = HybridDepotDownloader(rust, diagnostics) { 0L }
 
-            assertTrue(hybrid.verifyChunk(ByteArray(8), 1))
+            assertVerifyFails(hybrid)
 
             assertEquals(1, rust.calls)
-            assertEquals(1, kotlin.calls)
             assertEquals(DiagnosticLevel.WARNING, diagnostics.events.single().level)
         }
 
     @Test
-    fun `unavailable rust engine routes everything to kotlin`() =
+    fun `unavailable rust engine reports no capabilities`() =
         runTest {
             val rust = FakeEngine(emptySet())
-            val kotlin = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_VERIFICATION, DepotDownloaderCapability.CHUNK_DECODE))
-            val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics()) { 0L }
+            val hybrid = HybridDepotDownloader(rust, RecordingDiagnostics()) { 0L }
 
-            assertTrue(hybrid.verifyChunk(ByteArray(8), 1))
+            assertVerifyFails(hybrid)
             assertEquals(0, rust.calls)
-            assertEquals(1, kotlin.calls)
-            assertFalse(DepotDownloaderCapability.CHUNK_DOWNLOAD in hybrid.capabilities)
+            assertTrue(DepotDownloaderCapability.CHUNK_DOWNLOAD !in hybrid.capabilities)
         }
 
     @Test
-    fun `capabilities are the union of both engines`() {
+    fun `capabilities mirror the rust engine`() {
         val rust = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_DOWNLOAD, DepotDownloaderCapability.CHUNK_DECODE))
-        val kotlin = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_VERIFICATION))
-        val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics()) { 0L }
+        val hybrid = HybridDepotDownloader(rust, RecordingDiagnostics()) { 0L }
 
         assertEquals(
-            setOf(
-                DepotDownloaderCapability.CHUNK_DOWNLOAD,
-                DepotDownloaderCapability.CHUNK_DECODE,
-                DepotDownloaderCapability.CHUNK_VERIFICATION,
-            ),
+            setOf(DepotDownloaderCapability.CHUNK_DOWNLOAD, DepotDownloaderCapability.CHUNK_DECODE),
             hybrid.capabilities,
         )
     }
@@ -116,44 +113,37 @@ class HybridDepotDownloaderTest {
         runTest {
             val rust = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_VERIFICATION))
             rust.verifyError = IllegalStateException("native engine panicked")
-            val kotlin = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_VERIFICATION))
             var nowMs = 0L
-            val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics()) { nowMs }
+            val hybrid = HybridDepotDownloader(rust, RecordingDiagnostics()) { nowMs }
 
             repeat(HybridDepotDownloader.MAX_RUST_CONSECUTIVE_FAILURES) {
-                hybrid.verifyChunk(ByteArray(8), 1)
+                assertVerifyFails(hybrid)
             }
             val rustCallsAfterWarmup = rust.calls
-            val kotlinCallsAfterWarmup = kotlin.calls
 
             // Within the reprobe window the Rust engine stays disabled.
             nowMs += HybridDepotDownloader.RUST_REPROBE_MS / 2
-            hybrid.verifyChunk(ByteArray(8), 1)
+            assertVerifyFails(hybrid)
             assertEquals(rustCallsAfterWarmup, rust.calls)
-            assertEquals(kotlinCallsAfterWarmup + 1, kotlin.calls)
 
-            // After the reprobe window elapses the Rust engine is retried first; when the
-            // retry fails again the Kotlin engine still serves the request.
+            // After the reprobe window elapses the Rust engine is retried.
             nowMs += HybridDepotDownloader.RUST_REPROBE_MS
-            hybrid.verifyChunk(ByteArray(8), 1)
+            assertVerifyFails(hybrid)
             assertEquals(rustCallsAfterWarmup + 1, rust.calls)
-            assertEquals(kotlinCallsAfterWarmup + 2, kotlin.calls)
         }
 
     @Test
-    fun `decode result passes through without a kotlin retry on success`() =
+    fun `decode result passes through on success`() =
         runTest {
             val payload = ByteArray(16) { 7 }
             val rust = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_DECODE))
             rust.decodeResult = Result.success(payload)
-            val kotlin = FakeEngine(setOf(DepotDownloaderCapability.CHUNK_DECODE))
-            val hybrid = HybridDepotDownloader(kotlin, rust, RecordingDiagnostics()) { 0L }
+            val hybrid = HybridDepotDownloader(rust, RecordingDiagnostics()) { 0L }
             val spec = DepotChunkSpec(checksum = 3, offset = 0L, compressedLength = 8, uncompressedLength = 16)
 
             val result = hybrid.decodeChunk(spec, ByteArray(8), ByteArray(32))
 
             assertTrue(result.isSuccess)
             assertEquals(payload, result.getOrThrow())
-            assertEquals(0, kotlin.calls)
         }
 }
