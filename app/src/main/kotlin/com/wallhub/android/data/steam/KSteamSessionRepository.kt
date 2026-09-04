@@ -398,11 +398,7 @@ class KSteamSessionRepository
                         } catch (error: Throwable) {
                             publishPhase(
                                 phase = SteamSessionPhase.FAILED,
-                                message =
-                                    applicationContext.getString(
-                                        R.string.backend_steam_restore_failed,
-                                        error.displayMessage(),
-                                    ),
+                                message = applicationContext.getString(R.string.backend_steam_restore_failed),
                                 hasStoredSession = error is KsteamSessionStorageException || legacyCredentialExists(),
                             )
                         } finally {
