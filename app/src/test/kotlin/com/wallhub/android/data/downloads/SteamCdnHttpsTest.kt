@@ -1,7 +1,5 @@
 package com.wallhub.android.data.downloads
 
-import com.wallhub.android.data.steam.wire.ContentManifestMetadata
-import com.wallhub.android.data.steam.wire.ContentManifestPayload
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
@@ -81,26 +79,32 @@ class SteamCdnHttpsTest {
     @Test
     fun depotManifestContainerUsesLittleEndianHeaders() {
         val payload =
-            ContentManifestPayload(
-                mappings =
-                    listOf(
-                        ContentManifestPayload.FileMapping(
-                            filename = "video.mp4",
-                            size = 4L,
-                            chunks =
-                                listOf(
-                                    ContentManifestPayload.ChunkData(
-                                        offset = 0L,
-                                        cb_original = 4,
-                                        cb_compressed = 4,
-                                    ),
-                                ),
-                        ),
-                    ),
-            ).let { ContentManifestPayload.ADAPTER.encodeByteString(it).toByteArray() }
-        val metadata =
-            ContentManifestMetadata(depot_id = 431960, gid_manifest = 7L, cb_disk_original = 4L)
-                .let { ContentManifestMetadata.ADAPTER.encodeByteString(it).toByteArray() }
+            byteArrayOf(
+                0x0A,
+                0x15,
+                0x0A,
+                0x09,
+                'v'.code.toByte(),
+                'i'.code.toByte(),
+                'd'.code.toByte(),
+                'e'.code.toByte(),
+                'o'.code.toByte(),
+                '.'.code.toByte(),
+                'm'.code.toByte(),
+                'p'.code.toByte(),
+                '4'.code.toByte(),
+                0x10,
+                0x04,
+                0x32,
+                0x06,
+                0x18,
+                0x00,
+                0x20,
+                0x04,
+                0x28,
+                0x04,
+            )
+        val metadata = byteArrayOf(0x08, 0xD8.toByte(), 0xAE.toByte(), 0x1A, 0x10, 0x07, 0x28, 0x04)
         val container =
             ByteBuffer
                 .allocate(20 + payload.size + metadata.size)
