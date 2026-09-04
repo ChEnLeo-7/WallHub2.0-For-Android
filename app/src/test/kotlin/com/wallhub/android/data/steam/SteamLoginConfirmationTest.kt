@@ -4,8 +4,17 @@ import bruhcollective.itaysonlab.ksteam.models.account.AuthorizationState
 import com.wallhub.android.core.model.SteamSessionPhase
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class SteamLoginConfirmationTest {
+    @Test
+    fun `authenticated Steam client is usable only while its CM transport is active`() {
+        assertTrue(isUsableAuthenticatedSteamClient(authorized = true, connected = true))
+        assertFalse(isUsableAuthenticatedSteamClient(authorized = true, connected = false))
+        assertFalse(isUsableAuthenticatedSteamClient(authorized = false, connected = true))
+    }
+
     @Test
     fun `empty confirmation list remains in login progress while kSteam polls`() {
         assertEquals(

@@ -106,6 +106,17 @@ internal fun deviceInformation(): DeviceInformation =
         platformType = EAuthTokenPlatformType.k_EAuthTokenPlatformType_SteamClient,
     )
 
+internal fun isUsableAuthenticatedSteamClient(
+    authorized: Boolean,
+    connected: Boolean,
+): Boolean = authorized && connected
+
+private fun SteamClient.hasUsableAuthenticatedConnection(): Boolean =
+    isUsableAuthenticatedSteamClient(
+        authorized = account.clientAuthState.value is AuthorizationState.Success,
+        connected = connectionStatus.value.hasActiveServerConnection,
+    )
+
 /**
  * kSteam-backed implementation of the engine-neutral [SteamProtocolClient] seam. After the
  * JavaSteam removal this is the sole Steam engine:
@@ -788,23 +799,30 @@ class KSteamSessionRepository
          */
         internal suspend fun steamContentClient(authenticated: Boolean): SteamClient? {
             if (authenticated) {
-                engine?.takeIf { it.account.clientAuthState.value is AuthorizationState.Success }?.let { return it }
+                engine?.takeIf(SteamClient::hasUsableAuthenticatedConnection)?.let { return it }
                 // The signed-in engine may briefly leave the Success state while kSteam
                 // transparently re-connects its CM transport; wait a short window for it
                 // before falling back to the anonymous client, whose CM list is far less
                 // reliable (no cell id -> arbitrary global endpoints).
                 withTimeoutOrNull(CONTENT_SESSION_WAIT_TIMEOUT_MS) {
-                    (engine?.account?.clientAuthState ?: kotlinx.coroutines.flow.flowOf(null))
-                        .first { it is AuthorizationState.Success }
+                    engine?.let { client ->
+                        combine(client.account.clientAuthState, client.connectionStatus) { auth, connection ->
+                            auth is AuthorizationState.Success && connection.hasActiveServerConnection
+                        }.first { it }
+                    }
                 }
-                engine?.takeIf { it.account.clientAuthState.value is AuthorizationState.Success }?.let { return it }
+                engine?.takeIf(SteamClient::hasUsableAuthenticatedConnection)?.let { return it }
             }
             return anonymousClient()
         }
 
         private suspend fun anonymousClient(): SteamClient? =
             anonymousMutex.withLock {
-                anonymousEngineRef.get()?.let { return it }
+                anonymousEngineRef.get()?.let { cached ->
+                    if (cached.connectionStatus.value.hasActiveServerConnection) return cached
+                    anonymousEngineRef.compareAndSet(cached, null)
+                    runCatching { cached.stop() }
+                }
                 // Reuse the signed-in engine's cell id so Steam's CM directory returns
                 // nearby, reachable servers; a zero cell id yields arbitrary global
                 // endpoints that are frequently unroutable (NoRouteToHost).
@@ -824,14 +842,19 @@ class KSteamSessionRepository
                 }
                 repeat(ANONYMOUS_CONNECT_ATTEMPTS) { attempt ->
                     try {
-                        created.start()
                         withTimeout(ANONYMOUS_CONNECT_TIMEOUT_MS) {
+                            created.start()
                             created.connectionStatus.first { it.hasActiveServerConnection }
+                            sendAnonymousLogon(created)
                         }
-                        sendAnonymousLogon(created)
                         anonymousEngineRef.set(created)
                         recordSessionEvent(0, "anonymous_logon_success")
                         return created
+                    } catch (error: TimeoutCancellationException) {
+                        runCatching { created.stop() }
+                        recordSessionEvent(0, "anonymous_logon_failure", outcome = error.javaClass.simpleName)
+                        if (attempt == ANONYMOUS_CONNECT_ATTEMPTS - 1) return null
+                        delay(ANONYMOUS_RETRY_DELAY_MS)
                     } catch (error: CancellationException) {
                         runCatching { created.stop() }
                         throw error
@@ -913,7 +936,7 @@ class KSteamSessionRepository
         // ------------------------------------------------------------------
 
         private suspend fun acquireWorkshopClient(): SteamClient? {
-            engine?.takeIf { it.account.clientAuthState.value is AuthorizationState.Success }?.let { return it }
+            engine?.takeIf(SteamClient::hasUsableAuthenticatedConnection)?.let { return it }
             return anonymousClient()
         }
 
