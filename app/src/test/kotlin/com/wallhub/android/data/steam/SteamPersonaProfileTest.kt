@@ -18,7 +18,7 @@ class SteamPersonaProfileTest {
 
         val url = hash.toSteamAvatarUrl()
 
-        assertEquals("https://avatars.fastly.steamstatic.com/deadbef_medium.jpg", url)
+        assertEquals("https://avatars.fastly.steamstatic.com/deadbeef_medium.jpg", url)
     }
 
     @Test
