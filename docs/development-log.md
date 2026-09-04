@@ -12,6 +12,13 @@
 - Maintenance: Removed eight bilingual JavaSteam status strings left unused by the kSteam migration and refreshed the reviewed main-source Lint warning budget from 208 to 209.
 - Verification: Added secure Steam URL, port-isolated prewarming, and fail-closed session-storage regression coverage. Commit-bound CI build and device verification must confirm login, cold-start restore, CM browsing, download, and online playback.
 
+### Steam CDN request correctness
+
+- Fix: Request CDN authorization with the directory server's `host` identity while retaining `vhost` for the CDN URL authority, matching SteamKit's CDN protocol.
+- Fix: Honor Steam CDN proxy-server path templates, use the shared Steam HTTP client configuration, and only attempt directory entries that advertise HTTPS for the secure content pipeline.
+- Fix: Release the per-stream HTTP dispatcher when an online stream closes.
+- Verification: Commit-bound CI and device validation must confirm public MPKG download and online chunk playback after this change.
+
 ## 2026-09-03
 
 ### Password-only Steam login

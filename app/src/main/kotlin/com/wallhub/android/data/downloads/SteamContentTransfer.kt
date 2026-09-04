@@ -13,6 +13,7 @@ import com.wallhub.android.core.model.WorkshopVideoBufferState
 import com.wallhub.android.data.steam.KSteamSessionRepository
 import com.wallhub.android.core.model.WorkshopVideoFullCacheState
 import com.wallhub.android.core.model.WorkshopVideoFullCacheStatus
+import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -103,12 +104,25 @@ internal suspend fun resolveContentAccess(
         } catch (error: IllegalStateException) {
             throw SteamDepotAccessException(target.depotId, error.message ?: "unavailable")
         }
+    val directoryServers =
+        client.steamCdnServers(cellId = client.configuration.cellId, maxServers = CDN_SERVER_LIMIT)
     val servers =
-        client
-            .steamCdnServers(cellId = client.configuration.cellId, maxServers = CDN_SERVER_LIMIT)
-            .filter { server -> resolveCdnRequestHost(server.vHost, server.host) != null }
+        directoryServers
+            .filter { server ->
+                !server.useAsProxy &&
+                    server.https &&
+                    resolveCdnRequestHost(server.vHost, server.host) != null
+            }
             .let(::prioritizeCdnServers)
     check(servers.isNotEmpty()) { "Steam returned no available CDN servers" }
+    val proxyServer =
+        directoryServers
+            .firstOrNull { server ->
+                server.useAsProxy &&
+                    server.https &&
+                    !server.proxyRequestPathTemplate.isNullOrBlank() &&
+                    resolveCdnRequestHost(server.vHost, server.host) != null
+            }
     val requestCode =
         client.steamManifestRequestCode(
             depotId = target.depotId,
@@ -119,6 +133,7 @@ internal suspend fun resolveContentAccess(
         depotKey = depotKey,
         manifestRequestCode = requestCode,
         servers = servers,
+        proxyServer = proxyServer,
         authTokens =
             CdnAuthTokenProvider(
                 client = client,
@@ -364,6 +379,7 @@ internal class SteamContentVideoStream internal constructor(
         fullCacheJob?.cancel()
         fetchScope.cancel()
         decodeDispatcher.close()
+        cdnHttpClient.dispatcher.executorService.shutdown()
         streamCache.close()
     }
 
@@ -461,6 +477,7 @@ internal class SteamContentVideoStream internal constructor(
                                     downloadEncryptedChunk(
                                         httpClient = cdnHttpClient,
                                         servers = access.servers,
+                                        proxyServer = access.proxyServer,
                                         depotId = depotId,
                                         chunk = chunk,
                                         authTokens = access.authTokens,
@@ -1116,6 +1133,7 @@ internal fun steamStreamChunksInRange(
 internal suspend fun downloadManifest(
     httpClient: OkHttpClient,
     servers: List<CdnServer>,
+    proxyServer: CdnServer? = null,
     depotId: Int,
     manifestId: Long,
     requestCode: Long,
@@ -1139,6 +1157,7 @@ internal suspend fun downloadManifest(
                     .url(
                         buildSteamCdnCommand(
                             server = server,
+                            proxyServer = proxyServer,
                             command = server.depotManifestUrl(depotId, manifestId, requestCode),
                             query = token,
                         ),
@@ -1185,6 +1204,7 @@ internal suspend fun downloadManifest(
 internal suspend fun downloadChunk(
     httpClient: OkHttpClient,
     servers: List<CdnServer>,
+    proxyServer: CdnServer? = null,
     depotId: Int,
     chunk: DepotChunkSpec,
     depotKey: ByteArray,
@@ -1198,6 +1218,7 @@ internal suspend fun downloadChunk(
         downloadEncryptedChunk(
             httpClient = httpClient,
             servers = servers,
+            proxyServer = proxyServer,
             depotId = depotId,
             chunk = chunk,
             authTokens = authTokens,
@@ -1211,6 +1232,7 @@ internal suspend fun downloadChunk(
 internal suspend fun downloadEncryptedChunk(
     httpClient: OkHttpClient,
     servers: List<CdnServer>,
+    proxyServer: CdnServer? = null,
     depotId: Int,
     chunk: DepotChunkSpec,
     authTokens: CdnAuthTokenProvider,
@@ -1238,6 +1260,7 @@ internal suspend fun downloadEncryptedChunk(
                 downloadEncryptedChunkStreaming(
                     httpClient = httpClient,
                     server = server,
+                    proxyServer = proxyServer,
                     depotId = depotId,
                     chunk = chunk,
                     cdnAuthToken = token,
@@ -1284,6 +1307,7 @@ internal suspend fun downloadEncryptedChunk(
 private suspend fun downloadEncryptedChunkStreaming(
     httpClient: OkHttpClient,
     server: CdnServer,
+    proxyServer: CdnServer?,
     depotId: Int,
     chunk: DepotChunkSpec,
     cdnAuthToken: String?,
@@ -1296,7 +1320,11 @@ private suspend fun downloadEncryptedChunkStreaming(
     }
     val chunkIdHex = chunkId.joinToString("") { "%02x".format(it.toInt() and 0xff) }
     val command = "depot/$depotId/chunk/$chunkIdHex"
-    val request = Request.Builder().url(buildSteamCdnCommand(server, command, cdnAuthToken)).build()
+    val request =
+        Request
+            .Builder()
+            .url(buildSteamCdnCommand(server, command, cdnAuthToken, proxyServer))
+            .build()
     val call = httpClient.newCall(request)
     val cancellationWatcher =
         launch(start = CoroutineStart.UNDISPATCHED) {
@@ -1339,17 +1367,20 @@ private suspend fun downloadEncryptedChunkStreaming(
     }
 }
 
-/** Returns the OkHttp client configured by createCdnClient (proxy, TLS and dispatcher). */
-private fun buildSteamCdnCommand(
+/** Builds a CDN request, optionally rewriting it through Steam's content proxy server. */
+internal fun buildSteamCdnCommand(
     server: CdnServer,
     command: String,
     query: String?,
+    proxyServer: CdnServer? = null,
 ): HttpUrl {
     val scheme = if (server.https) "https" else "http"
+    val requestHost = resolveCdnRequestHost(server.vHost, server.host)
+    requireNotNull(requestHost) { "Steam CDN server has no request host" }
     val builder =
         HttpUrl.Builder()
             .scheme(scheme)
-            .host(server.vHost ?: server.host ?: "")
+            .host(requestHost)
             .port(server.port)
             .addPathSegments(command.trimStart('/'))
     query?.trimStart('?')?.takeIf { it.isNotEmpty() }?.split('&')?.forEach { parameter ->
@@ -1360,7 +1391,20 @@ private fun buildSteamCdnCommand(
             builder.addQueryParameter(keyValue[0], "")
         }
     }
-    return builder.build()
+    val requestUrl = builder.build()
+    val proxyTemplate = proxyServer?.proxyRequestPathTemplate?.takeIf { it.isNotBlank() }
+    if (proxyServer == null || proxyTemplate == null) return requestUrl
+    val proxyPath =
+        proxyTemplate
+            .replace("%host%", requestUrl.host)
+            .replace("%path%", requestUrl.encodedPath)
+    return requestUrl
+        .newBuilder()
+        .scheme(if (proxyServer.https) "https" else "http")
+        .host(resolveCdnRequestHost(proxyServer.vHost, proxyServer.host) ?: return requestUrl)
+        .port(proxyServer.port)
+        .encodedPath(proxyPath)
+        .build()
 }
 
 internal class SteamCdnHttpException(message: String) : IOException(message)
@@ -1410,6 +1454,7 @@ internal suspend fun downloadFilePlans(
     destinationDirectory: File,
     httpClient: OkHttpClient,
     servers: List<CdnServer>,
+    proxyServer: CdnServer? = null,
     depotId: Int,
     depotKey: ByteArray,
     authTokens: CdnAuthTokenProvider,
@@ -1446,6 +1491,7 @@ internal suspend fun downloadFilePlans(
                         destinationDirectory = destinationDirectory,
                         httpClient = httpClient,
                         servers = servers,
+                        proxyServer = proxyServer,
                         depotId = depotId,
                         depotKey = depotKey,
                         authTokens = authTokens,
@@ -1466,6 +1512,7 @@ internal suspend fun downloadFilePlan(
     destinationDirectory: File,
     httpClient: OkHttpClient,
     servers: List<CdnServer>,
+    proxyServer: CdnServer? = null,
     depotId: Int,
     depotKey: ByteArray,
     authTokens: CdnAuthTokenProvider,
@@ -1516,6 +1563,7 @@ internal suspend fun downloadFilePlan(
             output = output,
             httpClient = httpClient,
             servers = servers,
+            proxyServer = proxyServer,
             depotId = depotId,
             depotKey = depotKey,
             authTokens = authTokens,
@@ -1549,6 +1597,7 @@ internal suspend fun downloadChunksContinuously(
     output: RandomAccessFile,
     httpClient: OkHttpClient,
     servers: List<CdnServer>,
+    proxyServer: CdnServer? = null,
     depotId: Int,
     depotKey: ByteArray,
     authTokens: CdnAuthTokenProvider,
@@ -1577,6 +1626,7 @@ internal suspend fun downloadChunksContinuously(
                 val data = downloadChunk(
                     httpClient = httpClient,
                     servers = servers,
+                    proxyServer = proxyServer,
                     depotId = depotId,
                     chunk = chunk,
                     depotKey = depotKey,
@@ -1645,15 +1695,18 @@ internal fun calculateFileHash(file: File): ByteArray {
     return digest.digest()
 }
 
-internal fun createCdnHttpClient(options: SteamContentDownloadOptions): OkHttpClient {
+internal fun createCdnHttpClient(
+    options: SteamContentDownloadOptions,
+    clientFactory: SteamHttpClientFactory,
+): OkHttpClient {
     val dispatcher =
         Dispatcher().apply {
             maxRequests = options.chunkConcurrency * 2
             maxRequestsPerHost = options.chunkConcurrency
         }
     val httpClientBuilder =
-        OkHttpClient
-            .Builder()
+        clientFactory
+            .newBuilder()
             .dispatcher(dispatcher)
             .connectionPool(
                 ConnectionPool(
@@ -1665,23 +1718,9 @@ internal fun createCdnHttpClient(options: SteamContentDownloadOptions): OkHttpCl
             .readTimeout(CDN_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .writeTimeout(CDN_WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(true)
-            .addInterceptor { chain ->
-                val request = chain.request()
-                val secureUrl = request.url.upgradeSteamCdnUrl()
-                chain.proceed(
-                    if (secureUrl == request.url) request else request.newBuilder().url(secureUrl).build(),
-                )
-            }
     httpClientBuilder.applyDownloadProxy(options.proxyUrl)
     return httpClientBuilder.build()
 }
-
-internal fun HttpUrl.upgradeSteamCdnUrl(): HttpUrl =
-    if (scheme == "http") {
-        newBuilder().scheme("https").port(HTTPS_PORT).build()
-    } else {
-        this
-    }
 
 internal fun java.io.InputStream.readBytesBounded(maxBytes: Int): ByteArray {
     require(maxBytes > 0) { "Invalid response byte limit: $maxBytes" }
@@ -1731,6 +1770,7 @@ internal data class SteamContentAccess(
     val depotKey: ByteArray,
     val manifestRequestCode: Long,
     val servers: List<CdnServer>,
+    val proxyServer: CdnServer?,
     val authTokens: CdnAuthTokenProvider,
 )
 
@@ -1871,7 +1911,7 @@ internal class CdnAuthTokenProvider(
 
     suspend fun get(server: CdnServer): String? {
         if (!enabled) return null
-        val requestHost = resolveCdnRequestHost(server.vHost, server.host) ?: return null
+        val requestHost = resolveCdnAuthHost(server.host, server.vHost) ?: return null
         val cacheKey = requestHost.lowercase()
         var cachedToken: String? = null
         val pending =
@@ -1907,6 +1947,13 @@ internal class CdnAuthTokenProvider(
         }
     }
 }
+
+internal fun resolveCdnAuthHost(
+    host: String?,
+    virtualHost: String?,
+): String? =
+    host?.trim()?.takeIf(String::isNotBlank)
+        ?: virtualHost?.trim()?.takeIf(String::isNotBlank)
 
 internal fun String.videoFileExtension(): String {
     val fileName = substringAfterLast('/').substringAfterLast('\\')

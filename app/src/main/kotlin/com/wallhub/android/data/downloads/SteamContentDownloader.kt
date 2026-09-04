@@ -7,6 +7,7 @@ import com.wallhub.android.core.model.DepotDownloader
 import com.wallhub.android.core.model.DepotFileSpec
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.data.steam.KSteamSessionRepository
+import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
@@ -254,6 +255,7 @@ internal class SteamContentDownloader
     constructor(
         private val sessionRepository: KSteamSessionRepository,
         private val depotDownloader: DepotDownloader,
+        private val steamHttpClientFactory: SteamHttpClientFactory,
     ) {
     suspend fun download(
         target: WorkshopContentTarget,
@@ -317,7 +319,7 @@ internal class SteamContentDownloader
             openContentSession(sessionRepository, credential) {
                 onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.AUTHENTICATING))
             }
-        val httpClient = createCdnHttpClient(options)
+        val httpClient = createCdnHttpClient(options, steamHttpClientFactory)
         try {
             checkDownloadControl(control)
             onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
@@ -334,6 +336,7 @@ internal class SteamContentDownloader
                 downloadManifest(
                     httpClient = httpClient,
                     servers = access.servers,
+                    proxyServer = access.proxyServer,
                     depotId = target.depotId,
                     manifestId = target.contentManifestId,
                     requestCode = access.manifestRequestCode,
@@ -392,6 +395,7 @@ internal class SteamContentDownloader
                 destinationDirectory = destinationDirectory,
                 httpClient = httpClient,
                 servers = access.servers,
+                proxyServer = access.proxyServer,
                 depotId = target.depotId,
                 depotKey = access.depotKey,
                 authTokens = access.authTokens,
@@ -426,13 +430,14 @@ internal class SteamContentDownloader
             require(target.contentManifestId > 0L) { "Invalid Steam manifest ID" }
             val normalizedOptions = options.normalized()
             val session = openContentSession(sessionRepository, credential) {}
-            val httpClient = createCdnHttpClient(normalizedOptions)
+            val httpClient = createCdnHttpClient(normalizedOptions, steamHttpClientFactory)
             try {
                 val access = resolveContentAccess(session, target)
                 val manifest =
                     downloadManifest(
                         httpClient = httpClient,
                         servers = access.servers,
+                        proxyServer = access.proxyServer,
                         depotId = target.depotId,
                         manifestId = target.contentManifestId,
                         requestCode = access.manifestRequestCode,
