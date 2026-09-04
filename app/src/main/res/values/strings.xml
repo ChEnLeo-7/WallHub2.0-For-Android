@@ -957,14 +957,9 @@
     </string>
     <string name='backend_steam_connecting'>Connecting to Steam. Mobile confirmation or a Steam Guard code may be required…</string>
     <string name='backend_steam_credentials_expired'>The saved Steam credentials have expired. Sign in again.</string>
-    <string name='backend_steam_credentials_verified'>Credentials verified. Establishing the Steam session…</string>
     <string name='backend_steam_disconnected'>The Steam connection was interrupted. Try restoring the session.</string>
-    <string name='backend_steam_email_code_incorrect'>The email code was incorrect. Try again.</string>
     <string name='backend_steam_enter_credentials'>Enter your Steam username and password</string>
-    <string name='backend_steam_enter_email_code'>Enter the Steam email code</string>
-    <string name='backend_steam_enter_email_code_address'>Enter the Steam email code (%1$s)</string>
     <string name='backend_steam_enter_guard_code'>Enter the Steam Guard mobile code</string>
-    <string name='backend_steam_guard_code_incorrect'>The Steam Guard code was incorrect. Check your phone and try again.</string>
     <string name='backend_steam_login_failed'>Steam sign-in failed: %1$s</string>
     <string name='backend_steam_machine_token_unsupported'>This Steam login requires a machine token that WallHub does not have. Sign in from a trusted Steam client first.</string>
     <string name='backend_steam_login_success'>Signed in to Steam. The local session was saved securely.</string>
@@ -973,7 +968,6 @@
          There is no active sign-in to switch to a code. Enter your username and
         password again.
     </string>
-    <string name='backend_steam_no_saved_session'>No saved Steam session was found</string>
     <string name='backend_steam_reconnecting'>The first connection failed. Reconnecting to Steam…</string>
     <string name='backend_steam_requesting_login'>Requesting a Steam sign-in session…</string>
     <string name='backend_steam_restore_failed'>
@@ -983,11 +977,9 @@
     <string name='backend_steam_restore_rejected'>Steam temporarily rejected session restoration. Try again later.</string>
     <string name='backend_steam_restore_timeout'>Steam session restoration timed out. Check your network and try again.</string>
     <string name='backend_steam_restoring_session'>Restoring the saved Steam session…</string>
-    <string name='backend_steam_session_restored'>Steam session restored.</string>
     <string name='backend_steam_session_storage_unavailable'>The saved Steam session could not be read. Sign in again to replace it.</string>
     <string name='backend_steam_signed_in_account'>signed-in Steam account %1$s</string>
     <string name='backend_steam_signed_out'>Signed out of Steam and removed the saved local session.</string>
-    <string name='backend_steam_switching_to_guard'>Switching to a Steam Guard code…</string>
     <string name='workshop_placeholder_title'>Wallpaper %1$d</string>
     <string name='workshop_placeholder_steam_user'>Steam user</string>
     <string name='workshop_placeholder_steam_user_with_id'>Steam user %1$s</string>
