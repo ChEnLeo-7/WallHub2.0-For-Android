@@ -64,10 +64,10 @@ internal fun parseDepotManifest(bytes: ByteArray): DepotManifestSpec {
 
     fun readInt(): Int {
         val value =
-            ((buffer[offset].toInt() and 0xff) shl 24) or
-                ((buffer[offset + 1].toInt() and 0xff) shl 16) or
-                ((buffer[offset + 2].toInt() and 0xff) shl 8) or
-                (buffer[offset + 3].toInt() and 0xff)
+            (buffer[offset].toInt() and 0xff) or
+                ((buffer[offset + 1].toInt() and 0xff) shl 8) or
+                ((buffer[offset + 2].toInt() and 0xff) shl 16) or
+                ((buffer[offset + 3].toInt() and 0xff) shl 24)
         offset += 4
         return value
     }

@@ -1,5 +1,9 @@
 package com.wallhub.android.data.downloads
 
+import com.wallhub.android.data.steam.wire.ContentManifestMetadata
+import com.wallhub.android.data.steam.wire.ContentManifestPayload
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -72,5 +76,48 @@ class SteamCdnHttpsTest {
             "cdn.example.test",
             resolveCdnAuthHost(null, "cdn.example.test"),
         )
+    }
+
+    @Test
+    fun depotManifestContainerUsesLittleEndianHeaders() {
+        val payload =
+            ContentManifestPayload(
+                mappings =
+                    listOf(
+                        ContentManifestPayload.FileMapping(
+                            filename = "video.mp4",
+                            size = 4L,
+                            chunks =
+                                listOf(
+                                    ContentManifestPayload.ChunkData(
+                                        offset = 0L,
+                                        cb_original = 4,
+                                        cb_compressed = 4,
+                                    ),
+                                ),
+                        ),
+                    ),
+            ).let { ContentManifestPayload.ADAPTER.encodeByteString(it).toByteArray() }
+        val metadata =
+            ContentManifestMetadata(depot_id = 431960, gid_manifest = 7L, cb_disk_original = 4L)
+                .let { ContentManifestMetadata.ADAPTER.encodeByteString(it).toByteArray() }
+        val container =
+            ByteBuffer
+                .allocate(20 + payload.size + metadata.size)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putInt(DepotManifestContainer.PAYLOAD_MAGIC)
+                .putInt(payload.size)
+                .put(payload)
+                .putInt(DepotManifestContainer.METADATA_MAGIC)
+                .putInt(metadata.size)
+                .put(metadata)
+                .putInt(DepotManifestContainer.END_MAGIC)
+                .array()
+
+        val manifest = parseDepotManifest(container)
+
+        assertEquals(431960, manifest.depotId)
+        assertEquals("video.mp4", manifest.files.single().fileName)
+        assertEquals(4, manifest.files.single().chunks.single().uncompressedLength)
     }
 }
