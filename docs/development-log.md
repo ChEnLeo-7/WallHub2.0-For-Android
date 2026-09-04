@@ -15,7 +15,7 @@
 ### Steam CDN request correctness
 
 - Fix: Request CDN authorization with the directory server's `host` identity while retaining `vhost` for the CDN URL authority, matching SteamKit's CDN protocol.
-- Fix: Honor Steam CDN proxy-server path templates, use the shared Steam HTTP client configuration, and only attempt directory entries that advertise HTTPS for the secure content pipeline.
+- Fix: Honor Steam CDN proxy-server path templates, use the shared Steam HTTP client configuration, and preserve each directory entry's advertised HTTP or HTTPS protocol.
 - Fix: Release the per-stream HTTP dispatcher when an online stream closes.
 - Verification: Commit-bound CI and device validation must confirm public MPKG download and online chunk playback after this change.
 

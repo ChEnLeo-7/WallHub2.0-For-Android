@@ -110,7 +110,6 @@ internal suspend fun resolveContentAccess(
         directoryServers
             .filter { server ->
                 !server.useAsProxy &&
-                    server.https &&
                     resolveCdnRequestHost(server.vHost, server.host) != null
             }
             .let(::prioritizeCdnServers)
@@ -119,7 +118,6 @@ internal suspend fun resolveContentAccess(
         directoryServers
             .firstOrNull { server ->
                 server.useAsProxy &&
-                    server.https &&
                     !server.proxyRequestPathTemplate.isNullOrBlank() &&
                     resolveCdnRequestHost(server.vHost, server.host) != null
             }
