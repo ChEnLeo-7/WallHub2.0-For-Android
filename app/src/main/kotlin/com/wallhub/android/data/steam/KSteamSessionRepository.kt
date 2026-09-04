@@ -46,6 +46,7 @@ import com.wallhub.android.data.steam.wire.CMsgClientGetDepotDecryptionKey
 import com.wallhub.android.data.steam.wire.CMsgClientGetDepotDecryptionKeyResponse
 import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
+import com.wallhub.android.data.steamaccess.shouldPrewarmSteamUrl
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
