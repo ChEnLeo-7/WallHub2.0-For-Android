@@ -127,10 +127,7 @@ internal class KsteamEncryptedPersistenceDriver private constructor(
     ): String = "$SECURE_KEY_PREFIX${id.id}:$key"
 
     private fun readPayload(): String =
-        when (val result = encryptedStore.read()) {
-            is EncryptedStringReadResult.Value -> result.value
-            else -> "{}"
-        }
+        kSteamPersistencePayload(encryptedStore.read())
 
     private fun persist() {
         encryptedStore.write(entries.toString())
@@ -142,3 +139,15 @@ internal class KsteamEncryptedPersistenceDriver private constructor(
         const val SECURE_KEY_PREFIX = "secure:"
     }
 }
+
+internal fun kSteamPersistencePayload(result: EncryptedStringReadResult): String =
+    when (result) {
+        is EncryptedStringReadResult.Value -> result.value
+        EncryptedStringReadResult.Missing -> "{}"
+        is EncryptedStringReadResult.Unreadable ->
+            throw KsteamSessionStorageException(result.cause)
+    }
+
+internal class KsteamSessionStorageException(
+    cause: Throwable,
+) : IllegalStateException("Unable to read kSteam session storage", cause)

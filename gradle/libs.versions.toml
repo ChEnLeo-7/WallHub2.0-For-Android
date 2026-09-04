@@ -21,6 +21,7 @@ work = "2.11.2"
 
 # Kotlin ecosystem
 coroutines = "1.10.2"
+ktor = "3.4.2"
 serialization = "1.8.1"
 
 # Third party
@@ -93,6 +94,7 @@ kotlinx-coroutines-jdk8 = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-j
 kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "serialization" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 junit = { module = "junit:junit", version.ref = "junit" }
 
 # Third party

@@ -71,19 +71,20 @@ internal class SteamLoopbackTlsBridge
                     )
                     return
                 }
-                val host = SteamDomainPolicy.requireSupported(request.host)
-                if (request.port != HTTPS_PORT) throw IOException("Unsupported CONNECT port")
-                val route = accessManager.acceleratedRoute(host)
+                val host = SteamDomainPolicy.requireSupportedEndpoint(request.host, request.port)
+                val route = accessManager.acceleratedRoute(host, request.port)
                 selectedRoute = route
                 val upstream =
                     noSniTlsDialer.connect(
                         hostname = host,
                         candidates = route.addresses,
+                        port = request.port,
                         onFailure = { address, error ->
                             accessManager.recordAcceleratedFailure(
                                 hostname = host,
                                 selectedNetworkType = route.networkType,
                                 generation = route.generation,
+                                port = request.port,
                                 address = address,
                                 error = error,
                             )
@@ -94,6 +95,7 @@ internal class SteamLoopbackTlsBridge
                     accessManager.commitAcceleratedRoute(
                         route = route,
                         hostname = host,
+                        port = request.port,
                         address = upstream.address,
                         elapsedMs = upstream.elapsedMs,
                         commitTunnel = {
@@ -202,7 +204,6 @@ internal class SteamLoopbackTlsBridge
 
         private companion object {
             const val LOOPBACK_HOST = "127.0.0.1"
-            const val HTTPS_PORT = 443
             const val ACCEPT_BACKLOG = 16
             const val TOKEN_BYTES = 32
             const val MAX_HEADER_BYTES = 16 * 1024
@@ -228,7 +229,12 @@ internal fun parseSteamConnectRequest(headersText: String): ConnectRequest {
     val authority = requestParts[1]
     if (authority.count { it == ':' } != 1) throw IOException("Invalid CONNECT authority")
     val host = authority.substringBefore(':').lowercase().trimEnd('.')
-    val port = authority.substringAfter(':').toIntOrNull() ?: throw IOException("Invalid CONNECT port")
+    val port =
+        authority
+            .substringAfter(':')
+            .toIntOrNull()
+            ?.takeIf { it in 1..MAX_CONNECT_PORT }
+            ?: throw IOException("Invalid CONNECT port")
     val headers =
         lines
             .drop(1)
@@ -247,3 +253,5 @@ internal fun parseSteamConnectRequest(headersText: String): ConnectRequest {
         authorization = headers["proxy-authorization"],
     )
 }
+
+private const val MAX_CONNECT_PORT = 65535

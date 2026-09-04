@@ -21,9 +21,11 @@ internal class SteamAccessProbe(
     fun rank(
         hostname: String,
         candidates: List<InetAddress>,
+        port: Int = STEAM_HTTPS_PORT,
     ): List<SteamProbeResult> {
+        val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
         val limited = candidates.distinctBy(InetAddress::getHostAddress).take(MAX_PROBE_ADDRESSES)
-        val tasks = limited.map { address -> Callable { probe(hostname, address) } }
+        val tasks = limited.map { address -> Callable { probe(host, address, port) } }
         if (tasks.isEmpty()) return emptyList()
         return executor
             .invokeAll(tasks, TOTAL_PROBE_BUDGET_MS, TimeUnit.MILLISECONDS)
@@ -41,6 +43,7 @@ internal class SteamAccessProbe(
     private fun probe(
         hostname: String,
         address: InetAddress,
+        port: Int,
     ): SteamProbeResult {
         val startedAt = System.nanoTime()
         val client =
@@ -54,7 +57,7 @@ internal class SteamAccessProbe(
         val request =
             Request
                 .Builder()
-                .url("https://$hostname${probePath(hostname)}")
+                .url("https://$hostname${if (port == STEAM_HTTPS_PORT) "" else ":$port"}${probePath(hostname)}")
                 .header("User-Agent", "WallHub-Android/SteamAccessProbe")
                 .build()
         val successful =

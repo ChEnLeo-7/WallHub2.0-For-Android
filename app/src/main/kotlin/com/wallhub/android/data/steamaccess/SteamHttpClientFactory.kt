@@ -24,10 +24,11 @@ class SteamHttpClientFactory
             object : ProxySelector() {
                 override fun select(uri: URI?): List<Proxy> {
                     val host = uri?.host ?: return systemProxies(uri)
+                    val port = uri.port.takeIf { it > 0 } ?: STEAM_HTTPS_PORT
                     val useBridge =
-                        uri.scheme.equals("https", ignoreCase = true) &&
-                            SteamDomainPolicy.supports(host) &&
-                            manager.shouldAccelerate(host)
+                        isSteamSecureScheme(uri.scheme) &&
+                            SteamDomainPolicy.supportsEndpoint(host, port) &&
+                            manager.shouldAccelerate(host, port)
                     return if (useBridge) listOf(bridge.proxy) else systemProxies(uri)
                 }
 
@@ -65,7 +66,23 @@ class SteamHttpClientFactory
                             .build()
                     }
                 }.sslSocketFactory(privateCa.clientSocketFactory, privateCa.clientTrustManager)
+
+        internal suspend fun prewarmSteamEndpoint(
+            hostname: String,
+            port: Int,
+        ): Boolean = manager.prewarmSteamEndpoint(hostname, port)
     }
+
+internal fun shouldPrewarmSteamUrl(
+    scheme: String,
+    hostname: String,
+    port: Int,
+): Boolean =
+    isSteamSecureScheme(scheme) &&
+        SteamDomainPolicy.supportsEndpoint(hostname, port)
+
+internal fun isSteamSecureScheme(scheme: String?): Boolean =
+    scheme.equals("https", ignoreCase = true) || scheme.equals("wss", ignoreCase = true)
 
 internal fun ProxySelector?.safeSelect(uri: URI?): List<Proxy> =
     uri

@@ -13,10 +13,9 @@ internal class SteamAccessRouteStore(
     fun preferred(
         networkType: String,
         hostname: String,
+        port: Int = STEAM_HTTPS_PORT,
     ): List<InetAddress> {
-        val array =
-            runCatching { JSONArray(preferences.getString(key(networkType, hostname), "[]")) }
-                .getOrNull() ?: return emptyList()
+        val array = readRecords(networkType, hostname, port) ?: return emptyList()
         val now = System.currentTimeMillis()
         return buildList {
             repeat(array.length()) { index ->
@@ -34,10 +33,9 @@ internal class SteamAccessRouteStore(
     fun coolingDownAddresses(
         networkType: String,
         hostname: String,
+        port: Int = STEAM_HTTPS_PORT,
     ): Set<String> {
-        val array =
-            runCatching { JSONArray(preferences.getString(key(networkType, hostname), "[]")) }
-                .getOrNull() ?: return emptySet()
+        val array = readRecords(networkType, hostname, port) ?: return emptySet()
         val now = System.currentTimeMillis()
         return buildSet {
             repeat(array.length()) { index ->
@@ -50,10 +48,11 @@ internal class SteamAccessRouteStore(
     fun recordSuccess(
         networkType: String,
         hostname: String,
+        port: Int = STEAM_HTTPS_PORT,
         address: InetAddress,
         elapsedMs: Long? = null,
     ) {
-        update(networkType, hostname, address) { record ->
+        update(networkType, hostname, port, address) { record ->
             record.put("success", record.optInt("success") + 1)
             record.put("consecutiveFailure", 0)
             record.put("lastSuccessAt", System.currentTimeMillis())
@@ -68,9 +67,10 @@ internal class SteamAccessRouteStore(
     fun recordFailure(
         networkType: String,
         hostname: String,
+        port: Int = STEAM_HTTPS_PORT,
         address: InetAddress,
     ) {
-        update(networkType, hostname, address) { record ->
+        update(networkType, hostname, port, address) { record ->
             val failures = record.optInt("consecutiveFailure") + 1
             record.put("failure", record.optInt("failure") + 1)
             record.put("consecutiveFailure", failures)
@@ -85,10 +85,11 @@ internal class SteamAccessRouteStore(
     private fun update(
         networkType: String,
         hostname: String,
+        port: Int,
         address: InetAddress,
         mutation: (JSONObject) -> Unit,
     ) {
-        val storageKey = key(networkType, hostname)
+        val storageKey = steamRouteCacheKey(networkType, hostname, port)
         synchronized(this) {
             val array =
                 runCatching { JSONArray(preferences.getString(storageKey, "[]")) }
@@ -106,10 +107,25 @@ internal class SteamAccessRouteStore(
         }
     }
 
-    private fun key(
+    private fun legacyKey(
         networkType: String,
         hostname: String,
-    ): String = "$networkType|${hostname.lowercase()}"
+    ): String = "$networkType|${hostname.lowercase().trimEnd('.')}"
+
+    private fun readRecords(
+        networkType: String,
+        hostname: String,
+        port: Int,
+    ): JSONArray? {
+        val canonicalKey = steamRouteCacheKey(networkType, hostname, port)
+        val storageKey =
+            if (port == STEAM_HTTPS_PORT && !preferences.contains(canonicalKey)) {
+                legacyKey(networkType, hostname)
+            } else {
+                canonicalKey
+            }
+        return runCatching { JSONArray(preferences.getString(storageKey, "[]")) }.getOrNull()
+    }
 
     companion object {
         private const val MAX_RECORDS_PER_HOST = 24

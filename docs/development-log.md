@@ -1,5 +1,14 @@
 # Development Log
 
+## 2026-09-04
+
+### kSteam CM routing and session restore
+
+- Fix: Route kSteam HTTP and CM WebSocket traffic through WallHub's shared OkHttp Steam access bridge, including port-aware dynamic `steamserver.net` endpoint prewarming before the first WSS attempt.
+- Fix: Support Steam CM WebSocket ports `27017`-`27050` in the no-SNI bridge and isolate route health by host and port so a `443` result cannot mask an unreachable CM endpoint.
+- Fix: Stop issuing a second saved-account CM logon during restore; kSteam's AwaitingAuthorization callback owns that logon and now has a single restore path.
+- Verification: Added secure Steam URL, port-isolated prewarming, and fail-closed session-storage regression coverage. Commit-bound CI build and device verification must confirm login, cold-start restore, CM browsing, download, and online playback.
+
 ## 2026-09-03
 
 ### Password-only Steam login

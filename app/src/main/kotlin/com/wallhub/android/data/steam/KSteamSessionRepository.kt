@@ -45,7 +45,12 @@ import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.data.steam.wire.CMsgClientGetDepotDecryptionKey
 import com.wallhub.android.data.steam.wire.CMsgClientGetDepotDecryptionKeyResponse
 import com.wallhub.android.core.model.AccountWorkshopRepository
+import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.HttpSend
+import io.ktor.client.plugins.plugin
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -121,6 +126,7 @@ class KSteamSessionRepository
     constructor(
         @ApplicationContext context: Context,
         internal val diagnostics: DiagnosticRepository,
+        private val steamHttpClientFactory: SteamHttpClientFactory,
     ) : SteamSessionRepository,
         SteamContentCredentialProvider,
         AccountWorkshopRepository,
@@ -143,6 +149,22 @@ class KSteamSessionRepository
         private val expiredPublished = AtomicBoolean(false)
         private val anonymousEngineRef = AtomicReference<SteamClient?>(null)
         private val pendingAccountName = AtomicReference<String?>(null)
+
+        private fun newKSteamHttpClient(): HttpClient =
+            HttpClient(OkHttp) {
+                engine {
+                    preconfigured = steamHttpClientFactory.newBuilder().build()
+                }
+                install("WallHubSteamRoutePrewarm") {
+                    plugin(HttpSend).intercept { request ->
+                        val port = request.url.port
+                        if (shouldPrewarmSteamUrl(request.url.protocol.name, request.url.host, port)) {
+                            steamHttpClientFactory.prewarmSteamEndpoint(request.url.host, port)
+                        }
+                        execute(request)
+                    }
+                }
+            }
 
         @Volatile
         private var engine: SteamClient? = null
@@ -168,6 +190,7 @@ class KSteamSessionRepository
                 deviceInfo = deviceInformation()
                 loggingVerbosity = Logger.Verbosity.Warning
                 persistenceDriver = KsteamEncryptedPersistenceDriver(applicationContext)
+                ktor(::newKSteamHttpClient)
             }
 
         private suspend fun obtainEngine(): SteamClient =
@@ -379,7 +402,7 @@ class KSteamSessionRepository
                                         R.string.backend_steam_restore_failed,
                                         error.displayMessage(),
                                     ),
-                                hasStoredSession = legacyCredentialExists(),
+                                hasStoredSession = error is KsteamSessionStorageException || legacyCredentialExists(),
                             )
                         } finally {
                             loginInProgress.set(false)
@@ -397,14 +420,8 @@ class KSteamSessionRepository
                     message = applicationContext.getString(R.string.backend_steam_restoring_session),
                     hasStoredSession = true,
                 )
-                if (!client.account.trySignInSavedDefault()) {
-                    publishPhase(
-                        phase = SteamSessionPhase.RESTORABLE,
-                        message = applicationContext.getString(R.string.backend_steam_restore_rejected),
-                        hasStoredSession = true,
-                    )
-                    return
-                }
+                // Account registers its saved-account logon when CM enters AwaitingAuthorization.
+                // Sending a second logon here races that callback and can replace a valid session.
                 awaitRestorationOutcome(client)
                 return
             }
@@ -802,6 +819,7 @@ class KSteamSessionRepository
                             deviceInfo = deviceInformation()
                             loggingVerbosity = Logger.Verbosity.Warning
                             persistenceDriver = MemoryPersistenceDriver
+                            ktor(::newKSteamHttpClient)
                         }
                     }.getOrNull() ?: return null
                 if (inheritedCellId != 0) {

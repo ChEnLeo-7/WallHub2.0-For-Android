@@ -194,6 +194,7 @@ dependencies {
     implementation(libs.hilt.android)
     implementation(libs.javax.inject)
     implementation(libs.json)
+    implementation(libs.ktor.client.okhttp)
     // kSteam protocol engine: the sole Steam client implementation after the JavaSteam removal.
     implementation(libs.ksteam.core)
     implementation(libs.kotlinx.coroutines.android)

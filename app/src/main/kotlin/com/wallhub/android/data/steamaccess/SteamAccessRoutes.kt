@@ -63,6 +63,12 @@ internal object SteamAccessRoutes {
     }
 }
 
+internal fun steamRouteCacheKey(
+    networkType: String,
+    hostname: String,
+    port: Int,
+): String = "$networkType|${hostname.lowercase().trimEnd('.')}|$port"
+
 internal object SteamHostsParser {
     fun parse(text: String): Map<String, List<InetAddress>> {
         val result = linkedMapOf<String, MutableList<InetAddress>>()

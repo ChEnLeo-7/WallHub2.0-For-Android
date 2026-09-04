@@ -8,6 +8,7 @@ internal data class SteamRoutePrewarmKey(
     val networkType: String,
     val generation: Long,
     val hostname: String,
+    val port: Int,
 )
 
 internal class SteamRoutePrewarmTracker(
