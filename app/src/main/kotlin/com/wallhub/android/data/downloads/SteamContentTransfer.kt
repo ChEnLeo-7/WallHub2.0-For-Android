@@ -1372,14 +1372,17 @@ internal fun buildSteamCdnCommand(
     query: String?,
     proxyServer: CdnServer? = null,
 ): HttpUrl {
-    val scheme = if (server.https) "https" else "http"
+    // Android disallows cleartext traffic; Steam's optional-HTTPS entries still support the
+    // secure endpoint used by the legacy client fallback.
+    val scheme = "https"
+    val port = if (server.https) server.port else HTTPS_PORT
     val requestHost = resolveCdnRequestHost(server.vHost, server.host)
     requireNotNull(requestHost) { "Steam CDN server has no request host" }
     val builder =
         HttpUrl.Builder()
             .scheme(scheme)
             .host(requestHost)
-            .port(server.port)
+            .port(port)
             .addPathSegments(command.trimStart('/'))
     query?.trimStart('?')?.takeIf { it.isNotEmpty() }?.split('&')?.forEach { parameter ->
         val keyValue = parameter.split('=', limit = 2)
@@ -1398,9 +1401,9 @@ internal fun buildSteamCdnCommand(
             .replace("%path%", requestUrl.encodedPath)
     return requestUrl
         .newBuilder()
-        .scheme(if (proxyServer.https) "https" else "http")
+        .scheme("https")
         .host(resolveCdnRequestHost(proxyServer.vHost, proxyServer.host) ?: return requestUrl)
-        .port(proxyServer.port)
+        .port(if (proxyServer.https) proxyServer.port else HTTPS_PORT)
         .encodedPath(proxyPath)
         .build()
 }

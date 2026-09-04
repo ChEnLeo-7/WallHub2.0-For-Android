@@ -5,7 +5,7 @@ import org.junit.Test
 
 class SteamCdnHttpsTest {
     @Test
-    fun cdnRequestPreservesAdvertisedHttpProtocol() {
+    fun optionalCdnRouteUsesSecureFallback() {
         val url =
             buildSteamCdnCommand(
                 server = CdnServer("cdn.example.test", "cdn.example.test", 80, false),
@@ -13,8 +13,8 @@ class SteamCdnHttpsTest {
                 query = null,
             )
 
-        assertEquals("http", url.scheme)
-        assertEquals(80, url.port)
+        assertEquals("https", url.scheme)
+        assertEquals(443, url.port)
     }
 
     @Test
