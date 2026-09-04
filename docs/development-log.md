@@ -15,6 +15,7 @@
 ### Steam CDN request correctness
 
 - Fix: Request CDN authorization with the directory server's `host` identity while retaining `vhost` for the CDN URL authority, matching SteamKit's CDN protocol.
+- Fix: Preserve Steam's encoded CDN authorization query verbatim instead of percent-encoding token values a second time.
 - Fix: Honor Steam CDN proxy-server path templates, use the shared Steam HTTP client configuration, and use the secure `443` fallback for optional-HTTPS entries because Android disallows cleartext traffic.
 - Fix: Parse Steam depot manifest container headers as little-endian, matching the bytes returned by Steam CDN servers.
 - Fix: Release the per-stream HTTP dispatcher when an online stream closes.

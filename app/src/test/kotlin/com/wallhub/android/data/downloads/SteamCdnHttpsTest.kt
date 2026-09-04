@@ -31,13 +31,14 @@ class SteamCdnHttpsTest {
                         https = true,
                     ),
                 command = "depot/1/manifest/2/5",
-                query = "token=abc",
+                query = "token=a%2Fb%3D&expires=123",
             )
 
         assertEquals("https", url.scheme)
         assertEquals("cdn.example.test", url.host)
         assertEquals("/depot/1/manifest/2/5", url.encodedPath)
-        assertEquals("token=abc", url.query)
+        assertEquals("token=a/b=&expires=123", url.query)
+        assertEquals("token=a%2Fb%3D&expires=123", url.encodedQuery)
     }
 
     @Test

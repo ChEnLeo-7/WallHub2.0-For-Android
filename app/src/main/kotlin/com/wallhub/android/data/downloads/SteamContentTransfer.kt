@@ -1384,14 +1384,7 @@ internal fun buildSteamCdnCommand(
             .host(requestHost)
             .port(port)
             .addPathSegments(command.trimStart('/'))
-    query?.trimStart('?')?.takeIf { it.isNotEmpty() }?.split('&')?.forEach { parameter ->
-        val keyValue = parameter.split('=', limit = 2)
-        if (keyValue.size == 2) {
-            builder.addQueryParameter(keyValue[0], keyValue[1])
-        } else if (keyValue[0].isNotEmpty()) {
-            builder.addQueryParameter(keyValue[0], "")
-        }
-    }
+    query?.trimStart('?')?.takeIf { it.isNotEmpty() }?.let(builder::encodedQuery)
     val requestUrl = builder.build()
     val proxyTemplate = proxyServer?.proxyRequestPathTemplate?.takeIf { it.isNotBlank() }
     if (proxyServer == null || proxyTemplate == null) return requestUrl
