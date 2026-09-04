@@ -64,6 +64,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
@@ -821,7 +822,7 @@ class KSteamSessionRepository
                 anonymousEngineRef.get()?.let { cached ->
                     if (cached.connectionStatus.value.hasActiveServerConnection) return cached
                     anonymousEngineRef.compareAndSet(cached, null)
-                    runCatching { cached.stop() }
+                    stopAnonymousClient(cached)
                 }
                 // Reuse the signed-in engine's cell id so Steam's CM directory returns
                 // nearby, reachable servers; a zero cell id yields arbitrary global
@@ -851,15 +852,15 @@ class KSteamSessionRepository
                         recordSessionEvent(0, "anonymous_logon_success")
                         return created
                     } catch (error: TimeoutCancellationException) {
-                        runCatching { created.stop() }
+                        stopAnonymousClient(created)
                         recordSessionEvent(0, "anonymous_logon_failure", outcome = error.javaClass.simpleName)
                         if (attempt == ANONYMOUS_CONNECT_ATTEMPTS - 1) return null
                         delay(ANONYMOUS_RETRY_DELAY_MS)
                     } catch (error: CancellationException) {
-                        runCatching { created.stop() }
+                        stopAnonymousClient(created)
                         throw error
                     } catch (error: Throwable) {
-                        runCatching { created.stop() }
+                        stopAnonymousClient(created)
                         recordSessionEvent(0, "anonymous_logon_failure", outcome = error.javaClass.simpleName)
                         if (attempt == ANONYMOUS_CONNECT_ATTEMPTS - 1) return null
                         delay(ANONYMOUS_RETRY_DELAY_MS)
@@ -867,6 +868,14 @@ class KSteamSessionRepository
                 }
                 null
             }
+
+        private suspend fun stopAnonymousClient(client: SteamClient) {
+            withContext(NonCancellable) {
+                withTimeoutOrNull(ANONYMOUS_STOP_TIMEOUT_MS) {
+                    runCatching { client.stop() }
+                }
+            }
+        }
 
         /**
          * Performs an anonymous CM logon with a raw `k_EMsgClientLogon` packet. kSteam's
@@ -937,6 +946,17 @@ class KSteamSessionRepository
 
         private suspend fun acquireWorkshopClient(): SteamClient? {
             engine?.takeIf(SteamClient::hasUsableAuthenticatedConnection)?.let { return it }
+            anonymousEngineRef
+                .get()
+                ?.takeIf { it.connectionStatus.value.hasActiveServerConnection }
+                ?.let { return it }
+            restorePersistedSession()
+            synchronized(restoreLock) { restoreJobRef.get() }
+                ?.takeIf(Job::isActive)
+                ?.let { restoreJob ->
+                    withTimeoutOrNull(CONTENT_SESSION_WAIT_TIMEOUT_MS) { restoreJob.join() }
+                    engine?.takeIf(SteamClient::hasUsableAuthenticatedConnection)?.let { return it }
+                }
             return anonymousClient()
         }
 
@@ -1524,6 +1544,7 @@ class KSteamSessionRepository
 
         internal companion object {
             const val ANONYMOUS_CONNECT_TIMEOUT_MS = 20_000L
+            const val ANONYMOUS_STOP_TIMEOUT_MS = 2_000L
             const val ANONYMOUS_CONNECT_ATTEMPTS = 3
             const val ANONYMOUS_RETRY_DELAY_MS = 2_000L
             const val CONTENT_SESSION_WAIT_TIMEOUT_MS = 12_000L

@@ -8,7 +8,7 @@
 - Fix: Support Steam CM WebSocket ports `27017`-`27050` in the no-SNI bridge and isolate route health by host and port so a `443` result cannot mask an unreachable CM endpoint.
 - Fix: Stop issuing a second saved-account CM logon during restore; kSteam's AwaitingAuthorization callback owns that logon and now has a single restore path.
 - Fix: Use the localized generic restore-failure message without treating it as a format string, keeping Android lint and runtime resource handling consistent.
-- Fix: Bound anonymous CM logon attempts and reject disconnected cached clients so Home cannot remain indefinitely loading after a restored session changes connection state.
+- Fix: Coordinate public Workshop client acquisition with persisted-session restore, bound anonymous CM logon and cleanup, and reject disconnected cached clients so Home cannot remain indefinitely loading during startup connection races.
 - Maintenance: Removed eight bilingual JavaSteam status strings left unused by the kSteam migration and refreshed the reviewed main-source Lint warning budget from 208 to 209.
 - Verification: Added secure Steam URL, port-isolated prewarming, and fail-closed session-storage regression coverage. Commit-bound CI build and device verification must confirm login, cold-start restore, CM browsing, download, and online playback.
 
