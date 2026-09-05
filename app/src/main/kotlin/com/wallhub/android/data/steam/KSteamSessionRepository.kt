@@ -641,8 +641,10 @@ class KSteamSessionRepository
                 )
                 loginJobRef.set(
                     scope.launch(start = CoroutineStart.LAZY) {
+                        var loginClient: SteamClient? = null
                         try {
                             val client = obtainEngine()
+                            loginClient = client
                             startEngine(client)
                             publishPhase(
                                 phase = SteamSessionPhase.SIGNING_IN,
@@ -674,6 +676,13 @@ class KSteamSessionRepository
                                         accountName = accountName.trim(),
                                     )
                             }
+                        } catch (error: TimeoutCancellationException) {
+                            runCatching { loginClient?.account?.cancelPolling() }
+                            publishPhase(
+                                phase = SteamSessionPhase.FAILED,
+                                message = applicationContext.getString(R.string.backend_steam_login_timeout),
+                                accountName = pendingAccountName.get(),
+                            )
                         } catch (error: CancellationException) {
                             throw error
                         } catch (error: Throwable) {
