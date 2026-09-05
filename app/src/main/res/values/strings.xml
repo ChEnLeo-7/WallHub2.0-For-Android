@@ -963,6 +963,7 @@
     <string name='backend_steam_enter_credentials'>Enter your Steam username and password</string>
     <string name='backend_steam_enter_guard_code'>Enter the Steam Guard mobile code</string>
     <string name='backend_steam_login_failed'>Steam sign-in failed: %1$s</string>
+    <string name='backend_steam_login_timeout'>Steam sign-in timed out. Check your network and try again.</string>
     <string name='backend_steam_machine_token_unsupported'>This Steam login requires a machine token that WallHub does not have. Sign in from a trusted Steam client first.</string>
     <string name='backend_steam_login_success'>Signed in to Steam. The local session was saved securely.</string>
     <string name='backend_steam_no_guard_request'>There is no pending Steam Guard verification request</string>

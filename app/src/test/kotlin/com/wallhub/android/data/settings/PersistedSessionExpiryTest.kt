@@ -73,4 +73,14 @@ class PersistedSessionExpiryTest {
             ),
         )
     }
+
+    @Test
+    fun `expired sessions remain reportable after credentials are removed`() {
+        assertTrue(
+            shouldReportExpiredPersistedSession(
+                SteamSessionState(phase = SteamSessionPhase.EXPIRED, hasStoredSession = false),
+                alreadyReported = false,
+            ),
+        )
+    }
 }

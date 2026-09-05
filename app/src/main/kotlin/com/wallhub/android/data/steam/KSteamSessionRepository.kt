@@ -610,8 +610,12 @@ class KSteamSessionRepository
 
         /** Waits until kSteam's auth flow reaches a terminal app phase after a logon attempt. */
         private suspend fun awaitRestorationOutcome(client: SteamClient) {
-            client.account.clientAuthState.first { state -> state is AuthorizationState.Success }
-            mutableSession.first { it.phase != SteamSessionPhase.SIGNING_IN }
+            combine(client.account.clientAuthState, mutableSession) { auth, session ->
+                (auth is AuthorizationState.Success && session.phase != SteamSessionPhase.SIGNING_IN) ||
+                    session.phase == SteamSessionPhase.EXPIRED ||
+                    session.phase == SteamSessionPhase.FAILED ||
+                    session.phase == SteamSessionPhase.RESTORABLE
+            }.first { it }
         }
 
         override fun login(
@@ -646,13 +650,16 @@ class KSteamSessionRepository
                                 accountName = accountName.trim(),
                             )
                             when (
-                                client.account.signIn(
-                                    username = accountName.trim(),
-                                    password = password,
-                                    rememberSession = true,
-                                )
+                                withTimeout(INTERACTIVE_LOGIN_TIMEOUT_MS) {
+                                    client.account.signIn(
+                                        username = accountName.trim(),
+                                        password = password,
+                                        rememberSession = true,
+                                    )
+                                }
                             ) {
-                                bruhcollective.itaysonlab.ksteam.handlers.Account.AuthorizationResult.ProceedToTfa -> Unit
+                                bruhcollective.itaysonlab.ksteam.handlers.Account.AuthorizationResult.ProceedToTfa ->
+                                    awaitInteractiveLoginOutcome(client)
                                 bruhcollective.itaysonlab.ksteam.handlers.Account.AuthorizationResult.InvalidPassword ->
                                     publishPhase(
                                         phase = SteamSessionPhase.FAILED,
@@ -680,6 +687,25 @@ class KSteamSessionRepository
                             loginInProgress.set(false)
                         }
                     }.also(Job::start),
+                )
+            }
+        }
+
+        private suspend fun awaitInteractiveLoginOutcome(client: SteamClient) {
+            try {
+                withTimeout(INTERACTIVE_LOGIN_TIMEOUT_MS) {
+                    combine(client.account.clientAuthState, mutableSession) { auth, session ->
+                        auth is AuthorizationState.Success ||
+                            session.phase == SteamSessionPhase.FAILED ||
+                            session.phase == SteamSessionPhase.EXPIRED
+                    }.first { it }
+                }
+            } catch (error: TimeoutCancellationException) {
+                runCatching { client.account.cancelPolling() }
+                publishPhase(
+                    phase = SteamSessionPhase.FAILED,
+                    message = applicationContext.getString(R.string.backend_steam_login_timeout),
+                    accountName = pendingAccountName.get(),
                 )
             }
         }
@@ -1718,6 +1744,7 @@ class KSteamSessionRepository
             const val RESTORE_TOTAL_TIMEOUT_MS = 60_000L
             const val CONTENT_CREDENTIAL_RESTORE_TIMEOUT_MS = 30_000L
             const val STEAM_RPC_TIMEOUT_MS = 25_000L
+            const val INTERACTIVE_LOGIN_TIMEOUT_MS = 5 * 60_000L
             const val FOREGROUND_SESSION_REFRESH_AFTER_BACKGROUND_MS = 2 * 60_000L
             const val MIGRATED_ACCESS_TOKEN_PLACEHOLDER = "wallhub-migrated"
         }
