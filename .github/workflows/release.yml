@@ -47,6 +47,23 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK packages
         run: yes | sdkmanager "platforms;android-36" "build-tools;${BUILD_TOOLS_VERSION}"
+      - name: Build kSteam into Maven Local
+        env:
+          KSTEAM_PINNED_SHA: c6ca6ef389d65c5223b2af9bf422ac830a0a2f32
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/iTaysonLab/kSteam.git /tmp/ksteam
+          cd /tmp/ksteam
+          if [[ "$(git rev-parse HEAD)" != "$KSTEAM_PINNED_SHA" ]]; then
+            git fetch --depth 1 origin "$KSTEAM_PINNED_SHA"
+            git checkout --quiet FETCH_HEAD
+          fi
+          test "$(git rev-parse HEAD)" = "$KSTEAM_PINNED_SHA"
+          python3 "$GITHUB_WORKSPACE/scripts/patch-ksteam-auth-flow.py"
+          git submodule update --init --depth 1
+          chmod +x gradlew
+          ./gradlew --no-daemon :proto-common:upgradeProtoFiles
+          ./gradlew --no-daemon publishToMavenLocal
       - name: Validate release request
         id: release_meta
         run: |
@@ -139,7 +156,7 @@ jobs:
       - name: Verify Android application
         run: |
           chmod +x gradlew
-          ./gradlew :app:testDebugUnitTest :app:verifyLintSourceWarningBudget detekt ktlintCheck dependencyUpdates :app:assembleDebug
+          ./gradlew -Pwallhub.usePatchedKSteam=true :app:testDebugUnitTest :app:verifyLintSourceWarningBudget detekt ktlintCheck dependencyUpdates :app:assembleDebug
       - name: Require Release signing secrets
         env:
           WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
@@ -173,7 +190,7 @@ jobs:
           WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
           WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
           WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease -Pwallhub.publishAbiApks=true -Pwallhub.requireReleaseSigning=true
+        run: ./gradlew -Pwallhub.usePatchedKSteam=true :app:assembleRelease -Pwallhub.publishAbiApks=true -Pwallhub.requireReleaseSigning=true
       - name: Package and verify Release assets
         env:
           VERSION_NAME: ${{ steps.release_meta.outputs.version_name }}

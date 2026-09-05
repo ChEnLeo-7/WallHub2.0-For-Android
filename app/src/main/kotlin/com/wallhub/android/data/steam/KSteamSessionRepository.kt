@@ -993,20 +993,20 @@ class KSteamSessionRepository
                 // nearby, reachable servers; a zero cell id yields arbitrary global
                 // endpoints that are frequently unroutable (NoRouteToHost).
                 val inheritedCellId = engine?.configuration?.cellId ?: 0
-                val created =
-                    runCatching {
-                        kSteam {
-                            rootFolder = File(applicationContext.cacheDir, "ksteam-anonymous").absolutePath.toPath()
-                            deviceInfo = deviceInformation()
-                            loggingVerbosity = Logger.Verbosity.Warning
-                            persistenceDriver = MemoryPersistenceDriver
-                            ktor(::newKSteamHttpClient)
-                        }
-                    }.getOrNull() ?: return null
-                if (inheritedCellId != 0) {
-                    runCatching { created.configuration.cellId = inheritedCellId }
-                }
                 repeat(ANONYMOUS_CONNECT_ATTEMPTS) { attempt ->
+                    val created =
+                        runCatching {
+                            kSteam {
+                                rootFolder = File(applicationContext.cacheDir, "ksteam-anonymous-$attempt").absolutePath.toPath()
+                                deviceInfo = deviceInformation()
+                                loggingVerbosity = Logger.Verbosity.Warning
+                                persistenceDriver = MemoryPersistenceDriver
+                                ktor(::newKSteamHttpClient)
+                            }
+                        }.getOrNull() ?: return@repeat
+                    if (inheritedCellId != 0) {
+                        runCatching { created.configuration.cellId = inheritedCellId }
+                    }
                     try {
                         withTimeout(ANONYMOUS_CONNECT_TIMEOUT_MS) {
                             created.start()

@@ -385,6 +385,14 @@ class FormalWorkshopDownloadWorker
                         conversionScheduler.enqueue(taskId)
                         Result.success()
                     }
+                } catch (error: SteamDownloadPausedException) {
+                    persist(
+                        task,
+                        status = DownloadStatus.PAUSED,
+                        requestedAction = null,
+                        message = applicationContext.getString(R.string.backend_download_paused),
+                    )
+                    Result.success()
                 } catch (error: SteamDownloadCancelledException) {
                     stagingDirectory?.takeIf(::isManagedStagingDirectory)?.deleteRecursively()
                     persist(
@@ -522,7 +530,7 @@ class FormalWorkshopDownloadWorker
             while (true) {
                 when (controlProbe.current()) {
                     SteamDownloadControl.CONTINUE -> return
-                    SteamDownloadControl.PAUSE -> delay(PAUSE_POLL_INTERVAL_MS)
+                    SteamDownloadControl.PAUSE -> throw SteamDownloadPausedException()
                     SteamDownloadControl.CANCEL -> throw SteamDownloadCancelledException()
                 }
             }

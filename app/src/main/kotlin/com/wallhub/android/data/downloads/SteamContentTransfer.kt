@@ -164,6 +164,7 @@ internal class SteamContentVideoStream internal constructor(
     private val access: SteamContentAccess,
     private val depotId: Int,
     private val depotDownloader: DepotDownloader,
+    private val contentTransportLease: java.io.Closeable,
 ) : com.wallhub.android.core.model.WorkshopVideoStreamSession {
     private val cdnHttpClient = httpClient
     private val selector = CdnServerSelector()
@@ -379,6 +380,7 @@ internal class SteamContentVideoStream internal constructor(
         decodeDispatcher.close()
         cdnHttpClient.dispatcher.executorService.shutdown()
         streamCache.close()
+        contentTransportLease.close()
     }
 
     private suspend fun loadChunkSliceInto(
@@ -1183,6 +1185,8 @@ internal suspend fun downloadManifest(
             throw error
         } catch (error: SteamDownloadCancelledException) {
             throw error
+        } catch (error: SteamDownloadPausedException) {
+            throw error
         } catch (error: VirtualMachineError) {
             throw error
         } catch (error: Throwable) {
@@ -1278,6 +1282,9 @@ internal suspend fun downloadEncryptedChunk(
             selector.recordCancelled(server)
             throw error
         } catch (error: SteamDownloadCancelledException) {
+            selector.recordCancelled(server)
+            throw error
+        } catch (error: SteamDownloadPausedException) {
             selector.recordCancelled(server)
             throw error
         } catch (error: VirtualMachineError) {
@@ -1617,21 +1624,26 @@ internal suspend fun downloadChunksContinuously(
             for (chunk in queue) {
                 currentCoroutineContext().ensureActive()
                 checkDownloadControl(control)
-                val data = downloadChunk(
-                    httpClient = httpClient,
-                    servers = servers,
-                    proxyServer = proxyServer,
-                    depotId = depotId,
-                    chunk = chunk,
-                    depotKey = depotKey,
-                    authTokens = authTokens,
-                    selector = selector,
-                    depotDownloader = depotDownloader,
-                    control = control,
-                )
-                val written = CompletableDeferred<Unit>()
-                completed.send(DownloadedChunk(chunk.offset, data, written))
-                written.await()
+                withDownloadChunkMemoryPermit(
+                    compressedBytes = chunk.compressedLength,
+                    uncompressedBytes = chunk.uncompressedLength,
+                ) {
+                    val data = downloadChunk(
+                        httpClient = httpClient,
+                        servers = servers,
+                        proxyServer = proxyServer,
+                        depotId = depotId,
+                        chunk = chunk,
+                        depotKey = depotKey,
+                        authTokens = authTokens,
+                        selector = selector,
+                        depotDownloader = depotDownloader,
+                        control = control,
+                    )
+                    val written = CompletableDeferred<Unit>()
+                    completed.send(DownloadedChunk(chunk.offset, data, written))
+                    written.await()
+                }
             }
         }
     }
@@ -1667,12 +1679,10 @@ internal fun isCompletedFile(
 }
 
 internal suspend fun checkDownloadControl(control: suspend () -> SteamDownloadControl) {
-    while (true) {
-        when (control()) {
-            SteamDownloadControl.CONTINUE -> return
-            SteamDownloadControl.PAUSE -> delay(PAUSE_POLL_INTERVAL_MS)
-            SteamDownloadControl.CANCEL -> throw SteamDownloadCancelledException()
-        }
+    when (control()) {
+        SteamDownloadControl.CONTINUE -> return
+        SteamDownloadControl.PAUSE -> throw SteamDownloadPausedException()
+        SteamDownloadControl.CANCEL -> throw SteamDownloadCancelledException()
     }
 }
 

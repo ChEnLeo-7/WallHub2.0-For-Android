@@ -114,6 +114,16 @@ internal fun safeDownloadLimit(
 
 private val GLOBAL_DOWNLOAD_MEMORY_BUDGET = DownloadMemoryBudget(Runtime.getRuntime().maxMemory())
 
+internal suspend fun <T> withDownloadChunkMemoryPermit(
+    compressedBytes: Int,
+    uncompressedBytes: Int,
+    block: suspend () -> T,
+): T =
+    GLOBAL_DOWNLOAD_MEMORY_BUDGET.withPermit(
+        requestedBytes = estimatedSteamChunkPeakMemoryBytes(compressedBytes, uncompressedBytes),
+        block = block,
+    )
+
 internal class DownloadMemoryBudget private constructor(
     private val capacityBytes: Long,
     @Suppress("UNUSED_PARAMETER") fixedCapacity: Boolean,

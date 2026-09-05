@@ -160,14 +160,6 @@ fun WorkshopBrowseQuery.matchesSteamWallpaper(summary: WorkshopSummary): Boolean
     return true
 }
 
-fun WorkshopBrowseQuery.needsQuestionableRatingFallback(): Boolean {
-    val excluded = steamTagCriteria().excludedTags.toSet()
-    return "Everyone" in excluded && "Questionable" in excluded
-}
-
-fun WorkshopBrowseQuery.allowQuestionableRatingFallback(): WorkshopBrowseQuery =
-    copy(ratings = setOf(WorkshopRating.QUESTIONABLE, WorkshopRating.MATURE))
-
 fun WorkshopBrowseQuery.effectiveWorkshopTypes(): Set<WorkshopType> =
     types.filter { it != WorkshopType.UNKNOWN }.toSet().ifEmpty {
         type?.takeIf { it != WorkshopType.UNKNOWN }?.let(::setOf).orEmpty()

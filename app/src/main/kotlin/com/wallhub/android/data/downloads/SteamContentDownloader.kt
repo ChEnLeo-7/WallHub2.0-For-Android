@@ -40,6 +40,8 @@ internal enum class SteamDownloadControl {
     CANCEL,
 }
 
+internal class SteamDownloadPausedException : Exception("Steam download was paused")
+
 internal class SteamDownloadCancelledException : Exception("Steam download was cancelled")
 
 internal data class SteamDownloadProgress(
@@ -437,9 +439,11 @@ internal class SteamContentDownloader
             require(target.appId > 0) { "Invalid Steam App ID" }
             require(target.contentManifestId > 0L) { "Invalid Steam manifest ID" }
             val normalizedOptions = options.normalized()
-            val session = openContentSession(sessionRepository, credential) {}
-            val httpClient = createCdnHttpClient(normalizedOptions, steamHttpClientFactory)
+            val contentTransportLease = sessionRepository.acquireContentTransportLease()
+            var httpClient: okhttp3.OkHttpClient? = null
             try {
+                val session = openContentSession(sessionRepository, credential) {}
+                httpClient = createCdnHttpClient(normalizedOptions, steamHttpClientFactory)
                 val access = resolveContentAccess(session, target)
                 val manifest =
                     downloadManifest(
@@ -485,9 +489,11 @@ internal class SteamContentDownloader
                     access = access,
                     depotId = target.depotId,
                     depotDownloader = depotDownloader,
+                    contentTransportLease = contentTransportLease,
                 )
             } catch (error: Throwable) {
-                runCatching { httpClient.dispatcher.executorService.shutdown() }
+                httpClient?.let { client -> runCatching { client.dispatcher.executorService.shutdown() } }
+                contentTransportLease.close()
                 throw error
             }
         }

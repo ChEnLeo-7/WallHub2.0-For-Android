@@ -229,7 +229,7 @@ internal fun WorkshopBrowseQuery.matches(summary: WorkshopSummary): Boolean {
     return matchesSteamWallpaper(summary)
 }
 
-internal fun WorkshopBrowseQuery.communityBrowsePageSize(): Int = if (creatorId == null) pageSize else AUTHOR_BROWSE_PAGE_SIZE
+internal fun WorkshopBrowseQuery.communityBrowsePageSize(): Int = pageSize
 
 internal fun Uri.Builder.appendFilterTags(
     selected: Set<String>,
@@ -248,7 +248,6 @@ internal fun Uri.Builder.appendFilterTags(
 }
 
 internal const val WALLPAPER_ENGINE_APP_ID = 431960
-internal const val AUTHOR_BROWSE_PAGE_SIZE = 30
 internal const val MAX_PAGE_SIZE = 50
 internal const val MAX_DIRECT_BROWSE_PAGE = 1_000
 internal const val MAX_COMMENT_PAGE_SIZE = 50

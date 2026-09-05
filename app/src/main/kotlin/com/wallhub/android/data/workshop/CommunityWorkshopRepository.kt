@@ -16,8 +16,6 @@ import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.matchesSteamWallpaper
 import com.wallhub.android.core.model.workshopSearchIdOrNull
 import com.wallhub.android.core.model.workshopAuthorSearchOrNull
-import com.wallhub.android.core.model.needsQuestionableRatingFallback
-import com.wallhub.android.core.model.allowQuestionableRatingFallback
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -60,18 +58,31 @@ class CommunityWorkshopRepository
                     return@withContext unifiedWorkshopRepository.browsePublic(normalizedQuery)
                         ?: error("A signed-in Steam session is required for friend Workshop activity")
                 }
-                if (
-                    preferences.steamWorkshopDataSource == SteamWorkshopDataSource.COMMUNITY_HTML &&
-                    (normalizedQuery.createdAfterEpochSeconds != null || normalizedQuery.createdBeforeEpochSeconds != null)
+                require(
+                    preferences.steamWorkshopDataSource != SteamWorkshopDataSource.COMMUNITY_HTML ||
+                        (normalizedQuery.createdAfterEpochSeconds == null &&
+                            normalizedQuery.createdBeforeEpochSeconds == null),
                 ) {
-                    unifiedWorkshopRepository.browsePublic(normalizedQuery)?.let { return@withContext it }
+                    "Community HTML does not support created-date Workshop queries"
                 }
                 val steamApiKey = preferences.steamApiKey.trim()
                 when (preferences.steamWorkshopDataSource) {
                     SteamWorkshopDataSource.COMMUNITY_HTML -> browseViaCommunity(normalizedQuery)
                     SteamWorkshopDataSource.WEB_API -> {
-                        require(steamApiKey.isNotEmpty() || normalizedQuery.searchText.workshopSearchIdOrNull() != null) {
+                        val workshopId = normalizedQuery.searchText.workshopSearchIdOrNull()
+                        require(steamApiKey.isNotEmpty()) {
                             "The Steam Web API data source requires an API key"
+                        }
+                        if (workshopId != null) {
+                            val detail = getPublishedFileDetails(listOf(workshopId), steamApiKey).firstOrNull()
+                                ?: error("Steam Web API did not return this Workshop item")
+                            return@withContext WorkshopPage(
+                                items = listOf(enrichDetailAuthor(detail, steamApiKey).summary),
+                                page = normalizedQuery.page,
+                                hasNextPage = false,
+                                totalCount = 1,
+                                totalPages = 1,
+                            )
                         }
                         enrichPageAuthors(
                             if (normalizedQuery.creatorId != null) {
@@ -86,11 +97,7 @@ class CommunityWorkshopRepository
                     SteamWorkshopDataSource.CM_WEBSOCKET -> {
                         val first = unifiedWorkshopRepository.browsePublic(normalizedQuery)
                             ?: error("Failed to establish a Steam CM WebSocket session")
-                        if (first.items.isEmpty() && normalizedQuery.needsQuestionableRatingFallback()) {
-                            unifiedWorkshopRepository.browsePublic(normalizedQuery.allowQuestionableRatingFallback()) ?: first
-                        } else {
-                            first
-                        }
+                        first
                     }
                 }
             }
@@ -105,7 +112,9 @@ class CommunityWorkshopRepository
                         val detail =
                             getPublishedFileDetails(listOf(workshopId), steamApiKey).firstOrNull()
                                 ?: error("Steam did not return this Workshop item; it may be deleted or not publicly accessible")
-                        val authorName = CommunityWorkshopParser.extractAuthorName(get(buildDetailUrl(workshopId)))
+                        val authorName =
+                            runCatching { CommunityWorkshopParser.extractAuthorName(get(buildDetailUrl(workshopId))) }
+                                .getOrNull()
                         detail.copy(
                             summary =
                                 detail.summary.copy(
@@ -497,9 +506,6 @@ class CommunityWorkshopRepository
                 CommunityWorkshopParser
                     .extractItemIds(html)
                     .take(sourcePageSize)
-            if (ids.isEmpty() && normalizedQuery.needsQuestionableRatingFallback()) {
-                return browseViaCommunity(normalizedQuery.allowQuestionableRatingFallback())
-            }
             if (ids.isEmpty()) {
                 return WorkshopPage(
                     items = emptyList(),
@@ -554,9 +560,7 @@ class CommunityWorkshopRepository
                 totalCount = total,
                 totalPages = totalPages,
             )
-            return if (page.items.isEmpty() && normalizedQuery.needsQuestionableRatingFallback()) {
-                browseViaSteamApi(normalizedQuery.allowQuestionableRatingFallback(), steamApiKey)
-            } else page
+            return page
         }
 
         private fun browseViaSteamApiAuthor(

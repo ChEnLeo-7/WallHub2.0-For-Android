@@ -879,6 +879,7 @@
     </plurals>
     <string name='backend_download_authenticating'>Verifying content access with the signed-in Steam account…</string>
     <string name='backend_download_cancelled_cleaned'>Download cancelled and temporary files cleaned up</string>
+    <string name='backend_download_paused'>Download paused</string>
     <string name='backend_download_cancelling'>Cancelling download and cleaning up temporary files</string>
     <plurals name='backend_download_complete_anonymous'>
         <item quantity='one'>Download complete: %1$d file, %2$s; anonymous Steam account; converting and exporting</item>

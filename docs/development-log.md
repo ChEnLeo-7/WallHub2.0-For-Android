@@ -9,6 +9,12 @@
 - Update: Show localized startup progress while preferences load and a non-blocking app-wide Steam restore banner with retry access until the saved session is restored.
 - Verification: Added restore-banner state coverage; commit-bound CI and device cold-start verification must confirm visible restoration, bounded failure, and successful saved-account recovery.
 
+### Download lifecycle hardening
+
+- Fix: A paused download now releases its WorkManager slot and Steam transport lease, preserving verified staging data for a later requeue.
+- Fix: Ordinary depot chunk decode now participates in the shared download memory budget, and online video streams hold their Steam transport lease until close.
+- Fix: Community date-filter queries fail explicitly instead of silently changing data source or dropping the requested date range; author page sizing and Web API ID lookup now follow the selected query.
+
 ### Legacy Steam VZip content
 
 - Fix: Decode Steam `VZa` depot chunks with a bounded pure-Rust LZMA implementation while retaining manifest length and Adler-32 verification.
