@@ -40,7 +40,7 @@ internal enum class SteamDownloadControl {
     CANCEL,
 }
 
-internal class SteamDownloadPausedException : Exception("Steam download was paused")
+internal class SteamDownloadPausedException : CancellationException("Steam download was paused")
 
 internal class SteamDownloadCancelledException : Exception("Steam download was cancelled")
 

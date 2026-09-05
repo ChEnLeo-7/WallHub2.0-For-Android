@@ -1185,8 +1185,6 @@ internal suspend fun downloadManifest(
             throw error
         } catch (error: SteamDownloadCancelledException) {
             throw error
-        } catch (error: SteamDownloadPausedException) {
-            throw error
         } catch (error: VirtualMachineError) {
             throw error
         } catch (error: Throwable) {
@@ -1282,9 +1280,6 @@ internal suspend fun downloadEncryptedChunk(
             selector.recordCancelled(server)
             throw error
         } catch (error: SteamDownloadCancelledException) {
-            selector.recordCancelled(server)
-            throw error
-        } catch (error: SteamDownloadPausedException) {
             selector.recordCancelled(server)
             throw error
         } catch (error: VirtualMachineError) {
