@@ -271,7 +271,9 @@ internal fun estimatedSteamChunkPeakMemoryBytes(
     require(compressedBytes >= 0) { "Compressed Steam chunk size must not be negative" }
     require(uncompressedBytes >= 0) { "Uncompressed Steam chunk size must not be negative" }
     val networkAndDecodePeak =
-        compressedBytes.toLong() * STEAM_CHUNK_COMPRESSED_BUFFER_COPIES + uncompressedBytes.toLong()
+        compressedBytes.toLong() * STEAM_CHUNK_COMPRESSED_BUFFER_COPIES +
+            uncompressedBytes.toLong() +
+            STEAM_CHUNK_MAX_LZMA_DICTIONARY_BYTES
     val checksumPeak =
         compressedBytes.toLong() * STEAM_CHUNK_CHECKSUM_COMPRESSED_COPIES +
             uncompressedBytes.toLong() * STEAM_CHUNK_UNCOMPRESSED_BUFFER_COPIES
@@ -284,3 +286,4 @@ private const val DOWNLOAD_MEMORY_MAX_BYTES = 32L * 1024L * 1024L
 private const val STEAM_CHUNK_COMPRESSED_BUFFER_COPIES = 3L
 private const val STEAM_CHUNK_CHECKSUM_COMPRESSED_COPIES = 2L
 private const val STEAM_CHUNK_UNCOMPRESSED_BUFFER_COPIES = 2L
+private const val STEAM_CHUNK_MAX_LZMA_DICTIONARY_BYTES = 8L * 1024L * 1024L

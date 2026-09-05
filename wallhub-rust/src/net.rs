@@ -5,17 +5,18 @@ use std::time::Duration;
 const DEFAULT_USER_AGENT: &str = concat!("WallHub-Rust/", env!("CARGO_PKG_VERSION"));
 
 /// Downloads a complete Steam CDN resource (manifest, chunk, ...) and returns the raw bytes.
-pub async fn download_resource(
-    url: &str,
-    timeout_ms: u64,
-) -> Result<Vec<u8>, String> {
+pub async fn download_resource(url: &str, timeout_ms: u64) -> Result<Vec<u8>, String> {
     let client = reqwest::Client::builder()
         .user_agent(DEFAULT_USER_AGENT)
         .timeout(Duration::from_millis(timeout_ms))
         .connect_timeout(Duration::from_secs(20))
         .build()
         .map_err(|error| format!("failed to build HTTP client: {error}"))?;
-    let response = client.get(url).send().await.map_err(|error| error.to_string())?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
     let status = response.status();
     if !status.is_success() {
         return Err(format!("CDN request failed: HTTP {status}"));

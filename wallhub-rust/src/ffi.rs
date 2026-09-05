@@ -10,7 +10,6 @@ use jni::objects::{JByteArray, JObject, JString};
 use jni::sys::{jboolean, jbyteArray, jint, jstring};
 use jni::JNIEnv;
 
-use crate::crypto::aes;
 use crate::depot::chunk;
 use crate::depot::verify;
 
@@ -44,6 +43,24 @@ fn write_bytes(env: &mut JNIEnv, bytes: &[u8]) -> Result<jbyteArray, String> {
     env.set_byte_array_region(&output, 0, &signed)
         .map_err(|error| error.to_string())?;
     Ok(output.into_raw())
+}
+
+fn read_depot_key(env: &mut JNIEnv, value: &JByteArray) -> Result<[u8; 32], String> {
+    let bytes = read_bytes(env, value)?;
+    if bytes.len() != 32 {
+        return Err(format!("depot key must be 32 bytes, got {}", bytes.len()));
+    }
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&bytes);
+    Ok(key)
+}
+
+fn read_uncompressed_length(value: jint) -> Result<usize, String> {
+    let length = usize::try_from(value).map_err(|_| format!("invalid chunk length {value}"))?;
+    if length == 0 || length > crate::compression::vzip::MAX_DEPOT_CHUNK_BYTES {
+        return Err(format!("invalid chunk length {value}"));
+    }
+    Ok(length)
 }
 
 fn read_string(env: &mut JNIEnv, value: &JString) -> Result<String, String> {
@@ -115,20 +132,13 @@ pub extern "system" fn Java_com_wallhub_android_data_downloads_WallHubRust_decod
 ) -> jbyteArray {
     guarded(&mut env, std::ptr::null_mut(), |env| {
         let encrypted_bytes = read_bytes(env, &encrypted)?;
-        let key_bytes = read_bytes(env, &depot_key)?;
-        if key_bytes.len() != 32 {
-            return Err(format!(
-                "depot key must be 32 bytes, got {}",
-                key_bytes.len()
-            ));
-        }
-        let mut key = [0u8; 32];
-        key.copy_from_slice(&key_bytes);
+        let key = read_depot_key(env, &depot_key)?;
+        let expected_length = read_uncompressed_length(uncompressed_length)?;
         let decoded = chunk::decrypt_depot_chunk(
             &encrypted_bytes,
             &key,
             expected_checksum as u32,
-            uncompressed_length.max(0) as usize,
+            expected_length,
         )
         .map_err(|error| error.to_string())?;
         write_bytes(env, &decoded)
@@ -166,50 +176,15 @@ pub extern "system" fn Java_com_wallhub_android_data_downloads_WallHubRust_downl
 ) -> jbyteArray {
     guarded(&mut env, std::ptr::null_mut(), |env| {
         let target = read_string(env, &url)?;
-        let key_bytes = read_bytes(env, &depot_key)?;
-        if key_bytes.len() != 32 {
-            return Err(format!(
-                "depot key must be 32 bytes, got {}",
-                key_bytes.len()
-            ));
-        }
-        let mut key = [0u8; 32];
-        key.copy_from_slice(&key_bytes);
+        let key = read_depot_key(env, &depot_key)?;
+        let expected_length = read_uncompressed_length(uncompressed_length)?;
         let encrypted = runtime().block_on(crate::net::download_resource(
             &target,
             timeout_ms.max(1_000) as u64,
         ))?;
-        // The first 16 bytes are the ECB-encrypted IV; the depot key check mirrors
-        // DepotChunk.process before any decryption happens.
-        let iv = aes::decrypt_chunk_iv(&key, &encrypted).map_err(chunk_error)?;
-        let decrypted =
-            aes::decrypt_chunk_payload(&key, &iv, &encrypted[16..]).map_err(chunk_error)?;
-        let compression = crate::compression::ChunkCompression::detect(&decrypted)
-            .ok_or_else(|| chunk_error("unrecognized compression magic"))?;
-        let decompressed = match compression {
-            crate::compression::ChunkCompression::Zstd => {
-                crate::compression::zstd::decompress_vzstd_container(&decrypted)
-                    .map_err(chunk_error)?
-            }
-            other => return Err(chunk_error(&format!("unsupported compression {other:?}"))),
-        };
-        if decompressed.len() != uncompressed_length.max(0) as usize {
-            return Err(chunk_error(&format!(
-                "chunk decompressed to {} bytes, expected {}",
-                decompressed.len(),
-                uncompressed_length
-            )));
-        }
-        let actual = verify::steam_adler32(&decompressed);
-        if actual != expected_checksum as u32 {
-            return Err(chunk_error(&format!(
-                "checksum mismatch: expected {expected_checksum:#010x}, got {actual:#010x}"
-            )));
-        }
-        write_bytes(env, &decompressed)
+        let decoded =
+            chunk::decrypt_depot_chunk(&encrypted, &key, expected_checksum as u32, expected_length)
+                .map_err(|error| error.to_string())?;
+        write_bytes(env, &decoded)
     })
-}
-
-fn chunk_error(message: impl std::fmt::Display) -> String {
-    message.to_string()
 }

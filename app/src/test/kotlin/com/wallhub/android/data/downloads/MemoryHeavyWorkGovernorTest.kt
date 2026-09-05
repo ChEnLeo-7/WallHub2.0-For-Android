@@ -23,7 +23,7 @@ class MemoryHeavyWorkGovernorTest {
         val mebibyte = 1024 * 1024
 
         assertEquals(
-            6L * mebibyte,
+            13L * mebibyte,
             estimatedSteamChunkPeakMemoryBytes(
                 compressedBytes = mebibyte,
                 uncompressedBytes = 2 * mebibyte,

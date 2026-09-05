@@ -3,11 +3,9 @@ package com.wallhub.android.core.model
 /**
  * Engine-neutral depot content seam for the kSteam + Rust hybrid migration.
  *
- * The Kotlin engine (`KotlinDepotDownloader`) implements verification and full chunk decode
- * on top of JavaSteam today; the planned Rust engine fills in chunk download and the
- * performance-critical verification/decompression paths. Engines declare their
- * [capabilities][DepotDownloader.capabilities] so routing and fallback logic can select a
- * supported engine without hard failure.
+ * The Rust depot engine owns verification and full chunk decode. Engines declare their
+ * [capabilities][DepotDownloader.capabilities] so callers can reject unavailable operations
+ * without depending on a concrete implementation.
  */
 interface DepotDownloader {
     val capabilities: Set<DepotDownloaderCapability>

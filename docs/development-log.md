@@ -1,5 +1,13 @@
 # Development Log
 
+## 2026-09-05
+
+### Legacy Steam VZip content
+
+- Fix: Decode Steam `VZa` depot chunks with a bounded pure-Rust LZMA implementation while retaining manifest length and Adler-32 verification.
+- Fix: Route both JNI chunk entry points through the same decrypt/decompress/verify implementation so formal downloads and online playback support identical formats.
+- Verification: Added the pinned SteamKit encrypted VZip fixture and malformed-container limits; device validation must render and continuously play Workshop `3423261668` through the Steam CM data source.
+
 ## 2026-09-04
 
 ### kSteam CM routing and session restore

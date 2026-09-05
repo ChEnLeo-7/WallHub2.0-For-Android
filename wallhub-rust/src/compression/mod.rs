@@ -1,6 +1,7 @@
 //! Engine-neutral compression primitives used by depot chunk decoding.
 
 pub mod lz4;
+pub mod vzip;
 pub mod zstd;
 
 /// Compression container observed inside a decrypted Steam depot chunk.
