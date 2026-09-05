@@ -52,6 +52,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpSend
 import io.ktor.client.plugins.plugin
+import java.io.Closeable
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -112,6 +113,38 @@ internal fun isUsableAuthenticatedSteamClient(
     connected: Boolean,
 ): Boolean = authorized && connected
 
+internal class SteamContentLifecycleState {
+    private var foreground = true
+    private var activeTransfers = 0
+
+    @Synchronized
+    fun onBackgrounded(): Boolean {
+        foreground = false
+        return activeTransfers == 0
+    }
+
+    @Synchronized
+    fun onForegrounded() {
+        foreground = true
+    }
+
+    @Synchronized
+    fun acquire(): Boolean {
+        activeTransfers += 1
+        return !foreground && activeTransfers == 1
+    }
+
+    @Synchronized
+    fun release(): Boolean {
+        check(activeTransfers > 0) { "Steam content lifecycle lease underflow" }
+        activeTransfers -= 1
+        return !foreground && activeTransfers == 0
+    }
+
+    @Synchronized
+    fun shouldPause(): Boolean = !foreground && activeTransfers == 0
+}
+
 private fun SteamClient.hasUsableAuthenticatedConnection(): Boolean =
     isUsableAuthenticatedSteamClient(
         authorized = account.clientAuthState.value is AuthorizationState.Success,
@@ -156,6 +189,8 @@ class KSteamSessionRepository
         private val engineMutex = Mutex()
         private val anonymousMutex = Mutex()
         private val credentialMutex = Mutex()
+        private val engineLifecycleMutex = Mutex()
+        private val contentLifecycleState = SteamContentLifecycleState()
         private val restoreLock = Any()
         private val restoreJobRef = AtomicReference<Job?>(null)
         private val loginInProgress = AtomicBoolean(false)
@@ -670,23 +705,25 @@ class KSteamSessionRepository
                     backgroundedAtElapsedRealtime = SystemClock.elapsedRealtime()
                 }
             }
-            scope.launch {
-                runCatching {
-                    val client = engine ?: return@launch
-                    if (engineStarted) client.pause()
-                }
+            if (contentLifecycleState.onBackgrounded()) {
+                pauseEngineIfIdleInBackground()
             }
         }
 
         override fun onAppForegrounded() {
+            contentLifecycleState.onForegrounded()
             val backgroundedAt =
                 synchronized(restoreLock) {
                     backgroundedAtElapsedRealtime.also { backgroundedAtElapsedRealtime = null }
-                }
+            }
             scope.launch {
                 runCatching {
-                    val client = engine ?: return@launch
-                    if (engineStarted) client.resume() else startEngine(client)
+                    val client =
+                        engineLifecycleMutex.withLock {
+                            val current = engine ?: return@withLock null
+                            if (engineStarted) current.resume() else startEngine(current)
+                            current
+                        } ?: return@runCatching
                     val stale =
                         backgroundedAt != null &&
                             SystemClock.elapsedRealtime() - backgroundedAt >= FOREGROUND_SESSION_REFRESH_AFTER_BACKGROUND_MS
@@ -695,6 +732,45 @@ class KSteamSessionRepository
                         client.account.clientAuthState.value !is AuthorizationState.Success
                     ) {
                         restorePersistedSession()
+                    }
+                }
+            }
+        }
+
+        internal suspend fun <T> withContentTransportActive(block: suspend () -> T): T {
+            val lease = acquireContentTransportLease()
+            return try {
+                block()
+            } finally {
+                lease.close()
+            }
+        }
+
+        private suspend fun acquireContentTransportLease(): Closeable {
+            val shouldResume = contentLifecycleState.acquire()
+            try {
+                if (shouldResume) {
+                    engineLifecycleMutex.withLock {
+                        val client = engine ?: return@withLock
+                        if (engineStarted) client.resume() else startEngine(client)
+                    }
+                }
+            } catch (error: Throwable) {
+                contentLifecycleState.release()
+                throw error
+            }
+            return Closeable {
+                if (contentLifecycleState.release()) pauseEngineIfIdleInBackground()
+            }
+        }
+
+        private fun pauseEngineIfIdleInBackground() {
+            scope.launch {
+                runCatching {
+                    engineLifecycleMutex.withLock {
+                        if (!contentLifecycleState.shouldPause()) return@withLock
+                        val client = engine ?: return@withLock
+                        if (engineStarted) client.pause()
                     }
                 }
             }

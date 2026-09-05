@@ -39,6 +39,7 @@ class WorkManagerDownloadWorkScheduler
         override fun enqueue(taskId: String) {
             val request =
                 OneTimeWorkRequestBuilder<FormalWorkshopDownloadWorker>()
+                    .setInputData(workDataOf(FormalWorkshopDownloadWorker.KEY_TASK_ID to taskId))
                     .setConstraints(
                         Constraints
                             .Builder()
@@ -47,6 +48,7 @@ class WorkManagerDownloadWorkScheduler
                     )
                     .setBackoffCriteria(BackoffPolicy.LINEAR, 10_000L, TimeUnit.MILLISECONDS)
                     .addTag(FORMAL_DOWNLOAD_TAG)
+                    .addTag(FormalWorkshopDownloadWorker.WORK_TAG_PREFIX + taskId)
                     .build()
             WorkManager.getInstance(context).enqueueUniqueWork(
                 FormalWorkshopDownloadWorker.UNIQUE_DOWNLOAD_WORK_PREFIX + taskId,

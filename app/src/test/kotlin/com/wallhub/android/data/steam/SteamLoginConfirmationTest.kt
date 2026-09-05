@@ -9,6 +9,42 @@ import kotlin.test.assertTrue
 
 class SteamLoginConfirmationTest {
     @Test
+    fun `backgrounding keeps Steam active while content transfers hold leases`() {
+        val state = SteamContentLifecycleState()
+
+        assertFalse(state.acquire())
+        assertFalse(state.onBackgrounded())
+        assertFalse(state.shouldPause())
+        assertTrue(state.release())
+        assertTrue(state.shouldPause())
+    }
+
+    @Test
+    fun `content transfer started in background resumes Steam until final lease closes`() {
+        val state = SteamContentLifecycleState()
+
+        assertTrue(state.onBackgrounded())
+        assertTrue(state.acquire())
+        assertFalse(state.acquire())
+        assertFalse(state.release())
+        assertFalse(state.shouldPause())
+        assertTrue(state.release())
+        assertTrue(state.shouldPause())
+    }
+
+    @Test
+    fun `foregrounding prevents final lease from pausing Steam`() {
+        val state = SteamContentLifecycleState()
+
+        state.onBackgrounded()
+        assertTrue(state.acquire())
+        state.onForegrounded()
+
+        assertFalse(state.release())
+        assertFalse(state.shouldPause())
+    }
+
+    @Test
     fun `authenticated Steam client is usable only while its CM transport is active`() {
         assertTrue(isUsableAuthenticatedSteamClient(authorized = true, connected = true))
         assertFalse(isUsableAuthenticatedSteamClient(authorized = true, connected = false))

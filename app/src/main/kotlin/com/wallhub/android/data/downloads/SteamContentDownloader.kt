@@ -265,44 +265,46 @@ internal class SteamContentDownloader
         control: suspend () -> SteamDownloadControl = { SteamDownloadControl.CONTINUE },
         onProgress: suspend (SteamDownloadProgress) -> Unit,
     ): SteamContentDownloadResult =
-        withContext(Dispatchers.IO) {
-            require(target.appId > 0) { "Invalid Steam App ID" }
-            require(target.contentManifestId > 0L) { "Invalid Steam manifest ID" }
-            checkDownloadControl(control)
-            val normalizedOptions = options.normalized()
-            var publishedBytes = 0L
-            var publishedFiles = 0
-            val publishProgress: suspend (SteamDownloadProgress) -> Unit = { progress ->
-                if (progress.phase == SteamDownloadPhase.DOWNLOADING) {
-                    publishedBytes = maxOf(publishedBytes, progress.completedBytes)
-                    publishedFiles = maxOf(publishedFiles, progress.completedFiles)
-                    onProgress(
-                        progress.copy(
-                            completedBytes = publishedBytes,
-                            completedFiles = publishedFiles,
-                        ),
-                    )
-                } else {
-                    onProgress(progress)
+        sessionRepository.withContentTransportActive {
+            withContext(Dispatchers.IO) {
+                require(target.appId > 0) { "Invalid Steam App ID" }
+                require(target.contentManifestId > 0L) { "Invalid Steam manifest ID" }
+                checkDownloadControl(control)
+                val normalizedOptions = options.normalized()
+                var publishedBytes = 0L
+                var publishedFiles = 0
+                val publishProgress: suspend (SteamDownloadProgress) -> Unit = { progress ->
+                    if (progress.phase == SteamDownloadPhase.DOWNLOADING) {
+                        publishedBytes = maxOf(publishedBytes, progress.completedBytes)
+                        publishedFiles = maxOf(publishedFiles, progress.completedFiles)
+                        onProgress(
+                            progress.copy(
+                                completedBytes = publishedBytes,
+                                completedFiles = publishedFiles,
+                            ),
+                        )
+                    } else {
+                        onProgress(progress)
+                    }
                 }
-            }
-            withSteamCdnRecovery(
-                onRetry = { attempt, error ->
-                    Log.w(
-                        STEAM_CONTENT_LOG_TAG,
-                        "Recoverable Steam CDN failure; rebuilding session after attempt $attempt, " +
-                            "type=${error.cause?.javaClass?.name ?: error.javaClass.name}",
+                withSteamCdnRecovery(
+                    onRetry = { attempt, error ->
+                        Log.w(
+                            STEAM_CONTENT_LOG_TAG,
+                            "Recoverable Steam CDN failure; rebuilding session after attempt $attempt, " +
+                                "type=${error.cause?.javaClass?.name ?: error.javaClass.name}",
+                        )
+                    },
+                ) {
+                    downloadOnce(
+                        target = target,
+                        destinationDirectory = destinationDirectory,
+                        credential = credential,
+                        options = normalizedOptions,
+                        control = control,
+                        onProgress = publishProgress,
                     )
-                },
-            ) {
-                downloadOnce(
-                    target = target,
-                    destinationDirectory = destinationDirectory,
-                    credential = credential,
-                    options = normalizedOptions,
-                    control = control,
-                    onProgress = publishProgress,
-                )
+                }
             }
         }
 

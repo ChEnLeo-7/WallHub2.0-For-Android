@@ -48,6 +48,16 @@ internal object ActiveFormalWorkshopDownloadWorkers {
     fun isActive(taskId: String): Boolean = taskId in taskIds
 }
 
+internal fun resolveDownloadTaskId(
+    inputTaskId: String?,
+    tags: Set<String>,
+): String? =
+    inputTaskId?.takeIf(String::isNotBlank)
+        ?: tags
+            .firstOrNull { it.startsWith(FormalWorkshopDownloadWorker.WORK_TAG_PREFIX) }
+            ?.removePrefix(FormalWorkshopDownloadWorker.WORK_TAG_PREFIX)
+            ?.takeIf(String::isNotBlank)
+
 internal fun resolveWorkshopStagingDirectory(
     persistentRoot: File,
     legacyRoot: File,
@@ -103,15 +113,14 @@ class FormalWorkshopDownloadWorker
     ) : CoroutineWorker(appContext, params) {
         override suspend fun doWork(): Result =
             withContext(Dispatchers.IO) {
-                // Some Android 16 ROM deliveries of the expedited job arrive with the
-                // WorkManager input data stripped; fall back to the oldest queued task
-                // so the download can still proceed.
-                var taskId = inputData.getString(KEY_TASK_ID)
+                // Some Android 16 ROM deliveries strip WorkManager input data. The task-specific
+                // tag still identifies this request without racing another queued worker.
+                var taskId = resolveDownloadTaskId(inputData.getString(KEY_TASK_ID), tags)
                 if (taskId == null) {
                     taskId = taskDao.findOldestQueued()?.taskId
                     Log.w(
                         DOWNLOAD_LOG_TAG,
-                        "doWork input data empty; adopting queued task=$taskId",
+                        "doWork identity missing; adopting legacy queued task=$taskId",
                     )
                 }
                 if (taskId == null) {
@@ -678,6 +687,7 @@ class FormalWorkshopDownloadWorker
         companion object {
             const val KEY_TASK_ID = "task_id"
             const val UNIQUE_DOWNLOAD_WORK_PREFIX = "wallhub_formal_workshop_download_"
+            const val WORK_TAG_PREFIX = "wallhub_formal_workshop_download_task_"
             private const val NOTIFICATION_CHANNEL_ID = "wallhub_workshop_download"
             private const val NOTIFICATION_ID = 4202
             private const val PROGRESS_PERSIST_INTERVAL_MS = 750L

@@ -4,11 +4,38 @@ import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
 import com.wallhub.android.core.model.WorkshopType
 import java.nio.file.Files
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadRetryRoutingTest {
+    @Test
+    fun `download task identity falls back to its request tag`() {
+        assertEquals(
+            "task-b",
+            resolveDownloadTaskId(
+                inputTaskId = null,
+                tags =
+                    setOf(
+                        "wallhub_formal_workshop_download",
+                        FormalWorkshopDownloadWorker.WORK_TAG_PREFIX + "task-b",
+                    ),
+            ),
+        )
+    }
+
+    @Test
+    fun `download input identity takes precedence over request tag`() {
+        assertEquals(
+            "task-a",
+            resolveDownloadTaskId(
+                inputTaskId = "task-a",
+                tags = setOf(FormalWorkshopDownloadWorker.WORK_TAG_PREFIX + "task-b"),
+            ),
+        )
+    }
+
     @Test
     fun completeDownloadRetriesConversion() {
         val directory = Files.createTempDirectory("wallhub-complete").toFile()

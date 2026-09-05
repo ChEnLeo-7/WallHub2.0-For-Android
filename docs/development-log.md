@@ -21,6 +21,12 @@
 - Fix: Release the per-stream HTTP dispatcher when an online stream closes.
 - Verification: Commit-bound CI and device validation must confirm public MPKG download and online chunk playback after this change.
 
+### Screen-off content downloads
+
+- Fix: Keep the signed-in Steam CM transport active while background depot downloads hold content-transfer leases; pause it only after the final transfer finishes while the app remains backgrounded.
+- Fix: Serialize lifecycle pause/resume operations so screen-off and WorkManager startup cannot leave a content task using a paused CM session.
+- Verification: Queue several distinct Workshop projects, turn the display off through ADB, and confirm each task downloads, converts, and appears in local storage before waking the device.
+
 ## 2026-09-03
 
 ### Password-only Steam login
