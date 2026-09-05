@@ -257,6 +257,12 @@ internal class SteamContentDownloader
         private val depotDownloader: DepotDownloader,
         private val steamHttpClientFactory: SteamHttpClientFactory,
     ) {
+    suspend fun <T> withContentTransportActive(block: suspend () -> T): T =
+        sessionRepository.withContentTransportActive(block)
+
+    suspend fun acquireContentTransportLease(): java.io.Closeable =
+        sessionRepository.acquireContentTransportLease()
+
     suspend fun download(
         target: WorkshopContentTarget,
         destinationDirectory: File,

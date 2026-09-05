@@ -746,7 +746,7 @@ class KSteamSessionRepository
             }
         }
 
-        private suspend fun acquireContentTransportLease(): Closeable {
+        internal suspend fun acquireContentTransportLease(): Closeable {
             val shouldResume = contentLifecycleState.acquire()
             try {
                 if (shouldResume) {

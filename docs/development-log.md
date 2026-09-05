@@ -25,6 +25,7 @@
 
 - Fix: Keep the signed-in Steam CM transport active while background depot downloads hold content-transfer leases; pause it only after the final transfer finishes while the app remains backgrounded.
 - Fix: Serialize lifecycle pause/resume operations so screen-off and WorkManager startup cannot leave a content task using a paused CM session.
+- Fix: Hold the transport lease while each worker waits for its download slot, preventing a pause/resume gap between sequential queued items.
 - Verification: Queue several distinct Workshop projects, turn the display off through ADB, and confirm each task downloads, converts, and appears in local storage before waking the device.
 
 ## 2026-09-03

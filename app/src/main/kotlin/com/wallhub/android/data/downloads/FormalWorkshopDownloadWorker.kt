@@ -155,12 +155,14 @@ class FormalWorkshopDownloadWorker
                 }
                 ActiveFormalWorkshopDownloadWorkers.markActive(taskId)
                 var stagingDirectory: File? = null
+                var contentTransportLease: java.io.Closeable? = null
                 try {
                     // No setForeground() here: this ROM treats the WorkManager FGS as
                     // typeless and force-stops it after ~4 seconds, which cancelled the
                     // worker mid-run. A plain JobScheduler job survives; Result.retry()
                     // covers any residual system stops.
                     val downloadPreferences = settingsRepository.preferences.first()
+                    contentTransportLease = steamWorkshopContentClient.acquireContentTransportLease()
                     task =
                         persist(
                             task,
@@ -449,6 +451,7 @@ class FormalWorkshopDownloadWorker
                     )
                     Result.success()
                 } finally {
+                    contentTransportLease?.close()
                     ActiveFormalWorkshopDownloadWorkers.markInactive(taskId)
                 }
             }
