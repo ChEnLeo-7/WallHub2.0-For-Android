@@ -124,6 +124,12 @@ interface FormalTaskRecordDao {
     suspend fun delete(taskId: String): Int
 
     @Query(
+        "DELETE FROM formal_task_records WHERE taskId = :taskId " +
+            "AND status IN ('COMPLETED', 'FAILED', 'CANCELLED')",
+    )
+    suspend fun deleteTerminal(taskId: String): Int
+
+    @Query(
         "DELETE FROM formal_task_records " +
             "WHERE status IN ('COMPLETED', 'FAILED', 'CANCELLED')",
     )

@@ -589,6 +589,7 @@ class FormalWorkshopDownloadWorker
                     outputLabel = outputLabel,
                     message = effectiveMessage,
                     requestedAction = effectiveAction,
+                    queuePosition = persisted?.queuePosition ?: previous.queuePosition,
                     updatedAt = System.currentTimeMillis(),
                 )
             taskDao.upsert(updated)

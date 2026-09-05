@@ -20,6 +20,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -37,6 +39,8 @@ class RoomDownloadTaskRepository
         private val settingsRepository: SettingsRepository,
         private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
     ) : DownloadTaskRepository {
+        private val taskMutationMutex = Mutex()
+
         override val tasks: Flow<List<DownloadTask>> =
             taskDao.observeAll().map { records ->
                 records.map(FormalTaskRecordEntity::toModel)
@@ -48,7 +52,7 @@ class RoomDownloadTaskRepository
             taskDao.upsert(task.toEntity())
         }
 
-        override suspend fun enqueue(request: DownloadRequest): DownloadTask {
+        override suspend fun enqueue(request: DownloadRequest): DownloadTask = taskMutationMutex.withLock {
             require(request.workshopId > 0L) { "Invalid Workshop item ID" }
             taskDao.findActiveForWorkshop(request.workshopId)?.toModel()?.let { return it }
             val now = System.currentTimeMillis()
@@ -297,7 +301,7 @@ class RoomDownloadTaskRepository
             downloadConcurrencyGovernor.updatePriorities(mergedOrder)
         }
 
-        override suspend fun clearFinishedHistory(): Int {
+        override suspend fun clearFinishedHistory(): Int = taskMutationMutex.withLock {
             val removableTasks =
                 taskDao
                     .observeAll()
@@ -313,7 +317,7 @@ class RoomDownloadTaskRepository
             return deleteHistoryTasks(removableTasks)
         }
 
-        override suspend fun clearCompletedHistory(): Int {
+        override suspend fun clearCompletedHistory(): Int = taskMutationMutex.withLock {
             val removableTasks =
                 taskDao
                     .listAll()
@@ -322,7 +326,7 @@ class RoomDownloadTaskRepository
             return deleteHistoryTasks(removableTasks)
         }
 
-        override suspend fun retryFailedTasks(): Int {
+        override suspend fun retryFailedTasks(): Int = taskMutationMutex.withLock {
             val failedTaskIds =
                 taskDao.listAll()
                     .filter { task -> task.status == DownloadStatus.FAILED.name }
@@ -334,8 +338,11 @@ class RoomDownloadTaskRepository
 
         private suspend fun deleteHistoryTasks(tasks: List<FormalTaskRecordEntity>): Int =
             tasks.sumOf { task ->
-                deleteManagedStagingDirectory(context, task.stagingDirectory)
-                taskDao.delete(task.taskId)
+                val deleted = taskDao.deleteTerminal(task.taskId)
+                if (deleted > 0) {
+                    deleteManagedStagingDirectory(context, task.stagingDirectory)
+                }
+                deleted
             }
     }
 
