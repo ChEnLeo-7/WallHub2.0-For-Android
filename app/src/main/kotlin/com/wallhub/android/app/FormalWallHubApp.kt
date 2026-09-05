@@ -128,7 +128,7 @@ fun FormalWallHubApp(
             SteamSessionRestoreBanner(
                 session = steamSession,
                 onRetry = onRetrySteamRestore,
-            }
+            )
             Box(modifier = Modifier.weight(1f)) {
                 WallHubAdaptiveNavigationLayout(
                     windowWidthSizeClass = windowWidthSizeClass,
@@ -141,7 +141,7 @@ fun FormalWallHubApp(
                     homeScrollRequest = homeScrollRequest,
                     discoverRefreshRequest = discoverRefreshRequest,
                 )
-            )
+            }
         }
     }
 }
