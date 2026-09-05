@@ -2,6 +2,13 @@
 
 ## 2026-09-05
 
+### Visible bounded Steam session restore
+
+- Fix: Detect persisted Steam credentials before starting the CM transport, publish the restoring state immediately, and skip signed-in CM startup entirely when no saved session exists.
+- Fix: Bound CM startup and the complete refresh-token restore flow, pausing the connection after timeout so kSteam cannot continue retrying invisibly in the background.
+- Update: Show localized startup progress while preferences load and a non-blocking app-wide Steam restore banner with retry access until the saved session is restored.
+- Verification: Added restore-banner state coverage; commit-bound CI and device cold-start verification must confirm visible restoration, bounded failure, and successful saved-account recovery.
+
 ### Legacy Steam VZip content
 
 - Fix: Decode Steam `VZa` depot chunks with a bounded pure-Rust LZMA implementation while retaining manifest length and Adler-32 verification.

@@ -1,6 +1,7 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <resources xmlns:tools='http://schemas.android.com/tools'>
     <string name='app_name'>WallHub</string>
+    <string name='app_starting'>Starting WallHub…</string>
     <string name='app_saved_steam_session_expired'>Your saved Steam sign-in has expired. Sign in again to continue.</string>
     <string name='setup_welcome_title'>Welcome to WallHub</string>
     <string name='setup_welcome_description'>Browse, download, and manage Wallpaper Engine Workshop content on Android.</string>

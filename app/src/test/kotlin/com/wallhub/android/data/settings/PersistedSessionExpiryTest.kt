@@ -12,7 +12,7 @@ class PersistedSessionExpiryTest {
         val expiredSession =
             SteamSessionState(
                 phase = SteamSessionPhase.EXPIRED,
-                hasStoredSession = true,
+                hasStoredSession = false,
             )
 
         assertTrue(shouldReportExpiredPersistedSession(expiredSession, alreadyReported = false))
@@ -34,6 +34,42 @@ class PersistedSessionExpiryTest {
                     hasStoredSession = true,
                 ),
                 alreadyReported = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `shows a global restore banner while a saved session is not signed in`() {
+        assertTrue(
+            shouldShowSteamSessionRestoreBanner(
+                SteamSessionState(
+                    phase = SteamSessionPhase.SIGNING_IN,
+                    hasStoredSession = true,
+                ),
+            ),
+        )
+        assertTrue(
+            shouldShowSteamSessionRestoreBanner(
+                SteamSessionState(
+                    phase = SteamSessionPhase.RESTORABLE,
+                    hasStoredSession = true,
+                ),
+            ),
+        )
+        assertFalse(
+            shouldShowSteamSessionRestoreBanner(
+                SteamSessionState(
+                    phase = SteamSessionPhase.SIGNED_IN,
+                    hasStoredSession = true,
+                ),
+            ),
+        )
+        assertFalse(
+            shouldShowSteamSessionRestoreBanner(
+                SteamSessionState(
+                    phase = SteamSessionPhase.SIGNING_IN,
+                    hasStoredSession = false,
+                ),
             ),
         )
     }

@@ -2,6 +2,7 @@
 <resources>
     <string name='app_name'>WallHub</string>
     <string name='app_saved_steam_session_expired'>已保存的 Steam 登录已失效，请重新登录。</string>
+    <string name='app_starting'>正在启动 WallHub…</string>
     <string name='setup_welcome_title'>欢迎使用 WallHub</string>
     <string name='setup_welcome_description'>在 Android 上浏览、下载与管理 Wallpaper Engine 创意工坊内容。</string>
     <string name='setup_steam_title'>登录 Steam</string>

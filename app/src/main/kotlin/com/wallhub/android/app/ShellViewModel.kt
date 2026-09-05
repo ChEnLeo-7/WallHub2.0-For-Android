@@ -50,4 +50,8 @@ class ShellViewModel
         fun setSetupWizardCompleted(completed: Boolean) {
             viewModelScope.launch { settingsRepository.setSetupWizardCompleted(completed) }
         }
+
+        fun restoreSteamSession() {
+            steamSessionRepository.restorePersistedSession()
+        }
     }

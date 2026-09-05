@@ -69,6 +69,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -193,7 +194,9 @@ class KSteamSessionRepository
         private val contentLifecycleState = SteamContentLifecycleState()
         private val restoreLock = Any()
         private val restoreJobRef = AtomicReference<Job?>(null)
+        private val loginJobRef = AtomicReference<Job?>(null)
         private val loginInProgress = AtomicBoolean(false)
+        private val logoutInProgress = AtomicBoolean(false)
         private val expiredPublished = AtomicBoolean(false)
         private val anonymousEngineRef = AtomicReference<SteamClient?>(null)
         private val pendingAccountName = AtomicReference<String?>(null)
@@ -257,15 +260,42 @@ class KSteamSessionRepository
                     .collect { (auth, cmState) -> reconcileState(client, auth, cmState) }
             }
 
-        private suspend fun startEngine(client: SteamClient) {
+        private suspend fun startEngine(client: SteamClient) =
+            engineLifecycleMutex.withLock { startEngineLocked(client) }
+
+        private suspend fun startEngineLocked(client: SteamClient) {
             // start() refreshes the CM server list before connecting; resume() must never
             // run before it or CMList.getEndpoint() throws on the empty list.
-            if (!engineStarted) {
-                client.start()
-                engineStarted = true
+            try {
+                withTimeout(ENGINE_START_TIMEOUT_MS) {
+                    if (!engineStarted) {
+                        client.start()
+                        engineStarted = true
+                    } else {
+                        client.resume()
+                    }
+                    client.connectionStatus.first { it.hasActiveServerConnection }
+                }
+            } catch (error: CancellationException) {
+                stopEngineConnectionLocked(client)
+                throw error
+            } catch (error: Throwable) {
+                stopEngineConnectionLocked(client)
+                throw error
             }
-            withTimeout(ANONYMOUS_CONNECT_TIMEOUT_MS) {
-                client.connectionStatus.first { it.hasActiveServerConnection }
+        }
+
+        private suspend fun stopEngineConnection(client: SteamClient) {
+            withContext(NonCancellable) {
+                engineLifecycleMutex.withLock { stopEngineConnectionLocked(client) }
+            }
+        }
+
+        private suspend fun stopEngineConnectionLocked(client: SteamClient) {
+            withContext(NonCancellable) {
+                withTimeoutOrNull(ENGINE_STOP_TIMEOUT_MS) {
+                    runCatching { client.pause() }
+                }
             }
         }
 
@@ -427,14 +457,74 @@ class KSteamSessionRepository
         override fun restorePersistedSession() {
             synchronized(restoreLock) {
                 if (restoreJobRef.get()?.isActive == true) return
-                loginInProgress.set(true)
+                if (logoutInProgress.get()) return
+                if (!loginInProgress.compareAndSet(false, true)) return
                 restoreJobRef.set(
                     scope.launch(start = CoroutineStart.LAZY) {
+                        var restoreClient: SteamClient? = null
                         try {
                             val client = obtainEngine()
-                            startEngine(client)
-                            restoreInternal(client)
+                            restoreClient = client
+                            withTimeout(RESTORE_TOTAL_TIMEOUT_MS) {
+                                if (
+                                    mutableSession.value.phase == SteamSessionPhase.SIGNED_IN &&
+                                    client.hasUsableAuthenticatedConnection()
+                                ) {
+                                    return@withTimeout
+                                }
+                                val hasKSteamSession = client.account.hasSavedDataForAtLeastOneAccount()
+                                val legacyCredential =
+                                    if (hasKSteamSession) {
+                                        null
+                                    } else {
+                                        credentialMutex.withLock { credentialStore.read() }
+                                    }
+                                if (!hasKSteamSession && legacyCredential is SteamCredentialReadResult.Missing) {
+                                    publishPhase(phase = SteamSessionPhase.SIGNED_OUT, message = null)
+                                    return@withTimeout
+                                }
+                                if (!hasKSteamSession && legacyCredential is SteamCredentialReadResult.Unreadable) {
+                                    recordSessionEvent(
+                                        0,
+                                        "credential_read_failure",
+                                        outcome = legacyCredential.cause.javaClass.simpleName,
+                                    )
+                                    publishPhase(
+                                        phase = SteamSessionPhase.FAILED,
+                                        message = applicationContext.getString(R.string.backend_steam_session_storage_unavailable),
+                                        hasStoredSession = true,
+                                    )
+                                    return@withTimeout
+                                }
+                                val legacyValue = (legacyCredential as? SteamCredentialReadResult.Value)?.credential
+                                if (
+                                    !hasKSteamSession &&
+                                    legacyValue != null &&
+                                    steamIdFromRefreshToken(legacyValue.refreshToken)?.isEmpty != false
+                                ) {
+                                    publishPhase(
+                                        phase = SteamSessionPhase.RESTORABLE,
+                                        message = applicationContext.getString(R.string.backend_steam_restore_rejected),
+                                        accountName = legacyValue.accountName,
+                                        personaName = legacyValue.personaName,
+                                        avatarUrl = legacyValue.avatarUrl,
+                                        hasStoredSession = true,
+                                    )
+                                    return@withTimeout
+                                }
+                                publishPhase(
+                                    phase = SteamSessionPhase.SIGNING_IN,
+                                    message = applicationContext.getString(R.string.backend_steam_restoring_session),
+                                    accountName = legacyValue?.accountName,
+                                    personaName = legacyValue?.personaName,
+                                    avatarUrl = legacyValue?.avatarUrl,
+                                    hasStoredSession = true,
+                                )
+                                startEngine(client)
+                                restoreInternal(client, legacyCredential)
+                            }
                         } catch (error: TimeoutCancellationException) {
+                            restoreClient?.let { stopEngineConnection(it) }
                             publishPhase(
                                 phase = SteamSessionPhase.RESTORABLE,
                                 message = applicationContext.getString(R.string.backend_steam_restore_timeout),
@@ -446,7 +536,10 @@ class KSteamSessionRepository
                             publishPhase(
                                 phase = SteamSessionPhase.FAILED,
                                 message = applicationContext.getString(R.string.backend_steam_restore_failed),
-                                hasStoredSession = error is KsteamSessionStorageException || legacyCredentialExists(),
+                                hasStoredSession =
+                                    mutableSession.value.hasStoredSession ||
+                                        error is KsteamSessionStorageException ||
+                                        legacyCredentialExists(),
                             )
                         } finally {
                             loginInProgress.set(false)
@@ -456,21 +549,19 @@ class KSteamSessionRepository
             }
         }
 
-        private suspend fun restoreInternal(client: SteamClient) {
+        private suspend fun restoreInternal(
+            client: SteamClient,
+            legacyCredential: SteamCredentialReadResult? = null,
+        ) {
             if (mutableSession.value.phase == SteamSessionPhase.SIGNED_IN) return
             if (client.account.hasSavedDataForAtLeastOneAccount()) {
-                publishPhase(
-                    phase = SteamSessionPhase.SIGNING_IN,
-                    message = applicationContext.getString(R.string.backend_steam_restoring_session),
-                    hasStoredSession = true,
-                )
                 // Account registers its saved-account logon when CM enters AwaitingAuthorization.
                 // Sending a second logon here races that callback and can replace a valid session.
                 awaitRestorationOutcome(client)
                 return
             }
             val credential =
-                credentialMutex.withLock { credentialStore.read() }
+                legacyCredential ?: credentialMutex.withLock { credentialStore.read() }
             when (credential) {
                 is SteamCredentialReadResult.Missing ->
                     publishPhase(phase = SteamSessionPhase.SIGNED_OUT, message = null)
@@ -494,14 +585,6 @@ class KSteamSessionRepository
                         )
                         return
                     }
-                    publishPhase(
-                        phase = SteamSessionPhase.SIGNING_IN,
-                        message = applicationContext.getString(R.string.backend_steam_restoring_session),
-                        accountName = credential.credential.accountName,
-                        personaName = credential.credential.personaName,
-                        avatarUrl = credential.credential.avatarUrl,
-                        hasStoredSession = true,
-                    )
                     seedKSteamAccount(client, steamId, credential.credential)
                     client.account.signInWithRefreshToken(steamId, credential.credential.refreshToken)
                     awaitRestorationOutcome(client)
@@ -527,34 +610,8 @@ class KSteamSessionRepository
 
         /** Waits until kSteam's auth flow reaches a terminal app phase after a logon attempt. */
         private suspend fun awaitRestorationOutcome(client: SteamClient) {
-            val outcome =
-                withTimeoutOrNull(RESTORE_TOTAL_TIMEOUT_MS) {
-                    client.account.clientAuthState.first { state -> state is AuthorizationState.Success }
-                    mutableSession.first { it.phase != SteamSessionPhase.SIGNING_IN }
-                    mutableSession.value.phase
-                }
-            when (outcome) {
-                null ->
-                    publishPhase(
-                        phase = SteamSessionPhase.RESTORABLE,
-                        message = applicationContext.getString(R.string.backend_steam_restore_timeout),
-                        hasStoredSession = true,
-                    )
-
-                SteamSessionPhase.SIGNING_IN -> {
-                    // kSteam wiped the account after a rejected refresh token; the connection
-                    // observer publishes EXPIRED, so only handle the stuck case here.
-                    if (!client.account.hasSavedDataForAtLeastOneAccount()) {
-                        publishPhase(
-                            phase = SteamSessionPhase.RESTORABLE,
-                            message = applicationContext.getString(R.string.backend_steam_restore_rejected),
-                            hasStoredSession = false,
-                        )
-                    }
-                }
-
-                else -> Unit
-            }
+            client.account.clientAuthState.first { state -> state is AuthorizationState.Success }
+            mutableSession.first { it.phase != SteamSessionPhase.SIGNING_IN }
         }
 
         override fun login(
@@ -569,56 +626,61 @@ class KSteamSessionRepository
                 )
                 return
             }
-            loginInProgress.set(true)
-            pendingAccountName.set(accountName.trim())
-            publishPhase(
-                phase = SteamSessionPhase.SIGNING_IN,
-                message = applicationContext.getString(R.string.backend_steam_connecting),
-                accountName = accountName.trim(),
-            )
-            scope.launch {
-                try {
-                    val client = obtainEngine()
-                    startEngine(client)
-                    publishPhase(
-                        phase = SteamSessionPhase.SIGNING_IN,
-                        message = applicationContext.getString(R.string.backend_steam_requesting_login),
-                        accountName = accountName.trim(),
-                    )
-                    when (
-                        client.account.signIn(
-                            username = accountName.trim(),
-                            password = password,
-                            rememberSession = true,
-                        )
-                    ) {
-                        bruhcollective.itaysonlab.ksteam.handlers.Account.AuthorizationResult.ProceedToTfa -> Unit
-                        bruhcollective.itaysonlab.ksteam.handlers.Account.AuthorizationResult.InvalidPassword ->
+            synchronized(restoreLock) {
+                if (logoutInProgress.get()) return
+                if (!loginInProgress.compareAndSet(false, true)) return
+                pendingAccountName.set(accountName.trim())
+                publishPhase(
+                    phase = SteamSessionPhase.SIGNING_IN,
+                    message = applicationContext.getString(R.string.backend_steam_connecting),
+                    accountName = accountName.trim(),
+                )
+                loginJobRef.set(
+                    scope.launch(start = CoroutineStart.LAZY) {
+                        try {
+                            val client = obtainEngine()
+                            startEngine(client)
                             publishPhase(
-                                phase = SteamSessionPhase.FAILED,
-                                message = applicationContext.getString(R.string.backend_steam_login_failed, "The password does not match"),
+                                phase = SteamSessionPhase.SIGNING_IN,
+                                message = applicationContext.getString(R.string.backend_steam_requesting_login),
                                 accountName = accountName.trim(),
                             )
+                            when (
+                                client.account.signIn(
+                                    username = accountName.trim(),
+                                    password = password,
+                                    rememberSession = true,
+                                )
+                            ) {
+                                bruhcollective.itaysonlab.ksteam.handlers.Account.AuthorizationResult.ProceedToTfa -> Unit
+                                bruhcollective.itaysonlab.ksteam.handlers.Account.AuthorizationResult.InvalidPassword ->
+                                    publishPhase(
+                                        phase = SteamSessionPhase.FAILED,
+                                        message = applicationContext.getString(R.string.backend_steam_login_failed, "The password does not match"),
+                                        accountName = accountName.trim(),
+                                    )
 
-                        bruhcollective.itaysonlab.ksteam.handlers.Account.AuthorizationResult.RpcError ->
+                                bruhcollective.itaysonlab.ksteam.handlers.Account.AuthorizationResult.RpcError ->
+                                    publishPhase(
+                                        phase = SteamSessionPhase.FAILED,
+                                        message = applicationContext.getString(R.string.backend_steam_login_failed, "Steam network RPC error"),
+                                        accountName = accountName.trim(),
+                                    )
+                            }
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Throwable) {
                             publishPhase(
                                 phase = SteamSessionPhase.FAILED,
-                                message = applicationContext.getString(R.string.backend_steam_login_failed, "Steam network RPC error"),
-                                accountName = accountName.trim(),
+                                message =
+                                    applicationContext.getString(R.string.backend_steam_login_failed, error.displayMessage()),
+                                accountName = pendingAccountName.get(),
                             )
-                    }
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Throwable) {
-                    publishPhase(
-                        phase = SteamSessionPhase.FAILED,
-                        message =
-                            applicationContext.getString(R.string.backend_steam_login_failed, error.displayMessage()),
-                        accountName = pendingAccountName.get(),
-                    )
-                } finally {
-                    loginInProgress.set(false)
-                }
+                        } finally {
+                            loginInProgress.set(false)
+                        }
+                    }.also(Job::start),
+                )
             }
         }
 
@@ -668,34 +730,54 @@ class KSteamSessionRepository
         }
 
         override fun logout() {
+            val authenticationJobs =
+                synchronized(restoreLock) {
+                    if (!logoutInProgress.compareAndSet(false, true)) return
+                    loginInProgress.set(true)
+                    listOfNotNull(
+                        restoreJobRef.getAndSet(null),
+                        loginJobRef.getAndSet(null),
+                    )
+                }
             scope.launch {
-                loginInProgress.set(false)
-                val client = engine
-                if (client != null) {
-                    val steamId = client.currentSessionSteamId
-                    if (!steamId.isEmpty) {
-                        runCatching { client.configuration.deleteSecureAccount(steamId) }
+                try {
+                    authenticationJobs.forEach { job -> job.cancelAndJoin() }
+                    val client = engine
+                    if (client != null) {
+                        val steamId = client.currentSessionSteamId
+                        if (!steamId.isEmpty) {
+                            runCatching { client.configuration.deleteSecureAccount(steamId) }
+                        }
+                        client.configuration.autologinSteamId = SteamId.Empty
                     }
-                    client.configuration.autologinSteamId = SteamId.Empty
+                    credentialMutex.withLock { runCatching { credentialStore.clear() } }
+                    val observer =
+                        engineLifecycleMutex.withLock {
+                            engineMutex.withLock {
+                                val currentObserver = engineObserver
+                                currentObserver?.cancel()
+                                engineObserver = null
+                                if (engineStarted) {
+                                    runCatching { engine?.stop() }
+                                    engineStarted = false
+                                }
+                                engine = null
+                                currentObserver
+                            }
+                        }
+                    observer?.cancelAndJoin()
+                    steamProfiles.clear()
+                    authorDisplayNames.clear()
+                    pendingAccountName.set(null)
+                    expiredPublished.set(false)
+                    publishPhase(
+                        phase = SteamSessionPhase.SIGNED_OUT,
+                        message = applicationContext.getString(R.string.backend_steam_signed_out),
+                    )
+                } finally {
+                    loginInProgress.set(false)
+                    logoutInProgress.set(false)
                 }
-                credentialMutex.withLock { runCatching { credentialStore.clear() } }
-                engineMutex.withLock {
-                    engineObserver?.cancel()
-                    engineObserver = null
-                    if (engineStarted) {
-                        runCatching { engine?.stop() }
-                        engineStarted = false
-                    }
-                    engine = null
-                }
-                steamProfiles.clear()
-                authorDisplayNames.clear()
-                pendingAccountName.set(null)
-                expiredPublished.set(false)
-                publishPhase(
-                    phase = SteamSessionPhase.SIGNED_OUT,
-                    message = applicationContext.getString(R.string.backend_steam_signed_out),
-                )
             }
         }
 
@@ -718,10 +800,17 @@ class KSteamSessionRepository
             }
             scope.launch {
                 runCatching {
+                    if (logoutInProgress.get()) return@runCatching
+                    if (
+                        mutableSession.value.phase == SteamSessionPhase.SIGNED_OUT &&
+                        !mutableSession.value.hasStoredSession
+                    ) {
+                        return@runCatching
+                    }
                     val client =
                         engineLifecycleMutex.withLock {
                             val current = engine ?: return@withLock null
-                            if (engineStarted) current.resume() else startEngine(current)
+                            if (engineStarted) current.resume() else startEngineLocked(current)
                             current
                         } ?: return@runCatching
                     val stale =
@@ -752,7 +841,7 @@ class KSteamSessionRepository
                 if (shouldResume) {
                     engineLifecycleMutex.withLock {
                         val client = engine ?: return@withLock
-                        if (engineStarted) client.resume() else startEngine(client)
+                        if (engineStarted) client.resume() else startEngineLocked(client)
                     }
                 }
             } catch (error: Throwable) {
@@ -1621,6 +1710,8 @@ class KSteamSessionRepository
         internal companion object {
             const val ANONYMOUS_CONNECT_TIMEOUT_MS = 20_000L
             const val ANONYMOUS_STOP_TIMEOUT_MS = 2_000L
+            const val ENGINE_START_TIMEOUT_MS = 20_000L
+            const val ENGINE_STOP_TIMEOUT_MS = 2_000L
             const val ANONYMOUS_CONNECT_ATTEMPTS = 3
             const val ANONYMOUS_RETRY_DELAY_MS = 2_000L
             const val CONTENT_SESSION_WAIT_TIMEOUT_MS = 12_000L
