@@ -119,6 +119,10 @@ internal fun shouldReconnectForegroundSteamSession(
     hasUsableConnection: Boolean,
 ): Boolean = phase == SteamSessionPhase.SIGNED_IN && !hasUsableConnection
 
+internal fun shouldRestoreAfterForegroundReconnectFailure(
+    hasStoredSession: Boolean,
+): Boolean = hasStoredSession
+
 internal class SteamContentLifecycleState {
     private var foreground = true
     private var activeTransfers = 0
@@ -868,6 +872,7 @@ class KSteamSessionRepository
                         message = error.displayMessage(),
                         hasStoredSession = hasStoredSession,
                     )
+                    if (shouldRestoreAfterForegroundReconnectFailure(hasStoredSession)) restorePersistedSession()
                 }
             }
         }

@@ -74,6 +74,20 @@ class SteamLoginConfirmationTest {
     }
 
     @Test
+    fun `foreground reconnect failure remains recoverable when a saved session exists`() {
+        assertTrue(
+            shouldRestoreAfterForegroundReconnectFailure(
+                hasStoredSession = true,
+            ),
+        )
+        assertFalse(
+            shouldRestoreAfterForegroundReconnectFailure(
+                hasStoredSession = false,
+            ),
+        )
+    }
+
+    @Test
     fun `Steam websocket ping interval stays below common gateway idle timeout`() {
         assertTrue(KSteamSessionRepository.KSTEAM_WEBSOCKET_PING_INTERVAL_MS < 60_000L)
     }
