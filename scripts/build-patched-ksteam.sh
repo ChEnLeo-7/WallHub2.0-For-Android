@@ -84,6 +84,15 @@ while True:
 if insertions:
     settings.write_text(text, encoding="utf-8")
 
+for build_file in [Path("build.gradle.kts"), Path("build-extensions/build.gradle.kts")]:
+    text = build_file.read_text(encoding="utf-8")
+    if "mavenCentral()" in text and 'maven("https://maven.aliyun.com/repository/central")' not in text:
+        text = text.replace(
+            "mavenCentral()",
+            "maven(\"https://maven.aliyun.com/repository/central\")\n    maven(\"https://maven.aliyun.com/repository/public\")\n    mavenCentral()",
+        )
+        build_file.write_text(text, encoding="utf-8")
+
 extensions = Path("build-extensions/build.gradle.kts")
 text = extensions.read_text(encoding="utf-8")
 if 'maven("https://maven.aliyun.com/repository/public")' not in text:
