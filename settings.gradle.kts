@@ -41,12 +41,24 @@ if (usePatchedKSteam && System.getenv("GITHUB_ACTIONS") != "true") {
                 script.absolutePath
             }
         val exitCode =
-            ProcessBuilder(bash, scriptPath)
-                .directory(rootDir)
-                .inheritIO()
-                .start()
-                .waitFor()
-        check(exitCode == 0) { "Patched kSteam build failed with exit code $exitCode" }
+            run {
+                val patchLog = file("build/ksteam-patched/build.log")
+                patchLog.parentFile.mkdirs()
+                ProcessBuilder(bash, scriptPath)
+                    .directory(rootDir)
+                    .redirectErrorStream(true)
+                    .redirectOutput(patchLog)
+                    .start()
+                    .waitFor()
+            }
+        val patchLog = file("build/ksteam-patched/build.log")
+        check(exitCode == 0) {
+            val details = patchLog.takeIf { it.isFile }?.readText()?.takeLast(12_000).orEmpty()
+            "Patched kSteam build failed with exit code $exitCode\n$details"
+        }
+        check(stampFile.isFile && stampFile.readText().trim() == patchStamp) {
+            "Patched kSteam build completed without publishing the expected stamp"
+        }
     }
 }
 

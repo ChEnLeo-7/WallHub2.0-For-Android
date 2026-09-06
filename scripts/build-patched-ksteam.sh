@@ -47,7 +47,7 @@ git submodule update --init --depth 1
 if [[ -n "${WALLHUB_ANDROID_SDK:-}" ]]; then
     sdk_path="$WALLHUB_ANDROID_SDK"
 elif [[ -d "/f/AI-Studio/.android-sdk" ]]; then
-    sdk_path="F:\\AI-Studio\\.android-sdk"
+    sdk_path="/f/AI-Studio/.android-sdk"
 else
     sdk_path="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 fi
