@@ -33,20 +33,18 @@ if [[ -f "$STAMP_FILE" ]] && [[ "$(<"$STAMP_FILE")" == "$PATCH_STAMP" ]]; then
 fi
 
 mkdir -p "$OUTPUT_DIR"
-if [[ -d "$KSTEAM_DIR/.git" ]]; then
-    rm -rf "$KSTEAM_DIR"
-fi
 if [[ ! -d "$KSTEAM_DIR/.git" ]]; then
     git clone --no-checkout https://github.com/iTaysonLab/kSteam.git "$KSTEAM_DIR"
 fi
 
 git -C "$KSTEAM_DIR" fetch --depth 1 origin "$KSTEAM_PINNED_SHA"
-git -C "$KSTEAM_DIR" checkout --quiet FETCH_HEAD
+git -C "$KSTEAM_DIR" reset --hard --quiet FETCH_HEAD
+git -C "$KSTEAM_DIR" submodule sync --quiet
+git -C "$KSTEAM_DIR" submodule update --init --force --depth 1
 printf 'WallHub: checked out kSteam %s\n' "$KSTEAM_PINNED_SHA"
 
 cd "$KSTEAM_DIR"
 $python_command "$ROOT_DIR/scripts/patch-ksteam-auth-flow.py"
-git submodule update --init --depth 1
 printf 'WallHub: kSteam source patched and submodules ready\n'
 
 $python_command - <<'PYMIRROR'
@@ -101,9 +99,12 @@ fi
 
 chmod +x gradlew
 
-# kSteam's pinned proto tree needs the same deterministic repair used by CI.
-./gradlew --no-daemon :proto-common:upgradeProtoFiles
-$python_command - <<'PYFIX'
+# CI regenerates kSteam's vendored proto tree because it starts from a clean
+# checkout. The pinned source already contains the generated proto files, so
+# the LAN worker skips that network-heavy refresh by default.
+if [[ "${WALLHUB_KSTEAM_UPGRADE_PROTO:-0}" == "1" ]]; then
+    ./gradlew --no-daemon --stacktrace :proto-common:upgradeProtoFiles
+    $python_command - <<'PYFIX'
 import os
 import re
 import subprocess
@@ -171,6 +172,7 @@ for attempt in range(8):
 else:
     raise SystemExit("kSteam proto repair exceeded retry limit")
 PYFIX
+fi
 
 ./gradlew --no-daemon publishToMavenLocal
 printf '%s\n' "$PATCH_STAMP" > "$STAMP_FILE"
