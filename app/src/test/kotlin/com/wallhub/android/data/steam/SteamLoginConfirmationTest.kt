@@ -146,6 +146,28 @@ class SteamLoginConfirmationTest {
     }
 
     @Test
+    fun `foreground resets only an unusable saved account connection`() {
+        assertTrue(
+            shouldResetForegroundSteamConnection(
+                hasStoredSession = true,
+                hasUsableConnection = false,
+            ),
+        )
+        assertFalse(
+            shouldResetForegroundSteamConnection(
+                hasStoredSession = true,
+                hasUsableConnection = true,
+            ),
+        )
+        assertFalse(
+            shouldResetForegroundSteamConnection(
+                hasStoredSession = false,
+                hasUsableConnection = false,
+            ),
+        )
+    }
+
+    @Test
     fun `Steam websocket ping interval stays below common gateway idle timeout`() {
         assertTrue(KSteamSessionRepository.KSTEAM_WEBSOCKET_PING_INTERVAL_MS < 60_000L)
     }

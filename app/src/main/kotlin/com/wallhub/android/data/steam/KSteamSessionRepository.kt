@@ -131,6 +131,11 @@ internal fun shouldPauseBackgroundSteamEngine(
 internal fun shouldRetrySavedSteamLogon(connection: CMClientState): Boolean =
     connection == CMClientState.AwaitingAuthorization || connection == CMClientState.Authorizing
 
+internal fun shouldResetForegroundSteamConnection(
+    hasStoredSession: Boolean,
+    hasUsableConnection: Boolean,
+): Boolean = hasStoredSession && !hasUsableConnection
+
 internal class SteamContentLifecycleState {
     private var foreground = true
     private var activeTransfers = 0
@@ -877,9 +882,18 @@ class KSteamSessionRepository
                         return@launch
                     }
                     val client = engine ?: return@launch
+                    val hasKSteamSession = client.account.hasSavedDataForAtLeastOneAccount()
+                    if (
+                        shouldResetForegroundSteamConnection(
+                            hasStoredSession = hasKSteamSession,
+                            hasUsableConnection = client.hasUsableAuthenticatedConnection(),
+                        )
+                    ) {
+                        stopEngineConnection(client)
+                    }
                     startEngine(client)
                     reconcileState(client, client.account.clientAuthState.value, client.connectionStatus.value)
-                    if (!client.hasUsableAuthenticatedConnection() && client.account.hasSavedDataForAtLeastOneAccount()) {
+                    if (!client.hasUsableAuthenticatedConnection() && hasKSteamSession) {
                         restorePersistedSession()
                     }
                 } catch (error: CancellationException) {
