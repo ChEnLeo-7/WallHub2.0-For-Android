@@ -47,6 +47,17 @@ cd "$KSTEAM_DIR"
 $python_command "$ROOT_DIR/scripts/patch-ksteam-auth-flow.py"
 printf 'WallHub: kSteam source patched and submodules ready\n'
 
+$python_command - <<'PYTOOLCHAIN'
+from pathlib import Path
+
+path = Path("build-extensions/src/main/kotlin/CoreMppSetup.kt")
+text = path.read_text(encoding="utf-8")
+old = "    jvmToolchain(17)\n"
+if old in text:
+    path.write_text(text.replace(old, "    // Use the JDK installed on the LAN worker.\n", 1), encoding="utf-8")
+PYTOOLCHAIN
+printf 'WallHub: kSteam JDK toolchain follows the LAN worker\n'
+
 $python_command - <<'PYMIRROR'
 from pathlib import Path
 
