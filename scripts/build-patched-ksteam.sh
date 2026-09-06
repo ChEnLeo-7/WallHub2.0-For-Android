@@ -8,6 +8,8 @@ readonly OUTPUT_DIR="$ROOT_DIR/build/ksteam-patched"
 readonly KSTEAM_DIR="$OUTPUT_DIR/source"
 readonly STAMP_FILE="$OUTPUT_DIR/stamp"
 
+printf 'WallHub: patched kSteam preparation started (%s)\n' "$KSTEAM_PINNED_SHA"
+
 python_command=""
 for candidate in python3 python 'py -3'; do
     if [[ "$candidate" == "py -3" ]]; then
@@ -24,6 +26,7 @@ done
     printf 'Python 3 is required to prepare patched kSteam.\n' >&2
     exit 1
 }
+printf 'WallHub: using Python command %s\n' "$python_command"
 
 if [[ -f "$STAMP_FILE" ]] && [[ "$(<"$STAMP_FILE")" == "$PATCH_STAMP" ]]; then
     exit 0
@@ -39,10 +42,12 @@ fi
 
 git -C "$KSTEAM_DIR" fetch --depth 1 origin "$KSTEAM_PINNED_SHA"
 git -C "$KSTEAM_DIR" checkout --quiet FETCH_HEAD
+printf 'WallHub: checked out kSteam %s\n' "$KSTEAM_PINNED_SHA"
 
 cd "$KSTEAM_DIR"
 $python_command "$ROOT_DIR/scripts/patch-ksteam-auth-flow.py"
 git submodule update --init --depth 1
+printf 'WallHub: kSteam source patched and submodules ready\n'
 
 if [[ -n "${WALLHUB_ANDROID_SDK:-}" ]]; then
     sdk_path="$WALLHUB_ANDROID_SDK"
@@ -53,6 +58,7 @@ else
 fi
 if [[ -n "$sdk_path" ]]; then
     printf 'sdk.dir=%s\n' "$sdk_path" > local.properties
+    printf 'WallHub: using Android SDK %s\n' "$sdk_path"
 fi
 
 chmod +x gradlew

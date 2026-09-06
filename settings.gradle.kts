@@ -21,6 +21,7 @@ if (usePatchedKSteam && System.getenv("GITHUB_ACTIONS") != "true") {
     if (!stampFile.isFile || stampFile.readText().trim() != patchStamp) {
         val script = file("scripts/build-patched-ksteam.sh")
         check(script.isFile) { "Missing patched kSteam build script: $script" }
+        println("WallHub: preparing patched kSteam from $patchStamp")
         val bashCandidates =
             listOfNotNull(
                 System.getenv("WALLHUB_BASH"),
@@ -56,6 +57,7 @@ if (usePatchedKSteam && System.getenv("GITHUB_ACTIONS") != "true") {
             val details = patchLog.takeIf { it.isFile }?.readText()?.takeLast(12_000).orEmpty()
             "Patched kSteam build failed with exit code $exitCode\n$details"
         }
+        println("WallHub: patched kSteam build exited with code $exitCode")
         check(stampFile.isFile && stampFile.readText().trim() == patchStamp) {
             "Patched kSteam build completed without publishing the expected stamp"
         }
