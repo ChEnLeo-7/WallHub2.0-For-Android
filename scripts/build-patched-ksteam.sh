@@ -61,6 +61,16 @@ if marker not in text:
         "        mavenCentral()\n        maven(\"https://maven.aliyun.com/repository/gradle-plugin\")\n        maven(\"https://maven.aliyun.com/repository/google\")\n        maven(\"https://maven.aliyun.com/repository/public\")\n",
     )
     settings.write_text(text, encoding="utf-8")
+
+extensions = Path("build-extensions/build.gradle.kts")
+text = extensions.read_text(encoding="utf-8")
+if 'maven("https://maven.aliyun.com/repository/public")' not in text:
+    text = text.replace(
+        "repositories {\n",
+        "repositories {\n    maven(\"https://maven.aliyun.com/repository/gradle-plugin\")\n    maven(\"https://maven.aliyun.com/repository/public\")\n",
+        1,
+    )
+    extensions.write_text(text, encoding="utf-8")
 PYMIRROR
 printf 'WallHub: kSteam dependency mirrors configured\n'
 
