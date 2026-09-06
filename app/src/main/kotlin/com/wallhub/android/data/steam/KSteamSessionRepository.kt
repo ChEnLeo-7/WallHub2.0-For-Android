@@ -289,9 +289,11 @@ class KSteamSessionRepository
                     client.connectionStatus.first { it.hasActiveServerConnection }
                 }
             } catch (error: CancellationException) {
+                engineStarted = false
                 stopEngineConnectionLocked(client)
                 throw error
             } catch (error: Throwable) {
+                engineStarted = false
                 stopEngineConnectionLocked(client)
                 throw error
             }
