@@ -49,6 +49,21 @@ $python_command "$ROOT_DIR/scripts/patch-ksteam-auth-flow.py"
 git submodule update --init --depth 1
 printf 'WallHub: kSteam source patched and submodules ready\n'
 
+$python_command - <<'PYMIRROR'
+from pathlib import Path
+
+settings = Path("settings.gradle.kts")
+text = settings.read_text(encoding="utf-8")
+marker = 'maven("https://maven.aliyun.com/repository/public/")'
+if marker not in text:
+    text = text.replace(
+        "        mavenCentral()\n",
+        "        mavenCentral()\n        maven(\"https://maven.aliyun.com/repository/gradle-plugin\")\n        maven(\"https://maven.aliyun.com/repository/google\")\n        maven(\"https://maven.aliyun.com/repository/public\")\n",
+    )
+    settings.write_text(text, encoding="utf-8")
+PYMIRROR
+printf 'WallHub: kSteam dependency mirrors configured\n'
+
 if [[ -n "${WALLHUB_ANDROID_SDK:-}" ]]; then
     sdk_path="$WALLHUB_ANDROID_SDK"
 elif [[ -d "/f/AI-Studio/.android-sdk" ]]; then
