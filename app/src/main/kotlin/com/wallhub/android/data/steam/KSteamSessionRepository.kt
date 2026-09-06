@@ -210,7 +210,9 @@ class KSteamSessionRepository
                     plugin(HttpSend).intercept { request ->
                         val port = request.url.port
                         if (shouldPrewarmSteamUrl(request.url.protocol.name, request.url.host, port)) {
-                            steamHttpClientFactory.prewarmSteamEndpoint(request.url.host, port)
+                            withTimeoutOrNull(STEAM_ROUTE_PREWARM_WAIT_MS) {
+                                steamHttpClientFactory.prewarmSteamEndpoint(request.url.host, port)
+                            }
                         }
                         execute(request)
                     }
@@ -432,7 +434,7 @@ class KSteamSessionRepository
 
                         previous.phase == SteamSessionPhase.EXPIRED && !hasStoredSession -> Unit
                         previous.phase == SteamSessionPhase.RESTORABLE && hasStoredSession -> Unit
-                        previous.phase != SteamSessionPhase.SIGNED_OUT && !hasStoredSession -> {
+                        shouldPublishPassiveSignedOut(previous.phase, hasStoredSession) -> {
                             val next =
                                 previous.copy(
                                     phase = SteamSessionPhase.SIGNED_OUT,
@@ -1754,6 +1756,7 @@ class KSteamSessionRepository
             const val CONTENT_CREDENTIAL_RESTORE_TIMEOUT_MS = 30_000L
             const val STEAM_RPC_TIMEOUT_MS = 25_000L
             const val INTERACTIVE_LOGIN_TIMEOUT_MS = 5 * 60_000L
+            const val STEAM_ROUTE_PREWARM_WAIT_MS = 2_000L
             const val FOREGROUND_SESSION_REFRESH_AFTER_BACKGROUND_MS = 2 * 60_000L
             const val MIGRATED_ACCESS_TOKEN_PLACEHOLDER = "wallhub-migrated"
         }
@@ -1761,6 +1764,15 @@ class KSteamSessionRepository
 
 internal fun Throwable.displayMessage(): String =
     message?.takeIf(String::isNotBlank) ?: javaClass.simpleName
+
+internal fun shouldPublishPassiveSignedOut(
+    phase: SteamSessionPhase,
+    hasStoredSession: Boolean,
+): Boolean =
+    !hasStoredSession &&
+        phase != SteamSessionPhase.SIGNED_OUT &&
+        phase != SteamSessionPhase.FAILED &&
+        phase != SteamSessionPhase.EXPIRED
 
 internal fun steamLoginPhaseForConfirmations(
     methods: Collection<AuthorizationState.AwaitingTwoFactor.ConfirmationMethod>,

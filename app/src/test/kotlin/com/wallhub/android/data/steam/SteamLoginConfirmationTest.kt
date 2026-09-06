@@ -52,6 +52,26 @@ class SteamLoginConfirmationTest {
     }
 
     @Test
+    fun `passive disconnect does not erase a login failure`() {
+        assertFalse(
+            shouldPublishPassiveSignedOut(
+                phase = SteamSessionPhase.FAILED,
+                hasStoredSession = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `passive disconnect signs out a disconnected transient session`() {
+        assertTrue(
+            shouldPublishPassiveSignedOut(
+                phase = SteamSessionPhase.SIGNING_IN,
+                hasStoredSession = false,
+            ),
+        )
+    }
+
+    @Test
     fun `empty confirmation list remains in login progress while kSteam polls`() {
         assertEquals(
             SteamSessionPhase.SIGNING_IN,
