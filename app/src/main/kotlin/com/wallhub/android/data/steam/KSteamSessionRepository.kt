@@ -123,6 +123,11 @@ internal fun shouldRestoreAfterForegroundReconnectFailure(
     hasStoredSession: Boolean,
 ): Boolean = hasStoredSession
 
+internal fun shouldPauseBackgroundSteamEngine(
+    idleInBackground: Boolean,
+    hasStoredSession: Boolean,
+): Boolean = idleInBackground && !hasStoredSession
+
 internal class SteamContentLifecycleState {
     private var foreground = true
     private var activeTransfers = 0
@@ -912,8 +917,15 @@ class KSteamSessionRepository
             scope.launch {
                 runCatching {
                     engineLifecycleMutex.withLock {
-                        if (!contentLifecycleState.shouldPause()) return@withLock
                         val client = engine ?: return@withLock
+                        if (
+                            !shouldPauseBackgroundSteamEngine(
+                                idleInBackground = contentLifecycleState.shouldPause(),
+                                hasStoredSession = client.account.hasSavedDataForAtLeastOneAccount(),
+                            )
+                        ) {
+                            return@withLock
+                        }
                         if (engineStarted) client.pause()
                     }
                 }
