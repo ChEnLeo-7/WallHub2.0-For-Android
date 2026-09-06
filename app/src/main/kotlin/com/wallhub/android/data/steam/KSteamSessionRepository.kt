@@ -836,6 +836,19 @@ class KSteamSessionRepository
 
         override fun onAppForegrounded() {
             contentLifecycleState.onForegrounded()
+            val currentClient = engine
+            if (
+                currentClient != null &&
+                shouldReconnectForegroundSteamSession(
+                    phase = mutableSession.value.phase,
+                    hasUsableConnection = currentClient.hasUsableAuthenticatedConnection(),
+                )
+            ) {
+                publishPhase(
+                    phase = SteamSessionPhase.SIGNING_IN,
+                    message = applicationContext.getString(R.string.backend_steam_restoring_session),
+                )
+            }
             scope.launch {
                 try {
                     if (logoutInProgress.get()) return@launch
@@ -846,17 +859,6 @@ class KSteamSessionRepository
                         return@launch
                     }
                     val client = engine ?: return@launch
-                    if (
-                        shouldReconnectForegroundSteamSession(
-                            phase = mutableSession.value.phase,
-                            hasUsableConnection = client.hasUsableAuthenticatedConnection(),
-                        )
-                    ) {
-                        publishPhase(
-                            phase = SteamSessionPhase.SIGNING_IN,
-                            message = applicationContext.getString(R.string.backend_steam_restoring_session),
-                        )
-                    }
                     startEngine(client)
                     reconcileState(client, client.account.clientAuthState.value, client.connectionStatus.value)
                     if (!client.hasUsableAuthenticatedConnection() && client.account.hasSavedDataForAtLeastOneAccount()) {
