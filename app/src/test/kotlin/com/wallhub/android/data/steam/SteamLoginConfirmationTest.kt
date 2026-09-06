@@ -138,9 +138,9 @@ class SteamLoginConfirmationTest {
     }
 
     @Test
-    fun `saved account logon retries only while CM remains a guest`() {
+    fun `saved account logon retries while CM remains unauthenticated`() {
         assertTrue(shouldRetrySavedSteamLogon(CMClientState.AwaitingAuthorization))
-        assertFalse(shouldRetrySavedSteamLogon(CMClientState.Authorizing))
+        assertTrue(shouldRetrySavedSteamLogon(CMClientState.Authorizing))
         assertFalse(shouldRetrySavedSteamLogon(CMClientState.Connected))
         assertFalse(shouldRetrySavedSteamLogon(CMClientState.Offline))
     }

@@ -129,7 +129,7 @@ internal fun shouldPauseBackgroundSteamEngine(
 ): Boolean = idleInBackground && !hasStoredSession
 
 internal fun shouldRetrySavedSteamLogon(connection: CMClientState): Boolean =
-    connection == CMClientState.AwaitingAuthorization
+    connection == CMClientState.AwaitingAuthorization || connection == CMClientState.Authorizing
 
 internal class SteamContentLifecycleState {
     private var foreground = true
@@ -579,7 +579,8 @@ class KSteamSessionRepository
             if (client.account.hasSavedDataForAtLeastOneAccount()) {
                 // Account registers its saved-account logon when CM enters AwaitingAuthorization.
                 // Android can suspend that callback while background network access is blocked.
-                // Give it a short head start, then retry only if the CM is still a guest.
+                // Give it a short head start, then retry if the CM is still a guest or the
+                // original logon packet remained queued while background networking was blocked.
                 withTimeoutOrNull(SAVED_LOGON_AUTOSTART_WAIT_MS) {
                     client.connectionStatus.first { !shouldRetrySavedSteamLogon(it) }
                 }
