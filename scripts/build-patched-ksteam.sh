@@ -63,9 +63,10 @@ from pathlib import Path
 import re
 
 mirror_lines = (
-    'maven("https://maven.aliyun.com/repository/gradle-plugin")\n'
-    'maven("https://maven.aliyun.com/repository/google")\n'
     'maven("https://maven.aliyun.com/repository/public")\n'
+    'maven("https://maven.aliyun.com/repository/central")\n'
+    'maven("https://maven.aliyun.com/repository/google")\n'
+    'maven("https://maven.aliyun.com/repository/gradle-plugin")\n'
 )
 
 for build_file in [
