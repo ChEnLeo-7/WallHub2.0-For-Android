@@ -850,7 +850,7 @@ class KSteamSessionRepository
                     ) {
                         publishPhase(
                             phase = SteamSessionPhase.SIGNING_IN,
-                            message = applicationContext.getString(R.string.backend_steam_restoring),
+                            message = applicationContext.getString(R.string.backend_steam_restoring_session),
                         )
                     }
                     startEngine(client)
