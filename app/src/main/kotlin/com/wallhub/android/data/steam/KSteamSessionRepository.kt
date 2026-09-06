@@ -128,6 +128,9 @@ internal fun shouldPauseBackgroundSteamEngine(
     hasStoredSession: Boolean,
 ): Boolean = idleInBackground && !hasStoredSession
 
+internal fun shouldRetrySavedSteamLogon(connection: CMClientState): Boolean =
+    connection == CMClientState.AwaitingAuthorization
+
 internal class SteamContentLifecycleState {
     private var foreground = true
     private var activeTransfers = 0
@@ -575,7 +578,14 @@ class KSteamSessionRepository
             if (mutableSession.value.phase == SteamSessionPhase.SIGNED_IN) return
             if (client.account.hasSavedDataForAtLeastOneAccount()) {
                 // Account registers its saved-account logon when CM enters AwaitingAuthorization.
-                // Sending a second logon here races that callback and can replace a valid session.
+                // Android can suspend that callback while background network access is blocked.
+                // Give it a short head start, then retry only if the CM is still a guest.
+                withTimeoutOrNull(SAVED_LOGON_AUTOSTART_WAIT_MS) {
+                    client.connectionStatus.first { !shouldRetrySavedSteamLogon(it) }
+                }
+                if (shouldRetrySavedSteamLogon(client.connectionStatus.value)) {
+                    client.account.trySignInSavedDefault()
+                }
                 awaitRestorationOutcome(client)
                 return
             }
@@ -1792,6 +1802,7 @@ class KSteamSessionRepository
             const val ANONYMOUS_CONNECT_ATTEMPTS = 3
             const val ANONYMOUS_RETRY_DELAY_MS = 2_000L
             const val CONTENT_SESSION_WAIT_TIMEOUT_MS = 12_000L
+            const val SAVED_LOGON_AUTOSTART_WAIT_MS = 2_000L
             const val RESTORE_TOTAL_TIMEOUT_MS = 60_000L
             const val CONTENT_CREDENTIAL_RESTORE_TIMEOUT_MS = 30_000L
             const val STEAM_RPC_TIMEOUT_MS = 25_000L

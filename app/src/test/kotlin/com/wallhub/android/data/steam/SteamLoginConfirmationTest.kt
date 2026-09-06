@@ -138,6 +138,14 @@ class SteamLoginConfirmationTest {
     }
 
     @Test
+    fun `saved account logon retries only while CM remains a guest`() {
+        assertTrue(shouldRetrySavedSteamLogon(CMClientState.AwaitingAuthorization))
+        assertFalse(shouldRetrySavedSteamLogon(CMClientState.Authorizing))
+        assertFalse(shouldRetrySavedSteamLogon(CMClientState.Connected))
+        assertFalse(shouldRetrySavedSteamLogon(CMClientState.Offline))
+    }
+
+    @Test
     fun `Steam websocket ping interval stays below common gateway idle timeout`() {
         assertTrue(KSteamSessionRepository.KSTEAM_WEBSOCKET_PING_INTERVAL_MS < 60_000L)
     }
