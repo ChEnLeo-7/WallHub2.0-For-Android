@@ -45,14 +45,24 @@ if (usePatchedKSteam && System.getenv("GITHUB_ACTIONS") != "true") {
             run {
                 val patchLog = file("build/ksteam-patched/build.log")
                 patchLog.parentFile.mkdirs()
-                ProcessBuilder(bash, scriptPath)
+                val process =
+                    ProcessBuilder(bash, scriptPath)
                     .directory(rootDir)
                     .redirectErrorStream(true)
                     .redirectOutput(patchLog)
                     .start()
-                    .waitFor()
+                val finished = process.waitFor(25, java.util.concurrent.TimeUnit.MINUTES)
+                if (!finished) {
+                    process.destroyForcibly()
+                    error("Patched kSteam build exceeded 25 minute timeout")
+                }
+                process.exitValue()
             }
         val patchLog = file("build/ksteam-patched/build.log")
+        println("WallHub: patched kSteam process exited with code $exitCode")
+        if (patchLog.isFile) {
+            println(patchLog.readText().takeLast(12_000))
+        }
         check(exitCode == 0) {
             val details = patchLog.takeIf { it.isFile }?.readText()?.takeLast(12_000).orEmpty()
             "Patched kSteam build failed with exit code $exitCode\n$details"
