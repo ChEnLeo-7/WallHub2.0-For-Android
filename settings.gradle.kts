@@ -34,11 +34,9 @@ if (usePatchedKSteam && System.getenv("GITHUB_ACTIONS") != "true") {
             } ?: error("Git Bash is required to build patched kSteam")
         val scriptPath =
             if (bash != "bash" && System.getProperty("os.name").contains("Windows", ignoreCase = true)) {
-                script.absolutePath
-                    .replace('\\', '/')
-                    .replaceFirst(Regex("^([A-Za-z]):")) { match ->
-                        "/${match.groupValues[1].lowercase()}"
-                    }
+                val windowsPath = script.absolutePath.replace('\\', '/')
+                val drive = Regex("^([A-Za-z]):").find(windowsPath)?.groupValues?.get(1)
+                if (drive != null) "/${drive.lowercase()}${windowsPath.substring(2)}" else windowsPath
             } else {
                 script.absolutePath
             }
