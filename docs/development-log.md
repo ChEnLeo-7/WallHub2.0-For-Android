@@ -6,6 +6,7 @@
 
 - Fix: Request multiple Steam CM WebSocket endpoints, rotate after transport failures, and refresh discovery after exhausting candidates instead of retrying one failed endpoint indefinitely.
 - Fix: Keep pre-authentication CM WebSockets alive through gateway proxies with a bounded 20-second control ping, and include the persisted Steam cell ID in later endpoint discovery.
+- Build: The LAN Release worker now prepares and publishes the pinned patched kSteam source before resolving the app dependency, so local APKs contain the same CM failover fix as CI builds.
 - Verification: Added a keepalive regression guard; commit-bound CI, signed Release installation, and device cold-start verification are required.
 
 ## 2026-09-05

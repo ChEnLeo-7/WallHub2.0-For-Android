@@ -11,7 +11,46 @@ pluginManagement {
     }
 }
 
-val usePatchedKSteam = providers.gradleProperty("wallhub.usePatchedKSteam").orNull == "true"
+val usePatchedKSteam =
+    providers.gradleProperty("wallhub.usePatchedKSteam").orNull?.toBooleanStrictOrNull()
+        ?: System.getProperty("os.name").contains("Windows", ignoreCase = true)
+
+if (usePatchedKSteam && System.getenv("GITHUB_ACTIONS") != "true") {
+    val patchStamp = "c6ca6ef389d65c5223b2af9bf422ac830a0a2f32:cm-failover-v1"
+    val stampFile = file("build/ksteam-patched/stamp")
+    if (!stampFile.isFile || stampFile.readText().trim() != patchStamp) {
+        val script = file("scripts/build-patched-ksteam.sh")
+        check(script.isFile) { "Missing patched kSteam build script: $script" }
+        val bashCandidates =
+            listOfNotNull(
+                System.getenv("WALLHUB_BASH"),
+                "F:\\S\\Git\\bin\\bash.exe",
+                "C:\\Program Files\\Git\\bin\\bash.exe",
+                "bash",
+            )
+        val bash =
+            bashCandidates.firstOrNull { candidate ->
+                candidate == "bash" || java.io.File(candidate).isFile
+            } ?: error("Git Bash is required to build patched kSteam")
+        val scriptPath =
+            if (bash != "bash" && System.getProperty("os.name").contains("Windows", ignoreCase = true)) {
+                script.absolutePath
+                    .replace('\\', '/')
+                    .replaceFirst(Regex("^([A-Za-z]):")) { match ->
+                        "/${match.groupValues[1].lowercase()}"
+                    }
+            } else {
+                script.absolutePath
+            }
+        val exitCode =
+            ProcessBuilder(bash, scriptPath)
+                .directory(rootDir)
+                .inheritIO()
+                .start()
+                .waitFor()
+        check(exitCode == 0) { "Patched kSteam build failed with exit code $exitCode" }
+    }
+}
 
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
