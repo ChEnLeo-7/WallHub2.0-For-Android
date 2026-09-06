@@ -56,10 +56,9 @@ class RoomDownloadTaskRepository
             require(request.workshopId > 0L) { "Invalid Workshop item ID" }
             taskDao.findActiveForWorkshop(request.workshopId)?.toModel()?.let { return it }
             val now = System.currentTimeMillis()
-            // A null read can be a transient SIGNING_IN window while the persisted
-            // Steam session is being restored. Resolve that state before freezing the
-            // task's authorization mode; only a second null is treated as anonymous.
-            val credential = credentialProvider.resolveContentCredential()
+            // Do not hold the task mutation lock while waiting up to 30 seconds for Steam
+            // restoration. The worker performs the authoritative credential resolution.
+            val credential = credentialProvider.loadContentCredential()
             val task =
                 DownloadTask(
                     id = UUID.randomUUID().toString(),

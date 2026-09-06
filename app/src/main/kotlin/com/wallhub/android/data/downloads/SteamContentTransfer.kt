@@ -92,9 +92,9 @@ internal suspend fun openContentSession(
 internal suspend fun resolveContentAccess(
     session: KSteamContentSession,
     target: WorkshopContentTarget,
-): SteamContentAccess {
+): SteamContentAccess = coroutineScope {
     val client = session.client
-    val depotKey =
+    val depotKeyDeferred = async {
         try {
             session.repository.steamDepotDecryptionKey(
                 client = client,
@@ -104,8 +104,19 @@ internal suspend fun resolveContentAccess(
         } catch (error: IllegalStateException) {
             throw SteamDepotAccessException(target.depotId, error.message ?: "unavailable")
         }
-    val directoryServers =
+    }
+    val directoryServersDeferred = async {
         client.steamCdnServers(cellId = client.configuration.cellId, maxServers = CDN_SERVER_LIMIT)
+    }
+    val requestCodeDeferred = async {
+        client.steamManifestRequestCode(
+            depotId = target.depotId,
+            appId = target.appId,
+            manifestId = target.contentManifestId,
+        )
+    }
+    val depotKey = depotKeyDeferred.await()
+    val directoryServers = directoryServersDeferred.await()
     val servers =
         directoryServers
             .filter { server ->
@@ -121,13 +132,8 @@ internal suspend fun resolveContentAccess(
                     !server.proxyRequestPathTemplate.isNullOrBlank() &&
                     resolveCdnRequestHost(server.vHost, server.host) != null
             }
-    val requestCode =
-        client.steamManifestRequestCode(
-            depotId = target.depotId,
-            appId = target.appId,
-            manifestId = target.contentManifestId,
-        )
-    return SteamContentAccess(
+    val requestCode = requestCodeDeferred.await()
+    SteamContentAccess(
         depotKey = depotKey,
         manifestRequestCode = requestCode,
         servers = servers,

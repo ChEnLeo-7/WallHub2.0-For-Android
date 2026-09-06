@@ -52,6 +52,28 @@ class SteamLoginConfirmationTest {
     }
 
     @Test
+    fun `foreground reconnects a stale signed in session with no active CM transport`() {
+        assertTrue(
+            shouldReconnectForegroundSteamSession(
+                phase = SteamSessionPhase.SIGNED_IN,
+                hasUsableConnection = false,
+            ),
+        )
+        assertFalse(
+            shouldReconnectForegroundSteamSession(
+                phase = SteamSessionPhase.SIGNED_IN,
+                hasUsableConnection = true,
+            ),
+        )
+        assertFalse(
+            shouldReconnectForegroundSteamSession(
+                phase = SteamSessionPhase.RESTORABLE,
+                hasUsableConnection = false,
+            ),
+        )
+    }
+
+    @Test
     fun `Steam websocket ping interval stays below common gateway idle timeout`() {
         assertTrue(KSteamSessionRepository.KSTEAM_WEBSOCKET_PING_INTERVAL_MS < 60_000L)
     }

@@ -22,6 +22,8 @@ import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.WorkshopType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -184,12 +186,16 @@ class FormalWorkshopDownloadWorker
                             downloadPreferences.downloadProxyUrl
                                 .takeIf { downloadPreferences.downloadProxyEnabled }
                                 .orEmpty()
-                        val target =
-                            steamWorkshopContentClient.fetchContentTarget(
-                                publishedFileId = task.workshopId,
-                                proxyUrl = activeProxyUrl,
-                            )
-                        val credential = credentialProvider.resolveContentCredential()
+                        val (target, credential) = coroutineScope {
+                            val targetDeferred = async {
+                                steamWorkshopContentClient.fetchContentTarget(
+                                    publishedFileId = task.workshopId,
+                                    proxyUrl = activeProxyUrl,
+                                )
+                            }
+                            val credentialDeferred = async { credentialProvider.resolveContentCredential() }
+                            targetDeferred.await() to credentialDeferred.await()
+                        }
                         if (task.credentialMode == DownloadCredentialMode.LEGACY_UNKNOWN.name) {
                             persist(
                                 task,
