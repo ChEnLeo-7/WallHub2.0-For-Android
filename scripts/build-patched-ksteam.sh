@@ -88,7 +88,9 @@ printf 'WallHub: kSteam dependency mirrors configured\n'
 if [[ -n "${WALLHUB_ANDROID_SDK:-}" ]]; then
     sdk_path="$WALLHUB_ANDROID_SDK"
 elif [[ -d "/f/AI-Studio/.android-sdk" ]]; then
-    sdk_path="/f/AI-Studio/.android-sdk"
+    # Gradle runs on Windows, so local.properties needs escaped Windows path
+    # separators even though this preparation script runs under Git Bash.
+    sdk_path='F:\\AI-Studio\\.android-sdk'
 else
     sdk_path="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 fi
