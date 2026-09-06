@@ -60,48 +60,32 @@ printf 'WallHub: kSteam JDK toolchain follows the LAN worker\n'
 
 $python_command - <<'PYMIRROR'
 from pathlib import Path
+import re
 
-settings = Path("settings.gradle.kts")
-text = settings.read_text(encoding="utf-8")
-mirrors = (
-    "        maven(\"https://maven.aliyun.com/repository/gradle-plugin\")\n"
-    "        maven(\"https://maven.aliyun.com/repository/google\")\n"
-    "        maven(\"https://maven.aliyun.com/repository/public\")\n"
+mirror_lines = (
+    'maven("https://maven.aliyun.com/repository/gradle-plugin")\n'
+    'maven("https://maven.aliyun.com/repository/google")\n'
+    'maven("https://maven.aliyun.com/repository/public")\n'
 )
-needle = "        mavenCentral()\n"
-position = 0
-insertions = 0
-while True:
-    index = text.find(needle, position)
-    if index < 0:
-        break
-    after = index + len(needle)
-    if text[after:after + len(mirrors)] != mirrors:
-        text = text[:after] + mirrors + text[after:]
-        after += len(mirrors)
-        insertions += 1
-    position = after
-if insertions:
-    settings.write_text(text, encoding="utf-8")
 
-for build_file in [Path("build.gradle.kts"), Path("build-extensions/build.gradle.kts")]:
-    text = build_file.read_text(encoding="utf-8")
-    if "mavenCentral()" in text and 'maven("https://maven.aliyun.com/repository/central")' not in text:
-        text = text.replace(
-            "mavenCentral()",
-            "maven(\"https://maven.aliyun.com/repository/central\")\n    maven(\"https://maven.aliyun.com/repository/public\")\n    mavenCentral()",
-        )
-        build_file.write_text(text, encoding="utf-8")
-
-extensions = Path("build-extensions/build.gradle.kts")
-text = extensions.read_text(encoding="utf-8")
-if 'maven("https://maven.aliyun.com/repository/public")' not in text:
-    text = text.replace(
-        "repositories {\n",
-        "repositories {\n    maven(\"https://maven.aliyun.com/repository/gradle-plugin\")\n    maven(\"https://maven.aliyun.com/repository/public\")\n",
-        1,
+for build_file in [
+    Path("settings.gradle.kts"),
+    Path("build.gradle.kts"),
+    Path("build-extensions/build.gradle.kts"),
+]:
+    original = build_file.read_text(encoding="utf-8")
+    text = re.sub(
+        r"(?m)^\s*maven\(\"https://maven\.aliyun\.com/repository/(?:gradle-plugin|google|public|central)\"\)\n",
+        "",
+        original,
     )
-    extensions.write_text(text, encoding="utf-8")
+    text = re.sub(
+        r"(?m)^(\s*)mavenCentral\(\)\n",
+        lambda match: "".join(match.group(1) + line for line in mirror_lines.splitlines(True)) + match.group(0),
+        text,
+    )
+    if text != original:
+        build_file.write_text(text, encoding="utf-8")
 PYMIRROR
 printf 'WallHub: kSteam dependency mirrors configured\n'
 
