@@ -52,6 +52,11 @@ class SteamLoginConfirmationTest {
     }
 
     @Test
+    fun `Steam websocket ping interval stays below common gateway idle timeout`() {
+        assertTrue(KSteamSessionRepository.KSTEAM_WEBSOCKET_PING_INTERVAL_MS < 60_000L)
+    }
+
+    @Test
     fun `passive disconnect does not erase a login failure`() {
         assertFalse(
             shouldPublishPassiveSignedOut(

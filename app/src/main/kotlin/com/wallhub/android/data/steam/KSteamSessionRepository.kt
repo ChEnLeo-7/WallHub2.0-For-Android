@@ -55,6 +55,7 @@ import io.ktor.client.plugins.plugin
 import java.io.Closeable
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
@@ -204,7 +205,11 @@ class KSteamSessionRepository
         private fun newKSteamHttpClient(): HttpClient =
             HttpClient(OkHttp) {
                 engine {
-                    preconfigured = steamHttpClientFactory.newBuilder().build()
+                    preconfigured =
+                        steamHttpClientFactory
+                            .newBuilder()
+                            .pingInterval(KSTEAM_WEBSOCKET_PING_INTERVAL_MS, TimeUnit.MILLISECONDS)
+                            .build()
                 }
                 install("WallHubSteamRoutePrewarm") {
                     plugin(HttpSend).intercept { request ->
@@ -1757,6 +1762,7 @@ class KSteamSessionRepository
             const val STEAM_RPC_TIMEOUT_MS = 25_000L
             const val INTERACTIVE_LOGIN_TIMEOUT_MS = 5 * 60_000L
             const val STEAM_ROUTE_PREWARM_WAIT_MS = 2_000L
+            const val KSTEAM_WEBSOCKET_PING_INTERVAL_MS = 20_000L
             const val FOREGROUND_SESSION_REFRESH_AFTER_BACKGROUND_MS = 2 * 60_000L
             const val MIGRATED_ACCESS_TOKEN_PLACEHOLDER = "wallhub-migrated"
         }

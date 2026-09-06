@@ -1,5 +1,13 @@
 # Development Log
 
+## 2026-09-06
+
+### Steam CM login failover
+
+- Fix: Request multiple Steam CM WebSocket endpoints, rotate after transport failures, and refresh discovery after exhausting candidates instead of retrying one failed endpoint indefinitely.
+- Fix: Keep pre-authentication CM WebSockets alive through gateway proxies with a bounded 20-second control ping, and include the persisted Steam cell ID in later endpoint discovery.
+- Verification: Added a keepalive regression guard; commit-bound CI, signed Release installation, and device cold-start verification are required.
+
 ## 2026-09-05
 
 ### Visible bounded Steam session restore
