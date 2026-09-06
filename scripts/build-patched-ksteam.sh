@@ -54,12 +54,25 @@ from pathlib import Path
 
 settings = Path("settings.gradle.kts")
 text = settings.read_text(encoding="utf-8")
-marker = 'maven("https://maven.aliyun.com/repository/public/")'
-if marker not in text:
-    text = text.replace(
-        "        mavenCentral()\n",
-        "        mavenCentral()\n        maven(\"https://maven.aliyun.com/repository/gradle-plugin\")\n        maven(\"https://maven.aliyun.com/repository/google\")\n        maven(\"https://maven.aliyun.com/repository/public\")\n",
-    )
+mirrors = (
+    "        maven(\"https://maven.aliyun.com/repository/gradle-plugin\")\n"
+    "        maven(\"https://maven.aliyun.com/repository/google\")\n"
+    "        maven(\"https://maven.aliyun.com/repository/public\")\n"
+)
+needle = "        mavenCentral()\n"
+position = 0
+insertions = 0
+while True:
+    index = text.find(needle, position)
+    if index < 0:
+        break
+    after = index + len(needle)
+    if text[after:after + len(mirrors)] != mirrors:
+        text = text[:after] + mirrors + text[after:]
+        after += len(mirrors)
+        insertions += 1
+    position = after
+if insertions:
     settings.write_text(text, encoding="utf-8")
 
 extensions = Path("build-extensions/build.gradle.kts")
