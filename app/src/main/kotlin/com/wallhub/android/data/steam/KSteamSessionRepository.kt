@@ -110,9 +110,9 @@ internal fun deviceInformation(): DeviceInformation =
     )
 
 internal fun isUsableAuthenticatedSteamClient(
-    authorized: Boolean,
-    connected: Boolean,
-): Boolean = authorized && connected
+    auth: AuthorizationState,
+    connection: CMClientState,
+): Boolean = auth is AuthorizationState.Success && connection == CMClientState.Connected
 
 internal fun shouldReconnectForegroundSteamSession(
     phase: SteamSessionPhase,
@@ -157,8 +157,8 @@ internal class SteamContentLifecycleState {
 
 private fun SteamClient.hasUsableAuthenticatedConnection(): Boolean =
     isUsableAuthenticatedSteamClient(
-        authorized = account.clientAuthState.value is AuthorizationState.Success,
-        connected = connectionStatus.value.hasActiveServerConnection,
+        auth = account.clientAuthState.value,
+        connection = connectionStatus.value,
     )
 
 /**
@@ -323,7 +323,7 @@ class KSteamSessionRepository
             cmState: CMClientState,
         ) {
             when {
-                auth is AuthorizationState.Success && cmState.hasActiveServerConnection -> {
+                isUsableAuthenticatedSteamClient(auth, cmState) -> {
                     expiredPublished.set(false)
                     val previous = mutableSession.value
                     val accountName =
@@ -1025,7 +1025,7 @@ class KSteamSessionRepository
                 withTimeoutOrNull(CONTENT_SESSION_WAIT_TIMEOUT_MS) {
                     engine?.let { client ->
                         combine(client.account.clientAuthState, client.connectionStatus) { auth, connection ->
-                            auth is AuthorizationState.Success && connection.hasActiveServerConnection
+                            isUsableAuthenticatedSteamClient(auth, connection)
                         }.first { it }
                     }
                 }
@@ -1333,7 +1333,7 @@ class KSteamSessionRepository
                 restorePersistedSession()
                 withTimeoutOrNull(CONTENT_SESSION_WAIT_TIMEOUT_MS) {
                     combine(client.account.clientAuthState, client.connectionStatus) { auth, connection ->
-                        auth is AuthorizationState.Success && connection.hasActiveServerConnection
+                        isUsableAuthenticatedSteamClient(auth, connection)
                     }.first { it }
                 }
                 client.takeIf(SteamClient::hasUsableAuthenticatedConnection)?.let { return it }

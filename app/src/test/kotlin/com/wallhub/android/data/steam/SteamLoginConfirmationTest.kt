@@ -1,6 +1,7 @@
 package com.wallhub.android.data.steam
 
 import bruhcollective.itaysonlab.ksteam.models.account.AuthorizationState
+import bruhcollective.itaysonlab.ksteam.network.CMClientState
 import com.wallhub.android.core.model.SteamSessionPhase
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -45,10 +46,37 @@ class SteamLoginConfirmationTest {
     }
 
     @Test
-    fun `authenticated Steam client is usable only while its CM transport is active`() {
-        assertTrue(isUsableAuthenticatedSteamClient(authorized = true, connected = true))
-        assertFalse(isUsableAuthenticatedSteamClient(authorized = true, connected = false))
-        assertFalse(isUsableAuthenticatedSteamClient(authorized = false, connected = true))
+    fun `authenticated Steam client is usable only after account logon completes`() {
+        assertTrue(
+            isUsableAuthenticatedSteamClient(
+                auth = AuthorizationState.Success,
+                connection = CMClientState.Connected,
+            ),
+        )
+        assertFalse(
+            isUsableAuthenticatedSteamClient(
+                auth = AuthorizationState.Success,
+                connection = CMClientState.Offline,
+            ),
+        )
+        assertFalse(
+            isUsableAuthenticatedSteamClient(
+                auth = AuthorizationState.Success,
+                connection = CMClientState.AwaitingAuthorization,
+            ),
+        )
+        assertFalse(
+            isUsableAuthenticatedSteamClient(
+                auth = AuthorizationState.Success,
+                connection = CMClientState.Authorizing,
+            ),
+        )
+        assertFalse(
+            isUsableAuthenticatedSteamClient(
+                auth = AuthorizationState.Unauthorized,
+                connection = CMClientState.Connected,
+            ),
+        )
     }
 
     @Test
