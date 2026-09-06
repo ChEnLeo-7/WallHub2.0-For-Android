@@ -164,7 +164,6 @@ class FormalWorkshopDownloadWorker
                     // worker mid-run. A plain JobScheduler job survives; Result.retry()
                     // covers any residual system stops.
                     val downloadPreferences = settingsRepository.preferences.first()
-                    contentTransportLease = steamWorkshopContentClient.acquireContentTransportLease()
                     task =
                         persist(
                             task,
@@ -176,6 +175,7 @@ class FormalWorkshopDownloadWorker
                         priority = task.queuePosition,
                         limit = downloadPreferences.maxConcurrentDownloads,
                     ) {
+                        contentTransportLease = steamWorkshopContentClient.acquireContentTransportLease()
                         task =
                             persist(
                                 task,

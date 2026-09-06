@@ -985,10 +985,7 @@ class KSteamSessionRepository
         override suspend fun loadContentCredential(): SteamContentCredential? =
             withContext(Dispatchers.IO) {
                 val client = engine ?: return@withContext null
-                when (mutableSession.value.phase) {
-                    SteamSessionPhase.SIGNED_OUT, SteamSessionPhase.EXPIRED -> return@withContext null
-                    else -> Unit
-                }
+                if (!client.hasUsableAuthenticatedConnection()) return@withContext null
                 val account = client.account.getCurrentAccount() ?: return@withContext null
                 SteamContentCredential(
                     accountName = account.accountName.ifBlank { pendingAccountName.get().orEmpty() },
@@ -1281,7 +1278,14 @@ class KSteamSessionRepository
             ownerId: String,
         ): WorkshopCommentPage? =
             withContext(Dispatchers.IO) {
-                val client = runCatching { requireSignedInClient() }.getOrNull() ?: return@withContext null
+                val client =
+                    try {
+                        requireSignedInClient()
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        return@withContext null
+                    }
                 try {
                     val response =
                         awaitSteamRpc("community_get_comment_thread") {

@@ -421,7 +421,7 @@ internal class SteamContentDownloader
                 downloadedBytes = finalProgress.downloadedBytes,
                 totalBytes = totalBytes,
                 fileCount = finalProgress.completedFiles,
-                usedAuthenticatedSession = credential != null,
+                usedAuthenticatedSession = session.isAuthenticated,
             )
         } finally {
             runCatching { httpClient.dispatcher.executorService.shutdown() }
