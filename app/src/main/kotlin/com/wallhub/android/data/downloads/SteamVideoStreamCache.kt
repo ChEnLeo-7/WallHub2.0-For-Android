@@ -359,14 +359,19 @@ internal class SteamVideoStreamCache(
     private suspend fun maybeScheduleWatermarkSweep() {
         val total = state.mutex.withLock { state.totalBytes }
         if (total < (limitBytes * highWatermarkRatio).toLong()) return
+        val runInline =
+            synchronized(sweepJobLock) {
+                if (sweepJob?.isActive == true) return
+                sweepDebounceMs <= 0L
+            }
+        if (runInline) {
+            // Deterministic mode used by tests: run the sweep inline so failures
+            // surface to the caller instead of a detached job.
+            runSweep()
+            return
+        }
         synchronized(sweepJobLock) {
             if (sweepJob?.isActive == true) return
-            if (sweepDebounceMs <= 0L) {
-                // Deterministic mode used by tests: run the sweep inline so
-                // failures surface to the caller instead of a detached job.
-                runSweep()
-                return
-            }
             sweepJob =
                 sweepScope.launch {
                     delay(sweepDebounceMs)
