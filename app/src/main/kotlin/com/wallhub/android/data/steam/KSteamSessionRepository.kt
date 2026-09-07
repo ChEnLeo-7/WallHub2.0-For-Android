@@ -128,14 +128,8 @@ internal fun shouldPauseBackgroundSteamEngine(
     hasStoredSession: Boolean,
 ): Boolean = idleInBackground && !hasStoredSession
 
-internal fun shouldRestartForegroundSteamConnection(
-    hasStoredSession: Boolean,
-    hasUsableConnection: Boolean,
-    graceExpired: Boolean,
-): Boolean = hasStoredSession && !hasUsableConnection && graceExpired
-
-internal fun shouldResumeForegroundSteamConnection(connection: CMClientState): Boolean =
-    connection == CMClientState.Offline
+internal fun shouldRebuildSavedSessionTransport(hasUsableConnection: Boolean): Boolean =
+    !hasUsableConnection
 
 internal class SteamContentLifecycleState {
     private var foreground = true
@@ -509,7 +503,18 @@ class KSteamSessionRepository
                     scope.launch(start = CoroutineStart.LAZY) {
                         var restoreClient: SteamClient? = null
                         try {
-                            val client = obtainEngine()
+                            val existingEngine = engine
+                            val client =
+                                if (
+                                    existingEngine != null &&
+                                    shouldRebuildSavedSessionTransport(
+                                        hasUsableConnection = existingEngine.hasUsableAuthenticatedConnection(),
+                                    )
+                                ) {
+                                    rebuildEngine(existingEngine)
+                                } else {
+                                    obtainEngine()
+                                }
                             restoreClient = client
                             withTimeout(RESTORE_TOTAL_TIMEOUT_MS) {
                                 if (
@@ -891,48 +896,27 @@ class KSteamSessionRepository
                     ) {
                         return@launch
                     }
-                    val client = engine ?: return@launch
-                    val hasKSteamSession = client.account.hasSavedDataForAtLeastOneAccount()
-                    if (shouldResumeForegroundSteamConnection(client.connectionStatus.value)) {
-                        startEngine(client)
+                    val client = engine
+                    if (client == null) {
+                        restorePersistedSession()
+                        return@launch
                     }
-                    if (hasKSteamSession && !client.hasUsableAuthenticatedConnection()) {
-                        withTimeoutOrNull(FOREGROUND_CONNECTION_GRACE_MS) {
-                            combine(client.account.clientAuthState, client.connectionStatus) { auth, connection ->
-                                isUsableAuthenticatedSteamClient(auth, connection)
-                            }.first { it }
-                        }
+                    if (client.hasUsableAuthenticatedConnection()) {
+                        reconcileState(
+                            client,
+                            client.account.clientAuthState.value,
+                            client.connectionStatus.value,
+                        )
+                        return@launch
                     }
                     if (
-                        shouldRestartForegroundSteamConnection(
-                            hasStoredSession = hasKSteamSession,
-                            hasUsableConnection = client.hasUsableAuthenticatedConnection(),
-                            graceExpired = true,
-                        )
+                        client.account.hasSavedDataForAtLeastOneAccount() ||
+                            legacyCredentialExists()
                     ) {
-                        engineLifecycleMutex.withLock {
-                            client.restart()
-                        }
-                        withTimeoutOrNull(FOREGROUND_RESTART_TIMEOUT_MS) {
-                            combine(client.account.clientAuthState, client.connectionStatus) { auth, connection ->
-                                isUsableAuthenticatedSteamClient(auth, connection)
-                            }.first { it }
-                        }
-                    }
-                    val recoveryClient =
-                        if (hasKSteamSession && !client.hasUsableAuthenticatedConnection()) {
-                            rebuildEngine(client).also { rebuilt -> startEngine(rebuilt) }
-                        } else {
-                            client
-                        }
-                    if (hasKSteamSession && !recoveryClient.hasUsableAuthenticatedConnection()) {
                         restorePersistedSession()
+                    } else {
+                        startEngine(client)
                     }
-                    reconcileState(
-                        recoveryClient,
-                        recoveryClient.account.clientAuthState.value,
-                        recoveryClient.connectionStatus.value,
-                    )
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Throwable) {
@@ -1235,21 +1219,25 @@ class KSteamSessionRepository
         // Public Workshop RPCs (signed-in or anonymous CM session)
         // ------------------------------------------------------------------
 
-        private suspend fun acquireWorkshopClient(): SteamClient? {
+        private suspend fun awaitUsableSteamClient(budgetMs: Long): SteamClient? {
             engine?.takeIf(SteamClient::hasUsableAuthenticatedConnection)?.let { return it }
-            anonymousEngineRef
-                .get()
-                ?.takeIf { it.connectionStatus.value.hasActiveServerConnection }
-                ?.let { return it }
+            val hasStoredSession =
+                mutableSession.value.hasStoredSession ||
+                    engine?.account?.hasSavedDataForAtLeastOneAccount() == true ||
+                    legacyCredentialExists()
+            if (!hasStoredSession) {
+                return anonymousClient()
+            }
             restorePersistedSession()
-            synchronized(restoreLock) { restoreJobRef.get() }
-                ?.takeIf(Job::isActive)
-                ?.let { restoreJob ->
-                    withTimeoutOrNull(CONTENT_SESSION_WAIT_TIMEOUT_MS) { restoreJob.join() }
-                    engine?.takeIf(SteamClient::hasUsableAuthenticatedConnection)?.let { return it }
-                }
-            return anonymousClient()
+            val restoreJob = synchronized(restoreLock) { restoreJobRef.get() }
+            if (restoreJob != null && restoreJob.isActive) {
+                withTimeoutOrNull(budgetMs) { restoreJob.join() }
+            }
+            return engine?.takeIf(SteamClient::hasUsableAuthenticatedConnection)
         }
+
+        private suspend fun acquireWorkshopClient(): SteamClient? =
+            awaitUsableSteamClient(CONTENT_SESSION_WAIT_TIMEOUT_MS)
 
         override suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage? =
             withContext(Dispatchers.IO) {
@@ -1401,16 +1389,9 @@ class KSteamSessionRepository
         // ------------------------------------------------------------------
 
         private suspend fun requireSignedInClient(): SteamClient {
-            val client = engine
-            client?.takeIf(SteamClient::hasUsableAuthenticatedConnection)?.let { return it }
-            if (client != null && mutableSession.value.hasStoredSession) {
-                restorePersistedSession()
-                withTimeoutOrNull(CONTENT_SESSION_WAIT_TIMEOUT_MS) {
-                    combine(client.account.clientAuthState, client.connectionStatus) { auth, connection ->
-                        isUsableAuthenticatedSteamClient(auth, connection)
-                    }.first { it }
-                }
-                client.takeIf(SteamClient::hasUsableAuthenticatedConnection)?.let { return it }
+            val client = awaitUsableSteamClient(CONTENT_SESSION_WAIT_TIMEOUT_MS)
+            if (client != null && client.hasUsableAuthenticatedConnection()) {
+                return client
             }
             error(mutableSession.value.message ?: "Restore the Steam login before using the personal library")
         }
@@ -1854,8 +1835,6 @@ class KSteamSessionRepository
             const val ANONYMOUS_CONNECT_ATTEMPTS = 3
             const val ANONYMOUS_RETRY_DELAY_MS = 2_000L
             const val CONTENT_SESSION_WAIT_TIMEOUT_MS = 12_000L
-            const val FOREGROUND_CONNECTION_GRACE_MS = 3_000L
-            const val FOREGROUND_RESTART_TIMEOUT_MS = 4_000L
             const val RESTORE_TOTAL_TIMEOUT_MS = 60_000L
             const val CONTENT_CREDENTIAL_RESTORE_TIMEOUT_MS = 30_000L
             const val STEAM_RPC_TIMEOUT_MS = 25_000L

@@ -138,49 +138,14 @@ class SteamLoginConfirmationTest {
     }
 
     @Test
-    fun `foreground restarts a saved account connection only after its grace period`() {
-        assertFalse(
-            shouldRestartForegroundSteamConnection(
-                hasStoredSession = true,
-                hasUsableConnection = false,
-                graceExpired = false,
-            ),
-        )
-        assertTrue(
-            shouldRestartForegroundSteamConnection(
-                hasStoredSession = true,
-                hasUsableConnection = false,
-                graceExpired = true,
-            ),
-        )
-        assertFalse(
-            shouldRestartForegroundSteamConnection(
-                hasStoredSession = true,
-                hasUsableConnection = true,
-                graceExpired = true,
-            ),
-        )
-    }
-
-    @Test
-    fun `foreground resumes only an offline CM connection`() {
-        assertTrue(shouldResumeForegroundSteamConnection(CMClientState.Offline))
-        assertFalse(shouldResumeForegroundSteamConnection(CMClientState.Connecting))
-        assertFalse(shouldResumeForegroundSteamConnection(CMClientState.Reconnecting))
-        assertFalse(shouldResumeForegroundSteamConnection(CMClientState.AwaitingAuthorization))
-        assertFalse(shouldResumeForegroundSteamConnection(CMClientState.Authorizing))
-        assertFalse(shouldResumeForegroundSteamConnection(CMClientState.Connected))
-    }
-
-    @Test
     fun `Steam websocket ping interval stays below common gateway idle timeout`() {
         assertTrue(KSteamSessionRepository.KSTEAM_WEBSOCKET_PING_INTERVAL_MS < 60_000L)
     }
 
     @Test
-    fun `foreground recovery reaches client rebuild within a short budget`() {
-        assertTrue(KSteamSessionRepository.FOREGROUND_CONNECTION_GRACE_MS <= 3_000L)
-        assertTrue(KSteamSessionRepository.FOREGROUND_RESTART_TIMEOUT_MS <= 4_000L)
+    fun `foreground recovery budget stays bounded for data consumers`() {
+        assertTrue(KSteamSessionRepository.CONTENT_SESSION_WAIT_TIMEOUT_MS <= 12_000L)
+        assertTrue(KSteamSessionRepository.RESTORE_TOTAL_TIMEOUT_MS <= 60_000L)
     }
 
     @Test
