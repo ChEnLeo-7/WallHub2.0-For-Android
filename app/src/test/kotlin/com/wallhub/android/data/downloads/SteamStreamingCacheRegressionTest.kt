@@ -190,12 +190,13 @@ class SteamStreamingCacheRegressionTest {
 
     @Test
     fun `stream chunk pipeline budget includes encrypted and decoded peak buffers`() {
+        // networkAndDecode peak: 3x compressed + uncompressed + 8 MiB LZMA dictionary.
         assertEquals(
-            4L * 1024L * 1024L,
+            12L * 1024L * 1024L,
             steamStreamChunkPipelineBytes(1 * 1024 * 1024, 1 * 1024 * 1024),
         )
         assertEquals(
-            24L * 1024L * 1024L,
+            28L * 1024L * 1024L,
             steamStreamChunkPipelineBytes(4 * 1024 * 1024, 8 * 1024 * 1024),
         )
     }

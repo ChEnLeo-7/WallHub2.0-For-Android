@@ -57,8 +57,9 @@ class SteamVideoStreamCacheTest {
                 cache.protectChunkOffsets(listOf(base, base + 10_000_000L))
                 cache.commitVerified(base, steamAdler32(data), data)
                 cache.commitVerified(base + 10_000_000L, steamAdler32(data), data)
-                // The second protected commit cannot evict anything, so the cache
+                // The third protected commit cannot evict anything, so the cache
                 // crosses the high watermark and schedules the background sweep.
+                cache.commitVerified(base + 20_000_000L, steamAdler32(data), data)
                 assertTrue(chunkTotal(root) >= highWatermark)
                 cache.protectChunkOffsets(emptySet())
                 withTimeout(10_000L) {
