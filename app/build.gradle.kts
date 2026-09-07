@@ -1,7 +1,7 @@
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.cert.X509Certificate
-import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 
 plugins {
     id("wallhub.android.application")
