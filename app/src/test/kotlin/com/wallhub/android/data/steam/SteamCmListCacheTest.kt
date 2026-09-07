@@ -68,4 +68,3 @@ class SteamCmListCacheTest {
         assertFalse(looksLikeCmListJson("binary-gzip-garbage"))
     }
 }
-}
