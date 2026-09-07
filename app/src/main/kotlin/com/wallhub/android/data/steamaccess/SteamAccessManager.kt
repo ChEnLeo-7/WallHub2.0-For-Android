@@ -40,6 +40,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import java.io.IOException
+import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -198,7 +199,7 @@ class SteamAccessManager
             refresh()
         }
 
-        override fun lookup(hostname: String): List<InetAddress> = Dns.SYSTEM.lookup(hostname)
+        override fun lookup(hostname: String): List<InetAddress> = systemEndpointLookup(hostname)
 
         override suspend fun prewarmSteamIp(dataSource: SteamWorkshopDataSource): Boolean {
             val host =
@@ -216,6 +217,7 @@ class SteamAccessManager
         ): Boolean {
             val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
             preferencesReady.await()
+            if (!SteamDomainPolicy.accelerates(host)) return true
             while (true) {
                 if (!preferences.steamAccessEnabled) return true
                 val selectedNetworkType = networkType
@@ -242,7 +244,8 @@ class SteamAccessManager
             port: Int,
         ): Boolean {
             val host = hostname.lowercase().trimEnd('.')
-            if (!preferences.steamAccessEnabled || !SteamDomainPolicy.supportsEndpoint(host, port)) return false
+            if (!preferences.steamAccessEnabled || !SteamDomainPolicy.accelerates(host)) return false
+            if (!SteamDomainPolicy.supportsEndpoint(host, port)) return false
             val lookup = routeSnapshots.lookup(steamRouteCacheKey(networkType, host, port))
             if (lookup.shouldRefresh) requestRouteRefresh(host, port)
             return lookup.route?.accelerated == true
@@ -387,6 +390,7 @@ class SteamAccessManager
             port: Int,
         ) {
             val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
+            if (!SteamDomainPolicy.accelerates(host)) return
             val settings = preferences
             if (!settings.steamAccessEnabled) return
             val selectedNetworkType = networkType
@@ -536,7 +540,7 @@ class SteamAccessManager
                     message = context.getString(R.string.backend_steam_access_checking_host, hostname),
                     updatedAt = startedAt,
                 )
-            val systemAddresses = runCatching { Dns.SYSTEM.lookup(hostname) }.getOrDefault(emptyList())
+            val systemAddresses = systemEndpointLookup(hostname)
             val directHealthy = directProbe.rank(hostname, systemAddresses, port).any(SteamProbeResult::successful)
             if (directHealthy) {
                 val now = System.currentTimeMillis()
@@ -686,6 +690,11 @@ class SteamAccessManager
                 ?: false
         }
 
+        private fun systemEndpointLookup(hostname: String): List<InetAddress> {
+            val addresses = runCatching { Dns.SYSTEM.lookup(hostname) }.getOrDefault(emptyList())
+            return if (SteamDomainPolicy.isCmHost(hostname)) preferIpv4Addresses(addresses) else addresses
+        }
+
         private inner class SteamAccessEventListener : EventListener() {
             private var connectedAddress: InetAddress? = null
 
@@ -710,7 +719,7 @@ class SteamAccessManager
                 response: Response,
             ) {
                 val host = response.request.url.host
-                if (!preferences.steamAccessEnabled || !SteamDomainPolicy.supports(host)) return
+                if (!preferences.steamAccessEnabled || !SteamDomainPolicy.accelerates(host)) return
                 val address = connectedAddress ?: return
                 if (address.isLoopbackAddress) return
                 mutableState.value =
@@ -734,6 +743,7 @@ class SteamAccessManager
                 val host = call.request().url.host
                 val port = call.request().url.port
                 if (!SteamDomainPolicy.supportsEndpoint(host, port)) return
+                if (!SteamDomainPolicy.accelerates(host)) return
                 if (!preferences.steamAccessEnabled) return
                 val cacheKey = steamRouteCacheKey(networkType, host, port)
                 routeSnapshots.remove(cacheKey)
@@ -786,3 +796,8 @@ class SteamAccessManager
             const val NO_SNI_PROBE_BUDGET_MS = 6_000L
         }
     }
+
+internal fun preferIpv4Addresses(addresses: List<InetAddress>): List<InetAddress> {
+    val ipv4 = addresses.filterIsInstance<Inet4Address>()
+    return if (ipv4.isEmpty()) addresses else ipv4
+}

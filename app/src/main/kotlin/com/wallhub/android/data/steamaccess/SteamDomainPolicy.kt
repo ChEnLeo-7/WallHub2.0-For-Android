@@ -15,6 +15,11 @@ internal object SteamDomainPolicy {
             (host.length > STEAM_CM_HOST_SUFFIX.length && host.endsWith(STEAM_CM_HOST_SUFFIX))
     }
 
+    fun accelerates(hostname: String): Boolean {
+        val host = normalize(hostname)
+        return host in coreHosts
+    }
+
     fun requireSupported(hostname: String): String =
         normalize(hostname).also { host ->
             require(supports(host)) { "Unsupported Steam acceleration host: $host" }
@@ -61,7 +66,7 @@ internal object SteamDomainPolicy {
 
     private fun normalize(hostname: String): String = hostname.lowercase().trimEnd('.')
 
-    private fun isCmHost(hostname: String): Boolean =
+    internal fun isCmHost(hostname: String): Boolean =
         hostname.length > STEAM_CM_HOST_SUFFIX.length && hostname.endsWith(STEAM_CM_HOST_SUFFIX)
 
     private const val STEAM_CM_HOST_SUFFIX = ".steamserver.net"

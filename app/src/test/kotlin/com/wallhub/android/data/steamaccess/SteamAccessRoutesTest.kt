@@ -1,6 +1,8 @@
 package com.wallhub.android.data.steamaccess
 
 import java.io.IOException
+import java.net.Inet4Address
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.ProxySelector
@@ -121,6 +123,25 @@ class SteamAccessRoutesTest {
         assertTrue(isSteamSecureScheme("WSS"))
         assertFalse(isSteamSecureScheme("http"))
         assertFalse(isSteamSecureScheme("ws"))
+    }
+
+    @Test
+    fun `cm login connections bypass acceleration and prefer ipv4 addresses`() {
+        assertFalse(SteamDomainPolicy.accelerates("cmp3-hkg1.steamserver.net"))
+        assertFalse(SteamDomainPolicy.accelerates("cmp1-sgp1.steamserver.net"))
+        assertTrue(SteamDomainPolicy.accelerates("steamcommunity.com"))
+        assertTrue(SteamDomainPolicy.accelerates("api.steampowered.com"))
+        assertFalse(SteamDomainPolicy.accelerates("evil.steamcommunity.com"))
+
+        val ipv4Primary = InetAddress.getByName("103.28.54.102") as Inet4Address
+        val ipv4Secondary = InetAddress.getByName("155.133.248.51") as Inet4Address
+        val ipv6 = InetAddress.getByName("240e:900:0:1600::37")
+        assertEquals(
+            listOf<InetAddress>(ipv4Primary, ipv4Secondary),
+            preferIpv4Addresses(listOf(ipv6, ipv4Primary, ipv6, ipv4Secondary)),
+        )
+        assertEquals(listOf<InetAddress>(ipv6), preferIpv4Addresses(listOf(ipv6)))
+        assertTrue(preferIpv4Addresses(emptyList()).isEmpty())
     }
 
     @Test
