@@ -42,6 +42,28 @@ internal fun parseContentRangeTotal(contentRange: String?): Long? {
     return total.toLongOrNull()?.takeIf { it > 0L }
 }
 
+private suspend fun Call.awaitCall(): Response =
+    suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { cancel() }
+        enqueue(
+            object : Callback {
+                override fun onFailure(
+                    call: Call,
+                    error: IOException,
+                ) {
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                }
+
+                override fun onResponse(
+                    call: Call,
+                    response: Response,
+                ) {
+                    if (continuation.isActive) continuation.resume(response)
+                }
+            },
+        )
+    }
+
 /**
  * [WorkshopVideoStreamSession] backed by plain HTTP range requests against the
  * published file URL. A single in-memory forward window is prefetched so the
@@ -79,7 +101,7 @@ internal class SteamRemoteVideoStream private constructor(
                 "Invalid remote video read destination"
             }
             if (length == 0 || position >= contentLength) return@withContext 0
-            val requested = min(length.toLong(), contentLength - position).toInt()
+            val requested = minOf(length.toLong(), contentLength - position).toInt()
             var copied = consumeBuffered(position, requested, destination, destinationOffset)
             if (copied < requested) {
                 copied += fetchRangeInto(
@@ -109,7 +131,7 @@ internal class SteamRemoteVideoStream private constructor(
         bufferMutex.withLock {
             if (position < bufferStart || position >= bufferEnd) return 0
             val from = (position - bufferStart).toInt()
-            val count = min(requested.toLong(), bufferEnd - position).toInt()
+            val count = minOf(requested.toLong(), bufferEnd - position).toInt()
             System.arraycopy(bufferData, from, destination, destinationOffset, count)
             return count
         }
@@ -122,7 +144,7 @@ internal class SteamRemoteVideoStream private constructor(
             aheadJob =
                 scope.launch {
                     runCatching {
-                        val end = min(contentLength, from + REMOTE_AHEAD_WINDOW_BYTES)
+                        val end = minOf(contentLength, from + REMOTE_AHEAD_WINDOW_BYTES)
                         val length = (end - from).toInt()
                         if (length <= 0) return@runCatching
                         val bytes = fetchRangeBytes(from, length)
@@ -189,28 +211,6 @@ internal class SteamRemoteVideoStream private constructor(
             output
         }
     }
-
-    private suspend fun Call.awaitCall(): Response =
-        suspendCancellableCoroutine { continuation ->
-            continuation.invokeOnCancellation { cancel() }
-            enqueue(
-                object : Callback {
-                    override fun onFailure(
-                        call: Call,
-                        error: IOException,
-                    ) {
-                        if (continuation.isActive) continuation.resumeWithException(error)
-                    }
-
-                    override fun onResponse(
-                        call: Call,
-                        response: Response,
-                    ) {
-                        if (continuation.isActive) continuation.resume(response)
-                    }
-                },
-            )
-        }
 
     internal companion object {
         private const val STEAM_REMOTE_STREAM_LOG_TAG = "SteamRemoteVideo"

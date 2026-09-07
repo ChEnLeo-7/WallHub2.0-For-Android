@@ -351,7 +351,7 @@ internal class SteamVideoStreamCache(
      * watermark. The sweep targets a lower watermark so the next burst of writes
      * has headroom; it runs detached from the commit path and never blocks reads.
      */
-    private fun maybeScheduleWatermarkSweep() {
+    private suspend fun maybeScheduleWatermarkSweep() {
         val total = state.mutex.withLock { state.totalBytes }
         if (total < (limitBytes * highWatermarkRatio).toLong()) return
         synchronized(sweepJobLock) {
