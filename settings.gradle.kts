@@ -47,10 +47,10 @@ if (usePatchedKSteam && System.getenv("GITHUB_ACTIONS") != "true") {
                 patchLog.parentFile.mkdirs()
                 val process =
                     ProcessBuilder(bash, scriptPath)
-                    .directory(rootDir)
-                    .redirectErrorStream(true)
-                    .redirectOutput(patchLog)
-                    .start()
+                        .directory(rootDir)
+                        .redirectErrorStream(true)
+                        .redirectOutput(patchLog)
+                        .start()
                 val finished = process.waitFor(25, java.util.concurrent.TimeUnit.MINUTES)
                 if (!finished) {
                     process.destroyForcibly()
