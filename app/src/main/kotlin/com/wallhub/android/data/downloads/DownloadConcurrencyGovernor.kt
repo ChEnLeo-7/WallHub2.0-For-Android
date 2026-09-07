@@ -221,20 +221,21 @@ internal class DownloadMemoryBudget private constructor(
 
     private fun dispatchWaitersLocked(signals: MutableList<CompletableDeferred<Unit>>) {
         while (waiters.isNotEmpty()) {
-            val next =
+            val ordered =
                 waiters
                     .withIndex()
-                    .minWithOrNull(
+                    .sortedWith(
                         compareBy<IndexedValue<Waiter>> { it.value.priority }
                             .thenBy { it.value.order }
                             .thenBy { it.index },
                     )
-                    ?.value
-                    ?: break
-            if (availableBytes < next.bytes) break
-            waiters.remove(next)
-            availableBytes -= next.bytes
-            signals += next.signal
+            val head = ordered.first()
+            if (head.value.bytes >= capacityBytes && availableBytes < head.value.bytes) return
+            val chosen =
+                ordered.firstOrNull { availableBytes >= it.value.bytes } ?: return
+            waiters.removeAt(chosen.index)
+            availableBytes -= chosen.value.bytes
+            signals += chosen.value.signal
         }
     }
 

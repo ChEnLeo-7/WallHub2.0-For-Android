@@ -3,6 +3,9 @@
 package com.wallhub.android.feature.home
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -37,6 +41,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onClick
@@ -48,7 +53,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import kotlin.math.roundToInt
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import android.provider.Settings
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.format.formatByteSize
@@ -210,6 +218,8 @@ private const val HOME_CARD_COVER_SLOT = 0
 private const val HOME_CARD_COPY_SLOT = 1
 private const val HOME_CARD_ACTION_SLOT = 2
 private const val HOME_CARD_LAYOUT_SLOT_COUNT = 3
+internal const val WORKSHOP_COVER_FADE_IN_DURATION_MS = 240
+internal const val WORKSHOP_COVER_FADE_IN_START_SCALE = 1.015f
 
 @Composable
 internal fun WorkshopCoverFrame(
@@ -249,14 +259,49 @@ internal fun WorkshopCover(
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
-        if (item.previewUrl != null) {
-            AsyncImage(
-                model = item.previewUrl,
-                contentDescription = stringResource(R.string.home_preview_image, item.localizedTitle()),
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+    if (item.previewUrl != null) {
+        val context = LocalContext.current
+        val animatorScale =
+            remember {
+                Settings.Global.getFloat(
+                    context.contentResolver,
+                    Settings.Global.ANIMATOR_DURATION_SCALE,
+                    1f,
+                )
+            }
+        var coverLoaded by remember(item.previewUrl) { mutableStateOf(false) }
+        val fadeInSpec =
+            tween<Float>(
+                durationMillis = (WORKSHOP_COVER_FADE_IN_DURATION_MS * animatorScale).roundToInt(),
+                easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f),
             )
-        } else {
+        val coverAlpha by animateFloatAsState(
+            targetValue = if (coverLoaded) 1f else 0f,
+            animationSpec = fadeInSpec,
+            label = "WorkshopCoverFadeInAlpha",
+        )
+        val coverScale by animateFloatAsState(
+            targetValue = if (coverLoaded) 1f else WORKSHOP_COVER_FADE_IN_START_SCALE,
+            animationSpec = fadeInSpec,
+            label = "WorkshopCoverFadeInScale",
+        )
+        AsyncImage(
+            model = item.previewUrl,
+            contentDescription = stringResource(R.string.home_preview_image, item.localizedTitle()),
+            contentScale = ContentScale.Crop,
+            onState = { state ->
+                if (state is AsyncImagePainter.State.Success) coverLoaded = true
+            },
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        alpha = coverAlpha
+                        scaleX = coverScale
+                        scaleY = coverScale
+                    },
+        )
+    } else {
             Icon(
                 imageVector = Icons.Outlined.ImageNotSupported,
                 contentDescription = null,

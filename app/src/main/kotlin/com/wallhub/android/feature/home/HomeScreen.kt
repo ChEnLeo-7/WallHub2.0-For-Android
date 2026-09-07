@@ -93,8 +93,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -510,11 +508,7 @@ private fun HomeFloatingSearch(
     modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    LaunchedEffect(expanded) {
-        if (expanded) focusRequester.requestFocus()
-    }
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val expandedWidth = maxWidth.coerceAtMost(HOME_FLOATING_SEARCH_MAX_WIDTH)
         val width by animateDpAsState(
@@ -586,7 +580,7 @@ private fun HomeFloatingSearch(
                         BasicTextField(
                             value = state.query,
                             onValueChange = onQueryChanged,
-                            modifier = Modifier.fillMaxSize().focusRequester(focusRequester),
+                            modifier = Modifier.fillMaxSize(),
                             singleLine = true,
                             textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onPrimaryContainer),
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),

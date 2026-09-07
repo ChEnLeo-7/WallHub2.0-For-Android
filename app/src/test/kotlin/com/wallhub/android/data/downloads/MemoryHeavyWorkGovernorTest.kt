@@ -60,6 +60,66 @@ class MemoryHeavyWorkGovernorTest {
         }
 
     @Test
+    fun smallerReservationDispatchedBehindUnfittableHead() =
+        runTest {
+            val budget = DownloadMemoryBudget(maxHeapBytes = 192L * 1024L * 1024L)
+            val firstEntered = CompletableDeferred<Unit>()
+            val firstRelease = CompletableDeferred<Unit>()
+            val secondEntered = CompletableDeferred<Unit>()
+            val secondRelease = CompletableDeferred<Unit>()
+            val oversizedEntered = CompletableDeferred<Unit>()
+            val oversizedRelease = CompletableDeferred<Unit>()
+            val smallEntered = CompletableDeferred<Unit>()
+
+            val first =
+                async(start = CoroutineStart.UNDISPATCHED) {
+                    budget.withPermit(requestedBytes = 12L * 1024L * 1024L) {
+                        firstEntered.complete(Unit)
+                        firstRelease.await()
+                    }
+                }
+            val second =
+                async(start = CoroutineStart.UNDISPATCHED) {
+                    budget.withPermit(requestedBytes = 12L * 1024L * 1024L) {
+                        secondEntered.complete(Unit)
+                        secondRelease.await()
+                    }
+                }
+            firstEntered.await()
+            secondEntered.await()
+
+            val oversized =
+                async(start = CoroutineStart.UNDISPATCHED) {
+                    budget.withPermit(requestedBytes = 16L * 1024L * 1024L) {
+                        oversizedEntered.complete(Unit)
+                        oversizedRelease.await()
+                    }
+                }
+            val small =
+                async(start = CoroutineStart.UNDISPATCHED) {
+                    budget.withPermit(requestedBytes = 8L * 1024L * 1024L) {
+                        smallEntered.complete(Unit)
+                    }
+                }
+
+            assertTrue(!oversizedEntered.isCompleted)
+            assertTrue(!smallEntered.isCompleted)
+
+            firstRelease.complete(Unit)
+            first.await()
+
+            assertTrue(smallEntered.isCompleted)
+            assertTrue(!oversizedEntered.isCompleted)
+
+            secondRelease.complete(Unit)
+            second.await()
+            oversizedEntered.await()
+            oversizedRelease.complete(Unit)
+            oversized.await()
+            small.await()
+        }
+
+    @Test
     fun conversionRunsAlongsideDownloadsButRemainsSerial() =
         runTest {
             val governor = DownloadConcurrencyGovernor()
