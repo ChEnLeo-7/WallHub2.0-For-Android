@@ -22,6 +22,8 @@ val releaseSigningValues =
         releaseKeyPassword,
     )
 val hasReleaseSigning = releaseSigningValues.all { !it.isNullOrBlank() }
+val signDebugWithRelease =
+    providers.gradleProperty("wallhub.signDebugWithRelease").orNull == "true"
 val publishAbiApks = providers.gradleProperty("wallhub.publishAbiApks").orNull == "true"
 val requireReleaseSigning = providers.gradleProperty("wallhub.requireReleaseSigning").orNull == "true"
 
@@ -121,6 +123,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Opt-in for CI: a debug APK signed with the release identity can be
+            // installed over an installed Release build without wiping app data.
+            if (signDebugWithRelease && hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("releaseSigning")
+            }
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

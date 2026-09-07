@@ -1,6 +1,7 @@
 package com.wallhub.android.data.downloads
 
 import android.content.Context
+import android.util.Log
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
@@ -40,6 +41,35 @@ internal class SteamWorkshopVideoStreamRepository
                             steamHttpClientFactory.newBuilder().applyDownloadProxy(activeProxyUrl),
                         ).fetchContentTarget(workshopId)
                     check(target.contentTypeHint == "video") { "This item is not a streamable video wallpaper" }
+                    // Fast path: when Steam publishes a direct video file URL, stream it
+                    // with plain HTTP range requests and skip the manifest, depot key,
+                    // and CDN negotiation round trips entirely.
+                    val remoteUrl = remoteVideoUrlOrNull(target)
+                    if (remoteUrl != null) {
+                        val remoteSession =
+                            runCatching {
+                                SteamRemoteVideoStream.open(
+                                    title = target.title,
+                                    fileName =
+                                        target.rawFileName.ifBlank {
+                                            remoteUrl.substringAfterLast('/').substringBefore('?')
+                                        },
+                                    remoteUrl = remoteUrl,
+                                    expectedSize = target.expectedSize,
+                                    clientBuilder =
+                                        steamHttpClientFactory.newBuilder().applyDownloadProxy(activeProxyUrl),
+                                )
+                            }.onFailure { error ->
+                                Log.w(
+                                    "SteamVideoStream",
+                                    "Remote file_url stream unavailable, falling back to depot chunks: ${error.message}",
+                                )
+                            }.getOrNull()
+                        if (remoteSession != null) {
+                            openedStream = remoteSession
+                            return@withContext remoteSession
+                        }
+                    }
                     var lastError: Throwable? = null
                     repeat(VIDEO_STREAM_OPEN_ATTEMPTS) { attempt ->
                         try {

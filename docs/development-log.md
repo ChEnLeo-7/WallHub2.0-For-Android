@@ -1,5 +1,15 @@
 # Development Log
 
+## 2026-09-07
+
+### Online video startup fast path and streaming cache overshoot control
+
+- Update: Online video playback now prefers the published file's direct `file_url` when it points at a streamable video: a lightweight range probe replaces the manifest download, depot key exchange, and CDN negotiation round trips, so first playback starts after one network probe instead of the full depot chain. Items without a usable direct URL keep the proven chunk-streaming path, and any remote open failure falls back to it automatically.
+- Update: `SteamVideoStreamCache` gains write reservation: in-flight temporary payloads and the incoming chunk both count against the cache limit before the write lands, so concurrent chunk writes can no longer push the cache past the configured size. Temporary `.part` files are now part of the eviction math.
+- Update: Added a debounced background sweep that trims the streaming cache from the 85% high watermark to a 70% target after writes cross it. Unlike the old low-watermark sweep, it runs detached from the commit path and never holds the metadata lock, so playback and downloads are not stalled.
+- Update: Added the `android-debug-build` GitHub Actions workflow for the fastest commit-bound APK: SDK/NDK/Rust/kSteam prerequisites, app unit tests, and `:app:assembleDebug` signed with the pinned release identity (`-Pwallhub.signDebugWithRelease=true`) so debug APKs install over installed Release builds without wiping app data. Full verify.yml remains the release gate.
+- Verification: added unit coverage for the reservation budget, limit trimming, watermark sweep, direct-URL gating, Content-Range parsing, and `file_url` target parsing; commit-bound debug installation and on-device online playback measurement to follow.
+
 ## 2026-09-06
 
 ### Steam CM login failover

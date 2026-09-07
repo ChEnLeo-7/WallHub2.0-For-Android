@@ -21,6 +21,8 @@ internal data class WorkshopContentTarget(
     val contentManifestId: Long,
     val expectedSize: Long,
     val contentTypeHint: String?,
+    val fileUrl: String = "",
+    val rawFileName: String = "",
 ) {
     val depotId: Int
         get() = appId
@@ -93,7 +95,7 @@ internal class SteamWorkshopContentApi(
             )
         }
 
-    private fun parseTarget(
+    internal fun parseTarget(
         body: String,
         publishedFileId: Long,
     ): WorkshopContentTarget {
@@ -115,11 +117,11 @@ internal class SteamWorkshopContentApi(
         check(appId == WALLPAPER_ENGINE_APP_ID) {
             "Steam Workshop item belongs to unsupported app $appId"
         }
-        val manifestId =
-            detail
-                .jsonLong("hcontent_file")
-                .takeIf { it > 0L }
-                ?: error("This Workshop item has no downloadable Steam content manifest")
+        val manifestId = detail.jsonLong("hcontent_file").takeIf { it > 0L } ?: 0L
+        val fileUrl = detail.jsonString("file_url")
+        check(manifestId > 0L || fileUrl.isNotBlank()) {
+            "This Workshop item has neither a content manifest nor a direct file URL"
+        }
         return WorkshopContentTarget(
             publishedFileId = publishedFileId,
             title = detail.jsonString("title").ifBlank { "Workshop $publishedFileId" },
@@ -135,6 +137,8 @@ internal class SteamWorkshopContentApi(
                         else -> null
                     }
                 },
+            fileUrl = fileUrl,
+            rawFileName = detail.jsonString("filename"),
         )
     }
 

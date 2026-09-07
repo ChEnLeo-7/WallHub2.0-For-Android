@@ -1,5 +1,12 @@
 package com.wallhub.android.data.downloads
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -16,6 +23,9 @@ internal class SteamVideoStreamCache(
     rootDirectory: File,
     namespace: String,
     private val limitBytes: Long,
+    private val highWatermarkRatio: Double = SWEEP_HIGH_WATERMARK_RATIO,
+    private val targetWatermarkRatio: Double = SWEEP_TARGET_WATERMARK_RATIO,
+    private val sweepDebounceMs: Long = SWEEP_DEBOUNCE_MS,
 ) {
     init {
         require(limitBytes > 0L) { "Streaming cache limit must be positive" }
@@ -34,6 +44,9 @@ internal class SteamVideoStreamCache(
 
     @Volatile
     private var evictionListener: ((Long) -> Unit)? = null
+    private val sweepScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val sweepJobLock = Any()
+    private var sweepJob: Job? = null
 
     init {
         cacheDirectory.mkdirs()
@@ -62,6 +75,8 @@ internal class SteamVideoStreamCache(
 
     fun close() {
         evictionListener = null
+        synchronized(sweepJobLock) { sweepJob?.cancel() }
+        sweepScope.cancel()
         synchronized(state.protectionLock) {
             state.protectedPathsByOwner.remove(ownerId)
         }
@@ -141,7 +156,10 @@ internal class SteamVideoStreamCache(
         expectedChecksum: Int,
         data: ByteArray,
     ) {
-        prepareCache()
+        // Reserve room for the incoming write before it hits the disk: active
+        // temporary files and the pending payload both count against the limit,
+        // so concurrent chunk writes cannot push the cache past its budget.
+        prepareCache(incomingBytes = data.size.toLong())
         val file = chunkFile(chunkOffset)
         val path = file.absolutePath
         state.mutex.withLock {
@@ -177,6 +195,7 @@ internal class SteamVideoStreamCache(
                 }
             }
             evictOverflow(excludedPaths = setOf(path))
+            maybeScheduleWatermarkSweep()
         } finally {
             state.mutex.withLock {
                 val remaining = (state.activeChunkWrites[path] ?: 1) - 1
@@ -302,15 +321,48 @@ internal class SteamVideoStreamCache(
         }
     }
 
-    private suspend fun prepareCache() {
+    private suspend fun prepareCache(incomingBytes: Long = 0L) {
         ensureCacheReady()
-        evictOverflow()
+        evictOverflow(incomingBytes = incomingBytes)
     }
 
-    private suspend fun evictOverflow(excludedPaths: Set<String> = emptySet()) {
+    private suspend fun evictOverflow(
+        excludedPaths: Set<String> = emptySet(),
+        incomingBytes: Long = 0L,
+        targetBytes: Long? = null,
+    ) {
         state.evictionMutex.withLock {
-            val victims = state.mutex.withLock { selectEvictionVictimsLocked(limitBytes, excludedPaths) }
+            val maximumBytes =
+                targetBytes
+                    ?: state.mutex.withLock {
+                        reservationAdjustedLimit(
+                            limitBytes = limitBytes,
+                            activeTemporaryBytes = state.activeTemporaryFiles.values.sum(),
+                            incomingBytes = incomingBytes,
+                        )
+                    }
+            val victims = state.mutex.withLock { selectEvictionVictimsLocked(maximumBytes, excludedPaths) }
             deleteEvictionVictims(victims)
+        }
+    }
+
+    /**
+     * Schedules a debounced background sweep once the cache crosses the high
+     * watermark. The sweep targets a lower watermark so the next burst of writes
+     * has headroom; it runs detached from the commit path and never blocks reads.
+     */
+    private fun maybeScheduleWatermarkSweep() {
+        val total = state.mutex.withLock { state.totalBytes }
+        if (total < (limitBytes * highWatermarkRatio).toLong()) return
+        synchronized(sweepJobLock) {
+            if (sweepJob?.isActive == true) return
+            sweepJob =
+                sweepScope.launch {
+                    if (sweepDebounceMs > 0L) delay(sweepDebounceMs)
+                    runCatching {
+                        evictOverflow(targetBytes = (limitBytes * targetWatermarkRatio).toLong())
+                    }
+                }
         }
     }
 
@@ -504,6 +556,21 @@ internal class SteamVideoStreamCache(
         private const val MIN_QUEUE_COMPACT_SIZE = 64
         private const val TOUCH_INTERVAL_MS = 2_000L
         private const val CHUNK_LOCK_STRIPES = 64
+        internal const val SWEEP_HIGH_WATERMARK_RATIO = 0.85
+        internal const val SWEEP_TARGET_WATERMARK_RATIO = 0.70
+        internal const val SWEEP_DEBOUNCE_MS = 45_000L
+
+        /**
+         * Effective eviction budget for an incoming write: in-flight temporary
+         * payloads and the pending bytes both consume the limit before the write
+         * lands, so concurrent commits cannot overshoot the configured size.
+         */
+        internal fun reservationAdjustedLimit(
+            limitBytes: Long,
+            activeTemporaryBytes: Long,
+            incomingBytes: Long,
+        ): Long = (limitBytes - activeTemporaryBytes - incomingBytes).coerceAtLeast(0L)
+
         private val statesLock = Any()
         private val states = mutableMapOf<String, RootState>()
 
