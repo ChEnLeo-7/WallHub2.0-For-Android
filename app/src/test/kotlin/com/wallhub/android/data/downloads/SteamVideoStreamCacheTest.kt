@@ -60,12 +60,25 @@ class SteamVideoStreamCacheTest {
                 // The third protected commit cannot evict anything, so the cache
                 // crosses the high watermark and schedules the background sweep.
                 cache.commitVerified(base + 20_000_000L, steamAdler32(data), data)
-                assertTrue(chunkTotal(root) >= highWatermark)
+                assertTrue(
+                    "total after commits=${chunkTotal(root)} high=$highWatermark",
+                    chunkTotal(root) >= highWatermark,
+                )
                 cache.protectChunkOffsets(emptySet())
-                withTimeout(10_000L) {
-                    while (chunkTotal(root) > target) delay(50L)
+                try {
+                    withTimeout(10_000L) {
+                        while (chunkTotal(root) > target) delay(50L)
+                    }
+                } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
+                    throw AssertionError(
+                        "background sweep did not reach target: total=${chunkTotal(root)} target=$target",
+                        error,
+                    )
                 }
-                assertTrue(chunkTotal(root) in 1..target)
+                assertTrue(
+                    "total after sweep=${chunkTotal(root)} target=$target",
+                    chunkTotal(root) in 1..target,
+                )
             } finally {
                 cache.close()
             }

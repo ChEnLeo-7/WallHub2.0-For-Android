@@ -1,6 +1,7 @@
 import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.cert.X509Certificate
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 
 plugins {
     id("wallhub.android.application")
@@ -239,6 +240,13 @@ val dependencyUpgradeLintIssues =
         "OldTargetApi",
         "UseTomlInstead",
     )
+
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = TestExceptionFormat.FULL
+    }
+}
 
 tasks.register("verifyLintSourceWarningBudget") {
     group = "verification"

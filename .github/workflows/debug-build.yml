@@ -170,6 +170,14 @@ jobs:
             -Pwallhub.signDebugWithRelease=true \
             :app:testDebugUnitTest \
             :app:assembleDebug
+      - name: Upload unit test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results-${{ github.sha }}
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Package debug APK artifact
         run: |
           mkdir -p artifact
