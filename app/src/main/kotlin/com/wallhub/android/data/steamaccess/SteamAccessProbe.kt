@@ -1,12 +1,16 @@
 package com.wallhub.android.data.steamaccess
 
-import okhttp3.Dns
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SNIHostName
+import javax.net.ssl.SNIServerName
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLParameters
 
 internal data class SteamProbeResult(
     val address: InetAddress,
@@ -15,7 +19,6 @@ internal data class SteamProbeResult(
 )
 
 internal class SteamAccessProbe(
-    private val baseClient: OkHttpClient,
     private val executor: ExecutorService,
 ) {
     fun rank(
@@ -46,26 +49,7 @@ internal class SteamAccessProbe(
         port: Int,
     ): SteamProbeResult {
         val startedAt = System.nanoTime()
-        val client =
-            baseClient
-                .newBuilder()
-                .dns(
-                    Dns { requestedHost ->
-                        if (requestedHost.equals(hostname, ignoreCase = true)) listOf(address) else Dns.SYSTEM.lookup(requestedHost)
-                    },
-                ).build()
-        val request =
-            Request
-                .Builder()
-                .url("https://$hostname${if (port == STEAM_HTTPS_PORT) "" else ":$port"}${probePath(hostname)}")
-                .header("User-Agent", "WallHub-Android/SteamAccessProbe")
-                .build()
-        val successful =
-            runCatching {
-                client.newCall(request).execute().use { response ->
-                    response.code in 200..499
-                }
-            }.getOrDefault(false)
+        val successful = runCatching { probeTlsHandshake(hostname, address, port) }.getOrDefault(false)
         return SteamProbeResult(
             address = address,
             successful = successful,
@@ -73,10 +57,34 @@ internal class SteamAccessProbe(
         )
     }
 
-    private fun probePath(hostname: String): String = SteamDomainPolicy.probePath(hostname)
+    private fun probeTlsHandshake(
+        hostname: String,
+        address: InetAddress,
+        port: Int,
+    ): Boolean {
+        val socket = Socket()
+        try {
+            socket.connect(InetSocketAddress(address, port), TLS_PROBE_CONNECT_TIMEOUT_MS)
+            socket.soTimeout = TLS_PROBE_HANDSHAKE_TIMEOUT_MS
+            val sslSocket =
+                SSLContext.getDefault().socketFactory.createSocket(socket, hostname, port, true) as SSLSocket
+            sslSocket.useClientMode = true
+            sslSocket.sslParameters =
+                (sslSocket.sslParameters ?: SSLParameters()).apply {
+                    serverNames = listOf<SNIServerName>(SNIHostName(hostname))
+                }
+            sslSocket.startHandshake()
+            sslSocket.close()
+            return true
+        } finally {
+            runCatching { socket.close() }
+        }
+    }
 
     private companion object {
         const val MAX_PROBE_ADDRESSES = 4
-        const val TOTAL_PROBE_BUDGET_MS = 3_000L
+        const val TOTAL_PROBE_BUDGET_MS = 4_000L
+        const val TLS_PROBE_CONNECT_TIMEOUT_MS = 2_500
+        const val TLS_PROBE_HANDSHAKE_TIMEOUT_MS = 2_500
     }
 }

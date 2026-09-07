@@ -84,7 +84,7 @@ class SteamAccessManager
                 .callTimeout(6, TimeUnit.SECONDS)
                 .build()
         private val dohResolver = SteamAccessDohResolver(directProbeClient, queryExecutor)
-        private val directProbe = SteamAccessProbe(directProbeClient, queryExecutor)
+        private val directProbe = SteamAccessProbe(queryExecutor)
         private val routeSnapshots = SteamRouteSnapshotCache()
         private val refreshInFlight = ConcurrentHashMap.newKeySet<String>()
         private val scheduledRefreshes = ConcurrentHashMap<String, Job>()
@@ -217,7 +217,7 @@ class SteamAccessManager
         ): Boolean {
             val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
             preferencesReady.await()
-            if (!SteamDomainPolicy.accelerates(host)) return true
+            if (!isAcceleratedRouteExpected(host, port)) return true
             while (true) {
                 if (!preferences.steamAccessEnabled) return true
                 val selectedNetworkType = networkType
@@ -237,6 +237,19 @@ class SteamAccessManager
                     return result
                 }
             }
+        }
+
+        internal fun isAcceleratedRouteExpected(
+            hostname: String,
+            port: Int,
+        ): Boolean {
+            val host = hostname.lowercase().trimEnd('.')
+            if (!preferences.steamAccessEnabled || !SteamDomainPolicy.accelerates(host)) return false
+            if (!SteamDomainPolicy.supportsEndpoint(host, port)) return false
+            return routeSnapshots
+                .lookup(steamRouteCacheKey(networkType, host, port))
+                .route
+                ?.accelerated == true
         }
 
         internal fun shouldAccelerate(

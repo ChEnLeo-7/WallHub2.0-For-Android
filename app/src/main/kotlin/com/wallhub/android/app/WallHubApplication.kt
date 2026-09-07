@@ -50,6 +50,7 @@ class WallHubApplication :
     override fun onCreate() {
         super.onCreate()
         CrashDiagnostics.install(this)
+        steamSessionRepository.restorePersistedSession()
         ProcessLifecycleOwner
             .get()
             .lifecycle
