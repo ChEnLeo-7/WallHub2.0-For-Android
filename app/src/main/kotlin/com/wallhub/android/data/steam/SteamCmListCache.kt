@@ -47,12 +47,12 @@ class SteamCmListCache
         private val cacheFile = File(context.filesDir, "ksteam/cm-list-cache.json")
 
         @Synchronized
-        fun load(cellId: Int): CachedCmList? {
+        fun load(key: String): CachedCmList? {
             val entry =
                 runCatching {
                     JSONObject(cacheFile.readText())
                 }.getOrNull() ?: return null
-            if (entry.optInt(KEY_CELL_ID, Int.MIN_VALUE) != cellId) return null
+            if (entry.optString(KEY_QUERY).takeIf(String::isNotEmpty) != key.takeIf(String::isNotEmpty)) return null
             val savedAt = entry.optLong(KEY_SAVED_AT, 0L)
             val body = entry.optString(KEY_BODY).takeIf(String::isNotEmpty) ?: return null
             if (savedAt <= 0L) return null
@@ -60,12 +60,12 @@ class SteamCmListCache
         }
 
         @Synchronized
-        fun save(cellId: Int, body: String) {
+        fun save(key: String, body: String) {
             runCatching {
                 cacheFile.parentFile?.mkdirs()
                 val entry =
                     JSONObject()
-                        .put(KEY_CELL_ID, cellId)
+                        .put(KEY_QUERY, key)
                         .put(KEY_SAVED_AT, System.currentTimeMillis())
                         .put(KEY_BODY, body)
                 val temp = File(cacheFile.parentFile, "${cacheFile.name}.tmp")
@@ -84,7 +84,7 @@ class SteamCmListCache
         }
 
         private companion object {
-            const val KEY_CELL_ID = "cellId"
+            const val KEY_QUERY = "query"
             const val KEY_SAVED_AT = "savedAt"
             const val KEY_BODY = "body"
         }

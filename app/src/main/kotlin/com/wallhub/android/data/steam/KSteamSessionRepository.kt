@@ -269,10 +269,10 @@ class KSteamSessionRepository
                         .newBuilder()
                         .header("Accept-Encoding", "identity")
                         .build()
-                val cellId = plainRequest.url.queryParameter("cellid")?.toIntOrNull() ?: 0
-                val cached = cmListCache.load(cellId)
+                val cacheKey = plainRequest.url.encodedQuery.orEmpty()
+                val cached = cmListCache.load(cacheKey)
                 val decision = cmListCacheDecision(cached?.ageMs)
-                recordSessionEvent(0, "cm_list_cache_probe", outcome = "$decision;cached=${cached != null};valid=${cached?.let { looksLikeCmListJson(it.body) } ?: false}")
+                recordSessionEvent(0, "cm_list_cache_probe", outcome = "$decision;key=$cacheKey")
                 if (
                     cached != null &&
                     decision == SteamCmListCacheAction.SERVE_CACHED &&
@@ -295,7 +295,7 @@ class KSteamSessionRepository
                         val body = live.peekBody(MAX_CM_LIST_CACHE_BYTES).string()
                         val saved = looksLikeCmListJson(body)
                         if (saved) {
-                            cmListCache.save(cellId, body)
+                            cmListCache.save(cacheKey, body)
                         }
                         recordSessionEvent(0, "cm_list_cache_save", outcome = "saved=$saved;bytes=${body.length}")
                     }
@@ -313,6 +313,7 @@ class KSteamSessionRepository
                 .protocol(okhttp3.Protocol.HTTP_1_1)
                 .code(200)
                 .message("WallHub CM list cache")
+                .header("Content-Type", "application/json")
                 .body(body.toResponseBody("application/json".toMediaTypeOrNull()))
                 .sentRequestAtMillis(System.currentTimeMillis())
                 .receivedResponseAtMillis(System.currentTimeMillis())
