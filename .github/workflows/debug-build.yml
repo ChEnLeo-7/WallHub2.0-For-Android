@@ -163,6 +163,7 @@ jobs:
           WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
           WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
         run: |
+          chmod +x gradlew
           workers="$(nproc)"
           ./gradlew --no-daemon --parallel --build-cache --max-workers="$workers" \
             -Pwallhub.usePatchedKSteam=true \
