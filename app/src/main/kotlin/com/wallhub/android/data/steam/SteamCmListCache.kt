@@ -33,7 +33,10 @@ internal fun Request.isCmListRequest(): Boolean =
         url.encodedPath.contains("GetCMListForConnect", ignoreCase = true)
 
 internal fun looksLikeCmListJson(body: String): Boolean =
-    body.trimStart().startsWith("{") && body.contains("\"response\"") && body.contains("servers")
+    body.trimStart().startsWith("{") &&
+        body.contains("\"response\"") &&
+        body.contains("\"serverlist\"") &&
+        body.contains("\"endpoint\"")
 
 @Singleton
 class SteamCmListCache

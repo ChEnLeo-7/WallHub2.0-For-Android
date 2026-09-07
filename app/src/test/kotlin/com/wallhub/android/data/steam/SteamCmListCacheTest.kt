@@ -61,10 +61,11 @@ class SteamCmListCacheTest {
 
     @Test
     fun `cm list cache validation rejects gzip garbage and accepts json`() {
-        val valid = """{"response":{"servers":[{"endpoint":"cmp1-hkg1.steamserver.net:443"}]}}"""
+        val valid = """{"response":{"serverlist":[{"endpoint":"cmp1-hkg1.steamserver.net:443","legacy_endpoint":""}]}}"""
         assertTrue(looksLikeCmListJson(valid))
-        assertFalse(looksLikeCmListJson("""{"error":"no servers"}"""))
-        assertFalse(looksLikeCmListJson(""))
+        assertFalse(looksLikeCmListJson("""{"response":{}}"""))
+        assertFalse(looksLikeCmListJson(""))
         assertFalse(looksLikeCmListJson("binary-gzip-garbage"))
     }
+}
 }
