@@ -200,13 +200,15 @@ internal class SteamVideoStreamCache(
                 }
             }
             evictOverflow(excludedPaths = setOf(path))
-            maybeScheduleWatermarkSweep()
         } finally {
             state.mutex.withLock {
                 val remaining = (state.activeChunkWrites[path] ?: 1) - 1
                 if (remaining > 0) state.activeChunkWrites[path] = remaining else state.activeChunkWrites.remove(path)
             }
         }
+        // Scheduled after the active-write bookkeeping so the just-committed
+        // chunk is already evictable when a zero-debounce sweep runs inline.
+        maybeScheduleWatermarkSweep()
     }
 
     private suspend fun isValid(
