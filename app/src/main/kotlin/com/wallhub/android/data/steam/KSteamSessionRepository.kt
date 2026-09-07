@@ -1854,8 +1854,8 @@ class KSteamSessionRepository
             const val ANONYMOUS_CONNECT_ATTEMPTS = 3
             const val ANONYMOUS_RETRY_DELAY_MS = 2_000L
             const val CONTENT_SESSION_WAIT_TIMEOUT_MS = 12_000L
-            const val FOREGROUND_CONNECTION_GRACE_MS = 10_000L
-            const val FOREGROUND_RESTART_TIMEOUT_MS = 20_000L
+            const val FOREGROUND_CONNECTION_GRACE_MS = 3_000L
+            const val FOREGROUND_RESTART_TIMEOUT_MS = 4_000L
             const val RESTORE_TOTAL_TIMEOUT_MS = 60_000L
             const val CONTENT_CREDENTIAL_RESTORE_TIMEOUT_MS = 30_000L
             const val STEAM_RPC_TIMEOUT_MS = 25_000L

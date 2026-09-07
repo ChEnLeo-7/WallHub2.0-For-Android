@@ -203,7 +203,8 @@ private fun SteamSessionRestoreBanner(
 internal fun shouldShowSteamSessionRestoreBanner(session: SteamSessionState): Boolean =
     session.hasStoredSession &&
         session.phase != SteamSessionPhase.SIGNED_IN &&
-        session.phase != SteamSessionPhase.SIGNED_OUT
+        session.phase != SteamSessionPhase.SIGNED_OUT &&
+        session.phase != SteamSessionPhase.SIGNING_IN
 
 internal fun shouldReportExpiredPersistedSession(
     session: SteamSessionState,

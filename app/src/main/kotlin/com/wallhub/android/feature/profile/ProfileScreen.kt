@@ -75,6 +75,9 @@ class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionReposi
                         _counts.value = ProfileCounts(subscriptions, favorites, voted)
                         _runtimeHours.value = runCatching { playtimeRepository.getAppPlaytime(WALLPAPER_ENGINE_APP_ID)?.totalMinutes?.div(60) }.getOrNull()
                     }
+                    current.phase == SteamSessionPhase.SIGNING_IN &&
+                        current.hasStoredSession &&
+                        current.accountName == loadedAccount -> Unit
                     current.phase != SteamSessionPhase.SIGNED_IN -> {
                         loadedAccount = null
                         _counts.value = ProfileCounts()
@@ -101,7 +104,10 @@ fun ProfileRoute(onOpenSettings: () -> Unit, onOpenSubscriptions: () -> Unit, on
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
                     AsyncImage(model = session.avatarUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(112.dp).clip(MaterialTheme.shapes.extraLarge))
                     Text(session.personaName ?: session.accountName ?: stringResource(R.string.profile_anonymous), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 12.dp))
-                    if (session.phase == SteamSessionPhase.SIGNED_IN) {
+                    if (
+                        session.phase == SteamSessionPhase.SIGNED_IN ||
+                        (session.phase == SteamSessionPhase.SIGNING_IN && session.hasStoredSession)
+                    ) {
                         Text(
                             stringResource(
                                 R.string.profile_runtime_summary,
@@ -113,7 +119,12 @@ fun ProfileRoute(onOpenSettings: () -> Unit, onOpenSubscriptions: () -> Unit, on
                             modifier = Modifier.padding(top = 4.dp),
                         )
                     }
-                    if (session.phase != SteamSessionPhase.SIGNED_IN) TextButton(onClick = onOpenLogin) { Text(stringResource(R.string.profile_sign_in)) }
+                    if (
+                        session.phase != SteamSessionPhase.SIGNED_IN &&
+                        !(session.phase == SteamSessionPhase.SIGNING_IN && session.hasStoredSession)
+                    ) {
+                        TextButton(onClick = onOpenLogin) { Text(stringResource(R.string.profile_sign_in)) }
+                    }
                 }
             }
             item {

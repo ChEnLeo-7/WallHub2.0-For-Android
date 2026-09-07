@@ -178,6 +178,12 @@ class SteamLoginConfirmationTest {
     }
 
     @Test
+    fun `foreground recovery reaches client rebuild within a short budget`() {
+        assertTrue(KSteamSessionRepository.FOREGROUND_CONNECTION_GRACE_MS <= 3_000L)
+        assertTrue(KSteamSessionRepository.FOREGROUND_RESTART_TIMEOUT_MS <= 4_000L)
+    }
+
+    @Test
     fun `passive disconnect does not erase a login failure`() {
         assertFalse(
             shouldPublishPassiveSignedOut(

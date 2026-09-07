@@ -39,8 +39,8 @@ class PersistedSessionExpiryTest {
     }
 
     @Test
-    fun `shows a global restore banner while a saved session is not signed in`() {
-        assertTrue(
+    fun `keeps active restoration quiet until a saved session needs attention`() {
+        assertFalse(
             shouldShowSteamSessionRestoreBanner(
                 SteamSessionState(
                     phase = SteamSessionPhase.SIGNING_IN,
