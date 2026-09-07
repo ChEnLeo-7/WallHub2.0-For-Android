@@ -292,12 +292,21 @@ class KSteamSessionRepository
                     }
                 if (live.isSuccessful) {
                     runCatching {
-                        val body = live.peekBody(MAX_CM_LIST_CACHE_BYTES).string()
+                        val raw = live.peekBody(MAX_CM_LIST_CACHE_BYTES)
+                        val body = raw.string()
                         val saved = looksLikeCmListJson(body)
                         if (saved) {
                             cmListCache.save(cellId, body)
                         }
-                        recordSessionEvent(0, "cm_list_cache_save", outcome = "saved=$saved;bytes=${body.length}")
+                        val head =
+                            body
+                                .take(120)
+                                .map { char -> if (char.code in 0x20..0x7E) char else '?' }
+                                .joinToString("")
+                        runCatching {
+                            File(applicationContext.filesDir, "ksteam/cm-list-debug.body").writeBytes(raw.bytes())
+                        }
+                        recordSessionEvent(0, "cm_list_cache_save", outcome = "saved=$saved;bytes=${body.length};head=$head")
                     }
                 }
                 live
