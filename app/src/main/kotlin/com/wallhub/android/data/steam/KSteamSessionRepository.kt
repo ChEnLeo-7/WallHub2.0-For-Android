@@ -264,22 +264,34 @@ class KSteamSessionRepository
             okhttp3.Interceptor { chain ->
                 val request = chain.request()
                 if (!request.isCmListRequest()) return@Interceptor chain.proceed(request)
-                val cellId = request.url.queryParameter("cellid")?.toIntOrNull() ?: 0
+                val plainRequest =
+                    request
+                        .newBuilder()
+                        .header("Accept-Encoding", "identity")
+                        .build()
+                val cellId = plainRequest.url.queryParameter("cellid")?.toIntOrNull() ?: 0
                 val cached = cmListCache.load(cellId)
-                if (cached != null && cmListCacheDecision(cached.ageMs) == SteamCmListCacheAction.SERVE_CACHED) {
-                    return@Interceptor buildCmListCachedResponse(request, cached.body)
+                if (
+                    cached != null &&
+                    cmListCacheDecision(cached.ageMs) == SteamCmListCacheAction.SERVE_CACHED &&
+                    looksLikeCmListJson(cached.body)
+                ) {
+                    return@Interceptor buildCmListCachedResponse(plainRequest, cached.body)
                 }
                 val live =
-                    runCatching { chain.proceed(request) }.getOrElse { error ->
-                        if (cached != null && cmListCacheStaleUsable(cached.ageMs)) {
-                            buildCmListCachedResponse(request, cached.body)
+                    runCatching { chain.proceed(plainRequest) }.getOrElse { error ->
+                        if (cached != null && cmListCacheStaleUsable(cached.ageMs) && looksLikeCmListJson(cached.body)) {
+                            buildCmListCachedResponse(plainRequest, cached.body)
                         } else {
-                            runCatching { chain.proceed(request) }.getOrElse { throw error }
+                            runCatching { chain.proceed(plainRequest) }.getOrElse { throw error }
                         }
                     }
                 if (live.isSuccessful) {
                     runCatching {
-                        cmListCache.save(cellId, live.peekBody(MAX_CM_LIST_CACHE_BYTES).string())
+                        val body = live.peekBody(MAX_CM_LIST_CACHE_BYTES).string()
+                        if (looksLikeCmListJson(body)) {
+                            cmListCache.save(cellId, body)
+                        }
                     }
                 }
                 live

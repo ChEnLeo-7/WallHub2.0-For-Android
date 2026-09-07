@@ -58,4 +58,13 @@ class SteamCmListCacheTest {
                 .build()
         assertFalse(otherHost.isCmListRequest())
     }
+
+    @Test
+    fun `cm list cache validation rejects gzip garbage and accepts json`() {
+        val valid = """{"response":{"servers":[{"endpoint":"cmp1-hkg1.steamserver.net:443"}]}}"""
+        assertTrue(looksLikeCmListJson(valid))
+        assertFalse(looksLikeCmListJson("""{"error":"no servers"}"""))
+        assertFalse(looksLikeCmListJson(""))
+        assertFalse(looksLikeCmListJson("binary-gzip-garbage"))
+    }
 }

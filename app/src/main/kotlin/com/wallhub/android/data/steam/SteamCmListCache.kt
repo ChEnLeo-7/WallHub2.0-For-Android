@@ -32,6 +32,9 @@ internal fun Request.isCmListRequest(): Boolean =
     url.host.equals("api.steampowered.com", ignoreCase = true) &&
         url.encodedPath.contains("GetCMListForConnect", ignoreCase = true)
 
+internal fun looksLikeCmListJson(body: String): Boolean =
+    body.trimStart().startsWith("{") && body.contains("\"response\"") && body.contains("servers")
+
 @Singleton
 class SteamCmListCache
     @Inject
