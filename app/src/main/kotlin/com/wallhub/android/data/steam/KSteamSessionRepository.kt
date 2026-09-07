@@ -271,16 +271,20 @@ class KSteamSessionRepository
                         .build()
                 val cellId = plainRequest.url.queryParameter("cellid")?.toIntOrNull() ?: 0
                 val cached = cmListCache.load(cellId)
+                val decision = cmListCacheDecision(cached?.ageMs)
+                recordSessionEvent(0, "cm_list_cache_probe", outcome = "$decision;cached=${cached != null};valid=${cached?.let { looksLikeCmListJson(it.body) } ?: false}")
                 if (
                     cached != null &&
-                    cmListCacheDecision(cached.ageMs) == SteamCmListCacheAction.SERVE_CACHED &&
+                    decision == SteamCmListCacheAction.SERVE_CACHED &&
                     looksLikeCmListJson(cached.body)
                 ) {
+                    recordSessionEvent(0, "cm_list_cache_serve", outcome = "fresh")
                     return@Interceptor buildCmListCachedResponse(plainRequest, cached.body)
                 }
                 val live =
                     runCatching { chain.proceed(plainRequest) }.getOrElse { error ->
                         if (cached != null && cmListCacheStaleUsable(cached.ageMs) && looksLikeCmListJson(cached.body)) {
+                            recordSessionEvent(0, "cm_list_cache_serve", outcome = "stale_fallback")
                             buildCmListCachedResponse(plainRequest, cached.body)
                         } else {
                             runCatching { chain.proceed(plainRequest) }.getOrElse { throw error }
@@ -289,9 +293,11 @@ class KSteamSessionRepository
                 if (live.isSuccessful) {
                     runCatching {
                         val body = live.peekBody(MAX_CM_LIST_CACHE_BYTES).string()
-                        if (looksLikeCmListJson(body)) {
+                        val saved = looksLikeCmListJson(body)
+                        if (saved) {
                             cmListCache.save(cellId, body)
                         }
+                        recordSessionEvent(0, "cm_list_cache_save", outcome = "saved=$saved;bytes=${body.length}")
                     }
                 }
                 live
