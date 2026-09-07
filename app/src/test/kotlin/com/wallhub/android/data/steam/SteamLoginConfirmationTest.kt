@@ -138,6 +138,24 @@ class SteamLoginConfirmationTest {
     }
 
     @Test
+    fun `frozen environments pause even with a saved account`() {
+        assertTrue(
+            shouldPauseBackgroundSteamEngine(
+                idleInBackground = true,
+                hasStoredSession = true,
+                frozenEnvironment = true,
+            ),
+        )
+        assertFalse(
+            shouldPauseBackgroundSteamEngine(
+                idleInBackground = true,
+                hasStoredSession = true,
+                frozenEnvironment = false,
+            ),
+        )
+    }
+
+    @Test
     fun `Steam websocket ping interval stays below common gateway idle timeout`() {
         assertTrue(KSteamSessionRepository.KSTEAM_WEBSOCKET_PING_INTERVAL_MS < 60_000L)
     }

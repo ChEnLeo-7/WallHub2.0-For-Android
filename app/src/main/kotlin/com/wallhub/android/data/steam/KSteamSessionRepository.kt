@@ -53,10 +53,13 @@ import io.ktor.client.plugins.HttpSend
 import io.ktor.client.plugins.plugin
 import java.io.Closeable
 import java.io.File
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.ResponseBody.Companion.toResponseBody
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.cancellation.CancellationException
@@ -126,7 +129,8 @@ internal fun shouldRestoreAfterForegroundReconnectFailure(
 internal fun shouldPauseBackgroundSteamEngine(
     idleInBackground: Boolean,
     hasStoredSession: Boolean,
-): Boolean = idleInBackground && !hasStoredSession
+    frozenEnvironment: Boolean = false,
+): Boolean = idleInBackground && (!hasStoredSession || frozenEnvironment)
 
 internal fun shouldRebuildSavedSessionTransport(hasUsableConnection: Boolean): Boolean =
     !hasUsableConnection
@@ -191,6 +195,7 @@ class KSteamSessionRepository
         @ApplicationContext context: Context,
         internal val diagnostics: DiagnosticRepository,
         private val steamHttpClientFactory: SteamHttpClientFactory,
+        private val cmListCache: SteamCmListCache,
     ) : SteamSessionRepository,
         SteamContentCredentialProvider,
         AccountWorkshopRepository,
@@ -217,6 +222,17 @@ class KSteamSessionRepository
         private val expiredPublished = AtomicBoolean(false)
         private val anonymousEngineRef = AtomicReference<SteamClient?>(null)
         private val pendingAccountName = AtomicReference<String?>(null)
+        private var consecutiveTransportDeaths = 0
+
+        internal fun isFrozenEnvironment(): Boolean = consecutiveTransportDeaths >= 2
+
+        internal fun recordTransportAlive() {
+            consecutiveTransportDeaths = 0
+        }
+
+        internal fun recordTransportDead() {
+            consecutiveTransportDeaths += 1
+        }
 
         private fun newKSteamHttpClient(): HttpClient =
             HttpClient(OkHttp) {
@@ -225,6 +241,10 @@ class KSteamSessionRepository
                         steamHttpClientFactory
                             .newBuilder()
                             .pingInterval(KSTEAM_WEBSOCKET_PING_INTERVAL_MS, TimeUnit.MILLISECONDS)
+                            .connectTimeout(KSTEAM_HTTP_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                            .readTimeout(KSTEAM_HTTP_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                            .callTimeout(KSTEAM_HTTP_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                            .addInterceptor(cmListCacheInterceptor())
                             .build()
                 }
                 install("WallHubSteamRoutePrewarm") {
@@ -239,6 +259,46 @@ class KSteamSessionRepository
                     }
                 }
             }
+
+        private fun cmListCacheInterceptor(): okhttp3.Interceptor =
+            okhttp3.Interceptor { chain ->
+                val request = chain.request()
+                if (!request.isCmListRequest()) return@Interceptor chain.proceed(request)
+                val cellId = request.url.queryParameter("cellid")?.toIntOrNull() ?: 0
+                val cached = cmListCache.load(cellId)
+                if (cached != null && cmListCacheDecision(cached.ageMs) == SteamCmListCacheAction.SERVE_CACHED) {
+                    return@Interceptor buildCmListCachedResponse(request, cached.body)
+                }
+                val live =
+                    runCatching { chain.proceed(request) }.getOrElse { error ->
+                        if (cached != null && cmListCacheStaleUsable(cached.ageMs)) {
+                            buildCmListCachedResponse(request, cached.body)
+                        } else {
+                            runCatching { chain.proceed(request) }.getOrElse { throw error }
+                        }
+                    }
+                if (live.isSuccessful) {
+                    runCatching {
+                        cmListCache.save(cellId, live.peekBody(MAX_CM_LIST_CACHE_BYTES).string())
+                    }
+                }
+                live
+            }
+
+        private fun buildCmListCachedResponse(
+            request: okhttp3.Request,
+            body: String,
+        ): okhttp3.Response =
+            okhttp3.Response
+                .Builder()
+                .request(request)
+                .protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(200)
+                .message("WallHub CM list cache")
+                .body(body.toResponseBody("application/json".toMediaTypeOrNull()))
+                .sentRequestAtMillis(System.currentTimeMillis())
+                .receivedResponseAtMillis(System.currentTimeMillis())
+                .build()
 
         @Volatile
         private var engine: SteamClient? = null
@@ -329,7 +389,13 @@ class KSteamSessionRepository
                         val currentObserver = engineObserver
                         currentObserver?.cancel()
                         engineObserver = null
-                        runCatching { client.stop() }
+                        withContext(Dispatchers.IO) {
+                            runCatching {
+                                CompletableFuture
+                                    .runAsync { runCatching { client.stop() } }
+                                    .get(REBUILD_STOP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                            }
+                        }
                         engineStarted = false
                         engine = null
                         currentObserver
@@ -902,6 +968,7 @@ class KSteamSessionRepository
                         return@launch
                     }
                     if (client.hasUsableAuthenticatedConnection()) {
+                        recordTransportAlive()
                         reconcileState(
                             client,
                             client.account.clientAuthState.value,
@@ -913,8 +980,10 @@ class KSteamSessionRepository
                         client.account.hasSavedDataForAtLeastOneAccount() ||
                             legacyCredentialExists()
                     ) {
+                        recordTransportDead()
                         restorePersistedSession()
                     } else {
+                        recordTransportDead()
                         startEngine(client)
                     }
                 } catch (error: CancellationException) {
@@ -964,12 +1033,13 @@ class KSteamSessionRepository
                 runCatching {
                     engineLifecycleMutex.withLock {
                         val client = engine ?: return@withLock
-                        if (
-                            !shouldPauseBackgroundSteamEngine(
-                                idleInBackground = contentLifecycleState.shouldPause(),
-                                hasStoredSession = client.account.hasSavedDataForAtLeastOneAccount(),
-                            )
-                        ) {
+                    if (
+                        !shouldPauseBackgroundSteamEngine(
+                            idleInBackground = contentLifecycleState.shouldPause(),
+                            hasStoredSession = client.account.hasSavedDataForAtLeastOneAccount(),
+                            frozenEnvironment = isFrozenEnvironment(),
+                        )
+                    ) {
                             return@withLock
                         }
                         if (engineStarted) client.pause()
@@ -1841,6 +1911,10 @@ class KSteamSessionRepository
             const val INTERACTIVE_LOGIN_TIMEOUT_MS = 5 * 60_000L
             const val STEAM_ROUTE_PREWARM_WAIT_MS = 2_000L
             const val KSTEAM_WEBSOCKET_PING_INTERVAL_MS = 20_000L
+            const val KSTEAM_HTTP_CONNECT_TIMEOUT_MS = 5_000L
+            const val KSTEAM_HTTP_READ_TIMEOUT_MS = 8_000L
+            const val KSTEAM_HTTP_CALL_TIMEOUT_MS = 8_000L
+            const val REBUILD_STOP_TIMEOUT_MS = 2_000L
             const val MIGRATED_ACCESS_TOKEN_PLACEHOLDER = "wallhub-migrated"
         }
     }
