@@ -44,6 +44,11 @@ internal class SteamVideoStreamCache(
 
     @Volatile
     private var evictionListener: ((Long) -> Unit)? = null
+
+    /** Captures the last background sweep failure for diagnostics and tests. */
+    @Volatile
+    internal var lastSweepError: Throwable? = null
+        private set
     private val sweepScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val sweepJobLock = Any()
     private var sweepJob: Job? = null
@@ -356,13 +361,25 @@ internal class SteamVideoStreamCache(
         if (total < (limitBytes * highWatermarkRatio).toLong()) return
         synchronized(sweepJobLock) {
             if (sweepJob?.isActive == true) return
+            if (sweepDebounceMs <= 0L) {
+                // Deterministic mode used by tests: run the sweep inline so
+                // failures surface to the caller instead of a detached job.
+                runSweep()
+                return
+            }
             sweepJob =
                 sweepScope.launch {
-                    if (sweepDebounceMs > 0L) delay(sweepDebounceMs)
-                    runCatching {
-                        evictOverflow(targetBytes = (limitBytes * targetWatermarkRatio).toLong())
-                    }
+                    delay(sweepDebounceMs)
+                    runSweep()
                 }
+        }
+    }
+
+    private suspend fun runSweep() {
+        runCatching {
+            evictOverflow(targetBytes = (limitBytes * targetWatermarkRatio).toLong())
+        }.onFailure { error ->
+            lastSweepError = error
         }
     }
 

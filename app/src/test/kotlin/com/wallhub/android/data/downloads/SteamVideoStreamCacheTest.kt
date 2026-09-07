@@ -59,8 +59,8 @@ class SteamVideoStreamCacheTest {
                 // The third protected commit cannot evict anything, so the cache
                 // crosses the high watermark and schedules the background sweep.
                 cache.commitVerified(base + 20_000_000L, steamAdler32(data), data)
-                // A zero debounce lets the scheduled sweep run at any moment, so
-                // only the post-unprotect target is asserted deterministically.
+                // A zero debounce runs the sweep inline inside the commit, so the
+                // trim is observable without waiting on a detached job.
                 cache.protectChunkOffsets(emptySet())
                 try {
                     withTimeout(10_000L) {
@@ -68,7 +68,8 @@ class SteamVideoStreamCacheTest {
                     }
                 } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
                     throw AssertionError(
-                        "background sweep did not reach target: total=${chunkTotal(root)} target=$target",
+                        "background sweep did not reach target: total=${chunkTotal(root)} " +
+                            "target=$target sweepError=${cache.lastSweepError}",
                         error,
                     )
                 }
