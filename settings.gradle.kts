@@ -64,7 +64,12 @@ if (usePatchedKSteam && System.getenv("GITHUB_ACTIONS") != "true") {
             println(patchLog.readText().takeLast(12_000))
         }
         check(exitCode == 0) {
-            val details = patchLog.takeIf { it.isFile }?.readText()?.takeLast(12_000).orEmpty()
+            val details =
+                patchLog
+                    .takeIf { it.isFile }
+                    ?.readText()
+                    ?.takeLast(12_000)
+                    .orEmpty()
             "Patched kSteam build failed with exit code $exitCode\n$details"
         }
         println("WallHub: patched kSteam build exited with code $exitCode")
