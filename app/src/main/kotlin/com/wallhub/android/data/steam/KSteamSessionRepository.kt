@@ -327,6 +327,24 @@ class KSteamSessionRepository
             }
         }
 
+        private suspend fun rebuildEngine(client: SteamClient): SteamClient {
+            val observer =
+                engineLifecycleMutex.withLock {
+                    engineMutex.withLock {
+                        check(engine === client) { "Steam engine changed while rebuilding" }
+                        val currentObserver = engineObserver
+                        currentObserver?.cancel()
+                        engineObserver = null
+                        runCatching { client.stop() }
+                        engineStarted = false
+                        engine = null
+                        currentObserver
+                    }
+                }
+            observer?.cancelAndJoin()
+            return obtainEngine()
+        }
+
         // ------------------------------------------------------------------
         // Session state reconciliation
         // ------------------------------------------------------------------
@@ -894,13 +912,27 @@ class KSteamSessionRepository
                     ) {
                         engineLifecycleMutex.withLock {
                             client.restart()
-                            withTimeoutOrNull(ENGINE_START_TIMEOUT_MS) {
-                                client.connectionStatus.first { it.hasActiveServerConnection }
-                            }
                         }
+                        withTimeoutOrNull(FOREGROUND_RESTART_TIMEOUT_MS) {
+                            combine(client.account.clientAuthState, client.connectionStatus) { auth, connection ->
+                                isUsableAuthenticatedSteamClient(auth, connection)
+                            }.first { it }
+                        }
+                    }
+                    val recoveryClient =
+                        if (hasKSteamSession && !client.hasUsableAuthenticatedConnection()) {
+                            rebuildEngine(client).also { rebuilt -> startEngine(rebuilt) }
+                        } else {
+                            client
+                        }
+                    if (hasKSteamSession && !recoveryClient.hasUsableAuthenticatedConnection()) {
                         restorePersistedSession()
                     }
-                    reconcileState(client, client.account.clientAuthState.value, client.connectionStatus.value)
+                    reconcileState(
+                        recoveryClient,
+                        recoveryClient.account.clientAuthState.value,
+                        recoveryClient.connectionStatus.value,
+                    )
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Throwable) {
@@ -1823,6 +1855,7 @@ class KSteamSessionRepository
             const val ANONYMOUS_RETRY_DELAY_MS = 2_000L
             const val CONTENT_SESSION_WAIT_TIMEOUT_MS = 12_000L
             const val FOREGROUND_CONNECTION_GRACE_MS = 10_000L
+            const val FOREGROUND_RESTART_TIMEOUT_MS = 20_000L
             const val RESTORE_TOTAL_TIMEOUT_MS = 60_000L
             const val CONTENT_CREDENTIAL_RESTORE_TIMEOUT_MS = 30_000L
             const val STEAM_RPC_TIMEOUT_MS = 25_000L
