@@ -128,13 +128,14 @@ internal fun shouldPauseBackgroundSteamEngine(
     hasStoredSession: Boolean,
 ): Boolean = idleInBackground && !hasStoredSession
 
-internal fun shouldRetrySavedSteamLogon(connection: CMClientState): Boolean =
-    connection == CMClientState.AwaitingAuthorization || connection == CMClientState.Authorizing
-
-internal fun shouldResetForegroundSteamConnection(
+internal fun shouldRestartForegroundSteamConnection(
     hasStoredSession: Boolean,
     hasUsableConnection: Boolean,
-): Boolean = hasStoredSession && !hasUsableConnection
+    graceExpired: Boolean,
+): Boolean = hasStoredSession && !hasUsableConnection && graceExpired
+
+internal fun shouldResumeForegroundSteamConnection(connection: CMClientState): Boolean =
+    connection == CMClientState.Offline
 
 internal class SteamContentLifecycleState {
     private var foreground = true
@@ -582,16 +583,7 @@ class KSteamSessionRepository
         ) {
             if (mutableSession.value.phase == SteamSessionPhase.SIGNED_IN) return
             if (client.account.hasSavedDataForAtLeastOneAccount()) {
-                // Account registers its saved-account logon when CM enters AwaitingAuthorization.
-                // Android can suspend that callback while background network access is blocked.
-                // Give it a short head start, then retry if the CM is still a guest or the
-                // original logon packet remained queued while background networking was blocked.
-                withTimeoutOrNull(SAVED_LOGON_AUTOSTART_WAIT_MS) {
-                    client.connectionStatus.first { !shouldRetrySavedSteamLogon(it) }
-                }
-                if (shouldRetrySavedSteamLogon(client.connectionStatus.value)) {
-                    client.account.trySignInSavedDefault()
-                }
+                // kSteam submits the saved account when CM enters AwaitingAuthorization.
                 awaitRestorationOutcome(client)
                 return
             }
@@ -883,19 +875,32 @@ class KSteamSessionRepository
                     }
                     val client = engine ?: return@launch
                     val hasKSteamSession = client.account.hasSavedDataForAtLeastOneAccount()
+                    if (shouldResumeForegroundSteamConnection(client.connectionStatus.value)) {
+                        startEngine(client)
+                    }
+                    if (hasKSteamSession && !client.hasUsableAuthenticatedConnection()) {
+                        withTimeoutOrNull(FOREGROUND_CONNECTION_GRACE_MS) {
+                            combine(client.account.clientAuthState, client.connectionStatus) { auth, connection ->
+                                isUsableAuthenticatedSteamClient(auth, connection)
+                            }.first { it }
+                        }
+                    }
                     if (
-                        shouldResetForegroundSteamConnection(
+                        shouldRestartForegroundSteamConnection(
                             hasStoredSession = hasKSteamSession,
                             hasUsableConnection = client.hasUsableAuthenticatedConnection(),
+                            graceExpired = true,
                         )
                     ) {
-                        stopEngineConnection(client)
-                    }
-                    startEngine(client)
-                    reconcileState(client, client.account.clientAuthState.value, client.connectionStatus.value)
-                    if (!client.hasUsableAuthenticatedConnection() && hasKSteamSession) {
+                        engineLifecycleMutex.withLock {
+                            client.restart()
+                            withTimeoutOrNull(ENGINE_START_TIMEOUT_MS) {
+                                client.connectionStatus.first { it.hasActiveServerConnection }
+                            }
+                        }
                         restorePersistedSession()
                     }
+                    reconcileState(client, client.account.clientAuthState.value, client.connectionStatus.value)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Throwable) {
@@ -1817,7 +1822,7 @@ class KSteamSessionRepository
             const val ANONYMOUS_CONNECT_ATTEMPTS = 3
             const val ANONYMOUS_RETRY_DELAY_MS = 2_000L
             const val CONTENT_SESSION_WAIT_TIMEOUT_MS = 12_000L
-            const val SAVED_LOGON_AUTOSTART_WAIT_MS = 2_000L
+            const val FOREGROUND_CONNECTION_GRACE_MS = 10_000L
             const val RESTORE_TOTAL_TIMEOUT_MS = 60_000L
             const val CONTENT_CREDENTIAL_RESTORE_TIMEOUT_MS = 30_000L
             const val STEAM_RPC_TIMEOUT_MS = 25_000L

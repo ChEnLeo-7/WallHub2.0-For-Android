@@ -138,33 +138,38 @@ class SteamLoginConfirmationTest {
     }
 
     @Test
-    fun `saved account logon retries while CM remains unauthenticated`() {
-        assertTrue(shouldRetrySavedSteamLogon(CMClientState.AwaitingAuthorization))
-        assertTrue(shouldRetrySavedSteamLogon(CMClientState.Authorizing))
-        assertFalse(shouldRetrySavedSteamLogon(CMClientState.Connected))
-        assertFalse(shouldRetrySavedSteamLogon(CMClientState.Offline))
+    fun `foreground restarts a saved account connection only after its grace period`() {
+        assertFalse(
+            shouldRestartForegroundSteamConnection(
+                hasStoredSession = true,
+                hasUsableConnection = false,
+                graceExpired = false,
+            ),
+        )
+        assertTrue(
+            shouldRestartForegroundSteamConnection(
+                hasStoredSession = true,
+                hasUsableConnection = false,
+                graceExpired = true,
+            ),
+        )
+        assertFalse(
+            shouldRestartForegroundSteamConnection(
+                hasStoredSession = true,
+                hasUsableConnection = true,
+                graceExpired = true,
+            ),
+        )
     }
 
     @Test
-    fun `foreground resets only an unusable saved account connection`() {
-        assertTrue(
-            shouldResetForegroundSteamConnection(
-                hasStoredSession = true,
-                hasUsableConnection = false,
-            ),
-        )
-        assertFalse(
-            shouldResetForegroundSteamConnection(
-                hasStoredSession = true,
-                hasUsableConnection = true,
-            ),
-        )
-        assertFalse(
-            shouldResetForegroundSteamConnection(
-                hasStoredSession = false,
-                hasUsableConnection = false,
-            ),
-        )
+    fun `foreground resumes only an offline CM connection`() {
+        assertTrue(shouldResumeForegroundSteamConnection(CMClientState.Offline))
+        assertFalse(shouldResumeForegroundSteamConnection(CMClientState.Connecting))
+        assertFalse(shouldResumeForegroundSteamConnection(CMClientState.Reconnecting))
+        assertFalse(shouldResumeForegroundSteamConnection(CMClientState.AwaitingAuthorization))
+        assertFalse(shouldResumeForegroundSteamConnection(CMClientState.Authorizing))
+        assertFalse(shouldResumeForegroundSteamConnection(CMClientState.Connected))
     }
 
     @Test
