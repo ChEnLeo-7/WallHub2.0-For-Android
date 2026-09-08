@@ -1450,7 +1450,7 @@ internal fun buildSteamCdnCommand(
     val scheme = if (insecure) "http" else "https"
     val port =
         when {
-            insecure -> server.port.takeIf { it in 1..65535 } ?: HTTP_PORT
+            insecure -> HTTP_PORT
             server.https -> server.port
             else -> HTTPS_PORT
         }
