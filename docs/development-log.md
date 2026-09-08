@@ -1,5 +1,14 @@
 # Development Log
 
+## 2026-09-08
+
+### Steam CDN legacy HTTP fallback for downloads and streaming
+
+- Fix: A/B testing against WallHub for Webview proved the eleven "Steam CDN" download failures on the China network are HTTPS-path-specific: the same depot items download fine through the same CDN hosts over plain HTTP port 80 (DepotDownloader's transport), while the app's HTTPS requests hit TLS interference (`dl.steam.clngaa.com`), stale edge certificates (`xz.pphimalayanrt.com` presenting `*.ctcdn.cn`), and edge auth misconfiguration (`st.dl.eccdnx.com` returning 401 with a valid token).
+- Fix: Manifest and chunk downloads now fall back from HTTPS to the legacy HTTP transport on the same host when the HTTPS attempt fails with 401/403, a TLS-layer exception, or a transport-level IO error; hosts that fall back are remembered process-wide so subsequent chunks and sessions start on HTTP directly. The URL builder gained an explicit insecure mode (http + advertised port, defaulting to 80).
+- Update: Manifest allows cleartext so the fallback transport is reachable; every control-plane request (Steam WebAPI, CM, CDN auth tokens) remains HTTPS by construction because only CDN content paths build HTTP URLs.
+- Verification: unit coverage for insecure URL building (advertised and default port 80), fallback eligibility matrix (401/403/TLS/IO eligible; 500 and protocol mismatches not), and per-host marking; on-device retest of the previously failing workshop items follows the commit-bound debug build.
+
 ## 2026-09-07
 
 ### Online video startup fast path and streaming cache overshoot control

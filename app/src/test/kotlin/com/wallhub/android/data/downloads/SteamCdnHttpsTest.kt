@@ -20,6 +20,34 @@ class SteamCdnHttpsTest {
     }
 
     @Test
+    fun insecureTransportBuildsHttpUrlOnTheAdvertisedPort() {
+        val url =
+            buildSteamCdnCommand(
+                server = CdnServer("cdn.example.test", "cdn.example.test", 80, false),
+                command = "depot/1/chunk/abc",
+                query = "token=abc",
+                insecure = true,
+            )
+
+        assertEquals("http", url.scheme)
+        assertEquals(80, url.port)
+    }
+
+    @Test
+    fun insecureTransportFallsBackToPort80WhenAdvertisedPortInvalid() {
+        val url =
+            buildSteamCdnCommand(
+                server = CdnServer("cdn.example.test", "cdn.example.test", 443, true),
+                command = "depot/1/chunk/abc",
+                query = null,
+                insecure = true,
+            )
+
+        assertEquals("http", url.scheme)
+        assertEquals(80, url.port)
+    }
+
+    @Test
     fun cdnRequestUsesVirtualHostForItsUrl() {
         val url =
             buildSteamCdnCommand(

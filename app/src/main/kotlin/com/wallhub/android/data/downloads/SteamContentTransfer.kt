@@ -51,9 +51,11 @@ import java.io.FileInputStream
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import javax.net.ssl.SSLException
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.ZipInputStream
@@ -1154,50 +1156,63 @@ internal suspend fun downloadManifest(
         currentCoroutineContext().ensureActive()
         checkDownloadControl(control)
         var hasToken = false
-        try {
-            val token = authTokens.get(server)
-            hasToken = token != null
-            val request =
-                Request
-                    .Builder()
-                    .url(
-                        buildSteamCdnCommand(
-                            server = server,
-                            proxyServer = proxyServer,
-                            command = server.depotManifestUrl(depotId, manifestId, requestCode),
-                            query = token,
-                        ),
-                    ).build()
-            val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
-            response.use { resp ->
-                if (!resp.isSuccessful) {
-                    throw SteamCdnHttpException("Steam CDN returned ${resp.code} for the depot manifest")
-                }
-                val compressed =
-                    resp.body.byteStream().use { stream -> stream.readBytesBounded(MAX_MANIFEST_RESPONSE_BYTES) }
-                check(compressed.isNotEmpty()) { "Steam manifest response is empty" }
-                val manifestData =
-                    ZipInputStream(ByteArrayInputStream(compressed)).use { archive ->
-                        requireNotNull(archive.nextEntry) { "Steam manifest response ZIP is empty" }
-                        archive.readBytesBounded(MAX_MANIFEST_DECOMPRESSED_BYTES)
+        var insecure = SteamCdnTransportFallback.prefersInsecure(server.host)
+        while (true) {
+            try {
+                val token = authTokens.get(server)
+                hasToken = token != null
+                val request =
+                    Request
+                        .Builder()
+                        .url(
+                            buildSteamCdnCommand(
+                                server = server,
+                                proxyServer = proxyServer,
+                                command = server.depotManifestUrl(depotId, manifestId, requestCode),
+                                query = token,
+                                insecure = insecure,
+                            ),
+                        ).build()
+                val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
+                response.use { resp ->
+                    if (!resp.isSuccessful) {
+                        throw SteamCdnHttpException("Steam CDN returned ${resp.code} for the depot manifest", resp.code)
                     }
-                val manifest = parseDepotManifest(manifestData)
-                check(!manifest.filenamesEncrypted || manifest.decryptFilenames(depotKey)) {
-                    "Failed to decrypt file names in the Steam manifest"
+                    val compressed =
+                        resp.body.byteStream().use { stream -> stream.readBytesBounded(MAX_MANIFEST_RESPONSE_BYTES) }
+                    check(compressed.isNotEmpty()) { "Steam manifest response is empty" }
+                    val manifestData =
+                        ZipInputStream(ByteArrayInputStream(compressed)).use { archive ->
+                            requireNotNull(archive.nextEntry) { "Steam manifest response ZIP is empty" }
+                            archive.readBytesBounded(MAX_MANIFEST_DECOMPRESSED_BYTES)
+                        }
+                    val manifest = parseDepotManifest(manifestData)
+                    check(!manifest.filenamesEncrypted || manifest.decryptFilenames(depotKey)) {
+                        "Failed to decrypt file names in the Steam manifest"
+                    }
+                    return manifest
                 }
-                return manifest
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: SteamDownloadCancelledException) {
+                throw error
+            } catch (error: VirtualMachineError) {
+                throw error
+            } catch (error: Throwable) {
+                if (!insecure && SteamCdnTransportFallback.isInsecureFallbackEligible(error)) {
+                    // The HTTPS endpoint on this host is broken (TLS interference,
+                    // stale certificate, or edge auth rejection); the legacy HTTP
+                    // transport on the same host routinely keeps working.
+                    SteamCdnTransportFallback.markInsecure(server.host, server.vHost)
+                    insecure = true
+                    continue
+                }
+                lastError = error
+                errors += error
+                failures += describeServer(server, hasToken) + "\uFF1A" +
+                    (error.message ?: error.javaClass.simpleName)
+                break
             }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: SteamDownloadCancelledException) {
-            throw error
-        } catch (error: VirtualMachineError) {
-            throw error
-        } catch (error: Throwable) {
-            lastError = error
-            errors += error
-            failures += describeServer(server, hasToken) + "\uFF1A" +
-                (error.message ?: error.javaClass.simpleName)
         }
     }
     throw SteamCdnTransferException(
@@ -1256,47 +1271,59 @@ internal suspend fun downloadEncryptedChunk(
         var hasToken = false
         val attemptStartedAtNanos = System.nanoTime()
         selector.recordStart(server)
-        try {
-            val encrypted = ByteArray(chunk.compressedLength)
-            val token = authTokens.get(server)
-            hasToken = token != null
-            // Streaming into the caller-owned destination avoids duplicating the response
-            // buffer for every concurrent chunk request on a constrained Android heap.
-            val downloadedBytes =
-                downloadEncryptedChunkStreaming(
-                    httpClient = httpClient,
+        var insecure = SteamCdnTransportFallback.prefersInsecure(server.host)
+        while (true) {
+            try {
+                val encrypted = ByteArray(chunk.compressedLength)
+                val token = authTokens.get(server)
+                hasToken = token != null
+                // Streaming into the caller-owned destination avoids duplicating the response
+                // buffer for every concurrent chunk request on a constrained Android heap.
+                val downloadedBytes =
+                    downloadEncryptedChunkStreaming(
+                        httpClient = httpClient,
+                        server = server,
+                        proxyServer = proxyServer,
+                        depotId = depotId,
+                        chunk = chunk,
+                        cdnAuthToken = token,
+                        destination = encrypted,
+                        insecure = insecure,
+                    ) {
+                        checkDownloadControl(control)
+                    }
+                check(downloadedBytes == encrypted.size) { "Steam chunk compressed length mismatch" }
+                selector.recordSuccess(
                     server = server,
-                    proxyServer = proxyServer,
-                    depotId = depotId,
-                    chunk = chunk,
-                    cdnAuthToken = token,
-                    destination = encrypted,
-                ) {
-                    checkDownloadControl(control)
+                    bytes = encrypted.size,
+                    elapsedNanos = System.nanoTime() - attemptStartedAtNanos,
+                )
+                onSuccess?.invoke(server)
+                return encrypted
+            } catch (error: CancellationException) {
+                selector.recordCancelled(server)
+                throw error
+            } catch (error: SteamDownloadCancelledException) {
+                selector.recordCancelled(server)
+                throw error
+            } catch (error: VirtualMachineError) {
+                selector.recordCancelled(server)
+                throw error
+            } catch (error: Throwable) {
+                if (!insecure && SteamCdnTransportFallback.isInsecureFallbackEligible(error)) {
+                    // Retry the same host over the legacy HTTP transport before
+                    // giving up on it; see SteamCdnTransportFallback.
+                    SteamCdnTransportFallback.markInsecure(server.host, server.vHost)
+                    insecure = true
+                    continue
                 }
-            check(downloadedBytes == encrypted.size) { "Steam chunk compressed length mismatch" }
-            selector.recordSuccess(
-                server = server,
-                bytes = encrypted.size,
-                elapsedNanos = System.nanoTime() - attemptStartedAtNanos,
-            )
-            onSuccess?.invoke(server)
-            return encrypted
-        } catch (error: CancellationException) {
-            selector.recordCancelled(server)
-            throw error
-        } catch (error: SteamDownloadCancelledException) {
-            selector.recordCancelled(server)
-            throw error
-        } catch (error: VirtualMachineError) {
-            selector.recordCancelled(server)
-            throw error
-        } catch (error: Throwable) {
-            selector.recordFailure(server)
-            lastError = error
-            errors += error
-            failures += describeServer(server, hasToken) + "：" +
-                (error.message ?: error.javaClass.simpleName)
+                selector.recordFailure(server)
+                lastError = error
+                errors += error
+                failures += describeServer(server, hasToken) + "：" +
+                    (error.message ?: error.javaClass.simpleName)
+                break
+            }
         }
     }
     throw SteamCdnTransferException(
@@ -1318,6 +1345,7 @@ private suspend fun downloadEncryptedChunkStreaming(
     chunk: DepotChunkSpec,
     cdnAuthToken: String?,
     destination: ByteArray,
+    insecure: Boolean = false,
     beforeRead: suspend () -> Unit,
 ): Int = coroutineScope {
     val chunkId = requireNotNull(chunk.chunkId) { "Chunk must have a ChunkID." }
@@ -1329,7 +1357,7 @@ private suspend fun downloadEncryptedChunkStreaming(
     val request =
         Request
             .Builder()
-            .url(buildSteamCdnCommand(server, command, cdnAuthToken, proxyServer))
+            .url(buildSteamCdnCommand(server, command, cdnAuthToken, proxyServer, insecure))
             .build()
     val call = httpClient.newCall(request)
     val cancellationWatcher =
@@ -1344,7 +1372,10 @@ private suspend fun downloadEncryptedChunkStreaming(
         withContext(Dispatchers.IO) {
             call.execute().use { resp ->
                 if (!resp.isSuccessful) {
-                    throw SteamCdnHttpException("Steam CDN returned ${resp.code} (${resp.message})")
+                    throw SteamCdnHttpException(
+                        "Steam CDN returned ${resp.code} (${resp.message})",
+                        resp.code,
+                    )
                 }
                 val expected =
                     resp.body.contentLength().takeIf { it > 0L }?.toInt()
@@ -1373,17 +1404,56 @@ private suspend fun downloadEncryptedChunkStreaming(
     }
 }
 
+/**
+ * Tracks Steam CDN hosts whose HTTPS endpoint misbehaves so later requests use the
+ * legacy HTTP (port 80) transport that the official DepotDownloader also relies on.
+ * A host's HTTP service routinely stays healthy when its TLS path is broken
+ * (SNI interference, stale certificates, or edge auth misconfiguration).
+ */
+internal object SteamCdnTransportFallback {
+    private val insecureHosts = ConcurrentHashMap.newKeySet<String>()
+
+    fun prefersInsecure(host: String?): Boolean = !host.isNullOrBlank() && insecureHosts.contains(host)
+
+    fun markInsecure(vararg hosts: String?) {
+        hosts.forEach { host -> if (!host.isNullOrBlank()) insecureHosts.add(host) }
+    }
+
+    /**
+     * Decides whether a failed HTTPS attempt should be retried against the same
+     * host over HTTP: auth rejections (401/403 from a misconfigured edge), any
+     * TLS-layer failure, or transport-level IO errors whose port-80 sibling may
+     * still be alive. Protocol-level mismatches (SteamCdnHttpException with
+     * other codes) are not retried.
+     */
+    fun isInsecureFallbackEligible(error: Throwable): Boolean {
+        if (error is SteamCdnHttpException) {
+            return error.code == 401 || error.code == 403
+        }
+        var current: Throwable? = error
+        while (current != null) {
+            if (current is SSLException) return true
+            current = current.cause
+        }
+        return error is IOException
+    }
+}
+
 /** Builds a CDN request, optionally rewriting it through Steam's content proxy server. */
 internal fun buildSteamCdnCommand(
     server: CdnServer,
     command: String,
     query: String?,
     proxyServer: CdnServer? = null,
+    insecure: Boolean = false,
 ): HttpUrl {
-    // Android disallows cleartext traffic; Steam's optional-HTTPS entries still support the
-    // secure endpoint used by the legacy client fallback.
-    val scheme = "https"
-    val port = if (server.https) server.port else HTTPS_PORT
+    val scheme = if (insecure) "http" else "https"
+    val port =
+        when {
+            insecure -> server.port.takeIf { it in 1..65535 } ?: HTTP_PORT
+            server.https -> server.port
+            else -> HTTPS_PORT
+        }
     val requestHost = resolveCdnRequestHost(server.vHost, server.host)
     requireNotNull(requestHost) { "Steam CDN server has no request host" }
     val builder =
@@ -1409,7 +1479,10 @@ internal fun buildSteamCdnCommand(
         .build()
 }
 
-internal class SteamCdnHttpException(message: String) : IOException(message)
+internal class SteamCdnHttpException(
+    message: String,
+    val code: Int? = null,
+) : IOException(message)
 
 internal class SteamCdnTransferException(
     message: String,
@@ -2131,6 +2204,7 @@ internal object DownloadDiskReservations {
     }
 }
 internal const val HTTPS_PORT = 443
+internal const val HTTP_PORT = 80
 internal const val CONNECT_TIMEOUT_MS = 20_000L
 internal const val LOGON_TIMEOUT_MS = 30_000L
 internal const val CDN_SERVER_LIMIT = 20
