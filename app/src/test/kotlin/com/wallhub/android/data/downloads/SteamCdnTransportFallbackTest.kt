@@ -48,4 +48,12 @@ class SteamCdnTransportFallbackTest {
         val error = SteamCdnHttpException("Steam CDN returned 401 for the depot manifest", 401)
         assertEquals(401, error.code)
     }
+
+    @Test
+    fun only401And403AreCdnAuthChallenges() {
+        assertTrue(isCdnAuthChallenge(SteamCdnHttpException("401", 401)))
+        assertTrue(isCdnAuthChallenge(SteamCdnHttpException("403", 403)))
+        assertFalse(isCdnAuthChallenge(SteamCdnHttpException("500", 500)))
+        assertFalse(isCdnAuthChallenge(IOException("timeout")))
+    }
 }

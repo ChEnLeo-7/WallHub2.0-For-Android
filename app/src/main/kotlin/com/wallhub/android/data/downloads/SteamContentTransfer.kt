@@ -1155,12 +1155,10 @@ internal suspend fun downloadManifest(
     servers.take(MAX_CDN_ATTEMPTS).forEach { server ->
         currentCoroutineContext().ensureActive()
         checkDownloadControl(control)
-        var hasToken = false
+        var token = authTokens.getCached(server)
         var insecure = SteamCdnTransportFallback.prefersInsecure(server.host)
         while (true) {
             try {
-                val token = authTokens.get(server)
-                hasToken = token != null
                 val request =
                     Request
                         .Builder()
@@ -1207,9 +1205,13 @@ internal suspend fun downloadManifest(
                     insecure = true
                     continue
                 }
+                if (insecure && token == null && isCdnAuthChallenge(error)) {
+                    token = authTokens.get(server)
+                    if (token != null) continue
+                }
                 lastError = error
                 errors += error
-                failures += describeServer(server, hasToken) + "\uFF1A" +
+                failures += describeServer(server, token != null) + "\uFF1A" +
                     (error.message ?: error.javaClass.simpleName)
                 break
             }
@@ -1268,15 +1270,13 @@ internal suspend fun downloadEncryptedChunk(
     selector.candidates(servers.take(MAX_CDN_ATTEMPTS)).forEach { server ->
         currentCoroutineContext().ensureActive()
         checkDownloadControl(control)
-        var hasToken = false
+        var token = authTokens.getCached(server)
         val attemptStartedAtNanos = System.nanoTime()
         selector.recordStart(server)
         var insecure = SteamCdnTransportFallback.prefersInsecure(server.host)
         while (true) {
             try {
                 val encrypted = ByteArray(chunk.compressedLength)
-                val token = authTokens.get(server)
-                hasToken = token != null
                 // Streaming into the caller-owned destination avoids duplicating the response
                 // buffer for every concurrent chunk request on a constrained Android heap.
                 val downloadedBytes =
@@ -1317,10 +1317,14 @@ internal suspend fun downloadEncryptedChunk(
                     insecure = true
                     continue
                 }
+                if (insecure && token == null && isCdnAuthChallenge(error)) {
+                    token = authTokens.get(server)
+                    if (token != null) continue
+                }
                 selector.recordFailure(server)
                 lastError = error
                 errors += error
-                failures += describeServer(server, hasToken) + "：" +
+                failures += describeServer(server, token != null) + "：" +
                     (error.message ?: error.javaClass.simpleName)
                 break
             }
@@ -1483,6 +1487,9 @@ internal class SteamCdnHttpException(
     message: String,
     val code: Int? = null,
 ) : IOException(message)
+
+internal fun isCdnAuthChallenge(error: Throwable): Boolean =
+    error is SteamCdnHttpException && (error.code == 401 || error.code == 403)
 
 internal class SteamCdnTransferException(
     message: String,
@@ -1987,20 +1994,25 @@ internal class CdnAuthTokenProvider(
     private val mutex = Mutex()
     private val callbackScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    suspend fun getCached(server: CdnServer): String? {
+        if (!enabled) return null
+        val requestHost = resolveCdnAuthHost(server.host, server.vHost) ?: return null
+        val cacheKey = requestHost.lowercase()
+        return mutex.withLock {
+            val now = System.currentTimeMillis()
+            cachedTokens[cacheKey]
+                ?.takeIf { it.expiresAtMs > now + TOKEN_MIN_VALIDITY_MS }
+                ?.token
+        }
+    }
+
     suspend fun get(server: CdnServer): String? {
         if (!enabled) return null
         val requestHost = resolveCdnAuthHost(server.host, server.vHost) ?: return null
         val cacheKey = requestHost.lowercase()
-        var cachedToken: String? = null
+        getCached(server)?.let { return it }
         val pending =
             mutex.withLock {
-                val now = System.currentTimeMillis()
-                cachedTokens[cacheKey]
-                    ?.takeIf { it.expiresAtMs > now + TOKEN_MIN_VALIDITY_MS }
-                    ?.let { token ->
-                        cachedToken = token.token
-                        return@withLock null
-                    }
                 pendingTokens[cacheKey] ?: callbackScope
                     .async {
                         val (token, expiresAtMs) =
@@ -2008,8 +2020,7 @@ internal class CdnAuthTokenProvider(
                         CachedCdnAuthToken(token = token, expiresAtMs = expiresAtMs)
                     }.also { request -> pendingTokens[cacheKey] = request }
             }
-        cachedToken?.let { return it }
-        val request = checkNotNull(pending)
+        val request = pending
         return try {
             val result = request.await()
             mutex.withLock {
