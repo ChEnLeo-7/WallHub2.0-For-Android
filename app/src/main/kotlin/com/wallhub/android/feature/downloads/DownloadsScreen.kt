@@ -853,6 +853,17 @@ private fun DownloadTaskCard(
                         )
                     }
                 }
+                val failedOrCancelled =
+                    task.status == DownloadStatus.FAILED || task.status == DownloadStatus.CANCELLED
+                if (failedOrCancelled && !task.message.isNullOrBlank()) {
+                    Text(
+                        text = task.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
@@ -888,15 +899,9 @@ internal fun filterTasks(
             when (filter) {
                 DownloadFilter.ALL -> true
                 DownloadFilter.DOWNLOADING ->
-                    task.status in
-                        setOf(
-                            DownloadStatus.QUEUED,
-                            DownloadStatus.RESOLVING,
-                            DownloadStatus.DOWNLOADING,
-                            DownloadStatus.PAUSED,
-                            DownloadStatus.CONVERTING,
-                            DownloadStatus.EXPORTING,
-                        )
+                    // Every non-completed state stays visible here, including
+                    // FAILED and CANCELLED, so failures never silently vanish.
+                    task.status != DownloadStatus.COMPLETED
 
                 DownloadFilter.QUEUED -> task.status == DownloadStatus.QUEUED
                 DownloadFilter.COMPLETED -> task.status == DownloadStatus.COMPLETED

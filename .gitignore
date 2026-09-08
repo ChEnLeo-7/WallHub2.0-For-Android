@@ -60,6 +60,9 @@ signing.properties
 !/app/src/test/kotlin/com/wallhub/android/feature/discover/
 /app/src/test/kotlin/com/wallhub/android/feature/discover/*
 !/app/src/test/kotlin/com/wallhub/android/feature/discover/DiscoverQueryAdapterTest.kt
+!/app/src/test/kotlin/com/wallhub/android/feature/downloads/
+/app/src/test/kotlin/com/wallhub/android/feature/downloads/*
+!/app/src/test/kotlin/com/wallhub/android/feature/downloads/DownloadsFilterTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/discover/DiscoverSamplingTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/discover/OfficialDiscoverMetadataParserTest.kt
 /app/src/test/kotlin/com/wallhub/android/feature/local/*
