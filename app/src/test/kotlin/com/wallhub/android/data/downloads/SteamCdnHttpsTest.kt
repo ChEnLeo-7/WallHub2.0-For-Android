@@ -37,7 +37,7 @@ class SteamCdnHttpsTest {
     fun insecureTransportFallsBackToPort80WhenAdvertisedPortInvalid() {
         val url =
             buildSteamCdnCommand(
-                server = CdnServer("cdn.example.test", "cdn.example.test", 443, true),
+                server = CdnServer("cdn.example.test", "cdn.example.test", 0, true),
                 command = "depot/1/chunk/abc",
                 query = null,
                 insecure = true,
