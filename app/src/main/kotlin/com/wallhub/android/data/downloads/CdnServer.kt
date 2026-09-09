@@ -43,7 +43,8 @@ internal fun CdnServer.depotManifestUrl(
     manifestRequestCode: Long,
 ): String {
     require(manifestRequestCode > 0L) { "Steam manifest request code must be positive" }
-    return "depot/$depotId/manifest/$manifestId/5/$manifestRequestCode"
+    // Manifest handles are Steam uint64s; print the raw Long bits as unsigned.
+    return "depot/$depotId/manifest/${manifestId.toULong()}/5/${manifestRequestCode.toULong()}"
 }
 
 /** Magic-delimited manifest container constants (SteamDatabase depot manifest format). */

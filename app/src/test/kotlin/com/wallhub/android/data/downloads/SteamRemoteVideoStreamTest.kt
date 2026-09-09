@@ -63,6 +63,20 @@ class SteamRemoteVideoStreamTest {
     }
 
     @Test
+    fun hcontentFileAboveLongMaxIsRecoveredFromRawBody() {
+        val body =
+            """
+            {"response":{"publishedfiledetails":[{"result":1,"consumer_app_id":431960,
+             "title":"Clip","file_size":123,"file_url":"",
+             "hcontent_file":16566827351488351196,"tags":[{"tag":"video"}]}]}}
+            """.trimIndent()
+        val parsed = SteamWorkshopContentApi(OkHttpClient.Builder()).parseTarget(body, 42L)
+        assertEquals(16566827351488351196UL.toLong(), parsed.contentManifestId)
+        assertEquals("16566827351488351196", parsed.contentManifestId.toULong().toString())
+        assertEquals(WorkshopDownloadSource.STEAM_PIPE, workshopDownloadSource(parsed))
+    }
+
+    @Test
     fun directVideoFileNamesAreSanitizedForStaging() {
         assertEquals("clip.mp4", directVideoFileName(target("https://cdn.example/video.mp4"), "https://cdn.example/video.mp4"))
         assertEquals(

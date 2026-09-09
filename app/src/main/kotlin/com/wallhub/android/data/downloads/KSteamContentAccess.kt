@@ -56,7 +56,7 @@ internal suspend fun SteamClient.steamManifestRequestCode(
             )
         }
     return requireNotNull(response.manifest_request_code?.takeIf { it > 0L }) {
-        "Steam denied manifest request code for app $appId depot $depotId manifest $manifestId"
+        "Steam denied manifest request code for app $appId depot $depotId manifest ${manifestId.toULong()}"
     }
 }
 

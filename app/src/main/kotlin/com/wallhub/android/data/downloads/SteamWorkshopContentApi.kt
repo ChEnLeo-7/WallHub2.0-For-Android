@@ -115,7 +115,7 @@ internal class SteamWorkshopContentApi(
         check(appId == WALLPAPER_ENGINE_APP_ID) {
             "Steam Workshop item belongs to unsupported app $appId"
         }
-        val manifestId = detail.jsonLong("hcontent_file").takeIf { it > 0L } ?: 0L
+        val manifestId = manifestIdFromDetails(body)
         val fileUrl = detail.jsonString("file_url")
         check(manifestId > 0L || fileUrl.isNotBlank()) {
             "This Workshop item has neither a content manifest nor a direct file URL"
@@ -148,6 +148,22 @@ internal class SteamWorkshopContentApi(
             else -> 0L
         }
 
+    /**
+     * `hcontent_file` is a Steam uint64 that now exceeds Long.MAX_VALUE for recent items.
+     * Android's JSON parser degrades such literals to Double (losing precision) or drops
+     * them, so the raw body is matched and the digits are reinterpreted as unsigned bits
+     * of a Long; the wire and URL layers format it back as unsigned.
+     */
+    internal fun manifestIdFromDetails(body: String): Long =
+        HCONTENT_FILE_REGEX
+            .find(body)
+            ?.groupValues
+            ?.get(1)
+            ?.toULongOrNull()
+            ?.takeIf { it != 0UL }
+            ?.toLong()
+            ?: 0L
+
     private fun JSONObject.jsonString(name: String): String = opt(name)?.toString()?.trim().orEmpty()
 
     private fun JSONObject.jsonTags(): Set<String> {
@@ -171,5 +187,6 @@ internal class SteamWorkshopContentApi(
         const val USER_AGENT = "WallHub-Android/0.6 (Workshop Downloader)"
         const val PUBLISHED_FILE_DETAILS_URL =
             "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
+        val HCONTENT_FILE_REGEX = Regex("\"hcontent_file\"\\s*:\\s*\"?(\\d+)\"?")
     }
 }
