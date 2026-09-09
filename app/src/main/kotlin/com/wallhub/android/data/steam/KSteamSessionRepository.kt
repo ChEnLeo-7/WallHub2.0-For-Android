@@ -136,7 +136,7 @@ private fun parseWorkshopDepotFromAppInfo(
     appId: Int,
 ): Int? {
     val trimmed =
-        if (buffer.isNotEmpty && buffer[buffer.size - 1] == 0.toByte()) {
+        if (buffer.size > 0 && buffer[buffer.size - 1] == 0.toByte()) {
             buffer.substring(0, buffer.size - 1)
         } else {
             buffer
