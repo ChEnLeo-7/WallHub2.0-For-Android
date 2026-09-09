@@ -1,6 +1,7 @@
 package com.wallhub.android.data.steam
 
 import android.content.Context
+import android.util.Log
 import bruhcollective.itaysonlab.ksteam.EnvironmentConstants
 import bruhcollective.itaysonlab.ksteam.SteamClient
 import bruhcollective.itaysonlab.ksteam.handlers.Logger
@@ -18,9 +19,6 @@ import bruhcollective.itaysonlab.ksteam.network.CMClientState
 import bruhcollective.itaysonlab.ksteam.persistence.MemoryPersistenceDriver
 import bruhcollective.itaysonlab.ksteam.platform.DeviceInformation
 import bruhcollective.itaysonlab.ksteam.util.executeSteam
-import bruhcollective.itaysonlab.kxvdf.RootNodeSkipperDeserializationStrategy
-import bruhcollective.itaysonlab.kxvdf.Vdf
-import bruhcollective.itaysonlab.kxvdf.decodeFromBufferedSource
 import com.wallhub.android.R
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.DiagnosticEvent
@@ -88,8 +86,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.Serializable
 import okio.Buffer
 import okio.ByteString.Companion.decodeHex
 import okio.ByteString.Companion.toByteString
@@ -111,16 +107,84 @@ import steam.webui.publishedfile.CPublishedFile_RemoveAppRelationship_Request
 import steam.webui.publishedfile.CPublishedFile_Subscribe_Request
 import steam.webui.publishedfile.CPublishedFile_Unsubscribe_Request
 
-@Serializable
-private data class PicsWorkshopAppInfo(
-    val appid: Int,
-    val depots: PicsWorkshopDepots,
-)
+private const val KSTEAM_LOG_TAG = "WallHubSteamSession"
 
-@Serializable
-private data class PicsWorkshopDepots(
-    val workshopdepot: Long,
-)
+/**
+ * Reads `depots/workshopdepot` from a PICS AppInfo buffer using SteamKit2's binary
+ * KeyValue layout: each node is a type byte, a null-terminated name, and a type-sized
+ * payload; child lists of container nodes end on a terminator byte.
+ */
+private fun parseWorkshopDepotFromBinaryVdf(
+    buffer: okio.ByteString,
+    appId: Int,
+): Int? {
+    val source = okio.Buffer().write(buffer)
+
+    fun readCString(): String {
+        val start = source.indexOf(0)
+        check(start >= 0L) { "Unterminated binary VDF string in AppInfo for app $appId" }
+        val value = source.readUtf8(start)
+        source.skip(1)
+        return value
+    }
+
+    fun readWorkshopDepot(depth: Int): Int? {
+        while (true) {
+            val type = source.readByte().toInt() and 0xff
+            if (type == 8 || type == 9) return null
+            val name = readCString()
+            when (type) {
+                0 -> {
+                    readWorkshopDepot(depth + 1)?.let { depot -> return depot }
+                }
+
+                2 -> {
+                    val value = source.readIntLe()
+                    if (depth >= 1 && name == "workshopdepot" && value > 0) return value
+                }
+
+                1 -> {
+                    val value = readCString()
+                    if (depth >= 1 && name == "workshopdepot") {
+                        value.toLongOrNull()
+                            ?.takeIf { depot -> depot in 1..Int.MAX_VALUE.toLong() }
+                            ?.let { depot -> return depot.toInt() }
+                    }
+                }
+
+                3, 4, 6 -> source.skip(4)
+                7 -> {
+                    val value = source.readLongLe()
+                    if (depth >= 1 && name == "workshopdepot" && value in 1..Int.MAX_VALUE.toLong()) {
+                        return value.toInt()
+                    }
+                }
+
+                5 -> {
+                    while (true) {
+                        val unit = source.readShortLe()
+                        if (unit.toInt() == 0) break
+                    }
+                }
+
+                else -> throw IllegalStateException(
+                    "Unknown binary VDF type $type at node '$name' in AppInfo for app $appId",
+                )
+            }
+        }
+    }
+
+    return try {
+        readWorkshopDepot(depth = 0)
+    } catch (error: java.io.EOFException) {
+        Log.w(
+            KSTEAM_LOG_TAG,
+            "Truncated binary VDF in AppInfo for app $appId; consumed=${buffer.size - source.size}",
+            error,
+        )
+        null
+    }
+}
 
 internal const val KSTEAM_DEVICE_FRIENDLY_NAME = "WallHub Android"
 internal const val KSTEAM_CLIENT_PACKAGE_VERSION = 1_671_236_931
@@ -1326,7 +1390,6 @@ class KSteamSessionRepository
                 ?: error("Steam returned an empty depot key for depot $depotId")
         }
 
-        @OptIn(ExperimentalSerializationApi::class)
         suspend fun steamWorkshopDepotId(
             client: SteamClient,
             appId: Int,
@@ -1375,22 +1438,15 @@ class KSteamSessionRepository
                 appInfo = requestAppInfo(accessToken)
             }
             val buffer = appInfo?.buffer ?: error("Steam PICS returned no AppInfo for app $appId")
-            val decoded =
-                Vdf {
-                    binaryFormat = true
-                    ignoreUnknownKeys = true
-                    readFirstInt = false
-                }.decodeFromBufferedSource(
-                    deserializer = RootNodeSkipperDeserializationStrategy<PicsWorkshopAppInfo>(),
-                    source = Buffer().write(buffer),
-                )
-            check(decoded.appid == appId) {
-                "Steam PICS returned AppInfo for ${decoded.appid}, expected $appId"
-            }
-            return decoded.depots.workshopdepot
-                .takeIf { depotId -> depotId in 1..Int.MAX_VALUE.toLong() }
-                ?.toInt()
-                ?: error("Steam AppInfo returned no valid Workshop depot for app $appId")
+            return parseWorkshopDepotFromBinaryVdf(buffer, appId)
+                ?: run {
+                    Log.w(
+                        KSTEAM_LOG_TAG,
+                        "Steam AppInfo for app $appId has no Workshop depot; size=${buffer.size} " +
+                            "head=${buffer.substring(0, minOf(16, buffer.size)).hex()}",
+                    )
+                    error("Steam AppInfo returned no valid Workshop depot for app $appId")
+                }
         }
         // ------------------------------------------------------------------
         // Public Workshop RPCs (signed-in or anonymous CM session)
