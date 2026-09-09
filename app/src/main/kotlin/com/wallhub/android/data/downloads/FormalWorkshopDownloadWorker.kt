@@ -24,7 +24,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -175,7 +174,6 @@ class FormalWorkshopDownloadWorker
                         priority = task.queuePosition,
                         limit = downloadPreferences.maxConcurrentDownloads,
                     ) {
-                        contentTransportLease = steamWorkshopContentClient.acquireContentTransportLease()
                         task =
                             persist(
                                 task,
@@ -196,7 +194,11 @@ class FormalWorkshopDownloadWorker
                             val credentialDeferred = async { credentialProvider.resolveContentCredential() }
                             targetDeferred.await() to credentialDeferred.await()
                         }
-                        if (task.credentialMode == DownloadCredentialMode.LEGACY_UNKNOWN.name) {
+                        if (target.fileUrl.isBlank()) {
+                            contentTransportLease = steamWorkshopContentClient.acquireContentTransportLease()
+                        }
+                        val directDownload = target.fileUrl.isNotBlank()
+                        if (!directDownload && task.credentialMode == DownloadCredentialMode.LEGACY_UNKNOWN.name) {
                             persist(
                                 task,
                                 status = DownloadStatus.PAUSED,
@@ -206,6 +208,7 @@ class FormalWorkshopDownloadWorker
                             return@withSlot Result.success()
                         }
                         if (
+                            !directDownload &&
                             task.credentialMode == DownloadCredentialMode.ACCOUNT.name &&
                             (!task.accountName.isNullOrBlank() &&
                                 !task.accountName.equals(credential?.accountName, ignoreCase = true))
@@ -260,6 +263,7 @@ class FormalWorkshopDownloadWorker
                                 task,
                                 title = target.title,
                                 type = target.contentTypeHint.toWorkshopType().name,
+                                previewUrl = target.previewUrl.takeIf(String::isNotBlank) ?: task.previewUrl,
                                 appId = target.appId,
                                 contentManifestId = target.contentManifestId,
                                 stagingDirectory = resolvedDirectory.absolutePath,
@@ -546,6 +550,7 @@ class FormalWorkshopDownloadWorker
             previous: FormalTaskRecordEntity,
             title: String = previous.title,
             type: String = previous.type,
+            previewUrl: String? = previous.previewUrl,
             appId: Int = previous.appId,
             contentManifestId: Long = previous.contentManifestId,
             stagingDirectory: String? = previous.stagingDirectory,
@@ -583,6 +588,7 @@ class FormalWorkshopDownloadWorker
                 previous.copy(
                     title = title,
                     type = type,
+                    previewUrl = previewUrl,
                     appId = appId,
                     contentManifestId = contentManifestId,
                     stagingDirectory = stagingDirectory,

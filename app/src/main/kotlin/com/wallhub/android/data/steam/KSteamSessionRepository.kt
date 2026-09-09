@@ -18,6 +18,9 @@ import bruhcollective.itaysonlab.ksteam.network.CMClientState
 import bruhcollective.itaysonlab.ksteam.persistence.MemoryPersistenceDriver
 import bruhcollective.itaysonlab.ksteam.platform.DeviceInformation
 import bruhcollective.itaysonlab.ksteam.util.executeSteam
+import bruhcollective.itaysonlab.kxvdf.RootNodeSkipperDeserializationStrategy
+import bruhcollective.itaysonlab.kxvdf.Vdf
+import bruhcollective.itaysonlab.kxvdf.decodeFromBufferedSource
 import com.wallhub.android.R
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.DiagnosticEvent
@@ -73,11 +76,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -85,12 +88,21 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.Serializable
+import okio.Buffer
 import okio.ByteString.Companion.decodeHex
 import okio.ByteString.Companion.toByteString
 import okio.Path.Companion.toPath
 import steam.enums.EAuthTokenPlatformType
+import steam.messages.clientserver_appinfo.CMsgClientPICSAccessTokenRequest
+import steam.messages.clientserver_appinfo.CMsgClientPICSAccessTokenResponse
+import steam.messages.clientserver_appinfo.CMsgClientPICSProductInfoRequest
+import steam.messages.clientserver_appinfo.CMsgClientPICSProductInfoResponse
 import steam.webui.common.CMsgClientLogon
 import steam.webui.common.CMsgClientLogonResponse
+import steam.webui.player.CPlayer_GetOwnedGames_Request
+import steam.webui.player.CPlayer_GetPlayerLinkDetails_Request
 import steam.webui.publishedfile.CPublishedFile_AddAppRelationship_Request
 import steam.webui.publishedfile.CPublishedFile_AreFilesInSubscriptionList_Request
 import steam.webui.publishedfile.CPublishedFile_GetAppRelationships_Request
@@ -98,8 +110,17 @@ import steam.webui.publishedfile.CPublishedFile_GetUserFiles_Request
 import steam.webui.publishedfile.CPublishedFile_RemoveAppRelationship_Request
 import steam.webui.publishedfile.CPublishedFile_Subscribe_Request
 import steam.webui.publishedfile.CPublishedFile_Unsubscribe_Request
-import steam.webui.player.CPlayer_GetOwnedGames_Request
-import steam.webui.player.CPlayer_GetPlayerLinkDetails_Request
+
+@Serializable
+private data class PicsWorkshopAppInfo(
+    val appid: Int,
+    val depots: PicsWorkshopDepots,
+)
+
+@Serializable
+private data class PicsWorkshopDepots(
+    val workshopdepot: Long,
+)
 
 internal const val KSTEAM_DEVICE_FRIENDLY_NAME = "WallHub Android"
 internal const val KSTEAM_CLIENT_PACKAGE_VERSION = 1_671_236_931
@@ -1303,6 +1324,73 @@ class KSteamSessionRepository
             }
             return response.depot_encryption_key?.toByteArray()
                 ?: error("Steam returned an empty depot key for depot $depotId")
+        }
+
+        @OptIn(ExperimentalSerializationApi::class)
+        suspend fun steamWorkshopDepotId(
+            client: SteamClient,
+            appId: Int,
+        ): Int {
+            suspend fun requestAppInfo(accessToken: Long): CMsgClientPICSProductInfoResponse.AppInfo? =
+                client
+                    .awaitMultipleProto(
+                        packet =
+                            SteamPacket.newProto(
+                                messageId = EMsg.k_EMsgClientPICSProductInfoRequest,
+                                payload =
+                                    CMsgClientPICSProductInfoRequest(
+                                        apps =
+                                            listOf(
+                                                CMsgClientPICSProductInfoRequest.AppInfo(
+                                                    appid = appId,
+                                                    access_token = accessToken,
+                                                ),
+                                            ),
+                                        meta_data_only = false,
+                                        single_response = true,
+                                    ),
+                            ),
+                        adapter = CMsgClientPICSProductInfoResponse.ADAPTER,
+                        stopIf = { response -> response.response_pending != true },
+                    ).asSequence()
+                    .flatMap { response -> response.apps.asSequence() }
+                    .firstOrNull { app -> app.appid == appId }
+
+            var appInfo = requestAppInfo(accessToken = 0L)
+            if (appInfo?.missing_token == true) {
+                val tokenResponse =
+                    client.awaitProto(
+                        packet =
+                            SteamPacket.newProto(
+                                messageId = EMsg.k_EMsgClientPICSAccessTokenRequest,
+                                payload = CMsgClientPICSAccessTokenRequest(appids = listOf(appId)),
+                            ),
+                        adapter = CMsgClientPICSAccessTokenResponse.ADAPTER,
+                    )
+                val accessToken =
+                    tokenResponse.app_access_tokens
+                        .firstOrNull { token -> token.appid == appId }
+                        ?.access_token
+                        ?: error("Steam PICS returned no access token for app $appId")
+                appInfo = requestAppInfo(accessToken)
+            }
+            val buffer = appInfo?.buffer ?: error("Steam PICS returned no AppInfo for app $appId")
+            val decoded =
+                Vdf {
+                    binaryFormat = true
+                    ignoreUnknownKeys = true
+                    readFirstInt = false
+                }.decodeFromBufferedSource(
+                    deserializer = RootNodeSkipperDeserializationStrategy<PicsWorkshopAppInfo>(),
+                    source = Buffer().write(buffer),
+                )
+            check(decoded.appid == appId) {
+                "Steam PICS returned AppInfo for ${decoded.appid}, expected $appId"
+            }
+            return decoded.depots.workshopdepot
+                .takeIf { depotId -> depotId in 1..Int.MAX_VALUE.toLong() }
+                ?.toInt()
+                ?: error("Steam AppInfo returned no valid Workshop depot for app $appId")
         }
         // ------------------------------------------------------------------
         // Public Workshop RPCs (signed-in or anonymous CM session)

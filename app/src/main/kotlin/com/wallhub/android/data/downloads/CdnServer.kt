@@ -41,12 +41,10 @@ internal fun CdnServer.depotManifestUrl(
     depotId: Int,
     manifestId: Long,
     manifestRequestCode: Long,
-): String =
-    if (manifestRequestCode > 0L) {
-        "depot/$depotId/manifest/$manifestId/5/$manifestRequestCode"
-    } else {
-        "depot/$depotId/manifest/$manifestId/5"
-    }
+): String {
+    require(manifestRequestCode > 0L) { "Steam manifest request code must be positive" }
+    return "depot/$depotId/manifest/$manifestId/5/$manifestRequestCode"
+}
 
 /** Magic-delimited manifest container constants (SteamDatabase depot manifest format). */
 internal object DepotManifestContainer {

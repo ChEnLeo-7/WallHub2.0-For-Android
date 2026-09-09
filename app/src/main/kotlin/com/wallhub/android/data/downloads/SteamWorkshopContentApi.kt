@@ -23,10 +23,8 @@ internal data class WorkshopContentTarget(
     val contentTypeHint: String?,
     val fileUrl: String = "",
     val rawFileName: String = "",
-) {
-    val depotId: Int
-        get() = appId
-}
+    val previewUrl: String = "",
+)
 
 internal class SteamWorkshopContentApi(
     clientBuilder: OkHttpClient.Builder,
@@ -139,6 +137,7 @@ internal class SteamWorkshopContentApi(
                 },
             fileUrl = fileUrl,
             rawFileName = detail.jsonString("filename"),
+            previewUrl = detail.jsonString("preview_url"),
         )
     }
 

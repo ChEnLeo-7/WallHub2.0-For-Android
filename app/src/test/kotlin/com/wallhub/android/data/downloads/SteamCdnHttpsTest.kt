@@ -3,11 +3,12 @@ package com.wallhub.android.data.downloads
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class SteamCdnHttpsTest {
     @Test
-    fun optionalCdnRouteUsesSecureFallback() {
+    fun advertisedHttpRouteUsesPort80() {
         val url =
             buildSteamCdnCommand(
                 server = CdnServer("cdn.example.test", "cdn.example.test", 80, false),
@@ -15,36 +16,21 @@ class SteamCdnHttpsTest {
                 query = null,
             )
 
-        assertEquals("https", url.scheme)
-        assertEquals(443, url.port)
-    }
-
-    @Test
-    fun insecureTransportBuildsHttpUrlOnTheAdvertisedPort() {
-        val url =
-            buildSteamCdnCommand(
-                server = CdnServer("cdn.example.test", "cdn.example.test", 80, false),
-                command = "depot/1/chunk/abc",
-                query = "token=abc",
-                insecure = true,
-            )
-
         assertEquals("http", url.scheme)
         assertEquals(80, url.port)
     }
 
     @Test
-    fun insecureTransportUsesPort80WhenServerAdvertisesHttps() {
+    fun advertisedHttpsRouteUsesPort443() {
         val url =
             buildSteamCdnCommand(
                 server = CdnServer("cdn.example.test", "cdn.example.test", 443, true),
                 command = "depot/1/chunk/abc",
-                query = null,
-                insecure = true,
+                query = "token=abc",
             )
 
-        assertEquals("http", url.scheme)
-        assertEquals(80, url.port)
+        assertEquals("https", url.scheme)
+        assertEquals(443, url.port)
     }
 
     @Test
@@ -91,6 +77,40 @@ class SteamCdnHttpsTest {
         assertEquals("proxy-vhost.example.test", url.host)
         assertEquals("/proxy/origin-vhost.example.test/depot/1/chunk/abcd", url.encodedPath)
         assertEquals("auth=xyz", url.query)
+    }
+
+    @Test
+    fun cdnProxyUsesItsAdvertisedHttpTransport() {
+        val url =
+            buildSteamCdnCommand(
+                server = CdnServer("origin.example.test", "origin-vhost.example.test", 443, true),
+                command = "depot/1/chunk/abcd",
+                query = null,
+                proxyServer =
+                    CdnServer(
+                        host = "proxy.example.test",
+                        vHost = "proxy-vhost.example.test",
+                        port = 80,
+                        https = false,
+                        type = "SteamCache",
+                        useAsProxy = true,
+                        proxyRequestPathTemplate = "/proxy/%host%%path%",
+                    ),
+            )
+
+        assertEquals("http", url.scheme)
+        assertEquals(80, url.port)
+        assertEquals("proxy-vhost.example.test", url.host)
+    }
+
+    @Test
+    fun manifestUrlRequiresPositiveRequestCode() {
+        val server = CdnServer("cdn.example.test", "cdn.example.test", 443, true)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            server.depotManifestUrl(depotId = 20, manifestId = 30L, manifestRequestCode = 0L)
+        }
+        assertEquals("depot/20/manifest/30/5/40", server.depotManifestUrl(20, 30L, 40L))
     }
 
     @Test
@@ -150,6 +170,7 @@ class SteamCdnHttpsTest {
         val manifest = parseDepotManifest(container)
 
         assertEquals(431960, manifest.depotId)
+        assertEquals(7L, manifest.manifestGid)
         assertEquals("video.mp4", manifest.files.single().fileName)
         assertEquals(4, manifest.files.single().chunks.single().uncompressedLength)
     }
