@@ -61,7 +61,10 @@ class HybridDepotDownloader internal constructor(
                     if (decoded.isSuccess) recordRustSuccess()
                     return decoded
                 }
-                .onFailure { error -> recordRustFailure("decodeChunk", error) }
+                .onFailure { error ->
+                    recordRustFailure("decodeChunk", error)
+                    return Result.failure(error)
+                }
         }
         return Result.failure(
             IllegalStateException("Rust depot engine is not usable for chunk decode"),

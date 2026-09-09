@@ -1483,7 +1483,12 @@ internal suspend fun decodeAndVerifyChunk(
     check(encrypted.size == chunk.compressedLength) { "Steam chunk compressed length mismatch" }
     val decoded = decode(encrypted)
     check(decoded.size == chunk.uncompressedLength) { "Steam chunk decompressed length mismatch" }
-    check(steamAdler32(decoded) == chunk.checksum) { "Steam chunk checksum mismatch" }
+    val actualChecksum = steamAdler32(decoded)
+    check(actualChecksum == chunk.checksum) {
+        "Steam chunk checksum mismatch: expected=${chunk.checksum}, actual=$actualChecksum, " +
+            "chunkId=${chunk.chunkId?.joinToString("") { "%02x".format(it) }}, " +
+            "compressed=${chunk.compressedLength}, decoded=${decoded.size}"
+    }
     return decoded
 }
 
