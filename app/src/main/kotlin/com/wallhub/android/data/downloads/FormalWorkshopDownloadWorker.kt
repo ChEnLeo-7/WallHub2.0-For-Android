@@ -249,7 +249,7 @@ class FormalWorkshopDownloadWorker
                             "Invalid Steam download staging directory"
                         }
                         val manifestChanged =
-                            task.contentManifestId > 0L &&
+                            task.contentManifestId != 0L &&
                                 task.contentManifestId != target.contentManifestId
                         if (manifestChanged && resolvedDirectory.exists()) {
                             resolvedDirectory.deleteRecursively()

@@ -117,7 +117,7 @@ internal class SteamWorkshopContentApi(
         }
         val manifestId = manifestIdFromDetails(body)
         val fileUrl = detail.jsonString("file_url")
-        check(manifestId > 0L || fileUrl.isNotBlank()) {
+        check(manifestId != 0L || fileUrl.isNotBlank()) {
             "This Workshop item has neither a content manifest nor a direct file URL"
         }
         return WorkshopContentTarget(

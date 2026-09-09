@@ -276,7 +276,7 @@ internal class SteamContentDownloader
         sessionRepository.withContentTransportActive {
             withContext(Dispatchers.IO) {
                 require(target.appId > 0) { "Invalid Steam App ID" }
-                require(target.contentManifestId > 0L) { "Invalid Steam manifest ID" }
+                require(target.contentManifestId != 0L) { "Invalid Steam manifest ID" }
                 checkDownloadControl(control)
                 val normalizedOptions = options.normalized()
                 var publishedBytes = 0L
@@ -437,7 +437,7 @@ internal class SteamContentDownloader
     ): SteamContentVideoStream =
         withContext(Dispatchers.IO) {
             require(target.appId > 0) { "Invalid Steam App ID" }
-            require(target.contentManifestId > 0L) { "Invalid Steam manifest ID" }
+            require(target.contentManifestId != 0L) { "Invalid Steam manifest ID" }
             val normalizedOptions = options.normalized()
             val contentTransportLease = sessionRepository.acquireContentTransportLease()
             var httpClient: okhttp3.OkHttpClient? = null
