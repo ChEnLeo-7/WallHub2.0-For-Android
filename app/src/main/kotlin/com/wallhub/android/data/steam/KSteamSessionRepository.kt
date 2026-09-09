@@ -115,6 +115,11 @@ import steam.webui.publishedfile.CPublishedFile_Unsubscribe_Request
 private const val KSTEAM_LOG_TAG = "WallHubSteamSession"
 
 @Serializable
+private data class PicsWorkshopAppRoot(
+    val appinfo: PicsWorkshopAppInfo,
+)
+
+@Serializable
 private data class PicsWorkshopAppInfo(
     val appid: Long? = null,
     val depots: PicsWorkshopDepots,
@@ -128,7 +133,8 @@ private data class PicsWorkshopDepots(
 /**
  * Reads `depots/workshopdepot` from a PICS AppInfo buffer. Steam serves appinfo as TEXT
  * KeyValues with one trailing null byte; only package info uses binary VDF (SteamKit2
- * parses appinfo with KeyValue.ReadAsText for exactly this reason).
+ * parses appinfo with KeyValue.ReadAsText for exactly this reason). The root node is the
+ * app ID and the real tree lives under its `appinfo` child.
  */
 @OptIn(ExperimentalSerializationApi::class)
 private fun parseWorkshopDepotFromAppInfo(
@@ -141,13 +147,14 @@ private fun parseWorkshopDepotFromAppInfo(
         } else {
             buffer
         }
-    val appInfo =
+    val root =
         Vdf {
             ignoreUnknownKeys = true
         }.decodeFromBufferedSource(
-            deserializer = RootNodeSkipperDeserializationStrategy<PicsWorkshopAppInfo>(),
+            deserializer = RootNodeSkipperDeserializationStrategy<PicsWorkshopAppRoot>(),
             source = Buffer().write(trimmed),
         )
+    val appInfo = root.appinfo
     appInfo.appid
         ?.takeIf { it != 0L && it != appId.toLong() }
         ?.let { decoded ->
