@@ -17,7 +17,6 @@ import java.nio.file.StandardCopyOption
 import java.util.PriorityQueue
 import java.util.concurrent.ConcurrentHashMap
 import java.util.UUID
-import java.util.zip.Adler32
 
 internal class SteamVideoStreamCache(
     rootDirectory: File,
@@ -505,18 +504,8 @@ internal class SteamVideoStreamCache(
         state.evictionObservers.values.forEach { observer -> runCatching { observer(file) } }
     }
 
-    private fun calculateChecksum(file: File): Int {
-        val checksum = Adler32()
-        file.inputStream().buffered().use { input ->
-            val buffer = ByteArray(CHECKSUM_BUFFER_SIZE)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                if (read > 0) checksum.update(buffer, 0, read)
-            }
-        }
-        return checksum.value.toInt()
-    }
+    private fun calculateChecksum(file: File): Int =
+        file.inputStream().buffered().use { input -> steamAdler32(input) }
 
     private fun moveReplacing(
         source: File,
@@ -576,7 +565,6 @@ internal class SteamVideoStreamCache(
         // Keep one eviction-band of headroom for older videos and chunk-boundary
         // overshoot. With the default 512 MiB cache this leaves 409.6 MiB, enough
         // for the playback window of a high-bitrate source without restoring the old 256 MiB cap.
-        private const val CHECKSUM_BUFFER_SIZE = 64 * 1024
         private const val MIN_QUEUE_COMPACT_SIZE = 64
         private const val TOUCH_INTERVAL_MS = 2_000L
         private const val CHUNK_LOCK_STRIPES = 64
