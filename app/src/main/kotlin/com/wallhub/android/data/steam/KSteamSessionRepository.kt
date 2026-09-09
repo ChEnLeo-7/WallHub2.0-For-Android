@@ -19,9 +19,6 @@ import bruhcollective.itaysonlab.ksteam.network.CMClientState
 import bruhcollective.itaysonlab.ksteam.persistence.MemoryPersistenceDriver
 import bruhcollective.itaysonlab.ksteam.platform.DeviceInformation
 import bruhcollective.itaysonlab.ksteam.util.executeSteam
-import bruhcollective.itaysonlab.kxvdf.RootNodeSkipperDeserializationStrategy
-import bruhcollective.itaysonlab.kxvdf.Vdf
-import bruhcollective.itaysonlab.kxvdf.decodeFromBufferedSource
 import com.wallhub.android.R
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.DiagnosticEvent
@@ -89,8 +86,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.Serializable
 import okio.Buffer
 import okio.ByteString.Companion.decodeHex
 import okio.ByteString.Companion.toByteString
@@ -114,57 +109,97 @@ import steam.webui.publishedfile.CPublishedFile_Unsubscribe_Request
 
 private const val KSTEAM_LOG_TAG = "WallHubSteamSession"
 
-@Serializable
-private data class PicsWorkshopAppRoot(
-    val appinfo: PicsWorkshopAppInfo,
-)
-
-@Serializable
-private data class PicsWorkshopAppInfo(
-    val appid: Long? = null,
-    val depots: PicsWorkshopDepots,
-)
-
-@Serializable
-private data class PicsWorkshopDepots(
-    val workshopdepot: Long? = null,
-)
-
 /**
  * Reads `depots/workshopdepot` from a PICS AppInfo buffer. Steam serves appinfo as TEXT
- * KeyValues with one trailing null byte; only package info uses binary VDF (SteamKit2
- * parses appinfo with KeyValue.ReadAsText for exactly this reason). The root node is the
- * app ID and the real tree lives under its `appinfo` child.
+ * KeyValues whose root node name is the app ID (with one trailing null byte); only
+ * package info uses binary VDF (SteamKit2 parses appinfo with KeyValue.ReadAsText for
+ * exactly this reason). The value is accepted either directly under the root or under
+ * an `appinfo` wrapper node.
  */
-@OptIn(ExperimentalSerializationApi::class)
 private fun parseWorkshopDepotFromAppInfo(
     buffer: okio.ByteString,
     appId: Int,
 ): Int? {
-    val trimmed =
-        if (buffer.size > 0 && buffer[buffer.size - 1] == 0.toByte()) {
-            buffer.substring(0, buffer.size - 1)
-        } else {
-            buffer
+    val tokens = tokenizeTextVdf(buffer, appId)
+    fun findSection(from: Int, name: String, to: Int): Int? {
+        var index = from
+        while (index + 1 < to) {
+            if (tokens[index] == name && tokens[index + 1] == "{") {
+                return index + 1
+            }
+            index += 1
         }
-    val root =
-        Vdf {
-            ignoreUnknownKeys = true
-        }.decodeFromBufferedSource(
-            deserializer = RootNodeSkipperDeserializationStrategy<PicsWorkshopAppRoot>(),
-            source = Buffer().write(trimmed),
-        )
-    val appInfo = root.appinfo
-    appInfo.appid
-        ?.takeIf { it != 0L && it != appId.toLong() }
-        ?.let { decoded ->
-            check(decoded == appId.toLong()) {
-                "Steam PICS returned AppInfo for $decoded, expected $appId"
+        return null
+    }
+
+    fun readIntValue(openBrace: Int): Long? {
+        var index = openBrace + 1
+        var depth = 1
+        while (index < tokens.size && depth > 0) {
+            when (tokens[index]) {
+                "{" -> depth += 1
+                "}" -> depth -= 1
+                "workshopdepot" -> if (depth == 1 && index + 1 < tokens.size) {
+                    return tokens[index + 1].toLongOrNull()
+                }
+            }
+            index += 1
+        }
+        return null
+    }
+
+    val section =
+        findSection(0, "depots", tokens.size)
+            ?: findSection(0, "appinfo", tokens.size)
+                ?.let { appInfoBrace -> findSection(appInfoBrace, "depots", tokens.size) }
+    val depot = section?.let(::readIntValue) ?: return null
+    return depot
+        .takeIf { candidate -> candidate in 1..Int.MAX_VALUE.toLong() }
+        ?.toInt()
+}
+
+/** Splits text KeyValues into quoted-token boundaries used by [parseWorkshopDepotFromAppInfo]. */
+private fun tokenizeTextVdf(
+    buffer: okio.ByteString,
+    appId: Int,
+): List<String> {
+    val source = Buffer().write(buffer)
+    val tokens = mutableListOf<String>()
+    val current = StringBuilder()
+    var quoted = false
+
+    fun finishToken() {
+        if (current.isNotEmpty() || quoted) {
+            tokens += current.toString()
+            current.clear()
+            quoted = false
+        }
+    }
+
+    while (!source.exhausted()) {
+        when (val character = source.readUtf8CodePoint()) {
+            '"'.code -> {
+                if (quoted) finishToken() else {
+                    finishToken()
+                    quoted = true
+                }
+            }
+
+            '{'.code, '}'.code -> {
+                finishToken()
+                tokens += character.toChar().toString()
+            }
+
+            '\n'.code, '\r'.code, '\t'.code, ' '.code -> finishToken()
+
+            else -> {
+                current.appendCodePoint(character)
             }
         }
-    return appInfo.depots.workshopdepot
-        ?.takeIf { depot -> depot in 1..Int.MAX_VALUE.toLong() }
-        ?.toInt()
+    }
+    finishToken()
+    check(tokens.isNotEmpty()) { "Steam AppInfo for app $appId is empty" }
+    return tokens
 }
 
 internal const val KSTEAM_DEVICE_FRIENDLY_NAME = "WallHub Android"
