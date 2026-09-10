@@ -29,6 +29,7 @@ fi
 # The LAN worker keeps its checkout between jobs; remove stale ABI folders before
 # copying the four libraries for this build.
 rm -rf "$JNI_LIBS"
+rm -rf "$SCRIPT_DIR/../app/build"
 
 case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*)
