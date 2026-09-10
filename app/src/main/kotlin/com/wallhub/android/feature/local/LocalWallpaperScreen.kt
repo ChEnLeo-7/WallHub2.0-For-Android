@@ -54,8 +54,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.DividerDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -97,6 +95,8 @@ import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
+import com.wallhub.android.core.designsystem.WallHubDropdownMenu
+import com.wallhub.android.core.designsystem.WallHubDropdownMenuItem
 import com.wallhub.android.core.designsystem.WallHubToolbarSearchTitle
 import com.wallhub.android.core.format.formatByteSize
 import com.wallhub.android.core.designsystem.rememberWallHubDirectionalCollapseConnection
@@ -445,11 +445,11 @@ private fun LocalWallpaperScreen(
                                 contentDescription = stringResource(R.string.local_more_selection_actions),
                             )
                         }
-                        DropdownMenu(
+                        WallHubDropdownMenu(
                             expanded = selectionMenuExpanded,
                             onDismissRequest = { selectionMenuExpanded = false },
                         ) {
-                            DropdownMenuItem(
+                            WallHubDropdownMenuItem(
                                 text = { Text(stringResource(R.string.local_add_tag)) },
                                 leadingIcon = {
                                     Icon(imageVector = Icons.Outlined.Edit, contentDescription = null)
@@ -459,7 +459,7 @@ private fun LocalWallpaperScreen(
                                     tagDialogVisible = true
                                 },
                             )
-                            DropdownMenuItem(
+                            WallHubDropdownMenuItem(
                                 text = { Text(stringResource(R.string.local_toggle_favorites)) },
                                 leadingIcon = {
                                     Icon(imageVector = Icons.Outlined.FavoriteBorder, contentDescription = null)
@@ -833,11 +833,11 @@ private fun LocalWorkspaceMenu(
                 contentDescription = stringResource(R.string.local_more_actions),
             )
         }
-        DropdownMenu(
+        WallHubDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
-            DropdownMenuItem(
+            WallHubDropdownMenuItem(
                 text = { Text(stringResource(R.string.local_choose_scan_directory)) },
                 leadingIcon = {
                     Icon(imageVector = Icons.Outlined.FolderOpen, contentDescription = null)
@@ -848,7 +848,7 @@ private fun LocalWorkspaceMenu(
                 },
             )
             if (hasCustomSource) {
-                DropdownMenuItem(
+                WallHubDropdownMenuItem(
                     text = { Text(stringResource(R.string.local_remove_custom_directory)) },
                     leadingIcon = {
                         Icon(imageVector = Icons.Outlined.Cancel, contentDescription = null)
@@ -859,7 +859,7 @@ private fun LocalWorkspaceMenu(
                     },
                 )
             }
-            DropdownMenuItem(
+            WallHubDropdownMenuItem(
                 text = { Text(stringResource(R.string.local_manage_tags)) },
                 leadingIcon = {
                     Icon(imageVector = Icons.Outlined.Edit, contentDescription = null)

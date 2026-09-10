@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
@@ -418,6 +419,7 @@ fun DownloadsRoute(
     onOpenSettings: () -> Unit = {},
     onBack: () -> Unit = {},
     onPlayVideo: (String) -> Unit = {},
+    onOpenDetail: (Long) -> Unit = {},
     viewModel: DownloadsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -430,6 +432,7 @@ fun DownloadsRoute(
         onAction = viewModel::onAction,
         onBack = onBack,
         onOpenSettings = onOpenSettings,
+        onOpenDetail = onOpenDetail,
     )
 }
 
@@ -489,6 +492,7 @@ fun DownloadsScreen(
     onAction: (DownloadsAction) -> Unit,
     onOpenSettings: () -> Unit = {},
     onBack: () -> Unit = {},
+    onOpenDetail: (Long) -> Unit = {},
 ) {
     WallHubPageScaffold(
         title = stringResource(R.string.downloads_title),
@@ -523,6 +527,7 @@ fun DownloadsScreen(
             state = state,
             onAction = onAction,
             showFilters = true,
+            onOpenDetail = onOpenDetail,
             modifier = Modifier.padding(padding),
         )
     }
@@ -534,6 +539,7 @@ fun DownloadsContent(
     state: DownloadsUiState,
     onAction: (DownloadsAction) -> Unit,
     showFilters: Boolean,
+    onOpenDetail: (Long) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -569,6 +575,7 @@ fun DownloadsContent(
                         tasks = pageTasks,
                         onAction = { taskId, action -> onAction(DownloadsAction.RequestTaskAction(taskId, action)) },
                         onPlayVideo = { taskId -> onAction(DownloadsAction.PlayVideo(taskId)) },
+                        onOpenDetail = onOpenDetail,
                         onReorder = { taskIds -> onAction(DownloadsAction.ReorderTasks(taskIds)) },
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -587,6 +594,7 @@ fun DownloadsContent(
                     onAction(DownloadsAction.RequestTaskAction(taskId, action))
                 },
                 onPlayVideo = { taskId -> onAction(DownloadsAction.PlayVideo(taskId)) },
+                onOpenDetail = onOpenDetail,
                 onReorder = { taskIds -> onAction(DownloadsAction.ReorderTasks(taskIds)) },
                 modifier = Modifier.fillMaxSize(),
             )
@@ -599,6 +607,7 @@ private fun ReorderableDownloadList(
     tasks: List<DownloadTask>,
     onAction: (String, DownloadAction) -> Unit,
     onPlayVideo: (String) -> Unit,
+    onOpenDetail: (Long) -> Unit,
     onReorder: (List<String>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -719,6 +728,7 @@ private fun ReorderableDownloadList(
                 task = task,
                 onAction = { action -> onAction(task.id, action) },
                 onPlayVideo = { onPlayVideo(task.id) },
+                onOpenDetail = { onOpenDetail(task.workshopId) },
                 modifier = dragModifier,
             )
         }
@@ -730,6 +740,7 @@ private fun DownloadTaskCard(
     task: DownloadTask,
     onAction: (DownloadAction) -> Unit,
     onPlayVideo: () -> Unit,
+    onOpenDetail: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val showProgress =
@@ -751,7 +762,13 @@ private fun DownloadTaskCard(
             else -> MaterialTheme.colorScheme.primary
         }
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clickable(
+                    enabled = task.status == DownloadStatus.COMPLETED,
+                    onClick = onOpenDetail,
+                ),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         tonalElevation = DOWNLOAD_CARD_TONAL_ELEVATION,

@@ -25,8 +25,6 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.PersonSearch
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -63,6 +61,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.wallhub.android.R
+import com.wallhub.android.core.designsystem.WallHubDropdownMenu
+import com.wallhub.android.core.designsystem.WallHubDropdownMenuItem
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.model.DiscoverFeedbackRepository
 import com.wallhub.android.core.model.DiscoverSavedQuery
@@ -402,9 +402,9 @@ private fun DiscoverSortMenu(
                 Text(stringResource(selected.labelRes))
                 Icon(Icons.Outlined.KeyboardArrowDown, null)
             }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            WallHubDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { option ->
-                    DropdownMenuItem(
+                    WallHubDropdownMenuItem(
                         text = { Text(stringResource(option.labelRes)) },
                         onClick = {
                             expanded = false

@@ -5,8 +5,6 @@ import androidx.compose.material.icons.outlined.FilterAlt
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -34,12 +32,12 @@ fun WorkshopTypeFilterMenu(
                 contentDescription = contentDescription,
             )
         }
-        DropdownMenu(
+        WallHubDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
             FilterableWorkshopTypes.forEach { type ->
-                DropdownMenuItem(
+                WallHubDropdownMenuItem(
                     text = { Text(typeLabel(type)) },
                     leadingIcon = {
                         Checkbox(

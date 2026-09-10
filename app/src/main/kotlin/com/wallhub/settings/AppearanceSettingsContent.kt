@@ -29,7 +29,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -61,6 +60,8 @@ import androidx.compose.ui.unit.dp
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubAnimatedSelectionCheck
 import com.wallhub.android.core.designsystem.WallHubColorTokens
+import com.wallhub.android.core.designsystem.WallHubDropdownMenu
+import com.wallhub.android.core.designsystem.WALLHUB_DROPDOWN_ITEM_HEIGHT
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.wallHubPreviewColor
@@ -488,14 +489,9 @@ private fun ExposedPreferenceDropdown(
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
             }
         }
-        DropdownMenu(
+        WallHubDropdownMenu(
             expanded = expanded,
             onDismissRequest = { onExpandedChange(false) },
-            modifier = Modifier.width(SETTINGS_DROPDOWN_WIDTH),
-            shape = RoundedCornerShape(16.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            tonalElevation = WallHubSpacing.none,
-            shadowElevation = SETTINGS_DROPDOWN_MENU_ELEVATION,
             content = content,
         )
     }
@@ -529,7 +525,7 @@ private fun ExpressiveSettingMenuItem(
     Row(
         modifier =
             Modifier
-                .padding(horizontal = 4.dp, vertical = 1.dp)
+                .padding(horizontal = 4.dp)
                 .fillMaxWidth()
                 .clip(shape)
                 .background(
@@ -538,7 +534,7 @@ private fun ExpressiveSettingMenuItem(
                     selected = selected,
                     role = Role.RadioButton,
                     onClick = onClick,
-                ).heightIn(min = 44.dp)
+                ).height(WALLHUB_DROPDOWN_ITEM_HEIGHT)
                 .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -972,7 +968,6 @@ internal const val SETTINGS_PAGE_EXIT_OFFSET_DIVISOR = 18
 internal val SETTINGS_CONTENT_MAX_WIDTH = 760.dp
 internal val SETTINGS_SHEET_CONTENT_MAX_HEIGHT = 560.dp
 internal val SETTINGS_DROPDOWN_WIDTH = 176.dp
-internal val SETTINGS_DROPDOWN_MENU_ELEVATION = 3.dp
 internal val STEAM_DOH_ITEM_HEIGHT = 84.dp
 internal val STEAM_DOH_ITEM_SPACING = WallHubSpacing.xs
 internal val SETTINGS_PAGE_EASING = CubicBezierEasing(0.2f, 0f, 0f, 1f)

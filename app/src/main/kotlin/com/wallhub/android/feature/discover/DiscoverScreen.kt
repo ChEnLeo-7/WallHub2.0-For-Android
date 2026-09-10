@@ -43,8 +43,6 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
@@ -78,6 +76,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.wallhub.android.R
+import com.wallhub.android.core.designsystem.WallHubDropdownMenu
+import com.wallhub.android.core.designsystem.WallHubDropdownMenuItem
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.localizedAuthor
 import com.wallhub.android.core.designsystem.localizedTitle
@@ -509,42 +509,37 @@ private fun DiscoverContentMenu(
                 )
             }
         }
-        DropdownMenu(
+        WallHubDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
             offset = DpOffset(0.dp, 8.dp),
-            modifier = Modifier.width(264.dp),
-            shape = MaterialTheme.shapes.extraLarge,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 3.dp,
-            shadowElevation = 6.dp,
         ) {
-            DropdownMenuItem(
+            WallHubDropdownMenuItem(
                 text = { Text(stringResource(R.string.discover_following)) },
                 leadingIcon = { DiscoverContentMenuIcon(Icons.Outlined.Bookmarks) },
                 onClick = {
                     expanded = false
                     onOpenFollowing()
                 },
-                modifier = Modifier.padding(horizontal = 8.dp).clip(MaterialTheme.shapes.large).heightIn(min = 56.dp),
+                modifier = Modifier.padding(horizontal = 8.dp).clip(MaterialTheme.shapes.large),
             )
-            DropdownMenuItem(
+            WallHubDropdownMenuItem(
                 text = { Text(stringResource(R.string.discover_friend_favorites)) },
                 leadingIcon = { DiscoverContentMenuIcon(Icons.Outlined.FavoriteBorder) },
                 onClick = {
                     expanded = false
                     onOpenFriendFavorites()
                 },
-                modifier = Modifier.padding(horizontal = 8.dp).clip(MaterialTheme.shapes.large).heightIn(min = 56.dp),
+                modifier = Modifier.padding(horizontal = 8.dp).clip(MaterialTheme.shapes.large),
             )
-            DropdownMenuItem(
+            WallHubDropdownMenuItem(
                 text = { Text(stringResource(R.string.discover_friend_created)) },
                 leadingIcon = { DiscoverContentMenuIcon(Icons.Outlined.Group) },
                 onClick = {
                     expanded = false
                     onOpenFriendCreated()
                 },
-                modifier = Modifier.padding(horizontal = 8.dp).clip(MaterialTheme.shapes.large).heightIn(min = 56.dp),
+                modifier = Modifier.padding(horizontal = 8.dp).clip(MaterialTheme.shapes.large),
             )
         }
     }

@@ -166,6 +166,7 @@ internal fun WallHubNavHost(
             DownloadsRoute(
                 onBack = { navController.popBackStack() },
                 onPlayVideo = { navController.navigate(LocalVideoPlayerDestination(it)) },
+                onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
             )
         }
         composable<LibraryDestination> {

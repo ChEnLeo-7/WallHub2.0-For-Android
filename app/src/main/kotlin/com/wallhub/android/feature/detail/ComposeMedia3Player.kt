@@ -4,6 +4,7 @@ package com.wallhub.android.feature.detail
 
 import android.graphics.drawable.ColorDrawable
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.LayoutInflater
@@ -52,6 +53,8 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -80,6 +83,8 @@ internal fun ComposeMedia3Player(
     var holdDoubleSpeedActive by remember(player) { mutableStateOf(false) }
     var holdSpeedFrame by remember(player) { mutableStateOf<Bitmap?>(null) }
     var holdSpeed by remember(player) { mutableStateOf(2f) }
+    var holdIndicatorBounds by remember(player) { mutableStateOf<Rect?>(null) }
+    val holdIndicatorBoundsState = rememberUpdatedState(holdIndicatorBounds)
     val portrait =
         LocalConfiguration.current.orientation ==
             android.content.res.Configuration.ORIENTATION_PORTRAIT
@@ -104,7 +109,11 @@ internal fun ComposeMedia3Player(
                         setShowSubtitleButton(false)
                         setShutterBackgroundColor(AndroidColor.TRANSPARENT)
                         setKeepContentOnPlayerReset(true)
-                        HoldToDoubleSpeedController(this) { active, frame, speed -> holdSpeedState(active, frame, speed) }.also { controller ->
+                        HoldToDoubleSpeedController(
+                            playerView = this,
+                            indicatorBoundsInWindow = { holdIndicatorBoundsState.value },
+                            onActiveChanged = { active, frame, speed -> holdSpeedState(active, frame, speed) },
+                        ).also { controller ->
                             setOnTouchListener(controller)
                             setTag(R.id.wallhub_hold_speed_controller, controller)
                         }
@@ -135,6 +144,7 @@ internal fun ComposeMedia3Player(
             visible = holdDoubleSpeedActive,
             videoFrame = holdSpeedFrame,
             speed = holdSpeed,
+            onBoundsChanged = { holdIndicatorBounds = it },
             modifier =
                 Modifier
                     .align(Alignment.TopCenter)
@@ -148,6 +158,7 @@ private fun HoldDoubleSpeedIndicator(
     visible: Boolean,
     videoFrame: Bitmap?,
     speed: Float,
+    onBoundsChanged: (Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(HOLD_SPEED_CORNER_RADIUS)
@@ -162,6 +173,17 @@ private fun HoldDoubleSpeedIndicator(
         Surface(
             modifier =
                 Modifier
+                    .onGloballyPositioned { coordinates ->
+                        val bounds = coordinates.boundsInWindow()
+                        onBoundsChanged(
+                            Rect(
+                                bounds.left.roundToInt(),
+                                bounds.top.roundToInt(),
+                                bounds.right.roundToInt(),
+                                bounds.bottom.roundToInt(),
+                            ),
+                        )
+                    }
                     .border(
                         width = HOLD_SPEED_BORDER_WIDTH,
                         color = Color.White.copy(alpha = 0.28f),
@@ -409,6 +431,7 @@ private fun Float.toSpeedLabel(): String {
 /** Temporarily doubles playback speed while the video surface is held. */
 private class HoldToDoubleSpeedController(
     private val playerView: PlayerView,
+    private val indicatorBoundsInWindow: () -> Rect?,
     private val onActiveChanged: (Boolean, Bitmap?, Float) -> Unit,
 ) : View.OnTouchListener {
     private var acceleratedPlayer: Player? = null
@@ -493,8 +516,28 @@ private class HoldToDoubleSpeedController(
     private fun captureVideoFrame(): Bitmap? {
         val textureView = playerView.videoSurfaceView as? TextureView ?: return null
         if (!textureView.isAvailable) return null
+        val indicatorBounds = indicatorBoundsInWindow() ?: return null
+        if (textureView.width <= 0 || textureView.height <= 0) return null
         return runCatching {
-            textureView.getBitmap(HOLD_SPEED_FRAME_WIDTH_PX, HOLD_SPEED_FRAME_HEIGHT_PX)
+            val location = IntArray(2)
+            textureView.getLocationInWindow(location)
+            val scale = (HOLD_SPEED_CAPTURE_MAX_WIDTH_PX.toFloat() / textureView.width).coerceAtMost(1f)
+            val frameWidth = (textureView.width * scale).roundToInt().coerceAtLeast(1)
+            val frameHeight = (textureView.height * scale).roundToInt().coerceAtLeast(1)
+            val frame = textureView.getBitmap(frameWidth, frameHeight) ?: return@runCatching null
+            val left = ((indicatorBounds.left - location[0]) * scale).roundToInt().coerceIn(0, frameWidth - 1)
+            val top = ((indicatorBounds.top - location[1]) * scale).roundToInt().coerceIn(0, frameHeight - 1)
+            val right =
+                ((indicatorBounds.right - location[0]) * scale)
+                    .roundToInt()
+                    .coerceIn(left + 1, frameWidth)
+            val bottom =
+                ((indicatorBounds.bottom - location[1]) * scale)
+                    .roundToInt()
+                    .coerceIn(top + 1, frameHeight)
+            Bitmap.createBitmap(frame, left, top, right - left, bottom - top).also { cropped ->
+                if (cropped !== frame) frame.recycle()
+            }
         }.getOrNull()
     }
 
@@ -517,8 +560,7 @@ private val HOLD_SPEED_CORNER_RADIUS = 24.dp
 private val HOLD_SPEED_BLUR_RADIUS = 20.dp
 private val HOLD_SPEED_BORDER_WIDTH = 1.dp
 private val HOLD_SPEED_ELEVATION = 6.dp
-private const val HOLD_SPEED_FRAME_WIDTH_PX = 240
-private const val HOLD_SPEED_FRAME_HEIGHT_PX = 135
+private const val HOLD_SPEED_CAPTURE_MAX_WIDTH_PX = 480
 private const val HOLD_SPEED_FRAME_REFRESH_MS = 100L
 private const val HOLD_SPEED_TOP_FRACTION = 0.06f
 private const val MAX_HOLD_SPEED = 4f
