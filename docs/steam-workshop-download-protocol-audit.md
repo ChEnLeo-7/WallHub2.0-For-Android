@@ -159,6 +159,11 @@ as fatal after explicitly requesting a code and refreshes a nonzero code after f
 minutes during long retries. Five minutes is a reference implementation policy, not
 a server-declared expiry contract.
 
+The response field is a Steam uint64. Generated Kotlin models may expose it as a
+signed `Long`; therefore presence must be tested by raw bits (`value != 0L`), not by
+positivity, and URL rendering must use `value.toULong().toString()`. A negative signed
+view can represent a valid nonzero request code.
+
 WallHub currently accepts zero and issues a shorter manifest URL. That should be
 replaced with an explicit access/request-code failure.
 

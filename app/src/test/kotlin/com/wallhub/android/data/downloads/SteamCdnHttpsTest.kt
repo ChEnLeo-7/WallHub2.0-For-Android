@@ -111,6 +111,10 @@ class SteamCdnHttpsTest {
             server.depotManifestUrl(depotId = 20, manifestId = 30L, manifestRequestCode = 0L)
         }
         assertEquals("depot/20/manifest/30/5/40", server.depotManifestUrl(20, 30L, 40L))
+        assertEquals(
+            "depot/20/manifest/30/5/18446744073709551615",
+            server.depotManifestUrl(20, 30L, -1L),
+        )
     }
 
     @Test
