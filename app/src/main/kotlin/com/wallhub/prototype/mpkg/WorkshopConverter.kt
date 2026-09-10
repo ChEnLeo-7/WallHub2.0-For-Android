@@ -455,6 +455,12 @@ object ShaderCompatibility {
     private val sampleCountDeclaration = Regex("const int sampleCount = (\\d+);")
     private val sampleCountLoop = Regex("for \\(int i = 0; i < sampleCount; \\+\\+i\\)")
     private val textureCoordinateZero = Regex("(v_TexCoord\\.[zw] = )0;")
+    private val vectorDeclaration =
+        Regex("""(?:uniform\s+|attribute\s+|varying\s+)?vec[234]\s+([A-Za-z_][A-Za-z0-9_]*)""")
+    private val floatLiteral = Regex("""\d+\.\d*|\.\d+""")
+    private val integerLiteral = Regex("""\d+""")
+    private val integerArgument = Regex("""(?<![\w.])\d+(?![\w.])""")
+    private val mixCall = Regex("""(?<![A-Za-z0-9_])mix\(""")
     private const val COMMON_BLUR_INCLUDE = "#include \"common_blur.h\""
     private const val HIDDEN_TEXTURE_DECLARATION = "uniform sampler2D g_Texture0; // {\"hidden\":true}"
     private const val HIDDEN_TEXTURE_MARKER = " // {\"hidden\":true}"
@@ -480,6 +486,8 @@ object ShaderCompatibility {
             "30 / 8.0" to "30.0 / 8.0",
             "30 / 15.0" to "30.0 / 15.0",
         ).forEach { (old, new) -> output = output.replace(old, new) }
+        output = rewriteVectorIntegerArithmetic(output)
+        output = rewriteMixArguments(output)
         output =
             output
                 .replace(
@@ -508,6 +516,109 @@ object ShaderCompatibility {
             }
         }
         return output
+    }
+
+    private fun rewriteVectorIntegerArithmetic(source: String): String {
+        val vectorNames =
+            vectorDeclaration
+                .findAll(source)
+                .mapNotNull { it.groupValues.getOrNull(1) }
+                .toSet()
+        if (vectorNames.isEmpty()) return source
+        var output = source
+        vectorNames.forEach { name ->
+            val escapedName = Regex.escape(name)
+            val trailingExpression =
+                Regex(
+                    """(?<![A-Za-z0-9_])($escapedName(?:\.\w+)?(?:\s*[*+/\-]\s*\d+)(?:\s*[*+/\-]\s*\d+)*)""",
+                )
+            output = trailingExpression.replace(output) { match -> floatArguments(match.value) }
+            val leadingExpression =
+                Regex(
+                    """(?<![A-Za-z0-9_.])((?:\d+\s*[*+/\-]\s*)+$escapedName(?:\.\w+)?)""",
+                )
+            output = leadingExpression.replace(output) { match -> floatArguments(match.value) }
+        }
+        return output
+    }
+
+    private fun floatArguments(expression: String): String =
+        expression.replace(integerArgument) { match -> "${match.value}.0" }
+
+    private fun rewriteMixArguments(source: String): String {
+        val calls = mixCall.findAll(source).toList()
+        if (calls.isEmpty()) return source
+        val output = StringBuilder(source.length)
+        var cursor = 0
+        calls.forEach { call ->
+            if (call.range.first < cursor) return@forEach
+            val openParenthesis = call.range.last + 1
+            val closeParenthesis = matchingParenthesis(source, openParenthesis)
+            if (closeParenthesis < 0) return@forEach
+            output.append(source, cursor, openParenthesis + 1)
+            output.append(normalizeMixArguments(source.substring(openParenthesis + 1, closeParenthesis)))
+            cursor = closeParenthesis
+        }
+        output.append(source, cursor, source.length)
+        return output.toString()
+    }
+
+    private fun normalizeMixArguments(body: String): String {
+        val normalizedBody = rewriteMixArguments(body)
+        if (!floatLiteral.containsMatchIn(normalizedBody)) return normalizedBody
+        val arguments = splitTopLevelArguments(normalizedBody)
+        val coercedArguments =
+            arguments.map { argument ->
+                val trimmed = argument.trim()
+                if (integerLiteral.matches(trimmed)) "$trimmed.0" else argument
+            }
+        if (coercedArguments == arguments) return normalizedBody
+        return coercedArguments.joinToString(",")
+    }
+
+    private fun matchingParenthesis(
+        source: String,
+        openParenthesis: Int,
+    ): Int {
+        var depth = 0
+        for (position in openParenthesis until source.length) {
+            when (source[position]) {
+                '(' -> depth += 1
+                ')' -> {
+                    depth -= 1
+                    if (depth == 0) return position
+                }
+            }
+        }
+        return -1
+    }
+
+    private fun splitTopLevelArguments(body: String): List<String> {
+        val arguments = mutableListOf<String>()
+        val current = StringBuilder()
+        var depth = 0
+        body.forEach { character ->
+            when (character) {
+                '(', '[' -> {
+                    depth += 1
+                    current.append(character)
+                }
+                ')', ']' -> {
+                    depth -= 1
+                    current.append(character)
+                }
+                ',' ->
+                    if (depth == 0) {
+                        arguments += current.toString()
+                        current.setLength(0)
+                    } else {
+                        current.append(character)
+                    }
+                else -> current.append(character)
+            }
+        }
+        if (current.isNotEmpty()) arguments += current.toString()
+        return arguments
     }
 }
 
