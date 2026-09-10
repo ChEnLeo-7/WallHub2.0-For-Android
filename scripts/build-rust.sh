@@ -26,6 +26,10 @@ if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
     exit 0
 fi
 
+# The LAN worker keeps its checkout between jobs; remove stale ABI folders before
+# copying the four libraries for this build.
+rm -rf "$JNI_LIBS"
+
 case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*)
         HOST_TAG="windows-x86_64"
