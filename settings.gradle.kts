@@ -12,72 +12,7 @@ pluginManagement {
 }
 
 val usePatchedKSteam =
-    providers.gradleProperty("wallhub.usePatchedKSteam").orNull?.toBooleanStrictOrNull()
-        ?: System.getProperty("os.name").contains("Windows", ignoreCase = true)
-
-if (usePatchedKSteam && System.getenv("GITHUB_ACTIONS") != "true") {
-    val patchStamp = "c6ca6ef389d65c5223b2af9bf422ac830a0a2f32:cm-failover-v1"
-    val stampFile = file("build/ksteam-patched/stamp")
-    if (!stampFile.isFile || stampFile.readText().trim() != patchStamp) {
-        val script = file("scripts/build-patched-ksteam.sh")
-        check(script.isFile) { "Missing patched kSteam build script: $script" }
-        println("WallHub: preparing patched kSteam from $patchStamp")
-        val bashCandidates =
-            listOfNotNull(
-                System.getenv("WALLHUB_BASH"),
-                "F:\\S\\Git\\bin\\bash.exe",
-                "C:\\Program Files\\Git\\bin\\bash.exe",
-                "bash",
-            )
-        val bash =
-            bashCandidates.firstOrNull { candidate ->
-                candidate == "bash" || java.io.File(candidate).isFile
-            } ?: error("Git Bash is required to build patched kSteam")
-        val scriptPath =
-            if (bash != "bash" && System.getProperty("os.name").contains("Windows", ignoreCase = true)) {
-                val windowsPath = script.absolutePath.replace('\\', '/')
-                val drive = Regex("^([A-Za-z]):").find(windowsPath)?.groupValues?.get(1)
-                if (drive != null) "/${drive.lowercase()}${windowsPath.substring(2)}" else windowsPath
-            } else {
-                script.absolutePath
-            }
-        val exitCode =
-            run {
-                val patchLog = file("build/ksteam-patched/build.log")
-                patchLog.parentFile.mkdirs()
-                val process =
-                    ProcessBuilder(bash, scriptPath)
-                        .directory(rootDir)
-                        .redirectErrorStream(true)
-                        .redirectOutput(patchLog)
-                        .start()
-                val finished = process.waitFor(25, java.util.concurrent.TimeUnit.MINUTES)
-                if (!finished) {
-                    process.destroyForcibly()
-                    error("Patched kSteam build exceeded 25 minute timeout")
-                }
-                process.exitValue()
-            }
-        val patchLog = file("build/ksteam-patched/build.log")
-        println("WallHub: patched kSteam process exited with code $exitCode")
-        if (patchLog.isFile) {
-            println(patchLog.readText().takeLast(12_000))
-        }
-        check(exitCode == 0) {
-            val details =
-                patchLog
-                    .takeIf { it.isFile }
-                    ?.readText()
-                    ?.takeLast(12_000)
-                    .orEmpty()
-            "Patched kSteam build failed with exit code $exitCode\n$details"
-        }
-        println("WallHub: patched kSteam build exited with code $exitCode")
-        check(stampFile.isFile && stampFile.readText().trim() == patchStamp) {
-            "Patched kSteam build completed without publishing the expected stamp"
-        }
-    }
-}
+    providers.gradleProperty("wallhub.usePatchedKSteam").orNull?.toBooleanStrictOrNull() == true
 
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
@@ -86,9 +21,6 @@ dependencyResolutionManagement {
             // The Debug Action patches the pinned kSteam source and publishes it locally.
             mavenLocal()
         }
-        // Vendored kSteam engine artifacts (built once by the "Build kSteam" CI step and
-        // refreshed on demand) so offline LAN workers can resolve kSteam without MavenLocal.
-        maven { url = uri("$rootDir/ksteam-maven/repository") }
         if (!usePatchedKSteam) {
             mavenLocal()
         }
