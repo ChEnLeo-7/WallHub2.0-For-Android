@@ -735,6 +735,7 @@
     </plurals>
     <string name='local_scan_cancelled'>已取消扫描</string>
     <string name='local_save_directory_failed'>无法保存目录</string>
+    <string name="local_directory_already_scanned">该路径已包含在 WallHub 默认扫描路径中</string>
     <string name='local_save_favorite_failed'>收藏状态保存失败</string>
     <string name='local_save_tags_failed'>标签保存失败</string>
     <string name='local_rename_tag_failed'>标签重命名失败</string>

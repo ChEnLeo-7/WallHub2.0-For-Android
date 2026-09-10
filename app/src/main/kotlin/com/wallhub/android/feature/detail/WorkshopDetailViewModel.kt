@@ -219,6 +219,14 @@ class WorkshopDetailViewModel
 
         fun startInlineVideoPlayback() = startInlineVideoPlayback(0L)
 
+        fun startPreferredVideoPlayback() {
+            if (mutableState.value.localVideoTaskId != null) {
+                requestLocalVideoPlayback()
+            } else {
+                startInlineVideoPlayback()
+            }
+        }
+
         fun retryInlineVideoPlayback() {
             val resumePositionMs = mutableState.value.inlineVideoPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
             stopInlineVideoPlayback()

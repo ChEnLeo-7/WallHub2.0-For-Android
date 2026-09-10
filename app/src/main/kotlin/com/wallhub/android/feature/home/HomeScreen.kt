@@ -432,7 +432,12 @@ internal fun HomeScreenBody(
                     onPrimaryAction = { item ->
                         when (state.cardAction) {
                             HomeCardAction.DOWNLOAD -> onAction(HomeAction.RequestDownload(item))
-                            HomeCardAction.PLAY_VIDEO -> onAction(HomeAction.OpenDetail(item.id))
+                            HomeCardAction.PLAY_VIDEO ->
+                                if (item.type == WorkshopType.VIDEO) {
+                                    onAction(HomeAction.OpenDetail(item.id))
+                                } else {
+                                    onAction(HomeAction.RequestDownload(item))
+                                }
                             HomeCardAction.OPEN_STEAM -> onAction(HomeAction.OpenSteam(item.id))
                         }
                     },
@@ -1138,6 +1143,12 @@ internal fun WorkshopCard(
     onContextMenuDismiss: (Long) -> Unit,
 ) {
     val listMode = layoutKey.listMode
+    val displayedAction =
+        if (action == HomeCardAction.PLAY_VIDEO && item.type != WorkshopType.VIDEO) {
+            HomeCardAction.DOWNLOAD
+        } else {
+            action
+        }
     val twoColumnGrid = !listMode && layoutKey.effectiveColumns == 2
     val layoutMotion =
         rememberHomeViewCardLayoutMotion(
@@ -1314,7 +1325,7 @@ internal fun WorkshopCard(
         ) {
             WorkshopAdaptiveCardContent(
                 item = item,
-                action = action,
+                action = displayedAction,
                 listMode = listMode,
                 twoColumnGrid = twoColumnGrid,
                 gridShowFileSize = gridShowFileSize,

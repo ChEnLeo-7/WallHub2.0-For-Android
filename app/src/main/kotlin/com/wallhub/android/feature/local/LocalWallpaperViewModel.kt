@@ -1,5 +1,6 @@
 package com.wallhub.android.feature.local
 
+import android.net.Uri
 import androidx.annotation.PluralsRes
 import androidx.annotation.StringRes
 import androidx.lifecycle.SavedStateHandle
@@ -513,6 +514,14 @@ class LocalWallpaperViewModel
         ) {
             viewModelScope.launch {
                 try {
+                    val preferences = settingsRepository.preferences.first()
+                    if (
+                        treeUri.isSameDirectoryAs(preferences.outputTreeUri) ||
+                            treeUri.isDefaultWallHubDirectory()
+                    ) {
+                        showMessage(R.string.local_directory_already_scanned)
+                        return@launch
+                    }
                     settingsRepository.setLocalManagementDirectory(treeUri, label)
                     scan()
                 } catch (error: CancellationException) {
@@ -522,6 +531,16 @@ class LocalWallpaperViewModel
                 }
             }
         }
+
+        private fun String.isDefaultWallHubDirectory(): Boolean =
+            normalizedDirectoryUri()
+                .endsWith("primary:download/wallhub")
+
+        private fun String.isSameDirectoryAs(other: String?): Boolean =
+            !other.isNullOrBlank() && normalizedDirectoryUri() == other.normalizedDirectoryUri()
+
+        private fun String.normalizedDirectoryUri(): String =
+            Uri.decode(this).trimEnd('/').lowercase(Locale.ROOT)
 
         private fun clearCustomDirectory() {
             viewModelScope.launch {

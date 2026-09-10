@@ -168,6 +168,7 @@ private fun rememberLocalVideoPlayer(videoPath: String): ExoPlayer {
     LaunchedEffect(videoPath, player) {
         player.setMediaItem(MediaItem.fromUri(Uri.fromFile(File(videoPath))))
         player.prepare()
+        player.playWhenReady = true
     }
     return player
 }

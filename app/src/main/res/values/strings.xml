@@ -765,6 +765,7 @@
     </plurals>
     <string name='local_scan_cancelled'>Scan cancelled</string>
     <string name='local_save_directory_failed'>Unable to save directory</string>
+    <string name="local_directory_already_scanned">This directory is already included in WallHub scanning</string>
     <string name='local_save_favorite_failed'>Unable to save favorite status</string>
     <string name='local_save_tags_failed'>Unable to save tags</string>
     <string name='local_rename_tag_failed'>Unable to rename tag</string>

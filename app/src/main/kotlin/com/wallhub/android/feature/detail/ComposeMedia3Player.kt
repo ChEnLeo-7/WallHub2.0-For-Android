@@ -34,9 +34,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -80,13 +80,17 @@ internal fun ComposeMedia3Player(
     var holdDoubleSpeedActive by remember(player) { mutableStateOf(false) }
     var holdSpeedFrame by remember(player) { mutableStateOf<Bitmap?>(null) }
     var holdSpeed by remember(player) { mutableStateOf(2f) }
+    val portrait =
+        LocalConfiguration.current.orientation ==
+            android.content.res.Configuration.ORIENTATION_PORTRAIT
     val holdSpeedState by rememberUpdatedState { active: Boolean, frame: Bitmap?, speed: Float ->
         holdDoubleSpeedActive = active
         holdSpeed = speed
         if (frame != null) holdSpeedFrame = frame
         if (!active) holdSpeedFrame = null
     }
-    Box(modifier = modifier) {
+    BoxWithConstraints(modifier = modifier) {
+        val indicatorTopPadding = maxOf(HOLD_SPEED_MIN_TOP_PADDING, maxHeight * HOLD_SPEED_TOP_FRACTION)
         AndroidView(
             factory = { viewContext ->
                 val layoutParamsParent = FrameLayout(viewContext)
@@ -134,8 +138,7 @@ internal fun ComposeMedia3Player(
             modifier =
                 Modifier
                     .align(Alignment.TopCenter)
-                    .statusBarsPadding()
-                    .padding(top = HOLD_SPEED_TOP_PADDING),
+                    .padding(top = indicatorTopPadding),
         )
     }
 }
@@ -412,6 +415,14 @@ private class HoldToDoubleSpeedController(
     private var restorePlaybackParameters: PlaybackParameters? = null
     private var longPressActivated = false
     private var activeSpeed = 1f
+    private val refreshIndicatorFrame =
+        object : Runnable {
+            override fun run() {
+                if (acceleratedPlayer == null) return
+                onActiveChanged(true, captureVideoFrame(), activeSpeed)
+                playerView.postDelayed(this, HOLD_SPEED_FRAME_REFRESH_MS)
+            }
+        }
     private val gestureDetector =
         GestureDetector(
             playerView.context,
@@ -450,11 +461,12 @@ private class HoldToDoubleSpeedController(
         activeSpeed = (player.playbackParameters.speed + 1f).coerceAtMost(MAX_HOLD_SPEED)
         player.setPlaybackParameters(player.playbackParameters.withSpeed(activeSpeed))
         vibrate()
-        onActiveChanged(true, captureVideoFrame(), activeSpeed)
+        refreshIndicatorFrame.run()
     }
 
     private fun restoreSpeed() {
         val player = acceleratedPlayer ?: return
+        playerView.removeCallbacks(refreshIndicatorFrame)
         val parameters = restorePlaybackParameters
         if (parameters != null && player.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH)) {
             player.setPlaybackParameters(parameters)
@@ -500,11 +512,13 @@ private const val MUTED_VOLUME_THRESHOLD = 0.01f
 private const val DEFAULT_UNMUTE_VOLUME = 0.5f
 private const val DISABLED_CONTROL_ALPHA = 0.42f
 private const val VOLUME_BAR_MIN_WIDTH_DP = 480f
-private val HOLD_SPEED_TOP_PADDING = 20.dp
+private val HOLD_SPEED_MIN_TOP_PADDING = 16.dp
 private val HOLD_SPEED_CORNER_RADIUS = 24.dp
 private val HOLD_SPEED_BLUR_RADIUS = 20.dp
 private val HOLD_SPEED_BORDER_WIDTH = 1.dp
 private val HOLD_SPEED_ELEVATION = 6.dp
 private const val HOLD_SPEED_FRAME_WIDTH_PX = 240
 private const val HOLD_SPEED_FRAME_HEIGHT_PX = 135
+private const val HOLD_SPEED_FRAME_REFRESH_MS = 100L
+private const val HOLD_SPEED_TOP_FRACTION = 0.06f
 private const val MAX_HOLD_SPEED = 4f

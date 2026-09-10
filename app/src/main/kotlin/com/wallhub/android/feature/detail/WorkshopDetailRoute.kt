@@ -77,7 +77,7 @@ fun WorkshopDetailRoute(
         onToggleSubscription = viewModel::toggleSubscription,
         onToggleFavorite = viewModel::toggleFavorite,
         onReconnectSteam = viewModel::reconnectSteamSession,
-        onStartInlineVideo = viewModel::startInlineVideoPlayback,
+        onStartInlineVideo = viewModel::startPreferredVideoPlayback,
         onRetryInlineVideo = viewModel::retryInlineVideoPlayback,
         onExportFormatSelected = viewModel::selectExportFormat,
         onDownload = {
