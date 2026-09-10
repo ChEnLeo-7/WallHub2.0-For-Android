@@ -44,7 +44,7 @@ WallHub for Android 是面向 Wallpaper Engine 创意工坊的独立原生客户
 准备以下环境：
 
 - Android Studio 与 JDK 17 或更高版本。
-- Android SDK Platform 37。
+- Android SDK Platform 36。
 - Android SDK Build Tools 35.0.0。
 
 克隆项目后，在 Linux 或 macOS 执行：
