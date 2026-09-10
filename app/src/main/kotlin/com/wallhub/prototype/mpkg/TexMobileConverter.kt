@@ -1,14 +1,21 @@
 package com.wallhub.prototype.mpkg
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapRegionDecoder
+import android.graphics.Rect
 import net.jpountz.lz4.LZ4Factory
 import java.io.BufferedOutputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
+import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.min
 
 private const val TEX_FORMAT_RGBA8888 = 0
+private const val TEX_FORMAT_DXT5_LZ4 = 5
 private const val TEX_FORMAT_DXT5 = 4
 private const val TEX_FORMAT_DXT3 = 6
 private const val TEX_FORMAT_DXT1 = 7
@@ -62,6 +69,20 @@ private data class TexMipmap(
     val data: ByteArray,
 )
 
+private data class TexEntryMetadata(
+    val flags: Int,
+    val unknown: Int,
+    val imageWidth: Int,
+    val imageHeight: Int,
+    val imageFormat: Int,
+    val isMp4: Boolean,
+    val baseWidth: Int,
+    val baseHeight: Int,
+    val baseCompressed: Boolean,
+    val pngStart: Long,
+    val pngLength: Long,
+)
+
 /**
  * A pure Kotlin compatibility path for WallHub's lossless MPKG profile.
  * It converts common scene TEX formats to RGBA8888 + LZ4. ETC2 remains an
@@ -113,15 +134,49 @@ object TexMobileConverter {
                 rgba = texture.rgba,
             )
             TexFileConversionResult(true, prepared.reason)
+    }.getOrElse { error ->
+        outputFile.delete()
+        TexFileConversionResult(
+            converted = false,
+            reason = error.message ?: error.javaClass.simpleName,
+            canRetainOriginal = hasValidTexEnvelope(source),
+        )
+    }
+
+    fun convertToDxt5File(
+        sourceFile: File,
+        offset: Long,
+        length: Long,
+        outputFile: File,
+    ): TexFileConversionResult =
+        runCatching {
+            val metadata = readTexEntryMetadata(sourceFile, offset, length)
+            require(metadata.imageFormat >= 0) { "TEX payload is not image-backed" }
+            require(!metadata.isMp4 && metadata.flags and TEX_FLAG_GIF == 0 && metadata.flags and TEX_FLAG_VIDEO == 0) {
+                ANIMATED_TEXTURE_REASON
+            }
+            require(!metadata.baseCompressed) { "Compressed TEX payload is unsupported for DXT5 conversion" }
+            require(metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight) {
+                "TEX base mipmap does not match image dimensions"
+            }
+            require(metadata.imageWidth % 4 == 0 && metadata.imageHeight % 4 == 0) {
+                "TEX dimensions are not aligned to DXT5 block edges"
+            }
+            require(metadata.imageWidth.toLong() * metadata.imageHeight <= MAX_DXT5_PIXELS) {
+                "TEX exceeds DXT5 conversion pixel limit"
+            }
+            val tempPng = File(outputFile.parentFile, "${outputFile.name}.png")
+            try {
+                copyPngPayload(sourceFile, metadata.pngStart, metadata.pngLength, tempPng)
+                writeDxt5(tempPng, metadata.flags, metadata.unknown, metadata.imageWidth, metadata.imageHeight, outputFile)
+                TexFileConversionResult(true, "DXT5 + LZ4 HC3")
+            } finally {
+                tempPng.delete()
+            }
         }.getOrElse { error ->
             outputFile.delete()
-            TexFileConversionResult(
-                converted = false,
-                reason = error.message ?: error.javaClass.simpleName,
-                canRetainOriginal = hasValidTexEnvelope(source),
-            )
+            TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
         }
-    }
 
     internal fun hasValidTexEnvelope(source: ByteArray): Boolean =
         runCatching {
@@ -331,6 +386,363 @@ object TexMobileConverter {
         offset = output.writeCString(offset, "TEXV0005")
         offset = output.writeCString(offset, "TEXI0001")
         listOf(TEX_FORMAT_RGBA8888, flags, width, height, width, height, unknown).forEach { value ->
+            offset = output.writeIntLe(offset, value)
+        }
+        offset = output.writeCString(offset, "TEXB0004")
+        listOf(1, -1, 0, 1, width, height, 1, decompressedLength, compressedLength).forEach { value ->
+            offset = output.writeIntLe(offset, value)
+        }
+        require(offset == MOBILE_TEX_HEADER_SIZE)
+        return output
+    }
+
+    private fun readTexEntryMetadata(
+        sourceFile: File,
+        offset: Long,
+        length: Long,
+    ): TexEntryMetadata =
+        RandomAccessFile(sourceFile, "r").use { input ->
+            require(offset >= 0L && length >= 0L && length <= sourceFile.length() && offset <= sourceFile.length() - length)
+            val end = offset + length
+            input.seek(offset)
+            require(input.readBoundedCString(end) == "TEXV0005") { "Invalid TEX version" }
+            require(input.readBoundedCString(end) == "TEXI0001") { "Invalid TEX metadata" }
+            input.readBoundedIntLe(end)
+            val flags = input.readBoundedIntLe(end)
+            val textureWidth = input.readBoundedIntLe(end)
+            val textureHeight = input.readBoundedIntLe(end)
+            val imageWidth = input.readBoundedIntLe(end)
+            val imageHeight = input.readBoundedIntLe(end)
+            require(textureWidth > 0 && textureHeight > 0 && imageWidth > 0 && imageHeight > 0) {
+                "Invalid TEX dimensions"
+            }
+            val unknown = input.readBoundedIntLe(end)
+            val container = input.readBoundedCString(end)
+            require(input.readBoundedIntLe(end) == 1) { "Unsupported TEX image count" }
+            var imageFormat = -1
+            var isMp4 = false
+            when (container) {
+                "TEXB0003" -> imageFormat = input.readBoundedIntLe(end)
+                "TEXB0004" -> {
+                    imageFormat = input.readBoundedIntLe(end)
+                    isMp4 = input.readBoundedIntLe(end) != 0
+                }
+                "TEXB0001", "TEXB0002" -> Unit
+                else -> error("Unsupported TEX container: $container")
+            }
+            val mipCount = input.readBoundedIntLe(end)
+            require(mipCount in 1..64) { "Invalid TEX mipmap count" }
+            var baseWidth = 0
+            var baseHeight = 0
+            var baseCompressed = false
+            var payloadStart = 0L
+            var payloadLength = 0L
+            repeat(mipCount) { index ->
+                val width = input.readBoundedIntLe(end)
+                val height = input.readBoundedIntLe(end)
+                require(width > 0 && height > 0) { "Invalid TEX mipmap dimensions" }
+                var compressed = false
+                val storedSize =
+                    if (container == "TEXB0001") {
+                        input.readBoundedIntLe(end)
+                    } else {
+                        compressed = input.readBoundedIntLe(end) == 1
+                        input.readBoundedIntLe(end)
+                        input.readBoundedIntLe(end)
+                    }
+                require(storedSize >= 0) { "Invalid TEX payload size" }
+                require(input.filePointer <= end - storedSize.toLong()) { "Invalid TEX payload size" }
+                if (index == 0) {
+                    baseWidth = width
+                    baseHeight = height
+                    baseCompressed = compressed
+                    payloadStart = input.filePointer
+                    payloadLength = storedSize.toLong()
+                }
+                input.seek(input.filePointer + storedSize)
+            }
+            require(input.filePointer == end) { "TEX entry has trailing data" }
+            val pngStart = locatePngSignature(input, payloadStart, payloadLength)
+            TexEntryMetadata(
+                flags = flags,
+                unknown = unknown,
+                imageWidth = imageWidth,
+                imageHeight = imageHeight,
+                imageFormat = imageFormat,
+                isMp4 = isMp4,
+                baseWidth = baseWidth,
+                baseHeight = baseHeight,
+                baseCompressed = baseCompressed,
+                pngStart = pngStart,
+                pngLength = payloadStart + payloadLength - pngStart,
+            )
+        }
+
+    private fun locatePngSignature(
+        input: RandomAccessFile,
+        payloadStart: Long,
+        payloadLength: Long,
+    ): Long {
+        val scanLength = min(payloadLength, PNG_SIGNATURE_SCAN_BYTES.toLong()).toInt()
+        require(scanLength >= PNG_SIGNATURE.size) { "TEX payload is too small for a PNG image" }
+        input.seek(payloadStart)
+        val buffer = ByteArray(scanLength)
+        input.readFully(buffer)
+        for (index in 0..buffer.size - PNG_SIGNATURE.size) {
+            var matched = true
+            for (byteIndex in PNG_SIGNATURE.indices) {
+                if (buffer[index + byteIndex] != PNG_SIGNATURE[byteIndex]) {
+                    matched = false
+                    break
+                }
+            }
+            if (matched) return payloadStart + index
+        }
+        error("TEX payload is not a PNG image")
+    }
+
+    private fun copyPngPayload(
+        sourceFile: File,
+        pngStart: Long,
+        pngLength: Long,
+        outputFile: File,
+    ) {
+        RandomAccessFile(sourceFile, "r").use { input ->
+            input.seek(pngStart)
+            FileOutputStream(outputFile).use { output ->
+                val buffer = ByteArray(PNG_COPY_BUFFER_BYTES)
+                var remaining = pngLength
+                while (remaining > 0) {
+                    val chunk = min(buffer.size.toLong(), remaining).toInt()
+                    input.readFully(buffer, 0, chunk)
+                    output.write(buffer, 0, chunk)
+                    remaining -= chunk
+                }
+            }
+        }
+    }
+
+    private fun writeDxt5(
+        pngFile: File,
+        flags: Int,
+        unknown: Int,
+        width: Int,
+        height: Int,
+        outputFile: File,
+    ) {
+        val dxt = encodeDxt5(pngFile, width, height)
+        val (compressed, compressedLength) = compress(dxt)
+        outputFile.parentFile?.let { parent ->
+            check(parent.exists() || parent.mkdirs()) { "Unable to create TEX output directory" }
+        }
+        BufferedOutputStream(FileOutputStream(outputFile)).use { output ->
+            output.write(dxt5Header(flags, width, height, unknown, dxt.size, compressedLength))
+            output.write(compressed, 0, compressedLength)
+        }
+    }
+
+    private fun encodeDxt5(
+        pngFile: File,
+        width: Int,
+        height: Int,
+    ): ByteArray {
+        val dxt = ByteArray(checkedPayloadSize(width, height, 1))
+        FileInputStream(pngFile).use { stream ->
+            val decoder = BitmapRegionDecoder.newInstance(stream.fd, false)
+                ?: error("Unsupported PNG payload in TEX entry")
+            try {
+                require(decoder.width == width && decoder.height == height) {
+                    "PNG payload dimensions do not match TEX metadata"
+                }
+                val stripHeight = min(DXT5_STRIP_HEIGHT, height)
+                val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
+                var stripTop = 0
+                var dxtOffset = 0
+                while (stripTop < height) {
+                    val rows = min(stripHeight, height - stripTop)
+                    require(rows % 4 == 0) { "TEX height is not aligned to DXT5 block edges" }
+                    val bitmap =
+                        decoder.decodeRegion(Rect(0, stripTop, width, stripTop + rows), options)
+                            ?: error("Failed to decode TEX PNG payload")
+                    try {
+                        require(bitmap.width == width && bitmap.height == rows) {
+                            "PNG payload dimensions do not match TEX metadata"
+                        }
+                        val pixels = IntArray(checkedPayloadSize(width, rows, 1))
+                        bitmap.getPixels(pixels, 0, width, 0, 0, width, rows)
+                        encodeDxt5Strip(pixels, width, rows, dxt, dxtOffset)
+                    } finally {
+                        bitmap.recycle()
+                    }
+                    stripTop += rows
+                    dxtOffset += width * rows
+                }
+            } finally {
+                decoder.recycle()
+            }
+        }
+        return dxt
+    }
+
+    private fun encodeDxt5Strip(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        dxt: ByteArray,
+        dxtOffset: Int,
+    ) {
+        var blockOffset = dxtOffset
+        for (blockTop in 0 until height step 4) {
+            for (blockLeft in 0 until width step 4) {
+                encodeDxt5Block(pixels, width, blockTop, blockLeft, dxt, blockOffset)
+                blockOffset += DXT5_BLOCK_BYTES
+            }
+        }
+    }
+
+    private fun encodeDxt5Block(
+        pixels: IntArray,
+        width: Int,
+        blockTop: Int,
+        blockLeft: Int,
+        dxt: ByteArray,
+        offset: Int,
+    ) {
+        val colors = IntArray(DXT5_BLOCK_PIXELS)
+        var index = 0
+        repeat(4) { row ->
+            repeat(4) { column ->
+                colors[index++] = pixels[(blockTop + row) * width + blockLeft + column]
+            }
+        }
+        encodeDxt5AlphaBlock(colors, dxt, offset)
+        encodeDxt5ColorBlock(colors, dxt, offset + DXT5_ALPHA_BLOCK_BYTES)
+    }
+
+    private fun encodeDxt5AlphaBlock(
+        colors: IntArray,
+        dxt: ByteArray,
+        offset: Int,
+    ) {
+        val alphas = IntArray(DXT5_BLOCK_PIXELS) { index -> (colors[index] ushr 24) and 0xff }
+        val alphaMax = alphas.max()
+        val alphaMin = alphas.min()
+        val palette = IntArray(8)
+        palette[0] = alphaMax
+        palette[1] = alphaMin
+        if (alphaMax > alphaMin) {
+            (1..6).forEach { index -> palette[index + 1] = ((7 - index) * alphaMax + index * alphaMin) / 7 }
+        } else {
+            (1..4).forEach { index -> palette[index + 1] = ((5 - index) * alphaMax + index * alphaMin) / 5 }
+            palette[6] = 0
+            palette[7] = 255
+        }
+        var bits = 0L
+        alphas.forEachIndexed { index, alpha ->
+            var bestIndex = 0
+            var bestDistance = Int.MAX_VALUE
+            repeat(8) { paletteIndex ->
+                val distance = abs(alpha - palette[paletteIndex])
+                if (distance < bestDistance) {
+                    bestDistance = distance
+                    bestIndex = paletteIndex
+                }
+            }
+            bits = bits or (bestIndex.toLong() shl (index * 3))
+        }
+        dxt[offset] = alphaMax.toByte()
+        dxt[offset + 1] = alphaMin.toByte()
+        repeat(6) { byteIndex ->
+            dxt[offset + 2 + byteIndex] = ((bits ushr (byteIndex * 8)) and 0xffL).toByte()
+        }
+    }
+
+    private fun encodeDxt5ColorBlock(
+        colors: IntArray,
+        dxt: ByteArray,
+        offset: Int,
+    ) {
+        var redMin = 255
+        var redMax = 0
+        var greenMin = 255
+        var greenMax = 0
+        var blueMin = 255
+        var blueMax = 0
+        colors.forEach { color ->
+            val red = (color ushr 16) and 0xff
+            val green = (color ushr 8) and 0xff
+            val blue = color and 0xff
+            redMin = min(redMin, red)
+            redMax = max(redMax, red)
+            greenMin = min(greenMin, green)
+            greenMax = max(greenMax, green)
+            blueMin = min(blueMin, blue)
+            blueMax = max(blueMax, blue)
+        }
+        val packedMax = packRgb565(redMax, greenMax, blueMax)
+        val packedMin = packRgb565(redMin, greenMin, blueMin)
+        val high = maxOf(packedMax, packedMin)
+        val low = minOf(packedMax, packedMin)
+        val r0 = (rgb565(high, 255) ushr 16) and 0xff
+        val g0 = (rgb565(high, 255) ushr 8) and 0xff
+        val b0 = rgb565(high, 255) and 0xff
+        val r1 = (rgb565(low, 255) ushr 16) and 0xff
+        val g1 = (rgb565(low, 255) ushr 8) and 0xff
+        val b1 = rgb565(low, 255) and 0xff
+        val palette =
+            intArrayOf(
+                rgb565(high, 255),
+                rgb565(low, 255),
+                argb(255, (2 * r0 + r1) / 3, (2 * g0 + g1) / 3, (2 * b0 + b1) / 3),
+                argb(255, (r0 + 2 * r1) / 3, (g0 + 2 * g1) / 3, (b0 + 2 * b1) / 3),
+            )
+        var bits = 0
+        colors.forEachIndexed { index, color ->
+            val rgb = color and 0xffffff
+            var bestIndex = 0
+            var bestDistance = Long.MAX_VALUE
+            repeat(4) { paletteIndex ->
+                val candidate = palette[paletteIndex] and 0xffffff
+                val red = ((rgb ushr 16) and 0xff) - ((candidate ushr 16) and 0xff)
+                val green = ((rgb ushr 8) and 0xff) - ((candidate ushr 8) and 0xff)
+                val blue = (rgb and 0xff) - (candidate and 0xff)
+                val distance = red.toLong() * red + green.toLong() * green + blue.toLong() * blue
+                if (distance < bestDistance) {
+                    bestDistance = distance
+                    bestIndex = paletteIndex
+                }
+            }
+            bits = bits or (bestIndex shl (index * 2))
+        }
+        dxt[offset] = high.toByte()
+        dxt[offset + 1] = (high ushr 8).toByte()
+        dxt[offset + 2] = low.toByte()
+        dxt[offset + 3] = (low ushr 8).toByte()
+        dxt[offset + 4] = bits.toByte()
+        dxt[offset + 5] = (bits ushr 8).toByte()
+        dxt[offset + 6] = (bits ushr 16).toByte()
+        dxt[offset + 7] = (bits ushr 24).toByte()
+    }
+
+    private fun packRgb565(
+        red: Int,
+        green: Int,
+        blue: Int,
+    ): Int = ((red ushr 3) shl 11) or ((green ushr 2) shl 5) or (blue ushr 3)
+
+    private fun dxt5Header(
+        flags: Int,
+        width: Int,
+        height: Int,
+        unknown: Int,
+        decompressedLength: Int,
+        compressedLength: Int,
+    ): ByteArray {
+        val output = ByteArray(MOBILE_TEX_HEADER_SIZE)
+        var offset = 0
+        offset = output.writeCString(offset, "TEXV0005")
+        offset = output.writeCString(offset, "TEXI0001")
+        listOf(TEX_FORMAT_DXT5_LZ4, flags, width, height, width, height, unknown).forEach { value ->
             offset = output.writeIntLe(offset, value)
         }
         offset = output.writeCString(offset, "TEXB0004")
@@ -762,6 +1174,14 @@ private fun RandomAccessFile.readBoundedCString(end: Long): String {
 private const val MOBILE_TEX_HEADER_SIZE = 91
 private const val ANIMATED_TEXTURE_REASON = "animated texture"
 private const val LZ4_COMPRESSION_LEVEL = 3
+private val PNG_SIGNATURE = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+private const val PNG_SIGNATURE_SCAN_BYTES = 1024
+private const val PNG_COPY_BUFFER_BYTES = 128 * 1024
+private const val DXT5_STRIP_HEIGHT = 256
+private const val DXT5_BLOCK_BYTES = 16
+private const val DXT5_ALPHA_BLOCK_BYTES = 8
+private const val DXT5_BLOCK_PIXELS = 16
+private const val MAX_DXT5_PIXELS = 48L * 1024 * 1024
 private fun mobileRgbaLimit(maxHeapBytes: Long = Runtime.getRuntime().maxMemory()): Int =
     (maxHeapBytes / TEX_RGBA_HEAP_DIVISOR)
         .coerceIn(MIN_MOBILE_RGBA_BYTES.toLong(), MAX_MOBILE_RGBA_BYTES.toLong())

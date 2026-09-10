@@ -128,6 +128,16 @@ object WorkshopConverter {
                 when (extension) {
                     "tex" -> {
                         if (entry.length > texConversionInputLimit()) {
+                            checkCancellation()
+                            val dxt5 = File(transformedDirectory, "$index-dxt5.tex")
+                            val dxt5Result = TexMobileConverter.convertToDxt5File(scenePackage, entry.offset, entry.length, dxt5)
+                            if (dxt5Result.converted) {
+                                convertedTextures += 1
+                                warnings += "Re-encoded oversized texture as DXT5 + LZ4: ${entry.path}"
+                                entries += MpkgInputEntry(entry.path, FilePayload(dxt5))
+                                return@forEachIndexed
+                            }
+                            warnings += "DXT5 re-encode failed for oversized texture (${dxt5Result.reason}): ${entry.path}"
                             require(TexMobileConverter.hasValidTexEnvelope(scenePackage, entry.offset, entry.length)) {
                                 "Failed to retain oversized texture ${entry.path}: invalid TEX structure"
                             }
