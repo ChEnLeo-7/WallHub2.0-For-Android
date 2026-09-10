@@ -56,7 +56,7 @@ rustup target add \
     aarch64-linux-android \
     armv7-linux-androideabi \
     i686-linux-android \
-    x86_64-linux-android
+    x86_64-linux-android 2>&1
 
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN_BIN/aarch64-linux-android${MIN_SDK_API}-clang$LINKER_SUFFIX"
 export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$TOOLCHAIN_BIN/armv7a-linux-androideabi${MIN_SDK_API}-clang$LINKER_SUFFIX"
