@@ -47,7 +47,13 @@ WallHub for Android 是面向 Wallpaper Engine 创意工坊的独立原生客户
 - Android SDK Platform 36。
 - Android SDK Build Tools 35.0.0。
 
-克隆项目后，在 Linux 或 macOS 执行：
+克隆项目后，在 Windows 执行：
+
+```powershell
+.\gradlew.bat lintDebug :app:assembleDebug
+```
+
+在 Linux 或 macOS 执行：
 
 ```bash
 chmod +x gradlew
