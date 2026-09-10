@@ -87,11 +87,7 @@ for TARGET in "${!ABI_BY_TARGET[@]}"; do
     ABI="${ABI_BY_TARGET[$TARGET]}"
     DEST="$JNI_LIBS/$ABI"
     mkdir -p "$DEST"
-    # Keep Gradle from observing a partially copied native library on the
-    # persistent Windows worker while mergeReleaseNativeLibs is running.
-    TEMP_LIB="$DEST/.libwallhub_rust.so.$$"
-    cp "target/$TARGET/release/libwallhub_rust.so" "$TEMP_LIB"
-    mv -f "$TEMP_LIB" "$DEST/libwallhub_rust.so"
+    cp "target/$TARGET/release/libwallhub_rust.so" "$DEST/"
     echo "==> Installed $DEST/libwallhub_rust.so"
 done
 
