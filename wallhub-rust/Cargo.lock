@@ -1351,6 +1351,7 @@ version = "0.1.0"
 dependencies = [
  "adler2",
  "aes",
+ "cc",
  "jni",
  "lz4_flex",
  "lzma-rs",

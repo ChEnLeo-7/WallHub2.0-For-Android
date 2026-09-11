@@ -188,3 +188,42 @@ pub extern "system" fn Java_com_wallhub_android_data_downloads_WallHubRust_downl
         write_bytes(env, &decoded)
     })
 }
+
+#[no_mangle]
+pub extern "system" fn Java_com_wallhub_android_data_downloads_WallHubRust_compressEtc2Rgba<'local>(
+    mut env: JNIEnv<'local>,
+    _this: JObject<'local>,
+    pixels: JByteArray<'local>,
+    width: jint,
+    height: jint,
+) -> jbyteArray {
+    guarded(&mut env, std::ptr::null_mut(), |env| {
+        let width = usize::try_from(width).map_err(|_| "invalid ETC2 width".to_string())?;
+        let height = usize::try_from(height).map_err(|_| "invalid ETC2 height".to_string())?;
+        if width == 0 || height == 0 || width % 4 != 0 || height % 4 != 0 {
+            return Err("ETC2 dimensions must be positive multiples of four".to_string());
+        }
+        let source = read_bytes(env, &pixels)?;
+        let expected = width
+            .checked_mul(height)
+            .ok_or_else(|| "ETC2 dimensions overflow".to_string())?;
+        if source.len() != expected.checked_mul(4).ok_or_else(|| "ETC2 input overflow".to_string())? {
+            return Err("ETC2 input size does not match dimensions".to_string());
+        }
+        let block_count = expected / 16;
+        let mut source_words = Vec::with_capacity(expected);
+        for chunk in source.chunks_exact(4) {
+            source_words.push(u32::from_le_bytes([chunk[2], chunk[1], chunk[0], chunk[3]]));
+        }
+        let mut compressed = vec![0u8; block_count * 16];
+        unsafe {
+            crate::wallhub_compress_etc2_rgba(
+                source_words.as_ptr(),
+                width,
+                height,
+                compressed.as_mut_ptr(),
+            );
+        }
+        Ok(write_bytes(env, &compressed)?)
+    })
+}

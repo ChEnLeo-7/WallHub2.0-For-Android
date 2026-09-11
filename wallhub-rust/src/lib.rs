@@ -11,6 +11,15 @@ pub mod depot;
 pub mod ffi;
 pub mod net;
 
+extern "C" {
+    pub fn wallhub_compress_etc2_rgba(
+        pixels: *const u32,
+        width: usize,
+        height: usize,
+        output: *mut u8,
+    );
+}
+
 /// Semantic version of the Rust engine, surfaced to the Kotlin side once bindings land.
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 

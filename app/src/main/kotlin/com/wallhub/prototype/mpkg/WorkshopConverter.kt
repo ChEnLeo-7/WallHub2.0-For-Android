@@ -130,18 +130,18 @@ object WorkshopConverter {
                     "tex" -> {
                         if (entry.length > texConversionInputLimit()) {
                             checkCancellation()
-                            Log.i("WallhubMpkg", "Oversized texture ${entry.path} (${entry.length} bytes); attempting DXT5 re-encode")
-                            val dxt5 = File(transformedDirectory, "$index-dxt5.tex")
-                            val dxt5Result = TexMobileConverter.convertToDxt5File(scenePackage, entry.offset, entry.length, dxt5)
-                            if (dxt5Result.converted) {
+                            Log.i("WallhubMpkg", "Oversized texture ${entry.path} (${entry.length} bytes); attempting ETC2 re-encode")
+                            val etc2 = File(transformedDirectory, "$index-etc2.tex")
+                            val etc2Result = TexMobileConverter.convertToEtc2File(scenePackage, entry.offset, entry.length, etc2)
+                            if (etc2Result.converted) {
                                 convertedTextures += 1
-                                warnings += "Re-encoded oversized texture as DXT5 + LZ4: ${entry.path}"
-                                Log.i("WallhubMpkg", "DXT5 re-encode succeeded for ${entry.path}")
-                                entries += MpkgInputEntry(entry.path, FilePayload(dxt5))
+                                warnings += "Re-encoded oversized texture as ETC2 RGBA8 + LZ4: ${entry.path}"
+                                Log.i("WallhubMpkg", "ETC2 re-encode succeeded for ${entry.path}")
+                                entries += MpkgInputEntry(entry.path, FilePayload(etc2))
                                 return@forEachIndexed
                             }
-                            warnings += "DXT5 re-encode failed for oversized texture (${dxt5Result.reason}): ${entry.path}"
-                            Log.w("WallhubMpkg", "DXT5 re-encode failed for oversized texture (${dxt5Result.reason}): ${entry.path}")
+                            warnings += "ETC2 re-encode failed for oversized texture (${etc2Result.reason}): ${entry.path}"
+                            Log.w("WallhubMpkg", "ETC2 re-encode failed for oversized texture (${etc2Result.reason}): ${entry.path}")
                             require(TexMobileConverter.hasValidTexEnvelope(scenePackage, entry.offset, entry.length)) {
                                 "Failed to retain oversized texture ${entry.path}: invalid TEX structure"
                             }

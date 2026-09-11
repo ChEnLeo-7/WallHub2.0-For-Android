@@ -48,4 +48,10 @@ object WallHubRust {
         uncompressedLength: Int,
         timeoutMs: Int,
     ): ByteArray
+
+    external fun compressEtc2Rgba(
+        pixels: ByteArray,
+        width: Int,
+        height: Int,
+    ): ByteArray
 }
