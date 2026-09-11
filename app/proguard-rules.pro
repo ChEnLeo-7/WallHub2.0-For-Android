@@ -26,3 +26,7 @@
 -keepclasseswithmembernames class com.wallhub.android.data.downloads.WallHubRust {
     native <methods>;
 }
+
+# lz4-java instantiates its JNI/Unsafe/Safe implementations reflectively from LZ4Factory.
+-keep class net.jpountz.** { *; }
+-dontwarn net.jpountz.**
