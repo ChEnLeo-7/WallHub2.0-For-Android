@@ -134,13 +134,14 @@ object TexMobileConverter {
                 rgba = texture.rgba,
             )
             TexFileConversionResult(true, prepared.reason)
-    }.getOrElse { error ->
-        outputFile.delete()
-        TexFileConversionResult(
-            converted = false,
-            reason = error.message ?: error.javaClass.simpleName,
-            canRetainOriginal = hasValidTexEnvelope(source),
-        )
+        }.getOrElse { error ->
+            outputFile.delete()
+            TexFileConversionResult(
+                converted = false,
+                reason = error.message ?: error.javaClass.simpleName,
+                canRetainOriginal = hasValidTexEnvelope(source),
+            )
+        }
     }
 
     fun convertToDxt5File(
