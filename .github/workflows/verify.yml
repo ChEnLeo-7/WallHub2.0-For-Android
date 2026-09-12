@@ -48,8 +48,8 @@ jobs:
         id: ksteam-cache
         uses: actions/cache@v4
         with:
-          path: ~/.m2/repository/bruhcollective/itaysonlab/ksteam
-          key: ksteam-c6ca6ef389d65c5223b2af9bf422ac830a0a2f32-${{ hashFiles('scripts/patch-ksteam-auth-flow.py') }}
+          path: ~/.m2/repository/bruhcollective/itaysonlab
+          key: ksteam-r50-group-c6ca6ef389d65c5223b2af9bf422ac830a0a2f32-${{ hashFiles('scripts/patch-ksteam-auth-flow.py') }}
       - name: Build kSteam into Maven Local
         if: steps.ksteam-cache.outputs.cache-hit != 'true'
         env:
