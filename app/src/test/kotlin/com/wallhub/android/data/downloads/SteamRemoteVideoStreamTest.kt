@@ -1,11 +1,18 @@
 package com.wallhub.android.data.downloads
 
+import java.io.Closeable
+import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
-import java.io.File
 import kotlin.io.path.createTempDirectory
 
 class SteamRemoteVideoStreamTest {
@@ -132,4 +139,92 @@ class SteamRemoteVideoStreamTest {
             SteamWorkshopContentApi(OkHttpClient.Builder()).parseTarget(body, 42L)
         }
     }
+
+    @Test
+    fun contentTargetCacheCoalescesConcurrentRequestsAndExpires() = runBlocking {
+        var now = 1_000L
+        val gateway = CountingWorkshopContentGateway(target(""))
+        val client = SteamWorkshopContentClient(gateway) { now }
+
+        val first = List(8) { async { client.fetchContentTarget(42L, "") } }.awaitAll()
+        assertEquals(1, gateway.fetches.get())
+        assertEquals(first.first(), first.last())
+
+        now += 5 * 60 * 1_000L + 1
+        client.fetchContentTarget(42L, "")
+        assertEquals(2, gateway.fetches.get())
+
+        client.invalidateContentTarget(42L)
+        client.fetchContentTarget(42L, "")
+        assertEquals(3, gateway.fetches.get())
+    }
+
+    @Test
+    fun accessCacheIsClientScopedAndCopiesDepotKeys() = runBlocking {
+        val cache = SteamContentAccessCache()
+        val firstClient = Any()
+        val secondClient = Any()
+        var depotLoads = 0
+        var keyLoads = 0
+
+        assertEquals(7, cache.depotId(firstClient, 431960) { depotLoads += 1; 7 })
+        assertEquals(7, cache.depotId(firstClient, 431960) { depotLoads += 1; 8 })
+        assertEquals(8, cache.depotId(secondClient, 431960) { depotLoads += 1; 8 })
+        assertEquals(2, depotLoads)
+
+        val first = cache.depotKey(firstClient, 431960, 7) { keyLoads += 1; byteArrayOf(1, 2, 3) }
+        first[0] = 9
+        val second = cache.depotKey(firstClient, 431960, 7) { keyLoads += 1; byteArrayOf(4) }
+        assertEquals(listOf<Byte>(1, 2, 3), second.toList())
+        assertNotSame(first, second)
+        assertEquals(1, keyLoads)
+    }
+
+    @Test
+    fun cdnDirectoryCacheExpiresAndIsClientScoped() = runBlocking {
+        var now = 1_000L
+        val cache = SteamContentAccessCache { now }
+        val firstClient = Any()
+        val secondClient = Any()
+        var loads = 0
+        val load = suspend {
+            loads += 1
+            listOf(CdnServer("cdn-$loads.example", "cdn-$loads.example", 443, true))
+        }
+
+        assertEquals("cdn-1.example", cache.cdnServers(firstClient, 12, load).single().host)
+        assertEquals("cdn-1.example", cache.cdnServers(firstClient, 12, load).single().host)
+        assertEquals("cdn-2.example", cache.cdnServers(secondClient, 12, load).single().host)
+        now += 5 * 60 * 1_000L + 1
+        assertEquals("cdn-3.example", cache.cdnServers(firstClient, 12, load).single().host)
+        cache.invalidateCdnDirectories()
+        assertEquals("cdn-4.example", cache.cdnServers(firstClient, 12, load).single().host)
+        assertEquals(4, loads)
+    }
+}
+
+private class CountingWorkshopContentGateway(
+    private val target: WorkshopContentTarget,
+) : WorkshopContentGateway {
+    val fetches = AtomicInteger()
+
+    override suspend fun fetchContentTarget(
+        publishedFileId: Long,
+        proxyUrl: String,
+    ): WorkshopContentTarget {
+        fetches.incrementAndGet()
+        delay(20)
+        return target
+    }
+
+    override suspend fun download(
+        target: WorkshopContentTarget,
+        destinationDirectory: File,
+        credential: com.wallhub.android.core.model.SteamContentCredential?,
+        options: SteamContentDownloadOptions,
+        control: suspend () -> SteamDownloadControl,
+        onProgress: suspend (SteamDownloadProgress) -> Unit,
+    ): SteamContentDownloadResult = error("Not used")
+
+    override suspend fun acquireContentTransportLease(): Closeable = Closeable {}
 }

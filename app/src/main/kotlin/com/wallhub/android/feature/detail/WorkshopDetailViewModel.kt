@@ -207,6 +207,9 @@ class WorkshopDetailViewModel
                             )
                         refreshInteraction()
                         loadComments(refresh = true)
+                        viewModelScope.launch {
+                            runCatching { downloadTaskRepository.prewarmDownload(workshopId) }
+                        }
                     }.onFailure { error ->
                         mutableState.value =
                             mutableState.value.copy(

@@ -140,6 +140,15 @@ jobs:
                   raise SystemExit("kSteam proto repair did not converge; see GRADLE lines above")
           PYFIX
           ./gradlew --no-daemon publishToMavenLocal
+      - name: Test download startup regressions
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --build-cache \
+            -Pwallhub.usePatchedKSteam=true \
+            :app:testDebugUnitTest \
+            --tests com.wallhub.android.data.downloads.DownloadRetryRoutingTest \
+            --tests com.wallhub.android.data.downloads.SteamRemoteVideoStreamTest \
+            --tests com.wallhub.android.data.downloads.SteamCdnHttpsTest
       - name: Assemble Debug APK
         run: |
           chmod +x gradlew

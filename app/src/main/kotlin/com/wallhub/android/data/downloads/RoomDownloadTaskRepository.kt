@@ -28,7 +28,7 @@ import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 
-class RoomDownloadTaskRepository
+internal class RoomDownloadTaskRepository
     @Inject
     constructor(
         @ApplicationContext private val context: Context,
@@ -38,6 +38,7 @@ class RoomDownloadTaskRepository
         private val conversionScheduler: ConversionWorkScheduler,
         private val settingsRepository: SettingsRepository,
         private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
+        private val steamWorkshopContentClient: SteamWorkshopContentClient,
     ) : DownloadTaskRepository {
         private val taskMutationMutex = Mutex()
 
@@ -100,6 +101,23 @@ class RoomDownloadTaskRepository
                     "Unable to queue formal Steam download taskId=${task.id}, type=${error.javaClass.name}",
                 )
                 failed
+            }
+        }
+
+        override suspend fun prewarmDownload(workshopId: Long) {
+            if (workshopId <= 0L) return
+            val preferences = settingsRepository.preferences.first()
+            val proxyUrl =
+                preferences.downloadProxyUrl
+                    .takeIf { preferences.downloadProxyEnabled }
+                    .orEmpty()
+            val (target, credential) =
+                resolveDownloadTargetAndCredential(
+                    fetchTarget = { steamWorkshopContentClient.fetchContentTarget(workshopId, proxyUrl) },
+                    resolveCredential = credentialProvider::resolveContentCredential,
+                )
+            if (target.fileUrl.isBlank()) {
+                steamWorkshopContentClient.prewarmContentAccess(target, credential)
             }
         }
 

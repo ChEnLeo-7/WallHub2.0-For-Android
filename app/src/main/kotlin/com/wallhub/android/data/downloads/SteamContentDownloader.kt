@@ -261,11 +261,26 @@ internal class SteamContentDownloader
         private val depotDownloader: DepotDownloader,
         private val steamHttpClientFactory: SteamHttpClientFactory,
     ) {
+    private val contentAccessCache = SteamContentAccessCache()
+
     suspend fun <T> withContentTransportActive(block: suspend () -> T): T =
         sessionRepository.withContentTransportActive(block)
 
     suspend fun acquireContentTransportLease(): java.io.Closeable =
         sessionRepository.acquireContentTransportLease()
+
+    suspend fun prewarmContentAccess(
+        target: WorkshopContentTarget,
+        credential: SteamContentCredential?,
+    ) {
+        if (target.fileUrl.isNotBlank()) return
+        sessionRepository.withContentTransportActive {
+            withContext(Dispatchers.IO) {
+                val session = openContentSession(sessionRepository, credential)
+                prewarmContentAccess(session, target, contentAccessCache)
+            }
+        }
+    }
 
     suspend fun download(
         target: WorkshopContentTarget,
@@ -299,6 +314,7 @@ internal class SteamContentDownloader
                 }
                 withSteamCdnRecovery(
                     onRetry = { attempt, error ->
+                        contentAccessCache.invalidateCdnDirectories()
                         Log.w(
                             STEAM_CONTENT_LOG_TAG,
                             "Recoverable Steam CDN failure; rebuilding session after attempt $attempt, " +
@@ -335,7 +351,7 @@ internal class SteamContentDownloader
         try {
             checkDownloadControl(control)
             onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
-            val access = resolveContentAccess(session, target)
+            val access = resolveContentAccess(session, target, contentAccessCache)
             val selector = CdnServerSelector()
             Log.i(
                 STEAM_CONTENT_LOG_TAG,
@@ -447,7 +463,7 @@ internal class SteamContentDownloader
             try {
                 val session = openContentSession(sessionRepository, credential) {}
                 httpClient = createCdnHttpClient(normalizedOptions, steamHttpClientFactory)
-                val access = resolveContentAccess(session, target)
+                val access = resolveContentAccess(session, target, contentAccessCache)
                 val manifest =
                     downloadManifest(
                         httpClient = httpClient,

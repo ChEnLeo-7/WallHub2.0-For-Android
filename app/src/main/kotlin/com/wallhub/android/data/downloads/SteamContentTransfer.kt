@@ -39,7 +39,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.Call
-import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
@@ -52,6 +51,8 @@ import java.io.FileInputStream
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.security.MessageDigest
+import java.util.WeakHashMap
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -94,22 +95,29 @@ internal suspend fun openContentSession(
 internal suspend fun resolveContentAccess(
     session: KSteamContentSession,
     target: WorkshopContentTarget,
+    cache: SteamContentAccessCache,
 ): SteamContentAccess = coroutineScope {
     val client = session.client
-    val depotId = session.repository.steamWorkshopDepotId(client, target.appId)
+    val directoryServersDeferred = async {
+        cache.cdnServers(client, client.configuration.cellId) {
+            client.steamCdnServers(cellId = client.configuration.cellId, maxServers = CDN_SERVER_LIMIT)
+        }
+    }
+    val depotId = cache.depotId(client, target.appId) {
+        session.repository.steamWorkshopDepotId(client, target.appId)
+    }
     val depotKeyDeferred = async {
         try {
-            session.repository.steamDepotDecryptionKey(
-                client = client,
-                depotId = depotId,
-                appId = target.appId,
-            )
+            cache.depotKey(client, target.appId, depotId) {
+                session.repository.steamDepotDecryptionKey(
+                    client = client,
+                    depotId = depotId,
+                    appId = target.appId,
+                )
+            }
         } catch (error: IllegalStateException) {
             throw SteamDepotAccessException(depotId, error.message ?: "unavailable")
         }
-    }
-    val directoryServersDeferred = async {
-        client.steamCdnServers(cellId = client.configuration.cellId, maxServers = CDN_SERVER_LIMIT)
     }
     val requestCodeDeferred = async {
         client.steamManifestRequestCode(
@@ -144,6 +152,116 @@ internal suspend fun resolveContentAccess(
                 depotId = depotId,
             ),
     )
+}
+
+internal suspend fun prewarmContentAccess(
+    session: KSteamContentSession,
+    target: WorkshopContentTarget,
+    cache: SteamContentAccessCache,
+) = coroutineScope {
+    val client = session.client
+    val directoryServersDeferred = async {
+        cache.cdnServers(client, client.configuration.cellId) {
+            client.steamCdnServers(cellId = client.configuration.cellId, maxServers = CDN_SERVER_LIMIT)
+        }
+    }
+    val depotId = cache.depotId(client, target.appId) {
+        session.repository.steamWorkshopDepotId(client, target.appId)
+    }
+    val depotKeyDeferred = async {
+        cache.depotKey(client, target.appId, depotId) {
+            session.repository.steamDepotDecryptionKey(client, depotId, target.appId)
+        }
+    }
+    depotKeyDeferred.await()
+    directoryServersDeferred.await()
+}
+
+internal class SteamContentAccessCache(
+    private val nowMs: () -> Long = System::currentTimeMillis,
+) {
+    private data class DepotKey(
+        val appId: Int,
+        val depotId: Int,
+    )
+
+    private data class CachedServers(
+        val servers: List<CdnServer>,
+        val expiresAtMs: Long,
+    )
+
+    private class ClientCache {
+        val depotIds = ConcurrentHashMap<Int, Int>()
+        val depotKeys = ConcurrentHashMap<DepotKey, ByteArray>()
+        val serverDirectories = ConcurrentHashMap<Int, CachedServers>()
+        val locks = Array(CACHE_LOCK_COUNT) { Mutex() }
+
+        fun lockFor(key: Any): Mutex = locks[Math.floorMod(key.hashCode(), locks.size)]
+    }
+
+    private val clientCaches = WeakHashMap<Any, ClientCache>()
+
+    suspend fun depotId(
+        client: Any,
+        appId: Int,
+        load: suspend () -> Int,
+    ): Int {
+        val cache = cacheFor(client)
+        cache.depotIds[appId]?.let { return it }
+        return cache.lockFor(appId).withLock {
+            cache.depotIds[appId] ?: load().also { cache.depotIds[appId] = it }
+        }
+    }
+
+    suspend fun depotKey(
+        client: Any,
+        appId: Int,
+        depotId: Int,
+        load: suspend () -> ByteArray,
+    ): ByteArray {
+        val key = DepotKey(appId, depotId)
+        val cache = cacheFor(client)
+        cache.depotKeys[key]?.let { return it.copyOf() }
+        return cache.lockFor(key).withLock {
+            cache.depotKeys[key]?.copyOf()
+                ?: load().copyOf().also { cache.depotKeys[key] = it }.copyOf()
+        }
+    }
+
+    suspend fun cdnServers(
+        client: Any,
+        cellId: Int,
+        load: suspend () -> List<CdnServer>,
+    ): List<CdnServer> {
+        val cache = cacheFor(client)
+        cache.serverDirectories[cellId]
+            ?.takeIf { cached -> cached.expiresAtMs > nowMs() }
+            ?.let { cached -> return cached.servers }
+        return cache.lockFor(cellId).withLock {
+            cache.serverDirectories[cellId]
+                ?.takeIf { cached -> cached.expiresAtMs > nowMs() }
+                ?.servers
+                ?: load().also { servers ->
+                    cache.serverDirectories[cellId] = CachedServers(servers, nowMs() + CDN_DIRECTORY_CACHE_TTL_MS)
+                }
+        }
+    }
+
+    fun invalidateCdnDirectories() {
+        synchronized(clientCaches) {
+            clientCaches.values.forEach { cache -> cache.serverDirectories.clear() }
+        }
+    }
+
+    private fun cacheFor(client: Any): ClientCache =
+        synchronized(clientCaches) {
+            clientCaches.getOrPut(client, ::ClientCache)
+        }
+
+    private companion object {
+        const val CDN_DIRECTORY_CACHE_TTL_MS = 5 * 60 * 1_000L
+        const val CACHE_LOCK_COUNT = 16
+    }
 }
 
 internal class SteamDepotAccessException(
@@ -1924,13 +2042,7 @@ internal fun createCdnHttpClient(
         clientFactory
             .newBuilder()
             .dispatcher(dispatcher)
-            .connectionPool(
-                ConnectionPool(
-                    options.chunkConcurrency,
-                    CDN_KEEP_ALIVE_MINUTES,
-                    TimeUnit.MINUTES,
-                ),
-            ).connectTimeout(CDN_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .connectTimeout(CDN_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .readTimeout(CDN_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .writeTimeout(CDN_WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(true)
@@ -2366,7 +2478,6 @@ internal const val MAX_CDN_ERROR_DETAILS = 3
 internal const val CDN_CONNECT_TIMEOUT_MS = 20_000L
 internal const val CDN_READ_TIMEOUT_MS = 20_000L
 internal const val CDN_WRITE_TIMEOUT_MS = 20_000L
-internal const val CDN_KEEP_ALIVE_MINUTES = 5L
 internal const val CDN_TRANSFER_MAX_ATTEMPTS = 3
 private val CDN_TRANSFER_RETRY_DELAYS_MS = longArrayOf(1_000L, 3_000L)
 internal const val STEAM_CONTENT_LOG_TAG = "WallHubDownload"

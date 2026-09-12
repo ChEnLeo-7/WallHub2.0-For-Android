@@ -5,6 +5,8 @@ import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
@@ -12,12 +14,18 @@ import java.io.Closeable
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.LinkedHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /** Separates the externally hosted Steam session from WorkManager task orchestration. */
 internal interface WorkshopContentGateway {
     suspend fun acquireContentTransportLease(): Closeable = Closeable {}
+
+    suspend fun prewarmContentAccess(
+        target: WorkshopContentTarget,
+        credential: SteamContentCredential?,
+    ) = Unit
 
     suspend fun fetchContentTarget(
         publishedFileId: Long,
@@ -40,6 +48,13 @@ internal class FormalSteamWorkshopContentGateway(
 ) : WorkshopContentGateway {
     override suspend fun acquireContentTransportLease(): Closeable =
         contentDownloader.acquireContentTransportLease()
+
+    override suspend fun prewarmContentAccess(
+        target: WorkshopContentTarget,
+        credential: SteamContentCredential?,
+    ) {
+        contentDownloader.prewarmContentAccess(target, credential)
+    }
 
     override suspend fun fetchContentTarget(
         publishedFileId: Long,
@@ -312,22 +327,66 @@ private val PNG_SIGNATURE = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0
 @Singleton
 internal class SteamWorkshopContentClient private constructor(
     private val gateway: WorkshopContentGateway,
+    private val nowMs: () -> Long,
     @Suppress("UNUSED_PARAMETER") marker: Unit,
 ) {
+    private data class CachedTarget(
+        val target: WorkshopContentTarget,
+        val expiresAtMs: Long,
+    )
+
+    private val targetCache =
+        object : LinkedHashMap<Long, CachedTarget>(TARGET_CACHE_MAX_ENTRIES, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, CachedTarget>?): Boolean =
+                size > TARGET_CACHE_MAX_ENTRIES
+        }
+    private val targetLocks = Array(TARGET_CACHE_LOCK_COUNT) { Mutex() }
+
+    private fun cachedTarget(publishedFileId: Long): WorkshopContentTarget? =
+        synchronized(targetCache) {
+            targetCache[publishedFileId]
+                ?.takeIf { cached -> cached.expiresAtMs > nowMs() }
+                ?.target
+                ?: run {
+                    targetCache.remove(publishedFileId)
+                    null
+                }
+        }
+
     @Inject
     constructor(
         httpClientFactory: SteamHttpClientFactory,
         contentDownloader: SteamContentDownloader,
-    ) : this(FormalSteamWorkshopContentGateway(httpClientFactory, contentDownloader), Unit)
+    ) : this(FormalSteamWorkshopContentGateway(httpClientFactory, contentDownloader), System::currentTimeMillis, Unit)
 
     internal constructor(
         gateway: WorkshopContentGateway,
-    ) : this(gateway, Unit)
+        nowMs: () -> Long = System::currentTimeMillis,
+    ) : this(gateway, nowMs, Unit)
 
     internal suspend fun fetchContentTarget(
         publishedFileId: Long,
         proxyUrl: String,
-    ): WorkshopContentTarget = gateway.fetchContentTarget(publishedFileId, proxyUrl)
+    ): WorkshopContentTarget {
+        cachedTarget(publishedFileId)?.let { return it }
+        return targetLocks[Math.floorMod(publishedFileId.hashCode(), targetLocks.size)].withLock {
+            cachedTarget(publishedFileId)?.let { cached -> return@withLock cached }
+            gateway.fetchContentTarget(publishedFileId, proxyUrl).also { target ->
+                synchronized(targetCache) {
+                    targetCache[publishedFileId] = CachedTarget(target, nowMs() + TARGET_CACHE_TTL_MS)
+                }
+            }
+        }
+    }
+
+    internal suspend fun prewarmContentAccess(
+        target: WorkshopContentTarget,
+        credential: SteamContentCredential?,
+    ) = gateway.prewarmContentAccess(target, credential)
+
+    internal fun invalidateContentTarget(publishedFileId: Long) {
+        synchronized(targetCache) { targetCache.remove(publishedFileId) }
+    }
 
     internal suspend fun acquireContentTransportLease(): Closeable =
         gateway.acquireContentTransportLease()
@@ -348,4 +407,10 @@ internal class SteamWorkshopContentClient private constructor(
             control = control,
             onProgress = onProgress,
         )
+
+    private companion object {
+        const val TARGET_CACHE_TTL_MS = 5 * 60 * 1_000L
+        const val TARGET_CACHE_MAX_ENTRIES = 64
+        const val TARGET_CACHE_LOCK_COUNT = 16
+    }
 }

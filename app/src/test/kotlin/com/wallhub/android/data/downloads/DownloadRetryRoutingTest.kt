@@ -4,12 +4,69 @@ import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
 import com.wallhub.android.core.model.WorkshopType
 import java.nio.file.Files
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadRetryRoutingTest {
+    @Test
+    fun directTargetDoesNotWaitForCredentialRestoration() = runBlocking {
+        val credentialCancelled = AtomicBoolean(false)
+        val target =
+            WorkshopContentTarget(
+                publishedFileId = 42L,
+                title = "Clip",
+                appId = 431960,
+                contentManifestId = 0L,
+                expectedSize = 10L,
+                contentTypeHint = "video",
+                fileUrl = "https://cdn.example/clip.mp4",
+            )
+
+        val result =
+            resolveDownloadTargetAndCredential(
+                fetchTarget = { target },
+                resolveCredential = {
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        credentialCancelled.set(true)
+                    }
+                },
+            )
+
+        assertEquals(target, result.first)
+        assertEquals(null, result.second)
+        assertTrue(credentialCancelled.get())
+    }
+
+    @Test
+    fun directTargetIgnoresCredentialRestorationFailure() = runBlocking {
+        val target =
+            WorkshopContentTarget(
+                publishedFileId = 42L,
+                title = "Clip",
+                appId = 431960,
+                contentManifestId = 0L,
+                expectedSize = 10L,
+                contentTypeHint = "video",
+                fileUrl = "https://cdn.example/clip.mp4",
+            )
+
+        val result =
+            resolveDownloadTargetAndCredential(
+                fetchTarget = { target },
+                resolveCredential = { error("Corrupt credential") },
+            )
+
+        assertEquals(target, result.first)
+        assertEquals(null, result.second)
+    }
+
     @Test
     fun `download task identity falls back to its request tag`() {
         assertEquals(

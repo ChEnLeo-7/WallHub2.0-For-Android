@@ -315,6 +315,8 @@ interface DownloadTaskRepository {
 
     suspend fun enqueue(request: DownloadRequest): DownloadTask
 
+    suspend fun prewarmDownload(workshopId: Long) = Unit
+
     suspend fun requestAction(
         taskId: String,
         action: DownloadAction,

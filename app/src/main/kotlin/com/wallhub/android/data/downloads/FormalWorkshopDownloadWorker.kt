@@ -18,13 +18,16 @@ import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadCredentialMode
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.WorkshopType
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -58,6 +61,30 @@ internal fun resolveDownloadTaskId(
             .firstOrNull { it.startsWith(FormalWorkshopDownloadWorker.WORK_TAG_PREFIX) }
             ?.removePrefix(FormalWorkshopDownloadWorker.WORK_TAG_PREFIX)
             ?.takeIf(String::isNotBlank)
+
+internal suspend fun resolveDownloadTargetAndCredential(
+    fetchTarget: suspend () -> WorkshopContentTarget,
+    resolveCredential: suspend () -> SteamContentCredential?,
+): Pair<WorkshopContentTarget, SteamContentCredential?> = supervisorScope {
+    val targetDeferred = async { fetchTarget() }
+    val credentialDeferred =
+        async(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                Result.success(resolveCredential())
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Result.failure(error)
+            }
+        }
+    val target = targetDeferred.await()
+    if (target.fileUrl.isNotBlank()) {
+        credentialDeferred.cancel()
+        target to null
+    } else {
+        target to credentialDeferred.await().getOrThrow()
+    }
+}
 
 internal fun resolveWorkshopStagingDirectory(
     persistentRoot: File,
@@ -184,16 +211,16 @@ class FormalWorkshopDownloadWorker
                             downloadPreferences.downloadProxyUrl
                                 .takeIf { downloadPreferences.downloadProxyEnabled }
                                 .orEmpty()
-                        val (target, credential) = coroutineScope {
-                            val targetDeferred = async {
-                                steamWorkshopContentClient.fetchContentTarget(
-                                    publishedFileId = task.workshopId,
-                                    proxyUrl = activeProxyUrl,
-                                )
-                            }
-                            val credentialDeferred = async { credentialProvider.resolveContentCredential() }
-                            targetDeferred.await() to credentialDeferred.await()
-                        }
+                        val (target, credential) =
+                            resolveDownloadTargetAndCredential(
+                                fetchTarget = {
+                                    steamWorkshopContentClient.fetchContentTarget(
+                                        publishedFileId = task.workshopId,
+                                        proxyUrl = activeProxyUrl,
+                                    )
+                                },
+                                resolveCredential = credentialProvider::resolveContentCredential,
+                            )
                         if (target.fileUrl.isBlank()) {
                             contentTransportLease = steamWorkshopContentClient.acquireContentTransportLease()
                         }
@@ -456,6 +483,7 @@ class FormalWorkshopDownloadWorker
                         throw error
                     }
                 } catch (error: Throwable) {
+                    steamWorkshopContentClient.invalidateContentTarget(task.workshopId)
                     Log.e(
                         DOWNLOAD_LOG_TAG,
                         "Formal Steam download worker failed taskId=$taskId, type=${error.javaClass.name}",
