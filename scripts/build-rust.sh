@@ -36,6 +36,10 @@ case "$(uname -s)" in
         HOST_TAG="windows-x86_64"
         LINKER_SUFFIX=".cmd"
         AR_SUFFIX=".exe"
+        KSTEAM_CORE_POM="$HOME/.m2/repository/bruhcollective/itaysonlab/ksteam/core/r50/core-r50.pom"
+        if [[ ! -f "$KSTEAM_CORE_POM" ]]; then
+            "$SCRIPT_DIR/build-patched-ksteam.sh"
+        fi
         ;;
     Darwin*)
         HOST_TAG="darwin-x86_64"
