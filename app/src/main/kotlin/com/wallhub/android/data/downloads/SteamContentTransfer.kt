@@ -1170,7 +1170,7 @@ internal suspend fun downloadManifest(
         }
     } catch (error: CdnRaceFailure) {
         val failures = error.failures.mapNotNull { it as? CdnCandidateFailure }
-        val causes = failures.mapNotNull(Throwable::getCause)
+        val causes = failures.mapNotNull { failure -> failure.cause }
         val lastError = causes.lastOrNull()
         throw SteamCdnTransferException(
             message =
