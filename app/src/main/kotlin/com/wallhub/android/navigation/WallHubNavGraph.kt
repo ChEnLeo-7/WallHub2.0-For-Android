@@ -57,6 +57,9 @@ internal fun WallHubNavHost(
     val openSettings = {
         navController.navigate(SettingsDestination) { launchSingleTop = true }
     }
+    val openDownloads = {
+        navController.navigate(DownloadsDestination) { launchSingleTop = true }
+    }
     NavHost(
         navController = navController,
         startDestination = HomeDestination,
@@ -82,6 +85,7 @@ internal fun WallHubNavHost(
             HomeRoute(
                 onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
                 onSearchAuthor = navigateToAuthorSearch,
+                onOpenDownloads = openDownloads,
                 scrollToTopRequest = homeScrollRequest,
                 onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
             )
@@ -133,6 +137,7 @@ internal fun WallHubNavHost(
                 onBack = { navController.popBackStack() },
                 onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
                 onSearchAuthor = navigateToAuthorSearch,
+                onOpenDownloads = openDownloads,
             )
         }
         composable<ProfileDestination> {
@@ -150,6 +155,7 @@ internal fun WallHubNavHost(
             HomeRoute(
                 onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
                 onSearchAuthor = navigateToAuthorSearch,
+                onOpenDownloads = openDownloads,
                 onBack = { navController.popBackStack() },
                 onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
             )
@@ -158,6 +164,7 @@ internal fun WallHubNavHost(
             HomeRoute(
                 onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
                 onSearchAuthor = navigateToAuthorSearch,
+                onOpenDownloads = openDownloads,
                 onBack = { navController.popBackStack() },
                 onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
             )
@@ -175,6 +182,7 @@ internal fun WallHubNavHost(
                 onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
                 onPlayVideo = { navController.navigate(OnlineVideoPlayerDestination(it)) },
                 onSearchAuthor = navigateToAuthorSearch,
+                onOpenDownloads = openDownloads,
                 onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
             )
         }
@@ -186,6 +194,7 @@ internal fun WallHubNavHost(
                 onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
                 onPlayVideo = { navController.navigate(OnlineVideoPlayerDestination(it)) },
                 onSearchAuthor = navigateToAuthorSearch,
+                onOpenDownloads = openDownloads,
                 onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
             )
         }
@@ -209,6 +218,7 @@ internal fun WallHubNavHost(
                 onSearchAuthor = navigateToAuthorSearch,
                 onSearchTag = navigateToTagSearch,
                 onOpenLocalVideo = { navController.navigate(LocalVideoPlayerDestination(it)) },
+                onOpenDownloads = openDownloads,
             )
         }
         composable<LocalVideoPlayerDestination> { LocalVideoPlayerRoute(onBack = { navController.popBackStack() }) }

@@ -57,6 +57,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -164,7 +168,6 @@ import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.HowToVote
 import androidx.compose.material.icons.outlined.ImageNotSupported
-import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.StarBorder
@@ -996,28 +999,38 @@ fun LibraryRoute(
     onOpenDetail: (Long) -> Unit,
     onPlayVideo: (Long) -> Unit = {},
     onSearchAuthor: (String) -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
     onContextMenuActiveChanged: (Boolean) -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(initialCollection) {
         initialCollection
             ?.let { value -> LibraryCollectionTab.entries.firstOrNull { it.name == value } }
             ?.let { viewModel.onAction(LibraryAction.SelectCollection(it)) }
     }
-    LibraryEffectHandler(
-        viewModel = viewModel,
-        onOpenDetail = onOpenDetail,
-        onPlayVideo = onPlayVideo,
-        onSearchAuthor = onSearchAuthor,
-    )
-    LibraryScreen(
-        state = state,
-        onAction = viewModel::onAction,
-        onOpenSettings = onOpenSettings,
-        onBack = onBack,
-        onContextMenuActiveChanged = onContextMenuActiveChanged,
-    )
+    Box(modifier = Modifier.fillMaxSize()) {
+        LibraryEffectHandler(
+            viewModel = viewModel,
+            onOpenDetail = onOpenDetail,
+            onPlayVideo = onPlayVideo,
+            onSearchAuthor = onSearchAuthor,
+            onOpenDownloads = onOpenDownloads,
+            snackbarHostState = snackbarHostState,
+        )
+        LibraryScreen(
+            state = state,
+            onAction = viewModel::onAction,
+            onOpenSettings = onOpenSettings,
+            onBack = onBack,
+            onContextMenuActiveChanged = onContextMenuActiveChanged,
+        )
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+        )
+    }
 }
 
 @Composable
@@ -1026,6 +1039,8 @@ fun LibraryEffectHandler(
     onOpenDetail: (Long) -> Unit,
     onPlayVideo: (Long) -> Unit = {},
     onSearchAuthor: (String) -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
+    snackbarHostState: SnackbarHostState,
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -1033,6 +1048,7 @@ fun LibraryEffectHandler(
     val currentOnOpenDetail by rememberUpdatedState(onOpenDetail)
     val currentOnPlayVideo by rememberUpdatedState(onPlayVideo)
     val currentOnSearchAuthor by rememberUpdatedState(onSearchAuthor)
+    val currentOnOpenDownloads by rememberUpdatedState(onOpenDownloads)
     LaunchedEffect(viewModel, context, resources) {
         viewModel.effects.collect { effect ->
             when (effect) {
@@ -1052,12 +1068,21 @@ fun LibraryEffectHandler(
                     runCatching { context.startActivity(intent) }
                         .onFailure { currentOnOpenDetail(effect.workshopId) }
                 }
-                is LibraryEffect.ShowMessage ->
-                    Toast.makeText(
-                        context.applicationContext,
-                        resources.getString(effect.messageRes, *effect.formatArgs.toTypedArray()),
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                is LibraryEffect.ShowMessage -> {
+                    val message = resources.getString(effect.messageRes, *effect.formatArgs.toTypedArray())
+                    if (effect.messageRes == R.string.home_added_to_download_queue) {
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                        val result =
+                            snackbarHostState.showSnackbar(
+                                message = message,
+                                actionLabel = resources.getString(R.string.downloads_view_queue),
+                                duration = SnackbarDuration.Long,
+                            )
+                        if (result == SnackbarResult.ActionPerformed) currentOnOpenDownloads()
+                    } else {
+                        Toast.makeText(context.applicationContext, message, Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
     }
@@ -1682,7 +1707,7 @@ private fun LibraryWorkshopCard(
         onCopyText = onCopyText,
         onOpenSteam = onOpenSteam,
         modifier = Modifier.fillMaxWidth(),
-    ) { onShowActions ->
+    ) {
         Column {
             Box(
                 modifier =
@@ -1725,25 +1750,6 @@ private fun LibraryWorkshopCard(
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = WallHubSpacing.xs, vertical = WallHubSpacing.xxs),
                     )
-                }
-                Surface(
-                    modifier =
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(WallHubSpacing.xs),
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                ) {
-                    IconButton(
-                        onClick = onShowActions,
-                        modifier = Modifier.size(36.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.MoreVert,
-                            contentDescription = stringResource(R.string.library_open_actions_menu),
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
                 }
             }
             BoxWithConstraints(

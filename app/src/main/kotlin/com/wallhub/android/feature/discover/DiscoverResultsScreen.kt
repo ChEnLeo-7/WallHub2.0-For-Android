@@ -43,6 +43,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
@@ -323,6 +327,7 @@ fun DiscoverResultsRoute(
     onBack: () -> Unit,
     onOpenDetail: (Long) -> Unit,
     onSearchAuthor: (String) -> Unit,
+    onOpenDownloads: () -> Unit = {},
     viewModel: DiscoverResultsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -339,6 +344,8 @@ fun DiscoverResultsRoute(
     val clipboard = LocalClipboardManager.current
     val currentOpenDetail by rememberUpdatedState(onOpenDetail)
     val currentSearchAuthor by rememberUpdatedState(onSearchAuthor)
+    val currentOpenDownloads by rememberUpdatedState(onOpenDownloads)
+    val snackbarHostState = remember { SnackbarHostState() }
     var pendingDownload by remember { mutableStateOf<WorkshopSummary?>(null) }
     val filterDrawerState = rememberDrawerState(DrawerValue.Closed)
     val filterDrawerScope = rememberCoroutineScope()
@@ -355,12 +362,21 @@ fun DiscoverResultsRoute(
     LaunchedEffect(viewModel, context, resources) {
         viewModel.effects.collect { effect ->
             when (effect) {
-                is DiscoverResultsEffect.ShowMessage ->
-                    Toast.makeText(
-                        context.applicationContext,
-                        resources.getString(effect.messageRes, *effect.formatArgs.toTypedArray()),
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                is DiscoverResultsEffect.ShowMessage -> {
+                    val message = resources.getString(effect.messageRes, *effect.formatArgs.toTypedArray())
+                    if (effect.messageRes == R.string.home_added_to_download_queue) {
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                        val result =
+                            snackbarHostState.showSnackbar(
+                                message = message,
+                                actionLabel = resources.getString(R.string.downloads_view_queue),
+                                duration = SnackbarDuration.Long,
+                            )
+                        if (result == SnackbarResult.ActionPerformed) currentOpenDownloads()
+                    } else {
+                        Toast.makeText(context.applicationContext, message, Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
     }
@@ -394,226 +410,232 @@ fun DiscoverResultsRoute(
             }
         },
     ) {
-        WallHubContextMenuLayer(
-            state = contextMenuState,
-            onActiveChanged = {},
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            WallHubPageScaffold(
-                title = discoverResultsTitle(viewModel.destination, state.items.firstOrNull()?.author),
-                showBackButton = true,
-                onNavigateUp = onBack,
-                actions = {
-                    if (viewModel.destination.filtersEnabled) {
-                        IconButton(onClick = { filterDrawerScope.launch { filterDrawerState.open() } }) {
-                            Icon(Icons.Outlined.FilterAlt, stringResource(R.string.home_open_all_filters))
-                        }
-                    }
-                    DiscoverResultsViewModeToggle(
-                        columns = state.resultColumns,
-                        onColumnsChanged = { targetColumns ->
-                            val transitionStarted =
-                                layoutMotionState.request(
-                                    sourceKey = HomeCardLayoutKey.resolve(HomeViewMode.GRID, state.resultColumns),
-                                    targetKey = HomeCardLayoutKey.resolve(HomeViewMode.GRID, targetColumns),
-                                    visibleIndices = gridState.layoutInfo.visibleItemsInfo.map { item -> item.index },
-                                )
-                            if (transitionStarted || !layoutMotionState.isRunning) {
-                                viewModel.setResultColumns(targetColumns)
-                            }
-                        },
-                    )
-                },
-            ) { padding ->
-            when {
-                state.items.isEmpty() && state.isLoading ->
-                    Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                state.items.isEmpty() && state.error != null ->
-                    Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(stringResource(R.string.discover_results_load_failed), color = MaterialTheme.colorScheme.error)
-                            Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) {
-                                Text(stringResource(R.string.discover_retry))
+        Box(modifier = Modifier.fillMaxSize()) {
+            WallHubContextMenuLayer(
+                state = contextMenuState,
+                onActiveChanged = {},
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                WallHubPageScaffold(
+                    title = discoverResultsTitle(viewModel.destination, state.items.firstOrNull()?.author),
+                    showBackButton = true,
+                    onNavigateUp = onBack,
+                    actions = {
+                        if (viewModel.destination.filtersEnabled) {
+                            IconButton(onClick = { filterDrawerScope.launch { filterDrawerState.open() } }) {
+                                Icon(Icons.Outlined.FilterAlt, stringResource(R.string.home_open_all_filters))
                             }
                         }
-                    }
-                state.items.isEmpty() ->
-                    WallHubEmptyState(
-                        icon = Icons.Outlined.Collections,
-                        title = stringResource(R.string.discover_rail_empty),
-                        actionLabel = stringResource(R.string.discover_retry),
-                        onAction = viewModel::retry,
-                        modifier = Modifier.fillMaxSize().padding(padding),
-                    )
-                else -> {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(state.resultColumns),
-                        state = gridState,
-                        modifier =
-                            Modifier
-                                .fillMaxSize()
-                                .padding(padding)
-                                .onGloballyPositioned { contextMenuState.gridCoordinates = it },
-                        contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp),
-                        horizontalArrangement = Arrangement.spacedBy(DISCOVER_RESULTS_GRID_SPACING),
-                        verticalArrangement = Arrangement.spacedBy(DISCOVER_RESULTS_GRID_SPACING),
-                    ) {
-                        itemsIndexed(state.items, key = { _, item -> item.id }) { index, item ->
-                            val itemTitle = item.localizedTitle()
-                            val itemAuthor = item.localizedAuthor()
-                            WallHubContextMenuCard(
-                                itemId = item.id,
-                                shape = MaterialTheme.shapes.medium,
-                                state = contextMenuState,
-                                onClick = { currentOpenDetail(item.id) },
-                                clickLabel = stringResource(R.string.home_view_details),
-                                longClickLabel = stringResource(R.string.home_open_actions_menu),
-                                modifier = Modifier.fillMaxWidth(),
-                                menuContent = { dismiss ->
-                                    WallHubContextMenuMetadataItem(
-                                        label = stringResource(R.string.home_wallpaper_title),
-                                        value = itemTitle,
-                                        icon = Icons.Outlined.ContentCopy,
-                                        onClick = {
-                                            clipboard.setText(AnnotatedString(itemTitle))
-                                            Toast.makeText(context, R.string.home_wallpaper_title_copied, Toast.LENGTH_SHORT).show()
-                                            dismiss()
-                                        },
+                        DiscoverResultsViewModeToggle(
+                            columns = state.resultColumns,
+                            onColumnsChanged = { targetColumns ->
+                                val transitionStarted =
+                                    layoutMotionState.request(
+                                        sourceKey = HomeCardLayoutKey.resolve(HomeViewMode.GRID, state.resultColumns),
+                                        targetKey = HomeCardLayoutKey.resolve(HomeViewMode.GRID, targetColumns),
+                                        visibleIndices = gridState.layoutInfo.visibleItemsInfo.map { item -> item.index },
                                     )
-                                    WallHubContextMenuMetadataItem(
-                                        label = stringResource(R.string.home_author),
-                                        value = itemAuthor,
-                                        icon = Icons.Outlined.PersonOutline,
-                                        onClick = {
-                                            dismiss()
-                                            currentSearchAuthor(item.creatorId ?: item.author)
-                                        },
-                                    )
-                                    WallHubContextMenuMetadataItem(
-                                        label = stringResource(R.string.home_project_id),
-                                        value = item.id.toString(),
-                                        icon = Icons.Outlined.ContentCopy,
-                                        onClick = {
-                                            clipboard.setText(AnnotatedString(item.id.toString()))
-                                            Toast.makeText(context, R.string.home_project_id_copied, Toast.LENGTH_SHORT).show()
-                                            dismiss()
-                                        },
-                                    )
-                                    Spacer(Modifier.padding(top = WallHubSpacing.xxxs))
-                                    WallHubContextMenuAction(
-                                        text = stringResource(R.string.home_download),
-                                        icon = Icons.Outlined.Download,
-                                        onClick = {
-                                            dismiss()
-                                            if (context.requiresLegacyPublicDownloadPermission()) {
-                                                pendingDownload = item
-                                                storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                                            } else {
-                                                viewModel.download(item)
-                                            }
-                                        },
-                                    )
-                                    if (item.type == WorkshopType.VIDEO) {
-                                        WallHubContextMenuAction(
-                                            text = stringResource(R.string.home_open_video_details),
-                                            icon = Icons.Outlined.PlayArrow,
-                                            onClick = {
-                                                dismiss()
-                                                currentOpenDetail(item.id)
-                                            },
-                                        )
+                                if (transitionStarted || !layoutMotionState.isRunning) {
+                                    viewModel.setResultColumns(targetColumns)
+                                }
+                            },
+                        )
+                    },
+                ) { padding ->
+                    when {
+                        state.items.isEmpty() && state.isLoading ->
+                            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
+                        state.items.isEmpty() && state.error != null ->
+                            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(stringResource(R.string.discover_results_load_failed), color = MaterialTheme.colorScheme.error)
+                                    Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) {
+                                        Text(stringResource(R.string.discover_retry))
                                     }
-                                    WallHubContextMenuAction(
-                                        text = stringResource(R.string.home_open_in_steam),
-                                        icon = Icons.AutoMirrored.Outlined.OpenInNew,
-                                        onClick = {
-                                            dismiss()
-                                            val intent =
-                                                Intent(
-                                                    Intent.ACTION_VIEW,
-                                                    Uri.parse("https://steamcommunity.com/sharedfiles/filedetails/?id=${item.id}"),
-                                                )
-                                            runCatching { context.startActivity(intent) }
-                                                .onFailure { currentOpenDetail(item.id) }
-                                        },
-                                    )
-                                },
-                            ) {
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                                    shape = MaterialTheme.shapes.medium,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .then(
-                                                layoutMotionState.participantModifier(
-                                                    index = index,
-                                                    participant = HomeCardProjectionParticipant.CARD,
-                                                ),
-                                            ),
-                                ) {
-                                    AsyncImage(
-                                        model = item.previewUrl,
-                                        contentDescription = itemTitle,
-                                        contentScale = ContentScale.Crop,
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .aspectRatio(16f / 9f)
-                                                .then(
-                                                    layoutMotionState.participantModifier(
-                                                        index = index,
-                                                        participant = HomeCardProjectionParticipant.MEDIA,
-                                                    ),
-                                                ),
-                                    )
-                                    Text(
-                                        itemTitle,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier =
-                                            Modifier
-                                                .padding(start = 12.dp, end = 12.dp, top = 10.dp)
-                                                .then(
-                                                    layoutMotionState.participantModifier(
-                                                        index = index,
-                                                        participant = HomeCardProjectionParticipant.TITLE,
-                                                    ),
-                                                ),
-                                    )
-                                    Text(
-                                        itemAuthor,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier =
-                                            Modifier
-                                                .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 10.dp)
-                                                .then(
-                                                    layoutMotionState.participantModifier(
-                                                        index = index,
-                                                        participant = HomeCardProjectionParticipant.METADATA,
-                                                    ),
-                                                ),
-                                    )
                                 }
                             }
-                        }
-                        if (state.isLoading) {
-                            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                                Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator()
+                        state.items.isEmpty() ->
+                            WallHubEmptyState(
+                                icon = Icons.Outlined.Collections,
+                                title = stringResource(R.string.discover_rail_empty),
+                                actionLabel = stringResource(R.string.discover_retry),
+                                onAction = viewModel::retry,
+                                modifier = Modifier.fillMaxSize().padding(padding),
+                            )
+                        else -> {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(state.resultColumns),
+                                state = gridState,
+                                modifier =
+                                    Modifier
+                                        .fillMaxSize()
+                                        .padding(padding)
+                                        .onGloballyPositioned { contextMenuState.gridCoordinates = it },
+                                contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp),
+                                horizontalArrangement = Arrangement.spacedBy(DISCOVER_RESULTS_GRID_SPACING),
+                                verticalArrangement = Arrangement.spacedBy(DISCOVER_RESULTS_GRID_SPACING),
+                            ) {
+                                itemsIndexed(state.items, key = { _, item -> item.id }) { index, item ->
+                                    val itemTitle = item.localizedTitle()
+                                    val itemAuthor = item.localizedAuthor()
+                                    WallHubContextMenuCard(
+                                        itemId = item.id,
+                                        shape = MaterialTheme.shapes.medium,
+                                        state = contextMenuState,
+                                        onClick = { currentOpenDetail(item.id) },
+                                        clickLabel = stringResource(R.string.home_view_details),
+                                        longClickLabel = stringResource(R.string.home_open_actions_menu),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        menuContent = { dismiss ->
+                                            WallHubContextMenuMetadataItem(
+                                                label = stringResource(R.string.home_wallpaper_title),
+                                                value = itemTitle,
+                                                icon = Icons.Outlined.ContentCopy,
+                                                onClick = {
+                                                    clipboard.setText(AnnotatedString(itemTitle))
+                                                    Toast.makeText(context, R.string.home_wallpaper_title_copied, Toast.LENGTH_SHORT).show()
+                                                    dismiss()
+                                                },
+                                            )
+                                            WallHubContextMenuMetadataItem(
+                                                label = stringResource(R.string.home_author),
+                                                value = itemAuthor,
+                                                icon = Icons.Outlined.PersonOutline,
+                                                onClick = {
+                                                    dismiss()
+                                                    currentSearchAuthor(item.creatorId ?: item.author)
+                                                },
+                                            )
+                                            WallHubContextMenuMetadataItem(
+                                                label = stringResource(R.string.home_project_id),
+                                                value = item.id.toString(),
+                                                icon = Icons.Outlined.ContentCopy,
+                                                onClick = {
+                                                    clipboard.setText(AnnotatedString(item.id.toString()))
+                                                    Toast.makeText(context, R.string.home_project_id_copied, Toast.LENGTH_SHORT).show()
+                                                    dismiss()
+                                                },
+                                            )
+                                            Spacer(Modifier.padding(top = WallHubSpacing.xxxs))
+                                            WallHubContextMenuAction(
+                                                text = stringResource(R.string.home_download),
+                                                icon = Icons.Outlined.Download,
+                                                onClick = {
+                                                    dismiss()
+                                                    if (context.requiresLegacyPublicDownloadPermission()) {
+                                                        pendingDownload = item
+                                                        storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                                                    } else {
+                                                        viewModel.download(item)
+                                                    }
+                                                },
+                                            )
+                                            if (item.type == WorkshopType.VIDEO) {
+                                                WallHubContextMenuAction(
+                                                    text = stringResource(R.string.home_open_video_details),
+                                                    icon = Icons.Outlined.PlayArrow,
+                                                    onClick = {
+                                                        dismiss()
+                                                        currentOpenDetail(item.id)
+                                                    },
+                                                )
+                                            }
+                                            WallHubContextMenuAction(
+                                                text = stringResource(R.string.home_open_in_steam),
+                                                icon = Icons.AutoMirrored.Outlined.OpenInNew,
+                                                onClick = {
+                                                    dismiss()
+                                                    val intent =
+                                                        Intent(
+                                                            Intent.ACTION_VIEW,
+                                                            Uri.parse("https://steamcommunity.com/sharedfiles/filedetails/?id=${item.id}"),
+                                                        )
+                                                    runCatching { context.startActivity(intent) }
+                                                        .onFailure { currentOpenDetail(item.id) }
+                                                },
+                                            )
+                                        },
+                                    ) {
+                                        Card(
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                                            shape = MaterialTheme.shapes.medium,
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .then(
+                                                        layoutMotionState.participantModifier(
+                                                            index = index,
+                                                            participant = HomeCardProjectionParticipant.CARD,
+                                                        ),
+                                                    ),
+                                        ) {
+                                            AsyncImage(
+                                                model = item.previewUrl,
+                                                contentDescription = itemTitle,
+                                                contentScale = ContentScale.Crop,
+                                                modifier =
+                                                    Modifier
+                                                        .fillMaxWidth()
+                                                        .aspectRatio(16f / 9f)
+                                                        .then(
+                                                            layoutMotionState.participantModifier(
+                                                                index = index,
+                                                                participant = HomeCardProjectionParticipant.MEDIA,
+                                                            ),
+                                                        ),
+                                            )
+                                            Text(
+                                                itemTitle,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier =
+                                                    Modifier
+                                                        .padding(start = 12.dp, end = 12.dp, top = 10.dp)
+                                                        .then(
+                                                            layoutMotionState.participantModifier(
+                                                                index = index,
+                                                                participant = HomeCardProjectionParticipant.TITLE,
+                                                            ),
+                                                        ),
+                                            )
+                                            Text(
+                                                itemAuthor,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier =
+                                                    Modifier
+                                                        .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 10.dp)
+                                                        .then(
+                                                            layoutMotionState.participantModifier(
+                                                                index = index,
+                                                                participant = HomeCardProjectionParticipant.METADATA,
+                                                            ),
+                                                        ),
+                                            )
+                                        }
+                                    }
+                                }
+                                if (state.isLoading) {
+                                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                            CircularProgressIndicator()
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-            }
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+            )
         }
     }
 }

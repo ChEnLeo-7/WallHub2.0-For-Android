@@ -8,6 +8,13 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -20,6 +27,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wallhub.android.R
@@ -31,6 +41,7 @@ import kotlinx.coroutines.launch
 fun HomeRoute(
     onOpenDetail: (Long) -> Unit,
     onOpenSettings: (() -> Unit)? = null,
+    onOpenDownloads: () -> Unit = {},
     onSearchAuthor: (String) -> Unit = {},
     onBack: (() -> Unit)? = null,
     scrollToTopRequest: Int = 0,
@@ -38,6 +49,7 @@ fun HomeRoute(
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
     val onHomeAction: (HomeAction) -> Unit = { action ->
         if (action == HomeAction.SubmitSearch) {
             val requestedWorkshopId = state.query.workshopIdOrNull()
@@ -58,15 +70,23 @@ fun HomeRoute(
         viewModel = viewModel,
         onOpenDetail = onOpenDetail,
         onSearchAuthor = onSearchAuthor,
+        onOpenDownloads = onOpenDownloads,
+        snackbarHostState = snackbarHostState,
     )
-    HomeScreen(
-        state = state,
-        onAction = onHomeAction,
-        onOpenSettings = onOpenSettings,
-        onBack = onBack,
-        scrollToTopRequest = scrollToTopRequest,
-        onContextMenuActiveChanged = onContextMenuActiveChanged,
-    )
+    Box(modifier = Modifier.fillMaxSize()) {
+        HomeScreen(
+            state = state,
+            onAction = onHomeAction,
+            onOpenSettings = onOpenSettings,
+            onBack = onBack,
+            scrollToTopRequest = scrollToTopRequest,
+            onContextMenuActiveChanged = onContextMenuActiveChanged,
+        )
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+        )
+    }
 }
 
 @Composable
@@ -74,6 +94,8 @@ fun HomeEffectHandler(
     viewModel: HomeViewModel,
     onOpenDetail: (Long) -> Unit,
     onSearchAuthor: (String) -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
+    snackbarHostState: SnackbarHostState,
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -81,6 +103,7 @@ fun HomeEffectHandler(
     val clipboard = LocalClipboardManager.current
     val currentOnOpenDetail by rememberUpdatedState(onOpenDetail)
     val currentOnSearchAuthor by rememberUpdatedState(onSearchAuthor)
+    val currentOnOpenDownloads by rememberUpdatedState(onOpenDownloads)
     var pendingLegacyStorageDownload by remember { mutableStateOf<WorkshopSummary?>(null) }
     val legacyStoragePermissionLauncher =
         rememberLauncherForActivityResult(
@@ -108,12 +131,21 @@ fun HomeEffectHandler(
                         )
                     }
                 }
-                is HomeEffect.ShowMessage ->
-                    Toast.makeText(
-                        context.applicationContext,
-                        resources.getString(effect.messageRes, *effect.formatArgs.toTypedArray()),
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                is HomeEffect.ShowMessage -> {
+                    val message = resources.getString(effect.messageRes, *effect.formatArgs.toTypedArray())
+                    if (effect.messageRes == R.string.home_added_to_download_queue) {
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                        val result =
+                            snackbarHostState.showSnackbar(
+                                message = message,
+                                actionLabel = resources.getString(R.string.downloads_view_queue),
+                                duration = SnackbarDuration.Long,
+                            )
+                        if (result == SnackbarResult.ActionPerformed) currentOnOpenDownloads()
+                    } else {
+                        Toast.makeText(context.applicationContext, message, Toast.LENGTH_SHORT).show()
+                    }
+                }
                 is HomeEffect.ShowMessageText ->
                     Toast.makeText(context.applicationContext, unableToQueueDownload, Toast.LENGTH_SHORT).show()
                 is HomeEffect.OpenDetail -> currentOnOpenDetail(effect.workshopId)

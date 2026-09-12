@@ -636,6 +636,7 @@
     <string name='downloads_export_queued'>已加入转换和导出任务</string>
     <string name='downloads_action_failed'>操作失败，请稍后重试</string>
     <string name='downloads_added_to_queue'>已加入下载队列：%1$s</string>
+    <string name='downloads_view_queue'>查看下载</string>
     <string name='downloads_enqueue_failed'>无法加入下载队列</string>
     <string name='downloads_title'>下载</string>
     <string name='downloads_empty'>暂无下载任务</string>

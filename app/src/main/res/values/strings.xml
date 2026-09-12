@@ -663,6 +663,7 @@
     <string name='downloads_export_queued'>Added to the conversion and export queue</string>
     <string name='downloads_action_failed'>Operation failed. Try again later.</string>
     <string name='downloads_added_to_queue'>Added to download queue: %1$s</string>
+    <string name='downloads_view_queue'>View downloads</string>
     <string name='downloads_enqueue_failed'>Unable to add to the download queue</string>
     <string name='downloads_title'>Downloads</string>
     <string name='downloads_empty'>No download tasks</string>

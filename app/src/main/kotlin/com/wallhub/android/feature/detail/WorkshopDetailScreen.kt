@@ -119,6 +119,7 @@ fun WorkshopDetailScreen(
     onSearchTag: (String) -> Unit,
     onCopyText: (String, String) -> Unit,
     onOpenSteam: (Long) -> Unit,
+    onOpenDownloads: () -> Unit,
 ) {
     val selectedSummary = state.detail?.summary
     val unknown = stringResource(R.string.detail_unknown)
@@ -256,6 +257,7 @@ fun WorkshopDetailScreen(
                             },
                             onSearchAuthor = onSearchAuthor,
                             onSearchTag = onSearchTag,
+                            onOpenDownloads = onOpenDownloads,
                             modifier =
                                 Modifier
                                     .fillMaxSize()
@@ -334,6 +336,7 @@ internal fun WorkshopDetailPagerContent(
     onCopyWorkshopId: (Long) -> Unit,
     onSearchAuthor: (String) -> Unit,
     onSearchTag: (String) -> Unit,
+    onOpenDownloads: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val summary = detail.summary
@@ -430,6 +433,7 @@ internal fun WorkshopDetailPagerContent(
         onCopyWorkshopId = onCopyWorkshopId,
         onSearchAuthor = onSearchAuthor,
         onSearchTag = onSearchTag,
+        onOpenDownloads = onOpenDownloads,
         modifier = modifier,
     )
     if (showDownloadChoices) {
@@ -489,6 +493,7 @@ internal fun WorkshopDetailPane(
     onReconnectSteam: () -> Unit,
     isEnqueuingDownload: Boolean,
     downloadMessage: DetailUiText?,
+    onOpenDownloads: () -> Unit,
     onToggleSubscription: () -> Unit,
     onToggleFavorite: () -> Unit,
     onShowDownloadChoices: () -> Unit,
@@ -504,6 +509,8 @@ internal fun WorkshopDetailPane(
     val resolvedDownloadMessage = downloadMessage?.resolve()
     val disconnectedMessage = stringResource(R.string.backend_steam_disconnected)
     val reconnectActionLabel = stringResource(R.string.detail_reconnect)
+    val viewDownloadsActionLabel = stringResource(R.string.downloads_view_queue)
+    val currentOnOpenDownloads by rememberUpdatedState(onOpenDownloads)
     val canReconnect =
         steamSession.phase == SteamSessionPhase.RESTORABLE &&
             steamSession.hasStoredSession &&
@@ -516,23 +523,45 @@ internal fun WorkshopDetailPane(
             resolvedInteractionMessage != null -> resolvedInteractionMessage
             else -> resolvedDownloadMessage
         }
+    val canOpenDownloads =
+        resolvedDownloadMessage != null &&
+            !isLoadingInteraction &&
+            !isUpdatingInteraction &&
+            !canReconnect &&
+            resolvedInteractionMessage == null &&
+            downloadMessage is DetailUiText.Resource &&
+            downloadMessage.resourceId in
+                setOf(
+                    R.string.detail_added_to_download_queue,
+                    R.string.detail_video_queued_for_playback,
+                )
     val snackbarDuration =
         if (isLoadingInteraction || isUpdatingInteraction || canReconnect) {
             SnackbarDuration.Indefinite
+        } else if (canOpenDownloads) {
+            SnackbarDuration.Long
         } else {
             SnackbarDuration.Short
         }
-    LaunchedEffect(snackbarMessage, snackbarDuration, canReconnect) {
+    LaunchedEffect(snackbarMessage, snackbarDuration, canReconnect, canOpenDownloads) {
         snackbarHostState.currentSnackbarData?.dismiss()
         snackbarMessage?.let { message ->
             val result =
                 snackbarHostState.showSnackbar(
                     message = message,
-                    actionLabel = reconnectActionLabel.takeIf { canReconnect },
+                    actionLabel =
+                        when {
+                            canReconnect -> reconnectActionLabel
+                            canOpenDownloads -> viewDownloadsActionLabel
+                            else -> null
+                        },
                     duration = snackbarDuration,
                 )
-            if (canReconnect && result == SnackbarResult.ActionPerformed) {
-                onReconnectSteam()
+            if (result == SnackbarResult.ActionPerformed) {
+                when {
+                    canReconnect -> onReconnectSteam()
+                    canOpenDownloads -> currentOnOpenDownloads()
+                }
             }
         }
     }

@@ -112,7 +112,7 @@ internal fun LibraryContextMenuCard(
     onCopyText: (String, String) -> Unit,
     onOpenSteam: () -> Unit,
     modifier: Modifier = Modifier,
-    content: @Composable (onShowActions: () -> Unit) -> Unit,
+    content: @Composable () -> Unit,
 ) {
     val previewLayer = rememberGraphicsLayer()
     val position = remember { LibraryCardPositionHolder() }
@@ -197,15 +197,6 @@ internal fun LibraryContextMenuCard(
         menuMounted = true
         menuEntranceRequest++
     }
-    fun openMenuAtCenter() {
-        val size = position.touchCoordinates?.size ?: return
-        if (size.width > 0 && size.height > 0) {
-            openMenuAt(
-                touchPosition = Offset(size.width / 2f, size.height / 2f),
-                performHapticFeedback = false,
-            )
-        }
-    }
     val interactionModifier =
         Modifier
             .testTag("library-workshop-${item.id}")
@@ -267,7 +258,7 @@ internal fun LibraryContextMenuCard(
                     }.onGloballyPositioned { position.touchCoordinates = it }
                     .then(interactionModifier),
             shape = shape,
-            content = { content(::openMenuAtCenter) },
+            content = content,
         )
         if (menuMounted) {
             Popup(
