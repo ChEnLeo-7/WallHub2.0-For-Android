@@ -12,7 +12,8 @@ pluginManagement {
 }
 
 val usePatchedKSteam =
-    providers.gradleProperty("wallhub.usePatchedKSteam").orNull?.toBooleanStrictOrNull() == true
+    providers.gradleProperty("wallhub.usePatchedKSteam").orNull?.toBooleanStrictOrNull()
+        ?: System.getProperty("os.name").contains("Windows", ignoreCase = true)
 
 if (usePatchedKSteam && System.getenv("GITHUB_ACTIONS") != "true") {
     val mavenRepository =
