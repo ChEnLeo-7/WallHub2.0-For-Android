@@ -25,6 +25,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import kotlin.reflect.KClass
 
 class SteamCdnHttpsTest {
     @Test
@@ -307,6 +308,14 @@ private class ObservableCall(
     override fun isCanceled(): Boolean = cancelled
 
     override fun timeout(): Timeout = Timeout.NONE
+
+    override fun <T : Any> tag(type: KClass<T>): T? = null
+
+    override fun <T> tag(type: Class<out T>): T? = null
+
+    override fun <T : Any> tag(type: KClass<T>, computeIfAbsent: () -> T): T = computeIfAbsent()
+
+    override fun <T : Any> tag(type: Class<T>, computeIfAbsent: () -> T): T = computeIfAbsent()
 
     override fun clone(): Call = ObservableCall(body)
 }
