@@ -5,6 +5,7 @@ import com.wallhub.android.core.model.DepotChunkSpec
 import com.wallhub.android.core.model.DepotFileFlag
 import com.wallhub.android.core.model.DepotDownloader
 import com.wallhub.android.core.model.DepotFileSpec
+import com.wallhub.android.core.model.DepotManifestSpec
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.data.steam.KSteamSessionRepository
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
@@ -31,6 +32,7 @@ internal enum class SteamDownloadPhase {
     CONNECTING,
     AUTHENTICATING,
     RESOLVING,
+    PREPARING_DOWNLOAD,
     DOWNLOADING,
 }
 
@@ -365,6 +367,7 @@ internal class SteamContentDownloader
                     "totalUncompressed=${manifest.totalUncompressedSize}",
             )
             check(files.isNotEmpty()) { "Steam returned an empty Workshop content manifest" }
+            onProgress(manifestPreparationProgress(manifest))
             val filePlans =
                 manifest.files.mapNotNull { manifestFile ->
                     currentCoroutineContext().ensureActive()
@@ -497,4 +500,13 @@ internal class SteamContentDownloader
                 throw error
             }
         }
+}
+
+internal fun manifestPreparationProgress(manifest: DepotManifestSpec): SteamDownloadProgress {
+    val files = manifest.files.filterNot { it.flags.contains(DepotFileFlag.Directory) }
+    return SteamDownloadProgress(
+        phase = SteamDownloadPhase.PREPARING_DOWNLOAD,
+        totalBytes = manifest.totalUncompressedSize,
+        totalFiles = files.size,
+    )
 }

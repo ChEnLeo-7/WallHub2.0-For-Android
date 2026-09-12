@@ -1,12 +1,62 @@
 package com.wallhub.android.data.downloads
 
+import com.wallhub.android.core.model.DepotFileFlag
+import com.wallhub.android.core.model.DepotFileSpec
+import com.wallhub.android.core.model.DepotManifestSpec
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class SteamCdnHttpsTest {
+    @Test
+    fun cdnProbeReturnsFirstSuccessfulCandidateWithoutWaitingForSlowPeer() = runTest {
+        val result =
+            raceCdnCandidates(listOf("slow", "fast", "failed"), parallelism = 3) { candidate ->
+                when (candidate) {
+                    "slow" -> {
+                        delay(60_000)
+                        "slow result"
+                    }
+                    "fast" -> {
+                        delay(1_000)
+                        "fast result"
+                    }
+                    else -> error("unavailable")
+                }
+            }
+
+        assertEquals("fast result", result)
+        assertEquals(1_000L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun manifestCompletionPublishesPreparationProgressBeforeChunksArrive() {
+        val progress =
+            manifestPreparationProgress(
+                DepotManifestSpec(
+                    filenamesEncrypted = false,
+                    depotId = 20,
+                    manifestGid = 30L,
+                    totalUncompressedSize = 40L,
+                    files =
+                        listOf(
+                            DepotFileSpec("project.json", 10L, ByteArray(0), emptySet(), emptyList()),
+                            DepotFileSpec("scene.pkg", 30L, ByteArray(0), emptySet(), emptyList()),
+                            DepotFileSpec("assets", 0L, ByteArray(0), setOf(DepotFileFlag.Directory), emptyList()),
+                        ),
+                ),
+            )
+
+        assertEquals(SteamDownloadPhase.PREPARING_DOWNLOAD, progress.phase)
+        assertEquals(2, progress.totalFiles)
+        assertEquals(40L, progress.totalBytes)
+        assertEquals(0L, progress.completedBytes)
+    }
+
     @Test
     fun advertisedHttpRouteUsesPort80() {
         val url =

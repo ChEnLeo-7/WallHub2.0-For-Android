@@ -902,6 +902,7 @@
     <string name='backend_download_notification_title'>WallHub is downloading</string>
     <string name='backend_download_pause_requested'>Pause requested. Verified data will be retained.</string>
     <string name='backend_download_pausing'>Pausing download. Completed data will be retained.</string>
+    <string name='backend_download_preparing_transfer'>Manifest ready with %1$d files. Probing the fastest CDN route…</string>
     <string name='backend_download_progress'>Downloading file %1$d of %2$d</string>
     <string name='backend_download_progress_file'>Downloading file %1$d of %2$d: %3$s</string>
     <string name='backend_download_queued'>Waiting in the Steam download queue</string>

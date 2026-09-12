@@ -38,11 +38,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -1151,83 +1153,187 @@ internal suspend fun downloadManifest(
     authTokens: CdnAuthTokenProvider,
     control: suspend () -> SteamDownloadControl,
 ): DepotManifestSpec {
-    var lastError: Throwable? = null
-    val errors = mutableListOf<Throwable>()
-    val failures = mutableListOf<String>()
-    servers.take(MAX_CDN_ATTEMPTS).forEach { server ->
+    val candidates = servers.take(MAX_CDN_ATTEMPTS)
+    try {
+        return raceCdnCandidates(candidates, MANIFEST_PROBE_PARALLELISM) { server ->
+            downloadManifestFromServer(
+                httpClient = httpClient,
+                server = server,
+                proxyServer = proxyServer,
+                depotId = depotId,
+                manifestId = manifestId,
+                requestCode = requestCode,
+                depotKey = depotKey,
+                authTokens = authTokens,
+                control = control,
+            )
+        }
+    } catch (error: CdnRaceFailure) {
+        val failures = error.failures.mapNotNull { it as? CdnCandidateFailure }
+        val causes = failures.mapNotNull(Throwable::getCause)
+        val lastError = causes.lastOrNull()
+        throw SteamCdnTransferException(
+            message =
+                buildCdnError(
+                    "manifest",
+                    failures.map { failure ->
+                        describeServer(failure.server, failure.hasToken) + "：" +
+                            (failure.cause?.message ?: failure.javaClass.simpleName)
+                    },
+                    lastError,
+                ),
+            cause = lastError,
+            recoverable = causes.isNotEmpty() && causes.all(::hasIoCause),
+        )
+    }
+}
+
+private suspend fun downloadManifestFromServer(
+    httpClient: OkHttpClient,
+    server: CdnServer,
+    proxyServer: CdnServer?,
+    depotId: Int,
+    manifestId: Long,
+    requestCode: Long,
+    depotKey: ByteArray,
+    authTokens: CdnAuthTokenProvider,
+    control: suspend () -> SteamDownloadControl,
+): DepotManifestSpec {
+    var token = authTokens.getCached(server)
+    var refreshedRejectedToken = false
+    while (true) {
         currentCoroutineContext().ensureActive()
         checkDownloadControl(control)
-        var token = authTokens.getCached(server)
-        var refreshedRejectedToken = false
-        while (true) {
-            try {
-                val request =
-                    Request
-                        .Builder()
-                        .url(
-                            buildSteamCdnCommand(
-                                server = server,
-                                proxyServer = proxyServer,
-                                command = server.depotManifestUrl(depotId, manifestId, requestCode),
-                                query = token,
-                            ),
-                        ).build()
-                val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
-                response.use { resp ->
-                    if (!resp.isSuccessful) {
-                        throw SteamCdnHttpException("Steam CDN returned ${resp.code} for the depot manifest", resp.code)
-                    }
-                    val compressed =
-                        resp.body.byteStream().use { stream -> stream.readBytesBounded(MAX_MANIFEST_RESPONSE_BYTES) }
-                    check(compressed.isNotEmpty()) { "Steam manifest response is empty" }
-                    val manifestData =
-                        ZipInputStream(ByteArrayInputStream(compressed)).use { archive ->
-                            requireNotNull(archive.nextEntry) { "Steam manifest response ZIP is empty" }
-                            archive.readBytesBounded(MAX_MANIFEST_DECOMPRESSED_BYTES)
-                        }
-                    val manifest = parseDepotManifest(manifestData)
-                    validateManifestIdentity(manifest, depotId, manifestId)
-                    check(!manifest.filenamesEncrypted || manifest.decryptFilenames(depotKey)) {
-                        "Failed to decrypt file names in the Steam manifest"
-                    }
-                    return manifest
+        try {
+            val request =
+                Request
+                    .Builder()
+                    .url(
+                        buildSteamCdnCommand(
+                            server = server,
+                            proxyServer = proxyServer,
+                            command = server.depotManifestUrl(depotId, manifestId, requestCode),
+                            query = token,
+                        ),
+                    ).build()
+            executeCdnCall(httpClient.newCall(request)).use { response ->
+                if (!response.isSuccessful) {
+                    throw SteamCdnHttpException(
+                        "Steam CDN returned ${response.code} for the depot manifest",
+                        response.code,
+                    )
                 }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: SteamDownloadCancelledException) {
-                throw error
-            } catch (error: VirtualMachineError) {
-                throw error
-            } catch (error: Throwable) {
-                when (cdnAuthorizationAction(error, token != null, refreshedRejectedToken)) {
-                    CdnAuthorizationAction.REQUEST_TOKEN -> {
-                        token = authTokens.get(server)
-                        if (token != null) continue
+                val compressed =
+                    response.body.byteStream().use { stream -> stream.readBytesBounded(MAX_MANIFEST_RESPONSE_BYTES) }
+                check(compressed.isNotEmpty()) { "Steam manifest response is empty" }
+                val manifestData =
+                    ZipInputStream(ByteArrayInputStream(compressed)).use { archive ->
+                        requireNotNull(archive.nextEntry) { "Steam manifest response ZIP is empty" }
+                        archive.readBytesBounded(MAX_MANIFEST_DECOMPRESSED_BYTES)
                     }
-
-                    CdnAuthorizationAction.REFRESH_TOKEN -> {
-                        token = authTokens.refresh(server)
-                        refreshedRejectedToken = true
-                        if (token != null) continue
-                    }
-
-                    CdnAuthorizationAction.REJECT -> throw error
-                    CdnAuthorizationAction.NONE -> Unit
+                val manifest = parseDepotManifest(manifestData)
+                validateManifestIdentity(manifest, depotId, manifestId)
+                check(!manifest.filenamesEncrypted || manifest.decryptFilenames(depotKey)) {
+                    "Failed to decrypt file names in the Steam manifest"
                 }
-                lastError = error
-                errors += error
-                failures += describeServer(server, token != null) + "\uFF1A" +
-                    (error.message ?: error.javaClass.simpleName)
-                break
+                return manifest
             }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: SteamDownloadCancelledException) {
+            throw error
+        } catch (error: VirtualMachineError) {
+            throw error
+        } catch (error: Throwable) {
+            when (cdnAuthorizationAction(error, token != null, refreshedRejectedToken)) {
+                CdnAuthorizationAction.REQUEST_TOKEN -> {
+                    token = authTokens.get(server)
+                    if (token != null) continue
+                }
+
+                CdnAuthorizationAction.REFRESH_TOKEN -> {
+                    token = authTokens.refresh(server)
+                    refreshedRejectedToken = true
+                    if (token != null) continue
+                }
+
+                CdnAuthorizationAction.REJECT -> throw CdnCandidateFailure(server, error, token != null)
+                CdnAuthorizationAction.NONE -> Unit
+            }
+            throw CdnCandidateFailure(server, error, token != null)
         }
     }
-    throw SteamCdnTransferException(
-        message = buildCdnError("manifest", failures, lastError),
-        cause = lastError,
-        recoverable = errors.isNotEmpty() && errors.all(::hasIoCause),
-    )
 }
+
+internal suspend fun <C, T> raceCdnCandidates(
+    candidates: List<C>,
+    parallelism: Int,
+    probe: suspend (C) -> T,
+): T = coroutineScope {
+    require(candidates.isNotEmpty()) { "No CDN candidates available" }
+    require(parallelism > 0) { "CDN probe parallelism must be positive" }
+    val queue = Channel<C>(candidates.size)
+    candidates.forEach { queue.trySend(it).getOrThrow() }
+    queue.close()
+    val outcomes = Channel<Result<T>>(candidates.size)
+    val workers =
+        List(min(parallelism, candidates.size)) {
+            launch {
+                for (candidate in queue) {
+                    val outcome =
+                        try {
+                            Result.success(probe(candidate))
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: SteamDownloadCancelledException) {
+                            throw error
+                        } catch (error: VirtualMachineError) {
+                            throw error
+                        } catch (error: Throwable) {
+                            Result.failure(error)
+                        }
+                    outcomes.send(outcome)
+                    if (outcome.isSuccess) break
+                }
+            }
+        }
+    val failures = mutableListOf<Throwable>()
+    repeat(candidates.size) {
+        val outcome = outcomes.receive()
+        outcome.onSuccess { value ->
+            workers.forEach(Job::cancel)
+            return@coroutineScope value
+        }
+        failures += requireNotNull(outcome.exceptionOrNull())
+    }
+    throw CdnRaceFailure(failures)
+}
+
+private suspend fun executeCdnCall(call: Call): Response = coroutineScope {
+    val cancellationWatcher =
+        launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                awaitCancellation()
+            } finally {
+                call.cancel()
+            }
+        }
+    try {
+        withContext(Dispatchers.IO) { call.execute() }
+    } finally {
+        cancellationWatcher.cancel()
+    }
+}
+
+private class CdnCandidateFailure(
+    val server: CdnServer,
+    cause: Throwable,
+    val hasToken: Boolean = false,
+) : IOException(cause.message, cause)
+
+internal class CdnRaceFailure(
+    val failures: List<Throwable>,
+) : IOException("All CDN candidates failed")
 
 internal suspend fun downloadChunk(
     httpClient: OkHttpClient,
@@ -2247,9 +2353,10 @@ internal const val CONNECT_TIMEOUT_MS = 20_000L
 internal const val LOGON_TIMEOUT_MS = 30_000L
 internal const val CDN_SERVER_LIMIT = 20
 internal const val MAX_CDN_ATTEMPTS = 8
+internal const val MANIFEST_PROBE_PARALLELISM = 3
 internal const val MAX_CDN_ERROR_DETAILS = 3
 internal const val CDN_CONNECT_TIMEOUT_MS = 20_000L
-internal const val CDN_READ_TIMEOUT_MS = 60_000L
+internal const val CDN_READ_TIMEOUT_MS = 20_000L
 internal const val CDN_WRITE_TIMEOUT_MS = 20_000L
 internal const val CDN_KEEP_ALIVE_MINUTES = 5L
 internal const val CDN_TRANSFER_MAX_ATTEMPTS = 3

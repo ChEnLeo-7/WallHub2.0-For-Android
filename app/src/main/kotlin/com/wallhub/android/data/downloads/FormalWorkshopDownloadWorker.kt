@@ -615,6 +615,7 @@ class FormalWorkshopDownloadWorker
                 SteamDownloadPhase.RESOLVING,
                 -> DownloadStatus.RESOLVING
 
+                SteamDownloadPhase.PREPARING_DOWNLOAD,
                 SteamDownloadPhase.DOWNLOADING -> DownloadStatus.DOWNLOADING
             }
 
@@ -633,6 +634,11 @@ class FormalWorkshopDownloadWorker
                 SteamDownloadPhase.AUTHENTICATING ->
                     applicationContext.getString(R.string.backend_download_authenticating)
                 SteamDownloadPhase.RESOLVING -> applicationContext.getString(R.string.backend_download_resolving_content)
+                SteamDownloadPhase.PREPARING_DOWNLOAD ->
+                    applicationContext.getString(
+                        R.string.backend_download_preparing_transfer,
+                        totalFiles,
+                    )
                 SteamDownloadPhase.DOWNLOADING -> {
                     if (currentFile.isNullOrBlank()) {
                         applicationContext.getString(
