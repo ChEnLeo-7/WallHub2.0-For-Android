@@ -37,7 +37,7 @@ WallHub for Android 是面向 Wallpaper Engine 创意工坊的独立原生客户
 - 与创意工坊和 Steam 账户相关的功能需要可访问 Steam 服务的网络环境。
 - MPKG 导入需要设备安装官方 Wallpaper Engine Android 客户端。
 
-项目通过 GitHub Actions 生成签名 Release APK artifact。进入仓库的 **Actions > Android CI**，打开成功的 `main` 构建并下载 `wallhub-release-<commit-sha>` artifact；解压后安装其中的 `wallhub-release.apk`。请只安装你信任的构建产物，并注意 Android 不允许不同签名的 APK 直接覆盖现有安装。
+项目通过 GitHub Actions 快速生成 Debug 测试 APK。进入仓库的 **Actions > Android CI**，打开成功的 `main` 构建并下载 `wallhub-debug-<commit-sha>` artifact；解压后安装其中的 `wallhub-debug.apk`。Debug APK 仅用于测试，请只安装你信任的构建产物，并注意 Android 不允许不同签名的 APK 直接覆盖现有安装。
 
 ### 构建开发环境
 

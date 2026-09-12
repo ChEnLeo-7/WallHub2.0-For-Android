@@ -9,7 +9,7 @@ Usage: scripts/push-build-install.sh [--serial <adb-serial>] [--install-only]
 
 Pushes the current clean main branch to origin, then delegates to
 install-github-release-apk.sh to wait for, download, verify, and install the
-GitHub Actions Release artifact built from that exact commit.
+GitHub Actions Debug artifact built from that exact commit.
 
 Without --serial, installation selects the one device currently reported as
 state=device by adb immediately before installation. Multiple or zero devices
