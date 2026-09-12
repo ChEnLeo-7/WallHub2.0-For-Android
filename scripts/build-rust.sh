@@ -26,6 +26,11 @@ if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
     exit 0
 fi
 
+# The LAN worker keeps its checkout between jobs; remove stale native and
+# Gradle intermediates before publishing the libraries for this build.
+rm -rf "$JNI_LIBS"
+rm -rf "$SCRIPT_DIR/../app/build"
+
 case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*)
         HOST_TAG="windows-x86_64"
