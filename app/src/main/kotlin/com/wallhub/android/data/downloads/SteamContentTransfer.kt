@@ -54,6 +54,7 @@ import java.io.RandomAccessFile
 import java.security.MessageDigest
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -1216,7 +1217,7 @@ private suspend fun downloadManifestFromServer(
                             query = token,
                         ),
                     ).build()
-            executeCdnCall(httpClient.newCall(request)).use { response ->
+            return executeCdnCall(httpClient.newCall(request)) { response ->
                 if (!response.isSuccessful) {
                     throw SteamCdnHttpException(
                         "Steam CDN returned ${response.code} for the depot manifest",
@@ -1236,7 +1237,7 @@ private suspend fun downloadManifestFromServer(
                 check(!manifest.filenamesEncrypted || manifest.decryptFilenames(depotKey)) {
                     "Failed to decrypt file names in the Steam manifest"
                 }
-                return manifest
+                manifest
             }
         } catch (error: CancellationException) {
             throw error
@@ -1309,18 +1310,25 @@ internal suspend fun <C, T> raceCdnCandidates(
     throw CdnRaceFailure(failures)
 }
 
-private suspend fun executeCdnCall(call: Call): Response = coroutineScope {
+internal suspend fun <T> executeCdnCall(
+    call: Call,
+    consume: (Response) -> T,
+): T = coroutineScope {
+    val completed = AtomicBoolean(false)
     val cancellationWatcher =
         launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 awaitCancellation()
             } finally {
-                call.cancel()
+                if (!completed.get()) call.cancel()
             }
         }
     try {
-        withContext(Dispatchers.IO) { call.execute() }
+        withContext(Dispatchers.IO) {
+            call.execute().use(consume)
+        }
     } finally {
+        completed.set(true)
         cancellationWatcher.cancel()
     }
 }

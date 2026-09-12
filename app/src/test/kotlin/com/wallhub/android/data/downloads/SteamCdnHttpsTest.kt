@@ -5,9 +5,24 @@ import com.wallhub.android.core.model.DepotFileSpec
 import com.wallhub.android.core.model.DepotManifestSpec
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Timeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -31,6 +46,38 @@ class SteamCdnHttpsTest {
 
         assertEquals("fast result", result)
         assertEquals(1_000L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun cdnCallStaysOpenUntilResponseBodyIsConsumed() = runBlocking {
+        val call = ObservableCall("manifest")
+
+        val body =
+            executeCdnCall(call) { response ->
+                assertFalse(call.isCanceled())
+                response.body.string()
+            }
+
+        assertEquals("manifest", body)
+        assertFalse(call.isCanceled())
+    }
+
+    @Test
+    fun cancellingCdnCallConsumerCancelsUnderlyingCall() = runBlocking {
+        val call = ObservableCall("manifest")
+        val consuming = CountDownLatch(1)
+        val job =
+            launch(Dispatchers.Default) {
+                executeCdnCall(call) {
+                    consuming.countDown()
+                    while (!call.isCanceled()) Thread.sleep(10)
+                }
+            }
+
+        assertTrue(consuming.await(1, TimeUnit.SECONDS))
+        job.cancelAndJoin()
+
+        assertTrue(call.isCanceled())
     }
 
     @Test
@@ -228,4 +275,38 @@ class SteamCdnHttpsTest {
         assertEquals("video.mp4", manifest.files.single().fileName)
         assertEquals(4, manifest.files.single().chunks.single().uncompressedLength)
     }
+}
+
+private class ObservableCall(
+    private val body: String,
+) : Call {
+    private val request = Request.Builder().url("https://cdn.example.test/manifest").build()
+
+    @Volatile
+    private var cancelled = false
+
+    override fun request(): Request = request
+
+    override fun execute(): Response =
+        Response.Builder()
+            .request(request)
+            .protocol(Protocol.HTTP_1_1)
+            .code(200)
+            .message("OK")
+            .body(body.toResponseBody())
+            .build()
+
+    override fun enqueue(responseCallback: Callback) = error("Not used")
+
+    override fun cancel() {
+        cancelled = true
+    }
+
+    override fun isExecuted(): Boolean = false
+
+    override fun isCanceled(): Boolean = cancelled
+
+    override fun timeout(): Timeout = Timeout.NONE
+
+    override fun clone(): Call = ObservableCall(body)
 }

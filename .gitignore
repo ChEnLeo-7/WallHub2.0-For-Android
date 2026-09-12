@@ -27,6 +27,9 @@ signing.properties
 /AGENTS.md
 /progress.md
 /docs/
+!/docs/
+/docs/*
+!/docs/development-log.md
 # Keep the local legacy test archive ignored while allowing the focused regression suite.
 /app/src/test/*
 !/app/src/test/kotlin/
