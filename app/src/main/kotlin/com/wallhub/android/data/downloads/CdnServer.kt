@@ -77,21 +77,27 @@ internal fun parseDepotManifest(bytes: ByteArray): DepotManifestSpec {
         when (val magic = readInt()) {
             DepotManifestContainer.END_MAGIC -> break@loop
             DepotManifestContainer.PAYLOAD_MAGIC -> {
+                check(offset <= buffer.size - 4) { "Truncated depot manifest payload length" }
                 val length = readInt()
+                check(length >= 0 && offset <= buffer.size - length) { "Invalid depot manifest payload length" }
                 payload = ContentManifestPayload.ADAPTER.decode(buffer.copyOfRange(offset, offset + length))
                 offset += length
                 sawPayload = true
             }
 
             DepotManifestContainer.METADATA_MAGIC -> {
+                check(offset <= buffer.size - 4) { "Truncated depot manifest metadata length" }
                 val length = readInt()
+                check(length >= 0 && offset <= buffer.size - length) { "Invalid depot manifest metadata length" }
                 metadata = ContentManifestMetadata.ADAPTER.decode(buffer.copyOfRange(offset, offset + length))
                 offset += length
                 sawMetadata = true
             }
 
             DepotManifestContainer.SIGNATURE_MAGIC -> {
+                check(offset <= buffer.size - 4) { "Truncated depot manifest signature length" }
                 val length = readInt()
+                check(length >= 0 && offset <= buffer.size - length) { "Invalid depot manifest signature length" }
                 offset += length
             }
 

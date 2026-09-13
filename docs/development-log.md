@@ -14,6 +14,11 @@
 - Added bounded, session-scoped caches for Workshop targets, depot IDs, depot keys, and CDN directories without persisting credentials or authorization tokens.
 - Reused the application Steam HTTP connection pool across downloads and refreshed cached CDN directories after recoverable transfer failures.
 - Allowed direct-file downloads to proceed without waiting for Steam credential restoration.
+- Added atomic per-task manifest caching and chunk checkpoints so resumed Steam downloads reuse
+  committed chunks without re-requesting the manifest or rescanning completed staging data.
+- Added conservative playback coordination so active online Workshop sessions block new background
+  download, direct-file, and conversion work without changing the playback pipeline itself.
+- Hardened depot manifest section-length parsing against truncated or oversized sections.
 
 ### Verification
 
@@ -25,3 +30,5 @@
 - Replaced stale unique work when resuming or retrying, and wait for WorkManager scheduling operations to commit before reporting success.
 - Made the download-to-conversion handoff conditional on no pending control request and cleaned interrupted conversion artifacts on every terminal path.
 - Disabled conflicting controls while an action is pending, made large-file verification responsive to pause/cancel, and routed batch retry through storage permission checks.
+- Added checkpoint and playback-coordination regression coverage for manifest-bound resume state and
+  background work admission.

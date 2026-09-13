@@ -44,7 +44,8 @@ internal interface WorkshopContentGateway {
 
 internal class FormalSteamWorkshopContentGateway(
     private val httpClientFactory: SteamHttpClientFactory,
-    private val contentDownloader: SteamContentDownloader,
+        private val contentDownloader: SteamContentDownloader,
+        private val playbackCoordinator: PlaybackDownloadCoordinator,
 ) : WorkshopContentGateway {
     override suspend fun acquireContentTransportLease(): Closeable =
         contentDownloader.acquireContentTransportLease()
@@ -120,6 +121,7 @@ internal class FormalSteamWorkshopContentGateway(
                         destination = videoFile,
                         expectedSize = target.expectedSize,
                         control = control,
+                        playbackCoordinator = playbackCoordinator,
                         onChunkCommitted = onFirstChunkCommitted,
                     ) { completedBytes, totalBytes ->
                         onProgress(
@@ -140,6 +142,7 @@ internal class FormalSteamWorkshopContentGateway(
                     expectedSize = 0L,
                     maxBytes = MAX_DIRECT_PREVIEW_BYTES,
                     control = control,
+                    playbackCoordinator = playbackCoordinator,
                     onProgress = { _, _ -> },
                 )
                 val previewExtension = validatedPreviewExtension(previewCandidate)
@@ -241,6 +244,7 @@ private suspend fun downloadDirectFile(
     expectedSize: Long,
     maxBytes: Long = MAX_MANIFEST_FILE_BYTES,
     control: suspend () -> SteamDownloadControl,
+    playbackCoordinator: PlaybackDownloadCoordinator? = null,
     onChunkCommitted: (suspend () -> Unit)? = null,
     onProgress: suspend (completedBytes: Long, totalBytes: Long) -> Unit,
 ): Long {
@@ -286,6 +290,7 @@ private suspend fun downloadDirectFile(
                 val buffer = ByteArray(DIRECT_FILE_BUFFER_SIZE)
                 while (true) {
                     currentCoroutineContext().ensureActive()
+                    playbackCoordinator?.awaitBackgroundWorkAllowed()
                     checkDownloadControl(control)
                     val read = input.read(buffer)
                     if (read < 0) break
@@ -362,7 +367,8 @@ internal class SteamWorkshopContentClient private constructor(
     constructor(
         httpClientFactory: SteamHttpClientFactory,
         contentDownloader: SteamContentDownloader,
-    ) : this(FormalSteamWorkshopContentGateway(httpClientFactory, contentDownloader), System::currentTimeMillis, Unit)
+        playbackCoordinator: PlaybackDownloadCoordinator,
+    ) : this(FormalSteamWorkshopContentGateway(httpClientFactory, contentDownloader, playbackCoordinator), System::currentTimeMillis, Unit)
 
     internal constructor(
         gateway: WorkshopContentGateway,

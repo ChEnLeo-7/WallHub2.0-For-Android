@@ -9,10 +9,13 @@ import com.wallhub.android.core.model.WorkshopVideoStreamSession
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.Closeable
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,6 +28,7 @@ internal class SteamWorkshopVideoStreamRepository
         private val settingsRepository: SettingsRepository,
         private val steamHttpClientFactory: SteamHttpClientFactory,
         private val contentDownloader: SteamContentDownloader,
+        private val playbackCoordinator: PlaybackDownloadCoordinator,
     ) : WorkshopVideoStreamRepository {
         private val cacheRootDirectory: File
             get() = File(context.cacheDir, STREAM_CACHE_DIRECTORY)
@@ -60,14 +64,16 @@ internal class SteamWorkshopVideoStreamRepository
                                         steamHttpClientFactory.newBuilder().applyDownloadProxy(activeProxyUrl),
                                 )
                             }.onFailure { error ->
+                                if (error is CancellationException) throw error
                                 Log.w(
                                     "SteamVideoStream",
                                     "Remote file_url stream unavailable, falling back to depot chunks: ${error.message}",
                                 )
                             }.getOrNull()
                         if (remoteSession != null) {
-                            openedStream = remoteSession
-                            return@withContext remoteSession
+                            val coordinated = CoordinatedVideoStreamSession(remoteSession, playbackCoordinator.registerPlayback())
+                            openedStream = coordinated
+                            return@withContext coordinated
                         }
                     }
                     var lastError: Throwable? = null
@@ -88,7 +94,9 @@ internal class SteamWorkshopVideoStreamRepository
                                     ),
                                 cacheRootDirectory = cacheRootDirectory,
                                 cacheLimitBytes = preferences.mediaCacheLimitMb.toLong() * 1024L * 1024L,
-                            ).also { openedStream = it }
+                            ).let { stream ->
+                                CoordinatedVideoStreamSession(stream, playbackCoordinator.registerPlayback())
+                            }.also { openedStream = it }
                         } catch (error: SteamDepotAccessException) {
                             // A restored credential can unlock the depot on the retry pass.
                             lastError = error
@@ -110,6 +118,22 @@ internal class SteamWorkshopVideoStreamRepository
                 SteamVideoStreamCache.clearRoot(cacheRootDirectory)
             }
     }
+
+private class CoordinatedVideoStreamSession(
+    private val delegate: WorkshopVideoStreamSession,
+    private val playbackLease: Closeable,
+) : WorkshopVideoStreamSession by delegate {
+    private val closed = AtomicBoolean(false)
+
+    override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        try {
+            delegate.close()
+        } finally {
+            playbackLease.close()
+        }
+    }
+}
 
 private const val VIDEO_STREAM_OPEN_ATTEMPTS = 3
 private const val VIDEO_STREAM_RETRY_DELAY_MS = 750L

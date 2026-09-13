@@ -263,6 +263,7 @@ internal class SteamContentDownloader
         private val sessionRepository: KSteamSessionRepository,
         private val depotDownloader: DepotDownloader,
         private val steamHttpClientFactory: SteamHttpClientFactory,
+        private val playbackCoordinator: PlaybackDownloadCoordinator,
     ) {
     private val contentAccessCache = SteamContentAccessCache()
     private val downloadCdnSelector = CdnServerSelector()
@@ -376,6 +377,7 @@ internal class SteamContentDownloader
                     authTokens = access.authTokens,
                     control = control,
                     timingContext = options.timingContext,
+                    cacheFile = SteamDownloadCheckpoint(destinationDirectory, target.contentManifestId).manifestFile(access.depotId),
                 )
             check(manifest.files.size <= MAX_MANIFEST_FILE_COUNT) {
                 "Steam manifest file count ${manifest.files.size} exceeds limit $MAX_MANIFEST_FILE_COUNT"
@@ -419,6 +421,7 @@ internal class SteamContentDownloader
                     onProgress = onProgress,
                     onFirstChunkCommitted = options.onFirstChunkCommitted,
                 )
+            val checkpoint = SteamDownloadCheckpoint(destinationDirectory, target.contentManifestId)
             manifest.files.filter { it.flags.contains(DepotFileFlag.Directory) }.forEach { directory ->
                 if (directory.fileName.isBlank() || directory.fileName == ".") return@forEach
                 val destination = WorkshopStagingPath.resolve(destinationDirectory, directory.fileName)
@@ -440,6 +443,8 @@ internal class SteamContentDownloader
                 control = control,
                 progressReporter = progressReporter,
                 timingContext = options.timingContext,
+                checkpoint = checkpoint,
+                playbackCoordinator = playbackCoordinator,
             )
             val finalProgress = progressReporter.snapshot()
             return SteamContentDownloadResult(

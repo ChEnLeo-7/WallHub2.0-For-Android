@@ -48,6 +48,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.security.MessageDigest
@@ -1272,7 +1273,22 @@ internal suspend fun downloadManifest(
     authTokens: CdnAuthTokenProvider,
     control: suspend () -> SteamDownloadControl,
     timingContext: DownloadTimingContext? = null,
+    cacheFile: File? = null,
 ): DepotManifestSpec {
+    cacheFile?.takeIf(File::isFile)?.let { cached ->
+        val cachedManifest = runCatching {
+            check(cached.length() in 1..MAX_MANIFEST_RESPONSE_BYTES.toLong())
+            decodeDepotManifestResponse(cached.readBytes(), depotId, manifestId, depotKey)
+        }.getOrElse { error ->
+            if (error is CancellationException || error is VirtualMachineError) throw error
+            cached.delete()
+            null
+        }
+        cachedManifest?.let { manifest ->
+            timingContext?.let { DownloadTimingTelemetry.log(DownloadTimingTelemetry.MANIFEST_COMPLETED, it) }
+            return manifest
+        }
+    }
     val candidates = servers.take(MAX_CDN_ATTEMPTS)
     try {
         timingContext?.let { context ->
@@ -1281,7 +1297,7 @@ internal suspend fun downloadManifest(
                 context = context,
             )
         }
-        val manifest = raceCdnCandidates(candidates, MANIFEST_PROBE_PARALLELISM) { server ->
+        val downloaded = raceCdnCandidates(candidates, MANIFEST_PROBE_PARALLELISM) { server ->
             downloadManifestFromServer(
                 httpClient = httpClient,
                 server = server,
@@ -1294,13 +1310,14 @@ internal suspend fun downloadManifest(
                 control = control,
             )
         }
+        cacheFile?.let { file -> runCatching { writeManifestCache(file, downloaded.compressedBytes) } }
         timingContext?.let { context ->
             DownloadTimingTelemetry.log(
                 event = DownloadTimingTelemetry.MANIFEST_COMPLETED,
                 context = context,
             )
         }
-        return manifest
+        return downloaded.manifest
     } catch (error: CdnRaceFailure) {
         val failures = error.failures.mapNotNull { it as? CdnCandidateFailure }
         val causes = failures.mapNotNull { failure -> failure.cause }
@@ -1321,6 +1338,11 @@ internal suspend fun downloadManifest(
     }
 }
 
+private data class DownloadedManifest(
+    val manifest: DepotManifestSpec,
+    val compressedBytes: ByteArray,
+)
+
 private suspend fun downloadManifestFromServer(
     httpClient: OkHttpClient,
     server: CdnServer,
@@ -1331,7 +1353,7 @@ private suspend fun downloadManifestFromServer(
     depotKey: ByteArray,
     authTokens: CdnAuthTokenProvider,
     control: suspend () -> SteamDownloadControl,
-): DepotManifestSpec {
+): DownloadedManifest {
     var token = authTokens.getCached(server)
     var refreshedRejectedToken = false
     while (true) {
@@ -1359,17 +1381,10 @@ private suspend fun downloadManifestFromServer(
                 val compressed =
                     response.body.byteStream().use { stream -> stream.readBytesBounded(MAX_MANIFEST_RESPONSE_BYTES) }
                 check(compressed.isNotEmpty()) { "Steam manifest response is empty" }
-                val manifestData =
-                    ZipInputStream(ByteArrayInputStream(compressed)).use { archive ->
-                        requireNotNull(archive.nextEntry) { "Steam manifest response ZIP is empty" }
-                        archive.readBytesBounded(MAX_MANIFEST_DECOMPRESSED_BYTES)
-                    }
-                val manifest = parseDepotManifest(manifestData)
-                validateManifestIdentity(manifest, depotId, manifestId)
-                check(!manifest.filenamesEncrypted || manifest.decryptFilenames(depotKey)) {
-                    "Failed to decrypt file names in the Steam manifest"
-                }
-                manifest
+                DownloadedManifest(
+                    manifest = decodeDepotManifestResponse(compressed, depotId, manifestId, depotKey),
+                    compressedBytes = compressed,
+                )
             }
         } catch (error: CancellationException) {
             throw error
@@ -1397,6 +1412,52 @@ private suspend fun downloadManifestFromServer(
             }
             throw CdnCandidateFailure(server, error, token != null)
         }
+    }
+}
+
+internal fun decodeDepotManifestResponse(
+    compressedBytes: ByteArray,
+    depotId: Int,
+    manifestId: Long,
+    depotKey: ByteArray,
+): DepotManifestSpec {
+    check(compressedBytes.isNotEmpty() && compressedBytes.size <= MAX_MANIFEST_RESPONSE_BYTES) {
+        "Steam manifest response size is invalid"
+    }
+    val manifestData =
+        ZipInputStream(ByteArrayInputStream(compressedBytes)).use { archive ->
+            requireNotNull(archive.nextEntry) { "Steam manifest response ZIP is empty" }
+            archive.readBytesBounded(MAX_MANIFEST_DECOMPRESSED_BYTES)
+        }
+    val manifest = parseDepotManifest(manifestData)
+    validateManifestIdentity(manifest, depotId, manifestId)
+    check(!manifest.filenamesEncrypted || manifest.decryptFilenames(depotKey)) {
+        "Failed to decrypt file names in the Steam manifest"
+    }
+    return manifest
+}
+
+private fun writeManifestCache(file: File, bytes: ByteArray) {
+    file.parentFile?.mkdirs()
+    check(file.parentFile?.isDirectory == true) { "Failed to create Steam manifest cache directory" }
+    val temporary = File(file.parentFile, "${file.name}.${System.nanoTime()}.part")
+    try {
+        FileOutputStream(temporary).use { output ->
+            output.write(bytes)
+            output.fd.sync()
+        }
+        try {
+            java.nio.file.Files.move(
+                temporary.toPath(),
+                file.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+            java.nio.file.Files.move(temporary.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        }
+    } finally {
+        temporary.delete()
     }
 }
 
@@ -1854,6 +1915,8 @@ internal suspend fun downloadFilePlans(
     control: suspend () -> SteamDownloadControl,
     progressReporter: DownloadProgressReporter,
     timingContext: DownloadTimingContext? = null,
+    checkpoint: SteamDownloadCheckpoint? = null,
+    playbackCoordinator: PlaybackDownloadCoordinator? = null,
 ) = coroutineScope {
     validateManifestFilePlans(plans)
     DownloadDiskReservations.withReservation(destinationDirectory, remainingDownloadBytes(destinationDirectory, plans, control)) {
@@ -1892,6 +1955,8 @@ internal suspend fun downloadFilePlans(
                         control = control,
                         progressReporter = progressReporter,
                         timingContext = timingContext,
+                        checkpoint = checkpoint,
+                        playbackCoordinator = playbackCoordinator,
                     )
                 }
             }.awaitAll()
@@ -1914,6 +1979,8 @@ internal suspend fun downloadFilePlan(
     control: suspend () -> SteamDownloadControl,
     progressReporter: DownloadProgressReporter,
     timingContext: DownloadTimingContext? = null,
+    checkpoint: SteamDownloadCheckpoint? = null,
+    playbackCoordinator: PlaybackDownloadCoordinator? = null,
 ) {
     currentCoroutineContext().ensureActive()
     checkDownloadControl(control)
@@ -1922,7 +1989,8 @@ internal suspend fun downloadFilePlan(
     val destination = WorkshopStagingPath.resolve(destinationDirectory, manifestFile.fileName)
     destination.parentFile?.mkdirs()
     val partial = File(destination.parentFile, "${destination.name}.wallhub.part")
-    if (isCompletedFile(destination, manifestFile, plan.chunks, control)) {
+    val checkpointOffsets = checkpoint?.load(manifestFile.fileName, plan.chunks)
+    if (destination.isFile && destination.length() == manifestFile.totalSize && checkpointOffsets?.size == plan.chunks.size) {
         partial.delete()
         progressReporter.markExistingFileCompleted(
             fileName = manifestFile.fileName,
@@ -1941,7 +2009,7 @@ internal suspend fun downloadFilePlan(
         check(destination.delete()) { "Failed to delete stale file: ${manifestFile.fileName}" }
     }
 
-    val verifiedOffsets = findVerifiedChunkOffsets(partial, plan.chunks, control)
+    val verifiedOffsets = checkpointOffsets ?: findVerifiedChunkOffsets(partial, plan.chunks, control)
     val recoveredBytes =
         plan.chunks
             .filter { it.offset in verifiedOffsets }
@@ -1951,6 +2019,10 @@ internal suspend fun downloadFilePlan(
     }
     RandomAccessFile(partial, "rw").use { output ->
         output.setLength(manifestFile.totalSize)
+        if (checkpointOffsets == null && verifiedOffsets.isNotEmpty()) {
+            output.fd.sync()
+            checkpoint?.save(manifestFile.fileName, plan.chunks, verifiedOffsets)
+        }
         downloadChunksContinuously(
             chunks = plan.chunks.filterNot { it.offset in verifiedOffsets },
             output = output,
@@ -1965,11 +2037,14 @@ internal suspend fun downloadFilePlan(
             chunkConcurrency = chunkConcurrency,
             control = control,
             timingContext = timingContext,
-            onChunkWritten = { decodedChunk ->
+            beforeChunk = { playbackCoordinator?.awaitBackgroundWorkAllowed() },
+            initialCommittedOffsets = verifiedOffsets,
+            persistCommittedOffsets = { offsets -> checkpoint?.save(manifestFile.fileName, plan.chunks, offsets) },
+            onChunkWritten = { decodedBytes ->
                 progressReporter.markChunkCommitted()
                 progressReporter.addDownloadedBytes(
                     fileName = manifestFile.fileName,
-                    bytes = decodedChunk.size.toLong(),
+                    bytes = decodedBytes.toLong(),
                 )
             },
         )
@@ -2001,7 +2076,10 @@ internal suspend fun downloadChunksContinuously(
     chunkConcurrency: Int,
     control: suspend () -> SteamDownloadControl,
     timingContext: DownloadTimingContext? = null,
-    onChunkWritten: suspend (ByteArray) -> Unit,
+    beforeChunk: suspend () -> Unit = {},
+    initialCommittedOffsets: Set<Long> = emptySet(),
+    persistCommittedOffsets: (Set<Long>) -> Unit = {},
+    onChunkWritten: suspend (Int) -> Unit,
 ) = coroutineScope {
     if (chunks.isEmpty()) return@coroutineScope
     val queue = Channel<DepotChunkSpec>(chunkConcurrency)
@@ -2017,6 +2095,7 @@ internal suspend fun downloadChunksContinuously(
     repeat(chunkConcurrency) {
         launch {
             for (chunk in queue) {
+                beforeChunk()
                 currentCoroutineContext().ensureActive()
                 checkDownloadControl(control)
                 withDownloadChunkMemoryPermit(
@@ -2043,23 +2122,52 @@ internal suspend fun downloadChunksContinuously(
             }
         }
     }
-    repeat(chunks.size) {
-        val chunk = completed.receive()
-        output.seek(chunk.offset)
-        output.write(chunk.data)
-        timingContext?.let { context ->
-            DownloadTimingTelemetry.logChunk(
-                event = DownloadTimingTelemetry.FORMAL_CHUNK_FILE_WRITE_COMPLETED,
-                context = context,
-                chunkOffset = chunk.offset,
-                compressedBytes = chunk.compressedBytes,
-                uncompressedBytes = chunk.data.size,
-            )
+    val committedOffsets = initialCommittedOffsets.toMutableSet()
+    val pending = mutableListOf<PendingChunkCommit>()
+    var pendingBytes = 0L
+    var lastCheckpointAt = System.nanoTime()
+    suspend fun checkpoint() {
+        if (pending.isEmpty()) return
+        output.fd.sync()
+        committedOffsets += pending.map(PendingChunkCommit::offset)
+        persistCommittedOffsets(committedOffsets)
+        for (pendingChunk in pending) {
+            onChunkWritten(pendingChunk.uncompressedBytes)
         }
-        onChunkWritten(chunk.data)
-        chunk.written.complete(Unit)
+        pending.clear()
+        pendingBytes = 0L
+        lastCheckpointAt = System.nanoTime()
+    }
+    try {
+        repeat(chunks.size) {
+            val chunk = completed.receive()
+            output.seek(chunk.offset)
+            output.write(chunk.data)
+            timingContext?.let { context ->
+                DownloadTimingTelemetry.logChunk(
+                    event = DownloadTimingTelemetry.FORMAL_CHUNK_FILE_WRITE_COMPLETED,
+                    context = context,
+                    chunkOffset = chunk.offset,
+                    compressedBytes = chunk.compressedBytes,
+                    uncompressedBytes = chunk.data.size,
+                )
+            }
+            pending += PendingChunkCommit(chunk.offset, chunk.data.size)
+            pendingBytes += chunk.data.size
+            chunk.written.complete(Unit)
+            if (pendingBytes >= DOWNLOAD_CHECKPOINT_BYTES || System.nanoTime() - lastCheckpointAt >= DOWNLOAD_CHECKPOINT_INTERVAL_NANOS) {
+                checkpoint()
+            }
+        }
+    } finally {
+        checkpoint()
     }
 }
+
+private data class PendingChunkCommit(
+    val offset: Long,
+    val uncompressedBytes: Int,
+)
 
 internal fun verifyFileHash(
     file: DepotFileSpec,
@@ -2564,6 +2672,8 @@ internal const val FORMAL_CHUNK_ATTEMPT_TIMEOUT_MS = 5_000L
 internal const val CDN_WRITE_TIMEOUT_MS = 20_000L
 internal const val CDN_TRANSFER_MAX_ATTEMPTS = 3
 private val CDN_TRANSFER_RETRY_DELAYS_MS = longArrayOf(1_000L, 3_000L)
+private const val DOWNLOAD_CHECKPOINT_BYTES = 32L * 1024L * 1024L
+private const val DOWNLOAD_CHECKPOINT_INTERVAL_NANOS = 1_000_000_000L
 internal const val STEAM_CONTENT_LOG_TAG = "WallHubDownload"
 internal const val HASH_BUFFER_SIZE = 1024 * 1024
 internal const val TOKEN_MIN_VALIDITY_MS = 30_000L

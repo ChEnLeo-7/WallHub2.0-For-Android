@@ -148,8 +148,9 @@ jobs:
             :app:testDebugUnitTest \
             --tests com.wallhub.android.data.downloads.DownloadRetryRoutingTest \
             --tests com.wallhub.android.data.downloads.SteamRemoteVideoStreamTest \
-            --tests com.wallhub.android.data.downloads.SteamCdnHttpsTest \
-            --tests com.wallhub.android.feature.downloads.DownloadsFilterTest
+             --tests com.wallhub.android.data.downloads.SteamCdnHttpsTest \
+             --tests com.wallhub.android.data.downloads.SteamDownloadCheckpointTest \
+             --tests com.wallhub.android.feature.downloads.DownloadsFilterTest
       - name: Require Release signing secrets
         env:
           WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}

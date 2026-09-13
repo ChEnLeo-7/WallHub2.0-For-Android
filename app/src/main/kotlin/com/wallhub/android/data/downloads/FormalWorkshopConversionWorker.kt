@@ -51,6 +51,7 @@ class FormalWorkshopConversionWorker(
         params: WorkerParameters,
         private val taskDao: FormalTaskRecordDao,
         private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
+        private val playbackCoordinator: PlaybackDownloadCoordinator,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result =
         withContext(Dispatchers.IO) {
@@ -125,6 +126,7 @@ class FormalWorkshopConversionWorker(
                         destinationDirectory = temporaryDirectory,
                         pendingBytes = estimateConversionDiskBytes(sourceDirectory),
                     ) {
+                        playbackCoordinator.awaitBackgroundWorkAllowed()
                         downloadConcurrencyGovernor.withConversionSlot {
                             convert(
                                 task = task,
@@ -313,6 +315,7 @@ class FormalWorkshopConversionWorker(
                     .onEach { checkCancellation() }
                     .map { file -> file.canonicalFile }
                     .filter { file -> file.toPath().startsWith(root.toPath()) }
+                    .filter { file -> !file.toRelativeString(root).startsWith(".wallhub-download-state") }
                     .sortedBy { file ->
                         root
                             .toPath()
