@@ -46,7 +46,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-class FormalWorkshopConversionWorker(
+internal class FormalWorkshopConversionWorker(
     appContext: Context,
         params: WorkerParameters,
         private val taskDao: FormalTaskRecordDao,
