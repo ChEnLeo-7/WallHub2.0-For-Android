@@ -1504,6 +1504,7 @@ internal suspend fun downloadChunk(
         control = control,
         onSuccess = onSuccess,
         timingContext = timingContext,
+        attemptTimeoutMs = FORMAL_CHUNK_ATTEMPT_TIMEOUT_MS,
         decode = { encrypted -> depotDownloader.decodeChunk(chunk, encrypted, depotKey).getOrThrow() },
     )
 
@@ -1518,6 +1519,7 @@ internal suspend fun downloadEncryptedChunk(
     control: suspend () -> SteamDownloadControl,
     onSuccess: ((CdnServer) -> Unit)? = null,
     timingContext: DownloadTimingContext? = null,
+    attemptTimeoutMs: Long? = null,
     decode: suspend (ByteArray) -> ByteArray = { encrypted -> encrypted },
 ): ByteArray {
     validateManifestChunk(chunk)
@@ -1554,6 +1556,7 @@ internal suspend fun downloadEncryptedChunk(
                         chunk = chunk,
                         cdnAuthToken = token,
                         destination = encrypted,
+                        attemptTimeoutMs = attemptTimeoutMs,
                     ) {
                         checkDownloadControl(control)
                     }
@@ -1640,6 +1643,7 @@ private suspend fun downloadEncryptedChunkStreaming(
     chunk: DepotChunkSpec,
     cdnAuthToken: String?,
     destination: ByteArray,
+    attemptTimeoutMs: Long?,
     beforeRead: suspend () -> Unit,
 ): Int = coroutineScope {
     val chunkId = requireNotNull(chunk.chunkId) { "Chunk must have a ChunkID." }
@@ -1654,6 +1658,10 @@ private suspend fun downloadEncryptedChunkStreaming(
             .url(buildSteamCdnCommand(server, command, cdnAuthToken, proxyServer))
             .build()
     val call = httpClient.newCall(request)
+    attemptTimeoutMs?.let { timeoutMs ->
+        require(timeoutMs > 0L) { "Steam chunk attempt timeout must be positive" }
+        call.timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS)
+    }
     val cancellationWatcher =
         launch(start = CoroutineStart.UNDISPATCHED) {
             try {
@@ -2552,6 +2560,7 @@ internal const val MANIFEST_PROBE_PARALLELISM = 3
 internal const val MAX_CDN_ERROR_DETAILS = 3
 internal const val CDN_CONNECT_TIMEOUT_MS = 20_000L
 internal const val CDN_READ_TIMEOUT_MS = 20_000L
+internal const val FORMAL_CHUNK_ATTEMPT_TIMEOUT_MS = 5_000L
 internal const val CDN_WRITE_TIMEOUT_MS = 20_000L
 internal const val CDN_TRANSFER_MAX_ATTEMPTS = 3
 private val CDN_TRANSFER_RETRY_DELAYS_MS = longArrayOf(1_000L, 3_000L)

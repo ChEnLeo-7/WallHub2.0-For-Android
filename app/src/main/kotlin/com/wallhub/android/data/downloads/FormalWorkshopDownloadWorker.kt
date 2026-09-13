@@ -307,7 +307,7 @@ class FormalWorkshopDownloadWorker
 
                         var previousPhase: SteamDownloadPhase? = null
                         var lastPersistedAt = 0L
-                        var lastSpeedAt = System.currentTimeMillis()
+                        var lastSpeedAt = SystemClock.elapsedRealtime()
                         var lastSpeedBytes = task.downloadedBytes
                         var firstNonzeroSpeedPersisted = task.bytesPerSecond > 0L
                         val controlProbe = TaskControlProbe(taskDao, taskId)
@@ -334,10 +334,7 @@ class FormalWorkshopDownloadWorker
                                     event = DownloadTimingTelemetry.PROGRESS_CALLBACK_STARTED,
                                     context = timingContext,
                                 )
-                                val now = System.currentTimeMillis()
-                                val enteringDownloadPhase =
-                                    progress.phase == SteamDownloadPhase.DOWNLOADING &&
-                                        previousPhase != SteamDownloadPhase.DOWNLOADING
+                                val now = SystemClock.elapsedRealtime()
                                 if (progress.phase != previousPhase) {
                                     Log.i(
                                         DOWNLOAD_LOG_TAG,
@@ -351,17 +348,13 @@ class FormalWorkshopDownloadWorker
                                         (progress.totalBytes > 0L && progress.completedBytes >= progress.totalBytes)
                                 if (shouldPersist) {
                                     val speed =
-                                        if (
-                                            progress.phase == SteamDownloadPhase.DOWNLOADING &&
-                                            !enteringDownloadPhase &&
-                                            now > lastSpeedAt &&
-                                            progress.completedBytes >= lastSpeedBytes
-                                        ) {
-                                            ((progress.completedBytes - lastSpeedBytes) * 1_000L / (now - lastSpeedAt))
-                                                .coerceAtLeast(0L)
-                                        } else {
-                                            task.bytesPerSecond
-                                        }
+                                        downloadSpeedBytesPerSecond(
+                                            phase = progress.phase,
+                                            completedBytes = progress.completedBytes,
+                                            previousBytes = lastSpeedBytes,
+                                            elapsedMs = now - lastSpeedAt,
+                                            previousSpeed = task.bytesPerSecond,
+                                        )
                                     DownloadTimingTelemetry.log(
                                         event = DownloadTimingTelemetry.PROGRESS_PERSIST_STARTED,
                                         context = timingContext,
@@ -391,10 +384,8 @@ class FormalWorkshopDownloadWorker
                                             context = timingContext,
                                         )
                                     }
-                                    if (progress.phase == SteamDownloadPhase.DOWNLOADING) {
-                                        lastSpeedAt = now
-                                        lastSpeedBytes = progress.completedBytes
-                                    }
+                                    lastSpeedAt = now
+                                    lastSpeedBytes = progress.completedBytes
                                     previousPhase = progress.phase
                                     lastPersistedAt = now
                                 }
@@ -795,6 +786,19 @@ class FormalWorkshopDownloadWorker
             private const val PAUSE_POLL_INTERVAL_MS = 250L
             private const val MAX_PRESET_DEPENDENCY_DEPTH = 4
         }
+    }
+
+internal fun downloadSpeedBytesPerSecond(
+    phase: SteamDownloadPhase,
+    completedBytes: Long,
+    previousBytes: Long,
+    elapsedMs: Long,
+    previousSpeed: Long,
+): Long =
+    if (phase == SteamDownloadPhase.DOWNLOADING && elapsedMs > 0L && completedBytes >= previousBytes) {
+        ((completedBytes - previousBytes) * 1_000L / elapsedMs).coerceAtLeast(0L)
+    } else {
+        previousSpeed
     }
 
 private data class DependencyDownloadResult(

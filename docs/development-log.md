@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Reduced formal chunk fallback latency, shared CDN route health across downloads, and published an initial speed from the first committed chunk.
 - Added monotonic diagnostics for formal chunk request, response, decode, file-write, progress callback, and Room persistence boundaries.
 - Added non-sensitive monotonic download timing telemetry for the homepage click-to-first-visible-speed path.
 - Kept Steam CDN calls open until manifest response bodies are fully consumed, preventing the concurrent CDN probe cleanup from closing successful sockets prematurely.

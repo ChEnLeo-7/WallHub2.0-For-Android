@@ -265,6 +265,7 @@ internal class SteamContentDownloader
         private val steamHttpClientFactory: SteamHttpClientFactory,
     ) {
     private val contentAccessCache = SteamContentAccessCache()
+    private val downloadCdnSelector = CdnServerSelector()
 
     suspend fun <T> withContentTransportActive(block: suspend () -> T): T =
         sessionRepository.withContentTransportActive(block)
@@ -355,7 +356,7 @@ internal class SteamContentDownloader
             checkDownloadControl(control)
             onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
             val access = resolveContentAccess(session, target, contentAccessCache)
-            val selector = CdnServerSelector()
+            val selector = downloadCdnSelector
             Log.i(
                 STEAM_CONTENT_LOG_TAG,
                 "Steam CDN chunkConcurrency=${options.chunkConcurrency}, " +
