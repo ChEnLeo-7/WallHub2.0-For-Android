@@ -438,6 +438,7 @@ internal class SteamContentDownloader
                 chunkConcurrency = options.chunkConcurrency,
                 control = control,
                 progressReporter = progressReporter,
+                timingContext = options.timingContext,
             )
             val finalProgress = progressReporter.snapshot()
             return SteamContentDownloadResult(

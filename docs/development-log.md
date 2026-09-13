@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Added monotonic diagnostics for formal chunk request, response, decode, file-write, progress callback, and Room persistence boundaries.
 - Added non-sensitive monotonic download timing telemetry for the homepage click-to-first-visible-speed path.
 - Kept Steam CDN calls open until manifest response bodies are fully consumed, preventing the concurrent CDN probe cleanup from closing successful sockets prematurely.
 - Preserved cancellation propagation so losing CDN probes and user-cancelled downloads still cancel their underlying OkHttp calls.

@@ -1491,6 +1491,7 @@ internal suspend fun downloadChunk(
     depotDownloader: DepotDownloader,
     control: suspend () -> SteamDownloadControl,
     onSuccess: ((CdnServer) -> Unit)? = null,
+    timingContext: DownloadTimingContext? = null,
 ): ByteArray =
     downloadEncryptedChunk(
         httpClient = httpClient,
@@ -1502,6 +1503,7 @@ internal suspend fun downloadChunk(
         selector = selector,
         control = control,
         onSuccess = onSuccess,
+        timingContext = timingContext,
         decode = { encrypted -> depotDownloader.decodeChunk(chunk, encrypted, depotKey).getOrThrow() },
     )
 
@@ -1515,6 +1517,7 @@ internal suspend fun downloadEncryptedChunk(
     selector: CdnServerSelector,
     control: suspend () -> SteamDownloadControl,
     onSuccess: ((CdnServer) -> Unit)? = null,
+    timingContext: DownloadTimingContext? = null,
     decode: suspend (ByteArray) -> ByteArray = { encrypted -> encrypted },
 ): ByteArray {
     validateManifestChunk(chunk)
@@ -1533,6 +1536,15 @@ internal suspend fun downloadEncryptedChunk(
                 val encrypted = ByteArray(chunk.compressedLength)
                 // Streaming into the caller-owned destination avoids duplicating the response
                 // buffer for every concurrent chunk request on a constrained Android heap.
+                timingContext?.let { context ->
+                    DownloadTimingTelemetry.logChunk(
+                        event = DownloadTimingTelemetry.FORMAL_CHUNK_REQUEST_STARTED,
+                        context = context,
+                        chunkOffset = chunk.offset,
+                        compressedBytes = chunk.compressedLength,
+                        uncompressedBytes = chunk.uncompressedLength,
+                    )
+                }
                 val downloadedBytes =
                     downloadEncryptedChunkStreaming(
                         httpClient = httpClient,
@@ -1545,8 +1557,26 @@ internal suspend fun downloadEncryptedChunk(
                     ) {
                         checkDownloadControl(control)
                     }
+                timingContext?.let { context ->
+                    DownloadTimingTelemetry.logChunk(
+                        event = DownloadTimingTelemetry.FORMAL_CHUNK_RESPONSE_BODY_COMPLETED,
+                        context = context,
+                        chunkOffset = chunk.offset,
+                        compressedBytes = chunk.compressedLength,
+                        uncompressedBytes = chunk.uncompressedLength,
+                    )
+                }
                 check(downloadedBytes == encrypted.size) { "Steam chunk compressed length mismatch" }
                 val decoded = decodeAndVerifyChunk(chunk, encrypted, decode)
+                timingContext?.let { context ->
+                    DownloadTimingTelemetry.logChunk(
+                        event = DownloadTimingTelemetry.FORMAL_CHUNK_DECODE_COMPLETED,
+                        context = context,
+                        chunkOffset = chunk.offset,
+                        compressedBytes = chunk.compressedLength,
+                        uncompressedBytes = chunk.uncompressedLength,
+                    )
+                }
                 selector.recordSuccess(
                     server = server,
                     bytes = encrypted.size,
@@ -1815,6 +1845,7 @@ internal suspend fun downloadFilePlans(
     chunkConcurrency: Int,
     control: suspend () -> SteamDownloadControl,
     progressReporter: DownloadProgressReporter,
+    timingContext: DownloadTimingContext? = null,
 ) = coroutineScope {
     validateManifestFilePlans(plans)
     DownloadDiskReservations.withReservation(destinationDirectory, remainingDownloadBytes(destinationDirectory, plans, control)) {
@@ -1852,6 +1883,7 @@ internal suspend fun downloadFilePlans(
                         chunkConcurrency = perFileConcurrency,
                         control = control,
                         progressReporter = progressReporter,
+                        timingContext = timingContext,
                     )
                 }
             }.awaitAll()
@@ -1873,6 +1905,7 @@ internal suspend fun downloadFilePlan(
     chunkConcurrency: Int,
     control: suspend () -> SteamDownloadControl,
     progressReporter: DownloadProgressReporter,
+    timingContext: DownloadTimingContext? = null,
 ) {
     currentCoroutineContext().ensureActive()
     checkDownloadControl(control)
@@ -1923,6 +1956,7 @@ internal suspend fun downloadFilePlan(
             depotDownloader = depotDownloader,
             chunkConcurrency = chunkConcurrency,
             control = control,
+            timingContext = timingContext,
             onChunkWritten = { decodedChunk ->
                 progressReporter.markChunkCommitted()
                 progressReporter.addDownloadedBytes(
@@ -1958,6 +1992,7 @@ internal suspend fun downloadChunksContinuously(
     depotDownloader: DepotDownloader,
     chunkConcurrency: Int,
     control: suspend () -> SteamDownloadControl,
+    timingContext: DownloadTimingContext? = null,
     onChunkWritten: suspend (ByteArray) -> Unit,
 ) = coroutineScope {
     if (chunks.isEmpty()) return@coroutineScope
@@ -1991,9 +2026,10 @@ internal suspend fun downloadChunksContinuously(
                         selector = selector,
                         depotDownloader = depotDownloader,
                         control = control,
+                        timingContext = timingContext,
                     )
                     val written = CompletableDeferred<Unit>()
-                    completed.send(DownloadedChunk(chunk.offset, data, written))
+                    completed.send(DownloadedChunk(chunk.offset, chunk.compressedLength, data, written))
                     written.await()
                 }
             }
@@ -2003,6 +2039,15 @@ internal suspend fun downloadChunksContinuously(
         val chunk = completed.receive()
         output.seek(chunk.offset)
         output.write(chunk.data)
+        timingContext?.let { context ->
+            DownloadTimingTelemetry.logChunk(
+                event = DownloadTimingTelemetry.FORMAL_CHUNK_FILE_WRITE_COMPLETED,
+                context = context,
+                chunkOffset = chunk.offset,
+                compressedBytes = chunk.compressedBytes,
+                uncompressedBytes = chunk.data.size,
+            )
+        }
         onChunkWritten(chunk.data)
         chunk.written.complete(Unit)
     }
@@ -2133,6 +2178,7 @@ internal data class SteamContentAccess(
 
 internal data class DownloadedChunk(
     val offset: Long,
+    val compressedBytes: Int,
     val data: ByteArray,
     val written: CompletableDeferred<Unit>,
 )

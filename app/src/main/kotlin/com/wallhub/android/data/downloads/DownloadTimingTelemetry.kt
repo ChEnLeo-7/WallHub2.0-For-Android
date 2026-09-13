@@ -19,6 +19,14 @@ internal object DownloadTimingTelemetry {
     const val FIRST_CHUNK_COMMITTED = "first_chunk_committed"
     const val FIRST_NONZERO_SPEED_PERSISTED = "first_nonzero_speed_persisted"
     const val FIRST_NONZERO_SPEED_VISIBLE = "first_nonzero_speed_visible"
+    const val PROGRESS_CALLBACK_STARTED = "progress_callback_started"
+    const val PROGRESS_CALLBACK_ENDED = "progress_callback_ended"
+    const val PROGRESS_PERSIST_STARTED = "progress_persist_started"
+    const val PROGRESS_PERSIST_COMPLETED = "progress_persist_completed"
+    const val FORMAL_CHUNK_REQUEST_STARTED = "formal_chunk_request_started"
+    const val FORMAL_CHUNK_RESPONSE_BODY_COMPLETED = "formal_chunk_response_body_completed"
+    const val FORMAL_CHUNK_DECODE_COMPLETED = "formal_chunk_decode_completed"
+    const val FORMAL_CHUNK_FILE_WRITE_COMPLETED = "formal_chunk_file_write_completed"
 
     private val oneShotEvents = ConcurrentHashMap.newKeySet<String>()
 
@@ -32,6 +40,22 @@ internal object DownloadTimingTelemetry {
             DOWNLOAD_LOG_TAG,
             "timing event=$event taskId=$taskId workshopId=$workshopId " +
                 "elapsedRealtimeMs=$elapsedRealtimeMs",
+        )
+    }
+
+    fun logChunk(
+        event: String,
+        context: DownloadTimingContext,
+        chunkOffset: Long,
+        compressedBytes: Int,
+        uncompressedBytes: Int,
+        elapsedRealtimeMs: Long = SystemClock.elapsedRealtime(),
+    ) {
+        Log.i(
+            DOWNLOAD_LOG_TAG,
+            "timing event=$event taskId=${context.taskId} workshopId=${context.workshopId} " +
+                "chunkOffset=$chunkOffset compressedBytes=$compressedBytes " +
+                "uncompressedBytes=$uncompressedBytes elapsedRealtimeMs=$elapsedRealtimeMs",
         )
     }
 

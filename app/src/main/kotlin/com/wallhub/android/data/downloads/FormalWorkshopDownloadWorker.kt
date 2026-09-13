@@ -330,6 +330,10 @@ class FormalWorkshopDownloadWorker
                                     ),
                                 control = controlProbe::current,
                             ) { progress ->
+                                DownloadTimingTelemetry.log(
+                                    event = DownloadTimingTelemetry.PROGRESS_CALLBACK_STARTED,
+                                    context = timingContext,
+                                )
                                 val now = System.currentTimeMillis()
                                 val enteringDownloadPhase =
                                     progress.phase == SteamDownloadPhase.DOWNLOADING &&
@@ -358,6 +362,10 @@ class FormalWorkshopDownloadWorker
                                         } else {
                                             task.bytesPerSecond
                                         }
+                                    DownloadTimingTelemetry.log(
+                                        event = DownloadTimingTelemetry.PROGRESS_PERSIST_STARTED,
+                                        context = timingContext,
+                                    )
                                     task =
                                         persist(
                                             task,
@@ -372,6 +380,10 @@ class FormalWorkshopDownloadWorker
                                             bytesPerSecond = speed,
                                             message = progress.toMessage(credential != null),
                                         )
+                                    DownloadTimingTelemetry.log(
+                                        event = DownloadTimingTelemetry.PROGRESS_PERSIST_COMPLETED,
+                                        context = timingContext,
+                                    )
                                     if (!firstNonzeroSpeedPersisted && speed > 0L) {
                                         firstNonzeroSpeedPersisted = true
                                         DownloadTimingTelemetry.log(
@@ -386,6 +398,10 @@ class FormalWorkshopDownloadWorker
                                     previousPhase = progress.phase
                                     lastPersistedAt = now
                                 }
+                                DownloadTimingTelemetry.log(
+                                    event = DownloadTimingTelemetry.PROGRESS_CALLBACK_ENDED,
+                                    context = timingContext,
+                                )
                             }
                         val dependencyDownload =
                             downloadPresetDependencies(
