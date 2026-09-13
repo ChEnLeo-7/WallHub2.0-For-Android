@@ -374,6 +374,7 @@ internal class SteamContentDownloader
                     depotKey = access.depotKey,
                     authTokens = access.authTokens,
                     control = control,
+                    timingContext = options.timingContext,
                 )
             check(manifest.files.size <= MAX_MANIFEST_FILE_COUNT) {
                 "Steam manifest file count ${manifest.files.size} exceeds limit $MAX_MANIFEST_FILE_COUNT"
@@ -415,6 +416,7 @@ internal class SteamContentDownloader
                     totalBytes = totalBytes,
                     totalFiles = files.size,
                     onProgress = onProgress,
+                    onFirstChunkCommitted = options.onFirstChunkCommitted,
                 )
             manifest.files.filter { it.flags.contains(DepotFileFlag.Directory) }.forEach { directory ->
                 if (directory.fileName.isBlank() || directory.fileName == ".") return@forEach

@@ -34,7 +34,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
-import com.wallhub.android.core.model.WorkshopSummary
 import kotlinx.coroutines.launch
 
 @Composable
@@ -104,28 +103,28 @@ fun HomeEffectHandler(
     val currentOnOpenDetail by rememberUpdatedState(onOpenDetail)
     val currentOnSearchAuthor by rememberUpdatedState(onSearchAuthor)
     val currentOnOpenDownloads by rememberUpdatedState(onOpenDownloads)
-    var pendingLegacyStorageDownload by remember { mutableStateOf<WorkshopSummary?>(null) }
+    var pendingLegacyStorageDownload by remember { mutableStateOf<HomeAction.RequestDownload?>(null) }
     val legacyStoragePermissionLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission(),
         ) { granted ->
-            val pendingItem = pendingLegacyStorageDownload ?: return@rememberLauncherForActivityResult
+            val pendingRequest = pendingLegacyStorageDownload ?: return@rememberLauncherForActivityResult
             pendingLegacyStorageDownload = null
-            viewModel.onAction(HomeAction.LegacyStoragePermissionResult(pendingItem, granted))
+            viewModel.onAction(HomeAction.LegacyStoragePermissionResult(pendingRequest, granted))
         }
     LaunchedEffect(viewModel, context, resources, unableToQueueDownload) {
         viewModel.effects.collect { effect ->
             when (effect) {
                 is HomeEffect.ResolveLegacyStoragePermission -> {
                     if (context.requiresLegacyPublicDownloadPermission()) {
-                        pendingLegacyStorageDownload = effect.item
+                        pendingLegacyStorageDownload = effect.request
                         legacyStoragePermissionLauncher.launch(
                             Manifest.permission.WRITE_EXTERNAL_STORAGE,
                         )
                     } else {
                         viewModel.onAction(
                             HomeAction.LegacyStoragePermissionResult(
-                                item = effect.item,
+                                request = effect.request,
                                 granted = true,
                             ),
                         )

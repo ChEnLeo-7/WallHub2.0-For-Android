@@ -2,6 +2,7 @@
 
 package com.wallhub.android.feature.home
 
+import android.os.SystemClock
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Immutable
 import com.wallhub.android.core.model.HomeCardAction
@@ -15,6 +16,7 @@ import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.core.model.workshopSearchIdOrNull
+import java.util.UUID
 
 enum class HomeViewMode {
     GRID,
@@ -195,10 +197,12 @@ sealed interface HomeAction {
 
     data class RequestDownload(
         val item: WorkshopSummary,
+        val taskId: String = UUID.randomUUID().toString(),
+        val clickAtElapsedRealtimeMs: Long = SystemClock.elapsedRealtime(),
     ) : HomeAction
 
     data class LegacyStoragePermissionResult(
-        val item: WorkshopSummary,
+        val request: RequestDownload,
         val granted: Boolean,
     ) : HomeAction
 
@@ -222,7 +226,7 @@ sealed interface HomeAction {
 
 sealed interface HomeEffect {
     data class ResolveLegacyStoragePermission(
-        val item: WorkshopSummary,
+        val request: HomeAction.RequestDownload,
     ) : HomeEffect
 
     data class ShowMessage(

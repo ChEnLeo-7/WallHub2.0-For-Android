@@ -62,7 +62,7 @@ internal class RoomDownloadTaskRepository
             val credential = credentialProvider.loadContentCredential()
             val task =
                 DownloadTask(
-                    id = UUID.randomUUID().toString(),
+                    id = request.taskId ?: UUID.randomUUID().toString(),
                     workshopId = request.workshopId,
                     title = request.title.ifBlank { "Workshop ${request.workshopId}" },
                     type = request.type,
@@ -87,6 +87,11 @@ internal class RoomDownloadTaskRepository
             return try {
                 workScheduler.enqueue(task.id)
                 Log.i(LOG_TAG, "Queued formal Steam download taskId=${task.id}")
+                DownloadTimingTelemetry.log(
+                    event = DownloadTimingTelemetry.TASK_ENQUEUED,
+                    taskId = task.id,
+                    workshopId = task.workshopId,
+                )
                 task
             } catch (error: Throwable) {
                 val failed =

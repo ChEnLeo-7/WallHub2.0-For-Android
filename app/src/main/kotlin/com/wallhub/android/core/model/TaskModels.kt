@@ -38,6 +38,7 @@ data class DownloadRequest(
     val workshopId: Long,
     val title: String,
     val type: WorkshopType,
+    val taskId: String? = null,
     val previewUrl: String? = null,
     val expectedTotalBytes: Long = 0L,
     val outputTreeUri: String? = null,

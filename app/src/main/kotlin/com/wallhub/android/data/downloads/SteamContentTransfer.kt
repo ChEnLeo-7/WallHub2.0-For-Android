@@ -1271,10 +1271,17 @@ internal suspend fun downloadManifest(
     depotKey: ByteArray,
     authTokens: CdnAuthTokenProvider,
     control: suspend () -> SteamDownloadControl,
+    timingContext: DownloadTimingContext? = null,
 ): DepotManifestSpec {
     val candidates = servers.take(MAX_CDN_ATTEMPTS)
     try {
-        return raceCdnCandidates(candidates, MANIFEST_PROBE_PARALLELISM) { server ->
+        timingContext?.let { context ->
+            DownloadTimingTelemetry.log(
+                event = DownloadTimingTelemetry.MANIFEST_REQUEST_STARTED,
+                context = context,
+            )
+        }
+        val manifest = raceCdnCandidates(candidates, MANIFEST_PROBE_PARALLELISM) { server ->
             downloadManifestFromServer(
                 httpClient = httpClient,
                 server = server,
@@ -1287,6 +1294,13 @@ internal suspend fun downloadManifest(
                 control = control,
             )
         }
+        timingContext?.let { context ->
+            DownloadTimingTelemetry.log(
+                event = DownloadTimingTelemetry.MANIFEST_COMPLETED,
+                context = context,
+            )
+        }
+        return manifest
     } catch (error: CdnRaceFailure) {
         val failures = error.failures.mapNotNull { it as? CdnCandidateFailure }
         val causes = failures.mapNotNull { failure -> failure.cause }
@@ -1910,6 +1924,7 @@ internal suspend fun downloadFilePlan(
             chunkConcurrency = chunkConcurrency,
             control = control,
             onChunkWritten = { decodedChunk ->
+                progressReporter.markChunkCommitted()
                 progressReporter.addDownloadedBytes(
                     fileName = manifestFile.fileName,
                     bytes = decodedChunk.size.toLong(),
@@ -2617,12 +2632,27 @@ internal class DownloadProgressReporter(
     private val totalBytes: Long,
     private val totalFiles: Int,
     private val onProgress: suspend (SteamDownloadProgress) -> Unit,
+    private val onFirstChunkCommitted: (suspend () -> Unit)? = null,
 ) {
     private val mutex = Mutex()
     private var downloadedBytes = 0L
     private var completedFiles = 0
     private var lastPublishedAt = 0L
+    private var firstChunkCommitted = false
     private val callbackMutex = Mutex()
+
+    suspend fun markChunkCommitted() {
+        val shouldNotify =
+            mutex.withLock {
+                if (firstChunkCommitted) {
+                    false
+                } else {
+                    firstChunkCommitted = true
+                    true
+                }
+            }
+        if (shouldNotify) onFirstChunkCommitted?.invoke()
+    }
 
     suspend fun addDownloadedBytes(
         fileName: String,
@@ -2696,6 +2726,8 @@ internal data class DownloadProgressSnapshot(
 internal data class SteamContentDownloadOptions(
     val chunkConcurrency: Int = 24,
     val proxyUrl: String = "",
+    val timingContext: DownloadTimingContext? = null,
+    val onFirstChunkCommitted: (suspend () -> Unit)? = null,
 ) {
     fun normalized(): SteamContentDownloadOptions =
         copy(

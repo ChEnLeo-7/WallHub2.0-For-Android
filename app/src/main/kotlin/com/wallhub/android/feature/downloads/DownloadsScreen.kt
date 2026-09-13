@@ -50,6 +50,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -96,6 +97,8 @@ import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.android.data.downloads.DownloadTimingContext
+import com.wallhub.android.data.downloads.DownloadTimingTelemetry
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.Channel
@@ -760,6 +763,16 @@ private fun DownloadTaskCard(
     onOpenDetail: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val hasVisibleSpeed = task.status == DownloadStatus.DOWNLOADING && task.bytesPerSecond > 0L
+    LaunchedEffect(task.id, hasVisibleSpeed) {
+        if (hasVisibleSpeed) {
+            withFrameNanos { }
+            DownloadTimingTelemetry.logOnce(
+                event = DownloadTimingTelemetry.FIRST_NONZERO_SPEED_VISIBLE,
+                context = DownloadTimingContext(taskId = task.id, workshopId = task.workshopId),
+            )
+        }
+    }
     val showProgress =
         task.status in
             setOf(

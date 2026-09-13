@@ -1,9 +1,10 @@
 # Development Log
 
-## 2026-09-12
+## 2026-09-13
 
 ### Fixed
 
+- Added non-sensitive monotonic download timing telemetry for the homepage click-to-first-visible-speed path.
 - Kept Steam CDN calls open until manifest response bodies are fully consumed, preventing the concurrent CDN probe cleanup from closing successful sockets prematurely.
 - Preserved cancellation propagation so losing CDN probes and user-cancelled downloads still cancel their underlying OkHttp calls.
 - Expanded the patched kSteam CI cache to include its locally published transitive modules, preventing cache-hit builds from missing `kotlinx-vdf`.

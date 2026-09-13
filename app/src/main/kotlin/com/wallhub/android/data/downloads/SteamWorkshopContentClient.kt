@@ -79,6 +79,7 @@ internal class FormalSteamWorkshopContentGateway(
                 proxyUrl = options.proxyUrl,
                 control = control,
                 onProgress = onProgress,
+                onFirstChunkCommitted = options.onFirstChunkCommitted,
             )
         }
         return contentDownloader.download(
@@ -97,6 +98,7 @@ internal class FormalSteamWorkshopContentGateway(
         proxyUrl: String,
         control: suspend () -> SteamDownloadControl,
         onProgress: suspend (SteamDownloadProgress) -> Unit,
+        onFirstChunkCommitted: (suspend () -> Unit)? = null,
     ): SteamContentDownloadResult =
         withContext(Dispatchers.IO) {
             val remoteUrl = requireNotNull(remoteVideoUrlOrNull(target)) {
@@ -118,6 +120,7 @@ internal class FormalSteamWorkshopContentGateway(
                         destination = videoFile,
                         expectedSize = target.expectedSize,
                         control = control,
+                        onChunkCommitted = onFirstChunkCommitted,
                     ) { completedBytes, totalBytes ->
                         onProgress(
                             SteamDownloadProgress(
@@ -238,6 +241,7 @@ private suspend fun downloadDirectFile(
     expectedSize: Long,
     maxBytes: Long = MAX_MANIFEST_FILE_BYTES,
     control: suspend () -> SteamDownloadControl,
+    onChunkCommitted: (suspend () -> Unit)? = null,
     onProgress: suspend (completedBytes: Long, totalBytes: Long) -> Unit,
 ): Long {
     checkDownloadControl(control)
@@ -286,6 +290,7 @@ private suspend fun downloadDirectFile(
                     val read = input.read(buffer)
                     if (read < 0) break
                     output.write(buffer, 0, read)
+                    onChunkCommitted?.invoke()
                     copied += read
                     require(copied <= maxBytes) { "Steam direct file exceeds size limit" }
                     onProgress(copied, totalBytes.coerceAtLeast(copied))

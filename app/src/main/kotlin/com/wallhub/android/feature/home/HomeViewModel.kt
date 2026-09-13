@@ -26,6 +26,7 @@ import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopRepository
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
+import com.wallhub.android.data.downloads.DownloadTimingTelemetry
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -111,6 +112,14 @@ class HomeViewModel
         }
 
         fun onAction(action: HomeAction) {
+            if (action is HomeAction.RequestDownload) {
+                DownloadTimingTelemetry.log(
+                    event = DownloadTimingTelemetry.HOMEPAGE_DOWNLOAD_CLICK,
+                    taskId = action.taskId,
+                    workshopId = action.item.id,
+                    elapsedRealtimeMs = action.clickAtElapsedRealtimeMs,
+                )
+            }
             action.immediateEffect()?.let(::emitEffect) ?: handleStateAction(action)
         }
 
@@ -119,7 +128,7 @@ class HomeViewModel
             when (action) {
                 is HomeAction.LegacyStoragePermissionResult -> {
                     if (action.granted) {
-                        enqueueCardDownload(action.item)
+                        enqueueCardDownload(action.request)
                     } else {
                         emitEffect(
                             HomeEffect.ShowMessage(
@@ -309,7 +318,8 @@ class HomeViewModel
             loadPage(page = targetPage, append = false, version = requestVersion)
         }
 
-        private fun enqueueCardDownload(item: WorkshopSummary) {
+        private fun enqueueCardDownload(request: HomeAction.RequestDownload) {
+            val item = request.item
             viewModelScope.launch {
                 runCatching {
                     downloadTaskRepository.enqueue(
@@ -317,6 +327,7 @@ class HomeViewModel
                             workshopId = item.id,
                             title = applicationContext.localizedTitle(item),
                             type = item.type,
+                            taskId = request.taskId,
                             previewUrl = item.previewUrl,
                             expectedTotalBytes = item.fileSizeBytes ?: 0L,
                             outputTreeUri = mutableState.value.outputTreeUri,
@@ -469,7 +480,7 @@ class HomeViewModel
 
 internal fun HomeAction.immediateEffect(): HomeEffect? =
     when (this) {
-        is HomeAction.RequestDownload -> HomeEffect.ResolveLegacyStoragePermission(item)
+        is HomeAction.RequestDownload -> HomeEffect.ResolveLegacyStoragePermission(this)
         is HomeAction.OpenDetail -> HomeEffect.OpenDetail(workshopId)
         is HomeAction.SearchAuthor -> HomeEffect.SearchAuthor(creator)
         is HomeAction.CopyText -> HomeEffect.CopyText(text, messageRes)

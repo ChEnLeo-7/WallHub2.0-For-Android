@@ -154,6 +154,11 @@ class FormalWorkshopDownloadWorker
                 }
                 var task: FormalTaskRecordEntity = found
                 Log.i(DOWNLOAD_LOG_TAG, "Started formal Steam download worker taskId=$taskId")
+                val timingContext = DownloadTimingContext(taskId = taskId, workshopId = task.workshopId)
+                DownloadTimingTelemetry.log(
+                    event = DownloadTimingTelemetry.WORKER_STARTED,
+                    context = timingContext,
+                )
                 if (task.requestedAction == DownloadAction.CANCEL.name) {
                     task.stagingDirectory
                         ?.let(::File)
@@ -193,6 +198,10 @@ class FormalWorkshopDownloadWorker
                         priority = task.queuePosition,
                         limit = downloadPreferences.maxConcurrentDownloads,
                     ) {
+                        DownloadTimingTelemetry.log(
+                            event = DownloadTimingTelemetry.RESOLVING_STARTED,
+                            context = timingContext,
+                        )
                         task =
                             persist(
                                 task,
@@ -300,6 +309,7 @@ class FormalWorkshopDownloadWorker
                         var lastPersistedAt = 0L
                         var lastSpeedAt = System.currentTimeMillis()
                         var lastSpeedBytes = task.downloadedBytes
+                        var firstNonzeroSpeedPersisted = task.bytesPerSecond > 0L
                         val controlProbe = TaskControlProbe(taskDao, taskId)
                         val download =
                             steamWorkshopContentClient.download(
@@ -310,6 +320,13 @@ class FormalWorkshopDownloadWorker
                                     SteamContentDownloadOptions(
                                         chunkConcurrency = downloadPreferences.chunkDownloadConcurrency,
                                         proxyUrl = activeProxyUrl,
+                                        timingContext = timingContext,
+                                        onFirstChunkCommitted = {
+                                            DownloadTimingTelemetry.logOnce(
+                                                event = DownloadTimingTelemetry.FIRST_CHUNK_COMMITTED,
+                                                context = timingContext,
+                                            )
+                                        },
                                     ),
                                 control = controlProbe::current,
                             ) { progress ->
@@ -355,6 +372,13 @@ class FormalWorkshopDownloadWorker
                                             bytesPerSecond = speed,
                                             message = progress.toMessage(credential != null),
                                         )
+                                    if (!firstNonzeroSpeedPersisted && speed > 0L) {
+                                        firstNonzeroSpeedPersisted = true
+                                        DownloadTimingTelemetry.log(
+                                            event = DownloadTimingTelemetry.FIRST_NONZERO_SPEED_PERSISTED,
+                                            context = timingContext,
+                                        )
+                                    }
                                     if (progress.phase == SteamDownloadPhase.DOWNLOADING) {
                                         lastSpeedAt = now
                                         lastSpeedBytes = progress.completedBytes
