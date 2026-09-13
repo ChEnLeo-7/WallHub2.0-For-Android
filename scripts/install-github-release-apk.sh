@@ -12,7 +12,7 @@ usage() {
 Usage: scripts/install-github-release-apk.sh [--serial <adb-serial>] [--sha <commit-sha>] [--install-only]
 
 Waits for the successful GitHub Actions workflow run for a commit, downloads
-only that run's Debug APK artifact, verifies its checksum and signing
+only that run's signed Release APK artifact, verifies its checksum and signing
 certificate, then installs it in place on one connected ADB device.
 
 Defaults:
@@ -181,7 +181,7 @@ done
 
 [[ -n "$run_id" ]] || fail "Timed out waiting for a successful GitHub Actions workflow run"
 
-artifact_name="wallhub-debug-$sha"
+artifact_name="wallhub-release-$sha"
 artifacts_json="$(api_get "$repository_api/actions/runs/$run_id/artifacts?name=$artifact_name&per_page=20")"
 artifact_id="$(python3 -c '
 import json
@@ -195,19 +195,19 @@ work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 archive_path="$work_dir/artifact.zip"
 artifact_dir="$work_dir/artifact"
-apk_path="$artifact_dir/wallhub-debug.apk"
+apk_path="$artifact_dir/wallhub-release.apk"
 
 printf 'Downloading artifact %s...\n' "$artifact_name"
 api_get "$repository_api/actions/artifacts/$artifact_id/zip" > "$archive_path"
 unzip -q "$archive_path" -d "$artifact_dir"
 
-[[ -s "$apk_path" ]] || fail "Downloaded artifact does not contain wallhub-debug.apk"
-[[ -s "$artifact_dir/wallhub-debug.apk.sha256" ]] || fail "Downloaded artifact does not contain its SHA-256 file"
+[[ -s "$apk_path" ]] || fail "Downloaded artifact does not contain wallhub-release.apk"
+[[ -s "$artifact_dir/wallhub-release.apk.sha256" ]] || fail "Downloaded artifact does not contain its SHA-256 file"
 [[ "$(tr -d '\r\n' < "$artifact_dir/commit-sha.txt")" == "$sha" ]] || fail "Artifact commit SHA does not match requested commit"
 
 (
     cd "$artifact_dir"
-    sha256sum --check wallhub-debug.apk.sha256
+    sha256sum --check wallhub-release.apk.sha256
 )
 
 unzip -tq "$apk_path"
@@ -222,7 +222,7 @@ printf 'APK DEX entries: %s\n' "${dex_entries[*]}"
 artifact_certificate="$("$apksigner" verify --print-certs "$apk_path" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}')"
 artifact_certificate_subject="$("$apksigner" verify --print-certs "$apk_path" | awk -F': ' '/Signer #1 certificate DN:/{print $2; exit}')"
 [[ -n "$artifact_certificate" && -n "$artifact_certificate_subject" ]] || fail "Cannot read the artifact signing certificate"
-printf 'Debug artifact certificate: %s (%s)\n' "$artifact_certificate_subject" "$artifact_certificate"
+printf 'Release artifact certificate: %s (%s)\n' "$artifact_certificate_subject" "$artifact_certificate"
 
 serial="$(resolve_adb_target "$serial")"
 printf 'Selected current ADB target: %s\n' "$serial"

@@ -149,26 +149,59 @@ jobs:
             --tests com.wallhub.android.data.downloads.DownloadRetryRoutingTest \
             --tests com.wallhub.android.data.downloads.SteamRemoteVideoStreamTest \
             --tests com.wallhub.android.data.downloads.SteamCdnHttpsTest
-      - name: Assemble Debug APK
+      - name: Require Release signing secrets
+        env:
+          WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
+          WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
+          WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
+          WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for variable in \
+            WALLHUB_RELEASE_KEYSTORE_BASE64 \
+            WALLHUB_RELEASE_STORE_PASSWORD \
+            WALLHUB_RELEASE_KEY_ALIAS \
+            WALLHUB_RELEASE_KEY_PASSWORD; do
+            if [ -z "${!variable}" ]; then
+              echo "::error::Missing GitHub Actions secret: $variable"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - name: Restore Release signing keystore
+        env:
+          WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
+          WALLHUB_RELEASE_STORE_FILE: ${{ runner.temp }}/wallhub-release.keystore
+        run: |
+          printf '%s' "$WALLHUB_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$WALLHUB_RELEASE_STORE_FILE"
+          test -s "$WALLHUB_RELEASE_STORE_FILE"
+          chmod 600 "$WALLHUB_RELEASE_STORE_FILE"
+      - name: Assemble signed Release APK
+        env:
+          WALLHUB_RELEASE_STORE_FILE: ${{ runner.temp }}/wallhub-release.keystore
+          WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
+          WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
+          WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
           workers="$(nproc)"
           ./gradlew --no-daemon --parallel --build-cache --max-workers="$workers" \
             -Pwallhub.usePatchedKSteam=true \
-            :app:assembleDebug
-      - name: Package Debug APK artifact
+            -Pwallhub.requireReleaseSigning=true \
+            :app:assembleRelease
+      - name: Package Release APK artifact
         run: |
           mkdir -p artifact
-          cp app/build/outputs/apk/debug/app-debug.apk artifact/wallhub-debug.apk
+          cp app/build/outputs/apk/release/app-release.apk artifact/wallhub-release.apk
           (
             cd artifact
-            sha256sum wallhub-debug.apk > wallhub-debug.apk.sha256
+            sha256sum wallhub-release.apk > wallhub-release.apk.sha256
           )
           printf '%s\n' "$GITHUB_SHA" > artifact/commit-sha.txt
-      - name: Upload Debug APK
+      - name: Upload signed Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: wallhub-debug-${{ github.sha }}
+          name: wallhub-release-${{ github.sha }}
           path: artifact/
           if-no-files-found: error
           retention-days: 7

@@ -16,3 +16,4 @@
 
 - Added regression coverage for normal response-body consumption and coroutine cancellation of an in-flight CDN call.
 - Added cloud-executed regression coverage for target request coalescing, cache expiry and invalidation, Steam-client isolation, depot-key copying, and direct-file credential bypass.
+- Restored commit-bound GitHub Actions Release signing and deployment so cloud-built APKs preserve the installed application identity during ADB updates.
