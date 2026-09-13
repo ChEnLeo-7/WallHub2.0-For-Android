@@ -101,6 +101,65 @@ interface FormalTaskRecordDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(task: FormalTaskRecordEntity)
 
+    @Transaction
+    suspend fun upsertPreservingRequestedAction(task: FormalTaskRecordEntity): FormalTaskRecordEntity {
+        val current = find(task.taskId) ?: return task
+        val merged = task.copy(requestedAction = current.requestedAction ?: task.requestedAction)
+        upsert(merged)
+        return merged
+    }
+
+    @Query(
+        "UPDATE formal_task_records SET status = :status, requestedAction = NULL, message = :message, " +
+            "bytesPerSecond = 0, updatedAt = :updatedAt " +
+            "WHERE taskId = :taskId AND requestedAction = :expectedAction",
+    )
+    suspend fun acknowledgeControlAction(
+        taskId: String,
+        expectedAction: String,
+        status: String,
+        message: String,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        "UPDATE formal_task_records SET status = 'CONVERTING', downloadedBytes = :downloadedBytes, " +
+            "totalBytes = :totalBytes, bytesPerSecond = 0, outputLabel = NULL, message = :message, " +
+            "updatedAt = :updatedAt WHERE taskId = :taskId AND requestedAction IS NULL " +
+            "AND status IN ('QUEUED', 'RESOLVING', 'DOWNLOADING')",
+    )
+    suspend fun transitionToConverting(
+        taskId: String,
+        downloadedBytes: Long,
+        totalBytes: Long,
+        message: String,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        "UPDATE formal_task_records SET requestedAction = :action, message = :message, updatedAt = :updatedAt " +
+            "WHERE taskId = :taskId AND requestedAction IS NULL AND status IN (:allowedStatuses)",
+    )
+    suspend fun requestControlAction(
+        taskId: String,
+        action: String,
+        message: String,
+        updatedAt: Long,
+        allowedStatuses: List<String>,
+    ): Int
+
+    @Query(
+        "UPDATE formal_task_records SET requestedAction = 'CANCEL', message = :message, updatedAt = :updatedAt " +
+            "WHERE taskId = :taskId AND (requestedAction IS NULL OR requestedAction != 'CANCEL') " +
+            "AND status IN (:allowedStatuses)",
+    )
+    suspend fun requestCancellation(
+        taskId: String,
+        message: String,
+        updatedAt: Long,
+        allowedStatuses: List<String>,
+    ): Int
+
     @Query("SELECT COALESCE(MAX(queuePosition), 0) + 1 FROM formal_task_records")
     suspend fun nextQueuePosition(): Long
 

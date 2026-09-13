@@ -697,8 +697,10 @@
     <string name='downloads_reading_size'>Reading size</string>
     <string name='downloads_retry_failed'>Retry all failed downloads</string>
     <string name='downloads_clear_completed'>Clear completed downloads</string>
+    <string name='downloads_clear_finished'>Clear finished downloads</string>
     <string name='downloads_failed_retried'>Retrying %1$d failed download(s)</string>
     <string name='downloads_completed_cleared'>Cleared %1$d completed download(s)</string>
+    <string name='downloads_finished_cleared'>Cleared %1$d finished download(s)</string>
     <string name='library_view_details'>View details</string>
     <string name='library_open_actions_menu'>Open actions menu</string>
     <string name='library_wallpaper_title'>Wallpaper title</string>

@@ -1359,6 +1359,8 @@ private suspend fun downloadManifestFromServer(
             }
         } catch (error: CancellationException) {
             throw error
+        } catch (error: SteamDownloadPausedException) {
+            throw error
         } catch (error: SteamDownloadCancelledException) {
             throw error
         } catch (error: VirtualMachineError) {
@@ -1403,6 +1405,8 @@ internal suspend fun <C, T> raceCdnCandidates(
                         try {
                             Result.success(probe(candidate))
                         } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: SteamDownloadPausedException) {
                             throw error
                         } catch (error: SteamDownloadCancelledException) {
                             throw error
@@ -1537,6 +1541,9 @@ internal suspend fun downloadEncryptedChunk(
                 onSuccess?.invoke(server)
                 return decoded
             } catch (error: CancellationException) {
+                selector.recordCancelled(server)
+                throw error
+            } catch (error: SteamDownloadPausedException) {
                 selector.recordCancelled(server)
                 throw error
             } catch (error: SteamDownloadCancelledException) {
@@ -1796,7 +1803,7 @@ internal suspend fun downloadFilePlans(
     progressReporter: DownloadProgressReporter,
 ) = coroutineScope {
     validateManifestFilePlans(plans)
-    DownloadDiskReservations.withReservation(destinationDirectory, remainingDownloadBytes(destinationDirectory, plans)) {
+    DownloadDiskReservations.withReservation(destinationDirectory, remainingDownloadBytes(destinationDirectory, plans, control)) {
         var nextPlanIndex = 0
         val smallFileBatchSize = smallFilePipelineBatchSize(chunkConcurrency)
         while (nextPlanIndex < plans.size) {
@@ -1860,7 +1867,7 @@ internal suspend fun downloadFilePlan(
     val destination = WorkshopStagingPath.resolve(destinationDirectory, manifestFile.fileName)
     destination.parentFile?.mkdirs()
     val partial = File(destination.parentFile, "${destination.name}.wallhub.part")
-    if (isCompletedFile(destination, manifestFile, plan.chunks)) {
+    if (isCompletedFile(destination, manifestFile, plan.chunks, control)) {
         partial.delete()
         progressReporter.markExistingFileCompleted(
             fileName = manifestFile.fileName,
@@ -1879,7 +1886,7 @@ internal suspend fun downloadFilePlan(
         check(destination.delete()) { "Failed to delete stale file: ${manifestFile.fileName}" }
     }
 
-    val verifiedOffsets = findVerifiedChunkOffsets(partial, plan.chunks)
+    val verifiedOffsets = findVerifiedChunkOffsets(partial, plan.chunks, control)
     val recoveredBytes =
         plan.chunks
             .filter { it.offset in verifiedOffsets }
@@ -1915,7 +1922,7 @@ internal suspend fun downloadFilePlan(
     check(partial.length() == manifestFile.totalSize) {
         "File size verification failed: ${manifestFile.fileName}"
     }
-    verifyFileHash(manifestFile, calculateFileHash(partial))
+    verifyFileHash(manifestFile, calculateFileHash(partial, control))
     if (destination.exists()) {
         check(destination.delete()) { "Failed to replace existing file: ${manifestFile.fileName}" }
     }
@@ -1997,15 +2004,16 @@ internal fun verifyFileHash(
     }
 }
 
-internal fun isCompletedFile(
+internal suspend fun isCompletedFile(
     file: File,
     manifestFile: DepotFileSpec,
     chunks: List<DepotChunkSpec>,
+    control: suspend () -> SteamDownloadControl = { SteamDownloadControl.CONTINUE },
 ): Boolean {
     if (!file.isFile || file.length() != manifestFile.totalSize) return false
-    val verified = findVerifiedChunkOffsets(file, chunks)
+    val verified = findVerifiedChunkOffsets(file, chunks, control)
     if (verified.size != chunks.size) return false
-    return manifestFile.fileHash.isEmpty() || manifestFile.fileHash.contentEquals(calculateFileHash(file))
+    return manifestFile.fileHash.isEmpty() || manifestFile.fileHash.contentEquals(calculateFileHash(file, control))
 }
 
 internal suspend fun checkDownloadControl(control: suspend () -> SteamDownloadControl) {
@@ -2016,11 +2024,16 @@ internal suspend fun checkDownloadControl(control: suspend () -> SteamDownloadCo
     }
 }
 
-internal fun calculateFileHash(file: File): ByteArray {
+internal suspend fun calculateFileHash(
+    file: File,
+    control: suspend () -> SteamDownloadControl = { SteamDownloadControl.CONTINUE },
+): ByteArray {
     val digest = MessageDigest.getInstance("SHA-1")
     val buffer = ByteArray(HASH_BUFFER_SIZE)
     FileInputStream(file).use { input ->
         while (true) {
+            currentCoroutineContext().ensureActive()
+            checkDownloadControl(control)
             val count = input.read(buffer)
             if (count < 0) break
             if (count > 0) digest.update(buffer, 0, count)
@@ -2418,17 +2431,18 @@ internal fun requiredDownloadSpace(
     return required
 }
 
-internal fun remainingDownloadBytes(
+internal suspend fun remainingDownloadBytes(
     destinationDirectory: File,
     plans: List<ManifestFilePlan>,
+    control: suspend () -> SteamDownloadControl = { SteamDownloadControl.CONTINUE },
 ): Long =
     plans.sumOf { plan ->
         val destination = WorkshopStagingPath.resolve(destinationDirectory, plan.file.fileName)
-        if (isCompletedFile(destination, plan.file, plan.chunks)) {
+        if (isCompletedFile(destination, plan.file, plan.chunks, control)) {
             0L
         } else {
             val partial = File(destination.parentFile, "${destination.name}.wallhub.part")
-            val verified = findVerifiedChunkOffsets(partial, plan.chunks)
+            val verified = findVerifiedChunkOffsets(partial, plan.chunks, control)
             plan.chunks
                 .filterNot { it.offset in verified }
                 .sumOf { it.uncompressedLength.toLong() }

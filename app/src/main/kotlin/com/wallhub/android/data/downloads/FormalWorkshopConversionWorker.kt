@@ -61,8 +61,10 @@ class FormalWorkshopConversionWorker(
                 return@withContext Result.success()
             }
             FormalWorkshopConversionCancellation.start(taskId)
+            val temporaryDirectory = File(applicationContext.cacheDir, "wallhub-conversion/$taskId")
             if (task.status == DownloadStatus.EXPORTING.name) {
                 try {
+                    temporaryDirectory.deleteRecursively()
                     return@withContext failOrCancelBeforeConversion(
                         taskId = taskId,
                         task = task,
@@ -97,8 +99,8 @@ class FormalWorkshopConversionWorker(
                     FormalWorkshopConversionCancellation.clear(taskId)
                 }
             }
-            val temporaryDirectory = File(applicationContext.cacheDir, "wallhub-conversion/$taskId")
             if (task.requestedAction == DownloadAction.CANCEL.name) {
+                temporaryDirectory.deleteRecursively()
                 FormalWorkshopConversionCancellation.clear(taskId)
                 return@withContext cancelTask(task, sourceDirectory)
             }

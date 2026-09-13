@@ -670,8 +670,10 @@
     <string name='downloads_reading_size'>正在读取大小</string>
     <string name='downloads_retry_failed'>重试所有失败下载</string>
     <string name='downloads_clear_completed'>清空已完成下载</string>
+    <string name='downloads_clear_finished'>清空结束的下载</string>
     <string name='downloads_failed_retried'>正在重试 %1$d 个失败下载</string>
     <string name='downloads_completed_cleared'>已清空 %1$d 个已完成下载</string>
+    <string name='downloads_finished_cleared'>已清空 %1$d 个已结束下载</string>
     <string name='library_view_details'>查看详情</string>
     <string name='library_open_actions_menu'>打开操作菜单</string>
     <string name='library_wallpaper_title'>Wallpaper 标题</string>

@@ -15,19 +15,26 @@ import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.suspendCancellableCoroutine
 import javax.inject.Inject
 import javax.inject.Singleton
 
 interface DownloadWorkScheduler {
-    fun enqueue(taskId: String)
+    suspend fun enqueue(taskId: String)
 
-    fun cancel(taskId: String)
+    suspend fun replace(taskId: String)
+
+    suspend fun cancel(taskId: String)
 }
 
 interface ConversionWorkScheduler {
-    fun enqueue(taskId: String)
+    suspend fun enqueue(taskId: String)
 
-    fun cancel(taskId: String)
+    suspend fun replace(taskId: String)
+
+    suspend fun cancel(taskId: String)
 }
 
 @Singleton
@@ -36,7 +43,18 @@ class WorkManagerDownloadWorkScheduler
     constructor(
         @ApplicationContext private val context: Context,
     ) : DownloadWorkScheduler {
-        override fun enqueue(taskId: String) {
+        override suspend fun enqueue(taskId: String) {
+            enqueue(taskId, ExistingWorkPolicy.KEEP)
+        }
+
+        override suspend fun replace(taskId: String) {
+            enqueue(taskId, ExistingWorkPolicy.REPLACE)
+        }
+
+        private suspend fun enqueue(
+            taskId: String,
+            policy: ExistingWorkPolicy,
+        ) {
             val request =
                 OneTimeWorkRequestBuilder<FormalWorkshopDownloadWorker>()
                     .setInputData(workDataOf(FormalWorkshopDownloadWorker.KEY_TASK_ID to taskId))
@@ -50,22 +68,23 @@ class WorkManagerDownloadWorkScheduler
                     .addTag(FORMAL_DOWNLOAD_TAG)
                     .addTag(FormalWorkshopDownloadWorker.WORK_TAG_PREFIX + taskId)
                     .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                FormalWorkshopDownloadWorker.UNIQUE_DOWNLOAD_WORK_PREFIX + taskId,
-                ExistingWorkPolicy.KEEP,
-                request,
-            )
+            WorkManager.getInstance(context)
+                .enqueueUniqueWork(
+                    FormalWorkshopDownloadWorker.UNIQUE_DOWNLOAD_WORK_PREFIX + taskId,
+                    policy,
+                    request,
+                ).awaitCompletion()
         }
 
-        override fun cancel(taskId: String) {
+        override suspend fun cancel(taskId: String) {
             Log.w(
                 "WallHubDownloadScheduler",
                 "cancel($taskId) requested",
                 Exception("cancel trace"),
             )
-            WorkManager.getInstance(context).cancelUniqueWork(
-                FormalWorkshopDownloadWorker.UNIQUE_DOWNLOAD_WORK_PREFIX + taskId,
-            )
+            WorkManager.getInstance(context)
+                .cancelUniqueWork(FormalWorkshopDownloadWorker.UNIQUE_DOWNLOAD_WORK_PREFIX + taskId)
+                .awaitCompletion()
         }
 
         private companion object {
@@ -79,25 +98,53 @@ class WorkManagerConversionWorkScheduler
     constructor(
         @ApplicationContext private val context: Context,
     ) : ConversionWorkScheduler {
-        override fun enqueue(taskId: String) {
+        override suspend fun enqueue(taskId: String) {
+            enqueue(taskId, ExistingWorkPolicy.KEEP)
+        }
+
+        override suspend fun replace(taskId: String) {
+            enqueue(taskId, ExistingWorkPolicy.REPLACE)
+        }
+
+        private suspend fun enqueue(
+            taskId: String,
+            policy: ExistingWorkPolicy,
+        ) {
             val request =
                 OneTimeWorkRequestBuilder<FormalWorkshopConversionWorker>()
                     .setInputData(workDataOf(FormalWorkshopConversionWorker.KEY_TASK_ID to taskId))
                     .addTag(FormalWorkshopConversionWorker.WORK_TAG_PREFIX + taskId)
                     .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                FormalWorkshopConversionWorker.UNIQUE_WORK_NAME_PREFIX + taskId,
-                ExistingWorkPolicy.KEEP,
-                request,
-            )
+            WorkManager.getInstance(context)
+                .enqueueUniqueWork(
+                    FormalWorkshopConversionWorker.UNIQUE_WORK_NAME_PREFIX + taskId,
+                    policy,
+                    request,
+                ).awaitCompletion()
         }
 
-        override fun cancel(taskId: String) {
-            WorkManager.getInstance(context).cancelUniqueWork(
-                FormalWorkshopConversionWorker.UNIQUE_WORK_NAME_PREFIX + taskId,
-            )
+        override suspend fun cancel(taskId: String) {
+            WorkManager.getInstance(context)
+                .cancelUniqueWork(FormalWorkshopConversionWorker.UNIQUE_WORK_NAME_PREFIX + taskId)
+                .awaitCompletion()
         }
     }
+
+private suspend fun androidx.work.Operation.awaitCompletion() {
+    suspendCancellableCoroutine { continuation ->
+        result.addListener(
+            {
+                try {
+                    result.get()
+                    if (continuation.isActive) continuation.resume(Unit)
+                } catch (error: Throwable) {
+                    if (continuation.isActive) continuation.resumeWithException(error.cause ?: error)
+                }
+            },
+            java.util.concurrent.Executor(Runnable::run),
+        )
+    }
+}
 
 @Singleton
 internal class WallHubDownloadWorkerFactory

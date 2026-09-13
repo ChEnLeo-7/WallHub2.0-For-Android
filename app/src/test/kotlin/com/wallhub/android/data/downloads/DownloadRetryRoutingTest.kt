@@ -10,6 +10,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class DownloadRetryRoutingTest {
@@ -65,6 +66,21 @@ class DownloadRetryRoutingTest {
 
         assertEquals(target, result.first)
         assertEquals(null, result.second)
+    }
+
+    @Test
+    fun fileHashStopsWhenPauseIsRequested() {
+        val file = Files.createTempFile("wallhub-hash-pause", ".bin").toFile()
+        try {
+            file.writeBytes(ByteArray(1024) { 1 })
+            assertThrows(SteamDownloadPausedException::class.java) {
+                runBlocking {
+                    calculateFileHash(file) { SteamDownloadControl.PAUSE }
+                }
+            }
+        } finally {
+            file.delete()
+        }
     }
 
     @Test

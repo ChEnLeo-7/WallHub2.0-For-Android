@@ -24,6 +24,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
+import org.junit.Assert.fail
 import org.junit.Test
 import kotlin.reflect.KClass
 
@@ -47,6 +48,20 @@ class SteamCdnHttpsTest {
 
         assertEquals("fast result", result)
         assertEquals(1_000L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun cdnProbePropagatesPauseWithoutWaitingForOtherCandidates() = runTest {
+        try {
+            raceCdnCandidates(listOf("paused", "slow"), parallelism = 2) { candidate ->
+                if (candidate == "paused") throw SteamDownloadPausedException()
+                delay(60_000)
+                "slow result"
+            }
+            fail("Expected pause to propagate")
+        } catch (_: SteamDownloadPausedException) {
+            assertEquals(0L, testScheduler.currentTime)
+        }
     }
 
     @Test

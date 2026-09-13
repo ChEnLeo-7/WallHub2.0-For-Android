@@ -124,37 +124,40 @@ internal class RoomDownloadTaskRepository
         override suspend fun requestAction(
             taskId: String,
             action: DownloadAction,
-        ) {
-            val task = find(taskId) ?: return
-            require(action in task.availableActions) {
+        ) = taskMutationMutex.withLock {
+            val task = requireNotNull(find(taskId)) { "Download task no longer exists" }
+            require(task.requestedAction == null || action == DownloadAction.CANCEL) {
+                "Task already has a pending ${task.requestedAction} request"
+            }
+            require(action == DownloadAction.CANCEL || action in task.availableActions) {
                 "Task status ${task.status} does not support the ${action.name} action"
             }
-            val activeWorker = ActiveFormalWorkshopDownloadWorkers.isActive(taskId)
             when (action) {
                 DownloadAction.PAUSE -> requestPause(task)
                 DownloadAction.RESUME,
                 DownloadAction.RETRY,
-                -> requestResumeOrRetry(task, action, activeWorker)
+                -> requestResumeOrRetry(task, action)
                 DownloadAction.EXPORT -> requestExport(task)
-                DownloadAction.CANCEL -> requestCancellation(task, activeWorker)
+                DownloadAction.CANCEL -> requestCancellation(task)
                 DownloadAction.DELETE -> requestDeletion(task)
             }
         }
 
         private suspend fun requestPause(task: DownloadTask) {
-            upsert(
-                task.copy(
-                    requestedAction = DownloadAction.PAUSE,
+            check(
+                taskDao.requestControlAction(
+                    taskId = task.id,
+                    action = DownloadAction.PAUSE.name,
                     message = context.getString(R.string.backend_download_pause_requested),
                     updatedAt = System.currentTimeMillis(),
-                ),
-            )
+                    allowedStatuses = DOWNLOAD_CONTROL_STATUSES,
+                ) == 1,
+            ) { "Download state changed before pause could be requested" }
         }
 
         private suspend fun requestResumeOrRetry(
             task: DownloadTask,
             action: DownloadAction,
-            activeWorker: Boolean,
         ) {
             val recoveredTask =
                 if (task.credentialMode == DownloadCredentialMode.LEGACY_UNKNOWN) {
@@ -180,7 +183,7 @@ internal class RoomDownloadTaskRepository
                 )
                 upsert(converting)
                 try {
-                    conversionScheduler.enqueue(task.id)
+                    conversionScheduler.replace(task.id)
                 } catch (error: Throwable) {
                     upsert(
                         converting.copy(
@@ -192,23 +195,31 @@ internal class RoomDownloadTaskRepository
                             updatedAt = System.currentTimeMillis(),
                         ),
                     )
+                    throw error
                 }
                 return
             }
             upsert(
                 recoveredTask.copy(
-                    status = if (activeWorker) DownloadStatus.DOWNLOADING else DownloadStatus.QUEUED,
+                    status = DownloadStatus.QUEUED,
                     requestedAction = null,
-                    message =
-                        if (activeWorker) {
-                            context.getString(R.string.backend_download_resuming_session)
-                        } else {
-                            context.getString(R.string.backend_download_resuming_queue)
-                        },
+                    message = context.getString(R.string.backend_download_resuming_queue),
                     updatedAt = System.currentTimeMillis(),
                 ),
             )
-            if (!activeWorker) workScheduler.enqueue(recoveredTask.id)
+            try {
+                workScheduler.replace(recoveredTask.id)
+            } catch (error: Throwable) {
+                upsert(
+                    recoveredTask.copy(
+                        status = DownloadStatus.FAILED,
+                        requestedAction = null,
+                        message = context.getString(R.string.backend_download_start_failed, error.javaClass.simpleName),
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                )
+                throw error
+            }
         }
 
         private suspend fun requestExport(task: DownloadTask) {
@@ -241,19 +252,19 @@ internal class RoomDownloadTaskRepository
 
         private suspend fun requestCancellation(
             task: DownloadTask,
-            activeWorker: Boolean,
         ) {
             if (task.status == DownloadStatus.CONVERTING) {
                 if (!FormalWorkshopConversionCancellation.beginRequest(task.id)) return
                 try {
                     withContext(NonCancellable) {
-                        upsert(
-                            task.copy(
-                                requestedAction = DownloadAction.CANCEL,
+                        check(
+                            taskDao.requestCancellation(
+                                taskId = task.id,
                                 message = context.getString(R.string.backend_conversion_cancelling),
                                 updatedAt = System.currentTimeMillis(),
-                            ),
-                        )
+                                allowedStatuses = listOf(DownloadStatus.CONVERTING.name),
+                            ) == 1,
+                        ) { "Conversion state changed before cancellation could be requested" }
                         FormalWorkshopConversionCancellation.completeRequest(task.id)
                     }
                 } catch (error: Throwable) {
@@ -262,31 +273,17 @@ internal class RoomDownloadTaskRepository
                 }
                 return
             }
-            if (activeWorker) {
-                withContext(NonCancellable) {
-                    upsert(
-                        task.copy(
-                            requestedAction = DownloadAction.CANCEL,
-                            message = context.getString(R.string.backend_download_cancelling),
-                            updatedAt = System.currentTimeMillis(),
-                        ),
-                    )
-                    workScheduler.cancel(task.id)
-                }
-                return
+            withContext(NonCancellable) {
+                check(
+                    taskDao.requestCancellation(
+                        taskId = task.id,
+                        message = context.getString(R.string.backend_download_cancelling),
+                        updatedAt = System.currentTimeMillis(),
+                        allowedStatuses = DOWNLOAD_CONTROL_STATUSES + DownloadStatus.PAUSED.name,
+                    ) == 1,
+                ) { "Download state changed before cancellation could be requested" }
+                workScheduler.replace(task.id)
             }
-            workScheduler.cancel(task.id)
-            deleteManagedStagingDirectory(context, task.stagingDirectory)
-            upsert(
-                task.copy(
-                    status = DownloadStatus.CANCELLED,
-                    downloadedBytes = 0L,
-                    stagingDirectory = null,
-                    requestedAction = null,
-                    message = context.getString(R.string.backend_download_cancelled_cleaned),
-                    updatedAt = System.currentTimeMillis(),
-                ),
-            )
         }
 
         private suspend fun requestDeletion(task: DownloadTask) {
@@ -343,7 +340,7 @@ internal class RoomDownloadTaskRepository
             return deleteHistoryTasks(removableTasks)
         }
 
-        override suspend fun retryFailedTasks(): Int = taskMutationMutex.withLock {
+        override suspend fun retryFailedTasks(): Int {
             val failedTaskIds =
                 taskDao.listAll()
                     .filter { task -> task.status == DownloadStatus.FAILED.name }
@@ -358,6 +355,7 @@ internal class RoomDownloadTaskRepository
                 val deleted = taskDao.deleteTerminal(task.taskId)
                 if (deleted > 0) {
                     deleteManagedStagingDirectory(context, task.stagingDirectory)
+                    File(context.cacheDir, "wallhub-conversion/${task.taskId}").deleteRecursively()
                 }
                 deleted
             }
@@ -513,4 +511,10 @@ private val REORDERABLE_STATUSES =
         DownloadStatus.RESOLVING.name,
         DownloadStatus.DOWNLOADING.name,
         DownloadStatus.PAUSED.name,
+    )
+private val DOWNLOAD_CONTROL_STATUSES =
+    listOf(
+        DownloadStatus.QUEUED.name,
+        DownloadStatus.RESOLVING.name,
+        DownloadStatus.DOWNLOADING.name,
     )

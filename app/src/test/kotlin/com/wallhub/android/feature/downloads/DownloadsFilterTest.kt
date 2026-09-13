@@ -1,6 +1,7 @@
 package com.wallhub.android.feature.downloads
 
 import com.wallhub.android.core.model.DownloadCredentialMode
+import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
 import com.wallhub.android.core.model.WorkshopType
@@ -51,5 +52,15 @@ class DownloadsFilterTest {
     @Test
     fun failedFilterShowsFailedAndCancelledTasks() {
         assertEquals(listOf("failed", "cancelled"), filterTasks(allTasks, DownloadFilter.FAILED).map { it.id })
+    }
+
+    @Test
+    fun pendingControlRequestDisablesAllTaskActions() {
+        val task =
+            task("pending", DownloadStatus.DOWNLOADING).copy(
+                requestedAction = DownloadAction.PAUSE,
+            )
+
+        assertEquals(emptySet<DownloadAction>(), task.availableActions)
     }
 }

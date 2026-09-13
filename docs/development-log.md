@@ -17,3 +17,8 @@
 - Added regression coverage for normal response-body consumption and coroutine cancellation of an in-flight CDN call.
 - Added cloud-executed regression coverage for target request coalescing, cache expiry and invalidation, Steam-client isolation, depot-key copying, and direct-file credential bypass.
 - Restored commit-bound GitHub Actions Release signing and deployment so cloud-built APKs preserve the installed application identity during ADB updates.
+- Made pause propagate through concurrent CDN and chunk work without leaving parent coroutines waiting for missing results.
+- Serialized task actions, preserved pending control requests across worker progress writes, and made cancellation override an in-flight pause.
+- Replaced stale unique work when resuming or retrying, and wait for WorkManager scheduling operations to commit before reporting success.
+- Made the download-to-conversion handoff conditional on no pending control request and cleaned interrupted conversion artifacts on every terminal path.
+- Disabled conflicting controls while an action is pending, made large-file verification responsive to pause/cancel, and routed batch retry through storage permission checks.

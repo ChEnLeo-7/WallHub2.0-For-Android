@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
@@ -141,16 +142,7 @@ class FormalWorkshopDownloadWorker
     ) : CoroutineWorker(appContext, params) {
         override suspend fun doWork(): Result =
             withContext(Dispatchers.IO) {
-                // Some Android 16 ROM deliveries strip WorkManager input data. The task-specific
-                // tag still identifies this request without racing another queued worker.
-                var taskId = resolveDownloadTaskId(inputData.getString(KEY_TASK_ID), tags)
-                if (taskId == null) {
-                    taskId = taskDao.findOldestQueued()?.taskId
-                    Log.w(
-                        DOWNLOAD_LOG_TAG,
-                        "doWork identity missing; adopting legacy queued task=$taskId",
-                    )
-                }
+                val taskId = resolveDownloadTaskId(inputData.getString(KEY_TASK_ID), tags)
                 if (taskId == null) {
                     Log.w(DOWNLOAD_LOG_TAG, "doWork missing input data; keys=${inputData.keyValueMap.keys}")
                     return@withContext Result.failure()
@@ -162,9 +154,6 @@ class FormalWorkshopDownloadWorker
                 }
                 var task: FormalTaskRecordEntity = found
                 Log.i(DOWNLOAD_LOG_TAG, "Started formal Steam download worker taskId=$taskId")
-                if (task.status in setOf(DownloadStatus.COMPLETED.name, DownloadStatus.CANCELLED.name)) {
-                    return@withContext Result.success()
-                }
                 if (task.requestedAction == DownloadAction.CANCEL.name) {
                     task.stagingDirectory
                         ?.let(::File)
@@ -179,6 +168,9 @@ class FormalWorkshopDownloadWorker
                         message = applicationContext.getString(R.string.backend_download_cancelled_cleaned),
                         clearRequestedAction = true,
                     )
+                    return@withContext Result.success()
+                }
+                if (task.status in setOf(DownloadStatus.COMPLETED.name, DownloadStatus.CANCELLED.name)) {
                     return@withContext Result.success()
                 }
                 ActiveFormalWorkshopDownloadWorkers.markActive(taskId)
@@ -399,49 +391,48 @@ class FormalWorkshopDownloadWorker
                                 }
                             }
                         awaitTaskControl(controlProbe)
-                        task =
-                            persist(
-                                task,
-                                status = DownloadStatus.CONVERTING,
+                        val conversionMessage =
+                            applicationContext.resources.getQuantityString(
+                                if (download.usedAuthenticatedSession) {
+                                    R.plurals.backend_download_complete_authenticated
+                                } else {
+                                    R.plurals.backend_download_complete_anonymous
+                                },
+                                download.fileCount,
+                                download.fileCount,
+                                formatByteSize(download.downloadedBytes + dependencyDownload.downloadedBytes),
+                            )
+                        val transitioned =
+                            taskDao.transitionToConverting(
+                                taskId = taskId,
                                 downloadedBytes = download.downloadedBytes + dependencyDownload.downloadedBytes,
                                 totalBytes = download.totalBytes + dependencyDownload.totalBytes,
-                                bytesPerSecond = 0L,
-                                outputLabel = null,
-                                message =
-                                    applicationContext.resources.getQuantityString(
-                                        if (download.usedAuthenticatedSession) {
-                                            R.plurals.backend_download_complete_authenticated
-                                        } else {
-                                            R.plurals.backend_download_complete_anonymous
-                                        },
-                                        download.fileCount,
-                                        download.fileCount,
-                                        formatByteSize(download.downloadedBytes + dependencyDownload.downloadedBytes),
-                                    ),
+                                message = conversionMessage,
+                                updatedAt = System.currentTimeMillis(),
                             )
+                        if (transitioned != 1) {
+                            when (taskDao.find(taskId)?.requestedAction) {
+                                DownloadAction.PAUSE.name -> throw SteamDownloadPausedException()
+                                DownloadAction.CANCEL.name -> throw SteamDownloadCancelledException()
+                                else -> return@withSlot Result.success()
+                            }
+                        }
+                        task = requireNotNull(taskDao.find(taskId))
                         conversionScheduler.enqueue(taskId)
                         Result.success()
                     }
                 } catch (error: SteamDownloadPausedException) {
-                    persist(
-                        task,
-                        status = DownloadStatus.PAUSED,
-                        requestedAction = null,
+                    taskDao.acknowledgeControlAction(
+                        taskId = taskId,
+                        expectedAction = DownloadAction.PAUSE.name,
+                        status = DownloadStatus.PAUSED.name,
                         message = applicationContext.getString(R.string.backend_download_paused),
+                        updatedAt = System.currentTimeMillis(),
                     )
                     Result.success()
                 } catch (error: SteamDownloadCancelledException) {
                     stagingDirectory?.takeIf(::isManagedStagingDirectory)?.deleteRecursively()
-                    persist(
-                        task,
-                        stagingDirectory = null,
-                        downloadedBytes = 0L,
-                        bytesPerSecond = 0L,
-                        status = DownloadStatus.CANCELLED,
-                        requestedAction = null,
-                        clearRequestedAction = true,
-                        message = applicationContext.getString(R.string.backend_download_cancelled_cleaned),
-                    )
+                    acknowledgeCancellation(taskId)
                     Result.success()
                 } catch (error: CancellationException) {
                     Log.w(
@@ -455,16 +446,7 @@ class FormalWorkshopDownloadWorker
                             taskDao.find(taskId)?.requestedAction == DownloadAction.CANCEL.name
                         if (cancellationRequested) {
                             stagingDirectory?.takeIf(::isManagedStagingDirectory)?.deleteRecursively()
-                            persist(
-                                task,
-                                stagingDirectory = null,
-                                downloadedBytes = 0L,
-                                bytesPerSecond = 0L,
-                                status = DownloadStatus.CANCELLED,
-                                requestedAction = null,
-                                clearRequestedAction = true,
-                                message = applicationContext.getString(R.string.backend_download_cancelled_cleaned),
-                            )
+                            acknowledgeCancellation(taskId)
                         } else {
                             // The system (or the ROM's job policy) stopped the worker; keep
                             // the partial staging directory and let WorkManager retry the
@@ -632,8 +614,28 @@ class FormalWorkshopDownloadWorker
                     queuePosition = persisted?.queuePosition ?: previous.queuePosition,
                     updatedAt = System.currentTimeMillis(),
                 )
-            taskDao.upsert(updated)
-            return updated
+            return if (clearRequestedAction) {
+                taskDao.upsert(updated)
+                updated
+            } else {
+                taskDao.upsertPreservingRequestedAction(updated)
+            }
+        }
+
+        private suspend fun acknowledgeCancellation(taskId: String) {
+            val latest = taskDao.find(taskId) ?: return
+            if (latest.requestedAction != DownloadAction.CANCEL.name) return
+            taskDao.upsert(
+                latest.copy(
+                    status = DownloadStatus.CANCELLED.name,
+                    stagingDirectory = null,
+                    downloadedBytes = 0L,
+                    bytesPerSecond = 0L,
+                    requestedAction = null,
+                    message = applicationContext.getString(R.string.backend_download_cancelled_cleaned),
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
         }
 
         private fun SteamDownloadProgress.toDownloadStatus(): DownloadStatus =
@@ -728,7 +730,7 @@ class FormalWorkshopDownloadWorker
 
             suspend fun current(): SteamDownloadControl =
                 mutex.withLock {
-                    val now = System.currentTimeMillis()
+                    val now = SystemClock.elapsedRealtime()
                     if (now >= nextRefreshAt) {
                         cachedControl =
                             when (taskDao.find(taskId)?.requestedAction) {

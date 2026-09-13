@@ -183,6 +183,8 @@ sealed interface DownloadsPendingOperation {
     data class EnqueueWorkshop(
         val item: WorkshopSummary,
     ) : DownloadsPendingOperation
+
+    data object RetryFailedTasks : DownloadsPendingOperation
 }
 
 sealed interface DownloadsEffect {
@@ -231,7 +233,13 @@ class DownloadsViewModel
                     }
                 DownloadsAction.ClearFinishedHistory ->
                     viewModelScope.launch {
-                        taskRepository.clearFinishedHistory()
+                        val count = taskRepository.clearFinishedHistory()
+                        effectChannel.send(
+                            DownloadsEffect.ShowMessage(
+                                R.string.downloads_finished_cleared,
+                                listOf(count),
+                            ),
+                        )
                     }
                 DownloadsAction.ClearCompletedHistory ->
                     viewModelScope.launch {
@@ -244,15 +252,11 @@ class DownloadsViewModel
                         )
                     }
                 DownloadsAction.RetryFailedTasks ->
-                    viewModelScope.launch {
-                        val count = taskRepository.retryFailedTasks()
-                        effectChannel.send(
-                            DownloadsEffect.ShowMessage(
-                                R.string.downloads_failed_retried,
-                                listOf(count),
-                            ),
-                        )
-                    }
+                    emitEffect(
+                        DownloadsEffect.ResolveLegacyStoragePermission(
+                            DownloadsPendingOperation.RetryFailedTasks,
+                        ),
+                    )
                 is DownloadsAction.EnqueueWorkshop ->
                     emitEffect(
                         DownloadsEffect.ResolveLegacyStoragePermission(
@@ -300,6 +304,19 @@ class DownloadsViewModel
                         operation.action,
                     )
                 is DownloadsPendingOperation.EnqueueWorkshop -> enqueueWorkshop(operation.item)
+                DownloadsPendingOperation.RetryFailedTasks -> retryFailedTasks()
+            }
+        }
+
+        private fun retryFailedTasks() {
+            viewModelScope.launch {
+                val count = taskRepository.retryFailedTasks()
+                effectChannel.send(
+                    DownloadsEffect.ShowMessage(
+                        R.string.downloads_failed_retried,
+                        listOf(count),
+                    ),
+                )
             }
         }
 
@@ -514,11 +531,11 @@ fun DownloadsScreen(
                 )
             }
             IconButton(
-                onClick = { onAction(DownloadsAction.ClearCompletedHistory) },
+                onClick = { onAction(DownloadsAction.ClearFinishedHistory) },
             ) {
                 Icon(
                     imageVector = Icons.Outlined.DeleteSweep,
-                    contentDescription = stringResource(R.string.downloads_clear_completed),
+                    contentDescription = stringResource(R.string.downloads_clear_finished),
                 )
             }
         },

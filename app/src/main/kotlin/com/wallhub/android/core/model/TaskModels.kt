@@ -83,21 +83,25 @@ data class DownloadTask(
 
     val availableActions: Set<DownloadAction>
         get() =
-            when (status) {
-                DownloadStatus.QUEUED,
-                DownloadStatus.RESOLVING,
-                DownloadStatus.DOWNLOADING,
-                -> setOf(DownloadAction.PAUSE, DownloadAction.CANCEL)
+            if (requestedAction != null) {
+                emptySet()
+            } else {
+                when (status) {
+                    DownloadStatus.QUEUED,
+                    DownloadStatus.RESOLVING,
+                    DownloadStatus.DOWNLOADING,
+                    -> setOf(DownloadAction.PAUSE, DownloadAction.CANCEL)
 
-                DownloadStatus.CONVERTING -> setOf(DownloadAction.CANCEL)
-                DownloadStatus.EXPORTING -> emptySet()
-                DownloadStatus.PAUSED -> setOf(DownloadAction.RESUME, DownloadAction.CANCEL)
-                DownloadStatus.FAILED -> setOf(DownloadAction.RETRY, DownloadAction.DELETE)
-                DownloadStatus.CANCELLED -> setOf(DownloadAction.RETRY, DownloadAction.DELETE)
-                DownloadStatus.COMPLETED -> {
-                    buildSet {
-                        if (stagingDirectory != null && outputUri == null) add(DownloadAction.EXPORT)
-                        add(DownloadAction.DELETE)
+                    DownloadStatus.CONVERTING -> setOf(DownloadAction.CANCEL)
+                    DownloadStatus.EXPORTING -> emptySet()
+                    DownloadStatus.PAUSED -> setOf(DownloadAction.RESUME, DownloadAction.CANCEL)
+                    DownloadStatus.FAILED -> setOf(DownloadAction.RETRY, DownloadAction.DELETE)
+                    DownloadStatus.CANCELLED -> setOf(DownloadAction.RETRY, DownloadAction.DELETE)
+                    DownloadStatus.COMPLETED -> {
+                        buildSet {
+                            if (stagingDirectory != null && outputUri == null) add(DownloadAction.EXPORT)
+                            add(DownloadAction.DELETE)
+                        }
                     }
                 }
             }

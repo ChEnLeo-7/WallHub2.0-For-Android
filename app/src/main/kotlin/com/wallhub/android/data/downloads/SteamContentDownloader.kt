@@ -42,7 +42,7 @@ internal enum class SteamDownloadControl {
     CANCEL,
 }
 
-internal class SteamDownloadPausedException : CancellationException("Steam download was paused")
+internal class SteamDownloadPausedException : Exception("Steam download was paused")
 
 internal class SteamDownloadCancelledException : Exception("Steam download was cancelled")
 
@@ -210,9 +210,10 @@ internal class ForegroundFirstPermitPool(
     )
 }
 
-internal fun findVerifiedChunkOffsets(
+internal suspend fun findVerifiedChunkOffsets(
     file: File,
     chunks: List<DepotChunkSpec>,
+    control: suspend () -> SteamDownloadControl = { SteamDownloadControl.CONTINUE },
 ): Set<Long> {
     if (!file.isFile) return emptySet()
     val verifiedOffsets = mutableSetOf<Long>()
@@ -220,6 +221,8 @@ internal fun findVerifiedChunkOffsets(
     RandomAccessFile(file, "r").use { input ->
         val fileLength = input.length()
         chunks.forEach { chunk ->
+            currentCoroutineContext().ensureActive()
+            checkDownloadControl(control)
             val length = chunk.uncompressedLength
             val fits =
                 chunk.offset >= 0L &&
