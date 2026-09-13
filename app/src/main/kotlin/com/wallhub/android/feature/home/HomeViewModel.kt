@@ -112,14 +112,6 @@ class HomeViewModel
         }
 
         fun onAction(action: HomeAction) {
-            if (action is HomeAction.RequestDownload) {
-                DownloadTimingTelemetry.log(
-                    event = DownloadTimingTelemetry.HOMEPAGE_DOWNLOAD_CLICK,
-                    taskId = action.taskId,
-                    workshopId = action.item.id,
-                    elapsedRealtimeMs = action.clickAtElapsedRealtimeMs,
-                )
-            }
             action.immediateEffect()?.let(::emitEffect) ?: handleStateAction(action)
         }
 
@@ -334,11 +326,17 @@ class HomeViewModel
                             exportFormat = ExportFormat.AUTO,
                         ),
                     )
-                }.onSuccess {
+                }.onSuccess { task ->
+                    DownloadTimingTelemetry.log(
+                        event = DownloadTimingTelemetry.HOMEPAGE_DOWNLOAD_CLICK,
+                        taskId = task.id,
+                        workshopId = item.id,
+                        elapsedRealtimeMs = request.clickAtElapsedRealtimeMs,
+                    )
                     effectChannel.send(
                         HomeEffect.ShowMessage(
                             R.string.home_added_to_download_queue,
-                            listOf(it.title),
+                            listOf(task.title),
                         ),
                     )
                 }.onFailure {
