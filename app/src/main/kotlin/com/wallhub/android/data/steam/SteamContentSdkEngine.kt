@@ -36,10 +36,22 @@ class SteamContentSdkEngine
     constructor(
         @ApplicationContext private val context: Context,
     ) {
-        /** Route inputs the host may supply. Empty means "connect directly". */
+        /**
+         * Route inputs the host may supply. Empty means "connect directly".
+         *
+         * [cmProxy] is an HTTP proxy for the CM transport, for a network that passes no Steam CM traffic
+         * directly; [cmProxyAuthorization] is that proxy's `Proxy-Authorization` value, taken from the
+         * platform's own store and never logged. [extraTrustRootPem] is a certificate the host trusts **for
+         * this route only** - the root of its own TLS-terminating bridge - so a route that needs an
+         * interception root does not widen trust for every other connection.
+         */
         data class Route(
             val cmCandidates: String? = null,
             val cdnProxy: String? = null,
+            val cmProxy: String? = null,
+            val cmProxyAuthorization: String? = null,
+            val transport: Int = SessionTransportKind.STEAM3,
+            val extraTrustRootPem: String? = null,
         )
 
         private val storageRoot: String by lazy {
@@ -66,16 +78,26 @@ class SteamContentSdkEngine
         fun open(route: Route = Route()): SteamSession? {
             if (!available) return null
             close()
+            val roots =
+                if (route.extraTrustRootPem.isNullOrEmpty()) {
+                    trustBundle
+                } else {
+                    // One bundle still serves CM, CDN, and chunk fetches; the extra root is appended, never
+                    // substituted, so the platform store remains the baseline.
+                    trustBundle + route.extraTrustRootPem.toByteArray(Charsets.US_ASCII)
+                }
             val created =
                 SteamContentEngine.createWithSession(
                     SteamContentEngine.SessionOptions(
                         eventCapacity = 64,
-                        trustRootsPem = trustBundle,
+                        trustRootsPem = roots,
                         sessionMode = SessionMode.ACCOUNT,
-                        transport = SessionTransportKind.STEAM3,
+                        transport = route.transport,
                         cmCandidates = route.cmCandidates,
                         storageRoot = storageRoot,
                         cdnProxy = route.cdnProxy,
+                        cmProxy = route.cmProxy,
+                        cmProxyAuthorization = route.cmProxyAuthorization,
                     )
                 )
             created.start()
@@ -116,6 +138,24 @@ class SteamContentSdkEngine
             val open = session ?: return false
             if (!open.capabilities().supports(SessionCapabilityBits.ACCOUNT_LOGIN)) return false
             open.beginAccountLogon(accountName.toByteArray(Charsets.UTF_8), password)
+            return true
+        }
+
+        /**
+         * Restores a session from the platform's persisted refresh token.
+         *
+         * This is the adapter's normal path: the app already holds a Steam refresh token from its own login, and
+         * the SDK takes the token for one operation instead of asking the user for a password again. The token
+         * is not retained here, not logged, and not written anywhere.
+         */
+        @Synchronized
+        fun restore(
+            accountName: String,
+            refreshToken: ByteArray,
+        ): Boolean {
+            val open = session ?: return false
+            if (!open.capabilities().supports(SessionCapabilityBits.RESTORE)) return false
+            open.restore(accountName.toByteArray(Charsets.UTF_8), refreshToken)
             return true
         }
 
