@@ -18,6 +18,8 @@ val usePatchedKSteam =
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        // Local preview of the Steam Content SDK AAR (sc-sdk-maven/, gitignored).
+        maven(url = uri("sc-sdk-maven/repository"))
         if (usePatchedKSteam) {
             // The Debug Action patches the pinned kSteam source and publishes it locally.
             mavenLocal()

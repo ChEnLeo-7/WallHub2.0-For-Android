@@ -1,5 +1,6 @@
 package com.wallhub.android
 
+import android.os.SystemClock
 import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.AppUpdateRepository
 import com.wallhub.android.core.model.DepotDownloader
@@ -22,6 +23,8 @@ import com.wallhub.android.data.discover.HttpOfficialDiscoverMetadataRepository
 import com.wallhub.android.data.downloads.HybridDepotDownloader
 import com.wallhub.android.data.downloads.LocalWallpaperFileRepository
 import com.wallhub.android.data.downloads.RoomDownloadTaskRepository
+import com.wallhub.android.data.downloads.RustDepotDownloader
+import com.wallhub.android.data.downloads.SteamContentSdkDepotDownloader
 import com.wallhub.android.data.downloads.SteamWorkshopVideoStreamRepository
 import com.wallhub.android.data.settings.DataStoreSettingsRepository
 import com.wallhub.android.data.steam.KSteamSessionRepository
@@ -31,6 +34,7 @@ import com.wallhub.android.data.workshop.CommunityWorkshopRepository
 import com.wallhub.android.feature.discover.model.OfficialDiscoverMetadataRepository
 import dagger.Binds
 import dagger.Module
+import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
@@ -64,10 +68,25 @@ internal abstract class RepositoryModule {
     @Singleton
     abstract fun bindSteamProtocolClient(repository: KSteamSessionRepository): SteamProtocolClient
 
-    /** Hybrid depot routing engine (Rust core) as the default depot seam. */
-    @Binds
-    @Singleton
-    abstract fun bindDepotDownloader(downloader: HybridDepotDownloader): DepotDownloader
+    companion object {
+        /**
+         * Depot engine routing after the JavaSteam removal. The hybrid wrapper keeps its failure
+         * accounting and re-probe behaviour around whichever engine the opt-in flag selects, so
+         * switching backends is one build property rather than a code change.
+         */
+        @Provides
+        @Singleton
+        internal fun provideDepotDownloader(
+            sdkEngine: SteamContentSdkDepotDownloader,
+            rustEngine: RustDepotDownloader,
+            diagnostics: DiagnosticRepository,
+        ): DepotDownloader =
+            HybridDepotDownloader(
+                if (BuildConfig.USE_SDK_DEPOT_CORE) sdkEngine else rustEngine,
+                diagnostics,
+                SystemClock::elapsedRealtime,
+            )
+    }
 
     @Binds
     @Singleton

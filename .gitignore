@@ -16,6 +16,7 @@ replay_pid*.log
 /local-artifacts/
 /local-snapshots/
 /ksteam-maven/
+/sc-sdk-maven/
 
 # Signing credentials and machine-specific configuration
 *.jks
