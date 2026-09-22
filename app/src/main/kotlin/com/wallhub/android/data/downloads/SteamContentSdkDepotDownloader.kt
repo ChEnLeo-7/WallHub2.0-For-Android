@@ -1,5 +1,6 @@
 package com.wallhub.android.data.downloads
 
+import android.util.Log
 import com.wallhub.android.core.model.DepotChunkSpec
 import com.wallhub.android.core.model.DepotDownloader
 import com.wallhub.android.core.model.DepotDownloaderCapability
@@ -40,6 +41,12 @@ class SteamContentSdkDepotDownloader
                 emptySet()
             }
 
+        init {
+            // One availability line per process: enough to tell a packaged-but-unusable engine apart
+            // from a working one on a device whose ABIs the preview AAR does not all ship.
+            Log.i(TAG, "Steam Content SDK depot engine available=$nativeAvailable capabilities=$capabilities")
+        }
+
         override suspend fun verifyChunk(
             data: ByteArray,
             expectedChecksum: Int,
@@ -65,4 +72,8 @@ class SteamContentSdkDepotDownloader
                     )
                 }
             }
+
+        companion object {
+            private const val TAG = "WallHubSdkDepot"
+        }
     }
