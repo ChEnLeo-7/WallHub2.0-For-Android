@@ -1,6 +1,7 @@
 package com.wallhub.android
 
 import android.os.SystemClock
+import android.util.Log
 import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.AppUpdateRepository
 import com.wallhub.android.core.model.DepotDownloader
@@ -80,12 +81,18 @@ internal abstract class RepositoryModule {
             sdkEngine: SteamContentSdkDepotDownloader,
             rustEngine: RustDepotDownloader,
             diagnostics: DiagnosticRepository,
-        ): DepotDownloader =
-            HybridDepotDownloader(
-                if (BuildConfig.USE_SDK_DEPOT_CORE) sdkEngine else rustEngine,
+        ): DepotDownloader {
+            val useSdkEngine = BuildConfig.USE_SDK_DEPOT_CORE
+            Log.i(
+                "WallHubSdkDepot",
+                "depot engine selected=${if (useSdkEngine) "steam-content-sdk" else "wallhub-rust"}",
+            )
+            return HybridDepotDownloader(
+                if (useSdkEngine) sdkEngine else rustEngine,
                 diagnostics,
                 SystemClock::elapsedRealtime,
             )
+        }
     }
 
     @Binds
