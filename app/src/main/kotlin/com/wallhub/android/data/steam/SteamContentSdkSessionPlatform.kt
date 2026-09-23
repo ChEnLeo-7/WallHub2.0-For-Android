@@ -206,6 +206,13 @@ internal interface SteamContentSdkPlatformSession : Closeable {
     /** The pending challenge identifier, or null when the SDK reports none. An opaque value, never logged. */
     fun challengeId(): ByteArray?
 
+    /**
+     * The refresh token the SDK retained after a logon, or null when it retained none.
+     *
+     * A secret: the caller stores it once and zeroes its copy; nothing here logs it.
+     */
+    fun refreshToken(): ByteArray?
+
     fun beginAccountLogon(
         accountName: String,
         password: ByteArray,
@@ -273,6 +280,9 @@ private class SteamContentSdkEnginePlatformSession(
 
     override fun challengeId(): ByteArray? =
         runCatching { session.challengeText(ChallengeField.ID) }.getOrNull()?.takeIf { it.isNotEmpty() }
+
+    override fun refreshToken(): ByteArray? =
+        runCatching { session.refreshToken() }.getOrNull()
 
     override fun beginAccountLogon(
         accountName: String,

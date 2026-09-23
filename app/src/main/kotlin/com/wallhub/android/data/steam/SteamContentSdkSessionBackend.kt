@@ -546,12 +546,47 @@ internal class SteamContentSdkSessionBackend(
         hasStoredSession: Boolean,
     ) {
         pendingChallenge.set(null)
+        // The authentication edge is the one moment the app can keep a session across a restart, so the token
+        // the SDK retained is stored here, once, whichever path reached this state. A failure is reported as
+        // "not stored" rather than hidden, because a session the user believes is saved and is not would come
+        // back as an unexplained password prompt.
+        val stored = persistRetainedToken(accountName)
         publish(
             SteamSessionPhase.SIGNED_IN,
             messages.signedIn,
             accountName = accountName,
-            hasStoredSession = hasStoredSession,
+            hasStoredSession = hasStoredSession || stored,
         )
+    }
+
+    /**
+     * Writes the token the SDK retained into the app's encrypted store.
+     *
+     * The SDK owns the session and holds the only copy of the token; the copy taken here is zeroed immediately,
+     * and nothing in this method logs the value. Returns whether the store now holds a session.
+     */
+    private fun persistRetainedToken(accountName: String?): Boolean {
+        val name = accountName?.takeIf { it.isNotBlank() } ?: return false
+        val session = activeSession.get() ?: return false
+        val token = runCatching { session.refreshToken() }.getOrNull() ?: return false
+        return try {
+            if (token.isEmpty()) {
+                false
+            } else {
+                credentialStore.save(
+                    PersistedSteamCredential(
+                        accountName = name,
+                        refreshToken = token.toString(Charsets.UTF_8),
+                    ),
+                )
+                true
+            }
+        } catch (error: Throwable) {
+            record("token_persist_failure", error)
+            false
+        } finally {
+            token.fill(0)
+        }
     }
 
     private fun handleLoggedOut(
