@@ -211,7 +211,7 @@ dependencies {
     implementation(libs.ksteam.core)
     // Steam Content SDK: opt-in depot backend behind the existing DepotDownloader contract.
     // The AAR is a local, gitignored preview published from the SDK repository.
-    implementation("io.steamcontent.sdk:sc-content-android-preview:0.1.11")
+    implementation("io.steamcontent.sdk:sc-content-android-preview:0.1.12")
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.jdk8)
