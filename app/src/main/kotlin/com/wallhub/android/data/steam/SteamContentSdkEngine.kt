@@ -4,6 +4,7 @@ import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.steamcontent.sdk.DepotRangeStream
 import io.steamcontent.sdk.EngineCapability
+import io.steamcontent.sdk.ManifestFileList
 import io.steamcontent.sdk.SessionEventKind
 import io.steamcontent.sdk.SessionMode
 import io.steamcontent.sdk.SessionCapabilityBits
@@ -161,6 +162,24 @@ class SteamContentSdkEngine
         fun resolveWorkshop(itemId: Long): WorkshopResolveResponse {
             val open = engine ?: error("the Steam Content SDK engine is not open")
             return open.resolveWorkshop(itemId)
+        }
+
+        /**
+         * Lists the files of the decoded manifest for one content identity.
+         *
+         * The SDK decodes the manifest with the Depot Key, so this is the only way to name a file of an item
+         * whose public details do not name one, and the only way at all when the manifest's file names are
+         * encrypted. The paths come back exactly as the manifest states them, which is what the range stream
+         * accepts, and the caller owns the returned list.
+         */
+        @Synchronized
+        fun openManifestFiles(
+            appId: Long,
+            depotId: Long,
+            manifestId: Long = 0L,
+        ): ManifestFileList {
+            val open = engine ?: error("the Steam Content SDK engine is not open")
+            return open.openManifestFiles(appId, depotId, manifestId)
         }
 
         /**
