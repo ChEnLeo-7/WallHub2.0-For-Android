@@ -73,6 +73,13 @@ internal interface SteamContentSdkRangeStream : Closeable {
     ): Int
 }
 
+/** One file of a manifest the SDK decoded, as the app reads it. */
+internal data class SteamContentSdkManifestFile(
+    val path: String,
+    val size: Long,
+    val flags: Int,
+)
+
 /**
  * One opened, restored SDK session.
  *
@@ -90,6 +97,18 @@ internal interface SteamContentSdkSession : Closeable {
         manifestId: Long,
         destination: String?,
     ): SteamContentSdkTask
+
+    /**
+     * Lists the files of the decoded manifest for one content identity.
+     *
+     * The SDK decodes the manifest with the Depot Key, so this is the only way the app can name a file of an
+     * item whose public details do not name one. The paths come back exactly as the manifest states them.
+     */
+    fun manifestFiles(
+        appId: Long,
+        depotId: Long,
+        manifestId: Long,
+    ): List<SteamContentSdkManifestFile>
 
     /**
      * Opens a range stream over one file of the resolved content.

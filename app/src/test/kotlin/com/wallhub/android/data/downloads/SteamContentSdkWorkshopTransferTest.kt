@@ -381,6 +381,12 @@ class SteamContentSdkWorkshopTransferTest {
             manifestId: Long,
         ): SteamContentSdkRangeStream = error("this fixture serves downloads, not range streams")
 
+        override fun manifestFiles(
+            appId: Long,
+            depotId: Long,
+            manifestId: Long,
+        ): List<SteamContentSdkManifestFile> = error("this fixture serves downloads, not manifests")
+
         override fun close() {
             closed = true
         }

@@ -145,10 +145,6 @@ internal class SteamWorkshopVideoStreamRepository
             check(credential != null && credential.refreshToken.isNotBlank()) {
                 "The Steam Content SDK range path needs the stored Steam refresh token; none was read"
             }
-            val filePath = target.rawFileName
-            check(filePath.isNotBlank()) {
-                "The Steam Content SDK range path needs the item's in-manifest file name; none was read"
-            }
             val session = sdkSessionOpener.get().open(credential)
             try {
                 val resolved = session.resolveWorkshop(target.publishedFileId)
@@ -158,6 +154,15 @@ internal class SteamWorkshopVideoStreamRepository
                 check(resolved.appId > 0L && resolved.depotId > 0L) {
                     "The Steam Content SDK resolved Workshop item ${target.publishedFileId} without a usable app or depot"
                 }
+                // The manifest names the file, because the item's public details need not: the product rule
+                // that picks the video lives here, not in the SDK, and the size it reports is the decoded one.
+                val videoFile =
+                    selectStreamableVideoFile(
+                        session.manifestFiles(resolved.appId, resolved.depotId, resolved.manifestId),
+                    ) ?: error(
+                        "The Steam Content SDK manifest for Workshop item ${target.publishedFileId} " +
+                            "has no streamable video file",
+                    )
                 // One line per open so a parity reading can name the path that served the ranges. The ids
                 // are public catalog numbers; no title, path, key, or token is logged.
                 Log.i(
@@ -168,7 +173,7 @@ internal class SteamWorkshopVideoStreamRepository
                     session.openRangeStream(
                         appId = resolved.appId,
                         depotId = resolved.depotId,
-                        filePath = filePath,
+                        filePath = videoFile.path,
                         manifestId = resolved.manifestId,
                     )
                 return CoordinatedVideoStreamSession(
@@ -176,8 +181,8 @@ internal class SteamWorkshopVideoStreamRepository
                         session = session,
                         stream = stream,
                         title = target.title,
-                        fileName = filePath,
-                        contentLength = target.expectedSize,
+                        fileName = videoFile.path,
+                        contentLength = videoFile.size,
                     ),
                     playbackCoordinator.registerPlayback(),
                 )

@@ -102,6 +102,22 @@ private class SteamContentSdkEngineSession(
         return SteamContentSdkEngineTask(task)
     }
 
+    override fun manifestFiles(
+        appId: Long,
+        depotId: Long,
+        manifestId: Long,
+    ): List<SteamContentSdkManifestFile> =
+        engine.openManifestFiles(appId, depotId, manifestId).use { list ->
+            (0 until list.size()).map { index ->
+                val file = list.file(index)
+                SteamContentSdkManifestFile(
+                    path = list.path(index),
+                    size = file.size,
+                    flags = file.flags,
+                )
+            }
+        }
+
     override fun openRangeStream(
         appId: Long,
         depotId: Long,
