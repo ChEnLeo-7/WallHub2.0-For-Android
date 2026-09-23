@@ -37,8 +37,9 @@ import javax.inject.Singleton
 @Singleton
 class SteamContentSdkEngine
     @Inject
-    constructor(
+    internal constructor(
         @ApplicationContext private val context: Context,
+        private val deviceSeed: SteamDeviceSeedStore,
     ) {
         /**
          * Route inputs the host may supply. Empty means "connect directly".
@@ -113,6 +114,8 @@ class SteamContentSdkEngine
                         cdnProxy = route.cdnProxy,
                         cmProxy = route.cmProxy,
                         cmProxyAuthorization = route.cmProxyAuthorization,
+                        // ADR 0010: the platform owns the device identity, and Steam's logons carry it.
+                        deviceSeed = deviceSeed.seed(),
                     )
                 )
             created.start()
