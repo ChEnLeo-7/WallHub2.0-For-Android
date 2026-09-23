@@ -57,6 +57,22 @@ internal interface SteamContentSdkTask : Closeable {
 }
 
 /**
+ * One opened SDK range stream over a single manifest file.
+ *
+ * It mirrors [SteamContentSdkTask]: the app's playback contract reads from this interface, so the
+ * mapping onto it is exercised by a JVM unit test without a device or the native library.
+ */
+internal interface SteamContentSdkRangeStream : Closeable {
+    /** Reads into [destination] and returns the bytes written; zero means the end of the file. */
+    fun readAt(
+        position: Long,
+        destination: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int
+}
+
+/**
  * One opened, restored SDK session.
  *
  * [storageRoot] is the directory the SDK resolves a relative download destination against; the app names
@@ -73,10 +89,24 @@ internal interface SteamContentSdkSession : Closeable {
         manifestId: Long,
         destination: String?,
     ): SteamContentSdkTask
+
+    /**
+     * Opens a range stream over one file of the resolved content.
+     *
+     * The SDK resolves, authorizes, and serves the ranges itself; the app supplies only the content
+     * identity and the in-manifest path. The returned stream is owned by the caller and must be closed
+     * before the session it came from.
+     */
+    fun openRangeStream(
+        appId: Long,
+        depotId: Long,
+        filePath: String,
+        manifestId: Long,
+    ): SteamContentSdkRangeStream
 }
 
 /**
- * Opens the SDK session one download needs.
+ * Opens the SDK session one SDK-backed operation needs.
  *
  * The stored credential crosses this boundary unchanged and is never retained, logged, or copied. An
  * implementation must throw when the credential is absent or unusable instead of returning a session

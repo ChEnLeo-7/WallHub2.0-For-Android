@@ -374,6 +374,13 @@ class SteamContentSdkWorkshopTransferTest {
             return task
         }
 
+        override fun openRangeStream(
+            appId: Long,
+            depotId: Long,
+            filePath: String,
+            manifestId: Long,
+        ): SteamContentSdkRangeStream = error("this fixture serves downloads, not range streams")
+
         override fun close() {
             closed = true
         }

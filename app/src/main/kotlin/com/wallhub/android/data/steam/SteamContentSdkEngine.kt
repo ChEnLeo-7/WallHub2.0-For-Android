@@ -2,6 +2,7 @@ package com.wallhub.android.data.steam
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.steamcontent.sdk.DepotRangeStream
 import io.steamcontent.sdk.EngineCapability
 import io.steamcontent.sdk.SessionEventKind
 import io.steamcontent.sdk.SessionMode
@@ -160,6 +161,34 @@ class SteamContentSdkEngine
         fun resolveWorkshop(itemId: Long): WorkshopResolveResponse {
             val open = engine ?: error("the Steam Content SDK engine is not open")
             return open.resolveWorkshop(itemId)
+        }
+
+        /**
+         * Opens a range stream over one file of a resolved content identity.
+         *
+         * Resolving, authorizing, and serving the ranges all happen inside the SDK: the app hands in the
+         * app, depot, manifest, and the in-manifest file path, and receives a handle that serves any range
+         * of that file through the same chunk source and cache the download plane uses. No Depot Key, CDN
+         * token, or URL crosses this call, and the caller owns the returned handle.
+         */
+        @Synchronized
+        fun openRangeStream(
+            appId: Long,
+            depotId: Long,
+            filePath: String,
+            manifestId: Long = 0L,
+            cacheCapacityBytes: Long = 0L,
+            retryLimit: Int = 0,
+        ): DepotRangeStream {
+            val open = engine ?: error("the Steam Content SDK engine is not open")
+            return open.openRangeStream(
+                appId = appId,
+                depotId = depotId,
+                filePath = filePath,
+                manifestId = manifestId,
+                cacheCapacityBytes = cacheCapacityBytes,
+                retryLimit = retryLimit,
+            )
         }
 
         /**

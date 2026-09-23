@@ -3,6 +3,7 @@ package com.wallhub.android.data.downloads
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.data.steam.SteamContentSdkEngine
 import com.wallhub.android.data.steam.SteamContentSdkRouteFactory
+import io.steamcontent.sdk.DepotRangeStream
 import io.steamcontent.sdk.SessionEventKind
 import io.steamcontent.sdk.SessionState
 import io.steamcontent.sdk.SteamDownloadTask
@@ -101,8 +102,39 @@ private class SteamContentSdkEngineSession(
         return SteamContentSdkEngineTask(task)
     }
 
+    override fun openRangeStream(
+        appId: Long,
+        depotId: Long,
+        filePath: String,
+        manifestId: Long,
+    ): SteamContentSdkRangeStream =
+        SteamContentSdkEngineRangeStream(
+            engine.openRangeStream(
+                appId = appId,
+                depotId = depotId,
+                filePath = filePath,
+                manifestId = manifestId,
+            ),
+        )
+
     override fun close() {
         engine.close()
+    }
+}
+
+/** The SDK range-stream handle as [SteamContentSdkRangeStream]. */
+private class SteamContentSdkEngineRangeStream(
+    private val stream: DepotRangeStream,
+) : SteamContentSdkRangeStream {
+    override fun readAt(
+        position: Long,
+        destination: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int = stream.readAt(position, destination, offset, length)
+
+    override fun close() {
+        stream.close()
     }
 }
 
