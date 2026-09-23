@@ -28,6 +28,7 @@ val signDebugWithRelease =
 val publishAbiApks = providers.gradleProperty("wallhub.publishAbiApks").orNull == "true"
 val requireReleaseSigning = providers.gradleProperty("wallhub.requireReleaseSigning").orNull == "true"
 val useSdkDepotCore = providers.gradleProperty("wallhub.useSdkDepotCore").orNull == "true"
+val useSdkSession = providers.gradleProperty("wallhub.useSdkSession").orNull == "true"
 
 fun loadReleaseCertificate(): X509Certificate {
     val keyStoreFile = file(requireNotNull(releaseStoreFile))
@@ -98,6 +99,7 @@ android {
         versionName = "0.8.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "USE_SDK_DEPOT_CORE", useSdkDepotCore.toString())
+        buildConfigField("boolean", "USE_SDK_SESSION", useSdkSession.toString())
 
         javaCompileOptions {
             annotationProcessorOptions {

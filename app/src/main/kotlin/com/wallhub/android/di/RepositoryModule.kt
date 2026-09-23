@@ -13,7 +13,6 @@ import com.wallhub.android.core.model.LocalWallpaperRepository
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamContentCredentialProvider
-import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamPlaytimeRepository
 import com.wallhub.android.core.model.SteamProtocolClient
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
@@ -59,13 +58,10 @@ internal abstract class RepositoryModule {
     @Singleton
     abstract fun bindLauncherIconController(controller: AndroidLauncherIconController): LauncherIconController
 
-    @Binds
-    @Singleton
-    abstract fun bindSteamSessionRepository(repository: KSteamSessionRepository): SteamSessionRepository
-
     /**
-     * Exposes the kSteam session as the engine-neutral protocol seam. The singleton instance
-     * is shared with every individual contract binding above.
+     * Exposes the kSteam session as the engine-neutral protocol seam. The singleton instance is shared
+     * with the other kSteam contract bindings; only the session lifecycle is routed by
+     * `SteamSessionBackendModule`.
      */
     @Binds
     @Singleton

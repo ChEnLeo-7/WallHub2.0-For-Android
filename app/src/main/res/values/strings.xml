@@ -957,6 +957,8 @@
     <string name='backend_steam_access_unavailable'>Neither direct nor built-in routes are available</string>
     <string name='backend_steam_access_using_recent_route'>Route refresh failed. Continuing with the most recent available route.</string>
     <string name='backend_steam_anonymous_account'>anonymous Steam account</string>
+    <string name='backend_steam_auth_rejected'>Steam rejected the sign-in or verification.</string>
+    <string name='backend_steam_challenge_unsupported'>This Steam sign-in asked for a verification method WallHub cannot complete.</string>
     <string name='backend_steam_code_submitted'>Code submitted. Waiting for Steam confirmation…</string>
     <string name='backend_steam_confirm_mobile'>
          Confirm this login in the Steam mobile app. Sign-in will continue
@@ -976,6 +978,7 @@
          There is no active sign-in to switch to a code. Enter your username and
         password again.
     </string>
+    <string name='backend_steam_network_failed'>Could not reach Steam. Check your network and try again.</string>
     <string name='backend_steam_reconnecting'>The first connection failed. Reconnecting to Steam…</string>
     <string name='backend_steam_requesting_login'>Requesting a Steam sign-in session…</string>
     <string name='backend_steam_restore_failed'>
@@ -986,6 +989,8 @@
     <string name='backend_steam_restore_timeout'>Steam session restoration timed out. Check your network and try again.</string>
     <string name='backend_steam_restoring_session'>Restoring the saved Steam session…</string>
     <string name='backend_steam_session_storage_unavailable'>The saved Steam session could not be read. Sign in again to replace it.</string>
+    <string name='backend_steam_sdk_session_only'>Signed in to Steam. This session lasts until WallHub is restarted.</string>
+    <string name='backend_steam_sdk_session_unavailable'>The Steam Content SDK session is unavailable on this device.</string>
     <string name='backend_steam_signed_in_account'>signed-in Steam account %1$s</string>
     <string name='backend_steam_signed_out'>Signed out of Steam and removed the saved local session.</string>
     <string name='workshop_placeholder_title'>Wallpaper %1$d</string>
