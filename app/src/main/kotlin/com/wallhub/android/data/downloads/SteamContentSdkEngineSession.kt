@@ -35,7 +35,7 @@ internal class SteamContentSdkEngineSessionOpener
                 val token = credential.refreshToken
                 check(token.isNotBlank()) { "The stored Steam refresh token is empty" }
                 val route =
-                    routes.throughPlatformBridge()
+                    routes.platformRoute()
                         ?: error("The platform's Steam route is unavailable; the Steam Content SDK path cannot start")
                 val session = engine.open(route) ?: error("The Steam Content SDK is unavailable on this device")
                 check(engine.restore(credential.accountName, token.toByteArray(Charsets.UTF_8))) {

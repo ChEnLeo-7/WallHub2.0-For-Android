@@ -254,7 +254,7 @@ internal class SteamContentSdkEnginePlatform(
 ) : SteamContentSdkPlatform {
     override suspend fun open(): SteamContentSdkPlatformSession {
         val route =
-            routes.throughPlatformBridge()
+            routes.platformRoute()
                 ?: error("The platform's Steam route is unavailable; the Steam Content SDK session cannot start")
         val session =
             engine.open(route)
