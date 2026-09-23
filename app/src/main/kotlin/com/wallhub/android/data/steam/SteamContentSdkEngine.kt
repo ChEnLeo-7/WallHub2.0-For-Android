@@ -9,6 +9,7 @@ import io.steamcontent.sdk.SessionCapabilityBits
 import io.steamcontent.sdk.SessionState
 import io.steamcontent.sdk.SessionTransportKind
 import io.steamcontent.sdk.SteamContentEngine
+import io.steamcontent.sdk.SteamContentEngine.WorkshopResolveResponse
 import io.steamcontent.sdk.SteamDownloadTask
 import io.steamcontent.sdk.SteamSession
 import java.io.File
@@ -23,7 +24,8 @@ import javax.inject.Singleton
  * - **trust** comes from the system store, which Android keeps as one PEM file per certificate, so the files
  *   are concatenated once and the same bundle then serves the CM route, the CDN route, and the chunk fetches;
  * - **paths** come from the application's own files directory, so every SDK-owned file stays inside the app's
- *   sandbox and no product directory is touched;
+ *   sandbox. The root is [storageRoot], the directory the SDK resolves a relative download destination
+ *   against, which is what lets the app name its existing per-item directory instead of introducing one;
  * - **route** is whatever the host has configured (a local bridge endpoint and/or an HTTP proxy), because a
  *   network that blocks Steam directly needs one and the SDK must not guess it.
  *
@@ -54,9 +56,20 @@ class SteamContentSdkEngine
             val extraTrustRootPem: String? = null,
         )
 
-        private val storageRoot: String by lazy {
-            File(context.filesDir, "sc-sdk").apply { mkdirs() }.absolutePath
+        /**
+         * The root the SDK resolves a relative download destination against.
+         *
+         * The app's per-item download directories already live under `<filesDir>/wallhub-workshop`, and
+         * the SDK accepts only a safe relative destination under its storage root. Using the application
+         * files directory as that root lets a download name the existing per-item directory rather than
+         * introduce a second layout; the SDK's own private staging (`.sc-staging`) and journal therefore
+         * sit beside the app's files, and content still lands in the directory the app already reads.
+         */
+        val storageRoot: File by lazy {
+            runCatching { context.filesDir.canonicalFile }.getOrElse { context.filesDir.absoluteFile }
         }
+
+        private val storageRootPath: String by lazy { storageRoot.absolutePath }
 
         private val trustBundle: ByteArray by lazy { systemTrustBundle() }
 
@@ -94,7 +107,7 @@ class SteamContentSdkEngine
                         sessionMode = SessionMode.ACCOUNT,
                         transport = route.transport,
                         cmCandidates = route.cmCandidates,
-                        storageRoot = storageRoot,
+                        storageRoot = storageRootPath,
                         cdnProxy = route.cdnProxy,
                         cmProxy = route.cmProxy,
                         cmProxyAuthorization = route.cmProxyAuthorization,
@@ -124,11 +137,30 @@ class SteamContentSdkEngine
         /**
          * Starts a download the SDK resolves and performs itself.
          *
-         * The caller keeps the task; nothing in the returned handle exposes a Depot Key, a CDN token, or a path.
+         * [destination] names a safe relative directory under [storageRoot] so the published files land in
+         * the host's own layout; null accepts the SDK's own naming. The caller keeps the task; nothing in
+         * the returned handle exposes a Depot Key, a CDN token, or a path.
          */
         @Synchronized
-        fun startDownload(appId: Long, depotId: Long, manifestId: Long = 0L): SteamDownloadTask? =
-            engine?.startDownload(appId, depotId, manifestId)
+        fun startDownload(
+            appId: Long,
+            depotId: Long,
+            manifestId: Long = 0L,
+            destination: String? = null,
+        ): SteamDownloadTask? = engine?.startDownload(appId, depotId, manifestId, destination)
+
+        /**
+         * Resolves one Workshop item to the content identity a download accepts.
+         *
+         * The SDK performs the whole chain, so the app never reconstructs an app, depot, or manifest from
+         * a public details response, and no credential or key crosses this call. A chain that does not
+         * complete throws the SDK's typed failure, which carries no material.
+         */
+        @Synchronized
+        fun resolveWorkshop(itemId: Long): WorkshopResolveResponse {
+            val open = engine ?: error("the Steam Content SDK engine is not open")
+            return open.resolveWorkshop(itemId)
+        }
 
         /**
          * Begins an account logon. The password is passed straight to the SDK and is not retained here.

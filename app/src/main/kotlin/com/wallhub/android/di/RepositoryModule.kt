@@ -26,6 +26,8 @@ import com.wallhub.android.data.downloads.LocalWallpaperFileRepository
 import com.wallhub.android.data.downloads.RoomDownloadTaskRepository
 import com.wallhub.android.data.downloads.RustDepotDownloader
 import com.wallhub.android.data.downloads.SteamContentSdkDepotDownloader
+import com.wallhub.android.data.downloads.SteamContentSdkEngineSessionOpener
+import com.wallhub.android.data.downloads.SteamContentSdkSessionOpener
 import com.wallhub.android.data.downloads.SteamWorkshopVideoStreamRepository
 import com.wallhub.android.data.settings.DataStoreSettingsRepository
 import com.wallhub.android.data.steam.KSteamSessionRepository
@@ -68,6 +70,16 @@ internal abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindSteamProtocolClient(repository: KSteamSessionRepository): SteamProtocolClient
+
+    /**
+     * The SDK download path's session opener. It reads the same platform hook and route factory the
+     * engine already exposes; binding it here keeps the transfer itself free of SDK/native types.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindSteamContentSdkSessionOpener(
+        opener: SteamContentSdkEngineSessionOpener,
+    ): SteamContentSdkSessionOpener
 
     companion object {
         /**

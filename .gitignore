@@ -61,6 +61,8 @@ signing.properties
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamRemoteVideoStreamTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamCdnTransportFallbackTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamDownloadCheckpointTest.kt
+!/app/src/test/kotlin/com/wallhub/android/data/downloads/WorkshopDownloadPathSelectionTest.kt
+!/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamContentSdkWorkshopTransferTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/
 /app/src/test/kotlin/com/wallhub/android/feature/*
 !/app/src/test/kotlin/com/wallhub/android/feature/local/

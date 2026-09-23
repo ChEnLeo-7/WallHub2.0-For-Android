@@ -1,5 +1,6 @@
 package com.wallhub.android.data.downloads
 
+import com.wallhub.android.BuildConfig
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +46,7 @@ internal interface WorkshopContentGateway {
 internal class FormalSteamWorkshopContentGateway(
     private val httpClientFactory: SteamHttpClientFactory,
         private val contentDownloader: SteamContentDownloader,
+        private val transferRouter: WorkshopDownloadTransferRouter,
         private val playbackCoordinator: PlaybackDownloadCoordinator,
 ) : WorkshopContentGateway {
     override suspend fun acquireContentTransportLease(): Closeable =
@@ -83,7 +85,9 @@ internal class FormalSteamWorkshopContentGateway(
                 onFirstChunkCommitted = options.onFirstChunkCommitted,
             )
         }
-        return contentDownloader.download(
+        // Manifest-backed items go through the one path decision; direct-file items keep their own
+        // HTTP path because the SDK resolves depot content and has nothing to resolve here.
+        return transferRouter.transfer().download(
             target = target,
             destinationDirectory = destinationDirectory,
             credential = credential,
@@ -367,8 +371,23 @@ internal class SteamWorkshopContentClient private constructor(
     constructor(
         httpClientFactory: SteamHttpClientFactory,
         contentDownloader: SteamContentDownloader,
+        sdkTransfer: SteamContentSdkWorkshopTransfer,
         playbackCoordinator: PlaybackDownloadCoordinator,
-    ) : this(FormalSteamWorkshopContentGateway(httpClientFactory, contentDownloader, playbackCoordinator), System::currentTimeMillis, Unit)
+    ) : this(
+        FormalSteamWorkshopContentGateway(
+            httpClientFactory = httpClientFactory,
+            contentDownloader = contentDownloader,
+            transferRouter =
+                WorkshopDownloadTransferRouter(
+                    legacyTransfer = contentDownloader,
+                    sdkTransfer = sdkTransfer,
+                    useSdkDepotCore = BuildConfig.USE_SDK_DEPOT_CORE,
+                ),
+            playbackCoordinator = playbackCoordinator,
+        ),
+        System::currentTimeMillis,
+        Unit,
+    )
 
     internal constructor(
         gateway: WorkshopContentGateway,

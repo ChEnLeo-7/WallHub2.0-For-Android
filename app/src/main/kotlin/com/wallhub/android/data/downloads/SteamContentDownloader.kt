@@ -256,6 +256,13 @@ internal class StreamChunkRequest(
     }
 }
 
+/**
+ * The existing per-item transfer: kSteam content access (servers, manifest request code, CDN
+ * authorization) plus the product-local `wallhub-rust` depot core for chunk decode and verification.
+ *
+ * It serves [WorkshopContentTransfer] so the path decision in [WorkshopDownloadTransferRouter] is a
+ * choice between two implementations of one contract.
+ */
 @Singleton
 internal class SteamContentDownloader
     @Inject
@@ -264,7 +271,7 @@ internal class SteamContentDownloader
         private val depotDownloader: DepotDownloader,
         private val steamHttpClientFactory: SteamHttpClientFactory,
         private val playbackCoordinator: PlaybackDownloadCoordinator,
-    ) {
+    ) : WorkshopContentTransfer {
     private val contentAccessCache = SteamContentAccessCache()
     private val downloadCdnSelector = CdnServerSelector()
 
@@ -287,12 +294,12 @@ internal class SteamContentDownloader
         }
     }
 
-    suspend fun download(
+    override suspend fun download(
         target: WorkshopContentTarget,
         destinationDirectory: File,
         credential: SteamContentCredential?,
-        options: SteamContentDownloadOptions = SteamContentDownloadOptions(),
-        control: suspend () -> SteamDownloadControl = { SteamDownloadControl.CONTINUE },
+        options: SteamContentDownloadOptions,
+        control: suspend () -> SteamDownloadControl,
         onProgress: suspend (SteamDownloadProgress) -> Unit,
     ): SteamContentDownloadResult =
         sessionRepository.withContentTransportActive {
