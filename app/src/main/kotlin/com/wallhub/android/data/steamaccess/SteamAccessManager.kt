@@ -239,6 +239,44 @@ class SteamAccessManager
             }
         }
 
+        /**
+         * Warms one supported endpoint's accelerated route and reports whether the platform now has one.
+         *
+         * The ordinary request path only ever warms the hosts it accelerates itself (the Web API and the
+         * community hosts), while [acceleratedRoute] throws the moment a route is cold and merely starts the
+         * refresh. A caller that is about to name a CM endpoint to the bridge therefore has to warm it first,
+         * and this is that call: it awaits the same refresh the request path triggers, and answers with
+         * whether the route is usable now.
+         */
+        internal suspend fun warmSupportedEndpoint(
+            hostname: String,
+            port: Int,
+        ): Boolean {
+            val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
+            preferencesReady.await()
+            if (!preferences.steamAccessEnabled) return false
+            val selectedNetworkType = networkType
+            val selectedGeneration = routeGeneration.get()
+            val key = SteamRoutePrewarmKey(selectedNetworkType, selectedGeneration, host, port)
+            while (true) {
+                if (!preferences.steamAccessEnabled) return false
+                val lookup = routeSnapshots.lookup(steamRouteCacheKey(selectedNetworkType, host, port))
+                if (lookup.route?.accelerated == true && !lookup.shouldRefresh) return true
+                val refreshed =
+                    routePrewarmTracker.awaitCompletionOrInvalidation(key) {
+                        requestRouteRefresh(host, port)
+                    }
+                if (refreshed != true) return false
+                if (routeGeneration.get() != selectedGeneration || networkType != selectedNetworkType) {
+                    return false
+                }
+                return routeSnapshots
+                    .lookup(steamRouteCacheKey(selectedNetworkType, host, port))
+                    .route
+                    ?.accelerated == true
+            }
+        }
+
         internal fun isAcceleratedRouteExpected(
             hostname: String,
             port: Int,
