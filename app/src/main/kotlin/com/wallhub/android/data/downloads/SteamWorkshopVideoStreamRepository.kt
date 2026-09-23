@@ -158,6 +158,12 @@ internal class SteamWorkshopVideoStreamRepository
                 check(resolved.appId > 0L && resolved.depotId > 0L) {
                     "The Steam Content SDK resolved Workshop item ${target.publishedFileId} without a usable app or depot"
                 }
+                // One line per open so a parity reading can name the path that served the ranges. The ids
+                // are public catalog numbers; no title, path, key, or token is logged.
+                Log.i(
+                    "SteamVideoStream",
+                    "playback served by=steam-content-sdk app=${resolved.appId} depot=${resolved.depotId}",
+                )
                 val stream =
                     session.openRangeStream(
                         appId = resolved.appId,

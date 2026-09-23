@@ -1,5 +1,6 @@
 package com.wallhub.android.data.downloads
 
+import android.util.Log
 import com.wallhub.android.core.model.SteamContentCredential
 import io.steamcontent.sdk.TaskFailure
 import io.steamcontent.sdk.TaskState
@@ -166,6 +167,12 @@ internal class SteamContentSdkWorkshopTransfer
                         check(resolved.appId > 0L && resolved.depotId > 0L) {
                             "The Steam Content SDK resolved Workshop item ${target.publishedFileId} without a usable app or depot"
                         }
+                        // One line per run so a parity reading can name the path that served it. The ids are
+                        // public catalog numbers; no title, path, key, or token is logged.
+                        Log.i(
+                            TAG,
+                            "download served by=steam-content-sdk app=${resolved.appId} depot=${resolved.depotId}",
+                        )
                         val destination = sdkRelativeDestination(destinationDirectory, session.storageRoot)
                         onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.PREPARING_DOWNLOAD))
                         val task =
@@ -343,3 +350,6 @@ private fun File.canonicalFileOrSelf(): File = runCatching { canonicalFile }.get
 /** Counts the files the SDK published, matching the old path's file-count reading for the completion message. */
 private fun countPublishedFiles(directory: File): Int =
     runCatching { directory.walkTopDown().count { it.isFile } }.getOrDefault(0)
+
+/** The tag the SDK download path names its one per-run line with. */
+private const val TAG = "WallHubSdkTransfer"
