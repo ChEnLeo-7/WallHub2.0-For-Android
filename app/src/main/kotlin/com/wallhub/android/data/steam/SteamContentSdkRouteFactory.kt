@@ -19,8 +19,9 @@ import javax.inject.Singleton
  *   is given the bridge's endpoint and its authorization value, which the platform generated in-process.
  * - **the trust** stays the platform store plus exactly one extra root, the bridge's own certificate authority,
  *   and that root is scoped to a route that needs it. A direct route trusts the system store alone.
- * - **discovery** needs nothing extra: with a CM proxy configured, the SDK performs its own directory request
- *   through that proxy, so the platform never has to hand over a CM list.
+ * - **discovery** is the platform's job here. The engine's own directory request does not go through the CM
+ *   proxy, so on a network that only passes the bridge it returns no usable endpoint set; the platform reads
+ *   the CM directory itself, over the same route its other Steam traffic takes, and hands the endpoints over.
  */
 @Singleton
 internal class SteamContentSdkRouteFactory
@@ -28,18 +29,23 @@ internal class SteamContentSdkRouteFactory
     constructor(
         private val privateCa: WallHubPrivateCa,
         private val bridge: SteamLoopbackTlsBridge,
+        private val cmEndpoints: SteamCmEndpointSource,
     ) {
         /**
          * The route this platform actually has, for a network that passes no Steam CM traffic directly.
          *
          * Returns null when the bridge has no loopback endpoint, which means the platform route is unavailable
          * rather than "connect directly": the caller must not silently fall back on a blocked path.
+         *
+         * A directory that yields no endpoint leaves the endpoint set empty and the engine to its own
+         * discovery, rather than inventing one.
          */
-        fun throughPlatformBridge(cdnProxy: String? = null): SteamContentSdkEngine.Route? {
+        suspend fun throughPlatformBridge(cdnProxy: String? = null): SteamContentSdkEngine.Route? {
             val address = bridge.proxy.address() as? InetSocketAddress ?: return null
             val host = address.address?.hostAddress ?: address.hostString
             if (host.isNullOrEmpty() || address.port <= 0) return null
             return SteamContentSdkEngine.Route(
+                cmCandidates = cmEndpoints.candidates(),
                 cmProxy = "$host:${address.port}",
                 cmProxyAuthorization = bridge.proxyAuthorization,
                 transport = SessionTransportKind.WEBSOCKET,

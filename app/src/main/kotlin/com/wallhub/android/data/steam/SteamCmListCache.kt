@@ -76,6 +76,25 @@ class SteamCmListCache
             }
         }
 
+        /**
+         * The cached directory whatever query produced it.
+         *
+         * One directory serves every reader - the kSteam transport and the SDK route source ask the same
+         * service for the same list - so a reader that only needs the body does not have to reproduce the
+         * other reader's query string.
+         */
+        @Synchronized
+        fun loadMostRecent(): CachedCmList? {
+            val entry =
+                runCatching {
+                    JSONObject(cacheFile.readText())
+                }.getOrNull() ?: return null
+            val savedAt = entry.optLong(KEY_SAVED_AT, 0L)
+            val body = entry.optString(KEY_BODY).takeIf(String::isNotEmpty) ?: return null
+            if (savedAt <= 0L) return null
+            return CachedCmList(body = body, savedAt = savedAt)
+        }
+
         data class CachedCmList(
             val body: String,
             val savedAt: Long,
