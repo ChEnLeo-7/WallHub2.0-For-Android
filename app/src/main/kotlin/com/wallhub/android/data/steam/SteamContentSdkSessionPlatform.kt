@@ -267,16 +267,43 @@ private class SteamContentSdkEnginePlatformSession(
     private val engine: SteamContentSdkEngine,
     private val session: SteamSession,
 ) : SteamContentSdkPlatformSession {
+    /**
+     * The account this session was started for, so the authenticated session can be published as one the
+     * content path may borrow. Set by the logon and restore that started it, and never logged.
+     */
+    private var accountName: String? = null
+
     override fun supportsAccountLogon(): Boolean =
         session.capabilities().supports(SessionCapabilityBits.ACCOUNT_LOGIN)
 
     override fun supportsRestore(): Boolean =
         session.capabilities().supports(SessionCapabilityBits.RESTORE)
 
-    override fun state(): SteamContentSdkSessionState = steamContentSdkSessionState(session.state())
+    override fun state(): SteamContentSdkSessionState =
+        steamContentSdkSessionState(session.state()).also(::publishWhenAuthenticated)
 
     override fun pollEvent(timeoutMs: Int): SteamContentSdkSessionEvent? =
-        session.pollEvent(timeoutMs)?.let { event -> steamContentSdkSessionEvent(event.kind, event.value) }
+        session.pollEvent(timeoutMs)?.let { event ->
+            steamContentSdkSessionEvent(event.kind, event.value).also { resolved ->
+                if (resolved is SteamContentSdkSessionEvent.StateChanged) {
+                    publishWhenAuthenticated(resolved.state)
+                }
+            }
+        }
+
+    /**
+     * Publishes this session as borrowable once it authenticates.
+     *
+     * Publishing on the authentication edge is what keeps the content path from opening a second live
+     * session for the same account; the domain name stays in the record, and a lender re-checks the
+     * engine's state, so an unauthenticated or closed session is never lent.
+     */
+    private fun publishWhenAuthenticated(state: SteamContentSdkSessionState) {
+        val name = accountName ?: return
+        if (state == SteamContentSdkSessionState.AUTHENTICATED) {
+            SteamContentSdkLiveSession.publish(name, engine)
+        }
+    }
 
     override fun challengeId(): ByteArray? =
         runCatching { session.challengeText(ChallengeField.ID) }.getOrNull()?.takeIf { it.isNotEmpty() }
@@ -291,6 +318,7 @@ private class SteamContentSdkEnginePlatformSession(
         check(engine.logon(accountName, password)) {
             "The Steam Content SDK session cannot begin an account logon"
         }
+        this.accountName = accountName
     }
 
     override fun restore(
@@ -300,6 +328,7 @@ private class SteamContentSdkEnginePlatformSession(
         check(engine.restore(accountName, refreshToken)) {
             "The Steam Content SDK session cannot restore a stored account"
         }
+        this.accountName = accountName
     }
 
     override fun respondToChallenge(
@@ -313,5 +342,8 @@ private class SteamContentSdkEnginePlatformSession(
 
     override fun logout() = engine.logout()
 
-    override fun close() = engine.close()
+    override fun close() {
+        SteamContentSdkLiveSession.clear(engine)
+        engine.close()
+    }
 }

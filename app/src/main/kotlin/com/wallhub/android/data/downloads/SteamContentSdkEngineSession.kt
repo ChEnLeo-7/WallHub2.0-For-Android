@@ -1,7 +1,9 @@
 package com.wallhub.android.data.downloads
 
+import android.util.Log
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.data.steam.SteamContentSdkEngine
+import com.wallhub.android.data.steam.SteamContentSdkLiveSession
 import com.wallhub.android.data.steam.SteamContentSdkRouteFactory
 import io.steamcontent.sdk.DepotRangeStream
 import io.steamcontent.sdk.SessionEventKind
@@ -17,6 +19,10 @@ import kotlinx.coroutines.withContext
 /**
  * Opens the SDK session for a download from the platform hook, restored from the refresh token the app
  * already stores.
+ *
+ * When the session domain already holds an authenticated session for the same account, this borrows it:
+ * the peer refuses a second live session for one account, and a restore into a competing one is exactly
+ * what it refuses. Otherwise it opens its own session and restores from the stored token.
  *
  * This is the only class that touches the SDK's native session handle. The token arrives from the
  * existing credential boundary and goes straight into `restore`; it is not retained, logged, or copied
@@ -34,6 +40,17 @@ internal class SteamContentSdkEngineSessionOpener
             withContext(Dispatchers.IO) {
                 val token = credential.refreshToken
                 check(token.isNotBlank()) { "The stored Steam refresh token is empty" }
+                // The session domain may already own an authenticated session for this account. The peer
+                // refuses a second live SDK session for one account, so this path borrows that session
+                // instead of restoring a competing one - and then must not close it. The one line this
+                // logs is whether it borrowed, so a device run can separate "the restore was refused"
+                // from "no restore was attempted".
+                val live = SteamContentSdkLiveSession.authenticated(credential.accountName)
+                if (live != null) {
+                    Log.i(TAG, "content session reused=true")
+                    return@withContext SteamContentSdkEngineSession(live, ownsEngine = false)
+                }
+                Log.i(TAG, "content session reused=false")
                 val route =
                     routes.platformRoute()
                         ?: error("The platform's Steam route is unavailable; the Steam Content SDK path cannot start")
@@ -67,14 +84,21 @@ internal class SteamContentSdkEngineSessionOpener
         }
 
         private companion object {
+            const val TAG = "WallHubSteamSession"
             const val SESSION_POLL_MS = 250
             const val AUTHENTICATION_TIMEOUT_NANOS = 30_000_000_000L
         }
     }
 
-/** The engine-backed session a download holds for the length of one transfer. */
+/**
+ * The engine-backed session a download holds for the length of one transfer.
+ *
+ * [ownsEngine] is false when the session was borrowed from the session domain's already-authenticated
+ * engine: the download must not close an engine it does not own, or it would end the UI's session.
+ */
 private class SteamContentSdkEngineSession(
     private val engine: SteamContentSdkEngine,
+    private val ownsEngine: Boolean = true,
 ) : SteamContentSdkSession {
     override val storageRoot: File
         get() = engine.storageRoot
@@ -134,7 +158,7 @@ private class SteamContentSdkEngineSession(
         )
 
     override fun close() {
-        engine.close()
+        if (ownsEngine) engine.close()
     }
 }
 
