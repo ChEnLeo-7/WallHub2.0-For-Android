@@ -284,6 +284,31 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
+    fun aTransportFailureOnRestoreRetriesWhenTheSessionIsLeftDisconnected() =
+        runTest {
+            val fixture = Fixture()
+            val credential = PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 67))
+            fixture.storeCredential(credential)
+            // The SDK leaves the session whose whole candidate pass failed in the disconnected state, not the
+            // closed one. The attempt therefore has to end from the failure it already reported: reading that
+            // state as "not over yet" is what left the shipped retry unreachable on the device.
+            fixture.session.stateAfterEvents = SteamContentSdkSessionState.DISCONNECTED
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.NETWORK)
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.NETWORK)
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+
+            assertEquals(1, fixture.platform.liveOpenCalls)
+            assertEquals(2, fixture.session.restores.size)
+            assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
+            assertEquals(FakeMessages.restoreFailed, backend.session.value.message)
+        }
+
+    @Test
     fun anExpiredSessionClearsTheStoredCredential() =
         runTest {
             val fixture = Fixture()

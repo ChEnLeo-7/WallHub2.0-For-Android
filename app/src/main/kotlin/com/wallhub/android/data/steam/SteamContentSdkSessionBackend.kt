@@ -1,5 +1,6 @@
 package com.wallhub.android.data.steam
 
+import android.util.Log
 import com.wallhub.android.core.model.DiagnosticEvent
 import com.wallhub.android.core.model.DiagnosticLevel
 import com.wallhub.android.core.model.DiagnosticRepository
@@ -256,7 +257,6 @@ internal class SteamContentSdkSessionBackend(
     }
 
     private suspend fun restore(stored: PersistedSteamCredential) {
-        lastAttemptFailure.set(SteamContentSdkSessionFailure.NONE)
         restoreOnce(stored, refreshLive = false)
         if (lastAttemptFailure.get() != SteamContentSdkSessionFailure.NETWORK) return
         // The transport class is the one attempt failure that can mean the CM endpoint set the platform
@@ -272,6 +272,9 @@ internal class SteamContentSdkSessionBackend(
         stored: PersistedSteamCredential,
         refreshLive: Boolean,
     ) {
+        // The class belongs to one attempt: a previous attempt's transport failure must not decide this
+        // one's outcome, which is what let a successful live retry still be read as a transport failure.
+        lastAttemptFailure.set(SteamContentSdkSessionFailure.NONE)
         val session = openSession(refreshLive)
         if (session == null) {
             publish(
@@ -320,18 +323,15 @@ internal class SteamContentSdkSessionBackend(
         accountName: String,
         password: String,
     ) {
-        lastAttemptFailure.set(SteamContentSdkSessionFailure.NONE)
         // At most one extra open per user-initiated logon: a transport failure asks once for an endpoint set
         // read live instead of the platform's cached one, which is the only input a failed candidate pass can
         // mean was stale. A second transport failure, or any other failure class, reports as it is - no loop,
-        // and kSteam is never consulted.
-        var retryLiveCandidates = false
-        while (true) {
-            val done = logonOnPlatformRoute(accountName, password, retryLiveCandidates)
-            if (done || lastAttemptFailure.get() != SteamContentSdkSessionFailure.NETWORK) return
-            record("logon_retry_live_candidates")
-            retryLiveCandidates = true
-        }
+        // and kSteam is never consulted. Writing it as one retry rather than a loop is what keeps a second
+        // transport failure from starting a third attempt.
+        val done = logonOnPlatformRoute(accountName, password, retryLiveCandidates = false)
+        if (done || lastAttemptFailure.get() != SteamContentSdkSessionFailure.NETWORK) return
+        record("logon_retry_live_candidates")
+        logonOnPlatformRoute(accountName, password, retryLiveCandidates = true)
     }
 
     /**
@@ -347,6 +347,8 @@ internal class SteamContentSdkSessionBackend(
         password: String,
         retryLiveCandidates: Boolean,
     ): Boolean {
+        // The class belongs to one attempt, so a previous attempt cannot make this one look retryable.
+        lastAttemptFailure.set(SteamContentSdkSessionFailure.NONE)
         publish(SteamSessionPhase.SIGNING_IN, messages.connecting, accountName = accountName, hasStoredSession = false)
         val session = openSession(refreshLive = retryLiveCandidates)
         if (session == null) {
@@ -454,7 +456,12 @@ internal class SteamContentSdkSessionBackend(
             SteamContentSdkSessionState.CLOSED,
             SteamContentSdkSessionState.UNKNOWN,
             -> {
-                failAttempt(restore, accountName, hasStoredSession)
+                // A session that already reported a failure class does not get a second, later class: the
+                // transport class is what the caller reads to decide its one live retry, so a close after it
+                // must not overwrite it with a generic internal failure.
+                if (lastAttemptFailure.get() == SteamContentSdkSessionFailure.NONE) {
+                    failAttempt(restore, accountName, hasStoredSession)
+                }
                 true
             }
 
@@ -520,7 +527,12 @@ internal class SteamContentSdkSessionBackend(
             SteamContentSdkSessionState.CLOSED,
             SteamContentSdkSessionState.UNKNOWN,
             -> {
-                failAttempt(restore, accountName, hasStoredSession)
+                // A session that already reported a failure class does not get a second, later class: the
+                // transport class is what the caller reads to decide its one live retry, so a close after it
+                // must not overwrite it with a generic internal failure.
+                if (lastAttemptFailure.get() == SteamContentSdkSessionFailure.NONE) {
+                    failAttempt(restore, accountName, hasStoredSession)
+                }
                 true
             }
 
@@ -676,10 +688,13 @@ internal class SteamContentSdkSessionBackend(
     }
 
     /**
-     * Publishes the outcome for an attempt failure and returns whether that outcome is terminal.
+     * Publishes the outcome for an attempt failure and returns whether this attempt is over.
      *
-     * The transport class is the one failure that is not terminal by itself: the caller may make its single
-     * live-candidate retry, and only then does the outcome stand. Every other class is reported and done.
+     * Every classified failure ends the attempt. A session that has reported one outcome, including the
+     * transport class, will not report a second one for the same attempt, and polling it afterwards is what
+     * kept the live-candidate retry from ever being reached. The transport class is still the retry-eligible
+     * one, but that is read from [lastAttemptFailure] by the caller, which starts the retry as a new attempt;
+     * this return value only says that the attempt that produced the failure is finished.
      */
     private fun publishAttemptFailure(
         restore: Boolean,
@@ -688,6 +703,7 @@ internal class SteamContentSdkSessionBackend(
         failure: SteamContentSdkSessionFailure,
     ): Boolean {
         lastAttemptFailure.set(failure)
+        recordClassifiedFailure(failure, restore)
         when (steamContentSdkFailurePhase(failure)) {
             SteamSessionPhase.EXPIRED -> {
                 clearStoredCredential()
@@ -719,7 +735,7 @@ internal class SteamContentSdkSessionBackend(
                     hasStoredSession = hasStoredSession,
                 )
         }
-        return failure != SteamContentSdkSessionFailure.NETWORK
+        return true
     }
 
     // ------------------------------------------------------------------
@@ -778,7 +794,24 @@ internal class SteamContentSdkSessionBackend(
 
     private suspend fun <T> withSession(block: () -> T): T = sessionMutex.withLock(action = block)
 
+    /**
+     * Writes the one device-side line that says how an attempt failure was classified.
+     *
+     * The class ordinal and the stage are the whole content: no account name, token, endpoint, or error text.
+     * A local JVM test runs against the Android stub library, where a Log call is not implemented, so a
+     * diagnostic that cannot be written must never change the session outcome.
+     */
+    private fun recordClassifiedFailure(
+        failure: SteamContentSdkSessionFailure,
+        restore: Boolean,
+    ) {
+        runCatching {
+            Log.i(TAG, "attempt failure class=${failure.ordinal} stage=${if (restore) "restore" else "logon"}")
+        }
+    }
+
     private companion object {
+        const val TAG = "WallHubSteamSession"
         const val SESSION_POLL_TIMEOUT_MS = 250
         const val SESSION_ATTEMPT_TIMEOUT_MS = 5 * 60_000L
     }
