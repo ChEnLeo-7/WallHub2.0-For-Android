@@ -30,6 +30,7 @@ import com.wallhub.android.data.downloads.SteamContentSdkSessionOpener
 import com.wallhub.android.data.downloads.SteamWorkshopVideoStreamRepository
 import com.wallhub.android.data.settings.DataStoreSettingsRepository
 import com.wallhub.android.data.steam.KSteamSessionRepository
+import com.wallhub.android.data.steam.SteamContentSdkCredentialProvider
 import com.wallhub.android.data.steamaccess.SteamAccessManager
 import com.wallhub.android.data.update.GitHubAppUpdateRepository
 import com.wallhub.android.data.workshop.CommunityWorkshopRepository
@@ -83,6 +84,28 @@ internal abstract class RepositoryModule {
          * accounting and re-probe behaviour around whichever engine the opt-in flag selects, so
          * switching backends is one build property rather than a code change.
          */
+        /**
+         * Content-credential routing after the session migration.
+         *
+         * With `wallhub.useSdkSession` off (the default) this is kSteam's live account token, exactly as
+         * before. With it on, the SDK owns the session and its retained token is the one the download and
+         * range arms must present, so the credential comes from the store the SDK writes.
+         */
+        @Provides
+        @Singleton
+        internal fun provideSteamContentCredentialProvider(
+            kSteam: KSteamSessionRepository,
+            sdk: SteamContentSdkCredentialProvider,
+        ): SteamContentCredentialProvider {
+            val useSdkSession = BuildConfig.USE_SDK_SESSION
+            Log.i(
+                "WallHubSteamSession",
+                "content credential selected=" +
+                    if (useSdkSession) "steam-content-sdk-store" else "ksteam",
+            )
+            return if (useSdkSession) sdk else kSteam
+        }
+
         @Provides
         @Singleton
         internal fun provideDepotDownloader(
@@ -106,10 +129,6 @@ internal abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindSteamPlaytimeRepository(repository: KSteamSessionRepository): SteamPlaytimeRepository
-
-    @Binds
-    @Singleton
-    abstract fun bindSteamContentCredentialProvider(repository: KSteamSessionRepository): SteamContentCredentialProvider
 
     @Binds
     @Singleton
