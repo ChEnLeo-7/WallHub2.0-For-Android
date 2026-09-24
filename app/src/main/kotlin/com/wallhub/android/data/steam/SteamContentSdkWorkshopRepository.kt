@@ -3,9 +3,11 @@ package com.wallhub.android.data.steam
 import android.content.Context
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
+import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.FavoriteState
 import com.wallhub.android.core.model.SteamAppPlaytime
 import com.wallhub.android.core.model.SteamPlaytimeRepository
+import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
