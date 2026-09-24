@@ -21,6 +21,9 @@ import com.wallhub.android.core.model.effectiveWorkshopTypes
 import com.wallhub.android.core.model.steamSearchText
 import com.wallhub.android.core.model.workshopAuthorSearchOrNull
 import com.wallhub.android.core.model.workshopDetailTagSearch
+import io.steamcontent.sdk.PlayerField
+import io.steamcontent.sdk.PlayerProfileField
+import io.steamcontent.sdk.PlayerProfiles
 import io.steamcontent.sdk.SteamContentEngine
 import io.steamcontent.sdk.WorkshopCommentField
 import io.steamcontent.sdk.WorkshopCommentSort
@@ -30,6 +33,7 @@ import io.steamcontent.sdk.WorkshopItemField
 import io.steamcontent.sdk.WorkshopPage as SdkWorkshopPage
 import io.steamcontent.sdk.WorkshopPersonalList
 import io.steamcontent.sdk.WorkshopResult
+import io.steamcontent.sdk.WorkshopTextField
 import io.steamcontent.sdk.WorkshopTrendWindow
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +45,9 @@ import kotlinx.coroutines.withContext
  * One Workshop summary row as the SDK reports it: a field number per ordinal, in a fixed slot order.
  *
  * The slots exist because the SDK reads a page item one field at a time while a details handle reads the same
- * rows through a different entry point; both then build the app model through one mapping.
+ * rows through a different entry point; both then build the app model through one mapping. Every ordinal in
+ * [ORDINALS] is one the SDK answers on a page row *and* on a details result, which is why `VIEWS` is here and
+ * the details-only rows are not.
  */
 private class SdkSummaryFields(
     private val numbers: LongArray,
@@ -49,13 +55,20 @@ private class SdkSummaryFields(
     /** The number at one ordinal slot. */
     fun at(slot: Int): Long = numbers[slot]
 
+    /** The author's account id, or null when the row reported none. */
+    fun authorIdOrNull(): Long? = at(AUTHOR).takeIf { it > 0L }
+
+    /** How many tag strings the row states, clamped to the bound this adapter copies. */
+    fun tagCount(): Int = at(TAG_COUNT).coerceIn(0L, MAX_SDK_ITEM_TAGS.toLong()).toInt()
+
     companion object {
         const val ITEM = 0
         const val AUTHOR = 1
         const val CONTENT_TYPE = 2
         const val SUBSCRIPTIONS = 3
         const val FAVOURITES = 4
-        const val SIZE = 5
+        const val TAG_COUNT = 5
+        const val VIEWS = 6
 
         /** The summary rows a resolved item and a page row can both answer. */
         val ORDINALS: IntArray =
@@ -65,9 +78,24 @@ private class SdkSummaryFields(
                 WorkshopItemField.CONTENT_TYPE,
                 WorkshopItemField.SUBSCRIPTIONS,
                 WorkshopItemField.FAVOURITES,
+                WorkshopItemField.TAG_COUNT,
+                WorkshopItemField.VIEWS,
             )
     }
 }
+
+/** One resolved Steam profile as the player family reports it, after the avatar URL is built app-side. */
+private data class SdkPlayerProfile(
+    val personaName: String,
+    val avatarUrl: String?,
+)
+
+/** One comment row as the page reports it, before the persona read decorates it. */
+private data class SdkCommentRow(
+    val text: String,
+    val authorId: Long?,
+    val createdAt: Long?,
+)
 
 /**
  * The Steam Content SDK as this app's public and account Workshop reader.
@@ -82,28 +110,27 @@ private class SdkSummaryFields(
  * The SDK reports "no Workshop provider", "no session", and "this operation is not implemented yet" as an
  * `IllegalStateException` rather than a nullable answer. Every read below translates that into the
  * contract's own unavailable answer: null for a method the contract already marks nullable, an empty page or
- * interaction for one it does not, and no throw ever crosses this class.
+ * interaction for one it does not, and no throw ever crosses this class but the caller's own invalid input.
  *
- * This class is deliberately not bound into the dependency graph yet. The contracts still resolve to kSteam,
- * so nothing in the app behaves differently while this unit is reviewed.
+ * The acting account comes from the SDK session (ADR 0034), so this class holds no credential store and
+ * parses no token. This class is deliberately not bound into the dependency graph yet. The contracts still
+ * resolve to kSteam, so nothing in the app behaves differently while this unit is reviewed.
  */
 internal class SteamContentSdkWorkshopRepository
     @Inject
     constructor(
         private val engine: SteamContentSdkEngine,
-        private val credentialStore: EncryptedSteamCredentialStore,
     ) : SteamUnifiedWorkshopRepository,
         AccountWorkshopRepository,
         SteamPlaytimeRepository {
         /**
-         * Constructs the adapter and the one engine and credential store it reads from the platform context.
+         * Constructs the adapter and the one engine it reads from the platform context.
          *
          * This is the no-graph form of the constructor above: it builds the same engine the download path
          * builds, so the adapter is usable before it has a binding.
          */
         constructor(context: Context) : this(
             engine = SteamContentSdkEngine(context, SteamDeviceSeedStore(context)),
-            credentialStore = EncryptedSteamCredentialStore(context),
         )
 
         /** Serializes Workshop reads so the engine is never asked for two handles at once. */
@@ -156,12 +183,21 @@ internal class SteamContentSdkWorkshopRepository
             }
 
         /**
-         * GAP(getPublicCollectionChildren): the SDK exposes no collection-children read.
+         * The ordered direct children of a collection (ADR 0033).
          *
-         * kSteam reads `children[].publishedfileid`; the SDK's item field table ends at `FAVOURITED=16` and
-         * the core summary and detail structs carry no children at all.
+         * The details response the item was resolved from now carries them, ordered by its own `sortorder`
+         * ascending, so this is a pass-through over the result handle. Null is the unavailable answer the
+         * contract allows; a resolved item with no children answers an empty list.
          */
-        override suspend fun getPublicCollectionChildren(collectionId: Long): List<Long>? = null
+        override suspend fun getPublicCollectionChildren(collectionId: Long): List<Long>? =
+            withContext(Dispatchers.IO) {
+                runCatchingUnavailable {
+                    require(collectionId > 0L) { "Invalid Workshop collection ID" }
+                    mutex.withLock {
+                        engine.openWorkshopItem(collectionId).use { result -> readCollectionChildren(result) }
+                    }
+                }
+            }
 
         override suspend fun getAuthenticatedComments(
             workshopId: Long,
@@ -227,12 +263,28 @@ internal class SteamContentSdkWorkshopRepository
             }
 
         /**
-         * GAP(resolveAuthorDisplayName): the SDK's AUTHOR field is an account id, not a name.
+         * Resolves the creator's public display name through the player family (ADR 0032).
          *
-         * kSteam resolves the creator's persona through `player.GetPlayerLinkDetails`; the SDK has no persona
-         * read and no name-bearing copy ordinal for a Workshop item.
+         * The item's `AUTHOR` field is an account id, not a name; the persona read is the only name-bearing
+         * reading. The id-bearing placeholder the old adapter answered here is now a real name whenever the
+         * player plane answers, and null when it does not.
          */
-        override suspend fun resolveAuthorDisplayName(workshopId: Long): String? = null
+        override suspend fun resolveAuthorDisplayName(workshopId: Long): String? =
+            withContext(Dispatchers.IO) {
+                require(workshopId > 0L) { "Invalid Workshop item ID" }
+                runCatchingUnavailable {
+                    mutex.withLock {
+                        engine.openWorkshopItem(workshopId).use { result ->
+                            val authorId = result.field(WorkshopItemField.AUTHOR).valueOrZero().takeIf { it > 0L }
+                            if (authorId == null) {
+                                null
+                            } else {
+                                readPlayerProfiles(setOf(authorId))[authorId]?.personaName
+                            }
+                        }
+                    }
+                }
+            }
 
         override suspend fun getInteraction(workshopId: Long): WorkshopInteraction =
             withContext(Dispatchers.IO) {
@@ -286,28 +338,52 @@ internal class SteamContentSdkWorkshopRepository
             }
 
         /**
-         * GAP(postComment): the SDK has no comment-write entry point.
+         * Writes one comment to an item's public thread (ADR 0033).
          *
-         * Every Workshop operation the AAR exposes is a read or an interaction toggle and there is no
-         * comment-write bit in its capability mask, so this answers without doing anything.
+         * The AAR's own second argument is the account that owns the thread - the contract's `ownerId`, which
+         * the caller already holds - while the write itself is authorized as the session's signed-in account;
+         * no acting-account number is sent. The app's comment rules stay the caller error they are today, and
+         * only SDK unavailability is swallowed, because this signature cannot carry a null.
          */
         override suspend fun postComment(
             workshopId: Long,
             ownerId: String,
             text: String,
-        ) = Unit
+        ) = withContext(Dispatchers.IO) {
+            val request = normalizeWorkshopCommentRequest(workshopId, ownerId, text)
+            runCatchingUnavailable {
+                mutex.withLock {
+                    engine.postComment(request.workshopId, request.ownerId.toLong(), request.text)
+                }
+            }
+            Unit
+        }
 
         // ------------------------------------------------------------------
         // SteamPlaytimeRepository
         // ------------------------------------------------------------------
 
         /**
-         * GAP(getAppPlaytime): the SDK exposes no player or owned-games read.
+         * Reads the signed-in account's playtime for one App through the player family (ADR 0032).
          *
-         * kSteam reads `player.GetOwnedGames`; the SDK's surface is session, Workshop, download, manifest, and
-         * chunk only, so there is no playtime to report.
+         * The SDK separates "no record" from "played zero minutes" with its own `present` flag, so this maps
+         * a record that is not present to the contract's null and otherwise keeps the three counters the
+         * kSteam path returned. An engine without a player plane answers null rather than throwing.
          */
-        override suspend fun getAppPlaytime(appId: Int): SteamAppPlaytime? = null
+        override suspend fun getAppPlaytime(appId: Int): SteamAppPlaytime? =
+            withContext(Dispatchers.IO) {
+                val playtime = runCatchingUnavailable { mutex.withLock { engine.playerPlaytime(appId.toLong()) } }
+                playtime
+                    ?.takeIf { it.present }
+                    ?.let { row ->
+                        SteamAppPlaytime(
+                            appId = row.appId.toInt(),
+                            totalMinutes = row.playtimeForeverMinutes.toInt(),
+                            recentMinutes = row.playtime2WeeksMinutes.toInt(),
+                            lastPlayedEpochSeconds = row.lastPlayedUnixSeconds.takeIf { it > 0L },
+                        )
+                    }
+            }
 
         // ------------------------------------------------------------------
         // Reads
@@ -324,7 +400,19 @@ internal class SteamContentSdkWorkshopRepository
 
         /** Builds one detail from a resolved item, reading each field the app model needs once. */
         private fun readWorkshopDetail(result: WorkshopResult): WorkshopDetail {
-            val summary = readWorkshopSummary(summaryFieldsOf(result), result)
+            val fields = summaryFieldsOf(result)
+            val authorId = fields.authorIdOrNull()
+            val profile = authorId?.let { readPlayerProfiles(setOf(it))[it] }
+            val summary =
+                summaryOf(
+                    fields = fields,
+                    title = result.text(WorkshopTextField.TITLE).orEmpty(),
+                    previewUrl = result.text(WorkshopTextField.PREVIEW_URL),
+                    tags = readResultTags(result, fields),
+                    profile = profile,
+                    // kSteam's details path labels an unresolved creator, not an unresolved user.
+                    unresolvedPlaceholder = WorkshopAuthorPlaceholder.CREATOR,
+                )
             val fileSize = result.field(WorkshopItemField.FILE_SIZE)
             return WorkshopDetail(
                 summary = summary,
@@ -342,10 +430,16 @@ internal class SteamContentSdkWorkshopRepository
             )
         }
 
+        /** The ordered child ids a resolved collection states; the SDK orders them by its own sortorder. */
+        private fun readCollectionChildren(result: WorkshopResult): List<Long> {
+            val count = result.childCount()
+            return (0 until count).map { index -> result.child(index) }.filter { it > 0L }
+        }
+
         /** Reads the summary rows a resolved item reports. */
         private fun summaryFieldsOf(result: WorkshopResult): SdkSummaryFields =
             SdkSummaryFields(
-                LongArray(SdkSummaryFields.SIZE).also { values ->
+                LongArray(SdkSummaryFields.ORDINALS.size).also { values ->
                     SdkSummaryFields.ORDINALS.forEachIndexed { slot, ordinal ->
                         values[slot] = result.field(ordinal).value
                     }
@@ -358,38 +452,33 @@ internal class SteamContentSdkWorkshopRepository
             index: Int,
         ): SdkSummaryFields =
             SdkSummaryFields(
-                LongArray(SdkSummaryFields.SIZE).also { values ->
+                LongArray(SdkSummaryFields.ORDINALS.size).also { values ->
                     SdkSummaryFields.ORDINALS.forEachIndexed { slot, ordinal ->
                         values[slot] = page.field(index, ordinal).value
                     }
                 }
             )
 
-        /** Builds the app summary shared by the detail and page paths. */
-        private fun readWorkshopSummary(
-            fields: SdkSummaryFields,
-            result: WorkshopResult,
-        ): WorkshopSummary =
-            summaryOf(
-                fields = fields,
-                title = result.text(WorkshopTextField.TITLE).orEmpty(),
-                previewUrl = result.text(WorkshopTextField.PREVIEW_URL),
-            )
-
-        /** Builds the app summary of one page row, closing over the page it reads text from. */
+        /** Builds the app summary of one page row, closing over the page it reads text and tags from. */
         private fun readWorkshopPage(
             page: SdkWorkshopPage,
             requestedPage: Int,
         ): WorkshopPage {
             val size = page.size()
             val state = page.state()
+            val rows = (0 until size).map { index -> summaryFieldsOf(page, index) }
+            val profiles = readPlayerProfiles(rows.mapNotNull { it.authorIdOrNull() }.toSet())
             val items =
-                (0 until size).map { index ->
-                    val fields = summaryFieldsOf(page, index)
+                rows.mapIndexed { index, fields ->
                     summaryOf(
                         fields = fields,
                         title = page.text(index, WorkshopTextField.TITLE).orEmpty(),
                         previewUrl = page.text(index, WorkshopTextField.PREVIEW_URL),
+                        tags = readPageTags(page, index, fields),
+                        profile = fields.authorIdOrNull()?.let(profiles::get),
+                        // A page row has no resolved creator behind it, so the id-bearing placeholder stands
+                        // in exactly as `PublishedFileDetails.toWorkshopSummary` leaves it.
+                        unresolvedPlaceholder = WorkshopAuthorPlaceholder.USER_WITH_ID,
                     )
                 }
             val total = state.total.takeIf { it > 0 }
@@ -408,36 +497,40 @@ internal class SteamContentSdkWorkshopRepository
             fields: SdkSummaryFields,
             title: String,
             previewUrl: String?,
+            tags: List<String>,
+            profile: SdkPlayerProfile?,
+            unresolvedPlaceholder: WorkshopAuthorPlaceholder,
         ): WorkshopSummary {
             val trimmedTitle = title.trim()
-            val creatorId = fields.at(SdkSummaryFields.AUTHOR).takeIf { it > 0L }?.toString()
+            val creatorId = fields.authorIdOrNull()?.toString()
             return WorkshopSummary(
                 id = fields.at(SdkSummaryFields.ITEM),
                 title = trimmedTitle,
-                // AUTHOR is an account id and the SDK has no persona read, so no name can be filled in; the
-                // placeholder is the reading the kSteam path itself produces before profile resolution.
-                author = "",
+                // The player family's persona fills the name (ADR 0032); an unresolved author keeps the
+                // placeholder the kSteam path produces before its own profile resolution.
+                author = profile?.personaName.orEmpty(),
                 creatorId = creatorId,
-                authorAvatarUrl = null,
+                authorAvatarUrl = profile?.avatarUrl,
                 previewUrl = previewUrl?.trim()?.takeIf(String::isNotBlank),
                 type = fields.at(SdkSummaryFields.CONTENT_TYPE).toWorkshopType(),
-                // Only TAG_COUNT exists; no copy ordinal carries tag text.
-                tags = emptyList(),
+                // The tag text copy ordinals complete TAG_COUNT, so the app's client-side tag filtering sees
+                // the same tags the old path put on the model.
+                tags = tags,
                 subscriptions = fields.at(SdkSummaryFields.SUBSCRIPTIONS).takeIf { it > 0L },
                 favorites = fields.at(SdkSummaryFields.FAVOURITES).takeIf { it > 0L },
-                // No views field exists in the SDK's ordinal table.
-                views = null,
-                // FILE_SIZE is a details-only row, so a page row leaves the size absent.
+                // VIEWS is the one row past UPDATED_AT that a page row can answer too (ADR 0033).
+                views = fields.at(SdkSummaryFields.VIEWS).takeIf { it > 0L },
+                // FILE_SIZE stays details-only and the details path reads it directly above; SUBSCRIBED and
+                // FAVOURITED stay details-only as well, so a page row genuinely cannot report either state.
                 fileSizeBytes = null,
-                // SUBSCRIBED/FAVOURITED are details-only rows too, so a page row cannot report either state.
                 subscriptionState = SubscriptionState.UNKNOWN,
                 favoriteState = FavoriteState.UNKNOWN,
                 isTitlePlaceholder = trimmedTitle.isEmpty(),
                 authorPlaceholder =
-                    if (creatorId == null) {
-                        WorkshopAuthorPlaceholder.NONE
-                    } else {
-                        WorkshopAuthorPlaceholder.USER_WITH_ID
+                    when {
+                        profile != null -> WorkshopAuthorPlaceholder.NONE
+                        creatorId == null -> WorkshopAuthorPlaceholder.NONE
+                        else -> unresolvedPlaceholder
                     },
             )
         }
@@ -452,23 +545,32 @@ internal class SteamContentSdkWorkshopRepository
             val size = page.size()
             val state = page.state()
             val creatorId = ownerId.toLongOrNull()?.takeIf { it > 0L }
-            val comments =
+            val rows =
                 (0 until size).mapNotNull { index ->
                     val text = page.text(index, WorkshopCommentField.BODY).orEmpty().trim()
                     if (text.isEmpty()) return@mapNotNull null
-                    val authorId = page.field(index, WorkshopCommentField.AUTHOR).value.takeIf { it > 0L }
-                    WorkshopComment(
-                        // AUTHOR is an account id and no persona read exists, so the label stays blank.
-                        author = "",
+                    SdkCommentRow(
                         text = text,
-                        authorId = authorId?.toString(),
-                        avatarUrl = null,
+                        authorId = page.field(index, WorkshopCommentField.AUTHOR).valueOrZero().takeIf { it > 0L },
+                        createdAt = page.field(index, WorkshopCommentField.CREATED_AT).epochSeconds(),
+                    )
+                }
+            val profiles = readPlayerProfiles(rows.mapNotNull { it.authorId }.toSet())
+            val comments =
+                rows.map { row ->
+                    val profile = row.authorId?.let(profiles::get)
+                    WorkshopComment(
+                        // AUTHOR is an account id; the persona read is what names the comment (ADR 0032).
+                        author = profile?.personaName.orEmpty(),
+                        text = row.text,
+                        authorId = row.authorId?.toString(),
+                        avatarUrl = profile?.avatarUrl,
                         // The one field this adapter can derive: the comment's author is the thread owner.
-                        isCreator = authorId != null && authorId == creatorId,
-                        timestamp = page.field(index, WorkshopCommentField.CREATED_AT).epochSeconds(),
+                        isCreator = row.authorId != null && row.authorId == creatorId,
+                        timestamp = row.createdAt,
                         dateLabel = null,
-                        // A resolved author id with no persona behind it is exactly the placeholder reading.
-                        isAuthorPlaceholder = authorId != null,
+                        // A resolved author with no persona behind it is exactly the placeholder reading.
+                        isAuthorPlaceholder = profile == null,
                     )
                 }
             val nextStart = state.nextOffset
@@ -496,21 +598,58 @@ internal class SteamContentSdkWorkshopRepository
         }
 
         // ------------------------------------------------------------------
-        // Account identity
+        // Player profiles and account identity
         // ------------------------------------------------------------------
 
         /**
-         * The signed-in account id, derived from the stored refresh token the SDK session persisted.
+         * Resolves a bounded set of account ids into persona names and avatar URLs (ADR 0032).
          *
-         * A personal read and a mutation both need the acting account as an identifier, and the app's session
-         * state carries none, so it is read from the one place the app keeps it: the same token whose `sub`
-         * claim the legacy-credential migration already reads. An unreadable or unparseable token answers null
-         * and the caller reports the operation as unavailable.
+         * Callers already hold [mutex], so this never takes it again; the SDK's profile handle is a second
+         * child handle of the same engine and is closed here. An engine without a player plane, or a provider
+         * that refuses the read, answers an empty map so every caller keeps its own placeholder reading.
          */
-        private fun signedInAccountId(): Long? {
-            val token = credentialStore.load()?.refreshToken?.takeIf(String::isNotBlank) ?: return null
-            return steamIdFromRefreshToken(token)?.longId?.takeIf { it > 0L }
+        private fun readPlayerProfiles(accountIds: Set<Long>): Map<Long, SdkPlayerProfile> {
+            val ids = accountIds.filter { it > 0L }.distinct().toLongArray()
+            if (ids.isEmpty()) return emptyMap()
+            return runCatchingUnavailable {
+                engine.openPlayerProfiles(ids).use { profiles -> readProfiles(profiles) }
+            } ?: emptyMap()
         }
+
+        /**
+         * Reads every profile of one resolved set.
+         *
+         * Only a profile the service named is kept, exactly as the kSteam path keeps one, so an account with
+         * no persona keeps the placeholder reading rather than reporting an empty name as resolved. The
+         * avatar crosses the AAR as a hash, never a URL, so the URL is built on this side.
+         */
+        private fun readProfiles(profiles: PlayerProfiles): Map<Long, SdkPlayerProfile> {
+            val resolved = LinkedHashMap<Long, SdkPlayerProfile>()
+            for (index in 0 until profiles.count()) {
+                val account = profiles.field(index, PlayerProfileField.ACCOUNT_ID)
+                val accountId =
+                    account.value.takeIf { account.state == PlayerField.VALUE.toLong() && it > 0L } ?: continue
+                val personaName =
+                    profiles.text(index, PlayerProfileField.PERSONA_NAME)?.trim()?.takeIf(String::isNotBlank)
+                        ?: continue
+                resolved[accountId] =
+                    SdkPlayerProfile(
+                        personaName = personaName,
+                        avatarUrl = profiles.text(index, PlayerProfileField.AVATAR_HASH).toSteamAvatarUrl(),
+                    )
+            }
+            return resolved
+        }
+
+        /**
+         * The signed-in account id from the SDK session, or null when nobody is signed in.
+         *
+         * The session names the account it is authorized as (ADR 0034) and reports zero when no account is
+         * signed in, so a zero never reaches an account-scoped read: the caller reports the read unavailable
+         * instead. No stored token is parsed and no credential crosses this helper.
+         */
+        private fun signedInAccountId(): Long? =
+            runCatching { engine.currentSession()?.accountId() }.getOrNull()?.takeIf { it > 0L }
     }
 
 /** Runs an SDK call and answers null when the engine has no provider, no session, or no such operation. */
@@ -528,6 +667,39 @@ private fun emptyWorkshopPage(query: AccountWorkshopQuery): WorkshopPage =
         page = query.page.coerceAtLeast(1),
         hasNextPage = false,
     )
+
+/**
+ * The tag texts one page row states, in the response's own order.
+ *
+ * The tag copies are never joined into one string by the SDK, so this reads the count `TAG_COUNT` reports and
+ * copies each index; a copy that produced no bytes or only blanks is absent from the list.
+ */
+private fun readPageTags(
+    page: SdkWorkshopPage,
+    index: Int,
+    fields: SdkSummaryFields,
+): List<String> = (0 until fields.tagCount()).mapNotNull { tagIndex -> page.tagText(index, tagIndex).tagOrNull() }
+
+/** The tag texts one resolved item states, the details half of the same copy ordinals. */
+private fun readResultTags(
+    result: WorkshopResult,
+    fields: SdkSummaryFields,
+): List<String> = (0 until fields.tagCount()).mapNotNull { tagIndex -> result.tagText(tagIndex).tagOrNull() }
+
+/** One tag text as the app model keeps it; a copy with no bytes or only blanks is absent. */
+private fun String?.tagOrNull(): String? = this?.trim()?.takeIf(String::isNotBlank)
+
+/**
+ * The Steam CDN URL for one avatar hash (ADR 0032).
+ *
+ * The player family copies the avatar as the lowercase hexadecimal hash the service reported and never as a
+ * URL, so constructing the URL stays the product rule it already is on the kSteam path. The old path
+ * hex-encoded the digest bytes; the SDK has already done that step, so only the URL is left to build here.
+ */
+private fun String?.toSteamAvatarUrl(): String? =
+    this?.trim()?.takeIf(String::isNotBlank)?.let { hash ->
+        "https://avatars.fastly.steamstatic.com/${hash}_medium.jpg"
+    }
 
 /**
  * Normalises a public query the way the kSteam path does before either transport sees it, so the page, size,
@@ -596,18 +768,22 @@ private fun WorkshopBrowseQuery.sdkTags(): List<String> =
         .distinct()
         .take(MAX_SDK_TAGS)
 
-/** Maps the app's sort onto the one SDK ranking it has; an unmapped sort falls back to relevance. */
+/**
+ * The app's seven sorts onto the AAR's published ranking vocabulary, one to one.
+ *
+ * `WorkshopSort.TOTAL_VOTES`, `FRIENDS_FAVORITED`, and `FRIENDS_CREATED` were the three rankings the AAR
+ * did not publish, which is why those sorts used to fall back to relevance; every one now names a real
+ * query type. `LAST_UPDATED` and `MOST_FAVORITED` are SDK members with no app sort, so they are unused.
+ */
 private fun WorkshopSort.sdkSort(): Int =
     when (this) {
         WorkshopSort.TRENDING -> io.steamcontent.sdk.WorkshopSort.MOST_POPULAR
         WorkshopSort.MOST_RECENT -> io.steamcontent.sdk.WorkshopSort.MOST_RECENT
         WorkshopSort.TOP_RATED -> io.steamcontent.sdk.WorkshopSort.RELEVANCE
+        WorkshopSort.MOST_VOTES -> io.steamcontent.sdk.WorkshopSort.TOTAL_VOTES
         WorkshopSort.MOST_SUBSCRIBERS -> io.steamcontent.sdk.WorkshopSort.MOST_SUBSCRIBED
-        // No SDK ranking exists for votes, friends' favourites, or friends' creations.
-        WorkshopSort.MOST_VOTES,
-        WorkshopSort.FRIENDS_FAVORITES,
-        WorkshopSort.FRIENDS_CREATED,
-        -> io.steamcontent.sdk.WorkshopSort.RELEVANCE
+        WorkshopSort.FRIENDS_FAVORITES -> io.steamcontent.sdk.WorkshopSort.FRIENDS_FAVORITED
+        WorkshopSort.FRIENDS_CREATED -> io.steamcontent.sdk.WorkshopSort.FRIENDS_CREATED
     }
 
 /** Maps the SDK's content-type ordinal onto the app's type; only the video ordinal names one. */
@@ -667,4 +843,7 @@ private const val MAX_SDK_COMMENT_PAGE_SIZE = 50
 private const val MAX_SDK_PAGE_SIZE = 50
 private const val MAX_SDK_SEARCH_LENGTH = 128
 private const val MAX_SDK_TAGS = 48
+
+/** The most tag copies this adapter reads from one item, well past any list the service reports. */
+private const val MAX_SDK_ITEM_TAGS = 256
 private const val MAX_SDK_DIRECT_BROWSE_PAGE = 1_000

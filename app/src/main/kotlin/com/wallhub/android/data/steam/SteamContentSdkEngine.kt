@@ -5,12 +5,14 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import io.steamcontent.sdk.DepotRangeStream
 import io.steamcontent.sdk.EngineCapability
 import io.steamcontent.sdk.ManifestFileList
+import io.steamcontent.sdk.PlayerProfiles
 import io.steamcontent.sdk.SessionEventKind
 import io.steamcontent.sdk.SessionMode
 import io.steamcontent.sdk.SessionCapabilityBits
 import io.steamcontent.sdk.SessionState
 import io.steamcontent.sdk.SessionTransportKind
 import io.steamcontent.sdk.SteamContentEngine
+import io.steamcontent.sdk.SteamContentEngine.PlayerPlaytime
 import io.steamcontent.sdk.SteamContentEngine.WorkshopAuthorRequest
 import io.steamcontent.sdk.SteamContentEngine.WorkshopCommentsRequest
 import io.steamcontent.sdk.SteamContentEngine.WorkshopInteractionState
@@ -392,6 +394,28 @@ class SteamContentSdkEngine
         fun openWorkshopItem(itemId: Long): WorkshopResult = openEngine(WorkshopOperation.DETAILS).openWorkshopItem(itemId)
 
         /**
+         * Resolves a bounded set of account ids into a profile handle (ADR 0032).
+         *
+         * The accounts are read once and held by the returned handle, which the caller closes; the persona
+         * and the avatar hash are then read one field at a time. The engine must report
+         * [EngineCapability.PLAYER], so an engine without a player plane throws [IllegalStateException]
+         * rather than answering an empty set a caller could mistake for "no persona".
+         */
+        @Synchronized
+        fun openPlayerProfiles(accountIds: LongArray): PlayerProfiles =
+            openPlayerEngine().openPlayerProfiles(accountIds)
+
+        /**
+         * Reads one App's playtime for the signed-in account (ADR 0032).
+         *
+         * The caller never names an account; the session's own is the one read. The returned
+         * [PlayerPlaytime.present] keeps "no record" distinct from "played zero minutes", and the engine
+         * must report [EngineCapability.PLAYER].
+         */
+        @Synchronized
+        fun playerPlaytime(appId: Long): PlayerPlaytime = openPlayerEngine().playerPlaytime(appId)
+
+        /**
          * Sets or clears one item's subscription, answering with the confirmed state.
          *
          * [accountId] is the acting account, an identifier the caller already holds and never a credential.
@@ -419,6 +443,23 @@ class SteamContentSdkEngine
             openEngine(WorkshopOperation.SET_FAVORITED).setFavorited(itemId, accountId, enabled)
 
         /**
+         * Writes one comment to an item's public thread (ADR 0033).
+         *
+         * [ownerId] is the account that owns the thread, never a credential; the write is authorized as the
+         * session's own account, and nothing about that account is sent here as a number. [text] is handed
+         * to the SDK for one call and is not retained by this layer. The provider must advertise
+         * [WorkshopOperation.POST_COMMENT].
+         */
+        @Synchronized
+        fun postComment(
+            itemId: Long,
+            ownerId: Long,
+            text: String,
+        ) {
+            openEngine(WorkshopOperation.POST_COMMENT).postComment(itemId, ownerId, text)
+        }
+
+        /**
          * Returns the open engine after checking that both the provider and this ABI advertise [operation].
          *
          * The gate is the SDK's own negotiation, so a read that is not implemented yet fails as a typed
@@ -432,6 +473,18 @@ class SteamContentSdkEngine
                     ?: error("the Steam Content SDK engine has no Workshop provider")
             return open.takeIf { capabilities.providerSupports(operation) && capabilities.abiSupports(operation) }
                 ?: error("the Steam Content SDK cannot serve Workshop operation $operation")
+        }
+
+        /**
+         * Returns the open engine after checking the player family bit (ADR 0032).
+         *
+         * A session-backed player plane sets [EngineCapability.PLAYER], so an engine without one reports
+         * the same unavailable reading a closed engine does instead of an empty profile set.
+         */
+        private fun openPlayerEngine(): SteamContentEngine {
+            val open = engine ?: error("the Steam Content SDK engine is not open")
+            return open.takeIf { it.info().supports(EngineCapability.PLAYER) }
+                ?: error("the Steam Content SDK engine has no player plane")
         }
 
         /**
