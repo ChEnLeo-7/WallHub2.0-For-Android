@@ -64,6 +64,22 @@ internal class SteamSessionBackendRouter(
 
     override fun onAppBackgrounded() = selected.onAppBackgrounded()
 
+    /**
+     * Signs the selected backend out, and in the SDK build also the kSteam arm that still serves the
+     * Workshop reads.
+     *
+     * kSteam keeps its own persisted session (`wallhub_ksteam_session`), so an SDK-owned logon does not
+     * end it: without this call a signed-out UI would still browse subscriptions and favorites, and a
+     * logon with a second account would read the first account's list. Both arms clear the shared
+     * credential slot on the way out, so the second call is idempotent for the store the SDK owns.
+     */
+    override fun logout() {
+        selected.logout()
+        if (backend == SteamSessionBackend.STEAM_CONTENT_SDK) {
+            runCatching { kSteamBackend.logout() }
+        }
+    }
+
     override fun login(
         accountName: String,
         password: String,
@@ -72,6 +88,4 @@ internal class SteamSessionBackendRouter(
     override fun submitSteamGuardCode(code: String) = selected.submitSteamGuardCode(code)
 
     override fun useManualSteamGuardFallback() = selected.useManualSteamGuardFallback()
-
-    override fun logout() = selected.logout()
 }
