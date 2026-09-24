@@ -41,9 +41,16 @@ internal class SteamContentSdkRouteFactory
          * Returns null when the platform has no endpoint set to offer, which means the platform route is
          * unavailable rather than "connect directly": the caller must not silently fall back to the engine's
          * own discovery on a network that blocks it.
+         *
+         * [refreshLive] is the one bounded retry a caller makes after a transport-level logon or restore
+         * failure: the cached endpoint set is exactly the input under suspicion, so the candidates are read
+         * live, and a route that cannot be built from a live read is no route at all.
          */
-        suspend fun platformRoute(cdnProxy: String? = null): SteamContentSdkEngine.Route? {
-            val candidates = cmEndpoints.candidates() ?: return null
+        suspend fun platformRoute(
+            cdnProxy: String? = null,
+            refreshLive: Boolean = false,
+        ): SteamContentSdkEngine.Route? {
+            val candidates = cmEndpoints.candidates(refreshLive = refreshLive) ?: return null
             return SteamContentSdkEngine.Route(
                 cmCandidates = candidates,
                 transport = SessionTransportKind.WEBSOCKET,

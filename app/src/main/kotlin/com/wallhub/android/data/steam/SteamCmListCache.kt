@@ -28,6 +28,18 @@ internal fun cmListCacheDecision(ageMs: Long?): SteamCmListCacheAction =
 internal fun cmListCacheStaleUsable(ageMs: Long): Boolean =
     ageMs in 0 until CM_LIST_CACHE_STALE_TTL_MS
 
+/**
+ * Whether the SDK route source may answer from the cache without a directory request.
+ *
+ * A fresh cache answers, so a signed-in app normally answers with no network call. A cache past its fresh
+ * age is refreshed first, and a caller that is retrying after a transport-level failure never takes the
+ * cached list at all: that list is exactly the input being questioned.
+ */
+internal fun cmCandidatesCacheAnswers(
+    ageMs: Long?,
+    refreshLive: Boolean,
+): Boolean = !refreshLive && cmListCacheDecision(ageMs) == SteamCmListCacheAction.SERVE_CACHED
+
 internal fun Request.isCmListRequest(): Boolean =
     url.host.equals("api.steampowered.com", ignoreCase = true) &&
         url.encodedPath.contains("GetCMListForConnect", ignoreCase = true)

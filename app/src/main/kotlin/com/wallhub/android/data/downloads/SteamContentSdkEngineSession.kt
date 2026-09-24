@@ -7,6 +7,7 @@ import com.wallhub.android.data.steam.SteamContentSdkLiveSession
 import com.wallhub.android.data.steam.SteamContentSdkRouteFactory
 import io.steamcontent.sdk.DepotRangeStream
 import io.steamcontent.sdk.SessionEventKind
+import io.steamcontent.sdk.SessionFailure
 import io.steamcontent.sdk.SessionState
 import io.steamcontent.sdk.SteamDownloadTask
 import io.steamcontent.sdk.SteamSession
@@ -28,6 +29,11 @@ import kotlinx.coroutines.withContext
  * existing credential boundary and goes straight into `restore`; it is not retained, logged, or copied
  * anywhere. A missing token, an unavailable platform route, or a refused restore all fail here with a
  * clear error, so the SDK path never silently falls back to the old backend.
+ *
+ * A restore that fails at the transport layer - the class the SDK reports when its whole candidate pass
+ * failed to connect - is retried exactly once against a candidate list read live from the directory. That
+ * is the only outcome that can mean the platform's cached endpoint set is the stale input, and one retry
+ * is the whole of the policy: there is no loop, and the credential presented is the same stored token.
  */
 @Singleton
 internal class SteamContentSdkEngineSessionOpener
@@ -51,16 +57,43 @@ internal class SteamContentSdkEngineSessionOpener
                     return@withContext SteamContentSdkEngineSession(live, ownsEngine = false)
                 }
                 Log.i(TAG, "content session reused=false")
-                val route =
-                    routes.platformRoute()
-                        ?: error("The platform's Steam route is unavailable; the Steam Content SDK path cannot start")
-                val session = engine.open(route) ?: error("The Steam Content SDK is unavailable on this device")
-                check(engine.restore(credential.accountName, token.toByteArray(Charsets.UTF_8))) {
-                    "The Steam Content SDK session cannot restore a stored account"
+                return@withContext try {
+                    restoreOnPlatformRoute(credential.accountName, token, refreshLive = false)
+                } catch (transportFailure: SteamContentSdkTransportFailure) {
+                    // A transport-class failure is the one outcome that puts the candidate list itself under
+                    // suspicion. The platform hands the engine its own cached endpoint set, and the engine
+                    // treats a host list as authoritative, so nothing else would ever question it. This asks
+                    // for a list read from the directory and tries exactly once more with the same stored
+                    // credential; a second failure reports the first, and kSteam is never a fallback.
+                    try {
+                        restoreOnPlatformRoute(credential.accountName, token, refreshLive = true)
+                    } catch (_: SteamContentSdkTransportFailure) {
+                        throw transportFailure
+                    }
                 }
-                awaitAuthenticated(session)
-                SteamContentSdkEngineSession(engine)
             }
+
+        /**
+         * Opens the engine on the platform route and restores one stored account.
+         *
+         * [refreshLive] asks the route for an endpoint set read from the directory instead of the platform's
+         * cached one, which is what the single retry after a transport failure uses.
+         */
+        private suspend fun restoreOnPlatformRoute(
+            accountName: String,
+            token: String,
+            refreshLive: Boolean,
+        ): SteamContentSdkEngineSession {
+            val route =
+                routes.platformRoute(refreshLive = refreshLive)
+                    ?: error("The platform's Steam route is unavailable; the Steam Content SDK path cannot start")
+            val session = engine.open(route) ?: error("The Steam Content SDK is unavailable on this device")
+            check(engine.restore(accountName, token.toByteArray(Charsets.UTF_8))) {
+                "The Steam Content SDK session cannot restore a stored account"
+            }
+            awaitAuthenticated(session)
+            return SteamContentSdkEngineSession(engine)
+        }
 
         private suspend fun awaitAuthenticated(session: SteamSession) {
             val deadline = System.nanoTime() + AUTHENTICATION_TIMEOUT_NANOS
@@ -72,10 +105,13 @@ internal class SteamContentSdkEngineSessionOpener
                 val event = session.pollEvent(SESSION_POLL_MS)
                 if (event?.kind == SessionEventKind.COMMAND_FAILED) {
                     val diagnostic = runCatching { session.lastError() }.getOrNull()?.takeIf(String::isNotBlank)
-                    error(
+                    val message =
                         "The Steam Content SDK could not restore the stored account" +
-                            (diagnostic?.let { ": $it" } ?: ""),
-                    )
+                            (diagnostic?.let { ": $it" } ?: "")
+                    // The SDK reports a failed connect pass as the transport class; only that class can mean
+                    // the endpoint list the platform supplied is the stale input, so only it earns the retry.
+                    if (event.value == SessionFailure.NETWORK) throw SteamContentSdkTransportFailure(message)
+                    error(message)
                 }
                 if (System.nanoTime() >= deadline) {
                     error("The Steam Content SDK session did not authenticate in time")
@@ -89,6 +125,18 @@ internal class SteamContentSdkEngineSessionOpener
             const val AUTHENTICATION_TIMEOUT_NANOS = 30_000_000_000L
         }
     }
+
+/**
+ * A restore that failed in the transport layer rather than in the credential layer.
+ *
+ * The SDK reports a failed candidate pass with the same "protocol adapter failed" text whatever the
+ * underlying cause, so this type is what separates "the route did not connect" from "the peer refused the
+ * account": only the former is worth one retry against a live endpoint list, and the latter must never be
+ * retried or treated as a route problem.
+ */
+private class SteamContentSdkTransportFailure(
+    message: String,
+) : IllegalStateException(message)
 
 /**
  * The engine-backed session a download holds for the length of one transfer.

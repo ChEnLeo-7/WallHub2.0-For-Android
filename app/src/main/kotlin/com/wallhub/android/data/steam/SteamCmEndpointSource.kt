@@ -35,8 +35,10 @@ private val CM_ENDPOINT_REGEX = Regex("([A-Za-z0-9][A-Za-z0-9.-]*\\.steamserver\
  * [SteamContentSdkEngine.Route.cmCandidates]; the engine then connects to one of them directly, which is how
  * this platform's own signed-in transport reaches the same channel.
  *
- * Cache first: the directory the kSteam transport already caches is read before any request, so a
- * signed-in app normally answers without a network call. A fetch that fails leaves the decision to the
+ * Cache first while the cached directory is fresh: the directory the kSteam transport already caches is read
+ * before any request, so a signed-in app normally answers without a network call. Past the fresh age the
+ * directory is read first and the stale body only answers if that read fails, and a caller retrying after a
+ * transport-level failure never takes the cached body at all. A fetch that fails leaves the decision to the
  * engine rather than inventing an endpoint.
  */
 @Singleton
@@ -46,27 +48,38 @@ internal class SteamCmEndpointSource
         private val httpClientFactory: SteamHttpClientFactory,
         private val cmListCache: SteamCmListCache,
     ) {
-        /** Newline-separated `host:port` candidates, or null when the platform has none to offer. */
-        suspend fun candidates(): String? =
+        /**
+         * Newline-separated `host:port` candidates, or null when the platform has none to offer.
+         *
+         * [refreshLive] is the single bounded retry a caller makes after a transport-level logon or restore
+         * failure: the cached body is not offered again, so the result is a list read live or nothing.
+         */
+        suspend fun candidates(refreshLive: Boolean = false): String? =
             withContext(Dispatchers.IO) {
                 val cached =
                     cmListCache
                         .loadMostRecent()
                         ?.takeIf { cmListCacheStaleUsable(it.ageMs) }
-                        ?.body
-                        ?.let(::cmCandidatesFromBody)
-                        .orEmpty()
-                if (cached.isNotEmpty()) {
-                    Log.i(TAG, "cm candidates=${cached.lines().size} source=cache")
-                    return@withContext cached
+                val cachedCandidates = cached?.body?.let(::cmCandidatesFromBody).orEmpty()
+                if (cmCandidatesCacheAnswers(cached?.ageMs, refreshLive) && cachedCandidates.isNotEmpty()) {
+                    Log.i(TAG, "cm candidates=${cachedCandidates.lines().size} source=cache")
+                    return@withContext cachedCandidates
                 }
                 val live =
                     runCatching { fetchDirectory() }
                         .getOrNull()
                         ?.let(::cmCandidatesFromBody)
                         .orEmpty()
-                Log.i(TAG, "cm candidates=${live.lines().size} source=live")
-                live.ifEmpty { null }
+                Log.i(
+                    TAG,
+                    "cm candidates=${live.lines().size} source=live" + if (refreshLive) " retry=true" else "",
+                )
+                if (live.isNotEmpty()) return@withContext live
+                // The directory is unreachable. A stale body the platform already read is still the best route
+                // it has, but the retry that asked for a live list has already seen the cached one fail and
+                // takes nothing from it again.
+                if (!refreshLive && cachedCandidates.isNotEmpty()) return@withContext cachedCandidates
+                null
             }
 
         private fun fetchDirectory(): String? {

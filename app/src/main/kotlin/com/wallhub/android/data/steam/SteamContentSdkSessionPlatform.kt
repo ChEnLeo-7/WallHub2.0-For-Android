@@ -239,6 +239,14 @@ internal interface SteamContentSdkPlatformSession : Closeable {
  */
 internal fun interface SteamContentSdkPlatform {
     suspend fun open(): SteamContentSdkPlatformSession?
+
+    /**
+     * Opens the session on a CM endpoint set read from the directory rather than the platform's cache.
+     *
+     * The default keeps every platform that knows no live route - a test double, or a host with no cache -
+     * on [open]. Only the single retry after a transport-level restore failure calls this.
+     */
+    suspend fun openWithLiveCandidates(): SteamContentSdkPlatformSession? = open()
 }
 
 /**
@@ -252,9 +260,14 @@ internal class SteamContentSdkEnginePlatform(
     private val engine: SteamContentSdkEngine,
     private val routes: SteamContentSdkRouteFactory,
 ) : SteamContentSdkPlatform {
-    override suspend fun open(): SteamContentSdkPlatformSession {
+    override suspend fun open(): SteamContentSdkPlatformSession = openPlatformRoute(refreshLive = false)
+
+    override suspend fun openWithLiveCandidates(): SteamContentSdkPlatformSession =
+        openPlatformRoute(refreshLive = true)
+
+    private suspend fun openPlatformRoute(refreshLive: Boolean): SteamContentSdkPlatformSession {
         val route =
-            routes.platformRoute()
+            routes.platformRoute(refreshLive = refreshLive)
                 ?: error("The platform's Steam route is unavailable; the Steam Content SDK session cannot start")
         val session =
             engine.open(route)

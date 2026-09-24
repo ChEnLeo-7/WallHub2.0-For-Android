@@ -36,6 +36,16 @@ class SteamCmListCacheTest {
     }
 
     @Test
+    fun `the sdk route source answers from the cache only while it is fresh and never on a retry`() {
+        assertTrue(cmCandidatesCacheAnswers(0L, refreshLive = false))
+        assertTrue(cmCandidatesCacheAnswers(CM_LIST_CACHE_FRESH_TTL_MS - 1, refreshLive = false))
+        assertFalse(cmCandidatesCacheAnswers(CM_LIST_CACHE_FRESH_TTL_MS, refreshLive = false))
+        assertFalse(cmCandidatesCacheAnswers(CM_LIST_CACHE_STALE_TTL_MS - 1, refreshLive = false))
+        assertFalse(cmCandidatesCacheAnswers(null, refreshLive = false))
+        assertFalse(cmCandidatesCacheAnswers(0L, refreshLive = true))
+    }
+
+    @Test
     fun `cm list request detection matches api directory endpoint only`() {
         val cmList =
             Request

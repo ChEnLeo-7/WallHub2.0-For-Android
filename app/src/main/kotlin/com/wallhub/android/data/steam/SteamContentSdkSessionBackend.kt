@@ -53,6 +53,9 @@ internal class SteamContentSdkSessionBackend(
     private val attemptJob = AtomicReference<Job?>(null)
     private val activeSession = AtomicReference<SteamContentSdkPlatformSession?>(null)
     private val pendingChallenge = AtomicReference<PendingChallenge?>(null)
+
+    /** The failure class of the attempt that just finished, so a transport failure earns one retry. */
+    private val lastAttemptFailure = AtomicReference(SteamContentSdkSessionFailure.NONE)
     private val sessionMutex = Mutex()
 
     private class PendingChallenge(
@@ -247,7 +250,23 @@ internal class SteamContentSdkSessionBackend(
     }
 
     private suspend fun restore(stored: PersistedSteamCredential) {
-        val session = openSession()
+        lastAttemptFailure.set(SteamContentSdkSessionFailure.NONE)
+        restoreOnce(stored, refreshLive = false)
+        if (lastAttemptFailure.get() != SteamContentSdkSessionFailure.NETWORK) return
+        // The transport class is the one attempt failure that can mean the CM endpoint set the platform
+        // cached is the stale input: the SDK treats a host-supplied list as authoritative and never
+        // questions it, so nothing else would ever refresh it. One retry asks for a list read from the
+        // directory and re-presents the same stored credential; a second failure is reported as it is,
+        // and kSteam is never consulted.
+        record("restore_retry_live_candidates")
+        restoreOnce(stored, refreshLive = true)
+    }
+
+    private suspend fun restoreOnce(
+        stored: PersistedSteamCredential,
+        refreshLive: Boolean,
+    ) {
+        val session = openSession(refreshLive)
         if (session == null) {
             publish(
                 SteamSessionPhase.FAILED,
@@ -321,10 +340,10 @@ internal class SteamContentSdkSessionBackend(
         driveToOutcome(session = session, restore = false, accountName = accountName, hasStoredSession = false)
     }
 
-    private suspend fun openSession(): SteamContentSdkPlatformSession? {
+    private suspend fun openSession(refreshLive: Boolean = false): SteamContentSdkPlatformSession? {
         val opened =
             try {
-                platform.open()
+                if (refreshLive) platform.openWithLiveCandidates() else platform.open()
             } catch (error: Throwable) {
                 record("platform_open_failure", error)
                 return null
@@ -629,6 +648,7 @@ internal class SteamContentSdkSessionBackend(
         hasStoredSession: Boolean,
         failure: SteamContentSdkSessionFailure,
     ) {
+        lastAttemptFailure.set(failure)
         when (steamContentSdkFailurePhase(failure)) {
             SteamSessionPhase.EXPIRED -> {
                 clearStoredCredential()

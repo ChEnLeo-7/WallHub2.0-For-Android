@@ -198,6 +198,28 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
+    fun aTransportFailureOnRestoreRetriesOnceWithLiveCandidates() =
+        runTest {
+            val fixture = Fixture()
+            val credential = PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 47))
+            fixture.storeCredential(credential)
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.NETWORK)
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+
+            // Exactly one retry, and the retry is what asks the platform for a live endpoint set: the first
+            // attempt's cached list is the input under suspicion, so it is never offered a second time. The
+            // retry presents the same stored credential and its failure is the one the caller sees.
+            assertEquals(1, fixture.platform.liveOpenCalls)
+            assertEquals(2, fixture.session.restores.size)
+            assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
+            assertEquals(FakeMessages.restoreFailed, backend.session.value.message)
+        }
+
+    @Test
     fun anExpiredSessionClearsTheStoredCredential() =
         runTest {
             val fixture = Fixture()
@@ -211,6 +233,9 @@ class SteamContentSdkSessionBackendTest {
 
             assertEquals(SteamSessionPhase.EXPIRED, backend.session.value.phase)
             assertEquals(1, fixture.store.clearCalls)
+            // A credential rejection is not a route problem: it never earns the live-candidate retry.
+            assertEquals(1, fixture.platform.openCalls)
+            assertEquals(0, fixture.platform.liveOpenCalls)
         }
 
     @Test
@@ -309,12 +334,18 @@ class SteamContentSdkSessionBackendTest {
         private val session: FakeSdkSession,
     ) : SteamContentSdkPlatform {
         var openCalls = 0
+        var liveOpenCalls = 0
         var openFailure: Throwable? = null
 
         override suspend fun open(): SteamContentSdkPlatformSession? {
             openCalls += 1
             openFailure?.let { throw it }
             return session
+        }
+
+        override suspend fun openWithLiveCandidates(): SteamContentSdkPlatformSession? {
+            liveOpenCalls += 1
+            return open()
         }
     }
 
