@@ -11,9 +11,17 @@ import io.steamcontent.sdk.SessionCapabilityBits
 import io.steamcontent.sdk.SessionState
 import io.steamcontent.sdk.SessionTransportKind
 import io.steamcontent.sdk.SteamContentEngine
+import io.steamcontent.sdk.SteamContentEngine.WorkshopAuthorRequest
+import io.steamcontent.sdk.SteamContentEngine.WorkshopCommentsRequest
+import io.steamcontent.sdk.SteamContentEngine.WorkshopInteractionState
+import io.steamcontent.sdk.SteamContentEngine.WorkshopPersonalRequest
 import io.steamcontent.sdk.SteamContentEngine.WorkshopResolveResponse
+import io.steamcontent.sdk.SteamContentEngine.WorkshopSearchRequest
 import io.steamcontent.sdk.SteamDownloadTask
 import io.steamcontent.sdk.SteamSession
+import io.steamcontent.sdk.WorkshopOperation
+import io.steamcontent.sdk.WorkshopPage
+import io.steamcontent.sdk.WorkshopResult
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -264,6 +272,166 @@ class SteamContentSdkEngine
             runCatching { engine?.close() }
             session = null
             engine = null
+        }
+
+        /**
+         * Resolves one page of browse or search results, read through [WorkshopPage].
+         *
+         * The page is a handle the caller owns and closes. The Workshop provider must be installed and must
+         * advertise the operation, so an engine without one throws [IllegalStateException] rather than
+         * answering an empty page.
+         */
+        @Synchronized
+        fun workshopSearch(
+            appId: Long,
+            sort: Int,
+            trendWindow: Int,
+            pageSize: Int,
+            pageOffset: Int,
+            queryText: String?,
+            contentTypes: List<Int>,
+            tags: List<String>,
+        ): WorkshopPage {
+            val open = openEngine(WorkshopOperation.SEARCH)
+            return open.workshopSearch(
+                WorkshopSearchRequest(
+                    pageSize = pageSize,
+                    sort = sort,
+                    trendWindow = trendWindow,
+                    pageOffset = pageOffset,
+                    appId = appId,
+                    queryText = queryText,
+                    contentTypes = contentTypes,
+                    tags = tags,
+                )
+            )
+        }
+
+        /**
+         * Resolves one page of an author's published items, read through [WorkshopPage].
+         *
+         * [authorId] is the account whose profile is open, never a credential. As with [workshopSearch], an
+         * engine that cannot serve the read throws rather than answering an empty page.
+         */
+        @Synchronized
+        fun workshopAuthorItems(
+            authorId: Long,
+            pageSize: Int,
+            pageOffset: Int,
+            contentTypes: List<Int>,
+        ): WorkshopPage {
+            val open = openEngine(WorkshopOperation.AUTHOR_ITEMS)
+            return open.workshopAuthorItems(
+                WorkshopAuthorRequest(
+                    authorId = authorId,
+                    pageSize = pageSize,
+                    pageOffset = pageOffset,
+                    contentTypes = contentTypes,
+                )
+            )
+        }
+
+        /**
+         * Resolves one page of the signed-in account's own items, read through [WorkshopPage].
+         *
+         * [accountId] is both the account the list belongs to and the account the read is authorized as - an
+         * identifier the caller already holds, never a credential. [list] is a `WorkshopPersonalList`
+         * ordinal.
+         */
+        @Synchronized
+        fun workshopPersonalItems(
+            accountId: Long,
+            list: Int,
+            pageSize: Int,
+            pageOffset: Int,
+        ): WorkshopPage {
+            val open = openEngine(WorkshopOperation.PERSONAL_ITEMS)
+            return open.workshopPersonalItems(
+                WorkshopPersonalRequest(
+                    accountId = accountId,
+                    list = list,
+                    pageSize = pageSize,
+                    pageOffset = pageOffset,
+                )
+            )
+        }
+
+        /**
+         * Resolves one page of one item's comments, read through [WorkshopPage].
+         *
+         * A comment page answers the comment field space rather than the summary one, which the returned
+         * handle already routes. Comments take no authorization of their own, but the provider must still
+         * advertise [WorkshopOperation.COMMENTS].
+         */
+        @Synchronized
+        fun workshopComments(
+            itemId: Long,
+            sort: Int,
+            pageSize: Int,
+            pageOffset: Int,
+        ): WorkshopPage {
+            val open = openEngine(WorkshopOperation.COMMENTS)
+            return open.workshopComments(
+                WorkshopCommentsRequest(
+                    itemId = itemId,
+                    pageSize = pageSize,
+                    sort = sort,
+                    pageOffset = pageOffset,
+                )
+            )
+        }
+
+        /**
+         * Resolves one Workshop item, returning a handle its fields are read through.
+         *
+         * The caller closes the handle. An engine without a Workshop provider throws
+         * [IllegalStateException], exactly as the underlying call does, so a caller that treats the read as
+         * optional translates it at its own boundary.
+         */
+        @Synchronized
+        fun openWorkshopItem(itemId: Long): WorkshopResult = openEngine(WorkshopOperation.DETAILS).openWorkshopItem(itemId)
+
+        /**
+         * Sets or clears one item's subscription, answering with the confirmed state.
+         *
+         * [accountId] is the acting account, an identifier the caller already holds and never a credential.
+         * The favourite half of an interaction is not part of this answer.
+         */
+        @Synchronized
+        fun setSubscribed(
+            itemId: Long,
+            accountId: Long,
+            enabled: Boolean,
+        ): WorkshopInteractionState =
+            openEngine(WorkshopOperation.SET_SUBSCRIBED).setSubscribed(itemId, accountId, enabled)
+
+        /**
+         * Sets or clears one item's favourite, answering with the confirmed state.
+         *
+         * The subscription half of an interaction is not part of this answer.
+         */
+        @Synchronized
+        fun setFavorited(
+            itemId: Long,
+            accountId: Long,
+            enabled: Boolean,
+        ): WorkshopInteractionState =
+            openEngine(WorkshopOperation.SET_FAVORITED).setFavorited(itemId, accountId, enabled)
+
+        /**
+         * Returns the open engine after checking that both the provider and this ABI advertise [operation].
+         *
+         * The gate is the SDK's own negotiation, so a read that is not implemented yet fails as a typed
+         * [IllegalStateException] here instead of reaching native code that cannot serve it. A closed engine
+         * reports the same way, which is also how the app learns that no Workshop provider is installed.
+         */
+        private fun openEngine(operation: Long): SteamContentEngine {
+            val open = engine ?: error("the Steam Content SDK engine is not open")
+            val capabilities =
+                open.workshopCapabilities()
+                    ?: error("the Steam Content SDK engine has no Workshop provider")
+            return open.takeIf { capabilities.providerSupports(operation) && capabilities.abiSupports(operation) }
+                ?: error("the Steam Content SDK cannot serve Workshop operation $operation")
         }
 
         /**
