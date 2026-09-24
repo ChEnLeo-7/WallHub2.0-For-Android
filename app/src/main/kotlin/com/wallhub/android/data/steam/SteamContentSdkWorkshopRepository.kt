@@ -839,8 +839,6 @@ private fun Int.toMaximumPage(pageSize: Int): Int {
         .toInt()
 }
 
-/** The Wallpaper Engine App the app's Workshop reads are scoped to, as the kSteam path scopes them. */
-private const val WALLPAPER_ENGINE_APP_ID = 431_960
 private const val MAX_SDK_COMMENT_PAGE_SIZE = 50
 private const val MAX_SDK_PAGE_SIZE = 50
 private const val MAX_SDK_SEARCH_LENGTH = 128
