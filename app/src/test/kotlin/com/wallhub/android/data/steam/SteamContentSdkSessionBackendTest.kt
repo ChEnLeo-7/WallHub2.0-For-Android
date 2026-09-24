@@ -198,6 +198,70 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
+    fun aTransportFailureOnLogonRetriesOnceWithLiveCandidatesAndTheSameSecret() =
+        runTest {
+            val fixture = Fixture()
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.NETWORK)
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            val backend = fixture.backend(this)
+            val secret = opaqueValue(seed = 53)
+
+            backend.login("account", secret)
+            advanceUntilIdle()
+
+            // One extra open, on live candidates, and one extra logon that re-presents the caller's own
+            // secret: the first attempt's cached endpoint set is the input under suspicion, so the retry
+            // never re-offers it, and no credential is stored to make that retry possible.
+            assertEquals(1, fixture.platform.openCalls)
+            assertEquals(1, fixture.platform.liveOpenCalls)
+            assertEquals(2, fixture.session.logons.size)
+            assertEquals("account", fixture.session.logons.last().accountName)
+            assertContentEquals(secret.toByteArray(Charsets.UTF_8), fixture.session.logons.last().secret)
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+        }
+
+    @Test
+    fun aTransportFailureOnLogonIsRetriedOnlyOnce() =
+        runTest {
+            val fixture = Fixture()
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.NETWORK)
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.NETWORK)
+            val backend = fixture.backend(this)
+
+            backend.login("account", opaqueValue(seed = 59))
+            advanceUntilIdle()
+
+            // The second transport failure is reported, not retried: one logon means one extra open at most.
+            assertEquals(1, fixture.platform.openCalls)
+            assertEquals(1, fixture.platform.liveOpenCalls)
+            assertEquals(2, fixture.session.logons.size)
+            assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
+            assertEquals(FakeMessages.networkFailed, backend.session.value.message)
+        }
+
+    @Test
+    fun aCredentialFailureOnLogonNeverRetriesOnLiveCandidates() =
+        runTest {
+            val fixture = Fixture()
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.AUTHENTICATION_FAILED)
+            val backend = fixture.backend(this)
+
+            backend.login("account", opaqueValue(seed = 61))
+            advanceUntilIdle()
+
+            // A refused credential is not a route problem: it is reported once and never re-presented.
+            assertEquals(1, fixture.platform.openCalls)
+            assertEquals(0, fixture.platform.liveOpenCalls)
+            assertEquals(1, fixture.session.logons.size)
+            assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
+            assertEquals(FakeMessages.authRejected, backend.session.value.message)
+        }
+
+    @Test
     fun aTransportFailureOnRestoreRetriesOnceWithLiveCandidates() =
         runTest {
             val fixture = Fixture()

@@ -37,6 +37,12 @@ import kotlinx.coroutines.withTimeoutOrNull
  * The backend never falls back to kSteam. A missing or unreadable token, an unavailable platform route, or
  * a refused SDK capability publishes a failure that the UI can render instead of silently answering from
  * another backend, which is what a later parity comparison depends on.
+ *
+ * A logon or a restore that fails in the transport class - what the SDK reports when its whole candidate
+ * pass failed to connect, as "protocol adapter failed" - is retried exactly once against a candidate list
+ * read live from the directory. That is the only outcome that can mean the platform's cached endpoint set is
+ * the stale input, and one retry is the whole of the policy on either path: there is no loop, a second
+ * transport failure is reported as it is, and no other failure class is ever retried.
  */
 internal class SteamContentSdkSessionBackend(
     private val platform: SteamContentSdkPlatform,
@@ -314,16 +320,43 @@ internal class SteamContentSdkSessionBackend(
         accountName: String,
         password: String,
     ) {
+        lastAttemptFailure.set(SteamContentSdkSessionFailure.NONE)
+        // At most one extra open per user-initiated logon: a transport failure asks once for an endpoint set
+        // read live instead of the platform's cached one, which is the only input a failed candidate pass can
+        // mean was stale. A second transport failure, or any other failure class, reports as it is - no loop,
+        // and kSteam is never consulted.
+        var retryLiveCandidates = false
+        while (true) {
+            val done = logonOnPlatformRoute(accountName, password, retryLiveCandidates)
+            if (done || lastAttemptFailure.get() != SteamContentSdkSessionFailure.NETWORK) return
+            record("logon_retry_live_candidates")
+            retryLiveCandidates = true
+        }
+    }
+
+    /**
+     * Runs one logon attempt on the platform route.
+     *
+     * Returns whether this attempt reached a terminal outcome, which is every failure class except the
+     * transport one: [lastAttemptFailure] then says whether the caller is allowed its single live-candidate
+     * retry. The caller's password is passed straight through to the one begin call, converted to bytes only
+     * for that call and zeroed directly afterwards; it is never retained, copied elsewhere, or logged.
+     */
+    private suspend fun logonOnPlatformRoute(
+        accountName: String,
+        password: String,
+        retryLiveCandidates: Boolean,
+    ): Boolean {
         publish(SteamSessionPhase.SIGNING_IN, messages.connecting, accountName = accountName, hasStoredSession = false)
-        val session = openSession()
+        val session = openSession(refreshLive = retryLiveCandidates)
         if (session == null) {
             publish(SteamSessionPhase.FAILED, messages.unavailable, accountName = accountName)
-            return
+            return true
         }
         if (!session.supportsAccountLogon()) {
             releaseSession()
             publish(SteamSessionPhase.FAILED, messages.authRejected, accountName = accountName)
-            return
+            return true
         }
         publish(SteamSessionPhase.SIGNING_IN, messages.requestingLogin, accountName = accountName)
         val secret = password.toByteArray(Charsets.UTF_8)
@@ -333,11 +366,12 @@ internal class SteamContentSdkSessionBackend(
             record("logon_command_failure", error)
             releaseSession()
             publish(SteamSessionPhase.FAILED, messages.authRejected, accountName = accountName)
-            return
+            return true
         } finally {
             secret.fill(0)
         }
         driveToOutcome(session = session, restore = false, accountName = accountName, hasStoredSession = false)
+        return lastAttemptFailure.get() != SteamContentSdkSessionFailure.NETWORK
     }
 
     private suspend fun openSession(refreshLive: Boolean = false): SteamContentSdkPlatformSession? {
@@ -638,16 +672,21 @@ internal class SteamContentSdkSessionBackend(
         hasStoredSession: Boolean,
     ): Boolean {
         if (failure == SteamContentSdkSessionFailure.NONE) return false
-        publishAttemptFailure(restore, accountName, hasStoredSession, failure)
-        return true
+        return publishAttemptFailure(restore, accountName, hasStoredSession, failure)
     }
 
+    /**
+     * Publishes the outcome for an attempt failure and returns whether that outcome is terminal.
+     *
+     * The transport class is the one failure that is not terminal by itself: the caller may make its single
+     * live-candidate retry, and only then does the outcome stand. Every other class is reported and done.
+     */
     private fun publishAttemptFailure(
         restore: Boolean,
         accountName: String?,
         hasStoredSession: Boolean,
         failure: SteamContentSdkSessionFailure,
-    ) {
+    ): Boolean {
         lastAttemptFailure.set(failure)
         when (steamContentSdkFailurePhase(failure)) {
             SteamSessionPhase.EXPIRED -> {
@@ -680,6 +719,7 @@ internal class SteamContentSdkSessionBackend(
                     hasStoredSession = hasStoredSession,
                 )
         }
+        return failure != SteamContentSdkSessionFailure.NETWORK
     }
 
     // ------------------------------------------------------------------
