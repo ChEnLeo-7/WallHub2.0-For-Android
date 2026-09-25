@@ -1,5 +1,6 @@
 package com.wallhub.android.data.steam
 
+import android.util.Log
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
@@ -491,6 +492,18 @@ internal class SteamContentSdkWorkshopRepository
                         collection = collection,
                     )
                 }
+            // One line per non-empty page, so a device reading can name what the SDK actually put on its
+            // rows (tags, the mapped content type, and the size) without exposing anything but public item
+            // metadata: the same evidence convention the session, depot, and playback paths follow.
+            if (items.isNotEmpty()) {
+                val first = items.first()
+                Log.i(
+                    TAG,
+                    "workshop page rows=${items.size} collection=${collection?.name ?: "public"} " +
+                        "first-id=${first.id} first-type=${first.type} first-size=${first.fileSizeBytes ?: 0} " +
+                        "first-tags=${first.tags.take(MAX_LOGGED_TAGS)}",
+                )
+            }
             val total = state.total.takeIf { it > 0 }
             return WorkshopPage(
                 items = items,
@@ -883,6 +896,11 @@ private fun Int.toMaximumPage(pageSize: Int): Int {
         .coerceIn(1L, MAX_SDK_DIRECT_BROWSE_PAGE.toLong())
         .toInt()
 }
+
+private const val TAG = "WallHubSdkWorkshop"
+
+/** How many tag names one diagnostic page line may carry: enough to name the type, no more. */
+private const val MAX_LOGGED_TAGS = 8
 
 private const val MAX_SDK_COMMENT_PAGE_SIZE = 50
 private const val MAX_SDK_PAGE_SIZE = 50
