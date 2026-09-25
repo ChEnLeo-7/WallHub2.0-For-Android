@@ -11,22 +11,13 @@ pluginManagement {
     }
 }
 
-val usePatchedKSteam =
-    providers.gradleProperty("wallhub.usePatchedKSteam").orNull?.toBooleanStrictOrNull()
-        ?: System.getProperty("os.name").contains("Windows", ignoreCase = true)
-
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         // Local preview of the Steam Content SDK AAR (sc-sdk-maven/, gitignored).
         maven(url = uri("sc-sdk-maven/repository"))
-        if (usePatchedKSteam) {
-            // The Debug Action patches the pinned kSteam source and publishes it locally.
-            mavenLocal()
-        }
-        if (!usePatchedKSteam) {
-            mavenLocal()
-        }
+        // A locally published artifact from this machine, kept for local iterations.
+        mavenLocal()
         google()
         mavenCentral()
         maven(url = "https://maven.aliyun.com/repository/google")

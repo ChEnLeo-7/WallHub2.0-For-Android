@@ -2,7 +2,6 @@ package com.wallhub.android.data.downloads
 
 import android.content.Context
 import android.util.Log
-import com.wallhub.android.BuildConfig
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
@@ -13,7 +12,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.Closeable
@@ -29,7 +27,6 @@ internal class SteamWorkshopVideoStreamRepository
         private val credentialProvider: SteamContentCredentialProvider,
         private val settingsRepository: SettingsRepository,
         private val steamHttpClientFactory: SteamHttpClientFactory,
-        private val contentDownloader: SteamContentDownloader,
         private val playbackCoordinator: PlaybackDownloadCoordinator,
         private val sdkSessionOpener: Lazy<SteamContentSdkSessionOpener>,
     ) : WorkshopVideoStreamRepository {
@@ -48,29 +45,26 @@ internal class SteamWorkshopVideoStreamRepository
                             steamHttpClientFactory.newBuilder().applyDownloadProxy(activeProxyUrl),
                         ).fetchContentTarget(workshopId)
                     check(target.contentTypeHint == "video") { "This item is not a streamable video wallpaper" }
-                    // The SDK arm serves every range itself, so it comes before the direct-link fast
-                    // path: with the flag on, playback is the SDK's data plane and nothing falls back.
-                    if (selectWorkshopVideoStreamPath(BuildConfig.USE_SDK_RANGE_STREAM) ==
-                        WorkshopVideoStreamPath.STEAM_CONTENT_SDK
-                    ) {
-                        val sdkSession = openSdkVideoStream(target)
-                        openedStream = sdkSession
-                        return@withContext sdkSession
-                    }
-                    // Fast path: when Steam publishes a direct video file URL, stream it
-                    // with plain HTTP range requests and skip the manifest, depot key,
-                    // and CDN negotiation round trips entirely.
-                    val remoteUrl = remoteVideoUrlOrNull(target)
-                    if (remoteUrl != null) {
+                    // A direct-file item is a file Steam publishes at a URL: there is no depot to resolve,
+                    // so the product's own HTTP range reader serves it, exactly as the direct-file download
+                    // path does. Every depot-backed item is resolved and served by the SDK range arm, which
+                    // reads no Depot Key, CDN token, or URL of ours.
+                    val directUrl =
+                        if (workshopDownloadSource(target) == WorkshopDownloadSource.DIRECT_FILE) {
+                            remoteVideoUrlOrNull(target)
+                        } else {
+                            null
+                        }
+                    if (directUrl != null) {
                         val remoteSession =
                             runCatching {
                                 SteamRemoteVideoStream.open(
                                     title = target.title,
                                     fileName =
                                         target.rawFileName.ifBlank {
-                                            remoteUrl.substringAfterLast('/').substringBefore('?')
+                                            directUrl.substringAfterLast('/').substringBefore('?')
                                         },
-                                    remoteUrl = remoteUrl,
+                                    remoteUrl = directUrl,
                                     expectedSize = target.expectedSize,
                                     clientBuilder =
                                         steamHttpClientFactory.newBuilder().applyDownloadProxy(activeProxyUrl),
@@ -79,7 +73,7 @@ internal class SteamWorkshopVideoStreamRepository
                                 if (error is CancellationException) throw error
                                 Log.w(
                                     "SteamVideoStream",
-                                    "Remote file_url stream unavailable, falling back to depot chunks: ${error.message}",
+                                    "Direct file_url stream unavailable: ${error.message}",
                                 )
                             }.getOrNull()
                         if (remoteSession != null) {
@@ -87,38 +81,12 @@ internal class SteamWorkshopVideoStreamRepository
                             openedStream = coordinated
                             return@withContext coordinated
                         }
+                        // A direct file the range reader cannot open has no depot behind it either, so it is
+                        // the SDK arm's error to report rather than a silent fall-through.
                     }
-                    var lastError: Throwable? = null
-                    repeat(VIDEO_STREAM_OPEN_ATTEMPTS) { attempt ->
-                        try {
-                            return@withContext contentDownloader.openVideoStream(
-                                target = target,
-                                credential =
-                                    if (attempt == 0) {
-                                        credentialProvider.loadContentCredential()
-                                    } else {
-                                        credentialProvider.restoreContentCredential()
-                                    },
-                                options =
-                                    SteamContentDownloadOptions(
-                                        chunkConcurrency = preferences.chunkDownloadConcurrency,
-                                        proxyUrl = activeProxyUrl,
-                                    ),
-                                cacheRootDirectory = cacheRootDirectory,
-                                cacheLimitBytes = preferences.mediaCacheLimitMb.toLong() * 1024L * 1024L,
-                            ).let { stream ->
-                                CoordinatedVideoStreamSession(stream, playbackCoordinator.registerPlayback())
-                            }.also { openedStream = it }
-                        } catch (error: SteamDepotAccessException) {
-                            // A restored credential can unlock the depot on the retry pass.
-                            lastError = error
-                            if (attempt + 1 >= VIDEO_STREAM_OPEN_ATTEMPTS) {
-                                throw error
-                            }
-                            delay(VIDEO_STREAM_RETRY_DELAY_MS)
-                        }
-                    }
-                    throw lastError ?: IllegalStateException("Steam video stream could not be opened")
+                    val sdkSession = openSdkVideoStream(target)
+                    openedStream = sdkSession
+                    return@withContext sdkSession
                 }.also { openedStream = null }
             } finally {
                 openedStream?.close()
@@ -209,33 +177,4 @@ private class CoordinatedVideoStreamSession(
     }
 }
 
-/**
- * The two implementations of [WorkshopVideoStreamRepository]'s playback source this build can choose
- * between.
- */
-internal enum class WorkshopVideoStreamPath {
-    /** The direct-link fast path and the kSteam + `wallhub-rust` depot chunks: the default path. */
-    DIRECT_LINK_AND_WALLHUB_RUST,
-
-    /** The Steam Content SDK resolves the item and serves every range of the file itself. */
-    STEAM_CONTENT_SDK,
-}
-
-/**
- * The single decision point for one playback stream.
- *
- * `wallhub.useSdkRangeStream` (surfaced as `BuildConfig.USE_SDK_RANGE_STREAM`) stays off by default, so
- * the unchecked value selects the existing direct-link and depot-chunk path byte for byte. The repository
- * routes through this one expression rather than testing the flag itself, so a later comparison and the
- * deletion of the old arm touch this one place.
- */
-internal fun selectWorkshopVideoStreamPath(useSdkRangeStream: Boolean): WorkshopVideoStreamPath =
-    if (useSdkRangeStream) {
-        WorkshopVideoStreamPath.STEAM_CONTENT_SDK
-    } else {
-        WorkshopVideoStreamPath.DIRECT_LINK_AND_WALLHUB_RUST
-    }
-
-private const val VIDEO_STREAM_OPEN_ATTEMPTS = 3
-private const val VIDEO_STREAM_RETRY_DELAY_MS = 750L
 private const val STREAM_CACHE_DIRECTORY = "steam-video-stream"

@@ -16,12 +16,6 @@
     *** Companion;
 }
 
-# kSteam persists protocol models through kotlinx.serialization and Wire reflection.
--keep class bruhcollective.itaysonlab.ksteam.** { *; }
--keep class steam.** { *; }
--dontwarn bruhcollective.itaysonlab.ksteam.**
--dontwarn steam.**
-
 # The app-owned ETC2 encoder resolves this native method from libwallhub_etc2.so; R8 must
 # not rename it or remove the class that declares it.
 -keep class com.wallhub.prototype.mpkg.Etc2Compressor { *; }

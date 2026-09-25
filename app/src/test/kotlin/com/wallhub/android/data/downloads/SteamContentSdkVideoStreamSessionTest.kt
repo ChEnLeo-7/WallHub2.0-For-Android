@@ -65,22 +65,6 @@ private class FakeRangeSession : SteamContentSdkSession {
 
 class SteamContentSdkVideoStreamSessionTest {
     @Test
-    fun theDefaultFlagSelectsTheDirectLinkAndWallHubRustPath() {
-        assertEquals(
-            WorkshopVideoStreamPath.DIRECT_LINK_AND_WALLHUB_RUST,
-            selectWorkshopVideoStreamPath(useSdkRangeStream = false),
-        )
-    }
-
-    @Test
-    fun theOptInFlagSelectsTheSteamContentSdkPath() {
-        assertEquals(
-            WorkshopVideoStreamPath.STEAM_CONTENT_SDK,
-            selectWorkshopVideoStreamPath(useSdkRangeStream = true),
-        )
-    }
-
-    @Test
     fun aReadForwardsTheRangeToTheSdkStream() =
         runBlocking {
             val fixture = fixture(contentLength = 100L)

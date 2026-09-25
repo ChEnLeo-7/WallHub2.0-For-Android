@@ -27,9 +27,6 @@ val signDebugWithRelease =
     providers.gradleProperty("wallhub.signDebugWithRelease").orNull == "true"
 val publishAbiApks = providers.gradleProperty("wallhub.publishAbiApks").orNull == "true"
 val requireReleaseSigning = providers.gradleProperty("wallhub.requireReleaseSigning").orNull == "true"
-val useSdkDepotCore = providers.gradleProperty("wallhub.useSdkDepotCore").orNull == "true"
-val useSdkSession = providers.gradleProperty("wallhub.useSdkSession").orNull == "true"
-val useSdkRangeStream = providers.gradleProperty("wallhub.useSdkRangeStream").orNull == "true"
 
 fun loadReleaseCertificate(): X509Certificate {
     val keyStoreFile = file(requireNotNull(releaseStoreFile))
@@ -99,9 +96,6 @@ android {
         versionCode = 35
         versionName = "0.8.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("boolean", "USE_SDK_DEPOT_CORE", useSdkDepotCore.toString())
-        buildConfigField("boolean", "USE_SDK_SESSION", useSdkSession.toString())
-        buildConfigField("boolean", "USE_SDK_RANGE_STREAM", useSdkRangeStream.toString())
 
         javaCompileOptions {
             annotationProcessorOptions {
@@ -211,10 +205,8 @@ dependencies {
     implementation(libs.javax.inject)
     implementation(libs.json)
     implementation(libs.ktor.client.okhttp)
-    // kSteam protocol engine: the sole Steam client implementation after the JavaSteam removal.
-    implementation(libs.ksteam.core)
-    // Steam Content SDK: opt-in depot backend behind the existing DepotDownloader contract.
-    // The AAR is a local, gitignored preview published from the SDK repository.
+    // Steam Content SDK: the app's Steam session, Workshop, and content backend. The AAR is a local,
+    // gitignored preview published from the SDK repository.
     implementation("io.steamcontent.sdk:sc-content-android-preview:0.1.34")
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)

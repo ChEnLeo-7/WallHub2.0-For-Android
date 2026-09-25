@@ -1,23 +1,17 @@
 package com.wallhub.android.di
 
 import android.content.Context
-import android.util.Log
-import com.wallhub.android.BuildConfig
 import com.wallhub.android.core.model.DiagnosticRepository
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.data.steam.AndroidSteamContentSdkSessionMessages
 import com.wallhub.android.data.steam.EncryptedSteamCredentialStore
-import com.wallhub.android.data.steam.KSteamSessionRepository
 import com.wallhub.android.data.steam.SteamContentSdkEngine
-import com.wallhub.android.data.steam.SteamDeviceSeedStore
 import com.wallhub.android.data.steam.SteamContentSdkEnginePlatform
 import com.wallhub.android.data.steam.SteamContentSdkPlatform
 import com.wallhub.android.data.steam.SteamContentSdkRouteFactory
 import com.wallhub.android.data.steam.SteamContentSdkSessionBackend
 import com.wallhub.android.data.steam.SteamContentSdkSessionMessages
-import com.wallhub.android.data.steam.SteamSessionBackend
-import com.wallhub.android.data.steam.SteamSessionBackendRouter
-import dagger.Lazy
+import com.wallhub.android.data.steam.SteamDeviceSeedStore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -33,27 +27,20 @@ import kotlinx.coroutines.SupervisorJob
  * The SDK session backend needs its own platform engine.
  *
  * [SteamContentSdkEngine] owns one session at a time and `open` replaces it, and the download path already
- * holds the application-wide instance. A separate instance for the session domain keeps enabling
- * `wallhub.useSdkSession` and `wallhub.useSdkDepotCore` together from having one consumer close the other's
- * session.
+ * holds the application-wide instance. A separate instance for the session domain keeps a download from
+ * closing the session the sign-in flow is holding open.
  */
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.FUNCTION, AnnotationTarget.VALUE_PARAMETER)
 internal annotation class SteamSessionSdkEngine
 
-/** Marks the SDK session repository so the router can receive it alongside the kSteam one. */
-@Qualifier
-@Retention(AnnotationRetention.BINARY)
-@Target(AnnotationTarget.FUNCTION, AnnotationTarget.VALUE_PARAMETER)
-internal annotation class SteamSessionSdkBackend
-
 /**
- * Wires the session backend decision point.
+ * Wires the session backend.
  *
- * The SDK backend is injected as a [Lazy], so with `wallhub.useSdkSession` off (the default) the graph
- * serves [KSteamSessionRepository] exactly as before and never builds the SDK backend or its engine. With
- * the flag on, the SDK backend and nothing else answers the session contract.
+ * The SDK backend is the only session implementation: kSteam's repository, its encrypted persistence
+ * driver, and the router that chose between them are gone, so [SteamSessionRepository] resolves to this
+ * backend and nothing selects a backend at build time any more.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -87,8 +74,7 @@ internal object SteamSessionBackendModule {
 
     @Provides
     @Singleton
-    @SteamSessionSdkBackend
-    internal fun provideSteamSessionSdkBackend(
+    internal fun provideSteamSessionRepository(
         platform: SteamContentSdkPlatform,
         credentialStore: EncryptedSteamCredentialStore,
         messages: SteamContentSdkSessionMessages,
@@ -101,19 +87,4 @@ internal object SteamSessionBackendModule {
             diagnostics = diagnostics,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
         )
-
-    @Provides
-    @Singleton
-    internal fun provideSteamSessionRepository(
-        kSteam: KSteamSessionRepository,
-        @SteamSessionSdkBackend sdk: Lazy<SteamSessionRepository>,
-    ): SteamSessionRepository {
-        val router = SteamSessionBackendRouter(kSteam, sdk::get, BuildConfig.USE_SDK_SESSION)
-        Log.i(
-            "WallHubSteamSession",
-            "session backend selected=" +
-                if (router.backend == SteamSessionBackend.STEAM_CONTENT_SDK) "steam-content-sdk" else "ksteam",
-        )
-        return router
-    }
 }

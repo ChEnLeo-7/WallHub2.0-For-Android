@@ -1,6 +1,5 @@
 package com.wallhub.android
 
-import android.os.SystemClock
 import android.util.Log
 import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.AppUpdateRepository
@@ -14,23 +13,20 @@ import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.SteamPlaytimeRepository
-import com.wallhub.android.core.model.SteamProtocolClient
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.WorkshopRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.data.diagnostics.FileDiagnosticRepository
 import com.wallhub.android.data.discover.HttpOfficialDiscoverMetadataRepository
-import com.wallhub.android.data.downloads.HybridDepotDownloader
 import com.wallhub.android.data.downloads.LocalWallpaperFileRepository
 import com.wallhub.android.data.downloads.RoomDownloadTaskRepository
-import com.wallhub.android.data.downloads.RustDepotDownloader
 import com.wallhub.android.data.downloads.SteamContentSdkDepotDownloader
 import com.wallhub.android.data.downloads.SteamContentSdkEngineSessionOpener
 import com.wallhub.android.data.downloads.SteamContentSdkSessionOpener
 import com.wallhub.android.data.downloads.SteamWorkshopVideoStreamRepository
 import com.wallhub.android.data.settings.DataStoreSettingsRepository
-import com.wallhub.android.data.steam.KSteamSessionRepository
 import com.wallhub.android.data.steam.SteamContentSdkCredentialProvider
+import com.wallhub.android.data.steam.SteamContentSdkWorkshopRepository
 import com.wallhub.android.data.steamaccess.SteamAccessManager
 import com.wallhub.android.data.update.GitHubAppUpdateRepository
 import com.wallhub.android.data.workshop.CommunityWorkshopRepository
@@ -60,15 +56,6 @@ internal abstract class RepositoryModule {
     abstract fun bindLauncherIconController(controller: AndroidLauncherIconController): LauncherIconController
 
     /**
-     * Exposes the kSteam session as the engine-neutral protocol seam. The singleton instance is shared
-     * with the other kSteam contract bindings; only the session lifecycle is routed by
-     * `SteamSessionBackendModule`.
-     */
-    @Binds
-    @Singleton
-    abstract fun bindSteamProtocolClient(repository: KSteamSessionRepository): SteamProtocolClient
-
-    /**
      * The SDK download path's session opener. It reads the same platform hook and route factory the
      * engine already exposes; binding it here keeps the transfer itself free of SDK/native types.
      */
@@ -80,55 +67,37 @@ internal abstract class RepositoryModule {
 
     companion object {
         /**
-         * Depot engine routing after the JavaSteam removal. The hybrid wrapper keeps its failure
-         * accounting and re-probe behaviour around whichever engine the opt-in flag selects, so
-         * switching backends is one build property rather than a code change.
-         */
-        /**
-         * Content-credential routing after the session migration.
+         * The content credential the download and range arms present.
          *
-         * With `wallhub.useSdkSession` off (the default) this is kSteam's live account token, exactly as
-         * before. With it on, the SDK owns the session and its retained token is the one the download and
-         * range arms must present, so the credential comes from the store the SDK writes.
+         * The SDK owns the session, so its retained token is the one those arms must use, and it comes from
+         * the store the SDK writes. The line is kept because a device reading names the store that served a
+         * run without exposing any part of the token.
          */
         @Provides
         @Singleton
         internal fun provideSteamContentCredentialProvider(
-            kSteam: KSteamSessionRepository,
             sdk: SteamContentSdkCredentialProvider,
         ): SteamContentCredentialProvider {
-            val useSdkSession = BuildConfig.USE_SDK_SESSION
             Log.i(
                 "WallHubSteamSession",
-                "content credential selected=" +
-                    if (useSdkSession) "steam-content-sdk-store" else "ksteam",
+                "content credential selected=steam-content-sdk-store",
             )
-            return if (useSdkSession) sdk else kSteam
+            return sdk
         }
 
         @Provides
         @Singleton
         internal fun provideDepotDownloader(
             sdkEngine: SteamContentSdkDepotDownloader,
-            rustEngine: RustDepotDownloader,
-            diagnostics: DiagnosticRepository,
         ): DepotDownloader {
-            val useSdkEngine = BuildConfig.USE_SDK_DEPOT_CORE
-            Log.i(
-                "WallHubSdkDepot",
-                "depot engine selected=${if (useSdkEngine) "steam-content-sdk" else "wallhub-rust"}",
-            )
-            return HybridDepotDownloader(
-                if (useSdkEngine) sdkEngine else rustEngine,
-                diagnostics,
-                SystemClock::elapsedRealtime,
-            )
+            Log.i("WallHubSdkDepot", "depot engine selected=steam-content-sdk")
+            return sdkEngine
         }
     }
 
     @Binds
     @Singleton
-    abstract fun bindSteamPlaytimeRepository(repository: KSteamSessionRepository): SteamPlaytimeRepository
+    abstract fun bindSteamPlaytimeRepository(repository: SteamContentSdkWorkshopRepository): SteamPlaytimeRepository
 
     @Binds
     @Singleton
@@ -136,11 +105,13 @@ internal abstract class RepositoryModule {
 
     @Binds
     @Singleton
-    abstract fun bindAccountWorkshopRepository(repository: KSteamSessionRepository): AccountWorkshopRepository
+    abstract fun bindAccountWorkshopRepository(repository: SteamContentSdkWorkshopRepository): AccountWorkshopRepository
 
     @Binds
     @Singleton
-    abstract fun bindSteamUnifiedWorkshopRepository(repository: KSteamSessionRepository): SteamUnifiedWorkshopRepository
+    abstract fun bindSteamUnifiedWorkshopRepository(
+        repository: SteamContentSdkWorkshopRepository,
+    ): SteamUnifiedWorkshopRepository
 
     @Binds
     @Singleton

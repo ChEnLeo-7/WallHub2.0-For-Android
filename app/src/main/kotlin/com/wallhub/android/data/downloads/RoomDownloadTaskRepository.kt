@@ -116,14 +116,10 @@ internal class RoomDownloadTaskRepository
                 preferences.downloadProxyUrl
                     .takeIf { preferences.downloadProxyEnabled }
                     .orEmpty()
-            val (target, credential) =
-                resolveDownloadTargetAndCredential(
-                    fetchTarget = { steamWorkshopContentClient.fetchContentTarget(workshopId, proxyUrl) },
-                    resolveCredential = credentialProvider::resolveContentCredential,
-                )
-            if (target.fileUrl.isBlank()) {
-                steamWorkshopContentClient.prewarmContentAccess(target, credential)
-            }
+            // What is worth warming is this client's target cache: the download worker's first step is the
+            // same read. The depot side needs no warm-up here, because the Steam Content SDK resolves the
+            // item and completes its own key/token handoff inside the task that downloads it.
+            steamWorkshopContentClient.fetchContentTarget(workshopId, proxyUrl)
         }
 
         override suspend fun requestAction(

@@ -8,6 +8,12 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Whether a chunk request is playback-critical or speculative; the governor wakes the foreground first. */
+internal enum class SteamStreamChunkPriority {
+    FOREGROUND,
+    PREFETCH,
+}
+
 @Singleton
 class DownloadConcurrencyGovernor
     @Inject

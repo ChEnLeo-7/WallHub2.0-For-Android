@@ -1,6 +1,5 @@
 package com.wallhub.android.data.downloads
 
-import java.io.Closeable
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.async
@@ -159,48 +158,6 @@ class SteamRemoteVideoStreamTest {
         assertEquals(3, gateway.fetches.get())
     }
 
-    @Test
-    fun accessCacheIsClientScopedAndCopiesDepotKeys() = runBlocking {
-        val cache = SteamContentAccessCache()
-        val firstClient = Any()
-        val secondClient = Any()
-        var depotLoads = 0
-        var keyLoads = 0
-
-        assertEquals(7, cache.depotId(firstClient, 431960) { depotLoads += 1; 7 })
-        assertEquals(7, cache.depotId(firstClient, 431960) { depotLoads += 1; 8 })
-        assertEquals(8, cache.depotId(secondClient, 431960) { depotLoads += 1; 8 })
-        assertEquals(2, depotLoads)
-
-        val first = cache.depotKey(firstClient, 431960, 7) { keyLoads += 1; byteArrayOf(1, 2, 3) }
-        first[0] = 9
-        val second = cache.depotKey(firstClient, 431960, 7) { keyLoads += 1; byteArrayOf(4) }
-        assertEquals(listOf<Byte>(1, 2, 3), second.toList())
-        assertNotSame(first, second)
-        assertEquals(1, keyLoads)
-    }
-
-    @Test
-    fun cdnDirectoryCacheExpiresAndIsClientScoped() = runBlocking {
-        var now = 1_000L
-        val cache = SteamContentAccessCache { now }
-        val firstClient = Any()
-        val secondClient = Any()
-        var loads = 0
-        val load = suspend {
-            loads += 1
-            listOf(CdnServer("cdn-$loads.example", "cdn-$loads.example", 443, true))
-        }
-
-        assertEquals("cdn-1.example", cache.cdnServers(firstClient, 12, load).single().host)
-        assertEquals("cdn-1.example", cache.cdnServers(firstClient, 12, load).single().host)
-        assertEquals("cdn-2.example", cache.cdnServers(secondClient, 12, load).single().host)
-        now += 5 * 60 * 1_000L + 1
-        assertEquals("cdn-3.example", cache.cdnServers(firstClient, 12, load).single().host)
-        cache.invalidateCdnDirectories()
-        assertEquals("cdn-4.example", cache.cdnServers(firstClient, 12, load).single().host)
-        assertEquals(4, loads)
-    }
 }
 
 private class CountingWorkshopContentGateway(
@@ -226,5 +183,4 @@ private class CountingWorkshopContentGateway(
         onProgress: suspend (SteamDownloadProgress) -> Unit,
     ): SteamContentDownloadResult = error("Not used")
 
-    override suspend fun acquireContentTransportLease(): Closeable = Closeable {}
 }

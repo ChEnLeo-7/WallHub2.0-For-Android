@@ -1,7 +1,6 @@
 package com.wallhub.android.data.steam
 
 import android.content.Context
-import bruhcollective.itaysonlab.ksteam.models.SteamId
 import com.wallhub.android.data.security.AndroidKeystoreEncryptedStringStore
 import com.wallhub.android.data.security.EncryptedStringReadResult
 import com.wallhub.android.data.security.EncryptedStringStore
@@ -129,15 +128,3 @@ internal data class SteamProfile(
     val displayName: String,
     val avatarUrl: String? = null,
 )
-
-/**
- * Extracts the SteamID64 from a Steam refresh token's JWT `sub` claim so legacy
- * (JavaSteam-era) credentials can be migrated into kSteam per-account storage.
- */
-internal fun steamIdFromRefreshToken(token: String): SteamId? =
-    runCatching {
-        val payload = token.split('.').getOrNull(1).orEmpty()
-        val json = String(Base64.getUrlDecoder().decode(payload), Charsets.UTF_8)
-        val sub = org.json.JSONObject(json).optString("sub").orEmpty()
-        sub.toULongOrNull()?.let(::SteamId)
-    }.getOrNull()

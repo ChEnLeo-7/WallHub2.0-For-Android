@@ -26,7 +26,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
@@ -180,7 +179,6 @@ class FormalWorkshopDownloadWorker
                 }
                 ActiveFormalWorkshopDownloadWorkers.markActive(taskId)
                 var stagingDirectory: File? = null
-                var contentTransportLease: java.io.Closeable? = null
                 try {
                     // No setForeground() here: this ROM treats the WorkManager FGS as
                     // typeless and force-stops it after ~4 seconds, which cancelled the
@@ -222,9 +220,6 @@ class FormalWorkshopDownloadWorker
                                 },
                                 resolveCredential = credentialProvider::resolveContentCredential,
                             )
-                        if (target.fileUrl.isBlank()) {
-                            contentTransportLease = steamWorkshopContentClient.acquireContentTransportLease()
-                        }
                         val directDownload = target.fileUrl.isNotBlank()
                         if (!directDownload && task.credentialMode == DownloadCredentialMode.LEGACY_UNKNOWN.name) {
                             persist(
@@ -510,7 +505,6 @@ class FormalWorkshopDownloadWorker
                     )
                     Result.success()
                 } finally {
-                    contentTransportLease?.close()
                     ActiveFormalWorkshopDownloadWorkers.markInactive(taskId)
                 }
             }

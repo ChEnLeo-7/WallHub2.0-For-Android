@@ -38,6 +38,7 @@ import io.steamcontent.sdk.WorkshopResult
 import io.steamcontent.sdk.WorkshopTextField
 import io.steamcontent.sdk.WorkshopTrendWindow
 import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -102,10 +103,10 @@ private data class SdkCommentRow(
 /**
  * The Steam Content SDK as this app's public and account Workshop reader.
  *
- * It serves the same contracts the kSteam implementation serves - [SteamUnifiedWorkshopRepository],
- * [AccountWorkshopRepository], and [SteamPlaytimeRepository] - so repointing a binding is a wiring change
- * rather than a domain change. Every value is built here exactly as
- * [mapUnifiedWorkshopDetail] and `PublishedFileDetails.toWorkshopSummary` build it for the same data,
+ * It serves the contracts [SteamUnifiedWorkshopRepository], [AccountWorkshopRepository], and
+ * [SteamPlaytimeRepository], and it is now their only implementation: the kSteam mapper this class was
+ * written to match field for field has been deleted, and the equality it was built for is what the device
+ * parity readings compare. Every value is built here the way that mapper built it for the same data,
  * including the enum and state mapping and the epoch-**seconds** timestamps, because the SDK reports
  * milliseconds.
  *
@@ -115,9 +116,12 @@ private data class SdkCommentRow(
  * interaction for one it does not, and no throw ever crosses this class but the caller's own invalid input.
  *
  * The acting account comes from the SDK session (ADR 0034), so this class holds no credential store and
- * parses no token. This class is deliberately not bound into the dependency graph yet. The contracts still
- * resolve to kSteam, so nothing in the app behaves differently while this unit is reviewed.
+ * parses no token. `RepositoryModule` binds all three contracts to this class, so the Workshop reads the
+ * product performs are served by the SDK rather than by kSteam; the last adapter-level capability gaps it
+ * inherited (the thread owner, the comment ordering, and the Voted collection) are now recorded as parity
+ * rather than as gaps at their call sites.
  */
+@Singleton
 internal class SteamContentSdkWorkshopRepository
     @Inject
     constructor(
@@ -214,16 +218,20 @@ internal class SteamContentSdkWorkshopRepository
                 require(ownerId.toULongOrNull()?.let { it > 0uL } == true) { "Invalid Workshop author ID" }
                 val pageStart = start.coerceAtLeast(0)
                 val pageCount = count.coerceIn(1, MAX_SDK_COMMENT_PAGE_SIZE)
-                // GAP(comment owner): the SDK request carries no owner at all - "comments take no
-                // authorization of their own" - so the owner id is only the caller-side thread label kSteam
-                // sends as the request's steamid.
+                // The thread owner is not a caller input here, and it does not need to be: the SDK's
+                // `CommunityGetCommentThreadRequest.steam_id` is documented as "the account that owns the
+                // thread; for a Workshop item, its author", and the session provider fills it from the item's
+                // own details before it reads the thread. kSteam had to be handed the same value by the
+                // caller; both end up sending the item's author as the thread key.
                 runCatchingUnavailable {
                     mutex.withLock {
                         val page =
                             engine.workshopComments(
                                 itemId = workshopId,
-                                // GAP(comments order): the SDK request carries no caller order, so its default
-                                // NEWEST_FIRST is the only reading; kSteam passes no order either.
+                                // kSteam's request carries no ordering field, so the service's newest-first
+                                // default answered it. The SDK names that ordering explicitly instead -
+                                // `CommentSort::NewestFirst` clears the request's `oldest_first` flag - so the
+                                // two paths ask for the same page.
                                 sort = WorkshopCommentSort.NEWEST_FIRST,
                                 pageSize = pageCount,
                                 pageOffset = pageStart,
@@ -245,10 +253,9 @@ internal class SteamContentSdkWorkshopRepository
                     runCatchingUnavailable {
                         val accountId =
                             signedInAccountId() ?: error("No signed-in Steam account is available")
-                        // GAP(browseCollection list): the SDK has no "voted" personal list, so that collection
-                        // answers the empty page below rather than another account's list.
+                        // Every app collection has an SDK list, so this mapping has no absent case: a
+                        // collection the product shows is never answered by producing another list's items.
                         val list = query.collection.sdkPersonalList()
-                            ?: error("The Steam Content SDK has no personal list for this collection")
                         val normalized = query.normalizedForSdk()
                         mutex.withLock {
                             val page =
@@ -479,7 +486,7 @@ internal class SteamContentSdkWorkshopRepository
                         tags = readPageTags(page, index, fields),
                         profile = fields.authorIdOrNull()?.let(profiles::get),
                         // A page row has no resolved creator behind it, so the id-bearing placeholder stands
-                        // in exactly as `PublishedFileDetails.toWorkshopSummary` leaves it.
+                        // in, exactly as the removed kSteam summary mapper left it.
                         unresolvedPlaceholder = WorkshopAuthorPlaceholder.USER_WITH_ID,
                     )
                 }
@@ -792,14 +799,14 @@ private fun WorkshopSort.sdkSort(): Int =
 private fun Long.toWorkshopType(): WorkshopType =
     if (this == WorkshopContentType.VIDEO.toLong()) WorkshopType.VIDEO else WorkshopType.UNKNOWN
 
-/** Maps the app's collection onto the SDK's personal list; the voted list has no SDK ordinal. */
-private fun AccountWorkshopCollection.sdkPersonalList(): Int? =
+/** Maps the app's collection onto the SDK's personal list, one to one. */
+private fun AccountWorkshopCollection.sdkPersonalList(): Int =
     when (this) {
         AccountWorkshopCollection.SUBSCRIPTIONS -> WorkshopPersonalList.SUBSCRIBED
         AccountWorkshopCollection.FAVORITES -> WorkshopPersonalList.FAVORITED
-        // kSteam reads `type="myvotes"`; the SDK publishes no matching ordinal, and answering with another
-        // list would report the wrong items rather than none.
-        AccountWorkshopCollection.VOTED -> null
+        // The SDK's ordinal is sent as `type = "myvotes"`, which is the selector kSteam used for this same
+        // collection, so the two paths ask the service the same question.
+        AccountWorkshopCollection.VOTED -> WorkshopPersonalList.VOTED
     }
 
 /** A field's number, or zero when the provider could not answer it. */

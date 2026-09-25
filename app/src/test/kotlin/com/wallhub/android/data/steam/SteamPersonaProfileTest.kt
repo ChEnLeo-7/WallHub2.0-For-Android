@@ -35,24 +35,4 @@ class SteamPersonaProfileTest {
         assertEquals("Current name", profile.displayName)
         assertEquals("https://example.com/avatar.jpg", profile.avatarUrl)
     }
-
-    @Test
-    fun `refresh token jwt sub yields the account steam id`() {
-        // sub = 76561197960287930
-        val payload = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
-            """{"sub":"76561197960287930"}""".toByteArray(Charsets.UTF_8),
-        )
-        val token = "header.$payload.signature"
-
-        val steamId = steamIdFromRefreshToken(token)
-
-        assertNotNull(steamId)
-        assertEquals(76561197960287930L, steamId.longId)
-    }
-
-    @Test
-    fun `malformed refresh tokens resolve to no steam id`() {
-        assertNull(steamIdFromRefreshToken("not-a-jwt"))
-        assertNull(steamIdFromRefreshToken("header.!!!invalid!!!.signature"))
-    }
 }

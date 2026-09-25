@@ -12,13 +12,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Steam Content SDK depot engine, selected with `-Pwallhub.useSdkDepotCore=true`.
+ * The Steam Content SDK depot engine: this app's only chunk verifier and decoder.
  *
  * The SDK owns the Steam chunk rule - Steam's Adler-32 variant, the depot AES-256 envelope, and the
  * VZstd/LZMA/PKZIP/stored containers - while this adapter only bridges the existing [DepotDownloader]
  * contract onto it. HTTP transport and CDN authorization stay with the application, so the engine declares
  * verification and decode but not [DepotDownloaderCapability.CHUNK_DOWNLOAD]:
- * [SteamContentTransfer] already downloads the encrypted chunk itself and calls [decodeChunk] with it.
+ * [SteamContentSdkWorkshopTransfer] already downloads the encrypted chunk itself and calls [decodeChunk] with it.
  *
  * When the native library cannot be loaded (for example an ABI the preview AAR does not ship yet) the
  * engine reports no capabilities, so the hybrid router treats it as unusable instead of failing silently.

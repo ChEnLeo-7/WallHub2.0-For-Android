@@ -1,6 +1,5 @@
 package com.wallhub.android.data.downloads
 
-import com.wallhub.android.BuildConfig
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import kotlinx.coroutines.Dispatchers
@@ -11,7 +10,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
-import java.io.Closeable
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -21,13 +19,6 @@ import javax.inject.Singleton
 
 /** Separates the externally hosted Steam session from WorkManager task orchestration. */
 internal interface WorkshopContentGateway {
-    suspend fun acquireContentTransportLease(): Closeable = Closeable {}
-
-    suspend fun prewarmContentAccess(
-        target: WorkshopContentTarget,
-        credential: SteamContentCredential?,
-    ) = Unit
-
     suspend fun fetchContentTarget(
         publishedFileId: Long,
         proxyUrl: String,
@@ -45,20 +36,9 @@ internal interface WorkshopContentGateway {
 
 internal class FormalSteamWorkshopContentGateway(
     private val httpClientFactory: SteamHttpClientFactory,
-        private val contentDownloader: SteamContentDownloader,
-        private val transferRouter: WorkshopDownloadTransferRouter,
-        private val playbackCoordinator: PlaybackDownloadCoordinator,
+    private val sdkTransfer: SteamContentSdkWorkshopTransfer,
+    private val playbackCoordinator: PlaybackDownloadCoordinator,
 ) : WorkshopContentGateway {
-    override suspend fun acquireContentTransportLease(): Closeable =
-        contentDownloader.acquireContentTransportLease()
-
-    override suspend fun prewarmContentAccess(
-        target: WorkshopContentTarget,
-        credential: SteamContentCredential?,
-    ) {
-        contentDownloader.prewarmContentAccess(target, credential)
-    }
-
     override suspend fun fetchContentTarget(
         publishedFileId: Long,
         proxyUrl: String,
@@ -85,9 +65,9 @@ internal class FormalSteamWorkshopContentGateway(
                 onFirstChunkCommitted = options.onFirstChunkCommitted,
             )
         }
-        // Manifest-backed items go through the one path decision; direct-file items keep their own
-        // HTTP path because the SDK resolves depot content and has nothing to resolve here.
-        return transferRouter.transfer().download(
+        // Manifest-backed items go through the SDK's own resolution and data plane. Direct-file items keep
+        // the HTTP path above because the SDK resolves depot content and has nothing to resolve here.
+        return sdkTransfer.download(
             target = target,
             destinationDirectory = destinationDirectory,
             credential = credential,
@@ -246,7 +226,7 @@ private suspend fun downloadDirectFile(
     url: String,
     destination: File,
     expectedSize: Long,
-    maxBytes: Long = MAX_MANIFEST_FILE_BYTES,
+    maxBytes: Long = MAX_DIRECT_FILE_BYTES,
     control: suspend () -> SteamDownloadControl,
     playbackCoordinator: PlaybackDownloadCoordinator? = null,
     onChunkCommitted: (suspend () -> Unit)? = null,
@@ -370,19 +350,12 @@ internal class SteamWorkshopContentClient private constructor(
     @Inject
     constructor(
         httpClientFactory: SteamHttpClientFactory,
-        contentDownloader: SteamContentDownloader,
         sdkTransfer: SteamContentSdkWorkshopTransfer,
         playbackCoordinator: PlaybackDownloadCoordinator,
     ) : this(
         FormalSteamWorkshopContentGateway(
             httpClientFactory = httpClientFactory,
-            contentDownloader = contentDownloader,
-            transferRouter =
-                WorkshopDownloadTransferRouter(
-                    legacyTransfer = contentDownloader,
-                    sdkTransfer = sdkTransfer,
-                    useSdkDepotCore = BuildConfig.USE_SDK_DEPOT_CORE,
-                ),
+            sdkTransfer = sdkTransfer,
             playbackCoordinator = playbackCoordinator,
         ),
         System::currentTimeMillis,
@@ -409,17 +382,9 @@ internal class SteamWorkshopContentClient private constructor(
         }
     }
 
-    internal suspend fun prewarmContentAccess(
-        target: WorkshopContentTarget,
-        credential: SteamContentCredential?,
-    ) = gateway.prewarmContentAccess(target, credential)
-
     internal fun invalidateContentTarget(publishedFileId: Long) {
         synchronized(targetCache) { targetCache.remove(publishedFileId) }
     }
-
-    internal suspend fun acquireContentTransportLease(): Closeable =
-        gateway.acquireContentTransportLease()
 
     internal suspend fun download(
         target: WorkshopContentTarget,

@@ -1,5 +1,16 @@
 name: Android CI
 
+# What this workflow can and cannot verify.
+#
+# The app module compiles against the Steam Content SDK's Android preview AAR, which is a local, gitignored
+# artifact published from the sibling SDK repository (`sc-sdk-maven/`, see `settings.gradle.kts`). No package
+# is published anywhere, so a hosted runner cannot resolve it and cannot build or unit-test `:app`. The APK is
+# built on the LAN build worker instead (`/usr/local/bin/request-android-release-build`), which is also where
+# the device-verified artifacts come from.
+#
+# This workflow therefore checks the parts that need no AAR: the app-owned ETC2 native module cross-compiles
+# for every shipped ABI, and the removed Steam backends stay removed.
+
 on:
   push:
     branches: [main]
@@ -14,7 +25,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
+  native-and-boundaries:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,188 +33,38 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
       - uses: android-actions/setup-android@v3
-      - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-36" "build-tools;35.0.0" "ndk;27.0.12077973" >/dev/null
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
-      - name: Cache Rust Android libraries
-        id: rust-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            wallhub-rust/target
-            app/src/main/jniLibs
-          key: rust-android-${{ runner.os }}-${{ hashFiles('wallhub-rust/Cargo.lock', 'wallhub-rust/src/**', 'scripts/build-rust.sh') }}
-      - name: Build Rust depot core
-        if: steps.rust-cache.outputs.cache-hit != 'true'
+      - name: Install the NDK
+        run: sdkmanager "ndk;27.0.12077973" >/dev/null
+      - name: Build the app-owned ETC2 encoder for every ABI
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.0.12077973"
-          export WALLHUB_RUST_SKIP_TESTS=1
-          bash scripts/build-rust.sh
-      - name: Cache patched kSteam
-        id: ksteam-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository/bruhcollective/itaysonlab
-          key: ksteam-r50-group-c6ca6ef389d65c5223b2af9bf422ac830a0a2f32-${{ hashFiles('scripts/patch-ksteam-auth-flow.py') }}
-      - name: Build kSteam into Maven Local
-        if: steps.ksteam-cache.outputs.cache-hit != 'true'
-        env:
-          KSTEAM_PINNED_SHA: c6ca6ef389d65c5223b2af9bf422ac830a0a2f32
-        run: |
-          git clone --depth 1 https://github.com/iTaysonLab/kSteam.git /tmp/ksteam
-          cd /tmp/ksteam
-          if [[ "$(git rev-parse HEAD)" != "$KSTEAM_PINNED_SHA" ]]; then
-            git fetch --depth 1 origin "$KSTEAM_PINNED_SHA"
-            git checkout --quiet FETCH_HEAD
-          fi
-          test "$(git rev-parse HEAD)" = "$KSTEAM_PINNED_SHA"
-          python3 "$GITHUB_WORKSPACE/scripts/patch-ksteam-auth-flow.py"
-          git submodule update --init --depth 1
-          yes | sdkmanager --licenses >/dev/null || true
-          chmod +x gradlew
-          # Regenerate the vendored Wire protos from the pinned Protobufs submodule:
-          # kSteam r50's committed proto tree is inconsistent with its own submodule pin.
-          ./gradlew --no-daemon :proto-common:upgradeProtoFiles
-          # SteamDatabase layout drift: some vendored webui protos reference types defined
-          # outside kSteam's webui-only pipeline. Generate root-scope stub messages for
-          # every unresolvable reference so Wire codegen (and kSteam's hand-written
-          # SteamGrpcClients, which touches every service) stays intact.
-          python3 - <<'PYFIX'
-          import os, re, subprocess
-
-          root = "proto-common/src/commonMain/proto"
-
-          def proto_files():
-              found = []
-              for base, _, names in os.walk(root):
-                  for name in names:
-                      if name.endswith(".proto"):
-                          found.append(os.path.join(base, name))
-              return found
-
-          stub_path = os.path.join(root, "webui", "zz_ci_stubs.proto")
-
-          def existing_stubs():
-              if not os.path.exists(stub_path):
-                  return set()
-              with open(stub_path, encoding="utf-8", errors="ignore") as handle:
-                  return set(re.findall(r"^message ([A-Za-z][A-Za-z0-9_]*) \{", handle.read(), re.M))
-
-          def fix_once():
-              proc = subprocess.run(
-                  ["./gradlew", "--no-daemon", ":proto-common:generateCommonMainProtos", "--stacktrace"],
-                  capture_output=True,
-                  text=True,
-              )
-              output = proc.stdout + proc.stderr
-              changed = 0
-              for target, source in re.findall(r"([\w/]+\.proto) needs to import ([\w/]+\.proto)", output):
-                  path = os.path.join(root, target)
-                  with open(path, encoding="utf-8", errors="ignore") as handle:
-                      text = handle.read()
-                  if ('import "%s";' % source) in text:
-                      continue
-                  lines = text.splitlines(keepends=True)
-                  at = next((index + 1 for index, line in enumerate(lines) if line.startswith("syntax")), 0)
-                  lines[at:at] = ['import "%s";\n' % source]
-                  with open(path, "w", encoding="utf-8") as handle:
-                      handle.writelines(lines)
-                  changed += 1
-              stubbed = existing_stubs()
-              fresh = sorted(set(re.findall(r"unable to resolve \.([A-Za-z][A-Za-z0-9_]*)", output)) - stubbed)
-              if fresh:
-                  with open(stub_path, "a", encoding="utf-8") as handle:
-                      if not stubbed:
-                          handle.write("// CI-generated stubs for SteamDatabase types outside kSteam's webui pipeline.\n")
-                          handle.write('syntax = "proto2";\n\n')
-                      for name in fresh:
-                          handle.write("message %s {}\n" % name)
-                  changed += 1
-              return proc.returncode == 0, changed, output
-
-          for attempt in range(8):
-              ok, changed, output = fix_once()
-              print("proto repair attempt %d: ok=%s fixes=%d" % (attempt, ok, changed))
-              if not ok:
-                  tail = output.splitlines()
-                  for index, line in enumerate(tail):
-                      if re.search(r"error|unable to resolve|needs to import|What went wrong|Caused by|For input string|\.proto", line):
-                          print("GRADLE:", line.strip()[:400])
-              if ok:
-                  break
-              if changed == 0:
-                  raise SystemExit("kSteam proto repair did not converge; see GRADLE lines above")
-          PYFIX
-          ./gradlew --no-daemon publishToMavenLocal
-      - name: Test download startup regressions
-        run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon --build-cache \
-            -Pwallhub.usePatchedKSteam=true \
-            :app:testDebugUnitTest \
-            --tests com.wallhub.android.data.downloads.DownloadRetryRoutingTest \
-            --tests com.wallhub.android.data.downloads.SteamRemoteVideoStreamTest \
-             --tests com.wallhub.android.data.downloads.SteamCdnHttpsTest \
-             --tests com.wallhub.android.data.downloads.SteamDownloadCheckpointTest \
-             --tests com.wallhub.android.feature.downloads.DownloadsFilterTest
-      - name: Require Release signing secrets
-        env:
-          WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
-          WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
-          WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
-          WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
-        run: |
-          missing=0
-          for variable in \
-            WALLHUB_RELEASE_KEYSTORE_BASE64 \
-            WALLHUB_RELEASE_STORE_PASSWORD \
-            WALLHUB_RELEASE_KEY_ALIAS \
-            WALLHUB_RELEASE_KEY_PASSWORD; do
-            if [ -z "${!variable}" ]; then
-              echo "::error::Missing GitHub Actions secret: $variable"
-              missing=1
-            fi
+          bash scripts/build-etc2.sh
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            test -s "app/src/main/jniLibs/$abi/libwallhub_etc2.so"
+            # Exactly one exported symbol: the JNI entry point the Kotlin boundary names.
+            count="$(readelf --dyn-syms --wide "app/src/main/jniLibs/$abi/libwallhub_etc2.so" \
+              | awk '$4 == "FUNC" && $7 != "UND" { n++ } END { print n + 0 }')"
+            test "$count" -eq 1
           done
-          exit "$missing"
-      - name: Restore Release signing keystore
-        env:
-          WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
-          WALLHUB_RELEASE_STORE_FILE: ${{ runner.temp }}/wallhub-release.keystore
+      - name: The removed Steam backends stay removed
         run: |
-          printf '%s' "$WALLHUB_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$WALLHUB_RELEASE_STORE_FILE"
-          test -s "$WALLHUB_RELEASE_STORE_FILE"
-          chmod 600 "$WALLHUB_RELEASE_STORE_FILE"
-      - name: Assemble signed Release APK
-        env:
-          WALLHUB_RELEASE_STORE_FILE: ${{ runner.temp }}/wallhub-release.keystore
-          WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
-          WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
-          WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
-        run: |
-          chmod +x gradlew
-          workers="$(nproc)"
-          ./gradlew --no-daemon --parallel --build-cache --max-workers="$workers" \
-            -Pwallhub.usePatchedKSteam=true \
-            -Pwallhub.requireReleaseSigning=true \
-            :app:assembleRelease
-      - name: Package Release APK artifact
-        run: |
-          mkdir -p artifact
-          cp app/build/outputs/apk/release/app-release.apk artifact/wallhub-release.apk
-          (
-            cd artifact
-            sha256sum wallhub-release.apk > wallhub-release.apk.sha256
-          )
-          printf '%s\n' "$GITHUB_SHA" > artifact/commit-sha.txt
-      - name: Upload signed Release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: wallhub-release-${{ github.sha }}
-          path: artifact/
-          if-no-files-found: error
-          retention-days: 7
+          set -e
+          # No kSteam dependency or source, no product-local Rust depot core, no Rust build step. The prose
+          # comments that record what was removed are not matched: only code-level markers are.
+          ! grep -rIn --exclude-dir=.git \
+            --include='*.kt' --include='*.kts' --include='*.toml' --include='*.properties' \
+            -e 'bruhcollective.itaysonlab.ksteam' -e 'libwallhub_rust' -e 'WallHubRust' \
+            -e 'RustDepotDownloader' -e 'KSteamSessionRepository' .
+          ! test -d wallhub-rust
+          ! test -f scripts/build-rust.sh
+          ! test -f app/src/main/kotlin/com/wallhub/android/data/downloads/SteamContentTransfer.kt
+          ! test -f app/src/main/kotlin/com/wallhub/android/data/downloads/SteamContentDownloader.kt
+          ! test -f app/src/main/kotlin/com/wallhub/android/data/steam/UnifiedWorkshopBrowse.kt
+          # The depot and range paths answer from the SDK, so nothing selects a backend at build time. Only
+          # code and build files are searched, so this workflow and the historical docs cannot match.
+          ! grep -rIn --exclude-dir=.git \
+            --include='*.kt' --include='*.kts' --include='*.toml' --include='*.properties' \
+            -e 'wallhub.useSdk' -e 'BuildConfig.USE_SDK' .
+          # The SDK AAR is the only Steam backend the app links against.
+          grep -q 'io.steamcontent.sdk:sc-content-android-preview' app/build.gradle.kts
