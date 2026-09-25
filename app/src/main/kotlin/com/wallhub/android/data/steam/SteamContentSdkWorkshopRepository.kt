@@ -263,7 +263,9 @@ internal class SteamContentSdkWorkshopRepository
                                     pageSize = normalized.pageSize,
                                     pageOffset = normalized.pageOffset(),
                                 )
-                            page.use { readWorkshopPage(it, normalized.page) }
+                            // A personal row's own state is the list it came from, which is how the removed
+                            // kSteam mapper read it.
+                            page.use { readWorkshopPage(it, normalized.page, query.collection) }
                         }
                     }
                 loaded ?: emptyWorkshopPage(query)
@@ -469,6 +471,7 @@ internal class SteamContentSdkWorkshopRepository
         private fun readWorkshopPage(
             page: SdkWorkshopPage,
             requestedPage: Int,
+            collection: AccountWorkshopCollection? = null,
         ): WorkshopPage {
             val size = page.size()
             val state = page.state()
@@ -485,6 +488,7 @@ internal class SteamContentSdkWorkshopRepository
                         // A page row has no resolved creator behind it, so the id-bearing placeholder stands
                         // in, exactly as the removed kSteam summary mapper left it.
                         unresolvedPlaceholder = WorkshopAuthorPlaceholder.USER_WITH_ID,
+                        collection = collection,
                     )
                 }
             val total = state.total.takeIf { it > 0 }
@@ -498,7 +502,13 @@ internal class SteamContentSdkWorkshopRepository
             )
         }
 
-        /** One summary in the app's model, from rows both the detail and page paths report the same way. */
+        /**
+         * One summary in the app's model, from rows both the detail and page paths report the same way.
+         *
+         * [collection] is the personal list a page row came from, when it came from one: the service reports
+         * counts on such a row, not this account's own state, so the collection is what says the row is
+         * subscribed or favourited - exactly the reading the removed kSteam mapper took.
+         */
         private fun summaryOf(
             fields: SdkSummaryFields,
             title: String,
@@ -506,6 +516,7 @@ internal class SteamContentSdkWorkshopRepository
             tags: List<String>,
             profile: SdkPlayerProfile?,
             unresolvedPlaceholder: WorkshopAuthorPlaceholder,
+            collection: AccountWorkshopCollection? = null,
         ): WorkshopSummary {
             val trimmedTitle = title.trim()
             val creatorId = fields.authorIdOrNull()?.toString()
@@ -518,7 +529,11 @@ internal class SteamContentSdkWorkshopRepository
                 creatorId = creatorId,
                 authorAvatarUrl = profile?.avatarUrl,
                 previewUrl = previewUrl?.trim()?.takeIf(String::isNotBlank),
-                type = fields.at(SdkSummaryFields.CONTENT_TYPE).toWorkshopType(),
+                // The type comes from the item's own tags, which is how the removed kSteam mapper read it
+                // and what the Library's badge and its video play action are gated on; the SDK's mapped
+                // content type is the fallback for a row whose tags the service did not report.
+                type = tags.toWorkshopType().takeIf { it != WorkshopType.UNKNOWN }
+                    ?: fields.at(SdkSummaryFields.CONTENT_TYPE).toWorkshopType(),
                 // The tag text copy ordinals complete TAG_COUNT, so the app's client-side tag filtering sees
                 // the same tags the old path put on the model.
                 tags = tags,
@@ -527,11 +542,20 @@ internal class SteamContentSdkWorkshopRepository
                 // VIEWS is the one row past UPDATED_AT that a page row can answer too (ADR 0033).
                 views = fields.at(SdkSummaryFields.VIEWS).takeIf { it > 0L },
                 // The size travels on the summary now that every read asks the service for the item's
-                // metadata; SUBSCRIBED and FAVOURITED stay details-only, so a page row genuinely cannot
-                // report either interaction state.
+                // metadata.
                 fileSizeBytes = fields.at(SdkSummaryFields.FILE_SIZE).takeIf { it > 0L },
-                subscriptionState = SubscriptionState.UNKNOWN,
-                favoriteState = FavoriteState.UNKNOWN,
+                subscriptionState =
+                    if (collection == AccountWorkshopCollection.SUBSCRIPTIONS) {
+                        SubscriptionState.SUBSCRIBED
+                    } else {
+                        SubscriptionState.UNKNOWN
+                    },
+                favoriteState =
+                    if (collection == AccountWorkshopCollection.FAVORITES) {
+                        FavoriteState.FAVORITED
+                    } else {
+                        FavoriteState.UNKNOWN
+                    },
                 isTitlePlaceholder = trimmedTitle.isEmpty(),
                 authorPlaceholder =
                     when {
@@ -794,10 +818,22 @@ private fun WorkshopSort.sdkSort(): Int =
     }
 
 /**
- * Maps the SDK's content-type ordinal onto the app's type. Only the video ordinal names one, because
- * [WorkshopType] has no other member: the SDK's `WorkshopContentType` now reports the service's own
- * number verbatim, and the Library's video play action is the one thing this type decides.
+ * The type an item's own tags name, taking the same three tags the removed kSteam mapper took.
+ *
+ * Wallpaper Engine publishes one of `Video`, `Scene`, or `Web`/`Website` on every item, and the product's
+ * Library badge and its video play action are gated on this reading rather than on the service's file-type
+ * number, which does not distinguish the three.
  */
+private fun List<String>.toWorkshopType(): WorkshopType =
+    when {
+        any { tag -> tag.equals("Video", ignoreCase = true) } -> WorkshopType.VIDEO
+        any { tag -> tag.equals("Scene", ignoreCase = true) } -> WorkshopType.SCENE
+        any { tag -> tag.equals("Web", ignoreCase = true) || tag.equals("Website", ignoreCase = true) } ->
+            WorkshopType.WEB
+        else -> WorkshopType.UNKNOWN
+    }
+
+/** Maps the SDK's content-type ordinal onto the app's type. Only the video ordinal names one. */
 private fun Long.toWorkshopType(): WorkshopType =
     if (this == WorkshopContentType.VIDEO.toLong()) WorkshopType.VIDEO else WorkshopType.UNKNOWN
 
