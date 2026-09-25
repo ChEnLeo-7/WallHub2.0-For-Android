@@ -504,7 +504,7 @@ internal class SteamContentSdkSessionBackend(
             }
 
             is SteamContentSdkSessionEvent.CommandFailed ->
-                if (handleCommandFailure(event.failure, restore, accountName, hasStoredSession)) {
+                if (handleCommandFailure(event.failure, session, restore, accountName, hasStoredSession)) {
                     releaseSession()
                     true
                 } else {
@@ -657,29 +657,24 @@ internal class SteamContentSdkSessionBackend(
     }
 
     /**
-     * Writes [token] unless the store already holds the same one.
+     * Writes [token] unless the store already holds the same one, and reports what a read-back returns.
      *
      * The compare is against the stored credential, not the one this attempt presented, so a rotated token is
      * written and an unchanged one leaves the store untouched. A store that cannot be read is not treated as
      * empty - the compare is skipped and the token is written, which is the recovery path for a store whose
-     * read failed.
+     * read failed. The read-back is what would make a store that saves and loads a *different* token visible:
+     * the bytes are compared here and only the outcome is recorded, never either value.
      */
     private fun writeRetainedToken(
         accountName: String,
         token: ByteArray,
     ): Boolean =
         try {
-            val stored =
-                (credentialStore.read() as? SteamCredentialReadResult.Value)
-                    ?.credential
-                    ?.refreshToken
-                    ?.toByteArray(Charsets.UTF_8)
+            val stored = readStoredToken()
             val unchanged =
                 try {
                     stored != null && stored.contentEquals(token)
                 } finally {
-                    // The stored value is a second plaintext copy of the same secret; it is zeroed like the
-                    // one taken from the SDK, and neither copy is ever logged or formatted.
                     stored?.fill(0)
                 }
             if (!unchanged) {
@@ -690,11 +685,31 @@ internal class SteamContentSdkSessionBackend(
                     ),
                 )
             }
+            val readBack = readStoredToken()
+            val restoredExactly =
+                try {
+                    readBack != null && readBack.contentEquals(token)
+                } finally {
+                    readBack?.fill(0)
+                }
+            record("credential_roundtrip match=$restoredExactly unchanged=$unchanged")
             true
         } catch (error: Throwable) {
             record("token_persist_failure", error)
             false
         }
+
+    /**
+     * Reads the stored token as bytes, or null when the store holds none this app can read.
+     *
+     * The caller owns the returned copy and zeroes it: it is a second plaintext copy of the same secret, and
+     * neither it nor a formatted form of it is ever logged.
+     */
+    private fun readStoredToken(): ByteArray? =
+        (credentialStore.read() as? SteamCredentialReadResult.Value)
+            ?.credential
+            ?.refreshToken
+            ?.toByteArray(Charsets.UTF_8)
 
     private fun handleLoggedOut(
         revoked: Boolean,
@@ -721,13 +736,30 @@ internal class SteamContentSdkSessionBackend(
 
     private fun handleCommandFailure(
         failure: SteamContentSdkSessionFailure,
+        session: SteamContentSdkPlatformSession,
         restore: Boolean,
         accountName: String?,
         hasStoredSession: Boolean,
     ): Boolean {
         if (failure == SteamContentSdkSessionFailure.NONE) return false
-        return publishAttemptFailure(restore, accountName, hasStoredSession, failure)
+        return publishAttemptFailure(
+            restore,
+            accountName,
+            hasStoredSession,
+            failure,
+            sdkFailureDetail(session),
+        )
     }
+
+    /**
+     * The SDK's own description of the failure behind [session], or null when it reports none.
+     *
+     * The value is the SDK's bounded, sanitised diagnostic, so it is passed on as it stands; a read that fails
+     * on a closed session yields null rather than a second failure. It is what lets a device reading name the
+     * step and the remote result code behind the class instead of only the class.
+     */
+    private fun sdkFailureDetail(session: SteamContentSdkPlatformSession): String? =
+        runCatching { session.lastError() }.getOrNull()?.takeIf { it.isNotBlank() }
 
     /**
      * Publishes the outcome for an attempt failure and returns whether this attempt is over.
@@ -743,9 +775,10 @@ internal class SteamContentSdkSessionBackend(
         accountName: String?,
         hasStoredSession: Boolean,
         failure: SteamContentSdkSessionFailure,
+        sdkDetail: String? = null,
     ): Boolean {
         lastAttemptFailure.set(failure)
-        recordClassifiedFailure(failure, restore)
+        recordClassifiedFailure(failure, restore, sdkDetail)
         when (steamContentSdkFailurePhase(failure)) {
             SteamSessionPhase.EXPIRED -> {
                 clearStoredCredential()
@@ -811,9 +844,16 @@ internal class SteamContentSdkSessionBackend(
         runCatching { credentialStore.clear() }
     }
 
+    /**
+     * Records one stage line.
+     *
+     * [detail] carries a diagnostic the SDK already produced and sanitised; it gets its own attribute so the
+     * stage value stays a short token and nothing that reads the stage has to parse the sentence around it.
+     */
     private fun record(
         stage: String,
         error: Throwable? = null,
+        detail: String? = null,
     ) {
         scope.launch {
             runCatching {
@@ -827,6 +867,7 @@ internal class SteamContentSdkSessionBackend(
                                 put("backend", "steam-content-sdk")
                                 put("stage", stage)
                                 error?.let { put("error", it.javaClass.simpleName) }
+                                detail?.let { put("sdk_detail", it) }
                             },
                     ),
                 )
@@ -839,17 +880,21 @@ internal class SteamContentSdkSessionBackend(
     /**
      * Writes the one device-side line that says how an attempt failure was classified.
      *
-     * The class ordinal and the stage are the whole content: no account name, token, endpoint, or error text.
-     * A local JVM test runs against the Android stub library, where a Log call is not implemented, so a
-     * diagnostic that cannot be written must never change the session outcome.
+     * The class ordinal and the stage are the whole app-side content: no account name, token, endpoint, or error
+     * text. The SDK's own diagnostic is appended when the platform can hand it over, because it names the step
+     * and the remote result code the class was derived from; it is already bounded and sanitised by the SDK and
+     * is recorded under its own attribute. A local JVM test runs against the Android stub library, where a Log
+     * call is not implemented, so a diagnostic that cannot be written must never change the session outcome.
      */
     private fun recordClassifiedFailure(
         failure: SteamContentSdkSessionFailure,
         restore: Boolean,
+        sdkDetail: String?,
     ) {
-        runCatching {
-            Log.i(TAG, "attempt failure class=${failure.ordinal} stage=${restoreStage(restore)}")
-        }
+        val stage = restoreStage(restore)
+        val line = "attempt failure class=${failure.ordinal} stage=$stage"
+        record("attempt_failure class=${failure.ordinal} stage=$stage", detail = sdkDetail)
+        runCatching { Log.i(TAG, sdkDetail?.let { "$line sdk=$it" } ?: line) }
     }
 
     /**

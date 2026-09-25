@@ -396,6 +396,53 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
+    fun theStoredTokenIsReadBackAndComparedWithTheOneTheSdkRetained() =
+        runTest {
+            val fixture = Fixture()
+            val presented = PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 109))
+            fixture.storeCredential(presented)
+            fixture.session.retainedToken = opaqueValue(seed = 113).toByteArray(Charsets.UTF_8)
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+
+            // A store that saves one token and loads another is invisible in the phase, and the failure it
+            // causes lands on the next start. The read-back reports that outcome, never either value.
+            val roundTrip =
+                fixture.diagnostics.events
+                    .mapNotNull { it.attributes["stage"] }
+                    .single { it.startsWith("credential_roundtrip") }
+            assertEquals("credential_roundtrip match=true unchanged=false", roundTrip)
+            assertFalse(roundTrip.contains(presented.refreshToken))
+        }
+
+    @Test
+    fun aClassifiedFailureRecordsTheDiagnosticTheSdkReported() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 127)))
+            fixture.session.lastFailure =
+                "authentication failed during AccessTokenLogon cause=RemoteResult (result=Some(5))"
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.AUTHENTICATION_FAILED)
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+
+            // The class alone cannot say whether a stored token was refused or the attempt never reached the
+            // service; the SDK's own line names the step and the remote result code, and it has to survive the
+            // one hop from the platform hook into the diagnostic record unchanged.
+            val stages = fixture.diagnostics.events.mapNotNull { it.attributes["stage"] }
+            val details = fixture.diagnostics.events.mapNotNull { it.attributes["sdk_detail"] }.single()
+            assertEquals(fixture.session.lastFailure, details)
+            assertTrue(stages.contains("attempt_failure class=2 stage=restore"))
+            assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
+        }
+
+    @Test
     fun logoutCallsTheSdkAndClearsTheStoredSession() =
         runTest {
             val fixture = Fixture()
@@ -542,6 +589,16 @@ class SteamContentSdkSessionBackendTest {
         override fun challengeId(): ByteArray? = pendingChallengeId
 
         override fun refreshToken(): ByteArray? = retainedToken?.copyOf()
+
+        /**
+         * What [SteamContentSdkPlatformSession.lastError] returns for the attempt.
+         *
+         * The real session holds the SDK's own redacted diagnostic of its last failure, so a test that wants a
+         * failure reading to name a cause sets this before the backend runs.
+         */
+        var lastFailure: String? = null
+
+        override fun lastError(): String? = lastFailure
 
         override fun beginAccountLogon(
             accountName: String,

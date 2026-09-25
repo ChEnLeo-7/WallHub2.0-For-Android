@@ -213,6 +213,15 @@ internal interface SteamContentSdkPlatformSession : Closeable {
      */
     fun refreshToken(): ByteArray?
 
+    /**
+     * The SDK's own description of its last failure, or null when it reports none.
+     *
+     * The SDK bounds the text, strips control characters, and redacts it before storing it, so this is a
+     * diagnostic and not credential material: it names the step that failed and, for a remote result, the
+     * result code. Reading it is what turns the class this app assigns a failure into a cause.
+     */
+    fun lastError(): String?
+
     fun beginAccountLogon(
         accountName: String,
         password: ByteArray,
@@ -323,6 +332,9 @@ private class SteamContentSdkEnginePlatformSession(
 
     override fun refreshToken(): ByteArray? =
         runCatching { session.refreshToken() }.getOrNull()
+
+    override fun lastError(): String? =
+        runCatching { session.lastError() }.getOrNull()?.takeIf { it.isNotBlank() }
 
     override fun beginAccountLogon(
         accountName: String,
