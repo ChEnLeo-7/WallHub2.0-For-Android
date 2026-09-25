@@ -203,3 +203,25 @@ never the missing fact - the size came from the item's own field; the type came 
 **Environment.** To reach the Range arm the "SteamKit 在线分块播放" toggle had to be turned on (it defaults
 off); its label still names SteamKit although the implementation is the SDK's. The first resolution took
 about two minutes end to end.
+
+## 2026-09-25 (2) - the Range arm plays, after four SDK defects
+
+The Library's play affordance reaches the SDK, and the SDK now serves the ranges end to end. The readings that
+got there, one build each, each one naming the next stage because the SDK's flattened messages were given
+their inner text along the way:
+
+| Build | Reading | Fix |
+| --- | --- | --- |
+| 0.1.38 | `first-tags=[]` on every personal row; `Steam CM did not return this Workshop item` for items that had tags | the tag field is a repeated record; the codec read it as a string, so the tag validator dropped the whole list |
+| 0.1.39 | `content resolution failed at workshop_details` | the resolution chain's own details read was unscoped; the resolve request now names the App |
+| 0.1.39 | `content resolution failed at manifest_request_code` | one playback resolved its identity three times, asking for three Manifest Request Codes; the SDK now reuses one answer per identity |
+| 0.1.40 | `the range stream could not serve that read` | the stream required a file's chunks in listing order, where a live manifest sends a rotation |
+| 0.1.41 | the same line, after the stream opened | the range plane had the encoded source the download engine wants, while a stream validates against the manifest's checksum and needs decoded bytes |
+
+The final reading: `playback served by=steam-content-sdk app=431960 depot=431960`, ExoPlayer's video decoder
+initialising, `00:15 / 00:30` on the player's own controls, a seek that advanced the picture, and a clean
+release when the screen was left. Start, seek, and cancel are read; a rebuffer was not forced.
+
+The Voted collection still fails (`invalid_input: the request was refused before it was sent`) - a locally
+refused call the SDK's taxonomy does not name precisely enough to diagnose from the device, so it needs a live
+probe of the `myvotes` selector rather than another guess.
