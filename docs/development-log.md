@@ -64,7 +64,7 @@ replaced".
 
 ### Where the current state lives
 
-The SDK repository's [`../../Steam Content SDK/docs/AGENT_HANDOVER.md`](../../Steam%20Content%20SDK/docs/AGENT_HANDOVER.md)
-is the handover document for a new session: snapshot, the device-driven fix chain, the exact build/install/read
+The SDK repository's handover document (`../../Steam Content SDK/docs/AGENT_HANDOVER.md`, i.e.
+`/root/pi/Wallhub-Release-2.0/Steam Content SDK/docs/AGENT_HANDOVER.md`) is the entry point for a new session: snapshot, the device-driven fix chain, the exact build/install/read
 commands, the traps (never `pm clear`; the app is not debuggable, so logcat is the only reading channel), and
 the prioritized remaining work. The SDK's `progress.md` §`CD4c` holds the evidence log for this campaign.
