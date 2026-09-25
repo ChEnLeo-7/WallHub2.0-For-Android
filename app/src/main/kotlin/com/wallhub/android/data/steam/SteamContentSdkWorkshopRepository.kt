@@ -405,14 +405,27 @@ internal class SteamContentSdkWorkshopRepository
         // Reads
         // ------------------------------------------------------------------
 
-        /** Resolves one item's detail, or null when the SDK cannot serve the read. */
-        private suspend fun loadWorkshopDetail(workshopId: Long): WorkshopDetail? =
-            runCatchingUnavailable {
-                require(workshopId > 0L) { "Invalid Workshop item ID" }
-                mutex.withLock {
-                    engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result -> readWorkshopDetail(result) }
+        /**
+         * Resolves one item's detail, or null when the SDK cannot serve the read.
+         *
+         * The item is named on the failure line: the contract's null answer carries no reason, and the SDK's
+         * typed failure is logged with this id so a device reading can tell which item a refusal was about.
+         */
+        private suspend fun loadWorkshopDetail(workshopId: Long): WorkshopDetail? {
+            val detail =
+                runCatchingUnavailable {
+                    require(workshopId > 0L) { "Invalid Workshop item ID" }
+                    mutex.withLock {
+                        engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result ->
+                            readWorkshopDetail(result)
+                        }
+                    }
                 }
+            if (detail == null) {
+                Log.w(TAG, "workshop detail unavailable id=$workshopId")
             }
+            return detail
+        }
 
         /** Builds one detail from a resolved item, reading each field the app model needs once. */
         private fun readWorkshopDetail(result: WorkshopResult): WorkshopDetail {
@@ -500,13 +513,17 @@ internal class SteamContentSdkWorkshopRepository
                 }
             // One line per non-empty page, so a device reading can name what the SDK actually put on its
             // rows (tags, the mapped content type, and the size) without exposing anything but public item
-            // metadata: the same evidence convention the session, depot, and playback paths follow.
+            // metadata: the same evidence convention the session, depot, and playback paths follow. The raw
+            // tag count and content-type ordinal are on the line too, so an untyped row says whether the
+            // service sent no tags or sent tags this adapter could not read.
             if (items.isNotEmpty()) {
                 val first = items.first()
                 Log.i(
                     TAG,
                     "workshop page rows=${items.size} collection=${collection?.name ?: "public"} " +
                         "first-id=${first.id} first-type=${first.type} first-size=${first.fileSizeBytes ?: 0} " +
+                        "first-tag-count=${rows.first().tagCount()} " +
+                        "first-content-type=${rows.first().at(SdkSummaryFields.CONTENT_TYPE)} " +
                         "first-tags=${first.tags.take(MAX_LOGGED_TAGS)}",
                 )
             }
@@ -702,11 +719,18 @@ internal class SteamContentSdkWorkshopRepository
             runCatching { engine.currentSession()?.accountId() }.getOrNull()?.takeIf { it > 0L }
     }
 
-/** Runs an SDK call and answers null when the engine has no provider, no session, or no such operation. */
+/**
+ * Runs an SDK call and answers null when the engine has no provider, no session, or no such operation.
+ *
+ * The typed failure is logged before it becomes null: the contract's null/empty answers carry no reason, so
+ * without this line a failed read is indistinguishable from an absent capability on the device. The text is
+ * the SDK's own redacted error, and it names no credential, token, or URL.
+ */
 private inline fun <T> runCatchingUnavailable(block: () -> T): T? =
     try {
         block()
     } catch (error: IllegalStateException) {
+        Log.w(TAG, "workshop read unavailable: ${error.message}")
         null
     }
 
