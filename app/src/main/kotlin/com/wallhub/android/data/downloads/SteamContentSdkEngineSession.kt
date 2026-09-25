@@ -176,7 +176,7 @@ private class SteamContentSdkEngineSession(
                 manifestId = manifestId,
                 destination = destination,
                 chunkConcurrency = chunkConcurrency,
-            )
+            ) ?: error("The Steam Content SDK did not start a download task")
         return SteamContentSdkEngineTask(task)
     }
 
