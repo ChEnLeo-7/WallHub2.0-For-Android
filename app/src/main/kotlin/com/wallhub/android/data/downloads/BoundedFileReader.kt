@@ -1,6 +1,28 @@
 package com.wallhub.android.data.downloads
 
+import java.io.ByteArrayOutputStream
 import java.io.File
+import kotlin.math.min
+
+/**
+ * Reads a response body into memory without trusting its length: the stream stops being consumed as soon as
+ * the next read would pass [maxBytes], rather than after a size that arrived in a header.
+ */
+internal fun java.io.InputStream.readBytesBounded(maxBytes: Int): ByteArray {
+    require(maxBytes > 0) { "Invalid response byte limit: $maxBytes" }
+    val output = ByteArrayOutputStream(min(8192, maxBytes))
+    val buffer = ByteArray(8192)
+    var total = 0
+    while (true) {
+        val read = read(buffer)
+        if (read < 0) break
+        if (read == 0) continue
+        require(total <= maxBytes - read) { "Steam manifest response exceeds $maxBytes bytes" }
+        output.write(buffer, 0, read)
+        total += read
+    }
+    return output.toByteArray()
+}
 
 fun readBoundedUtf8File(
     file: File,
