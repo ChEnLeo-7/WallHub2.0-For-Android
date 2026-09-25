@@ -119,3 +119,44 @@ The SDK repository's handover document (`../../Steam Content SDK/docs/AGENT_HAND
 `/root/pi/Wallhub-Release-2.0/Steam Content SDK/docs/AGENT_HANDOVER.md`) is the entry point for a new session: snapshot, the device-driven fix chain, the exact build/install/read
 commands, the traps (never `pm clear`; the app is not debuggable, so logcat is the only reading channel), and
 the prioritized remaining work. The SDK's `progress.md` §`CD4c` holds the evidence log for this campaign.
+
+## 2026-09-25 (device run) — the SDK-served Workshop reads, and what the first compile found
+
+The deletion build reached the device (`214dace` + `56ad037`, worker APK `20260925T065921Z-190919415`, SDK AAR
+`0.1.35`) and the same surfaces the old path had been read on were read again. The Android source now compiles
+against the 0.1.35 AAR with no kSteam, no `wallhub-rust` and no `libwallhub_rust.so` in the APK, and the ETC2
+encoder ships for all four ABIs.
+
+**Three defects the run found, all fixed**
+
+1. `videoFileExtension` and `readBytesBounded` were dropped by the deletion; both are extension functions the
+   re-homing scan could not see (`fc7dd9f`, `327db7b`).
+2. `WALLPAPER_ENGINE_APP_ID` had been defined once per package by the deleted files, so two callers lost it;
+   the constant now lives in `core/model` (`214dace`). The same commit deleted `data/steam/wire/DepotProtos.kt`,
+   dead Wire protos that had compiled only because kSteam brought `com.squareup.wire` transitively.
+3. `SteamContentSdkWorkshopRepository` read through the application-wide engine, which holds no session, so the
+   profile answered 0/0/0. It now takes `@SteamSessionSdkEngine` - the engine the session domain authenticated -
+   and the profile answers the same numbers as the old path (`56ad037`).
+
+**Parity, read on the device**
+
+| Surface | Old path (arm A) | SDK (arm B) |
+| --- | --- | --- |
+| Cold-start session restore | `credential_roundtrip match=true` -> `phase_signed_in` | same |
+| Subscriptions / favourites / votes counts | 1 / 239 / 0 | **1 / 239 / 0** |
+| Playtime | 1486 h | **1486 h** |
+| Voted list | error "无法读取个人资料库" | empty list, no error |
+| Subscriptions list | 1 item, 20.4 MB | same item, size "— MB" |
+| Favourites list | 6 items with sizes and type badges | first 5 identical, sizes/badges missing |
+| Detail + comments (community source) | 评论 (47) on one item | 评论 (25) and 评论 (58) on two others |
+| Detail (CM source) | served by kSteam | resolved, but the comments tab has no count |
+| Depot-backed playback | not read | not read |
+
+**Open, and mostly SDK-side**: a personal-list row cannot report file size or content type; the SDK's search
+request omits the `return_*` flags the old path set, so a CM-source browse can return rows with only ids when
+nothing is cached; the CM detail read carries no comment count; and the Range arm was not exercised because
+streaming is triggered from the Library's play affordance, which this run did not reach.
+
+**On the device right now**: the Library's rating filter has one value selected (from this run's taps), so the
+favourites list shows "没有符合条件的收藏" until it is cleared in the filter sheet (`恢复默认` -> `应用筛选`).
+The Workshop data source is back on Steam Community HTML.
