@@ -50,8 +50,8 @@ import kotlinx.coroutines.withContext
  *
  * The slots exist because the SDK reads a page item one field at a time while a details handle reads the same
  * rows through a different entry point; both then build the app model through one mapping. Every ordinal in
- * [ORDINALS] is one the SDK answers on a page row *and* on a details result, which is why `VIEWS` is here and
- * the details-only rows are not.
+ * [ORDINALS] is one the SDK answers on a page row *and* on a details result, which is why `VIEWS` and
+ * `FILE_SIZE` are here and the interaction rows are not.
  */
 private class SdkSummaryFields(
     private val numbers: LongArray,
@@ -73,6 +73,7 @@ private class SdkSummaryFields(
         const val FAVOURITES = 4
         const val TAG_COUNT = 5
         const val VIEWS = 6
+        const val FILE_SIZE = 7
 
         /** The summary rows a resolved item and a page row can both answer. */
         val ORDINALS: IntArray =
@@ -84,6 +85,7 @@ private class SdkSummaryFields(
                 WorkshopItemField.FAVOURITES,
                 WorkshopItemField.TAG_COUNT,
                 WorkshopItemField.VIEWS,
+                WorkshopItemField.FILE_SIZE,
             )
     }
 }
@@ -418,11 +420,10 @@ internal class SteamContentSdkWorkshopRepository
                     // kSteam's details path labels an unresolved creator, not an unresolved user.
                     unresolvedPlaceholder = WorkshopAuthorPlaceholder.CREATOR,
                 )
-            val fileSize = result.field(WorkshopItemField.FILE_SIZE)
             return WorkshopDetail(
                 summary = summary,
                 description = result.text(WorkshopTextField.DESCRIPTION).orEmpty().trim(),
-                fileSizeBytes = fileSize.valueOrZero().takeIf { it > 0L },
+                fileSizeBytes = fields.at(SdkSummaryFields.FILE_SIZE).takeIf { it > 0L },
                 // The SDK publishes one preview URL and no additional-preview list, so the summary's URL is
                 // the only media the app can name.
                 previewMediaUrl = summary.previewUrl,
@@ -525,9 +526,10 @@ internal class SteamContentSdkWorkshopRepository
                 favorites = fields.at(SdkSummaryFields.FAVOURITES).takeIf { it > 0L },
                 // VIEWS is the one row past UPDATED_AT that a page row can answer too (ADR 0033).
                 views = fields.at(SdkSummaryFields.VIEWS).takeIf { it > 0L },
-                // FILE_SIZE stays details-only and the details path reads it directly above; SUBSCRIBED and
-                // FAVOURITED stay details-only as well, so a page row genuinely cannot report either state.
-                fileSizeBytes = null,
+                // The size travels on the summary now that every read asks the service for the item's
+                // metadata; SUBSCRIBED and FAVOURITED stay details-only, so a page row genuinely cannot
+                // report either interaction state.
+                fileSizeBytes = fields.at(SdkSummaryFields.FILE_SIZE).takeIf { it > 0L },
                 subscriptionState = SubscriptionState.UNKNOWN,
                 favoriteState = FavoriteState.UNKNOWN,
                 isTitlePlaceholder = trimmedTitle.isEmpty(),
@@ -791,7 +793,11 @@ private fun WorkshopSort.sdkSort(): Int =
         WorkshopSort.FRIENDS_CREATED -> io.steamcontent.sdk.WorkshopSort.FRIENDS_CREATED
     }
 
-/** Maps the SDK's content-type ordinal onto the app's type; only the video ordinal names one. */
+/**
+ * Maps the SDK's content-type ordinal onto the app's type. Only the video ordinal names one, because
+ * [WorkshopType] has no other member: the SDK's `WorkshopContentType` now reports the service's own
+ * number verbatim, and the Library's video play action is the one thing this type decides.
+ */
 private fun Long.toWorkshopType(): WorkshopType =
     if (this == WorkshopContentType.VIDEO.toLong()) WorkshopType.VIDEO else WorkshopType.UNKNOWN
 
