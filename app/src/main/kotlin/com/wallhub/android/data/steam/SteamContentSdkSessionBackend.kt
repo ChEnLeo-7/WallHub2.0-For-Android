@@ -849,12 +849,25 @@ internal class SteamContentSdkSessionBackend(
      *
      * [detail] carries a diagnostic the SDK already produced and sanitised; it gets its own attribute so the
      * stage value stays a short token and nothing that reads the stage has to parse the sentence around it.
+     * The same line also goes to logcat, because a device reading is taken from there: everything that reaches
+     * this method is already redacted - a stage token, an exception's class name, or a sentence the SDK
+     * sanitised - so the copy adds no material the diagnostic store does not already hold. The log write is
+     * wrapped for the same reason as before: a local JVM test runs against the Android stub library, where
+     * `Log` is not implemented, and a diagnostic that cannot be written must never change the outcome.
      */
     private fun record(
         stage: String,
         error: Throwable? = null,
         detail: String? = null,
     ) {
+        runCatching {
+            val suffix =
+                buildString {
+                    error?.let { append(" error=").append(it.javaClass.simpleName) }
+                    detail?.let { append(" sdk=").append(it) }
+                }
+            Log.i(TAG, if (suffix.isEmpty()) stage else stage + suffix)
+        }
         scope.launch {
             runCatching {
                 diagnostics.record(
@@ -878,13 +891,11 @@ internal class SteamContentSdkSessionBackend(
     private suspend fun <T> withSession(block: () -> T): T = sessionMutex.withLock(action = block)
 
     /**
-     * Writes the one device-side line that says how an attempt failure was classified.
+     * Writes the one line that says how an attempt failure was classified.
      *
      * The class ordinal and the stage are the whole app-side content: no account name, token, endpoint, or error
-     * text. The SDK's own diagnostic is appended when the platform can hand it over, because it names the step
-     * and the remote result code the class was derived from; it is already bounded and sanitised by the SDK and
-     * is recorded under its own attribute. A local JVM test runs against the Android stub library, where a Log
-     * call is not implemented, so a diagnostic that cannot be written must never change the session outcome.
+     * text. The SDK's own diagnostic is passed as the detail when the platform can hand it over, because it
+     * names the step and the remote result code the class was derived from.
      */
     private fun recordClassifiedFailure(
         failure: SteamContentSdkSessionFailure,
@@ -892,9 +903,7 @@ internal class SteamContentSdkSessionBackend(
         sdkDetail: String?,
     ) {
         val stage = restoreStage(restore)
-        val line = "attempt failure class=${failure.ordinal} stage=$stage"
-        record("attempt_failure class=${failure.ordinal} stage=$stage", detail = sdkDetail)
-        runCatching { Log.i(TAG, sdkDetail?.let { "$line sdk=$it" } ?: line) }
+        record("attempt failure class=${failure.ordinal} stage=$stage", detail = sdkDetail)
     }
 
     /**

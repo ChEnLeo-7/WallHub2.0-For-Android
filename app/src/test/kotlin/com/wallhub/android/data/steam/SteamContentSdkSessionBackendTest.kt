@@ -438,7 +438,7 @@ class SteamContentSdkSessionBackendTest {
             val stages = fixture.diagnostics.events.mapNotNull { it.attributes["stage"] }
             val details = fixture.diagnostics.events.mapNotNull { it.attributes["sdk_detail"] }.single()
             assertEquals(fixture.session.lastFailure, details)
-            assertTrue(stages.contains("attempt_failure class=2 stage=restore"))
+            assertTrue(stages.contains("attempt failure class=2 stage=restore"))
             assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
         }
 
