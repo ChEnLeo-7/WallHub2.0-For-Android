@@ -119,7 +119,7 @@
     <string name='settings_action_download'>下载</string>
     <string name='settings_action_play'>播放</string>
     <string name='settings_action_open_steam'>Steam</string>
-    <string name='settings_streaming_cache'>SteamKit 在线播放缓存</string>
+    <string name='settings_streaming_cache'>Steam 在线播放缓存</string>
     <string name='settings_streaming_cache_description'>限制在线播放的已解密 Steam 分块缓存；默认 512 MB。</string>
     <string name='settings_clear_streaming_cache'>清理在线播放缓存</string>
     <string name='settings_streaming_cache_cleared'>已清理 %1$s 在线播放缓存</string>
@@ -198,7 +198,7 @@
     <string name='settings_experimental_notice_title'>实验功能可能改变网络与播放行为</string>
     <string name='settings_experimental_notice_description'>遇到稳定性问题时，可关闭相关开关恢复默认流程。</string>
     <string name='settings_online_playback_title'>在线播放</string>
-    <string name='settings_steamkit_chunk_streaming'>SteamKit 在线分块播放</string>
+    <string name='settings_steamkit_chunk_streaming'>Steam 在线分块播放</string>
     <string name='settings_steamkit_chunk_streaming_description'>开启后直接从 Steam 分块播放；关闭后先下载再播放</string>
     <string name='settings_system_permissions_title'>系统权限</string>
     <string name='settings_background_task_notifications'>后台任务通知</string>
@@ -582,9 +582,9 @@
     <string name='detail_mute'>静音</string>
     <string name='detail_no_comments'>暂时没有评论</string>
     <string name='detail_no_description'>该壁纸没有提供简介。</string>
-    <string name='detail_online_playback_failed'>SteamKit 在线播放失败</string>
-    <string name='detail_online_video_init_failed'>无法初始化 SteamKit 在线分块播放</string>
-    <string name='detail_online_video_player'>SteamKit 在线播放</string>
+    <string name='detail_online_playback_failed'>Steam 在线播放失败</string>
+    <string name='detail_online_video_init_failed'>无法初始化 Steam 在线分块播放</string>
+    <string name='detail_online_video_player'>Steam 在线播放</string>
     <string name='detail_open_steam_page'>打开 Steam 页面</string>
     <string name='detail_play_video'>播放视频</string>
     <string name='detail_playable_video_missing'>未在已下载项目中找到可播放的视频文件</string>
@@ -608,7 +608,7 @@
     <string name='detail_steam_cdn'>Steam CDN：%1$s</string>
     <string name='detail_steam_request_failed'>Steam 请求失败，请稍后重试</string>
     <string name='detail_storage_permission_denied'>未授予存储权限，无法导出到 Download/WallHub</string>
-    <string name='detail_streaming_started'>SteamKit 流式播放已开始</string>
+    <string name='detail_streaming_started'>Steam 流式播放已开始</string>
     <string name='detail_subscribe'>订阅</string>
     <string name='detail_subscribe_submitted'>已向 Steam 提交订阅请求</string>
     <string name='detail_subscriptions'>订阅数</string>

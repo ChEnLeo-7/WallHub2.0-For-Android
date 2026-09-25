@@ -1,6 +1,7 @@
 package com.wallhub.android.data.steam
 
 import android.content.Context
+import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.steamcontent.sdk.DepotRangeStream
 import io.steamcontent.sdk.EngineCapability
@@ -175,7 +176,10 @@ class SteamContentSdkEngine
         @Synchronized
         fun resolveWorkshop(itemId: Long): WorkshopResolveResponse {
             val open = engine ?: error("the Steam Content SDK engine is not open")
-            return open.resolveWorkshop(itemId)
+            // The App is named because the resolution's own details read is answered within one: a read that
+            // names none can come back without the item, which stops the chain at its first stage
+            // (`workshop_details`) for an item that plainly exists.
+            return open.resolveWorkshop(itemId, WALLPAPER_ENGINE_APP_ID.toLong())
         }
 
         /**

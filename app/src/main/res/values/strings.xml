@@ -131,7 +131,7 @@
     <string name='settings_action_download'>Download</string>
     <string name='settings_action_play'>Play</string>
     <string name='settings_action_open_steam'>Steam</string>
-    <string name='settings_streaming_cache'>SteamKit streaming cache</string>
+    <string name='settings_streaming_cache'>Steam streaming cache</string>
     <string name='settings_streaming_cache_description'>Limits cached decrypted Steam chunks for streaming. Default: 512 MB.</string>
     <string name='settings_clear_streaming_cache'>Clear online playback cache</string>
     <string name='settings_streaming_cache_cleared'>Cleared %1$s of online playback cache</string>
@@ -213,7 +213,7 @@
         issues occur.
     </string>
     <string name='settings_online_playback_title'>Online playback</string>
-    <string name='settings_steamkit_chunk_streaming'>SteamKit chunk streaming</string>
+    <string name='settings_steamkit_chunk_streaming'>Steam chunk streaming</string>
     <string name='settings_steamkit_chunk_streaming_description'>Stream directly from Steam when on; download before playback when off</string>
     <string name='settings_system_permissions_title'>System permissions</string>
     <string name='settings_background_task_notifications'>Background task notifications</string>
@@ -609,9 +609,9 @@
     <string name='detail_mute'>Mute</string>
     <string name='detail_no_comments'>No comments yet</string>
     <string name='detail_no_description'>No description was provided.</string>
-    <string name='detail_online_playback_failed'>SteamKit online playback failed</string>
-    <string name='detail_online_video_init_failed'>Could not initialize SteamKit online chunked playback</string>
-    <string name='detail_online_video_player'>SteamKit online playback</string>
+    <string name='detail_online_playback_failed'>Steam online playback failed</string>
+    <string name='detail_online_video_init_failed'>Could not initialize Steam online chunked playback</string>
+    <string name='detail_online_video_player'>Steam online playback</string>
     <string name='detail_open_steam_page'>Open Steam page</string>
     <string name='detail_play_video'>Play video</string>
     <string name='detail_playable_video_missing'>No playable video file was found in the downloaded item</string>
@@ -635,7 +635,7 @@
     <string name='detail_steam_cdn'>Steam CDN: %1$s</string>
     <string name='detail_steam_request_failed'>Steam request failed. Try again later.</string>
     <string name='detail_storage_permission_denied'>Storage permission was not granted. Cannot export to Download/WallHub.</string>
-    <string name='detail_streaming_started'>SteamKit streaming started</string>
+    <string name='detail_streaming_started'>Steam streaming started</string>
     <string name='detail_subscribe'>Subscribe</string>
     <string name='detail_subscribe_submitted'>Subscription request submitted to Steam</string>
     <string name='detail_subscriptions'>Subscriptions</string>
