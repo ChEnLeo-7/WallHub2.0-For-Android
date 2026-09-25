@@ -1,6 +1,5 @@
 package com.wallhub.android.data.steam
 
-import android.content.Context
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
@@ -24,6 +23,7 @@ import com.wallhub.android.core.model.effectiveWorkshopTypes
 import com.wallhub.android.core.model.steamSearchText
 import com.wallhub.android.core.model.workshopAuthorSearchOrNull
 import com.wallhub.android.core.model.workshopDetailTagSearch
+import com.wallhub.android.di.SteamSessionSdkEngine
 import io.steamcontent.sdk.PlayerField
 import io.steamcontent.sdk.PlayerProfileField
 import io.steamcontent.sdk.PlayerProfiles
@@ -117,29 +117,24 @@ private data class SdkCommentRow(
  * interaction for one it does not, and no throw ever crosses this class but the caller's own invalid input.
  *
  * The acting account comes from the SDK session (ADR 0034), so this class holds no credential store and
- * parses no token. `RepositoryModule` binds all three contracts to this class, so the Workshop reads the
- * product performs are served by the SDK rather than by kSteam; the last adapter-level capability gaps it
- * inherited (the thread owner, the comment ordering, and the Voted collection) are now recorded as parity
- * rather than as gaps at their call sites.
+ * parses no token: it reads through the engine the session domain authenticated. That engine is the one
+ * injected here, and it is the reason for the qualifier - the process also owns an application-wide engine
+ * for the download path, and a read issued on *that* one finds no session and answers the empty page this
+ * class would otherwise report as "no items".
+ *
+ * `RepositoryModule` binds all three contracts to this class, so the Workshop reads the product performs are
+ * served by the SDK rather than by kSteam; the last adapter-level capability gaps it inherited (the thread
+ * owner, the comment ordering, and the Voted collection) are now recorded as parity rather than as gaps at
+ * their call sites.
  */
 @Singleton
 internal class SteamContentSdkWorkshopRepository
     @Inject
     constructor(
-        private val engine: SteamContentSdkEngine,
+        @SteamSessionSdkEngine private val engine: SteamContentSdkEngine,
     ) : SteamUnifiedWorkshopRepository,
         AccountWorkshopRepository,
         SteamPlaytimeRepository {
-        /**
-         * Constructs the adapter and the one engine it reads from the platform context.
-         *
-         * This is the no-graph form of the constructor above: it builds the same engine the download path
-         * builds, so the adapter is usable before it has a binding.
-         */
-        constructor(context: Context) : this(
-            engine = SteamContentSdkEngine(context, SteamDeviceSeedStore(context)),
-        )
-
         /** Serializes Workshop reads so the engine is never asked for two handles at once. */
         private val mutex = Mutex()
 
