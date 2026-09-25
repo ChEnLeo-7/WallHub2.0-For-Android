@@ -160,3 +160,46 @@ streaming is triggered from the Library's play affordance, which this run did no
 **On the device right now**: the Library's rating filter has one value selected (from this run's taps), so the
 favourites list shows "没有符合条件的收藏" until it is cleared in the filter sheet (`恢复默认` -> `应用筛选`).
 The Workshop data source is back on Steam Community HTML.
+
+## 2026-09-25 - the SDK owns the Range arm, and three SDK defects it exposed
+
+`6347a30` deleted kSteam and `wallhub-rust`; this span is what the SDK-arm readings after that deletion
+turned up. Two device rounds: `0.1.37` + `facccbb` (the App scope), then `0.1.38` + `32d3fa9` (the tag
+codec).
+
+**What the App scope did and did not fix.** The device log now shows the request the adapter sends
+(`request.app_id = 431960` in the staged JNI, `first-id`/`first-size` intact), but the personal rows still
+arrived with `first-tags=[]`. The App scope was necessary and not sufficient: the SDK read
+`PublishedFileDetails.tags` - field 52, which the locked schema defines as a repeated record with its text
+at that record's field 1 - as a repeated string, so every tag element was a record's bytes
+(`\n\u{5}Scene`), and the Workshop tag validator refuses a control character. One refused entry makes the
+whole tag field unknown by decision, so every tag list arrived empty while the service had sent it. That
+one defect was behind both remaining failures: the untyped Library rows *and* the "Steam CM did not return
+this Workshop item" detail error (a details response for an item that has tags died in the same place,
+which is why it looked intermittent). Fixed in SDK `5f2dc5e`, AAR `0.1.38`.
+
+**Read back on the device**
+
+| Surface | Reading |
+| --- | --- |
+| Library rows | every card typed again - 网站 / 场景 / 视频 - with `first-tag-count=8` and the item's own tags on the diagnostic line; `first-content-type=0`, so for these rows the type comes from tags alone |
+| CM item detail (`3723118336`) | resolved: title, preview, 简介, author, id - the intermittent refusal is gone |
+| Video play action | appears on a video row now that the row is typed (it is gated on the type) |
+| Range arm | `SteamVideoStream: playback served by=steam-content-sdk app=431960 depot=431960` - the SDK resolved the item and its manifest and owns the range path |
+| Range arm, stream open | fails inside the SDK: `depot_access_denied: content resolution failed at manifest_request_code`, and on retry `content resolution failed at workshop_details` |
+| Voted collection | fails: `invalid_input: the request was refused before it was sent`; the count stays 0 |
+
+**The two stages, and where they come from.** `resolve_workshop_content` still calls the *unscoped*
+`workshop().details(item)` (`crates/sc-content/src/lib.rs:2216`), so the chain that must learn an item's App
+asks the question that can come back without the item - the retry's stage. And the range open re-resolves
+the App/depot identity through a resolver with no reusable material
+(`crates/sc-content-ffi/src/lib.rs:1776`), so it asks for a fresh manifest request code - the first
+attempt's stage.
+
+**Corrections to earlier readings.** The Voted list was recorded as "served but empty"; the adapter now
+logs the typed failure it used to swallow, and it was a failed read. And the personal rows' file *size* was
+never the missing fact - the size came from the item's own field; the type came from the tags.
+
+**Environment.** To reach the Range arm the "SteamKit 在线分块播放" toggle had to be turned on (it defaults
+off); its label still names SteamKit although the implementation is the SDK's. The first resolution took
+about two minutes end to end.
