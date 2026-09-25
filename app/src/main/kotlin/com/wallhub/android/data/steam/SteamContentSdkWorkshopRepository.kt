@@ -199,7 +199,9 @@ internal class SteamContentSdkWorkshopRepository
                 runCatchingUnavailable {
                     require(collectionId > 0L) { "Invalid Workshop collection ID" }
                     mutex.withLock {
-                        engine.openWorkshopItem(collectionId).use { result -> readCollectionChildren(result) }
+                        engine
+                            .openWorkshopItem(collectionId, WALLPAPER_ENGINE_APP_ID.toLong())
+                            .use { result -> readCollectionChildren(result) }
                     }
                 }
             }
@@ -263,6 +265,10 @@ internal class SteamContentSdkWorkshopRepository
                                     list = list,
                                     pageSize = normalized.pageSize,
                                     pageOffset = normalized.pageOffset(),
+                                    // A personal read is answered within one App's Workshop: without the
+                                    // scope the service omits each row's own tags and file type, which is
+                                    // what the device run showed as an untyped row.
+                                    appId = WALLPAPER_ENGINE_APP_ID.toLong(),
                                 )
                             // A personal row's own state is the list it came from, which is how the removed
                             // kSteam mapper read it.
@@ -284,7 +290,7 @@ internal class SteamContentSdkWorkshopRepository
                 require(workshopId > 0L) { "Invalid Workshop item ID" }
                 runCatchingUnavailable {
                     mutex.withLock {
-                        engine.openWorkshopItem(workshopId).use { result ->
+                        engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result ->
                             val authorId = result.field(WorkshopItemField.AUTHOR).valueOrZero().takeIf { it > 0L }
                             if (authorId == null) {
                                 null
@@ -404,7 +410,7 @@ internal class SteamContentSdkWorkshopRepository
             runCatchingUnavailable {
                 require(workshopId > 0L) { "Invalid Workshop item ID" }
                 mutex.withLock {
-                    engine.openWorkshopItem(workshopId).use { result -> readWorkshopDetail(result) }
+                    engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result -> readWorkshopDetail(result) }
                 }
             }
 
@@ -633,7 +639,7 @@ internal class SteamContentSdkWorkshopRepository
         /** Reads both interaction halves once, or reports both as unknown. */
         private fun readInteraction(workshopId: Long): WorkshopInteraction {
             require(workshopId > 0L) { "Invalid Workshop item ID" }
-            return engine.openWorkshopItem(workshopId).use { result ->
+            return engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result ->
                 WorkshopInteraction(
                     subscriptionState = subscriptionStateOf(result.field(WorkshopItemField.SUBSCRIBED)),
                     favoriteState = favoriteStateOf(result.field(WorkshopItemField.FAVOURITED)),

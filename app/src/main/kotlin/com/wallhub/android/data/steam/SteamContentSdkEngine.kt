@@ -15,6 +15,7 @@ import io.steamcontent.sdk.SteamContentEngine
 import io.steamcontent.sdk.SteamContentEngine.PlayerPlaytime
 import io.steamcontent.sdk.SteamContentEngine.WorkshopAuthorRequest
 import io.steamcontent.sdk.SteamContentEngine.WorkshopCommentsRequest
+import io.steamcontent.sdk.SteamContentEngine.WorkshopDetailsRequest
 import io.steamcontent.sdk.SteamContentEngine.WorkshopInteractionState
 import io.steamcontent.sdk.SteamContentEngine.WorkshopPersonalRequest
 import io.steamcontent.sdk.SteamContentEngine.WorkshopResolveResponse
@@ -338,7 +339,8 @@ class SteamContentSdkEngine
          *
          * [accountId] is both the account the list belongs to and the account the read is authorized as - an
          * identifier the caller already holds, never a credential. [list] is a `WorkshopPersonalList`
-         * ordinal.
+         * ordinal. [appId] scopes the read to one App's Workshop, which the service requires for a row to
+         * carry its own tags and file type.
          */
         @Synchronized
         fun workshopPersonalItems(
@@ -346,6 +348,7 @@ class SteamContentSdkEngine
             list: Int,
             pageSize: Int,
             pageOffset: Int,
+            appId: Long,
         ): WorkshopPage {
             val open = openEngine(WorkshopOperation.PERSONAL_ITEMS)
             return open.workshopPersonalItems(
@@ -354,6 +357,7 @@ class SteamContentSdkEngine
                     list = list,
                     pageSize = pageSize,
                     pageOffset = pageOffset,
+                    appId = appId,
                 )
             )
         }
@@ -388,10 +392,14 @@ class SteamContentSdkEngine
          *
          * The caller closes the handle. An engine without a Workshop provider throws
          * [IllegalStateException], exactly as the underlying call does, so a caller that treats the read as
-         * optional translates it at its own boundary.
+         * optional translates it at its own boundary. [appId] is the App the item belongs to: the service
+         * answers a details read within an App, and a read that names none can come back without the item.
          */
         @Synchronized
-        fun openWorkshopItem(itemId: Long): WorkshopResult = openEngine(WorkshopOperation.DETAILS).openWorkshopItem(itemId)
+        fun openWorkshopItem(itemId: Long, appId: Long): WorkshopResult =
+            openEngine(WorkshopOperation.DETAILS).openWorkshopItem(
+                WorkshopDetailsRequest(itemId = itemId, appId = appId)
+            )
 
         /**
          * Resolves a bounded set of account ids into a profile handle (ADR 0032).
