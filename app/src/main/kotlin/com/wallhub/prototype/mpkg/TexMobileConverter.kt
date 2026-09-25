@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.BitmapRegionDecoder
 import android.graphics.Rect
-import com.wallhub.android.data.downloads.WallHubRust
 import net.jpountz.lz4.LZ4Factory
 import java.io.BufferedOutputStream
 import java.io.File
@@ -599,7 +598,7 @@ object TexMobileConverter {
             rgba[position + 2] = (color and 0xff).toByte()
             rgba[position + 3] = ((color ushr 24) and 0xff).toByte()
         }
-        val compressed = WallHubRust.compressEtc2Rgba(rgba, width, height)
+        val compressed = Etc2Compressor.compressRgba(rgba, width, height)
         require(compressed.size == width * height) { "Unexpected ETC2 payload size" }
         compressed.copyInto(output, outputOffset)
     }

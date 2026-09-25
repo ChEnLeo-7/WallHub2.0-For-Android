@@ -22,10 +22,9 @@
 -dontwarn bruhcollective.itaysonlab.ksteam.**
 -dontwarn steam.**
 
-# wallhub-rust resolves these native methods from libwallhub_rust.so; R8 must not rename them.
--keepclasseswithmembernames class com.wallhub.android.data.downloads.WallHubRust {
-    native <methods>;
-}
+# The app-owned ETC2 encoder resolves this native method from libwallhub_etc2.so; R8 must
+# not rename it or remove the class that declares it.
+-keep class com.wallhub.prototype.mpkg.Etc2Compressor { *; }
 
 # lz4-java instantiates its JNI/Unsafe/Safe implementations reflectively from LZ4Factory.
 -keep class net.jpountz.** { *; }
