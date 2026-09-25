@@ -1,4 +1,4 @@
-# Retain runtime metadata consumed by Hilt, Room, Kotlin serialization and Wire.
+# Retain runtime metadata consumed by Hilt, Room and Kotlin serialization.
 -keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*
 
 # SpongyCastle registers the provider and RSA cipher implementations by class name

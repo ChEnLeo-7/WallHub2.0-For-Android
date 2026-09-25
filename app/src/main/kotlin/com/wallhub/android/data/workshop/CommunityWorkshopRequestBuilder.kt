@@ -4,6 +4,7 @@ import android.net.Uri
 import com.wallhub.android.core.model.STEAM_CONTENT_RATING_TAGS
 import com.wallhub.android.core.model.STEAM_WORKSHOP_TYPE_TAGS
 import com.wallhub.android.core.model.WORKSHOP_RESOLUTION_TAG_MAP
+import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
@@ -247,7 +248,6 @@ internal fun Uri.Builder.appendFilterTags(
     }
 }
 
-internal const val WALLPAPER_ENGINE_APP_ID = 431960
 internal const val MAX_PAGE_SIZE = 50
 internal const val MAX_DIRECT_BROWSE_PAGE = 1_000
 internal const val MAX_COMMENT_PAGE_SIZE = 50

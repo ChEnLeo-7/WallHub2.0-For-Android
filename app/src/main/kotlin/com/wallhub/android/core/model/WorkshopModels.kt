@@ -4,6 +4,9 @@ import java.util.Locale
 
 const val WORKSHOP_COMMENT_MAX_LENGTH = 1_000
 
+/** Wallpaper Engine's consumer app id: the App every Workshop read in this product is scoped to. */
+const val WALLPAPER_ENGINE_APP_ID = 431_960
+
 enum class WorkshopType {
     VIDEO,
     SCENE,

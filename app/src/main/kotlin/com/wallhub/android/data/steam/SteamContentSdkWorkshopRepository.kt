@@ -9,6 +9,7 @@ import com.wallhub.android.core.model.SteamAppPlaytime
 import com.wallhub.android.core.model.SteamPlaytimeRepository
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.SubscriptionState
+import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopComment
