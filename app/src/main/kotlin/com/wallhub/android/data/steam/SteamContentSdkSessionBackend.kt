@@ -228,7 +228,11 @@ internal class SteamContentSdkSessionBackend(
     }
 
     private suspend fun restoreStoredSession() {
-        when (val credential = credentialStore.read()) {
+        // The read result is kept in one value so the one load-time diagnostic below and the branch both read
+        // the same store result: the store is still read exactly once per attempt.
+        val credential = credentialStore.read()
+        recordCredentialLoad(credential)
+        when (credential) {
             SteamCredentialReadResult.Missing -> {
                 pendingChallenge.set(null)
                 publish(SteamSessionPhase.SIGNED_OUT, message = null, hasStoredSession = false)
@@ -449,7 +453,7 @@ internal class SteamContentSdkSessionBackend(
     ): Boolean =
         when (withSession { session.state() }) {
             SteamContentSdkSessionState.AUTHENTICATED -> {
-                publishSignedIn(accountName, hasStoredSession)
+                publishSignedIn(accountName, hasStoredSession, stage = restoreStage(restore))
                 true
             }
 
@@ -520,7 +524,7 @@ internal class SteamContentSdkSessionBackend(
     ): Boolean =
         when (state) {
             SteamContentSdkSessionState.AUTHENTICATED -> {
-                publishSignedIn(accountName, hasStoredSession)
+                publishSignedIn(accountName, hasStoredSession, stage = restoreStage(restore))
                 true
             }
 
@@ -609,18 +613,19 @@ internal class SteamContentSdkSessionBackend(
     private fun publishSignedIn(
         accountName: String?,
         hasStoredSession: Boolean,
+        stage: String,
     ) {
         pendingChallenge.set(null)
         // The authentication edge is the one moment the app can keep a session across a restart, so the token
-        // the SDK retained is stored here, once, whichever path reached this state. A failure is reported as
-        // "not stored" rather than hidden, because a session the user believes is saved and is not would come
-        // back as an unexplained password prompt.
-        val stored = persistRetainedToken(accountName)
+        // the SDK retained is stored here on every path that reaches this state - logon, a Guard answer, and a
+        // restore alike. The store write happens only when the SDK's retained token differs from the stored
+        // one, so a session that is already healthy does not rewrite the encrypted store on every restore.
+        val persisted = persistRetainedToken(accountName, stage)
         publish(
             SteamSessionPhase.SIGNED_IN,
             messages.signedIn,
             accountName = accountName,
-            hasStoredSession = hasStoredSession || stored,
+            hasStoredSession = hasStoredSession || persisted,
         )
     }
 
@@ -628,31 +633,68 @@ internal class SteamContentSdkSessionBackend(
      * Writes the token the SDK retained into the app's encrypted store.
      *
      * The SDK owns the session and holds the only copy of the token; the copy taken here is zeroed immediately,
-     * and nothing in this method logs the value. Returns whether the store now holds a session.
+     * and nothing in this method logs the value - the one diagnostic records presence and a coarse size bucket
+     * only. A result the SDK does not offer, or one that is empty, never overwrites what is stored: only a
+     * non-empty token that differs from the stored one is written. Returns whether the store holds a session
+     * for this account after the call.
      */
-    private fun persistRetainedToken(accountName: String?): Boolean {
-        val name = accountName?.takeIf { it.isNotBlank() } ?: return false
-        val session = activeSession.get() ?: return false
-        val token = runCatching { session.refreshToken() }.getOrNull() ?: return false
-        return try {
-            if (token.isEmpty()) {
-                false
-            } else {
+    private fun persistRetainedToken(
+        accountName: String?,
+        stage: String,
+    ): Boolean {
+        val session = activeSession.get()
+        val token = session?.let { runCatching { it.refreshToken() }.getOrNull() }
+        val bucket = tokenLengthClass(token?.size ?: 0)
+        try {
+            val name = accountName?.takeIf { it.isNotBlank() }
+            val absent = name == null || token == null || token.isEmpty()
+            val persisted = if (absent) false else writeRetainedToken(name, token)
+            record("credential_persisted persisted=$persisted stage=$stage length_class=$bucket")
+            return persisted
+        } finally {
+            token?.fill(0)
+        }
+    }
+
+    /**
+     * Writes [token] unless the store already holds the same one.
+     *
+     * The compare is against the stored credential, not the one this attempt presented, so a rotated token is
+     * written and an unchanged one leaves the store untouched. A store that cannot be read is not treated as
+     * empty - the compare is skipped and the token is written, which is the recovery path for a store whose
+     * read failed.
+     */
+    private fun writeRetainedToken(
+        accountName: String,
+        token: ByteArray,
+    ): Boolean =
+        try {
+            val stored =
+                (credentialStore.read() as? SteamCredentialReadResult.Value)
+                    ?.credential
+                    ?.refreshToken
+                    ?.toByteArray(Charsets.UTF_8)
+            val unchanged =
+                try {
+                    stored != null && stored.contentEquals(token)
+                } finally {
+                    // The stored value is a second plaintext copy of the same secret; it is zeroed like the
+                    // one taken from the SDK, and neither copy is ever logged or formatted.
+                    stored?.fill(0)
+                }
+            if (!unchanged) {
                 credentialStore.save(
                     PersistedSteamCredential(
-                        accountName = name,
+                        accountName = accountName,
                         refreshToken = token.toString(Charsets.UTF_8),
                     ),
                 )
-                true
             }
+            true
         } catch (error: Throwable) {
             record("token_persist_failure", error)
             false
-        } finally {
-            token.fill(0)
         }
-    }
 
     private fun handleLoggedOut(
         revoked: Boolean,
@@ -806,13 +848,45 @@ internal class SteamContentSdkSessionBackend(
         restore: Boolean,
     ) {
         runCatching {
-            Log.i(TAG, "attempt failure class=${failure.ordinal} stage=${if (restore) "restore" else "logon"}")
+            Log.i(TAG, "attempt failure class=${failure.ordinal} stage=${restoreStage(restore)}")
         }
     }
+
+    /**
+     * Records what the credential store held before an attempt used it.
+     *
+     * Presence and a coarse size bucket are the whole content: no token bytes, no account name, and no exact
+     * length. It is what makes the next device reading decisive about whether a refused restore read a stored
+     * token at all, instead of leaving the failure to be inferred from the phase alone. The stored value is
+     * already a string in memory, so the bucket is taken from its character count without decoding a copy.
+     */
+    private fun recordCredentialLoad(result: SteamCredentialReadResult) {
+        val stored = (result as? SteamCredentialReadResult.Value)?.credential?.refreshToken
+        val present = stored != null
+        val nonEmpty = stored?.isNotBlank() == true
+        record(
+            "credential_load present=$present non_empty=$nonEmpty " +
+                "length_class=${tokenLengthClass(stored?.length ?: 0)} stage=restore",
+        )
+    }
+
+    /** The stage name the device reading uses, from the same flag the failure line and the store compare use. */
+    private fun restoreStage(restore: Boolean): String = if (restore) "restore" else "logon"
+
+    /** A coarse size bucket for a credential, so a line can say a token arrived without fingerprinting it. */
+    private fun tokenLengthClass(length: Int): String =
+        when {
+            length <= 0 -> "empty"
+            length < SHORT_TOKEN_LENGTH -> "short"
+            length < LONG_TOKEN_LENGTH -> "typical"
+            else -> "long"
+        }
 
     private companion object {
         const val TAG = "WallHubSteamSession"
         const val SESSION_POLL_TIMEOUT_MS = 250
         const val SESSION_ATTEMPT_TIMEOUT_MS = 5 * 60_000L
+        const val SHORT_TOKEN_LENGTH = 32
+        const val LONG_TOKEN_LENGTH = 256
     }
 }

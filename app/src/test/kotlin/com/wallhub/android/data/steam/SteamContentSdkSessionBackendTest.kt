@@ -44,6 +44,74 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
+    fun aSuccessfulRestorePersistsTheTokenTheSdkRetained() =
+        runTest {
+            val fixture = Fixture()
+            val presented = PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 71))
+            val retained = opaqueValue(seed = 89)
+            fixture.storeCredential(presented)
+            fixture.session.retainedToken = retained.toByteArray(Charsets.UTF_8)
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+
+            // The authenticated edge of a restore is where a token the SDK rotated on use has to be stored, or
+            // the next start re-presents a token Steam has already replaced. Exactly one open and one write.
+            assertEquals(1, fixture.platform.openCalls)
+            assertEquals(1, fixture.session.restores.size)
+            assertEquals(1, fixture.store.writeCalls)
+            val stored =
+                (fixture.store.payload as EncryptedStringReadResult.Value).value.let(::decodeSteamCredential)
+            assertEquals(presented.accountName, stored.accountName)
+            assertEquals(retained, stored.refreshToken)
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+            assertTrue(backend.session.value.hasStoredSession)
+        }
+
+    @Test
+    fun aRestoreThatRetainsNoTokenDoesNotOverwriteTheStoredOne() =
+        runTest {
+            val fixture = Fixture()
+            val presented = PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 97))
+            fixture.storeCredential(presented)
+            // The SDK retains nothing this time. A blank result must never be written over a working credential.
+            fixture.session.retainedToken = null
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+            assertEquals(0, fixture.store.writeCalls)
+            val stored =
+                (fixture.store.payload as EncryptedStringReadResult.Value).value.let(::decodeSteamCredential)
+            assertEquals(presented.refreshToken, stored.refreshToken)
+        }
+
+    @Test
+    fun anUnchangedRetainedTokenDoesNotRewriteTheStoredOne() =
+        runTest {
+            val fixture = Fixture()
+            val presented = PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 101))
+            fixture.storeCredential(presented)
+            fixture.session.retainedToken = presented.refreshToken.toByteArray(Charsets.UTF_8)
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+
+            // A healthy session does not rewrite encrypted storage on every start.
+            assertEquals(0, fixture.store.writeCalls)
+            val stored =
+                (fixture.store.payload as EncryptedStringReadResult.Value).value.let(::decodeSteamCredential)
+            assertEquals(presented.refreshToken, stored.refreshToken)
+        }
+
+    @Test
     fun aMissingStoredTokenFailsWithoutOpeningTheSdk() =
         runTest {
             val fixture = Fixture()
@@ -406,10 +474,13 @@ class SteamContentSdkSessionBackendTest {
         var payload: EncryptedStringReadResult = EncryptedStringReadResult.Missing
         var clearCalls = 0
             private set
+        var writeCalls = 0
+            private set
 
         override fun read(): EncryptedStringReadResult = payload
 
         override fun write(value: String) {
+            writeCalls += 1
             payload = EncryptedStringReadResult.Value(value)
         }
 
@@ -444,6 +515,14 @@ class SteamContentSdkSessionBackendTest {
         val restores = mutableListOf<RestoreCall>()
         val answers = mutableListOf<ChallengeAnswerCall>()
         var pendingChallengeId: ByteArray? = null
+
+        /**
+         * What the SDK retains after the attempt, as [SteamContentSdkPlatformSession.refreshToken] returns it.
+         *
+         * The real session holds the token from its own last authentication step, so a test that wants the
+         * authenticated edge to observe one sets this before the backend runs.
+         */
+        var retainedToken: ByteArray? = null
         var logoutCalls = 0
             private set
         var closeCalls = 0
@@ -461,6 +540,8 @@ class SteamContentSdkSessionBackendTest {
         override fun pollEvent(timeoutMs: Int): SteamContentSdkSessionEvent? = events.removeFirstOrNull()
 
         override fun challengeId(): ByteArray? = pendingChallengeId
+
+        override fun refreshToken(): ByteArray? = retainedToken?.copyOf()
 
         override fun beginAccountLogon(
             accountName: String,
