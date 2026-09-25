@@ -140,12 +140,31 @@ fun WorkshopBrowseQuery.normalizedCreatedRange(): LongRange? {
 }
 
 fun WorkshopBrowseQuery.matchesSteamWallpaper(summary: WorkshopSummary): Boolean {
+    if (!matchesSteamWallpaperPage(summary)) return false
+    val itemTags = summary.tags.map { it.trim().lowercase(Locale.ROOT) }.filter(String::isNotBlank).toSet()
+    val detailRequired = steamTagCriteria().requiredTags.filterNot { it.equals("Wallpaper", ignoreCase = true) }
+    return detailRequired.all { it.lowercase(Locale.ROOT) in itemTags }
+}
+
+/**
+ * The half of the wallpaper filter a *service answer* still has to be checked against.
+ *
+ * A page a service answered is gated on the dimensions the request could not carry: the exclusions (a tag a
+ * row must not have), the product's own type vocabulary, the tag groups, the NSFW gate, and a creator filter.
+ * The required tags are deliberately **not** re-checked here. A request that names them has already been
+ * answered by the service, and re-deriving them from the catalog drops rows the service did return: the
+ * catalog's official tags are part of that list, so a page can collapse to a single row even though every row
+ * it holds carries the `Wallpaper` tag the product always means.
+ *
+ * An untyped row is not rejected either. The type is read from the row's own tags, and a service answer whose
+ * tag list omits the `Scene`/`Video`/`Web` tag is a row whose type this product cannot name - not a row that is
+ * not a wallpaper. Rejecting it is what turned one home page into one card.
+ */
+fun WorkshopBrowseQuery.matchesSteamWallpaperPage(summary: WorkshopSummary): Boolean {
     val criteria = steamTagCriteria()
     val itemTags = summary.tags.map { it.trim().lowercase(Locale.ROOT) }.filter(String::isNotBlank).toSet()
     if ("asset" in itemTags) return false
-    if (summary.type !in criteria.allowedTypes) return false
-    val detailRequired = criteria.requiredTags.filterNot { it.equals("Wallpaper", ignoreCase = true) }
-    if (!detailRequired.all { it.lowercase(Locale.ROOT) in itemTags }) return false
+    if (summary.type != WorkshopType.UNKNOWN && summary.type !in criteria.allowedTypes) return false
     if (criteria.excludedTags.any { it.lowercase(Locale.ROOT) in itemTags }) return false
     if (
         normalizedRequiredTagGroups().any { group ->

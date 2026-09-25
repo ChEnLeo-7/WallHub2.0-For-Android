@@ -10,7 +10,7 @@ import com.wallhub.android.core.model.SteamPlaytimeRepository
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
-import com.wallhub.android.core.model.matchesSteamWallpaper
+import com.wallhub.android.core.model.matchesSteamWallpaperPage
 import com.wallhub.android.core.model.steamTagCriteria
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
@@ -518,7 +518,10 @@ internal class SteamContentSdkWorkshopRepository
             // client-side gate the community and Web API sources apply decides what this page may show: an
             // `asset` row, a rating the account did not allow, or a genre outside the selection is not a
             // wallpaper this query asked for. Filtering after the page is exactly what those sources do.
-            val visible = filter?.let { query -> items.filter { item -> query.matchesSteamWallpaper(item) } } ?: items
+            val visible = filter?.let { query -> items.filter { item -> query.matchesSteamWallpaperPage(item) } } ?: items
+            // A page the gate shortened is the only case a reader cannot see from the row count alone, so the
+            // first rejected row's own reading is on the line: which row, which type, which tags.
+            val rejected = items.firstOrNull { item -> item !in visible }
             // One line per non-empty page, so a device reading can name what the SDK actually put on its
             // rows (tags, the mapped content type, and the size) without exposing anything but public item
             // metadata: the same evidence convention the session, depot, and playback paths follow. The raw
@@ -530,6 +533,8 @@ internal class SteamContentSdkWorkshopRepository
                     TAG,
                     "workshop page rows=${visible.size} of ${items.size} collection=" +
                         "${collection?.name ?: "public"} " +
+                        rejected?.let { row -> "rejected-id=${row.id} rejected-type=${row.type} " +
+                            "rejected-tags=${row.tags.take(MAX_LOGGED_TAGS)} " }.orEmpty() +
                         "first-id=${first.id} first-type=${first.type} first-size=${first.fileSizeBytes ?: 0} " +
                         "first-tag-count=${rows.first().tagCount()} " +
                         "first-content-type=${rows.first().at(SdkSummaryFields.CONTENT_TYPE)} " +
