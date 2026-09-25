@@ -96,6 +96,7 @@ internal interface SteamContentSdkSession : Closeable {
         depotId: Long,
         manifestId: Long,
         destination: String?,
+        chunkConcurrency: Int,
     ): SteamContentSdkTask
 
     /**
@@ -122,6 +123,7 @@ internal interface SteamContentSdkSession : Closeable {
         depotId: Long,
         filePath: String,
         manifestId: Long,
+        cacheCapacityBytes: Long,
     ): SteamContentSdkRangeStream
 }
 
@@ -200,6 +202,9 @@ internal class SteamContentSdkWorkshopTransfer
                                 depotId = resolved.depotId,
                                 manifestId = resolved.manifestId,
                                 destination = destination,
+                                // The product's own "chunks in parallel per item" setting is the SDK's
+                                // in-flight budget now; zero would leave the engine's own order in place.
+                                chunkConcurrency = options.chunkConcurrency,
                             )
                         try {
                             runTask(task, destinationDirectory, control, onProgress)

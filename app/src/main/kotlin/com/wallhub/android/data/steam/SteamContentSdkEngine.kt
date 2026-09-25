@@ -164,7 +164,9 @@ class SteamContentSdkEngine
             depotId: Long,
             manifestId: Long = 0L,
             destination: String? = null,
-        ): SteamDownloadTask? = engine?.startDownload(appId, depotId, manifestId, destination)
+            chunkConcurrency: Int = 0,
+        ): SteamDownloadTask? =
+            engine?.startDownload(appId, depotId, manifestId, destination, chunkConcurrency)
 
         /**
          * Resolves one Workshop item to the content identity a download accepts.

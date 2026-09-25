@@ -167,10 +167,16 @@ private class SteamContentSdkEngineSession(
         depotId: Long,
         manifestId: Long,
         destination: String?,
+        chunkConcurrency: Int,
     ): SteamContentSdkTask {
         val task =
-            engine.startDownload(appId, depotId, manifestId, destination)
-                ?: error("The Steam Content SDK did not start a download task")
+            engine.startDownload(
+                appId = appId,
+                depotId = depotId,
+                manifestId = manifestId,
+                destination = destination,
+                chunkConcurrency = chunkConcurrency,
+            )
         return SteamContentSdkEngineTask(task)
     }
 
@@ -195,6 +201,7 @@ private class SteamContentSdkEngineSession(
         depotId: Long,
         filePath: String,
         manifestId: Long,
+        cacheCapacityBytes: Long,
     ): SteamContentSdkRangeStream =
         SteamContentSdkEngineRangeStream(
             engine.openRangeStream(
@@ -202,6 +209,7 @@ private class SteamContentSdkEngineSession(
                 depotId = depotId,
                 filePath = filePath,
                 manifestId = manifestId,
+                cacheCapacityBytes = cacheCapacityBytes,
             ),
         )
 

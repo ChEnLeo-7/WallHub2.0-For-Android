@@ -10,6 +10,8 @@ import com.wallhub.android.core.model.SteamPlaytimeRepository
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
+import com.wallhub.android.core.model.matchesSteamWallpaper
+import com.wallhub.android.core.model.steamTagCriteria
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopComment
@@ -173,7 +175,7 @@ internal class SteamContentSdkWorkshopRepository
                                     contentTypes = normalized.sdkContentTypes(),
                                 )
                             }
-                        page.use { readWorkshopPage(it, normalized.page) }
+                        page.use { readWorkshopPage(it, normalized.page, filter = normalized) }
                     }
                 }
             }
@@ -492,6 +494,7 @@ internal class SteamContentSdkWorkshopRepository
             page: SdkWorkshopPage,
             requestedPage: Int,
             collection: AccountWorkshopCollection? = null,
+            filter: WorkshopBrowseQuery? = null,
         ): WorkshopPage {
             val size = page.size()
             val state = page.state()
@@ -511,16 +514,22 @@ internal class SteamContentSdkWorkshopRepository
                         collection = collection,
                     )
                 }
+            // The service answers the tags a request names, not a product's whole filter vocabulary, so the same
+            // client-side gate the community and Web API sources apply decides what this page may show: an
+            // `asset` row, a rating the account did not allow, or a genre outside the selection is not a
+            // wallpaper this query asked for. Filtering after the page is exactly what those sources do.
+            val visible = filter?.let { query -> items.filter { item -> query.matchesSteamWallpaper(item) } } ?: items
             // One line per non-empty page, so a device reading can name what the SDK actually put on its
             // rows (tags, the mapped content type, and the size) without exposing anything but public item
             // metadata: the same evidence convention the session, depot, and playback paths follow. The raw
             // tag count and content-type ordinal are on the line too, so an untyped row says whether the
             // service sent no tags or sent tags this adapter could not read.
-            if (items.isNotEmpty()) {
-                val first = items.first()
+            if (visible.isNotEmpty()) {
+                val first = visible.first()
                 Log.i(
                     TAG,
-                    "workshop page rows=${items.size} collection=${collection?.name ?: "public"} " +
+                    "workshop page rows=${visible.size} of ${items.size} collection=" +
+                        "${collection?.name ?: "public"} " +
                         "first-id=${first.id} first-type=${first.type} first-size=${first.fileSizeBytes ?: 0} " +
                         "first-tag-count=${rows.first().tagCount()} " +
                         "first-content-type=${rows.first().at(SdkSummaryFields.CONTENT_TYPE)} " +
@@ -529,7 +538,7 @@ internal class SteamContentSdkWorkshopRepository
             }
             val total = state.total.takeIf { it > 0 }
             return WorkshopPage(
-                items = items,
+                items = visible,
                 page = requestedPage,
                 // The cursor is zero when the provider reported no further page.
                 hasNextPage = state.nextOffset > 0,
@@ -835,10 +844,7 @@ private fun WorkshopBrowseQuery.sdkContentTypes(): List<Int> {
 }
 
 /** The tag filter the SDK request takes; its empty list means no tag filter at all. */
-private fun WorkshopBrowseQuery.sdkTags(): List<String> =
-    (tags + searchText.workshopDetailTagSearch())
-        .map(String::trim)
-        .filter(String::isNotBlank)
+private fun WorkshopBrowseQuery.sdkTags(): List<String> = steamTagCriteria().requiredTags
         .distinct()
         .take(MAX_SDK_TAGS)
 

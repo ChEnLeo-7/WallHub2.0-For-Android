@@ -1,8 +1,10 @@
 package com.wallhub.android.data.steam
 
+import com.wallhub.android.core.model.SettingsRepository
 import io.steamcontent.sdk.SessionTransportKind
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.first
 
 /**
  * Builds the Steam Content SDK's own route description from what this platform already has.
@@ -23,6 +25,7 @@ internal class SteamContentSdkRouteFactory
     @Inject
     constructor(
         private val cmEndpoints: SteamCmEndpointSource,
+        private val settingsRepository: SettingsRepository,
     ) {
         /**
          * The route this platform actually has.
@@ -54,11 +57,29 @@ internal class SteamContentSdkRouteFactory
             return SteamContentSdkEngine.Route(
                 cmCandidates = candidates,
                 transport = SessionTransportKind.WEBSOCKET,
-                cdnProxy = cdnProxy,
+                cdnProxy = cdnProxy ?: configuredCdnProxy(),
             )
         }
 
         /** The route for a network that passes Steam directly. No extra root is trusted here. */
         fun direct(cdnProxy: String? = null): SteamContentSdkEngine.Route =
             SteamContentSdkEngine.Route(cdnProxy = cdnProxy)
+
+        /**
+         * The download proxy the product's own settings name, as the SDK's `host:port`.
+         *
+         * Without this the SDK's CM and CDN traffic would bypass a proxy the user configured even though every
+         * other Steam call the product makes honours it. The URL form the setting accepts is
+         * `http://host:port`, which is what the settings screen validates before it can be enabled.
+         */
+        private suspend fun configuredCdnProxy(): String? {
+            val preferences = settingsRepository.preferences.first()
+            if (!preferences.downloadProxyEnabled) return null
+            return preferences.downloadProxyUrl
+                .trim()
+                .removePrefix("http://")
+                .removePrefix("https://")
+                .trimEnd('/')
+                .takeIf { it.isNotEmpty() }
+        }
     }

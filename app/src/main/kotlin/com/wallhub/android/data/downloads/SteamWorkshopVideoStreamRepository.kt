@@ -106,6 +106,12 @@ internal class SteamWorkshopVideoStreamRepository
          * playback and is released with the stream, so an SDK playback session never outlives the screen
          * that started it. Every failure is a failure - there is no fall-through to the old backend.
          */
+        /** The online-playback cache ceiling the product's settings name, in bytes. */
+        private suspend fun mediaCacheLimitBytes(): Long =
+            settingsRepository.preferences.first().mediaCacheLimitMb
+                .coerceAtLeast(MIN_MEDIA_CACHE_MB)
+                .toLong() * BYTES_PER_MB
+
         private suspend fun openSdkVideoStream(target: WorkshopContentTarget): WorkshopVideoStreamSession {
             val credential =
                 credentialProvider.loadContentCredential()
@@ -143,6 +149,10 @@ internal class SteamWorkshopVideoStreamRepository
                         depotId = resolved.depotId,
                         filePath = videoFile.path,
                         manifestId = resolved.manifestId,
+                        // The product's own online-playback cache setting is this stream's ceiling now: the
+                        // SDK builds one bounded cache per stream, so the size the user chose is the size it
+                        // holds. Zero would leave the SDK's own default in place.
+                        cacheCapacityBytes = mediaCacheLimitBytes(),
                     )
                 return CoordinatedVideoStreamSession(
                     SteamContentSdkVideoStreamSession(
@@ -178,3 +188,8 @@ private class CoordinatedVideoStreamSession(
 }
 
 private const val STREAM_CACHE_DIRECTORY = "steam-video-stream"
+
+/** The settings screen's own floor for the online-playback cache, mirrored here so the stream never asks for
+ * a cache smaller than the screen can express. */
+private const val MIN_MEDIA_CACHE_MB = 128
+private const val BYTES_PER_MB = 1024L * 1024L
