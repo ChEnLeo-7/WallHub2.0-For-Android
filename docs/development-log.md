@@ -62,6 +62,57 @@ the temporary `wallhub.useSdk*` flags are still enabled. Binding that repository
 on the device, and then deleting the kSteam files plus `wallhub-rust` is the remaining path to "kSteam fully
 replaced".
 
+## 2026-09-25 (later) — kSteam and `wallhub-rust` are deleted, and ETC2 is the app's own module
+
+The rows the previous entry left open are closed. Both old backends are gone from the tree, the graph serves
+every Steam contract from the SDK, and the one product-format primitive the depot core owned now has an
+app-owned native module. Commits: `5c5641c` (ETC2 module), `6347a30` (deletion), against SDK `e65800d` /
+AAR `0.1.35`.
+
+### ETC2 moved out of the depot core
+
+`TexMobileConverter` no longer reaches into `WallHubRust.compressEtc2Rgba`. The encoder is now
+`app/src/main/cpp` (the vendored etcpak sources with their license, one JNI-free core, one bridge) built by
+`scripts/build-etc2.sh` into `libwallhub_etc2.so` for all four ABIs through the NDK clang toolchain - not a
+Gradle CMake step, because the build worker's SDK has no CMake package. The move was proven before the old
+bridge was deleted: 10 sizes x 5 patterns from 4x4 to 2048x256, old versus new, 50/50 byte-identical under
+ASan/UBSan, and the first run caught a real bug in the new core (the output buffer was sized in blocks rather
+than bytes). Each library exports exactly one symbol - `Java_com_wallhub_prototype_mpkg_Etc2Compressor_nativeCompressRgba`,
+the name `javac -h` derives for the shape-equivalent class - and needs only libc/libm/libdl.
+
+### What the deletion took with it
+
+Five kSteam Kotlin files (`KSteamSessionRepository`, `SteamCredentialStore`'s kSteam driver,
+`KSteamContentAccess`, `SteamContentTransfer`, `SteamContentDownloader`), `wallhub-rust`, `RustDepotDownloader`,
+`HybridDepotDownloader`, `SteamProtocolClient`, the session-backend router, `CdnServer`/`parseDepotManifest`,
+`SteamStreamAdaptivePolicy`, `SteamDownloadCheckpoint`, the kSteam build scripts and Maven dependency, and the
+three `wallhub.useSdk*` flags: 17262 deletions against 390 insertions. `SteamCredentialStore.kt` stayed, because
+`EncryptedSteamCredentialStore` is what the SDK session backend writes and the download/range arms read; its
+one kSteam-typed helper (a legacy JWT `SteamId` reader whose only caller was a test) is gone, so no Kotlin file
+imports kSteam any more.
+
+Two things made that safe rather than hopeful. The declarations the surviving code still needed were re-homed
+first, into `SteamDownloadModels.kt`, `DownloadDiskReservations.kt`, `WorkshopStaging.kt`, and
+`WorkshopCommentInput.kt` - the keep set was computed as the transitive closure of what surviving main code
+references, not read off by hand. And the arm-A parity readings were taken from the *installed* APK (still the
+kSteam arm) before anything was deleted: subscriptions 1 / favorites 239 / votes 0 for `adgjl1182`, the
+subscriptions list, the first six favorites with counts and sizes, item `3799142774`'s detail with 47 comments
+and its two newest comments - plus the finding that the old path's **Voted list fails outright**
+("无法读取个人资料库"), so the SDK's new `myvotes` ordinal can only improve that collection.
+
+### Build and evidence status
+
+- The SDK's `WorkshopPersonalList` gained `VOTED = 4` (SDK ABI minor 20, `e65800d`), inside the
+  owner-approved schema route, so the Voted collection is served rather than answered with an empty page.
+- The build worker's `Invoke-AndroidBuildWorker.ps1` called the deleted `scripts/build-rust.sh`; it now calls
+  `scripts/build-etc2.sh` (backup kept beside it as `.bak-etc2`).
+- `.github/workflows/verify.yml` was rewritten around what a hosted runner can actually do: the SDK preview AAR
+  is a local, gitignored artifact, so CI cannot build the APK. The workflow now cross-compiles the ETC2 module
+  for every ABI and guards that the removed backends stay removed; the APK is built on the LAN worker.
+- **Open**: the application's Kotlin compile has not been run anywhere yet (Gradle is not allowed on the source
+  host), so the next build is the first compiler this change meets; and the device readings for the SDK-served
+  Workshop reads, depot-backed playback, and the Voted list are still to be taken.
+
 ### Where the current state lives
 
 The SDK repository's handover document (`../../Steam Content SDK/docs/AGENT_HANDOVER.md`, i.e.
