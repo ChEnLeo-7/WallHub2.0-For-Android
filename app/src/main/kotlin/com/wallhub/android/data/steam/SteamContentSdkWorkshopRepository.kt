@@ -694,11 +694,17 @@ internal class SteamContentSdkWorkshopRepository
          * that refuses the read, answers an empty map so every caller keeps its own placeholder reading.
          */
         private fun readPlayerProfiles(accountIds: Set<Long>): Map<Long, SdkPlayerProfile> {
-            val ids = accountIds.filter { it > 0L }.distinct().toLongArray()
+            val ids = accountIds.filter { it > 0L }.distinct()
             if (ids.isEmpty()) return emptyMap()
-            return runCatchingUnavailable {
-                engine.openPlayerProfiles(ids).use { profiles -> readProfiles(profiles) }
-            } ?: emptyMap()
+            // The SDK refuses a read of more than its own ceiling, and the refusal aborts whatever asked for the
+            // profiles - on a browse page that is the whole page. One page holds more authors than the ceiling,
+            // so the set is read in bounded slices and the answers are merged; a slice that fails contributes
+            // nothing, which is the same placeholder reading a failed single read leaves.
+            return ids.chunked(MAX_SDK_PROFILE_ACCOUNTS).flatMap { slice ->
+                runCatchingUnavailable {
+                    engine.openPlayerProfiles(slice.toLongArray()).use { profiles -> readProfiles(profiles) }
+                }.orEmpty().entries
+            }.associate { entry -> entry.key to entry.value }
         }
 
         /**
@@ -949,6 +955,14 @@ private const val TAG = "WallHubSdkWorkshop"
 
 /** How many tag names one diagnostic page line may carry: enough to name the type, no more. */
 private const val MAX_LOGGED_TAGS = 8
+
+/**
+ * How many accounts one SDK profile read may name.
+ *
+ * The SDK's own ceiling is sixteen (`sc_content::player::MAX_PLAYER_ACCOUNT_IDS`), and the binding refuses a
+ * longer list before the call leaves the process, so this mirrors it rather than guessing.
+ */
+private const val MAX_SDK_PROFILE_ACCOUNTS = 16
 
 private const val MAX_SDK_COMMENT_PAGE_SIZE = 50
 private const val MAX_SDK_PAGE_SIZE = 50
