@@ -656,3 +656,12 @@ and an empty list for a resolved collection that holds none
 this item owes needs one of two things: opening a collection item whose page lists its children, or the same
 kind of one-line diagnostic the interaction reads got. The rails themselves now load (entry (10)), so the
 former is available on a freshly started session.
+
+## 2026-09-27 (12) - the collection-children reading now has its line
+
+The read had no diagnostic, so the device reading ③ owes for 合集子项 had nothing to look at. It now logs the
+collection's id, the number of children the service returned, and up to twelve of their ids
+(`data/steam/SteamContentSdkWorkshopRepository.kt`, `getPublicCollectionChildren`), in the same one-line shape
+the interaction reads use. A refused read still answers null and therefore logs `count=null`, which is the
+"unavailable" answer the contract allows and not the same reading as a collection that holds no children.
+The line is app-side only, so it needs the next application build but no new AAR.

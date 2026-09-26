@@ -223,7 +223,18 @@ internal class SteamContentSdkWorkshopRepository
                     mutex.withLock {
                         engine
                             .openWorkshopItem(collectionId, WALLPAPER_ENGINE_APP_ID.toLong())
-                            .use { result -> readCollectionChildren(result) }
+                            .use { result ->
+                                val children = readCollectionChildren(result)
+                                // A collection's children travel on the details response, so the reading this
+                                // owes is the count and the ids the service put there - the same one-line shape
+                                // the interaction reads use. Null is the unavailable answer, not an empty list.
+                                Log.i(
+                                    TAG,
+                                    "workshop collection children id=$collectionId count=${children?.size} " +
+                                        "ids=${children?.take(MAX_LOGGED_CHILDREN)}",
+                                )
+                                children
+                            }
                     }
                 }
             }
@@ -1033,6 +1044,9 @@ private fun Int.toMaximumPage(pageSize: Int): Int {
 }
 
 private const val TAG = "WallHubSdkWorkshop"
+
+/** Most child ids one reading logs; a collection can hold more than a line should carry. */
+private const val MAX_LOGGED_CHILDREN = 12
 
 /** How many tag names one diagnostic page line may carry: enough to name the type, no more. */
 private const val MAX_LOGGED_TAGS = 8
