@@ -571,3 +571,14 @@ mutation that used to sit behind it was the wrong call rather than a wrong value
 **③ interaction pair, complete on the device**: subscription state (`SUBSCRIBED` / `NOT_SUBSCRIBED`), favourite
 state (`FAVORITED`), subscribe/unsubscribe writes confirmed, and favourite writes confirmed. The favourite
 write's own probe has been promoted to the fix in the SDK, so the next build carries it as production code.
+
+## 2026-09-27 (8) - the write tests left the account exactly as they found it
+
+After the favourite and subscription writes were exercised on item `2905017768` and `3774904326`, 我的 reads
+**我的订阅 1 / 我的收藏 239 / 我的投票 —**, the same counts the account had before the tests (and the same
+favourites total the pre-deletion arm-A baseline recorded). A stale 我的收藏 page showed the empty state for a
+moment because it had been reloaded while the item was briefly unfavourited; the authoritative counts on 我的
+show nothing was lost, and no write was left applied.
+
+That closes the interaction work of ③ on the device: subscription state, favourite state, subscribe/unsubscribe
+writes, and favourite writes - each read and each write confirmed, with the account restored afterwards.
