@@ -380,3 +380,16 @@ showed subscriptions and favourites answering normally.
 Verdict for this collection: within the approved published-file closure there is no request that lists the
 files an account voted on, and the pre-deletion backend failed on the same selector, so the Voted tab has never
 been served. How the UI should present that is a product decision; today it silently shows 0 and an empty list.
+
+## 2026-09-26 (7) - the Voted tab says what is true instead of nothing
+
+Steam has no request that lists the files an account voted on, so the collection now reports that rather than
+an invented zero:
+
+- the profile's 我的投票 card shows `—` when the read was refused instead of answered
+  (`feature/profile/ProfileScreen.kt`, `ProfileCounts.votedUnavailable`), because a zero would be a claim the
+  read never made;
+- the Library's Voted tab says "Steam does not provide a voted-items list" / "Steam 不提供已投票列表" instead
+  of "No matching voted items" (`library_empty_voted`, both locales).
+
+A read that is merely slow or empty still reads as empty, since only a refusal sets the flag.

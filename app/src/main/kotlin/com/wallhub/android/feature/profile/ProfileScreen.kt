@@ -53,6 +53,15 @@ data class ProfileCounts(
     val subscriptions: Int = 0,
     val favorites: Int = 0,
     val voted: Int = 0,
+    /**
+     * Whether Steam refused the voted-items read rather than answering it.
+     *
+     * The service has no selector that lists the files an account voted on - `GetUserFiles` accepts
+     * `myfiles`, `myfavorites`, and `mysubscriptions`, and every spelling of a votes selector answers
+     * `EResult 8` (`InvalidParam`) - so a zero here would be a claim the read never made. The card shows a
+     * dash instead, and the collection says why.
+     */
+    val votedUnavailable: Boolean = false,
 )
 
 @HiltViewModel
@@ -71,8 +80,14 @@ class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionReposi
                         loadedAccount = current.accountName
                         val subscriptions = runCatching { accountRepository.browseCollection(AccountWorkshopQuery(AccountWorkshopCollection.SUBSCRIPTIONS, pageSize = 1, resolveTotalCount = true)).totalCount ?: 0 }.getOrDefault(0)
                         val favorites = runCatching { accountRepository.browseCollection(AccountWorkshopQuery(AccountWorkshopCollection.FAVORITES, pageSize = 1, resolveTotalCount = true)).totalCount ?: 0 }.getOrDefault(0)
-                        val voted = runCatching { accountRepository.browseCollection(AccountWorkshopQuery(AccountWorkshopCollection.VOTED, pageSize = 1, resolveTotalCount = true)).totalCount ?: 0 }.getOrDefault(0)
-                        _counts.value = ProfileCounts(subscriptions, favorites, voted)
+                        val votedRead = runCatching { accountRepository.browseCollection(AccountWorkshopQuery(AccountWorkshopCollection.VOTED, pageSize = 1, resolveTotalCount = true)) }.getOrNull()
+                        _counts.value =
+                            ProfileCounts(
+                                subscriptions = subscriptions,
+                                favorites = favorites,
+                                voted = votedRead?.totalCount ?: 0,
+                                votedUnavailable = votedRead == null,
+                            )
                         _runtimeHours.value = runCatching { playtimeRepository.getAppPlaytime(WALLPAPER_ENGINE_APP_ID)?.totalMinutes?.div(60) }.getOrNull()
                     }
                     current.phase == SteamSessionPhase.SIGNING_IN &&
@@ -131,7 +146,12 @@ fun ProfileRoute(onOpenSettings: () -> Unit, onOpenSubscriptions: () -> Unit, on
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ProfileStatCard(stringResource(R.string.profile_subscriptions), counts.subscriptions.toString(), onOpenSubscriptions, Modifier.weight(1f))
                     ProfileStatCard(stringResource(R.string.profile_favorites), counts.favorites.toString(), onOpenFavorites, Modifier.weight(1f))
-                    ProfileStatCard(stringResource(R.string.profile_voted), counts.voted.toString(), onOpenVoted, Modifier.weight(1f))
+                    ProfileStatCard(
+                        stringResource(R.string.profile_voted),
+                        if (counts.votedUnavailable) "—" else counts.voted.toString(),
+                        onOpenVoted,
+                        Modifier.weight(1f),
+                    )
                 }
             }
             item { ProfileEntryCard(stringResource(R.string.profile_downloads), stringResource(R.string.profile_download_hint), onOpenDownloads, Icons.Outlined.Download) }

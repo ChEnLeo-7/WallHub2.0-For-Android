@@ -724,7 +724,7 @@
     <string name='library_empty_search'>No matching wallpaper in this library</string>
     <string name='library_empty_subscriptions'>No matching subscriptions</string>
     <string name='library_empty_favorites'>No matching favorites</string>
-    <string name='library_empty_voted'>No matching voted items</string>
+    <string name='library_empty_voted'>Steam does not provide a voted-items list</string>
     <string name='library_refresh'>Refresh</string>
     <string name='library_current_page_description'>Page %1$d; known last page %2$d; tap to enter a page</string>
     <string name='library_preview'>%1$s preview</string>

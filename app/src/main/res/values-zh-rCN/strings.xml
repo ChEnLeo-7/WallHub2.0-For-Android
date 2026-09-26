@@ -697,7 +697,7 @@
     <string name='library_empty_search'>资料库中没有匹配的壁纸</string>
     <string name='library_empty_subscriptions'>没有符合条件的个人订阅</string>
     <string name='library_empty_favorites'>没有符合条件的收藏</string>
-    <string name='library_empty_voted'>没有符合条件的投票项目</string>
+    <string name='library_empty_voted'>Steam 不提供已投票列表</string>
     <string name='library_refresh'>刷新</string>
     <string name='library_current_page_description'>当前第 %1$d 页；当前已知最大页码为 %2$d；点击输入页码</string>
     <string name='library_preview'>%1$s 预览图</string>

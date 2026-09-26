@@ -1565,6 +1565,8 @@ private fun LibraryResultsContent(
                     } else if (state.collection == LibraryCollectionTab.FAVORITES) {
                         stringResource(R.string.library_empty_favorites)
                     } else {
+                        // Steam has no request that lists the files an account voted on, so this tab must not
+                        // read as "you have none": an unanswerable list is not an empty one.
                         stringResource(R.string.library_empty_voted)
                     },
                 actionLabel = stringResource(R.string.library_refresh),
