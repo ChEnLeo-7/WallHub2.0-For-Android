@@ -305,6 +305,7 @@ class SteamContentSdkEngine
             createdAfter: Long = 0L,
             createdBefore: Long = 0L,
             language: Int = 0,
+            tagGroups: List<List<String>> = emptyList(),
         ): WorkshopPage {
             val open = openEngine(WorkshopOperation.SEARCH)
             return open.workshopSearch(
@@ -321,6 +322,7 @@ class SteamContentSdkEngine
                     createdAfter = createdAfter,
                     createdBefore = createdBefore,
                     language = language,
+                    tagGroups = tagGroups,
                 )
             )
         }

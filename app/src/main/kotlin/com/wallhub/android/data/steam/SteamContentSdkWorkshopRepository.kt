@@ -13,6 +13,7 @@ import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
 import com.wallhub.android.core.model.defaultSteamWorkshopLanguage
 import com.wallhub.android.core.model.matchesSteamWallpaperPage
 import com.wallhub.android.core.model.normalizedCreatedRange
+import com.wallhub.android.core.model.normalizedRequiredTagGroups
 import com.wallhub.android.core.model.steamTagCriteria
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
@@ -180,6 +181,9 @@ internal class SteamContentSdkWorkshopRepository
                                     createdAfter = normalized.sdkCreatedAfter(),
                                     createdBefore = normalized.sdkCreatedBefore(),
                                     language = defaultSteamWorkshopLanguage(),
+                                    // Tag groups are alternatives per group, which is how a discover route
+                                    // states its genres; the service satisfies at least one tag of each.
+                                    tagGroups = normalized.normalizedRequiredTagGroups(),
                                 )
                             } else {
                                 engine.workshopAuthorItems(
