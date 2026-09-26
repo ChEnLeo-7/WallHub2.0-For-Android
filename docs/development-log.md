@@ -645,3 +645,14 @@ vocabulary names - the 「此主题加载失败」 screens an hour earlier were 
 themselves. That also means the rail-based readings still owed to ③ (collection children, friend-activity
 ordering, and the two data sources) can be taken on a session that has just started, and that a restart is the
 workaround until the reconnect path is fixed.
+
+## 2026-09-27 (11) - what the collection-children reading needs
+
+Preparing the ③ item: `getPublicCollectionChildren` resolves the collection through the same
+`openWorkshopItem` details read every item uses and returns `readCollectionChildren(result)` - a pass-through
+over the details response's own ordered children (ADR 0033), with the contract's null for an unavailable read
+and an empty list for a resolved collection that holds none
+(`data/steam/SteamContentSdkWorkshopRepository.kt:213-228`). Nothing in that path logs, so the device reading
+this item owes needs one of two things: opening a collection item whose page lists its children, or the same
+kind of one-line diagnostic the interaction reads got. The rails themselves now load (entry (10)), so the
+former is available on a freshly started session.
