@@ -308,3 +308,27 @@ The other three fields were already real: `sdkCreatedAfter`/`sdkCreatedBefore` r
 `normalizedRequiredTagGroups()` - each populated from the official Discover descriptor, which carries
 `timestamp_start`/`timestamp_end` and `requiredtaggroups`
 (`feature/discover/DiscoverQueryAdapter.kt:141` and `:139`, `data/discover/OfficialDiscoverMetadataParser.kt:91`).
+
+## 2026-09-26 (4) - the Voted read is refused by the service, not by us
+
+AAR **0.1.48** (`sha256=3e1a4bf0970d8852ade94aaeb91232d9261563dff5e02b3a3b0c2e3dda6203da`), app revision
+`b677ea9`, installed from `/root/builds/wallhub-release-20260926T150457Z-1764520491.apk` (the APK's own
+`lib/arm64-v8a/libsc_content_ffi.so` is byte-identical to the AAR's, `4fc3f2050467a50a28085c8b1e57843bcfdc486a39cc18f4b6f887c8517fad0a`).
+Opening 我的 on a cold start read:
+
+```text
+23:08:00.832 I/WallHubSdkWorkshop: workshop page rows=1 of 1 collection=SUBSCRIPTIONS first-id=3774904326 ...
+23:08:01.433 I/WallHubSdkWorkshop: workshop page rows=1 of 1 collection=FAVORITES first-id=2905017768 ...
+23:08:02.015 W/WallHubSdkWorkshop: workshop read unavailable: access_denied: the service refused the request
+```
+
+The 0.1.48 AAR carries the fix that keeps the session's typed published-file seam, so this sentence is the real
+classification rather than the flattened one. It says the first two collections answered and the Voted read was
+**refused by Steam** - `access_denied` is the service-answer arm of the mapping. Every local hypothesis is now
+dead: the list ordinal, the `myvotes` selector, the one-row window, and the session state were each proven
+correct (see the SDK's `progress.md` CD5j/CD5k). The app's own `runCatching{}.getOrDefault(0)` on that call
+(`feature/profile/ProfileScreen.kt:74`) is why the screen showed 0 rather than an error.
+
+The same change lands with 0.1.49: a service refusal now prints the protocol result code Steam sent
+(`access_denied: the service refused the request (service result N)`), which the next reading needs to choose
+between a rate limit, a privacy refusal, and an invalid selector.
