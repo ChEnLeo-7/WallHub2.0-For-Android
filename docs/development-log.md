@@ -582,3 +582,26 @@ show nothing was lost, and no write was left applied.
 
 That closes the interaction work of ③ on the device: subscription state, favourite state, subscribe/unsubscribe
 writes, and favourite writes - each read and each write confirmed, with the account restored afterwards.
+
+## 2026-09-27 (9) - the discover rails fail on a dropped connection, and a retry does not recover it
+
+Opening 发现 showed every rail as 「此主题加载失败」 with a retry control, and the engine's own lines say why:
+
+```text
+00:51:30 I/WallHubSteamSession: phase_signed_in
+00:52:12 I/WallHubSdkWorkshop: workshop interaction id=2905017768 ... favorited=FAVORITED      (reads answered)
+00:57:18 W/WallHubSdkWorkshop: workshop read unavailable: temporarily_unavailable: the connection failed before the service answered
+00:57:18 ... eight identical lines, one per rail
+00:57:33 the same line after tapping a rail's retry
+```
+
+So this is not a filter, a selector, or a schema problem: the CM connection stopped answering about six minutes
+after the session reported itself signed in, and every subsequent read reports the transport failure while the
+session state never changes and the in-app retry does not re-establish it. Two things follow that a fresh
+session should pick up: the discover rails were not readable at all in this state, and ③'s remaining rail-based
+readings (合集子项, 好友动态排序, the two data sources) need a session that reconnects, so the reconnect path is
+worth reading next - whether the SDK is meant to notice the drop (heartbeat policy) or the app to re-establish
+the session when a read reports `temporarily_unavailable`.
+
+No code change was made for this reading; it is recorded so the next session does not mistake the rails'
+failure for the filter work of ①.
