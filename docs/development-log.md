@@ -552,3 +552,22 @@ session was refused with `EResult 15`, which isolates the defect to the favourit
 `AddAppRelationship` / `RemoveAppRelationship` - rather than to the mutation path. Since `Subscribe` carries its
 own `list_type` and the favourite *read* turned out to be the same list call with `listtype = 2`, the favourite
 may simply be another subscription-list type, which would make the fix a constant rather than new ABI surface.
+
+## 2026-09-27 (7) - the favourite write works: it is the subscription mutation with listtype 2
+
+AAR **0.1.57** (app `20260926T164949Z-16467962`) asked for the favourite through `Subscribe`/`Unsubscribe` with
+`list_type = 2`, and the device confirmed both directions:
+
+```text
+00:52:12 I/WallHubSdkWorkshop: workshop interaction id=2905017768 subscribed=NOT_SUBSCRIBED favorited=FAVORITED favorited-value=1
+00:52:19 I/WallHubSdkWorkshop: workshop favorite write id=2905017768 ask=false confirmed=false
+00:52:34 I/WallHubSdkWorkshop: workshop favorite write id=2905017768 ask=true  confirmed=true
+```
+
+No `access_denied` line, both directions confirmed, and the account's favourite was restored. So the star now
+both shows and changes the account's real state - the first time in this campaign - and the app-relationship
+mutation that used to sit behind it was the wrong call rather than a wrong value.
+
+**③ interaction pair, complete on the device**: subscription state (`SUBSCRIBED` / `NOT_SUBSCRIBED`), favourite
+state (`FAVORITED`), subscribe/unsubscribe writes confirmed, and favourite writes confirmed. The favourite
+write's own probe has been promoted to the fix in the SDK, so the next build carries it as production code.
