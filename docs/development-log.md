@@ -605,3 +605,11 @@ the session when a read reports `temporarily_unavailable`.
 
 No code change was made for this reading; it is recorded so the next session does not mistake the rails'
 failure for the filter work of ①.
+
+**The device was healthy while the reads failed.** One minute later: the app was alive and in the foreground
+(`pid 14223`, `topResumedActivity=com.wallhub.android/.MainActivityThemedIcon`) and the default network was a
+validated WiFi link (`WIFI CONNECTED`, `VALIDATED`, RSSI -12, 433 Mbps). So the failure is a stale CM
+connection inside the session - the state still reports `phase_signed_in` and the engine never re-establishes
+it - not a device or network outage. That is the concrete thing to read next: either the SDK should notice the
+drop (heartbeat policy) or the app should rebuild the session when a read answers
+`temporarily_unavailable`.
