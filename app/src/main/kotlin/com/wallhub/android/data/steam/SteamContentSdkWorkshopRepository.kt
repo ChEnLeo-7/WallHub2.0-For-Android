@@ -12,6 +12,7 @@ import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
 import com.wallhub.android.core.model.defaultSteamWorkshopLanguage
 import com.wallhub.android.core.model.matchesSteamWallpaperPage
+import com.wallhub.android.core.model.normalizedCreatedRange
 import com.wallhub.android.core.model.steamTagCriteria
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
