@@ -166,6 +166,10 @@ internal class SteamContentSdkWorkshopRepository
                                     queryText = normalized.steamSearchText().takeIf(String::isNotBlank),
                                     contentTypes = normalized.sdkContentTypes(),
                                     tags = normalized.sdkTags(),
+                                    // Both halves of the product's filter travel: the service excludes what
+                                    // the user did not select, so a page arrives already narrowed and stays
+                                    // full. The client-side gate below is the backstop, not the mechanism.
+                                    excludedTags = normalized.sdkExcludedTags(),
                                 )
                             } else {
                                 engine.workshopAuthorItems(
@@ -850,6 +854,9 @@ private fun WorkshopBrowseQuery.sdkContentTypes(): List<Int> {
 
 /** The tag filter the SDK request takes; its empty list means no tag filter at all. */
 private fun WorkshopBrowseQuery.sdkTags(): List<String> = steamTagCriteria().requiredTags
+
+/** The tags the filter vocabulary names as excluded, which the service now excludes for us. */
+private fun WorkshopBrowseQuery.sdkExcludedTags(): List<String> = steamTagCriteria().excludedTags
         .distinct()
         .take(MAX_SDK_TAGS)
 

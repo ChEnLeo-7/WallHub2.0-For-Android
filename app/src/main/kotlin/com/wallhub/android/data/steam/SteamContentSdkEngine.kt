@@ -300,6 +300,7 @@ class SteamContentSdkEngine
             queryText: String?,
             contentTypes: List<Int>,
             tags: List<String>,
+            excludedTags: List<String> = emptyList(),
         ): WorkshopPage {
             val open = openEngine(WorkshopOperation.SEARCH)
             return open.workshopSearch(
@@ -312,6 +313,7 @@ class SteamContentSdkEngine
                     queryText = queryText,
                     contentTypes = contentTypes,
                     tags = tags,
+                    excludedTags = excludedTags,
                 )
             )
         }
