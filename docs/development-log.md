@@ -521,3 +521,18 @@ Tapping the star then exercised the write, and the service refused it:
 nothing, and the item is still in 我的收藏. `RemoveAppRelationship` is sent without the App field and with the
 inherited `relationship = 1`, both of which are candidates for the refusal - the same two candidates the read
 half just settled.
+
+## 2026-09-27 (5) - the favourite write refuses relationship 2 as well
+
+With AAR **0.1.56** the mutation named relationship 2 (the value the favourites *list* uses) instead of 1, and
+the star tap was refused exactly as before:
+
+```text
+00:38:10 W/WallHubSdkWorkshop: workshop read unavailable: access_denied: the service refused the request (service result 15)
+00:38:10 I/WallHubSdkWorkshop: workshop favorite write id=2905017768 ask=false confirmed=null
+```
+
+The same item read `favorited=FAVORITED` ten seconds earlier, so the read is fine and the write is not about the
+relationship value. What is left is the `appid` field that `AddAppRelationship` / `RemoveAppRelationship` carry
+and this SDK deliberately leaves unset, because the seam's interaction request has no App to give it. Naming one
+is a seam + ABI change, so it is planned rather than guessed. The probe is reverted to the reviewed value.
