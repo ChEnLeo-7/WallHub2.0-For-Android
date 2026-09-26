@@ -29,6 +29,7 @@ import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.data.downloads.DownloadTimingTelemetry
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -421,6 +422,19 @@ class HomeViewModel
                         throw error
                     } catch (error: Throwable) {
                         if (version != requestVersion) return@launch
+                        // The error card names no cause, so the stage that failed and the exception's own text
+                        // are on the log: a prewarm refusal happens before the repository is ever called, and
+                        // without this line that reads exactly like a refused read.
+                        Log.w(
+                            HOME_LOG_TAG,
+                            "home load failed stage=" +
+                                (if (shouldPrewarm && mutableState.value.isSteamIpPrewarming) {
+                                    "steam_ip_prewarm"
+                                } else {
+                                    "browse"
+                                }) + " error=${error.message}",
+                            error,
+                        )
                         mutableState.value =
                             requestState.copy(
                                 isInitialLoading = false,
@@ -524,3 +538,6 @@ internal fun resolveHomeTotalPages(
 }
 
 private fun Int.nextPageOrLast(): Int = if (this < Int.MAX_VALUE) this + 1 else Int.MAX_VALUE
+
+/** The log tag the home flow writes its own stages under, so one filter reads the whole load. */
+private const val HOME_LOG_TAG = "WallHubHome"
