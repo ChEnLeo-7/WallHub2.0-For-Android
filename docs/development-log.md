@@ -613,3 +613,11 @@ connection inside the session - the state still reports `phase_signed_in` and th
 it - not a device or network outage. That is the concrete thing to read next: either the SDK should notice the
 drop (heartbeat policy) or the app should rebuild the session when a read answers
 `temporarily_unavailable`.
+
+**The keepalive is not the missing piece either.** The protocol client always starts with a 30 s / 90 s
+heartbeat policy (`crates/sc-protocol/src/async_client.rs:612`, applied at `:852`), and the engine's
+`heartbeat_policy: None` selects that default rather than disabling it
+(`crates/sc-content-ffi/src/lib.rs:557`, `crates/sc-content/src/session_bootstrap.rs:281`). So the connection was
+being kept alive and still died unnoticed above the heartbeats: the session state never moved off
+`phase_signed_in`, and a read that answers `temporarily_unavailable` (retry advice `Immediately`) does not
+rebuild the session or the client. That session-failure path is the next thing to read.
