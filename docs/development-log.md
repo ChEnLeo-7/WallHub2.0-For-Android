@@ -536,3 +536,19 @@ The same item read `favorited=FAVORITED` ten seconds earlier, so the read is fin
 relationship value. What is left is the `appid` field that `AddAppRelationship` / `RemoveAppRelationship` carry
 and this SDK deliberately leaves unset, because the seam's interaction request has no App to give it. Naming one
 is a seam + ABI change, so it is planned rather than guessed. The probe is reverted to the reviewed value.
+
+## 2026-09-27 (6) - the subscription write works, the favourite write does not
+
+The installed build's write diagnostics needed no new artifact: the bell on an item the account is subscribed
+to answered both directions, and the account state was restored.
+
+```text
+00:39:38 I/WallHubSdkWorkshop: workshop subscribe write id=3774904326 ask=false confirmed=false
+00:39:52 I/WallHubSdkWorkshop: workshop subscribe write id=3774904326 ask=true  confirmed=true
+```
+
+So ③'s subscription-write reading is done: cancel and re-subscribe both confirm. The favourite write on the same
+session was refused with `EResult 15`, which isolates the defect to the favourite's own call -
+`AddAppRelationship` / `RemoveAppRelationship` - rather than to the mutation path. Since `Subscribe` carries its
+own `list_type` and the favourite *read* turned out to be the same list call with `listtype = 2`, the favourite
+may simply be another subscription-list type, which would make the fix a constant rather than new ABI surface.
