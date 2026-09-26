@@ -302,6 +302,9 @@ class SteamContentSdkEngine
             contentTypes: List<Int>,
             tags: List<String>,
             excludedTags: List<String> = emptyList(),
+            createdAfter: Long = 0L,
+            createdBefore: Long = 0L,
+            language: Int = 0,
         ): WorkshopPage {
             val open = openEngine(WorkshopOperation.SEARCH)
             return open.workshopSearch(
@@ -315,6 +318,9 @@ class SteamContentSdkEngine
                     contentTypes = contentTypes,
                     tags = tags,
                     excludedTags = excludedTags,
+                    createdAfter = createdAfter,
+                    createdBefore = createdBefore,
+                    language = language,
                 )
             )
         }

@@ -10,6 +10,7 @@ import com.wallhub.android.core.model.SteamPlaytimeRepository
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
+import com.wallhub.android.core.model.defaultSteamWorkshopLanguage
 import com.wallhub.android.core.model.matchesSteamWallpaperPage
 import com.wallhub.android.core.model.steamTagCriteria
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
@@ -160,7 +161,7 @@ internal class SteamContentSdkWorkshopRepository
                                     sort = normalized.sort.sdkSort(),
                                     // Only DEFAULT is accepted by this release, so the search's own trend
                                     // window is what answers; the app's `days` has no SDK parameter.
-                                    trendWindow = WorkshopTrendWindow.DEFAULT,
+                                    trendWindow = normalized.days.toSdkTrendWindow(),
                                     pageSize = normalized.pageSize,
                                     pageOffset = normalized.pageOffset(),
                                     queryText = normalized.steamSearchText().takeIf(String::isNotBlank),
@@ -170,6 +171,12 @@ internal class SteamContentSdkWorkshopRepository
                                     // the user did not select, so a page arrives already narrowed and stays
                                     // full. The client-side gate below is the backstop, not the mechanism.
                                     excludedTags = normalized.sdkExcludedTags(),
+                                    // The window the product's filter names, the language its own catalogue
+                                    // asks for, and the trend window its day selection means: three fields the
+                                    // service answers with rather than dimensions the page has to be trimmed by.
+                                    createdAfter = normalized.sdkCreatedAfter(),
+                                    createdBefore = normalized.sdkCreatedBefore(),
+                                    language = defaultSteamWorkshopLanguage(),
                                 )
                             } else {
                                 engine.workshopAuthorItems(
@@ -863,6 +870,29 @@ private fun WorkshopBrowseQuery.sdkTags(): List<String> = steamTagCriteria().req
 
 /** The tags the filter vocabulary names as excluded, which the service now excludes for us. */
 private fun WorkshopBrowseQuery.sdkExcludedTags(): List<String> = steamTagCriteria().excludedTags
+
+/** The creation window's lower bound in epoch seconds, or zero for no bound. */
+private fun WorkshopBrowseQuery.sdkCreatedAfter(): Long =
+    normalizedCreatedRange()?.first?.coerceAtLeast(0L) ?: 0L
+
+/** The creation window's upper bound in epoch seconds, or zero for no bound. */
+private fun WorkshopBrowseQuery.sdkCreatedBefore(): Long =
+    normalizedCreatedRange()?.last?.coerceAtLeast(0L) ?: 0L
+
+/**
+ * The trend window the product's day selection means, as the ABI's own vocabulary.
+ *
+ * The ABI names day, week, month, and year rather than a count of days, so a selection that is not exactly one
+ * of those maps onto the nearest window it does not exceed; zero days is every time the service holds.
+ */
+private fun Int.toSdkTrendWindow(): Int =
+    when {
+        this <= 0 -> WorkshopTrendWindow.ALL_TIME
+        this == 1 -> WorkshopTrendWindow.DAY
+        this <= 7 -> WorkshopTrendWindow.WEEK
+        this <= 30 -> WorkshopTrendWindow.MONTH
+        else -> WorkshopTrendWindow.YEAR
+    }
         .distinct()
         .take(MAX_SDK_TAGS)
 
