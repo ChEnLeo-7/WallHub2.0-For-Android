@@ -255,3 +255,32 @@ plain HTTP ranges by `SteamRemoteVideoStream` and hold no decrypted-chunk cache,
 not apply to them.
 
 Both controls still need one device reading to confirm the copy change - it is in the next app build.
+
+## 2026-09-26 (2) - AAR 0.1.47 and the cache-copy fix are on the device
+
+The worker published AAR **0.1.47**
+(`sha256=1d43401ad58846fe76720038346ba75a36f3bb7b333b69c4128caa23544219c8`), the app pinned it at `4054275`,
+and the release APK built from that revision was installed with `adb install -r`. The APK really carries this
+ABI: `unzip -p <apk> lib/arm64-v8a/libsc_content_ffi.so | sha256sum` is
+`d8f5c657ac2f527fdf0efcc4241987a07af518e8f28b95b00db2eca16f68875b`, byte-identical to the AAR's
+`jni/arm64-v8a/libsc_content_ffi.so`. Artifact: `/root/builds/wallhub-release-20260926T144124Z-484913008.apk`.
+
+Cold start on the installed build:
+
+```text
+I/WallHubSteamSession: credential_persisted persisted=true stage=restore length_class=long
+I/WallHubSteamSession: phase_signed_in
+W/WallHubSdkPlayer: openPlayerProfiles count=16 ids=[76561198148035115, ...]
+W/WallHubSdkPlayer: openPlayerProfiles count=12 ids=[76561198812590217, ...]
+I/WallHubSdkWorkshop: workshop page rows=30 of 30 collection=public first-id=3799142774 first-type=WEB
+    first-size=50684227 first-tag-count=7 first-tags=[Web, Technology, Wallpaper, Audio responsive,
+    Customizable, Dynamic resolution, Everyone]
+```
+
+Session restore, the chunked profile reads (the 16-account SDK ceiling), and the full public page all still
+read correctly, so the new ABI did not regress startup. The `W/WallHubSdkPlayer` stack traces are the
+repository's own deliberate caller diagnostics, not a failure.
+
+This build also carries the online-playback-cache copy change from `7b07a4d`; the settings screen still needs
+one reading of the button with an empty cache to confirm the new message. The Voted collection read still needs
+one navigation to 我的 -> 我的投票 before its new named refusal can be read.
