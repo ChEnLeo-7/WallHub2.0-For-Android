@@ -135,6 +135,7 @@
     <string name='settings_streaming_cache_description'>Limits cached decrypted Steam chunks for streaming. Default: 512 MB.</string>
     <string name='settings_clear_streaming_cache'>Clear online playback cache</string>
     <string name='settings_streaming_cache_cleared'>Cleared %1$s of online playback cache</string>
+    <string name='settings_streaming_cache_empty'>No stored online playback cache to clear</string>
     <string name='settings_streaming_cache_clear_failed'>Unable to clear the online playback cache</string>
     <string name='settings_custom_value'>Custom: %1$s</string>
     <string name='settings_custom_streaming_cache'>Custom streaming cache</string>

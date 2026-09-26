@@ -225,3 +225,33 @@ release when the screen was left. Start, seek, and cancel are read; a rebuffer w
 The Voted collection still fails (`invalid_input: the request was refused before it was sent`) - a locally
 refused call the SDK's taxonomy does not name precisely enough to diagnose from the device, so it needs a live
 probe of the `myvotes` selector rather than another guess.
+
+## 2026-09-26 - the two streaming-cache controls, read on the source before another build
+
+The SDK arm is the only playback backend left, so the two settings-screen controls were re-read against the
+implementation rather than assumed.
+
+**"Clear online playback cache" used to claim work it had not done.** `SteamVideoStreamCache.clearRoot`
+returns `0` when the cache root holds no files
+(`app/src/main/kotlin/com/wallhub/android/data/downloads/SteamVideoStreamCache.kt:594`), and nothing in the app
+constructs `SteamVideoStreamCache` any more - the class is only ever reached through that static clear
+(`.../SteamWorkshopVideoStreamRepository.kt:96`), because SDK-served playback keeps its decrypted chunks in one
+bounded in-memory cache per stream (`.../SteamContentSdkVideoStreamSession.kt:11`). So on a build that no longer
+writes the on-disk cache the button reported "Cleared 0 B of online playback cache" - a no-op dressed as work.
+It now reports `settings_streaming_cache_empty` ("No stored online playback cache to clear") for a zero reading
+and keeps the byte count for a real one
+(`app/src/main/kotlin/com/wallhub/settings/SettingsViewModel.kt:246`); the legacy leftovers it can still free are
+still freed. The Chinese copy was added too (`res/values-zh-rCN/strings.xml`).
+
+**"Cache the complete file while watching" has no control to fix.** The banner that would carry it is gated on
+`fullCacheState` being `CACHING`/`COMPLETE`/`ERROR` (`.../feature/detail/OnlineVideoPlayerScreen.kt:571`), and
+the state is the contract default that never leaves `IDLE`
+(`core/model/RepositoryContracts.kt:186`); `startFullCache` has no caller anywhere in `app/src`. The affordance
+never appears, so it promises nothing on screen - it is unreachable code, not a visible no-op, and was left
+alone rather than edited without a device reading. What the slider does promise - "Limits cached decrypted Steam
+chunks for streaming" - is true: it is passed to the SDK range stream as that stream's own ceiling
+(`.../SteamWorkshopVideoStreamRepository.kt:110` and `:155`, floor 128 MB). Direct-file items are read over
+plain HTTP ranges by `SteamRemoteVideoStream` and hold no decrypted-chunk cache, so the ceiling correctly does
+not apply to them.
+
+Both controls still need one device reading to confirm the copy change - it is in the next app build.

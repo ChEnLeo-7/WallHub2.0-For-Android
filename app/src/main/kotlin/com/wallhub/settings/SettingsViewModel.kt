@@ -247,14 +247,20 @@ class SettingsViewModel
             viewModelScope.launch {
                 runCatching { workshopVideoStreamRepository.clearCache() }
                     .onSuccess { clearedBytes ->
-                        effectChannel.send(
-                            SettingsEffect.ShowMessage(
+                        // SDK-served playback holds its decrypted chunks in one bounded in-memory cache per
+                        // stream, so once no legacy leftovers remain there is nothing on disk to free. Saying
+                        // "cleared 0 B" there would claim work that did not happen, so the empty reading
+                        // reports itself instead.
+                        val message =
+                            if (clearedBytes > 0L) {
                                 context.getString(
                                     R.string.settings_streaming_cache_cleared,
                                     Formatter.formatFileSize(context, clearedBytes),
-                                ),
-                            ),
-                        )
+                                )
+                            } else {
+                                context.getString(R.string.settings_streaming_cache_empty)
+                            }
+                        effectChannel.send(SettingsEffect.ShowMessage(message))
                     }.onFailure {
                         effectChannel.send(
                             SettingsEffect.ShowMessage(

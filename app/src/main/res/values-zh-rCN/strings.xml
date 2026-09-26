@@ -123,6 +123,7 @@
     <string name='settings_streaming_cache_description'>限制在线播放的已解密 Steam 分块缓存；默认 512 MB。</string>
     <string name='settings_clear_streaming_cache'>清理在线播放缓存</string>
     <string name='settings_streaming_cache_cleared'>已清理 %1$s 在线播放缓存</string>
+    <string name='settings_streaming_cache_empty'>没有可清理的在线播放缓存</string>
     <string name='settings_streaming_cache_clear_failed'>清理在线播放缓存失败</string>
     <string name='settings_custom_value'>自定义：%1$s</string>
     <string name='settings_custom_streaming_cache'>自定义在线播放缓存</string>
