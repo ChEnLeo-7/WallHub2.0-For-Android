@@ -894,8 +894,6 @@ private fun Int.toSdkTrendWindow(): Int =
         this <= 30 -> WorkshopTrendWindow.MONTH
         else -> WorkshopTrendWindow.YEAR
     }
-        .distinct()
-        .take(MAX_SDK_TAGS)
 
 /**
  * The app's seven sorts onto the AAR's published ranking vocabulary, one to one.
