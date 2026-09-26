@@ -679,3 +679,9 @@ only when a collection item's page asks for its children. That is the one step l
 collection from the discover feed on a freshly started session (entry (11) explains why a fresh session), and
 the line will report the collection id, the child count, and up to twelve child ids, with `count=null` meaning
 the read was unavailable rather than an empty collection.
+
+**Device provenance for the clean build.** The APK built against 0.1.58 carries a native library byte-identical
+to that AAR's (`sha256=a5b39e19fdf17a11c3500b69768991f22c032a17ec71e326e649730a96874749` for
+`lib/arm64-v8a/libsc_content_ffi.so`), and the device's own `lastUpdateTime=2026-09-27 01:15:01` is the install
+recorded above. So what runs on the phone is exactly the clean 0.1.58 SDK plus the application build with the
+collection-children diagnostic - not the earlier probe artifact.
