@@ -10,7 +10,6 @@ import com.wallhub.android.core.model.SteamPlaytimeRepository
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
-import com.wallhub.android.core.model.defaultSteamWorkshopLanguage
 import com.wallhub.android.core.model.matchesSteamWallpaperPage
 import com.wallhub.android.core.model.normalizedCreatedRange
 import com.wallhub.android.core.model.normalizedRequiredTagGroups
@@ -180,7 +179,10 @@ internal class SteamContentSdkWorkshopRepository
                                     // service answers with rather than dimensions the page has to be trimmed by.
                                     createdAfter = normalized.sdkCreatedAfter(),
                                     createdBefore = normalized.sdkCreatedBefore(),
-                                    language = defaultSteamWorkshopLanguage(),
+                                    // The query's own language, not the phone's: the field is the one the
+                                    // caller states, and its default is already the locale's. Passing the
+                                    // locale here would silently ignore a query that names another language.
+                                    language = normalized.language.coerceAtLeast(0),
                                     // Tag groups are alternatives per group, which is how a discover route
                                     // states its genres; the service satisfies at least one tag of each.
                                     tagGroups = normalized.normalizedRequiredTagGroups(),

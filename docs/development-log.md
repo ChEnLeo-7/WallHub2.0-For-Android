@@ -284,3 +284,27 @@ repository's own deliberate caller diagnostics, not a failure.
 This build also carries the online-playback-cache copy change from `7b07a4d`; the settings screen still needs
 one reading of the button with an empty cache to confirm the new message. The Voted collection read still needs
 one navigation to 我的 -> 我的投票 before its new named refusal can be read.
+
+## 2026-09-26 (3) - the SDK browse request ignored the query's own language
+
+Reading the four filter fields end to end for ① turned up one that was not actually wired: the SDK browse
+request sent the **phone's** language rather than the query's.
+
+```kotlin
+language = defaultSteamWorkshopLanguage(),        // before
+language = normalized.language.coerceAtLeast(0),  // after
+```
+
+`WorkshopBrowseQuery.language` (`core/model/WorkshopModels.kt:77`) is the field a caller states and its default
+is already the locale's (`:80`), so nothing changes for a query that does not name one - but a query that does
+was silently ignored, while the COMMUNITY_HTML builder has always honoured it
+(`data/workshop/CommunityWorkshopRequestBuilder.kt:121` and `:182`). The SDK's contract makes zero mean "the
+service's own default" (`crates/sc-content-ffi/src/workshop.rs:2042`, omitted on the wire at `:2535`), which is
+what the clamp keeps. The unused import went with it.
+
+The other three fields were already real: `sdkCreatedAfter`/`sdkCreatedBefore` read
+`normalizedCreatedRange()` (`WorkshopQuerySemantics.kt:133`), `days` maps onto the ABI's trend vocabulary in
+`Int.toSdkTrendWindow()` (`data/steam/SteamContentSdkWorkshopRepository.kt:913`), and `tagGroups` is
+`normalizedRequiredTagGroups()` - each populated from the official Discover descriptor, which carries
+`timestamp_start`/`timestamp_end` and `requiredtaggroups`
+(`feature/discover/DiscoverQueryAdapter.kt:141` and `:139`, `data/discover/OfficialDiscoverMetadataParser.kt:91`).
