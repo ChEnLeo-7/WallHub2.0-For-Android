@@ -621,3 +621,9 @@ heartbeat policy (`crates/sc-protocol/src/async_client.rs:612`, applied at `:852
 being kept alive and still died unnoticed above the heartbeats: the session state never moved off
 `phase_signed_in`, and a read that answers `temporarily_unavailable` (retry advice `Immediately`) does not
 rebuild the session or the client. That session-failure path is the next thing to read.
+
+**A restart is the only thing that repairs it.** Force-stopping and relaunching the app one minute later gave
+`phase_signed_in` and every read answered again - the public page (`rows=30 of 30`), subscriptions (`rows=1 of
+1`), favourites (`rows=1 of 1`). So the stale connection is a defect with a workaround rather than a lost
+network: the app rebuilds its session on start and never rebuilds it while running, which is why the discover
+rails stayed failed through a rail's own retry while the device and network were healthy.
