@@ -497,3 +497,27 @@ The probe is reverted to `SUBSCRIPTION_LIST_TYPE`. The fix is to read the favour
 through the seam (so the list type stops being hard-coded in the session), which retires the unverified
 `FAVORITE_RELATIONSHIP` constant from the read path. Until that build lands, the detail screen still shows a
 hollow star for favourited items.
+
+## 2026-09-27 (4) - the star is right now, and the write behind it is refused
+
+AAR **0.1.55** (app `20260926T162921Z-1068210528`) reads the favourite from the favourites list, and the same
+item that read `NOT_FAVORITED` before now reads:
+
+```text
+00:31:48 I/WallHubSdkWorkshop: workshop interaction id=2905017768 subscribed=NOT_SUBSCRIBED favorited=FAVORITED favorited-value=1
+```
+
+So the detail screen shows the account's real favourite state for the first time in this campaign, and a list
+that answers about no item leaves the row unknown instead of reading as "not there".
+
+Tapping the star then exercised the write, and the service refused it:
+
+```text
+00:32:02 W/WallHubSdkWorkshop: workshop read unavailable: access_denied: the service refused the request (service result 15)
+00:32:02 I/WallHubSdkWorkshop: workshop favorite write id=2905017768 ask=false confirmed=null
+```
+
+`EResult 15` is `AccessDenied`, so the toggle does not reach the account today; the refused write changed
+nothing, and the item is still in 我的收藏. `RemoveAppRelationship` is sent without the App field and with the
+inherited `relationship = 1`, both of which are candidates for the refusal - the same two candidates the read
+half just settled.
