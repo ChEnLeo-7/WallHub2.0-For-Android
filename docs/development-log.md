@@ -393,3 +393,10 @@ an invented zero:
   of "No matching voted items" (`library_empty_voted`, both locales).
 
 A read that is merely slow or empty still reads as empty, since only a refusal sets the flag.
+
+**Correction to the entry above.** The first version of that change keyed the dash off the read failing, and the
+device showed it did not work: `AccountWorkshopRepository.browseCollection` has no null answer, so a refused
+read arrives as an *empty page* and the card still printed `0` (reading: 我的订阅 1 / 我的收藏 239 / 我的投票 0
+on the `0.1.52` build). Since Steam's refusal is a property of the list rather than of the moment, the profile
+now skips that read entirely and marks the count unavailable - the read could only ever produce an invented
+zero, and not making it also saves a refused service call.

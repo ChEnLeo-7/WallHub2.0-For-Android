@@ -54,12 +54,12 @@ data class ProfileCounts(
     val favorites: Int = 0,
     val voted: Int = 0,
     /**
-     * Whether Steam refused the voted-items read rather than answering it.
+     * Whether the voted-items list is unavailable rather than empty.
      *
-     * The service has no selector that lists the files an account voted on - `GetUserFiles` accepts
-     * `myfiles`, `myfavorites`, and `mysubscriptions`, and every spelling of a votes selector answers
-     * `EResult 8` (`InvalidParam`) - so a zero here would be a claim the read never made. The card shows a
-     * dash instead, and the collection says why.
+     * Steam has no selector that lists the files an account voted on - `GetUserFiles` accepts `myfiles`,
+     * `myfavorites`, and `mysubscriptions`, and every spelling of a votes selector answers `EResult 8`
+     * (`InvalidParam`) - so a count here would be a claim no read could make. The card shows a dash instead,
+     * and the collection says why.
      */
     val votedUnavailable: Boolean = false,
 )
@@ -80,13 +80,15 @@ class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionReposi
                         loadedAccount = current.accountName
                         val subscriptions = runCatching { accountRepository.browseCollection(AccountWorkshopQuery(AccountWorkshopCollection.SUBSCRIPTIONS, pageSize = 1, resolveTotalCount = true)).totalCount ?: 0 }.getOrDefault(0)
                         val favorites = runCatching { accountRepository.browseCollection(AccountWorkshopQuery(AccountWorkshopCollection.FAVORITES, pageSize = 1, resolveTotalCount = true)).totalCount ?: 0 }.getOrDefault(0)
-                        val votedRead = runCatching { accountRepository.browseCollection(AccountWorkshopQuery(AccountWorkshopCollection.VOTED, pageSize = 1, resolveTotalCount = true)) }.getOrNull()
+                        // The voted-items read is deliberately not made: Steam refuses every selector that
+                        // could ask for it with `EResult 8`, and the contract turns a refused read into an
+                        // empty page rather than a failure, so a count here could only ever be an invented 0.
+                        // The card says the list is unavailable instead.
                         _counts.value =
                             ProfileCounts(
                                 subscriptions = subscriptions,
                                 favorites = favorites,
-                                voted = votedRead?.totalCount ?: 0,
-                                votedUnavailable = votedRead == null,
+                                votedUnavailable = true,
                             )
                         _runtimeHours.value = runCatching { playtimeRepository.getAppPlaytime(WALLPAPER_ENGINE_APP_ID)?.totalMinutes?.div(60) }.getOrNull()
                     }
