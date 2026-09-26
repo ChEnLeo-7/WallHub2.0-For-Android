@@ -665,3 +665,17 @@ collection's id, the number of children the service returned, and up to twelve o
 the interaction reads use. A refused read still answers null and therefore logs `count=null`, which is the
 "unavailable" answer the contract allows and not the same reading as a collection that holds no children.
 The line is app-side only, so it needs the next application build but no new AAR.
+
+## 2026-09-27 (13) - the clean 0.1.58 build is on the device with the children line
+
+Clean AAR **0.1.58** (`sha256=2b587816b0d872af42302ecf91959f6fe0b024c8dc8ef8ba04254fa94916f205`) now carries the
+promoted favourite read/write fixes with no probe wording, the app was rebuilt against it
+(`20260926T171238Z-1406915700`), and the collection-children diagnostic went with it. A fresh start reads
+`phase_signed_in`, the public page (`rows=30 of 30`) and a discover rail (`rows=20 of 20 collection=public`,
+tags including `Dual 7680 x 2160` and `Everyone`).
+
+No `workshop collection children` line appeared for those taps because no collection was opened - the read runs
+only when a collection item's page asks for its children. That is the one step left for this ③ item: open a
+collection from the discover feed on a freshly started session (entry (11) explains why a fresh session), and
+the line will report the collection id, the child count, and up to twelve child ids, with `count=null` meaning
+the read was unavailable rather than an empty collection.
