@@ -627,3 +627,21 @@ rebuild the session or the client. That session-failure path is the next thing t
 1`), favourites (`rows=1 of 1`). So the stale connection is a defect with a workaround rather than a lost
 network: the app rebuilds its session on start and never rebuilds it while running, which is why the discover
 rails stayed failed through a rail's own retry while the device and network were healthy.
+
+## 2026-09-27 (10) - the discover rails load again once the session is healthy
+
+With the restarted session the discover feed's rails answered, two of them logged within a second of opening
+发现:
+
+```text
+00:59:55 I/WallHubSdkWorkshop: workshop page rows=20 of 20 collection=public first-id=3807473731
+    first-tags=[Scene, Anime, Wallpaper, Audio responsive, Customizable, Dual 7680 x 2160, Media Integration, Everyone]
+00:59:56 I/WallHubSdkWorkshop: workshop page rows=20 of 20 collection=public first-id=3616541797
+    first-tags=[Wallpaper, Scene, Anime, Approved, 2560 x 1440, Everyone, Customizable]
+```
+
+So the rails are served by the SDK/CM path and carry the resolution, rating, and official tags the filter
+vocabulary names - the 「此主题加载失败」 screens an hour earlier were the stale connection, not the rails
+themselves. That also means the rail-based readings still owed to ③ (collection children, friend-activity
+ordering, and the two data sources) can be taken on a session that has just started, and that a restart is the
+workaround until the reconnect path is fixed.
