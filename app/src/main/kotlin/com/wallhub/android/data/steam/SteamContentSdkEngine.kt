@@ -1,6 +1,7 @@
 package com.wallhub.android.data.steam
 
 import android.content.Context
+import android.util.Log
 import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.steamcontent.sdk.DepotRangeStream
@@ -418,8 +419,17 @@ class SteamContentSdkEngine
          * rather than answering an empty set a caller could mistake for "no persona".
          */
         @Synchronized
-        fun openPlayerProfiles(accountIds: LongArray): PlayerProfiles =
-            openPlayerEngine().openPlayerProfiles(accountIds)
+        fun openPlayerProfiles(accountIds: LongArray): PlayerProfiles {
+            // The SDK requires between one and its ceiling, and a caller that violates either aborts the read
+            // that asked for the profiles - which on the home screen is the whole page. The count and this
+            // call's own stack are what name the caller, because the guard it goes through is not this one.
+            Log.w(
+                "WallHubSdkPlayer",
+                "openPlayerProfiles count=${accountIds.size} ids=${accountIds.take(8).toList()}",
+                Throwable("openPlayerProfiles"),
+            )
+            return openPlayerEngine().openPlayerProfiles(accountIds)
+        }
 
         /**
          * Reads one App's playtime for the signed-in account (ADR 0032).
