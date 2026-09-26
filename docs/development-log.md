@@ -400,3 +400,19 @@ read arrives as an *empty page* and the card still printed `0` (reading: 我的�
 on the `0.1.52` build). Since Steam's refusal is a property of the list rather than of the moment, the profile
 now skips that read entirely and marks the count unavailable - the read could only ever produce an invented
 zero, and not making it also saves a refused service call.
+
+## 2026-09-26 (8) - the honest Voted card is on the device
+
+Build `20260926T155031Z-1207729304` (app-only change; SDK pinned at 0.1.52, whose AAR sha256
+`3ef8…`/`ea649248…` matches 0.1.49 because the probe was reverted before it). Cold start, then 我的:
+
+```text
+23:54:09.746 I/WallHubSdkWorkshop: workshop page rows=30 of 30 collection=public ...
+23:54:35.134 I/WallHubSdkWorkshop: workshop page rows=1 of 1 collection=SUBSCRIPTIONS ...
+23:54:35.954 I/WallHubSdkWorkshop: workshop page rows=1 of 1 collection=FAVORITES ...
+```
+
+and the screen reads **我的订阅 1 / 我的收藏 239 / 我的投票 —**, with the runtime line at 1486 hours. Two things
+follow: the votes count is no longer an invented zero, and the refused Voted call is gone from the log entirely,
+because the profile no longer asks a question Steam cannot answer. The favourites total (239) also matches the
+arm-A baseline recorded before the old backend was deleted.
