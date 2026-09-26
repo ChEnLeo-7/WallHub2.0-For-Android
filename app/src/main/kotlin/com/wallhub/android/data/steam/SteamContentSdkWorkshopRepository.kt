@@ -715,7 +715,9 @@ internal class SteamContentSdkWorkshopRepository
                     TAG,
                     "workshop interaction id=$workshopId subscribed=$subscribed favorited=$favorited " +
                         "subscribed-field=${result.field(WorkshopItemField.SUBSCRIBED).state} " +
-                        "favorited-field=${result.field(WorkshopItemField.FAVOURITED).state}",
+                        "subscribed-value=${result.field(WorkshopItemField.SUBSCRIBED).value} " +
+                        "favorited-field=${result.field(WorkshopItemField.FAVOURITED).state} " +
+                        "favorited-value=${result.field(WorkshopItemField.FAVOURITED).value}",
                 )
                 WorkshopInteraction(
                     subscriptionState = subscribed,
