@@ -332,3 +332,27 @@ correct (see the SDK's `progress.md` CD5j/CD5k). The app's own `runCatching{}.ge
 The same change lands with 0.1.49: a service refusal now prints the protocol result code Steam sent
 (`access_denied: the service refused the request (service result N)`), which the next reading needs to choose
 between a rate limit, a privacy refusal, and an invalid selector.
+
+## 2026-09-26 (5) - Voted is refused with EResult 8, and it never worked
+
+AAR **0.1.49** (`sha256=ea649248131c6b6cca92aa93760567535ee0e8eddcd8ed6fea3f5ce6d8771b36`), app revision
+`a3fae0c`, installed from `/root/builds/wallhub-release-20260926T151522Z-993322422.apk` (native library
+`5eb22e529232248708cc7290127295c16113a6c4d82b6f2f95e4eedf9cde1636`, identical to the AAR's copy). The same
+screen now reads the service's own code:
+
+```text
+23:18:12.366 I/WallHubSdkWorkshop: workshop page rows=1 of 1 collection=SUBSCRIPTIONS ...
+23:18:13.253 I/WallHubSdkWorkshop: workshop page rows=1 of 1 collection=FAVORITES ...
+23:18:13.518 W/WallHubSdkWorkshop: workshop read unavailable: access_denied: the service refused the request (service result 8)
+```
+
+`EResult 8` is `InvalidParam`. The three reads are identical except for the `type` string, and the two that
+answer are accepted, so Steam is rejecting `myvotes` itself. That matches the pre-deletion arm-A baseline,
+which already recorded the Voted list failing on the old backend and the profile's votes count at 0, and it
+matches Steam's own community page, whose only personal Workshop tabs are `myfiles` and `myfavorites` - there
+is no votes tab and no vote filter anywhere in it. The string came from WallHub's own earlier code
+(`46e0eb6^:.../SecureSteamSessionRuntime.kt:285`), not from the service.
+
+So the Voted collection is not a client defect: no selector in the approved published-file closure lists the
+files an account voted on. The app's own `runCatching{}.getOrDefault(0)` on that read is what keeps it silent
+(`feature/profile/ProfileScreen.kt:74`); the Library's Voted tab shows the empty state for the same reason.
