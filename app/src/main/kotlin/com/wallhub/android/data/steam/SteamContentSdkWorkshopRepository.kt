@@ -342,6 +342,13 @@ internal class SteamContentSdkWorkshopRepository
                         val accountId = signedInAccountId() ?: error("No signed-in Steam account is available")
                         mutex.withLock { engine.setSubscribed(workshopId, accountId, subscribed) }
                     }
+                // The write is a mutation of the operator's own Steam state, so the line names the item, the
+                // direction asked for, and what the service confirmed - a refused write must not read as one.
+                Log.i(
+                    TAG,
+                    "workshop subscribe write id=$workshopId ask=$subscribed " +
+                        "confirmed=${confirmed?.enabled}",
+                )
                 if (confirmed == null) {
                     WorkshopInteraction()
                 } else {
@@ -364,6 +371,11 @@ internal class SteamContentSdkWorkshopRepository
                         val accountId = signedInAccountId() ?: error("No signed-in Steam account is available")
                         mutex.withLock { engine.setFavorited(workshopId, accountId, favorited) }
                     }
+                Log.i(
+                    TAG,
+                    "workshop favorite write id=$workshopId ask=$favorited " +
+                        "confirmed=${confirmed?.enabled}",
+                )
                 if (confirmed == null) {
                     WorkshopInteraction()
                 } else {
@@ -693,9 +705,21 @@ internal class SteamContentSdkWorkshopRepository
         private fun readInteraction(workshopId: Long): WorkshopInteraction {
             require(workshopId > 0L) { "Invalid Workshop item ID" }
             return engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result ->
+                val subscribed = subscriptionStateOf(result.field(WorkshopItemField.SUBSCRIBED))
+                val favorited = favoriteStateOf(result.field(WorkshopItemField.FAVOURITED))
+                // The detail screen draws a hollow star for both "not favourited" and "the read did not
+                // answer", so a screen alone cannot say which. One line per read makes the two states - and
+                // the field states behind them - readable, and the ids are the public catalog numbers a
+                // reading already logs elsewhere.
+                Log.i(
+                    TAG,
+                    "workshop interaction id=$workshopId subscribed=$subscribed favorited=$favorited " +
+                        "subscribed-field=${result.field(WorkshopItemField.SUBSCRIBED).state} " +
+                        "favorited-field=${result.field(WorkshopItemField.FAVOURITED).state}",
+                )
                 WorkshopInteraction(
-                    subscriptionState = subscriptionStateOf(result.field(WorkshopItemField.SUBSCRIBED)),
-                    favoriteState = favoriteStateOf(result.field(WorkshopItemField.FAVOURITED)),
+                    subscriptionState = subscribed,
+                    favoriteState = favorited,
                 )
             }
         }
