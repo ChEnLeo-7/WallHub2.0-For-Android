@@ -46,6 +46,7 @@ import io.steamcontent.sdk.WorkshopTrendWindow
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -152,6 +153,7 @@ internal class SteamContentSdkWorkshopRepository
         override suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage? =
             withContext(Dispatchers.IO) {
                 runCatchingUnavailable {
+                    awaitSignedInSession()
                     val normalized = query.normalizedForSdk()
                     val creatorId = normalized.creatorId?.toLongOrNull()?.takeIf { it > 0L }
                     mutex.withLock {
@@ -266,6 +268,7 @@ internal class SteamContentSdkWorkshopRepository
                 // throw, which is the only "nothing to show" this signature can carry.
                 val loaded =
                     runCatchingUnavailable {
+                        awaitSignedInSession()
                         val accountId =
                             signedInAccountId() ?: error("No signed-in Steam account is available")
                         // Every app collection has an SDK list, so this mapping has no absent case: a
@@ -428,6 +431,7 @@ internal class SteamContentSdkWorkshopRepository
         private suspend fun loadWorkshopDetail(workshopId: Long): WorkshopDetail? {
             val detail =
                 runCatchingUnavailable {
+                    awaitSignedInSession()
                     require(workshopId > 0L) { "Invalid Workshop item ID" }
                     mutex.withLock {
                         engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result ->
@@ -749,6 +753,22 @@ internal class SteamContentSdkWorkshopRepository
          */
         private fun signedInAccountId(): Long? =
             runCatching { engine.currentSession()?.accountId() }.getOrNull()?.takeIf { it > 0L }
+
+        /**
+         * Waits, briefly, for the engine's own session to be signed in.
+         *
+         * The engine restores its session while a screen asks for its first page, and a workshop read that
+         * arrives before it is ready is refused *before it is sent* - a typed local refusal, not a wait, so the
+         * page it was serving reads as a failure and a screen that does not retry stays empty. This is the one
+         * bounded wait that turns that race into a page; it returns at once once the session answers.
+         */
+        private suspend fun awaitSignedInSession() {
+            if (signedInAccountId() != null) return
+            repeat(SESSION_READY_ATTEMPTS) {
+                delay(SESSION_READY_DELAY_MS)
+                if (signedInAccountId() != null) return
+            }
+        }
     }
 
 /**
@@ -992,6 +1012,10 @@ private const val MAX_LOGGED_TAGS = 8
  * longer list before the call leaves the process, so this mirrors it rather than guessing.
  */
 private const val MAX_SDK_PROFILE_ACCOUNTS = 16
+
+/** How long a workshop read waits for the engine's session to be signed in, and how often it looks. */
+private const val SESSION_READY_ATTEMPTS = 20
+private const val SESSION_READY_DELAY_MS = 250L
 
 private const val MAX_SDK_COMMENT_PAGE_SIZE = 50
 private const val MAX_SDK_PAGE_SIZE = 50
