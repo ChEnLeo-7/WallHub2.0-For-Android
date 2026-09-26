@@ -356,3 +356,27 @@ is no votes tab and no vote filter anywhere in it. The string came from WallHub'
 So the Voted collection is not a client defect: no selector in the approved published-file closure lists the
 files an account voted on. The app's own `runCatching{}.getOrDefault(0)` on that read is what keeps it silent
 (`feature/profile/ProfileScreen.kt:74`); the Library's Voted tab shows the empty state for the same reason.
+
+## 2026-09-26 (6) - the Voted probe: both remaining hypotheses refuted
+
+Two probe builds answered the question the EResult 8 raised, and neither answer was the one we wanted:
+
+- AAR **0.1.50** (app `d21b831`) tried the Voted read **without the App scope**, since every other parameter is
+  identical to the two reads that answer. Device line:
+  `access_denied: the service refused the request (service result 8)` - the same refusal, so the App scope is
+  not what the service rejects.
+- AAR **0.1.51** (app revision built at `20260926T153459Z`) walked the alternate selector spellings
+  `myvotes` -> `voted` -> `myvoted` -> `myvotedfiles` and the service refused every one with `EResult 8`. The
+  final line on the device was again `access_denied: the service refused the request (service result 8)`.
+
+The probe is removed from the SDK again (its commit is `revert(workshop): remove the Voted selector probe`), so
+the shipped read is the plain `GetUserFiles`. One environmental note from that session, recorded because it
+looked like a defect and was not: the first restart after installing the probe build failed session restore with
+`attempt failure class=2 stage=restore sdk=authentication failed during AccessTokenLogon cause=RemoteResult
+(result=Some(48))` - `EResult 48` is `RateLimitExceeded`, from the run of installs and cold starts in a short
+window. The app's own retry recovered it a few minutes later (`phase_signed_in`), and the next reading then
+showed subscriptions and favourites answering normally.
+
+Verdict for this collection: within the approved published-file closure there is no request that lists the
+files an account voted on, and the pre-deletion backend failed on the same selector, so the Voted tab has never
+been served. How the UI should present that is a product decision; today it silently shows 0 and an empty list.
