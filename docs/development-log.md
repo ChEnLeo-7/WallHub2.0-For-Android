@@ -453,3 +453,28 @@ raw pairs.
 512 MB, Steam 在线分块播放 = on, and 网络代理 = off with an empty address. The 清理在线播放缓存 button now
 answers 「没有可清理的在线播放缓存」 - the honest empty-cache copy from this campaign - confirming ④ on the
 device.
+
+## 2026-09-27 (2) - the favourite read comes back empty
+
+AAR **0.1.53** temporarily appended the service's own relationship data to the item's description, since the
+interaction field is a boolean. Opening the favourited item `2905017768` (from 我的收藏) and expanding its
+简介 to the end read:
+
+```text
+[rel-probe n=0 mask=0 rels=[] first-app=0]
+```
+
+The service returns **no app relationships** for that item, so the hollow star is not a constant mismatch: an
+empty answer is being read as "not favourited". The same items answer the subscription half correctly
+(`subscribed=SUBSCRIBED` for the subscribed one, `NOT_SUBSCRIBED` for the other), so the two halves are
+genuinely different reads.
+
+The probe is removed from the SDK again (it wrote into a user-visible description). The interaction log on the
+app side stays. Next: try `AreFilesInSubscriptionList` with a favourites `listtype`, the call that already
+answers subscriptions correctly with `listtype = 1`.
+
+**Detail page read along the way** (item `2905017768`, from 我的收藏): title resolved, 评论 (768), 作者 Cube,
+项目 ID 2905017768, 订阅数 99.8万, 收藏数 12.7万, 浏览量 13.9万, 文件大小 621.3 MB, 最后更新 2026年6月28日,
+类型 网站, and tags `[Web, Anime, Wallpaper, Audio responsive, Customizable, Dynamic resolution, Approved,
+Everyone]` - the CM detail read carries all of it, and the tag list matches what the search page reported for
+the same id.
