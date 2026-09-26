@@ -416,3 +416,40 @@ and the screen reads **我的订阅 1 / 我的收藏 239 / 我的投票 —**, w
 follow: the votes count is no longer an invented zero, and the refused Voted call is gone from the log entirely,
 because the profile no longer asks a question Steam cannot answer. The favourites total (239) also matches the
 arm-A baseline recorded before the old backend was deleted.
+
+## 2026-09-27 - interaction readings: the subscription half is right, the favourite half is wrong
+
+Build `20260926T155746Z-596418085` added one line per interaction read and per write, because the detail screen
+draws the same hollow star for "not favourited" and "the read did not answer". Two item details then answered
+with items whose membership is known independently - both taken from the account's own collections:
+
+```text
+I/WallHubSdkWorkshop: workshop interaction id=3774904326 subscribed=SUBSCRIBED     favorited=NOT_FAVORITED subscribed-field=1 favorited-field=1
+I/WallHubSdkWorkshop: workshop interaction id=2905017768 subscribed=NOT_SUBSCRIBED favorited=NOT_FAVORITED subscribed-field=1 favorited-field=1
+```
+
+`subscribed-field=1` is the SDK's "present value" state, so both answers are real readings rather than unknowns.
+Item `3774904326` came from 我的订阅 and reads `SUBSCRIBED`; item `2905017768` came from 我的收藏 (the same item
+the service put first on that page, `rows=16 of 16 collection=FAVORITES`) and reads `NOT_FAVORITED`.
+
+So:
+
+- **The subscription half is verified on the device.** `AreFilesInSubscriptionList` with `listtype = 1`
+  answers correctly in both directions.
+- **The favourite half is a defect.** `GetAppRelationships` is matched against
+  `FAVORITE_RELATIONSHIP = 1`, and no item the account favourited carries a relationship with that value. Like
+  the Voted selector, that constant came from the deleted product code rather than from the service
+  (`crates/sc-proto/src/published_file_relationship.rs:35`, doc-comment citing `KSteamSessionRepository`), and
+  the locked schema names the `relationship` field without enumerating its values
+  (`steammessages_publishedfile.steamclient.proto:565-575`). The old path therefore had the same unverified
+  constant, and the detail screen has been showing "not favourited" for favourited items - the write path's
+  own confirmation was the only thing that ever moved the star.
+
+The next reading has to say which relationship value the service actually sends (or whether the answer is
+empty because the read needs an App scope), which is a diagnostic the SDK has to make: the app cannot see the
+raw pairs.
+
+**Also read in the same session** (settings screen, 下载 section): 单项目分块并发 = 24 个, Steam 在线播放缓存 =
+512 MB, Steam 在线分块播放 = on, and 网络代理 = off with an empty address. The 清理在线播放缓存 button now
+answers 「没有可清理的在线播放缓存」 - the honest empty-cache copy from this campaign - confirming ④ on the
+device.
