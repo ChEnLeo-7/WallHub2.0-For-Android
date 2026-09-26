@@ -478,3 +478,22 @@ answers subscriptions correctly with `listtype = 1`.
 类型 网站, and tags `[Web, Anime, Wallpaper, Audio responsive, Customizable, Dynamic resolution, Approved,
 Everyone]` - the CM detail read carries all of it, and the tag list matches what the search page reported for
 the same id.
+
+## 2026-09-27 (3) - the favourites list is `listtype = 2`, verified both ways
+
+One line in the SDK's subscription-list request (`list_type: 2`) and the same two items answered:
+
+```text
+00:18:32 I/WallHubSdkWorkshop: workshop interaction id=2905017768 subscribed=SUBSCRIBED     ... subscribed-value=1
+00:19:01 I/WallHubSdkWorkshop: workshop interaction id=3774904326 subscribed=NOT_SUBSCRIBED ... subscribed-value=0
+```
+
+`2905017768` is in 我的收藏, `3774904326` is in 我的订阅, and under `listtype = 1` the two answers were exactly
+the other way round. So the favourites list is named by `listtype = 2` on the very call that already answers
+subscriptions correctly, and `GetAppRelationships` - which returns an empty list for a favourited item - is the
+wrong question for this half.
+
+The probe is reverted to `SUBSCRIPTION_LIST_TYPE`. The fix is to read the favourite half with `listtype = 2`
+through the seam (so the list type stops being hard-coded in the session), which retires the unverified
+`FAVORITE_RELATIONSHIP` constant from the read path. Until that build lands, the detail screen still shows a
+hollow star for favourited items.
