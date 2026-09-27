@@ -24,7 +24,6 @@ import com.wallhub.android.core.model.WorkshopPage
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
-import com.wallhub.android.core.model.effectiveWorkshopTypes
 import com.wallhub.android.core.model.steamSearchText
 import com.wallhub.android.core.model.workshopAuthorSearchOrNull
 import com.wallhub.android.core.model.workshopDetailTagSearch
@@ -168,7 +167,16 @@ internal class SteamContentSdkWorkshopRepository
                                     pageSize = normalized.pageSize,
                                     pageOffset = normalized.pageOffset(),
                                     queryText = normalized.steamSearchText().takeIf(String::isNotBlank),
-                                    contentTypes = normalized.sdkContentTypes(),
+                                    // The type is sent as tags and never as a content-type filter. The query's
+                                    // own type selection already reaches the service that way, because
+                                    // `sdkExcludedTags()` excludes every type tag the user did not select, and
+                                    // "Video" is a real Steam tag on these items - the same tags the Library
+                                    // types its rows from. The CM provider refuses a content-type filter on
+                                    // purpose, since the enum naming the service's file-type numbers is outside
+                                    // the approved schema closure, so sending the video ordinal made every
+                                    // video-narrowed browse fail outright instead of narrowing it. An empty list
+                                    // is "no content-type filter", which is what the service answers with.
+                                    contentTypes = emptyList(),
                                     tags = normalized.sdkTags(),
                                     // Both halves of the product's filter travel: the service excludes what
                                     // the user did not select, so a page arrives already narrowed and stays
@@ -192,7 +200,10 @@ internal class SteamContentSdkWorkshopRepository
                                     authorId = creatorId,
                                     pageSize = normalized.pageSize,
                                     pageOffset = normalized.pageOffset(),
-                                    contentTypes = normalized.sdkContentTypes(),
+                                    // The author read is `GetUserFiles`, which has no content-type dimension at
+                                    // all, so the ordinal that used to be named here was silently ignored. None
+                                    // is sent, and the type still narrows the page through the tag criteria.
+                                    contentTypes = emptyList(),
                                 )
                             }
                         page.use { readWorkshopPage(it, normalized.page, filter = normalized) }
@@ -911,22 +922,6 @@ private fun pageOffsetOf(
 ): Int {
     val offset = (page.coerceAtLeast(1).toLong() - 1L) * pageSize.coerceAtLeast(1).toLong()
     return offset.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
-}
-
-/** The SDK content-type filter for the query's effective types; only the video ordinal maps. */
-private fun WorkshopBrowseQuery.sdkContentTypes(): List<Int> {
-    // SCENE and WEB have no SDK content-type ordinal; kSteam expresses them as tags instead.
-    val mapped: List<Int> =
-        effectiveWorkshopTypes().mapNotNull { type ->
-            when (type) {
-                WorkshopType.VIDEO -> WorkshopContentType.VIDEO
-                WorkshopType.SCENE,
-                WorkshopType.WEB,
-                WorkshopType.UNKNOWN,
-                -> null
-            }
-        }
-    return mapped
 }
 
 /** The tag filter the SDK request takes; its empty list means no tag filter at all. */

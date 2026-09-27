@@ -732,3 +732,32 @@ an anonymous caller.
   (`SteamContentSdkWorkshopRepository.kt:917-930`), which maps `WorkshopType.VIDEO` to
   `WorkshopContentType.VIDEO` and lets `SCENE`/`WEB` fall through to tags. So a video-narrowed browse on this
   source is refused rather than served; the rail that asks for it is still to be named.
+
+## 2026-09-27 (15) - the video filter was asking for a filter the SDK refuses on purpose
+
+Entry (14) recorded the six `unsupported: this provider cannot express a content-type or visibility filter`
+refusals without naming the rail. The cause is not a particular rail: it is `sdkContentTypes()`, which mapped
+`WorkshopType.VIDEO` to `WorkshopContentType.VIDEO` and sent it as the search request's content-type filter.
+The CM provider refuses **any** content-type filter by decision - the locked schema carries `filetype` only as
+a bare `uint32`, and the enum naming the service's file-type numbers is outside the approved schema closure, so
+the provider reports `Unsupported` rather than silently dropping the filter
+(`crates/sc-content/src/workshop_session.rs:24-28` and `:493-499`). One refused field fails the whole request,
+so a browse narrowed to video came back as an error instead of a narrower page.
+
+**The type was already travelling as tags, which is why the filter was redundant as well as fatal.**
+`steamTagCriteria()` requires `Wallpaper` and then excludes every type tag the user did not select, by
+complement against `STEAM_WORKSHOP_TYPE_TAGS` (`WorkshopQuerySemantics.kt:75-80`); `steamWorkshopTag()` maps
+`VIDEO` to the real Steam tag `"Video"` (`:190-196`, `:213`); `sdkExcludedTags()` hands that exclusion set to
+the service (`SteamContentSdkWorkshopRepository.kt:943-944`); and the client-side gate still enforces the type
+by name, `summary.type !in criteria.allowedTypes` (`WorkshopQuerySemantics.kt:167`). So the narrowing survives
+without a content-type filter, on both the service side and the page gate.
+
+**The change.** The SDK search now sends `contentTypes = emptyList()` with the reason recorded at the call site,
+the author read sends the same (its filter was silently ignored anyway - `author_items` is `GetUserFiles`,
+which has no content-type dimension), and `sdkContentTypes()` is deleted with its now-unused import. App-side
+only: no AAR change is needed for this one, so it is not waiting on the SDK batch.
+
+**Not yet read.** No Gradle runs on this host, so the worker's build is the first compiler this edit meets, and
+the device reading is still owed: a video-narrowed browse should now answer `workshop page rows=…` instead of
+the `unsupported` line, with the rows' own types still the video ones the tag gate admits.
+
