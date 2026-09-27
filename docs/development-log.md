@@ -927,6 +927,44 @@ why the in-place rebuild was refused, and - if the hand-off recovers - the log s
 `session_rebuild_failed sdk=…` -> `phase_signing_in` -> `phase_signed_in` with reads working again, with no
 restart.
 
+## 2026-09-27 (20) - the connection now outlives the window, so the rebuild path stayed unread
+
+Entry (19) was built at revision `bfb699c`
+(`/root/builds/wallhub-release-20260927T034034Z-327389332.apk`, native library still `883b0cb5…`) and the same
+idle reading was taken. This build is faster and quieter than the last one - **and that is the whole finding:
+the connection no longer died inside the observation window, so the two things entry (19) was written for were
+never exercised.**
+
+Cold start `11:45:33`, `phase_signed_in` at `11:45:46.940`, then the loop ran unattended:
+
+```text
+11:46:06.947 I/WallHubSteamSession: session_maintenance sdk=pump=read step=heartbeat_sent
+… 17 ticks, every ~20.0 s, the last at 11:52:36.974 …
+```
+
+Nothing else happened: **0 `session_lost`, 0 `session_rebuild_failed`, 0 `temporarily_unavailable`**, and the
+connection was still serving reads at `11:53` - `workshop page rows=20 of 20` with
+`rail=… fidelity=EXACT` on 发现, roughly **eight minutes** after sign-in.
+
+| Build | Session died at | Loss reported | Rebuild |
+| --- | --- | --- | --- |
+| 0.1.58, no host loop (entry 16) | **~89 s** | no | not attempted |
+| `5c793f2`, host loop (entry 18) | **4 m 08 s** | yes, `session_lost` | refused, reason unreadable |
+| `bfb699c`, host loop + hand-off (this entry) | **not within ~8 min** | n/a | n/a |
+
+The last row is not evidence that the hand-off prolonged anything - it cannot, it only runs after a refusal -
+so the difference from the 4 m 08 s run is the peer's own timing, not a fix. What it does mean is that the
+`sdk=` reason on a refused rebuild and the live-candidate hand-off are **still unread**, and that the failure
+they were written for is now hard to reproduce naturally.
+
+**Two observations worth keeping.** A read fired *before* the restore finished at `11:45:43.705` and answered
+`invalid_input: the session was not authenticated when the request was sent` - a startup ordering race between
+the first screen's read and `phase_signed_in` at `11:45:46.940`, not the connection defect, and the only
+refusal in the whole run. And the tick stream has one ~84-second gap (`11:50:32.373` -> `11:51:56.962`): the OS
+had frozen the process with the screen off, which pauses the loop and resumes it cleanly afterwards. Neither
+is a defect; both are recorded so a later reading does not misread them as one.
+
+
 
 
 
