@@ -964,6 +964,47 @@ refusal in the whole run. And the tick stream has one ~84-second gap (`11:50:32.
 had frozen the process with the screen off, which pauses the loop and resumes it cleanly afterwards. Neither
 is a defect; both are recorded so a later reading does not misread them as one.
 
+## 2026-09-27 (21) - the lost connection recovers on its own, twice by rebuild and once by restore
+
+Entry (20) could not read the rebuild path because the connection outlived the window. A longer unattended run
+- the same build, `bfb699c`, left alone for **23 minutes** - finally exercised every branch, and all of them
+recovered **without a restart and without touching the phone for it**:
+
+```text
+11:53:54.128 I/WallHubSteamSession: session_maintenance sdk=pump=failed step=idle
+11:53:54.129 I/WallHubSteamSession: session_lost
+11:54:04.133 I/WallHubSteamSession: session_rebuild_failed error=IllegalStateException sdk=protocol adapter failed
+11:54:04.140 I/WallHubSteamSession: phase_signing_in
+11:54:04.146 I/WallHubSteamSession: credential_load present=true non_empty=true length_class=long stage=restore
+11:54:04.970 I/WallHubSteamSession: phase_signed_in
+11:54:24.973 I/WallHubSteamSession: session_lost
+11:54:31.652 I/WallHubSteamSession: session_rebuilt sdk=replayable=0 abandoned=0
+12:07:38.088 I/WallHubSteamSession: session_lost
+12:07:46.553 I/WallHubSteamSession: session_rebuilt sdk=replayable=0 abandoned=0
+```
+
+**The reason entry (19) added a line for is now readable**: `sdk=protocol adapter failed`. That is the SDK's
+own text for the in-place rebuild failing to re-establish the connection, which is exactly the case the hand-off
+was written for - `reconnect` reuses the discovery the session was opened with, and that attempt could not
+bring the link back.
+
+**Both recovery paths work.** The hand-off restored the session in under a second
+(`11:54:04.140 phase_signing_in` -> `credential_load … stage=restore` -> `11:54:04.970 phase_signed_in`), and
+the two later deaths were recovered in place, `session_rebuilt` seven and eight seconds after `session_lost`.
+Over the run there were **58 maintenance ticks**, three losses, three recoveries, and the session was healthy
+at the end (`12:08:26 … step=heartbeat_sent`).
+
+**What an outage costs, measured.** All 59 read refusals in the 23 minutes fall in a single ~11-second window
+(`11:53:54` -> `11:54:05`), and they are 58 reads at `11:53` plus one at `11:54`: the 发现 feed was firing a
+page of reads at the exact moment the link died. The `12:07` death, with nothing reading, cost **zero** read
+refusals. So the recovery is real but not instant - a read that races the loss still fails, and the next tick
+(within 20 s) is what puts it right.
+
+With that, B is complete on the device: the connection is held through long idle periods, a death is observed
+and published rather than hidden behind `phase_signed_in`, and the app rebuilds or restores itself with no
+restart.
+
+
 
 
 
