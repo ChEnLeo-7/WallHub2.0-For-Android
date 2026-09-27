@@ -26,6 +26,51 @@ blind edit there is exactly the mistake this campaign keeps catching. D5's fix w
 `WallHubDropdownMenu`, which every settings dropdown uses, and needs a visual check. D1's actual cause still
 needs the next reading: this batch only makes it say why.
 
+## 0b. Fix batch 1 read back on the device (`7996dc3`)
+
+Built and installed (`/root/builds/wallhub-release-20260927T060520Z-1356731965.apk`, native library still
+`883b0cb5…`). Two findings verified, and **the D1 diagnostic paid for itself immediately**.
+
+**Verified.** D4 is fixed: the Steam card reads 「已登录 Steam。WallHub 会维持该会话，并在连接中断时自动重连。」
+(the new zh string; the false "lasts until a restart" claim is gone). D2 shows no `ne5`/`cancelled` line after an
+induced cancellation (opening a detail and backing out inside a second) - 0 occurrences, where that shape used
+to print `workshop read unavailable: ne5 was cancelled`; the trigger is weak, so this is supporting evidence
+rather than proof.
+
+**D1 is no longer a mystery, and it is not a hung JNI call.** With every stop named, the whole chain is now
+readable in one window:
+
+```text
+14:10:22.928 W/WallHubSdkWorkshop: workshop read unavailable: temporarily_unavailable …
+14:10:22.932 I/WallHubSteamSession: session_maintenance sdk=pump=failed step=failed
+14:10:22.932 I/WallHubSteamSession: session_lost
+14:10:22.939 I/WallHubSteamSession: session_rebuild_failed error=IllegalStateException sdk=protocol adapter failed
+14:10:22.942 I/WallHubSteamSession: phase_signing_in
+14:10:22.943 I/WallHubSteamSession: session_maintenance_stopped rebuild_failed
+14:10:22.957 I/WallHubSteamSession: phase_signing_in
+14:10:23.307 I/WallHubSteamSession: attempt failure class=3 stage=restore sdk=protocol adapter failed
+14:10:23.310 I/WallHubSteamSession: phase_failed
+14:10:23.312 I/WallHubSteamSession: restore_retry_live_candidates
+14:10:23.359 I/WallHubSteamSession: platform_open_failure error=IllegalStateException
+14:10:23.360 I/WallHubSteamSession: phase_failed
+（backgrounded; 14:11:02 relaunch -> credential_load -> phase_signed_in, reads work）
+```
+
+So the "silent wedge" recorded as D1 is, in this episode, **the loop stopping exactly as designed after a
+rebuild was refused** - `session_maintenance_stopped rebuild_failed`. It looks like silence because the loop is
+gone and every later read answers `temporarily_unavailable` from a `phase_failed` session. The two recovery
+paths both failed for the same reason: the in-place `reconnect` and then the hand-off restore both ended in
+`protocol adapter failed`, and the hand-off's live-candidate retry could not even open a session
+(`platform_open_failure`). The app then recovered only when the operator brought it back to the foreground.
+
+**D6's foreground step did not fire in this episode** and should be read as unverified: the phase was already
+`FAILED`, so `onAppForegrounded` took its existing restore branch rather than the new maintenance branch. The
+gap that actually mattered here is that after `phase_failed` nothing retries on its own.
+
+**Next for D1**, in order: why `platformRoute(refreshLive = true)` cannot produce a route at that moment (that
+`error(...)` is where `platform_open_failure` comes from), and whether a failed rebuild should give up for good
+or retry on a bounded schedule. Both are now answerable from a reading rather than a guess.
+
 ## 1. Verified working
 
 | # | Surface | Reading |
