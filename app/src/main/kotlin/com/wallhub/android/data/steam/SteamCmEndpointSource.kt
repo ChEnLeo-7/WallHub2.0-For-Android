@@ -75,11 +75,13 @@ internal class SteamCmEndpointSource
                     "cm candidates=${live.lines().size} source=live" + if (refreshLive) " retry=true" else "",
                 )
                 if (live.isNotEmpty()) return@withContext live
-                // The directory is unreachable. A stale body the platform already read is still the best route
-                // it has, but the retry that asked for a live list has already seen the cached one fail and
-                // takes nothing from it again.
-                if (!refreshLive && cachedCandidates.isNotEmpty()) return@withContext cachedCandidates
-                null
+                // The directory is unreachable. "No route" is worse than a candidate list the platform has
+                // already read and that may have gone stale: with no route there is no session at all, and a
+                // recovery attempt that could not reach the directory is exactly when the cached list is the
+                // only thing left to try. It used to be withheld from the live retry on the theory that the
+                // retry had already seen it fail, which left a dropped connection with nothing to reconnect
+                // through until the operator brought the app back to the foreground.
+                cachedCandidates.takeIf { it.isNotEmpty() }
             }
 
         private fun fetchDirectory(): String? {
