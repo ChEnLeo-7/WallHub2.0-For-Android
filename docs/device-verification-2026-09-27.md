@@ -129,7 +129,8 @@ session was still connecting, and the page landed on a full error state that nev
 Home showed 无法加载 Steam 创意工坊，请稍后重试 with a 重试 button, `已加载 0 · 约 0 项`. The session then
 rebuilt itself inside a second and was healthy - and the page still did not reload: no further browse was issued
 while it stayed open. So the app is now good at repairing the connection and bad at telling the screens that it
-did, which is the same shape as D3 one level up.
+did, which is the same shape as D3 one level up. Tapping 重试 does work (`workshop page rows=30 of 30` straight
+after), so the affordance is fine - the missing piece is the automatic one.
 
 
 ## 3. Observations that are not yet defects
