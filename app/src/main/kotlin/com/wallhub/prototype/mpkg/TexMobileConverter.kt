@@ -77,8 +77,8 @@ private data class TexEntryMetadata(
     val baseWidth: Int,
     val baseHeight: Int,
     val baseCompressed: Boolean,
-    val pngStart: Long,
-    val pngLength: Long,
+    val imageStart: Long,
+    val imageLength: Long,
 )
 
 /**
@@ -154,23 +154,25 @@ object TexMobileConverter {
             require(!metadata.isMp4 && metadata.flags and TEX_FLAG_GIF == 0 && metadata.flags and TEX_FLAG_VIDEO == 0) {
                 ANIMATED_TEXTURE_REASON
             }
-            require(!metadata.baseCompressed) { "Compressed TEX payload is unsupported for DXT5 conversion" }
+            require(!metadata.baseCompressed) { "Compressed TEX payload is unsupported for ETC2 conversion" }
             require(metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight) {
                 "TEX base mipmap does not match image dimensions"
             }
-            require(metadata.imageWidth % 4 == 0 && metadata.imageHeight % 4 == 0) {
-                "TEX dimensions are not aligned to DXT5 block edges"
+            // Workshop artwork is not block aligned - a 3862-wide background is ordinary - but the block
+            // encoder is. The encode pads to the next block and replicates the last row and column, which
+            // the official client renders as the same image, so the alignment is not a reason to skip it.
+            val etc2Width = etc2BlockAligned(metadata.imageWidth)
+            val etc2Height = etc2BlockAligned(metadata.imageHeight)
+            require(etc2Width.toLong() * etc2Height <= MAX_ETC2_PIXELS) {
+                "TEX exceeds ETC2 conversion pixel limit"
             }
-            require(metadata.imageWidth.toLong() * metadata.imageHeight <= MAX_ETC2_PIXELS) {
-                "TEX exceeds DXT5 conversion pixel limit"
-            }
-            val tempPng = File(outputFile.parentFile, "${outputFile.name}.png")
+            val tempImage = File(outputFile.parentFile, "${outputFile.name}.image")
             try {
-                copyPngPayload(sourceFile, metadata.pngStart, metadata.pngLength, tempPng)
-                writeEtc2(tempPng, metadata.flags, metadata.unknown, metadata.imageWidth, metadata.imageHeight, outputFile)
+                copyImagePayload(sourceFile, metadata.imageStart, metadata.imageLength, tempImage)
+                writeEtc2(tempImage, metadata.flags, metadata.unknown, metadata.imageWidth, metadata.imageHeight, outputFile)
                 TexFileConversionResult(true, "ETC2 RGBA8 + LZ4 HC3")
             } finally {
-                tempPng.delete()
+                tempImage.delete()
             }
         }.getOrElse { error ->
             outputFile.delete()
@@ -461,7 +463,7 @@ object TexMobileConverter {
                 input.seek(input.filePointer + storedSize)
             }
             require(input.filePointer == end) { "TEX entry has trailing data" }
-            val pngStart = locatePngSignature(input, payloadStart, payloadLength)
+            val imageStart = locateEmbeddedImage(input, payloadStart, payloadLength)
             TexEntryMetadata(
                 flags = flags,
                 unknown = unknown,
@@ -472,45 +474,59 @@ object TexMobileConverter {
                 baseWidth = baseWidth,
                 baseHeight = baseHeight,
                 baseCompressed = baseCompressed,
-                pngStart = pngStart,
-                pngLength = payloadStart + payloadLength - pngStart,
+                imageStart = imageStart,
+                imageLength = payloadStart + payloadLength - imageStart,
             )
         }
 
-    private fun locatePngSignature(
+    private fun locateEmbeddedImage(
         input: RandomAccessFile,
         payloadStart: Long,
         payloadLength: Long,
     ): Long {
-        val scanLength = min(payloadLength, PNG_SIGNATURE_SCAN_BYTES.toLong()).toInt()
-        require(scanLength >= PNG_SIGNATURE.size) { "TEX payload is too small for a PNG image" }
+        val scanLength = min(payloadLength, IMAGE_SIGNATURE_SCAN_BYTES.toLong()).toInt()
+        require(scanLength >= MIN_IMAGE_SIGNATURE_BYTES) { "TEX payload is too small for an embedded image" }
         input.seek(payloadStart)
         val buffer = ByteArray(scanLength)
         input.readFully(buffer)
-        for (index in 0..buffer.size - PNG_SIGNATURE.size) {
-            var matched = true
-            for (byteIndex in PNG_SIGNATURE.indices) {
-                if (buffer[index + byteIndex] != PNG_SIGNATURE[byteIndex]) {
-                    matched = false
-                    break
-                }
-            }
-            if (matched) return payloadStart + index
-        }
-        error("TEX payload is not a PNG image")
+        val offset = embeddedImageOffset(buffer)
+        require(offset >= 0) { "TEX payload is not a PNG or JPEG image" }
+        return payloadStart + offset
     }
 
-    private fun copyPngPayload(
+    /**
+     * The offset of the first PNG or JPEG signature in [payload], or -1 when it carries neither.
+     *
+     * Desktop Workshop packs embed either; the pixel format of the container does not say which, so the
+     * payload itself has to be read. The base mipmap holds the whole embedded file.
+     */
+    internal fun embeddedImageOffset(payload: ByteArray): Int {
+        val png = indexOfSignature(payload, PNG_SIGNATURE)
+        val jpeg = indexOfSignature(payload, JPEG_SIGNATURE)
+        return listOf(png, jpeg).filter { it >= 0 }.minOrNull() ?: -1
+    }
+
+    private fun indexOfSignature(
+        payload: ByteArray,
+        signature: ByteArray,
+    ): Int {
+        for (index in 0..payload.size - signature.size) {
+            if (signature.indices.all { payload[index + it] == signature[it] }) return index
+        }
+        return -1
+    }
+
+    private fun copyImagePayload(
         sourceFile: File,
-        pngStart: Long,
-        pngLength: Long,
+        imageStart: Long,
+        imageLength: Long,
         outputFile: File,
     ) {
         RandomAccessFile(sourceFile, "r").use { input ->
-            input.seek(pngStart)
+            input.seek(imageStart)
             FileOutputStream(outputFile).use { output ->
-                val buffer = ByteArray(PNG_COPY_BUFFER_BYTES)
-                var remaining = pngLength
+                val buffer = ByteArray(IMAGE_COPY_BUFFER_BYTES)
+                var remaining = imageLength
                 while (remaining > 0) {
                     val chunk = min(buffer.size.toLong(), remaining).toInt()
                     input.readFully(buffer, 0, chunk)
@@ -522,59 +538,97 @@ object TexMobileConverter {
     }
 
     private fun writeEtc2(
-        pngFile: File,
+        imageFile: File,
         flags: Int,
         unknown: Int,
         width: Int,
         height: Int,
         outputFile: File,
     ) {
-        val etc2 = encodeEtc2(pngFile, width, height)
+        val etc2 = encodeEtc2(imageFile, width, height)
         val (compressed, compressedLength) = compress(etc2)
         outputFile.parentFile?.let { parent ->
             check(parent.exists() || parent.mkdirs()) { "Unable to create TEX output directory" }
         }
         BufferedOutputStream(FileOutputStream(outputFile)).use { output ->
-            output.write(etc2Header(flags, width, height, unknown, etc2.size, compressedLength))
+            output.write(
+                etc2Header(
+                    flags = flags,
+                    width = etc2BlockAligned(width),
+                    height = etc2BlockAligned(height),
+                    unknown = unknown,
+                    decompressedLength = etc2.size,
+                    compressedLength = compressedLength,
+                ),
+            )
             output.write(compressed, 0, compressedLength)
         }
     }
 
+    /**
+     * The ETC2 block extent [value] pads to, four texels on each axis.
+     *
+     * An ETC2 block covers a fixed 4x4 texels, so a dimension that is not a multiple of four has to be
+     * padded before it can be encoded.
+     */
+    internal fun etc2BlockAligned(value: Int): Int {
+        require(value in 1..(Int.MAX_VALUE - ETC2_BLOCK_EDGE)) { "Invalid TEX dimension for ETC2: $value" }
+        return (value + ETC2_BLOCK_EDGE - 1) / ETC2_BLOCK_EDGE * ETC2_BLOCK_EDGE
+    }
+
+    /**
+     * Encodes [imageFile] as an ETC2 RGBA8 block grid, padding an unaligned edge by replicating its last
+     * row and column, which the official client renders as the same image.
+     */
     private fun encodeEtc2(
-        pngFile: File,
+        imageFile: File,
         width: Int,
         height: Int,
     ): ByteArray {
-        val etc2 = ByteArray(checkedPayloadSize(width, height, 1))
-        FileInputStream(pngFile).use { stream ->
+        val alignedWidth = etc2BlockAligned(width)
+        val alignedHeight = etc2BlockAligned(height)
+        val etc2 = ByteArray(checkedPayloadSize(alignedWidth, alignedHeight, 1))
+        FileInputStream(imageFile).use { stream ->
             val decoder = BitmapRegionDecoder.newInstance(stream.fd, false)
-                ?: error("Unsupported PNG payload in TEX entry")
+                ?: error("Unsupported embedded image in TEX entry")
             try {
                 require(decoder.width == width && decoder.height == height) {
-                    "PNG payload dimensions do not match TEX metadata"
+                    "Embedded image dimensions do not match TEX metadata"
                 }
-                val stripHeight = min(ETC2_STRIP_HEIGHT, height)
+                val stripHeight = min(ETC2_STRIP_HEIGHT, alignedHeight)
                 val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
                 var stripTop = 0
                 var etc2Offset = 0
-                while (stripTop < height) {
-                    val rows = min(stripHeight, height - stripTop)
-                    require(rows % 4 == 0) { "TEX height is not aligned to DXT5 block edges" }
+                while (stripTop < alignedHeight) {
+                    val rows = min(stripHeight, alignedHeight - stripTop)
+                    require(rows % ETC2_BLOCK_EDGE == 0) { "ETC2 strip is not aligned to block edges" }
+                    val sourceTop = min(stripTop, height - 1)
+                    val sourceRows = (min(stripTop + rows, height) - sourceTop).coerceAtLeast(1)
                     val bitmap =
-                        decoder.decodeRegion(Rect(0, stripTop, width, stripTop + rows), options)
-                            ?: error("Failed to decode TEX PNG payload")
+                        decoder.decodeRegion(Rect(0, sourceTop, width, sourceTop + sourceRows), options)
+                            ?: error("Failed to decode the embedded TEX image")
                     try {
-                        require(bitmap.width == width && bitmap.height == rows) {
-                            "PNG payload dimensions do not match TEX metadata"
+                        require(bitmap.width == width && bitmap.height == sourceRows) {
+                            "Embedded image dimensions do not match TEX metadata"
                         }
-                        val pixels = IntArray(checkedPayloadSize(width, rows, 1))
-                        bitmap.getPixels(pixels, 0, width, 0, 0, width, rows)
-                        encodeEtc2Strip(pixels, width, rows, etc2, etc2Offset)
+                        val pixels = IntArray(checkedPayloadSize(width, sourceRows, 1))
+                        bitmap.getPixels(pixels, 0, width, 0, 0, width, sourceRows)
+                        val padded = IntArray(checkedPayloadSize(alignedWidth, rows, 1))
+                        repeat(rows) { row ->
+                            val sourceRow = min(row, sourceRows - 1) * width
+                            val destinationRow = row * alignedWidth
+                            pixels.copyInto(padded, destinationRow, sourceRow, sourceRow + width)
+                            val edge = pixels[sourceRow + width - 1]
+                            for (column in width until alignedWidth) {
+                                padded[destinationRow + column] = edge
+                            }
+                        }
+                        encodeEtc2Strip(padded, alignedWidth, rows, etc2, etc2Offset)
                     } finally {
                         bitmap.recycle()
                     }
                     stripTop += rows
-                    etc2Offset += width * rows
+                    etc2Offset += alignedWidth * rows
                 }
             } finally {
                 decoder.recycle()
@@ -1048,9 +1102,12 @@ private const val MOBILE_TEX_HEADER_SIZE = 91
 private const val ANIMATED_TEXTURE_REASON = "animated texture"
 private const val LZ4_COMPRESSION_LEVEL = 3
 private val PNG_SIGNATURE = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
-private const val PNG_SIGNATURE_SCAN_BYTES = 1024
-private const val PNG_COPY_BUFFER_BYTES = 128 * 1024
+private val JPEG_SIGNATURE = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())
+private const val IMAGE_SIGNATURE_SCAN_BYTES = 1024
+private const val MIN_IMAGE_SIGNATURE_BYTES = 3
+private const val IMAGE_COPY_BUFFER_BYTES = 128 * 1024
 private const val ETC2_STRIP_HEIGHT = 256
+private const val ETC2_BLOCK_EDGE = 4
 private const val MAX_ETC2_PIXELS = 48L * 1024 * 1024
 private fun mobileRgbaLimit(maxHeapBytes: Long = Runtime.getRuntime().maxMemory()): Int =
     (maxHeapBytes / TEX_RGBA_HEAP_DIVISOR)
