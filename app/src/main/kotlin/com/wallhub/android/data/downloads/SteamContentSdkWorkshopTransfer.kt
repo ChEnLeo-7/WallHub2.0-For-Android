@@ -146,9 +146,11 @@ internal fun interface SteamContentSdkSessionOpener {
  * is published on the app's progress contract, and the task's own redacted diagnostic becomes the error
  * text when a run fails.
  *
- * A session is opened and closed around each download. One engine owns one session, so downloads are
- * serialized on [sessionMutex]; concurrent SDK-path downloads queue instead of competing for the
- * engine, while the default path keeps its own concurrency.
+ * A session is opened or borrowed for the run and closed once the last overlapping download releases it.
+ * Steam refuses a second live session for one account, so overlapping downloads have to share one session -
+ * they are not serialized on it. An earlier version held a lock around the whole download, which made the
+ * product's own "concurrent downloads" setting unreachable on this path: every item after the first waited
+ * for the one before it to finish.
  */
 @Singleton
 internal class SteamContentSdkWorkshopTransfer
@@ -156,7 +158,51 @@ internal class SteamContentSdkWorkshopTransfer
     constructor(
         private val sessionOpener: SteamContentSdkSessionOpener,
     ) : WorkshopContentTransfer {
+        /** One session shared by every download that overlaps in time. */
+        private class SessionLease(
+            val key: String,
+            val session: SteamContentSdkSession,
+        ) {
+            /** Downloads currently holding it; the last one out closes the session. */
+            var users = 0
+        }
+
         private val sessionMutex = Mutex()
+        private val sessionLeases = mutableMapOf<String, SessionLease>()
+
+        /**
+         * Borrows, or opens, the session for one account and counts one more holder of it.
+         *
+         * The lease is what decouples the session's lifetime from a single download: the first download to
+         * finish must not close a session its peers are still reading, and the last one out must close a
+         * session this path opened rather than leaking it. A session the session domain owns ignores `close`,
+         * so borrowing costs nothing here.
+         */
+        private suspend fun acquireSession(credential: SteamContentCredential): SessionLease =
+            sessionMutex.withLock {
+                val key = credential.accountName.orEmpty().lowercase()
+                val existing = sessionLeases[key]
+                if (existing != null) {
+                    existing.users += 1
+                    existing
+                } else {
+                    val opened = sessionOpener.open(credential)
+                    SessionLease(key, opened).also { lease ->
+                        lease.users = 1
+                        sessionLeases[key] = lease
+                    }
+                }
+            }
+
+        /** Releases one holder, closing the session when it was the last one. */
+        private suspend fun releaseSession(lease: SessionLease) {
+            sessionMutex.withLock {
+                lease.users -= 1
+                if (lease.users > 0) return@withLock
+                sessionLeases.remove(lease.key)
+                runCatching { lease.session.close() }
+            }
+        }
 
         override suspend fun download(
             target: WorkshopContentTarget,
@@ -176,44 +222,45 @@ internal class SteamContentSdkWorkshopTransfer
                 check(effectiveCredential.refreshToken.isNotBlank()) {
                     "The Steam Content SDK download path needs the stored Steam refresh token; none was read"
                 }
-                sessionMutex.withLock {
-                    onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.CONNECTING))
-                    val session = sessionOpener.open(effectiveCredential)
-                    try {
-                        onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
-                        val resolved = session.resolveWorkshop(target.publishedFileId)
-                        check(resolved.resolved) {
-                            "The Steam Content SDK did not resolve Workshop item ${target.publishedFileId} to an app, depot, and manifest"
-                        }
-                        check(resolved.appId > 0L && resolved.depotId > 0L) {
-                            "The Steam Content SDK resolved Workshop item ${target.publishedFileId} without a usable app or depot"
-                        }
-                        // One line per run so a parity reading can name the path that served it. The ids are
-                        // public catalog numbers; no title, path, key, or token is logged.
-                        Log.i(
-                            TAG,
-                            "download served by=steam-content-sdk app=${resolved.appId} depot=${resolved.depotId}",
-                        )
-                        val destination = sdkRelativeDestination(destinationDirectory, session.storageRoot)
-                        onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.PREPARING_DOWNLOAD))
-                        val task =
-                            session.startDownload(
-                                appId = resolved.appId,
-                                depotId = resolved.depotId,
-                                manifestId = resolved.manifestId,
-                                destination = destination,
-                                // The product's own "chunks in parallel per item" setting is the SDK's
-                                // in-flight budget now; zero would leave the engine's own order in place.
-                                chunkConcurrency = options.chunkConcurrency,
-                            )
-                        try {
-                            runTask(task, destinationDirectory, control, onProgress)
-                        } finally {
-                            runCatching { task.close() }
-                        }
-                    } finally {
-                        runCatching { session.close() }
+                onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.CONNECTING))
+                val lease = acquireSession(effectiveCredential)
+                try {
+                    val session = lease.session
+                    onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
+                    val resolved = session.resolveWorkshop(target.publishedFileId)
+                    check(resolved.resolved) {
+                        "The Steam Content SDK did not resolve Workshop item ${target.publishedFileId} to an app, depot, and manifest"
                     }
+                    check(resolved.appId > 0L && resolved.depotId > 0L) {
+                        "The Steam Content SDK resolved Workshop item ${target.publishedFileId} without a usable app or depot"
+                    }
+                    // One line per run so a parity reading can name the path that served it. The ids are
+                    // public catalog numbers; no title, path, key, or token is logged.
+                    Log.i(
+                        TAG,
+                        "download served by=steam-content-sdk app=${resolved.appId} depot=${resolved.depotId}",
+                    )
+                    val destination = sdkRelativeDestination(destinationDirectory, session.storageRoot)
+                    onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.PREPARING_DOWNLOAD))
+                    val task =
+                        session.startDownload(
+                            appId = resolved.appId,
+                            depotId = resolved.depotId,
+                            manifestId = resolved.manifestId,
+                            destination = destination,
+                            // The product's own "chunks in parallel per item" setting is the SDK's
+                            // in-flight budget now; zero would leave the engine's own order in place.
+                            chunkConcurrency = options.chunkConcurrency,
+                        )
+                    try {
+                        runTask(task, destinationDirectory, control, onProgress)
+                    } finally {
+                        runCatching { task.close() }
+                    }
+                } finally {
+                    // The lease, not this download, owns the session: closing it here would take it away from
+                    // the downloads that are still running beside this one.
+                    releaseSession(lease)
                 }
             }
 

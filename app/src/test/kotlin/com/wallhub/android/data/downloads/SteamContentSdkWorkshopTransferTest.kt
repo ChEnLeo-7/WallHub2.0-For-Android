@@ -5,6 +5,10 @@ import io.steamcontent.sdk.TaskFailure
 import io.steamcontent.sdk.TaskState
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -291,6 +295,45 @@ class SteamContentSdkWorkshopTransferTest {
         }
     }
 
+    /**
+     * Two overlapping downloads must share one session instead of queueing on it.
+     *
+     * The product's "concurrent downloads" setting is inert if the transfer holds a lock for the whole
+     * download: the second item then waits for the first to finish, however many workers the governor
+     * admitted. Steam refuses a second live session for one account, so the fix is to share one session and
+     * keep it alive until the last download releases it - not to give each download its own.
+     */
+    @Test
+    fun overlappingDownloadsShareOneSessionInsteadOfQueueingOnIt() =
+        runBlocking {
+            val fixture = Fixture()
+            try {
+                // Both resolves have to be inside the session at once: with a lock around the download the
+                // first would hold it while waiting here, and this latch would never reach zero.
+                val bothInside = CountDownLatch(2)
+                fixture.session.onResolve = {
+                    bothInside.countDown()
+                    check(bothInside.await(5, TimeUnit.SECONDS)) {
+                        "the second download never entered the shared session"
+                    }
+                }
+                fixture.task.statuses += completed(committedBytes = 9L)
+                val second = File(fixture.root, "wallhub-workshop/task-2").apply { mkdirs() }
+
+                val first = launch(Dispatchers.IO) { fixture.download() }
+                val secondRun = launch(Dispatchers.IO) { fixture.download(destination = second) }
+                first.join()
+                secondRun.join()
+
+                assertEquals(0L, bothInside.count)
+                assertEquals("both downloads must share one session", 1, fixture.openerCalls)
+                assertEquals("the shared session must be closed exactly once", 1, fixture.session.closeCalls)
+                assertEquals(2, fixture.session.resolveCalls)
+            } finally {
+                fixture.close()
+            }
+        }
+
     private class Fixture {
         val root: File = Files.createTempDirectory("sdk-transfer-root").toFile()
         val destination: File = File(root, "wallhub-workshop/task-1").apply { mkdirs() }
@@ -357,10 +400,15 @@ class SteamContentSdkWorkshopTransferTest {
         var resolved: SteamContentSdkResolvedItem = resolved
         val starts = mutableListOf<StartCall>()
         var resolveCalls = 0
+        var closeCalls = 0
         var closed = false
+
+        /** Runs inside a resolve, so a test can hold one download open while another starts. */
+        var onResolve: (() -> Unit)? = null
 
         override fun resolveWorkshop(itemId: Long): SteamContentSdkResolvedItem {
             resolveCalls += 1
+            onResolve?.invoke()
             return resolved
         }
 
@@ -369,8 +417,9 @@ class SteamContentSdkWorkshopTransferTest {
             depotId: Long,
             manifestId: Long,
             destination: String?,
+            chunkConcurrency: Int,
         ): SteamContentSdkTask {
-            starts += StartCall(appId, depotId, manifestId, destination)
+            starts += StartCall(appId, depotId, manifestId, destination, chunkConcurrency)
             return task
         }
 
@@ -388,6 +437,7 @@ class SteamContentSdkWorkshopTransferTest {
         ): List<SteamContentSdkManifestFile> = error("this fixture serves downloads, not manifests")
 
         override fun close() {
+            closeCalls += 1
             closed = true
         }
     }
@@ -397,6 +447,7 @@ class SteamContentSdkWorkshopTransferTest {
         val depotId: Long,
         val manifestId: Long,
         val destination: String?,
+        val chunkConcurrency: Int,
     )
 
     private class FakeTask : SteamContentSdkTask {
