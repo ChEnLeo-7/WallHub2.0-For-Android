@@ -346,7 +346,17 @@ internal class SteamContentSdkWorkshopTransfer
                                 totalBytes = totalBytes,
                             ),
                         )
-                        task.pollEvent(SDK_EVENT_POLL_MS)
+                        // The SDK publishes the task events this loop currently drops, and the event kind is the
+                        // only reading that splits the resolving phase: session obtain, the app's own workshop
+                        // read, then the manager's request code, server list, depot key and per-record token
+                        // calls, the manifest fetch and its decode, then the source opening. Ordinals only, no
+                        // host, token or URL, and only when an event actually arrives.
+                        task.pollEvent(SDK_EVENT_POLL_MS)?.let { event ->
+                            Log.i(
+                                TAG,
+                                "task event kind=${event.kind} value=${event.value}",
+                            )
+                        }
                     }
                 }
             }
