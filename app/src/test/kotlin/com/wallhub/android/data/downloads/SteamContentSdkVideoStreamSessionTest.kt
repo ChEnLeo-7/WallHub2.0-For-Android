@@ -46,13 +46,22 @@ private class FakeRangeSession : SteamContentSdkSession {
         depotId: Long,
         manifestId: Long,
         destination: String?,
+        chunkConcurrency: Int,
     ): SteamContentSdkTask = error("this fixture serves range streams, not downloads")
+
+    override fun manifestFiles(
+        appId: Long,
+        depotId: Long,
+        manifestId: Long,
+    ): List<SteamContentSdkManifestFile> =
+        error("this fixture serves range streams, not manifests")
 
     override fun openRangeStream(
         appId: Long,
         depotId: Long,
         filePath: String,
         manifestId: Long,
+        cacheCapacityBytes: Long,
     ): SteamContentSdkRangeStream {
         order += "stream-opened"
         return stream
@@ -135,15 +144,18 @@ class SteamContentSdkVideoStreamSessionTest {
 
     private fun fixture(contentLength: Long): Fixture {
         val sdkSession = FakeRangeSession()
-        val stream =
+        val stream: SteamContentSdkRangeStream =
             sdkSession.openRangeStream(
                 appId = 431960L,
                 depotId = 431961L,
                 filePath = "scene.mp4",
                 manifestId = 42L,
+                cacheCapacityBytes = 1L shl 20,
             )
         return Fixture(
-            stream = stream,
+            // The fixture keeps the concrete stream for its own assertions and hands the session the interface
+            // it actually holds, which is what the production call site does too.
+            stream = sdkSession.stream,
             sdkSession = sdkSession,
             session =
                 SteamContentSdkVideoStreamSession(

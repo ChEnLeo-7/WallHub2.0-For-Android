@@ -3,6 +3,7 @@ package com.wallhub.android.data.downloads
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
 import com.wallhub.android.core.model.WorkshopType
+import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking

@@ -114,6 +114,14 @@ android {
         }
     }
 
+    // The download transfer logs one line per run (`download served by=steam-content-sdk app=... depot=...`)
+    // because that line is how a device reading names the path that served it, and the JVM tests exercise the
+    // same code path. Without this, every one of those tests fails with `Method i in android.util.Log not
+    // mocked`: the harness gap, not the code, is what the failures were reporting.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     if (hasReleaseSigning) {
         signingConfigs.create("releaseSigning") {
             storeFile = file(requireNotNull(releaseStoreFile))

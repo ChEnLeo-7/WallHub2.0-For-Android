@@ -1061,3 +1061,29 @@ turns out to be read as abuse by the CDN the ceiling is a one-line change in
 The SDK change also has to reach this repository the way every SDK change does: a new preview AAR published by
 the worker, a version pin in `app/build.gradle.kts`, and a release build. None of that has been requested yet,
 so nothing here has been built or installed, and the app on the device is unchanged.
+
+## 2026-09-27 (24) - the app's unit tests had not compiled for a while
+
+Verification of the SDK-path changes in entries (23) and this one ran `:app:testDebugUnitTest` on the build
+worker, and the first result was a compile failure - not a test failure. Three test fixtures had fallen behind
+interfaces the product code had already grown:
+
+- `SteamContentSdkWorkshopTransferTest`'s `FakeSession` and `SteamContentSdkVideoStreamSessionTest`'s
+  `FakeRangeSession` still declared `startDownload` without `chunkConcurrency` and `openRangeStream` without
+  `cacheCapacityBytes` (the interface is in `SteamContentSdkWorkshopTransfer.kt`), and the video fixture was
+  missing `manifestFiles` entirely;
+- `DownloadRetryRoutingTest` used `java.nio.file.Files` without importing it.
+
+Once those compiled, 184 tests ran and **13 failed**, and eleven of them failed for one reason that has nothing
+to do with what they assert: `java.lang.RuntimeException: Method i in android.util.Log not mocked`. The transfer
+logs one line per run (`download served by=steam-content-sdk app=... depot=...`) as the channel a device reading
+uses, and the JVM tests exercise that path with no Android framework behind it. `app/build.gradle.kts` now sets
+`testOptions { unitTests.isReturnDefaultValues = true }`, which is the documented remedy.
+
+The suite is now **184 tests, 2 failed**; both failures are in `SteamContentSdkSessionBackendTest`
+(`aTransportFailureOnLogonRetriesOnceWithLiveCandidatesAndTheSameSecret` and
+`aTransportFailureOnLogonIsRetriedOnlyOnce`) and both assert `expected:<1> but was:<2>`: the transport-class
+logon failure is retried twice where these tests expect one live-candidate retry. That is a session-domain
+finding, recorded here rather than papered over - neither the test nor the retry policy was changed without a
+reading that says which one is wrong. The eleven download-transfer tests now pass, including the new
+`overlappingDownloadsShareOneSessionInsteadOfQueueingOnIt`.

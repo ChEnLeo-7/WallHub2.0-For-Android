@@ -428,6 +428,7 @@ class SteamContentSdkWorkshopTransferTest {
             depotId: Long,
             filePath: String,
             manifestId: Long,
+            cacheCapacityBytes: Long,
         ): SteamContentSdkRangeStream = error("this fixture serves downloads, not range streams")
 
         override fun manifestFiles(
