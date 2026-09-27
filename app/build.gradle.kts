@@ -134,6 +134,10 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            // The Steam Content SDK preview carries arm64-v8a only, so the other three ABIs could never serve a
+            // Steam read or a download: shipping their copies of this app's own libraries bought nothing and
+            // cost about 2.5 MB. Debug builds keep every ABI, so an x86_64 emulator still starts.
+            ndk { abiFilters += "arm64-v8a" }
             signingConfig =
                 if (hasReleaseSigning) {
                     signingConfigs.getByName("releaseSigning")
@@ -154,6 +158,9 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
         resources.excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+        // lz4-java keeps native libraries for the desktop platforms inside its jar. An APK can only load the
+        // Android ones, so the two macOS dylibs were being packaged into every build to be ignored.
+        resources.excludes += "/net/jpountz/util/darwin/**"
     }
 
     sourceSets.named("test") {
