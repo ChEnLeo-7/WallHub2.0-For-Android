@@ -90,6 +90,23 @@ internal data class SteamContentSdkReconnect(
 )
 
 /**
+ * How a pending logon challenge may be confirmed, mirroring the SDK's own ordinals and bits.
+ *
+ * The ordinals are what [SteamContentSdkPlatformSession.chooseGuard] takes; the bits are what
+ * [SteamContentSdkPlatformSession.guardChoices] reports. The backend reads this vocabulary rather than the
+ * SDK's constants so that no SDK type crosses this seam, which is what the rest of this file is for.
+ */
+internal object SteamContentSdkGuardChoice {
+    const val EMAIL_CODE: Int = 1
+    const val DEVICE_CODE: Int = 2
+    const val DEVICE_CONFIRMATION: Int = 3
+
+    const val EMAIL_CODE_BIT: Long = 1L shl 0
+    const val DEVICE_CODE_BIT: Long = 1L shl 1
+    const val DEVICE_CONFIRMATION_BIT: Long = 1L shl 2
+}
+
+/**
  * The signed-in account's own Steam profile.
  *
  * The SDK reports an avatar as the hash the service sent rather than a URL, so the URL is built at this seam
@@ -295,6 +312,18 @@ internal interface SteamContentSdkPlatformSession : Closeable {
      */
     fun accountProfile(): SteamContentSdkAccountProfile?
 
+    /**
+     * Every confirmation the pending logon challenge allows, as a mask of the SDK's guard-choice bits; 0 means
+     * no challenge is pending.
+     *
+     * This is the service's answer for the account, so it is what decides whether a device approval can be
+     * replaced with a code the account holder types.
+     */
+    fun guardChoices(): Long
+
+    /** Selects one of [guardChoices] for the pending challenge; the SDK publishes the challenge again. */
+    fun chooseGuard(choice: Int)
+
     /** The pending challenge identifier, or null when the SDK reports none. An opaque value, never logged. */
     fun challengeId(): ByteArray?
     /**
@@ -394,6 +423,12 @@ private class SteamContentSdkEnginePlatformSession(
 
     override fun state(): SteamContentSdkSessionState =
         steamContentSdkSessionState(session.state()).also(::publishWhenAuthenticated)
+
+    override fun guardChoices(): Long = runCatching { session.guardChoices() }.getOrDefault(0L)
+
+    override fun chooseGuard(choice: Int) {
+        session.chooseGuard(choice)
+    }
 
     override fun accountProfile(): SteamContentSdkAccountProfile? {
         val accountId = runCatching { session.accountId() }.getOrNull() ?: return null

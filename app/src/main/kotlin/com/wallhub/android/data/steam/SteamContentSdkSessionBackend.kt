@@ -170,11 +170,36 @@ internal class SteamContentSdkSessionBackend(
      */
     override fun useManualSteamGuardFallback() {
         val pending = pendingChallenge.get()
-        when {
-            pending != null -> publish(steamContentSdkChallengePhase(pending.kind), messages.enterGuardCode)
-            mutableSession.value.phase == SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION ->
-                record("manual_guard_fallback_unsupported")
-            else -> publish(SteamSessionPhase.FAILED, messages.noManualLogin)
+        if (pending != null) {
+            publish(steamContentSdkChallengePhase(pending.kind), messages.enterGuardCode)
+            return
+        }
+        if (mutableSession.value.phase != SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION) {
+            publish(SteamSessionPhase.FAILED, messages.noManualLogin)
+            return
+        }
+        scope.launch {
+            // Off the caller's thread: both calls cross into the SDK, and the caller is a ViewModel.
+            val session = activeSession.get()
+            val choices = session?.guardChoices() ?: 0L
+            // Only a confirmation the service allows for this account can be selected: the authenticator's code
+            // when the account has one, otherwise the code Steam emailed. The SDK publishes the challenge again
+            // as that code, and the poll this attempt is already running picks it up and shows the code field.
+            val code =
+                when {
+                    choices and SteamContentSdkGuardChoice.DEVICE_CODE_BIT != 0L -> SteamContentSdkGuardChoice.DEVICE_CODE
+                    choices and SteamContentSdkGuardChoice.EMAIL_CODE_BIT != 0L -> SteamContentSdkGuardChoice.EMAIL_CODE
+                    else -> null
+                }
+            if (session == null || code == null) {
+                // Nothing to switch to, so this account has no code to type for this logon.
+                record("manual_guard_fallback_unavailable choices=$choices")
+                publish(SteamSessionPhase.FAILED, messages.noManualLogin)
+                return@launch
+            }
+            record("manual_guard_fallback choice=$code")
+            runCatching { session.chooseGuard(code) }
+                .onFailure { record("manual_guard_fallback_failed", error = it) }
         }
     }
 

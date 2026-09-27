@@ -659,6 +659,16 @@ class SteamContentSdkSessionBackendTest {
 
         override fun accountProfile(): SteamContentSdkAccountProfile? = accountProfile
 
+        /** What the service said this account may confirm with, and what the host last selected. */
+        var guardChoices: Long = 0L
+        val chosenGuards = mutableListOf<Int>()
+
+        override fun guardChoices(): Long = guardChoices
+
+        override fun chooseGuard(choice: Int) {
+            chosenGuards += choice
+        }
+
         override fun challengeId(): ByteArray? = pendingChallengeId
 
         override fun refreshToken(): ByteArray? = retainedToken?.copyOf()
