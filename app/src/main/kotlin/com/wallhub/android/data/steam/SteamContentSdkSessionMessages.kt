@@ -43,9 +43,6 @@ internal interface SteamContentSdkSessionMessages {
 
     val networkFailed: String
 
-    /** Published when an established connection was lost and could not be rebuilt from the stored token. */
-    val sessionConnectionLost: String
-
     val challengeUnsupported: String
 
     val noGuardRequest: String
@@ -104,9 +101,6 @@ internal class AndroidSteamContentSdkSessionMessages(
 
     override val networkFailed: String
         get() = context.getString(R.string.backend_steam_network_failed)
-
-    override val sessionConnectionLost: String
-        get() = context.getString(R.string.backend_steam_session_connection_lost)
 
     override val challengeUnsupported: String
         get() = context.getString(R.string.backend_steam_challenge_unsupported)

@@ -931,7 +931,6 @@
     <string name='backend_steam_requesting_login'>正在请求 Steam 登录会话…</string>
     <string name='backend_steam_restore_failed'>暂时无法恢复 Steam 会话，请检查网络后重试。</string>
     <string name='backend_steam_restore_rejected'>Steam 暂时拒绝了会话恢复，请稍后重试。</string>
-    <string name='backend_steam_session_connection_lost'>与 Steam 的连接已断开且未能重建，请检查网络后重试。</string>
     <string name='backend_steam_restore_timeout'>恢复 Steam 会话超时，请检查网络后重试。</string>
     <string name='backend_steam_restoring_session'>正在恢复已保存的 Steam 登录状态…</string>
     <string name='backend_steam_session_storage_unavailable'>无法读取保存的 Steam 登录状态，请重新登录以替换它。</string>

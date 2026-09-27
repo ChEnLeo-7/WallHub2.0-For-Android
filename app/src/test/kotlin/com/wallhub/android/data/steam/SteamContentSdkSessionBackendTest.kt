@@ -498,7 +498,7 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
-    fun theHostDrivesMaintenanceAndReportsAConnectionItCannotRebuild() =
+    fun theHostDrivesMaintenanceAndHandsARefusedRebuildToTheAttemptPath() =
         runTest {
             val fixture = Fixture()
             val credential = PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 11))
@@ -518,15 +518,20 @@ class SteamContentSdkSessionBackendTest {
             assertTrue(fixture.session.maintenanceSteps.isNotEmpty())
             assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
 
-            // The connection is gone and cannot be rebuilt from the token the SDK retained. The loss is
-            // published instead of being left as a session that claims to be signed in while every read fails.
-            fixture.session.stateAfterEvents = SteamContentSdkSessionState.DISCONNECTED
+            // The connection is gone and an in-place rebuild is refused. The loss is reported and recovery is
+            // handed to the attempt path, which re-opens the session rather than leaving a signed-in claim
+            // over a dead socket. CLOSED is the state a re-opened session that cannot authenticate reports, so
+            // the handed-off attempt ends by itself and this test does not need to cancel it.
+            fixture.session.stateAfterEvents = SteamContentSdkSessionState.CLOSED
             fixture.session.reconnectSucceeds = false
             advanceTimeBy(1_001L)
 
             assertEquals(1, fixture.session.reconnects)
+            assertTrue(
+                fixture.platform.openCalls >= 2,
+                "a refused rebuild hands recovery to the attempt path, which re-opens the session",
+            )
             assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
-            assertEquals(FakeMessages.sessionConnectionLost, backend.session.value.message)
         }
 
     private class Fixture {
@@ -741,7 +746,6 @@ class SteamContentSdkSessionBackendTest {
         override val unavailable = "unavailable"
         override val authRejected = "auth-rejected"
         override val networkFailed = "network-failed"
-        override val sessionConnectionLost = "session-connection-lost"
         override val challengeUnsupported = "challenge-unsupported"
         override val noGuardRequest = "no-guard-request"
         override val noManualLogin = "no-manual-login"

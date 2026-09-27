@@ -980,7 +980,6 @@
         password again.
     </string>
     <string name='backend_steam_network_failed'>Could not reach Steam. Check your network and try again.</string>
-    <string name='backend_steam_session_connection_lost'>The Steam connection dropped and could not be re-established. Check your network and try again.</string>
     <string name='backend_steam_reconnecting'>The first connection failed. Reconnecting to Steam…</string>
     <string name='backend_steam_requesting_login'>Requesting a Steam sign-in session…</string>
     <string name='backend_steam_restore_failed'>

@@ -482,18 +482,35 @@ internal class SteamContentSdkSessionBackend(
             )
             return true
         }
-        // The retained token a rebuild needs is the one this app already stores, so a rebuild that failed has
-        // exhausted what can be tried without the operator. The session is closed and reported rather than
-        // retried on a timer: the next start restores it from the same store.
-        record("session_rebuild_failed", error = rebuilt.exceptionOrNull())
+        // The SDK's own words are the whole diagnostic here: the ABI bridge puts its bounded, redacted text in
+        // the exception, so a class name alone would throw away the reason a rebuild was refused.
+        record(
+            "session_rebuild_failed",
+            error = rebuilt.exceptionOrNull(),
+            detail = rebuildFailureReason(rebuilt),
+        )
+        // An in-place rebuild reuses the discovery the session was opened with. A full restore re-reads the
+        // candidate list from the directory, which is the retry that exists for the case this cannot cover -
+        // the cached endpoint set being the stale input - so the loss is handed to that path. If that restore
+        // fails too it publishes its own failure and starts no loop, so this cannot become a hot retry.
         releaseSession()
         publish(
-            SteamSessionPhase.FAILED,
-            messages.sessionConnectionLost,
+            SteamSessionPhase.SIGNING_IN,
+            messages.restoringSession,
             hasStoredSession = true,
         )
+        restorePersistedSession()
         return false
     }
+
+    /** The SDK's own explanation of a refused rebuild, bounded and without control characters. */
+    private fun rebuildFailureReason(rebuilt: Result<SteamContentSdkReconnect>): String? =
+        rebuilt
+            .exceptionOrNull()
+            ?.message
+            ?.filter { !it.isISOControl() }
+            ?.take(REBUILD_REASON_LENGTH)
+            ?.takeIf { it.isNotBlank() }
 
     private suspend fun driveToOutcome(
         session: SteamContentSdkPlatformSession,
@@ -1035,5 +1052,8 @@ internal class SteamContentSdkSessionBackend(
         const val SESSION_ATTEMPT_TIMEOUT_MS = 5 * 60_000L
         const val SHORT_TOKEN_LENGTH = 32
         const val LONG_TOKEN_LENGTH = 256
+
+        /** How much of the SDK's rebuild refusal is kept; the bridge already bounds and redacts its own text. */
+        const val REBUILD_REASON_LENGTH = 240
     }
 }

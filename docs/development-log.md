@@ -891,6 +891,43 @@ already logs `sdk=` detail on the logon paths, so this is the same treatment for
 Recorded as owed with that fix: whether the rebuild then succeeds, and - if it does - that a rebuilt session
 serves reads again without a restart.
 
+## 2026-09-27 (19) - a refused rebuild names its reason and hands over to the live-candidate restore
+
+Entry (18) left one line unexplained: `session_rebuild_failed error=IllegalStateException`, with the reason
+discarded at the log line. This entry is the follow-up, and it changes one part of entry (17): a refused
+in-place rebuild no longer ends the session in `FAILED`; it hands recovery to the attempt path.
+
+**The cause was not a missing token, and that was checked before changing anything.** `restore_session`
+clears the retained token before it connects (`crates/sc-content/src/account_session.rs:3720`) and the token
+logon sets it back on success (`:688`), so a session this app restored does hold one and
+`AccountSessionProvider::reconnect` finds it (`:3972`). The refusal therefore lies in the rebuild's own
+attempt, and only the SDK's text said which. The JNI bridge puts exactly that text in the exception
+(`bindings/android/src/main/c/sc_content_jni.c:32-35`); `record` printed the class name and dropped it.
+
+**The change.**
+
+* `session_rebuild_failed` now carries `sdk=<the SDK's own words>`, bounded and stripped of control
+  characters (`rebuildFailureReason`, `REBUILD_REASON_LENGTH = 240`). It is the same `sdk=` detail the logon
+  paths already record, and the SDK's `set_error` text is already bounded and redacted before it leaves the
+  frame.
+* A refused in-place rebuild hands over instead of giving up. `reconnect()` reuses the discovery the session
+  was opened with; the attempt path re-opens the engine - `SteamContentSdkEngine.open` closes and creates a
+  fresh one - and `restore` already retries a transport-class failure against a candidate list read live from
+  the directory. That live-candidate retry is the one thing an in-place rebuild cannot do, which is why the
+  recovery belongs there rather than in another reconnect attempt.
+* The hand-off cannot become a hot retry: the maintenance loop is already cancelled by `releaseSession`, and a
+  restore that fails publishes its own failure and starts no loop. The loop only comes back if the restore
+  succeeds, i.e. when recovery actually worked.
+* `backend_steam_session_connection_lost` and its `SteamContentSdkSessionMessages` property are removed: with
+  the hand-off, the restore path's own messages (`backend_steam_restore_failed`, `backend_steam_network_failed`)
+  are the accurate thing to show, and an unused string with no caller is worse than none.
+
+**Not yet built or read.** The two readings this owes: the `sdk=` text on `session_rebuild_failed` should name
+why the in-place rebuild was refused, and - if the hand-off recovers - the log should go `session_lost` ->
+`session_rebuild_failed sdk=…` -> `phase_signing_in` -> `phase_signed_in` with reads working again, with no
+restart.
+
+
 
 
 
