@@ -28,6 +28,9 @@ import io.steamcontent.sdk.WorkshopOperation
 import io.steamcontent.sdk.WorkshopPage
 import io.steamcontent.sdk.WorkshopResult
 import java.io.File
+import java.security.KeyStore
+import java.security.cert.X509Certificate
+import java.util.Base64
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,8 +39,9 @@ import javax.inject.Singleton
  *
  * The SDK deliberately takes only host-owned inputs; this class supplies them from the platform:
  *
- * - **trust** comes from the system store, which Android keeps as one PEM file per certificate, so the files
- *   are concatenated once and the same bundle then serves the CM route, the CDN route, and the chunk fetches;
+ * - **trust** comes from the platform's accepted issuers, which Android exposes as one `AndroidCAStore` entry
+ *   per certificate, so they are collected and encoded once and the same bundle then serves the CM route, the
+ *   CDN route, and the chunk fetches;
  * - **paths** come from the application's own files directory, so every SDK-owned file stays inside the app's
  *   sandbox. The root is [storageRoot], the directory the SDK resolves a relative download destination
  *   against, which is what lets the app name its existing per-item directory instead of introducing one;
@@ -522,25 +526,32 @@ class SteamContentSdkEngine
         }
 
         /**
-         * Concatenates the platform trust store into one PEM bundle.
+         * Encodes the platform's accepted issuers into one PEM bundle.
          *
-         * Android keeps system roots as individual **PEM** files; re-encoding them would produce a bundle with
-         * no usable roots, which the SDK rejects as an argument error rather than trusting nothing silently.
+         * The issuer list is the `AndroidCAStore` keystore entry set, not a scan of
+         * `/system/etc/security/cacerts`: that directory holds only the system roots, while Android's own TLS
+         * stack accepts the system store and the user-installed store together. A user certificate is what a
+         * gateway or transparent proxy installs when it intercepts TLS, so a bundle built from the directory
+         * alone left the SDK rejecting every intercepted handshake as an unknown issuer while the browser
+         * reached the same site.
+         *
+         * Aliases are sorted so one build of the bundle is reproducible; reading them through the store also
+         * lets the platform hand back whatever certificates it actually trusts instead of files this code
+         * decodes itself.
          */
         private fun systemTrustBundle(): ByteArray {
-            val directory = File("/system/etc/security/cacerts")
-            val files =
-                directory.listFiles()?.sortedBy { it.name }
-                    ?: throw IllegalStateException("the platform trust store is unavailable")
-            check(files.isNotEmpty()) { "the platform trust store is empty" }
-            val bundle = StringBuilder()
-            for (file in files) {
-                bundle.append(file.readText(Charsets.US_ASCII)).append('\n')
-            }
-            return bundle.toString().toByteArray(Charsets.US_ASCII)
+            val store = KeyStore.getInstance(ANDROID_CA_STORE).apply { load(null) }
+            val certificates =
+                store.aliases().toList().sorted().mapNotNull { alias ->
+                    (store.getCertificate(alias) as? X509Certificate)?.encoded
+                }
+            return trustBundlePem(certificates)
         }
 
         companion object {
+            /** The platform trust store that holds the system roots and the user-installed certificates. */
+            private const val ANDROID_CA_STORE = "AndroidCAStore"
+
             /** Session events the future adapter will render, named here so the mapping is in one place. */
             val OBSERVED_EVENTS: Set<Int> =
                 setOf(
@@ -551,3 +562,35 @@ class SteamContentSdkEngine
                 )
         }
     }
+
+/**
+ * Wraps each certificate in [derCertificates] as its own PEM block, in the order given.
+ *
+ * The encoding lives here rather than beside the store read because it needs no Android API: the platform
+ * supplies DER blobs and this half is what a JVM unit test can hold to the exact output. `java.util.Base64`
+ * covers both targets, since `minSdk` is 26, so no `android.util.Base64` call is needed and the helper stays
+ * callable from the JVM test source set.
+ *
+ * An empty store throws instead of returning an empty bundle: the SDK rejects an argument with no roots, and a
+ * bundle that silently trusts nothing would turn a missing store into a handshake failure at the first
+ * connection.
+ */
+internal fun trustBundlePem(derCertificates: List<ByteArray>): ByteArray {
+    check(derCertificates.isNotEmpty()) { "the platform trust store is empty" }
+    val encoder = Base64.getEncoder()
+    val bundle = StringBuilder()
+    for (certificate in derCertificates) {
+        val body = encoder.encodeToString(certificate)
+        bundle.append("-----BEGIN CERTIFICATE-----\n")
+        // PEM bodies are wrapped at 64 characters, which the encoder does not do on its own; a parser that
+        // requires that shape would otherwise reject a certificate whose encoding happened to run long.
+        for (offset in body.indices step PEM_LINE_LENGTH) {
+            bundle.append(body, offset, minOf(offset + PEM_LINE_LENGTH, body.length)).append('\n')
+        }
+        bundle.append("-----END CERTIFICATE-----\n")
+    }
+    return bundle.toString().toByteArray(Charsets.US_ASCII)
+}
+
+/** The line length PEM bodies use, in characters of Base64 text. */
+private const val PEM_LINE_LENGTH = 64
