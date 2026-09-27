@@ -1111,3 +1111,11 @@ clamps everything into `12..48` (`SteamDownloadModels.kt`). The floor is now 1 a
 16, 24, 32, 48`: the link, not the product, decides how many connections a depot can take, the SDK's own window
 is exactly this value, and its client pool (`MAX_LIVE_CLIENTS = 48`) is the ceiling, so nothing offered is
 silently reduced. `theChunkConcurrencyRangeIsTheSdkOne` pins the range.
+
+**The change to the row was not enough, and the device said so.** Selecting "1" stored 12 and redisplayed 12:
+the range was enforced in three places - the row's option list, `safeChunkConcurrency` for the request, and the
+preference store on **both** read and write (`AppPreferencesStore.kt`, `coerceIn(12, 48)`). The store is the one
+that decides what the user actually gets, and it had never been told the floor moved. One definition now lives in
+`AppModels.kt` beside the preference it bounds (`MIN_CHUNK_DOWNLOAD_CONCURRENCY`,
+`MAX_CHUNK_DOWNLOAD_CONCURRENCY`, `DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY`, and `safeChunkDownloadConcurrency`), and
+the other two call it, so the row's offer and the stored value cannot disagree again.

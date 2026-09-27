@@ -136,7 +136,7 @@ data class AppPreferences(
     val homePaginationMode: HomePaginationMode = HomePaginationMode.INFINITE_SCROLL,
     val matureContentEnabled: Boolean = false,
     val maxConcurrentDownloads: Int = 1,
-    val chunkDownloadConcurrency: Int = 24,
+    val chunkDownloadConcurrency: Int = DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY,
     val downloadProxyUrl: String = "",
     val downloadProxyEnabled: Boolean = false,
     val downloadProxyRequiresConfirmation: Boolean = false,
@@ -177,6 +177,24 @@ data class AppPreferences(
             "steamApiKey=<redacted>, steamWorkshopDataSource=$steamWorkshopDataSource, " +
             "onlineChunkPlaybackEnabled=$onlineChunkPlaybackEnabled)"
 }
+
+/**
+ * The chunk concurrency a download may ask the SDK for, and the only place that range is defined.
+ *
+ * It is enforced on the way into the store, on the way out of it, and again before the request reaches the
+ * engine. Three copies of it drifted apart: the settings row offered one chunk at a time while both store paths
+ * silently rewrote it to twelve, so the choice could not be made at all.
+ *
+ * The floor is one because the link, not the product, decides how many connections a depot can take, and the
+ * ceiling is the SDK's own client pool (48), so nothing offered here is reduced on the way through.
+ */
+const val MIN_CHUNK_DOWNLOAD_CONCURRENCY = 1
+const val MAX_CHUNK_DOWNLOAD_CONCURRENCY = 48
+const val DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY = 24
+
+/** Clamps a configured chunk concurrency into the range the SDK is given. */
+fun safeChunkDownloadConcurrency(configured: Int): Int =
+    configured.coerceIn(MIN_CHUNK_DOWNLOAD_CONCURRENCY, MAX_CHUNK_DOWNLOAD_CONCURRENCY)
 
 const val STEAM_ACCESS_DOH_ENDPOINT_LIMIT = 8
 
