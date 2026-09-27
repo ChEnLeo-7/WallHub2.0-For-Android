@@ -30,6 +30,8 @@ signing.properties
 !/docs/
 /docs/*
 !/docs/development-log.md
+# The device-verification sweep and its findings backlog are tracked: they are the list the fixes work from.
+!/docs/device-verification-*.md
 # Keep the local legacy test archive ignored while allowing the focused regression suite.
 /app/src/test/*
 !/app/src/test/kotlin/

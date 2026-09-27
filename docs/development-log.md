@@ -1004,6 +1004,28 @@ With that, B is complete on the device: the connection is held through long idle
 and published rather than hidden behind `phase_signed_in`, and the app rebuilds or restores itself with no
 restart.
 
+## 2026-09-27 (22) - a wide device sweep, and the findings backlog it produced
+
+The connection work is finished, so this entry starts the next job: find out what actually works across the
+whole app, and write down everything that does not. The result is a standing document -
+[`device-verification-2026-09-27.md`](device-verification-2026-09-27.md) - with three lists: nine surfaces read
+working, six defects with the log line behind each, and eleven features that still have no reading at all
+together with what each one would take. `.gitignore` gained one whitelist line so that document is tracked; it
+is the list the fixes will work from, and the log cannot hold it.
+
+**One finding is critical and it is in this campaign's own code.** After the SDK recovered a connection in place
+(`session_maintenance sdk=pump=failed step=reconnected` at `12:24:11.490`) the app went completely silent: no
+further maintenance tick, no Workshop read, and 发现 produced nothing either - for over three minutes, while the
+process stayed alive and in the foreground. Only a restart cleared it. That is the original silent-death defect
+in a new place, and the two candidates to read first are the tick's one unguarded call (`session.state()`) and a
+`pump`/`maintain` JNI call blocking while holding the session.
+
+The rest are smaller and each has its reading in the document: an R8-obfuscated class name (`ne5 was cancelled`)
+reported as a failure reason, the detail screen spinning forever with no error state, the settings card still
+claiming the session lasts only until a restart, a data-source dropdown whose three options are all truncated to
+"Steam …", and a cold-start read that fires before the restore finishes and is refused.
+
+
 
 
 
