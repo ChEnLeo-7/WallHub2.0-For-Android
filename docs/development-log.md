@@ -838,5 +838,59 @@ publishing `Disconnected`/`FAILED` instead of leaving `phase_signed_in` over a d
 look for are `session_maintenance pump=… step=…`, `session_lost`, and either `session_rebuilt` or
 `session_rebuild_failed`.
 
+## 2026-09-27 (18) - the host schedule holds the connection 4 minutes, and the rebuild needs a reason line
+
+Entry (17) was built at revision `5c793f2`
+(`/root/builds/wallhub-release-20260927T022352Z-1293321882.apk`, whose
+`lib/arm64-v8a/libsc_content_ffi.so` is still `883b0cb5…`, the pinned 0.1.59 AAR's) and read on the device. This
+was the first compiler that edit met, and it compiled.
+
+**The connection is held far past where it used to die.** Cold start at `10:29:27`, `phase_signed_in` at
+`10:29:28.448`, and then one maintenance tick every ~20.0 s with nothing driving the app:
+
+```text
+10:29:48.454 I/WallHubSteamSession: session_maintenance sdk=pump=read step=heartbeat_sent
+10:30:08.459 … (the same line at 10:30:28, 10:30:48, 10:31:08, 10:31:28, 10:31:48, 10:32:08, 10:32:27 …)
+10:33:26.794 I/WallHubSteamSession: session_maintenance sdk=pump=read step=idle
+```
+
+`pump=read` every tick means the CM's own heartbeats are being drained, so the SDK's liveness clock stays
+fresh, and `step=heartbeat_sent` is our heartbeat going out when due. The session was still **serving reads**
+long after the old death point: at `10:32:27` the discover rails answered `rows=20 of 20` with
+`fidelity=EXACT`, and until the connection finally went at `10:33:36` this run had **0 read failures**.
+
+| Same idle scenario | Before (entries 9/16) | After (this build) |
+| --- | --- | --- |
+| Session died at | **~89-92 s** after `phase_signed_in` | **4 m 08 s** (`10:29:28.448` -> `10:33:36.431`) |
+| Loss visible to the app | no, `phase_signed_in` stayed | **yes** (see below) |
+| Reads served after the death | none, 26-28 refusals until a restart | the loop reported it within one tick |
+
+**The loss is no longer silent, which is the defect this work was for.** Ten seconds after the first failing
+read the next tick found the dead link and said so:
+
+```text
+10:33:36.431 W/WallHubSdkWorkshop: workshop read unavailable: temporarily_unavailable: the connection failed…
+10:33:46.796 I/WallHubSteamSession: session_maintenance sdk=pump=failed step=failed
+10:33:46.797 I/WallHubSteamSession: session_lost
+10:33:47.518 I/WallHubSteamSession: session_rebuild_failed error=IllegalStateException
+10:33:47.522 I/WallHubSteamSession: phase_failed
+```
+
+So the app no longer claims `phase_signed_in` over a dead socket: it publishes `session_lost` and moves to
+`phase_failed` with the new message, which is what the UI and a retry need.
+
+**One thing this reading does not yet explain, and it is the next fix.** The automatic rebuild failed, and the
+line does not say why. `session_rebuild_failed error=IllegalStateException` is all there is, because `record`
+prints an exception's class name and not its message. The JNI bridge maps every non-OK status other than
+`SC_STATUS_INVALID_ARGUMENT` to `IllegalStateException` and puts the SDK's own `sc_last_error_message` text in
+it (`bindings/android/src/main/c/sc_content_jni.c:32-35`), so the reason existed and was thrown away at the log
+line. Two candidates, both cheap to tell apart once the reason is printed: the FFI reported `UNSUPPORTED`
+because the rebuild itself failed (the token or the transport), or the session was refused by a guard. The app
+already logs `sdk=` detail on the logon paths, so this is the same treatment for the rebuild path.
+
+Recorded as owed with that fix: whether the rebuild then succeeds, and - if it does - that a rebuilt session
+serves reads again without a restart.
+
+
 
 
