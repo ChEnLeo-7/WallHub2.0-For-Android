@@ -1032,3 +1032,32 @@ claiming the session lasts only until a restart, a data-source dropdown whose th
 
 
 
+
+## 2026-09-27 (23) - the SDK side answers the "chunks per download" setting
+
+The settings page has offered 12 to 48 chunks per download since before this campaign, and the finding backlog
+recorded the copy as promising something the engine did not deliver. Reading the SDK end to end this time found
+why, and the answer was not the chunk source at all: `download_depot` turned the setting into a schedule and
+then ran the engine's **exclusive** provider, so the schedule reordered a strictly serial run. The engine's
+concurrent provider existed and had no caller anywhere in the workspace. With that wired, the client pool
+inside the CDN chunk source - which had been capping concurrency at eight clients - was raised to the top of the
+range this application offers (48), and the request/join wave was replaced by a resident worker set that lets
+the loop wait only for the chunk it asked for.
+
+**No application source changed for this.** The setting already reached the SDK
+(`SteamContentSdkEngine.startDownload(..., chunkConcurrency)`), the SDK now honours it, and the strings
+(`settings_chunks_per_download`, "单项目分块并发" / "Chunks per download") are accurate as they stand. The
+shared-vs-exclusive seam, the pool, and the worker window are all SDK-side and are recorded in the SDK's
+`progress.md` (§CD5x-§CD5y); the SDK's own checks pass (764 tests) and two of them fail against the old wiring.
+
+What this changes for the numbers a device reads: until now the value only reordered work, so a bandwidth
+measurement at 12 and at 48 would have looked the same. After a preview AAR is built and installed they should
+differ, which is the reading this entry owes. The pool opens connections lazily and never more than the window
+has chunks in flight, so 48 is a permission and not a default: what the CDN actually sees is still whatever the
+setting says. The first measurement should therefore be taken at the current setting and again at 12, and if 48
+turns out to be read as abuse by the CDN the ceiling is a one-line change in
+`crates/sc-content/src/cdn_chunk_source.rs`.
+
+The SDK change also has to reach this repository the way every SDK change does: a new preview AAR published by
+the worker, a version pin in `app/build.gradle.kts`, and a release build. None of that has been requested yet,
+so nothing here has been built or installed, and the app on the device is unchanged.
