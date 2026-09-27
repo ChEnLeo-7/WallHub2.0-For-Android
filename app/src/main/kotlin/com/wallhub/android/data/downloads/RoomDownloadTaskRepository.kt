@@ -283,6 +283,10 @@ internal class RoomDownloadTaskRepository
                         allowedStatuses = DOWNLOAD_CONTROL_STATUSES + DownloadStatus.PAUSED.name,
                     ) == 1,
                 ) { "Download state changed before cancellation could be requested" }
+                // The worker's own cancel acknowledgement removes the SDK's staging too; doing it here as
+                // well makes the cancel effective even when the scheduled run never starts, for instance
+                // with no network to satisfy the work's constraint.
+                deleteManagedDownloadDirectories(context, task.id, task.stagingDirectory)
                 workScheduler.replace(task.id)
             }
         }
@@ -291,7 +295,7 @@ internal class RoomDownloadTaskRepository
             require(
                 task.status in setOf(DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELLED),
             ) { "An active download cannot be deleted; cancel the task first" }
-            deleteManagedStagingDirectory(context, task.stagingDirectory)
+            deleteManagedDownloadDirectories(context, task.id, task.stagingDirectory)
             taskDao.delete(task.id)
         }
 
@@ -355,7 +359,7 @@ internal class RoomDownloadTaskRepository
             tasks.sumOf { task ->
                 val deleted = taskDao.deleteTerminal(task.taskId)
                 if (deleted > 0) {
-                    deleteManagedStagingDirectory(context, task.stagingDirectory)
+                    deleteManagedDownloadDirectories(context, task.taskId, task.stagingDirectory)
                     File(context.cacheDir, "wallhub-conversion/${task.taskId}").deleteRecursively()
                 }
                 deleted
@@ -501,6 +505,23 @@ private fun deleteManagedStagingDirectory(
     ) {
         directory.deleteRecursively()
     }
+}
+
+/**
+ * Removes every directory one task's download owns.
+ *
+ * The destination directory is what this app's own layout names, but an SDK-backed download stages its
+ * partial bytes under the SDK's `.sc-staging` root, keyed by that same destination. A cancel or a delete
+ * that removed only the destination would leave the checkpoint the SDK resumes from, so a later retry of
+ * a task the person discarded would continue the bytes it was supposed to discard.
+ */
+private fun deleteManagedDownloadDirectories(
+    context: Context,
+    taskId: String,
+    stagingDirectory: String?,
+) {
+    deleteManagedStagingDirectory(context, stagingDirectory)
+    sdkStagingDirectory(context.filesDir, taskId)?.deleteRecursively()
 }
 
 private const val LOG_TAG = "WallHubDownload"

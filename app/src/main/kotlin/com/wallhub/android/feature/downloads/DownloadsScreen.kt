@@ -763,7 +763,7 @@ private fun DownloadTaskCard(
     onOpenDetail: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val hasVisibleSpeed = task.status == DownloadStatus.DOWNLOADING && task.bytesPerSecond > 0L
+    val hasVisibleSpeed = measuredDownloadSpeed(task) != null
     LaunchedEffect(task.id, hasVisibleSpeed) {
         if (hasVisibleSpeed) {
             withFrameNanos { }
@@ -859,14 +859,27 @@ private fun DownloadTaskCard(
                     )
                 }
                 if (showProgress) {
-                    LinearProgressIndicator(
-                        progress = { task.progress },
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .height(PROGRESS_INDICATOR_HEIGHT),
-                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    )
+                    val progressBarModifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(PROGRESS_INDICATOR_HEIGHT)
+                    val progressBarTrack = MaterialTheme.colorScheme.surfaceContainerHighest
+                    val measuredProgress = downloadProgressFraction(task)
+                    if (measuredProgress != null) {
+                        LinearProgressIndicator(
+                            progress = { measuredProgress },
+                            modifier = progressBarModifier,
+                            trackColor = progressBarTrack,
+                        )
+                    } else {
+                        // No durable byte reading exists yet, so the card animates rather than pinning a
+                        // determinate bar at zero: a 0% bar on a transfer that is really moving is what made
+                        // it read as frozen.
+                        LinearProgressIndicator(
+                            modifier = progressBarModifier,
+                            trackColor = progressBarTrack,
+                        )
+                    }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1017,17 +1030,36 @@ private fun DownloadTask.projectSizeLabel(): String =
         ?.let(::formatByteSize)
         ?: stringResource(R.string.downloads_reading_size)
 
+/**
+ * The fraction the card's determinate bar shows, or null when the bar has no reading to show.
+ *
+ * The determinate bar is the product's own number: durably committed bytes against the item's total. A
+ * running download whose SDK has not reported one committed byte yet has no such number, and a
+ * determinate 0% bar is what made a live transfer look frozen. Null asks for the indeterminate bar,
+ * which says work is happening without inventing a second source of truth.
+ */
+internal fun downloadProgressFraction(task: DownloadTask): Float? =
+    if (task.status == DownloadStatus.DOWNLOADING && task.downloadedBytes <= 0L) {
+        null
+    } else {
+        task.progress
+    }
+
+/**
+ * The rate the card may show, or null while no rate has been measured.
+ *
+ * A download whose rate is still unknown reads as its plain status. The SDK derives a rate from two
+ * durable commit readings, so until it has reported both there is no measurement to show, and a card
+ * that announces 正在测速 for the whole transfer is claiming one it does not have.
+ */
+internal fun measuredDownloadSpeed(task: DownloadTask): Long? =
+    task.bytesPerSecond.takeIf { task.status == DownloadStatus.DOWNLOADING && it > 0L }
+
 @Composable
 private fun DownloadTask.statusDescription(): String =
-    when {
-        status == DownloadStatus.DOWNLOADING && bytesPerSecond > 0L ->
-            "${formatByteSize(bytesPerSecond)}/s"
-
-        status == DownloadStatus.DOWNLOADING ->
-            stringResource(R.string.downloads_measuring)
-
-        else -> status.label()
-    }
+    measuredDownloadSpeed(this)
+        ?.let { "${formatByteSize(it)}/s" }
+        ?: status.label()
 
 private val REORDERABLE_DOWNLOAD_STATUSES =
     setOf(

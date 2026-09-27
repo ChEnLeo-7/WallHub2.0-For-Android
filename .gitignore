@@ -63,6 +63,8 @@ signing.properties
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamContentSdkWorkshopTransferTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamContentSdkVideoStreamSessionTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamContentSdkVideoFileSelectionTest.kt
+!/app/src/test/kotlin/com/wallhub/android/data/downloads/DownloadResumeCheckpointTest.kt
+!/app/src/test/kotlin/com/wallhub/android/data/downloads/DownloadSpeedTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/
 /app/src/test/kotlin/com/wallhub/android/feature/*
 !/app/src/test/kotlin/com/wallhub/android/feature/local/
@@ -72,6 +74,7 @@ signing.properties
 !/app/src/test/kotlin/com/wallhub/android/feature/downloads/
 /app/src/test/kotlin/com/wallhub/android/feature/downloads/*
 !/app/src/test/kotlin/com/wallhub/android/feature/downloads/DownloadsFilterTest.kt
+!/app/src/test/kotlin/com/wallhub/android/feature/downloads/DownloadProgressCardTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/discover/DiscoverSamplingTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/discover/OfficialDiscoverMetadataParserTest.kt
 /app/src/test/kotlin/com/wallhub/android/feature/local/*

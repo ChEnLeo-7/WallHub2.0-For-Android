@@ -166,6 +166,45 @@ class SteamContentSdkWorkshopTransferTest {
         }
     }
 
+    /**
+     * The pause is the last call made to the live task, so what stops the run is the SDK's own durable
+     * boundary and not a close that only aborts it.
+     */
+    @Test
+    fun thePauseIsRequestedBeforeTheTaskIsClosed() {
+        val fixture = Fixture()
+        try {
+            assertThrows(SteamDownloadPausedException::class.java) {
+                runBlocking { fixture.download(control = { SteamDownloadControl.PAUSE }) }
+            }
+            assertEquals(listOf("pause", "close"), fixture.task.calls)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    /**
+     * A pause the SDK refuses is still a pause.
+     *
+     * The SDK refuses one only when the run already ended or its handle is gone, and the durable checkpoint
+     * survives either way. Reading that refusal as a failure would take the task out of the paused state the
+     * resume action is offered from, so the app would offer a retry where it should offer a resume.
+     */
+    @Test
+    fun aRefusedSdkPauseStillRaisesTheAppPauseSignal() {
+        val fixture = Fixture()
+        try {
+            fixture.task.pauseFailure = IllegalStateException("this task has already finished")
+            assertThrows(SteamDownloadPausedException::class.java) {
+                runBlocking { fixture.download(control = { SteamDownloadControl.PAUSE }) }
+            }
+            assertEquals(1, fixture.task.pauseCalls)
+            assertEquals(1, fixture.task.closeCalls)
+        } finally {
+            fixture.close()
+        }
+    }
+
     @Test
     fun cancelReachesTheSdkTaskAndRaisesTheAppCancelSignal() {
         val fixture = Fixture()
@@ -498,6 +537,12 @@ class SteamContentSdkWorkshopTransferTest {
         var cancelCalls = 0
         var closeCalls = 0
 
+        /** Calls in the order the transfer made them, so the pause-then-close order is pinned. */
+        val calls = mutableListOf<String>()
+
+        /** What the SDK's pause call throws, if it refuses the request. */
+        var pauseFailure: Throwable? = null
+
         override fun status(): SteamContentSdkTaskStatus =
             statuses.removeFirstOrNull() ?: SteamContentSdkTaskStatus(
                 state = TaskState.COMPLETED,
@@ -512,18 +557,23 @@ class SteamContentSdkWorkshopTransferTest {
 
         override fun pause() {
             pauseCalls += 1
+            calls += "pause"
+            pauseFailure?.let { throw it }
         }
 
         override fun resume() {
             resumeCalls += 1
+            calls += "resume"
         }
 
         override fun cancel() {
             cancelCalls += 1
+            calls += "cancel"
         }
 
         override fun close() {
             closeCalls += 1
+            calls += "close"
         }
     }
 }

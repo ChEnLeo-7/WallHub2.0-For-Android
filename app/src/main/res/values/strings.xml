@@ -668,7 +668,6 @@
     <string name='downloads_enqueue_failed'>Unable to add to the download queue</string>
     <string name='downloads_title'>Downloads</string>
     <string name='downloads_empty'>No download tasks</string>
-    <string name='downloads_measuring'>Measuring</string>
     <string name='downloads_play_video'>Play video</string>
     <string name='downloads_filter_all'>All</string>
     <string name='downloads_filter_completed'>Completed</string>

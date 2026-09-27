@@ -36,7 +36,35 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 internal const val WORKSHOP_STAGING_DIRECTORY_NAME = "wallhub-workshop"
+
+/**
+ * The directory the Steam Content SDK keeps its own staging under, beside this app's files.
+ *
+ * The SDK stages under `.sc-staging/<destination>` inside its storage root, and this app names that root
+ * as its files directory. The partial bytes of an SDK-backed download therefore do not live in the
+ * destination directory the app hands the SDK: a cancel that deletes only the destination leaves the
+ * checkpoint a later retry resumes from, so the cancel would keep bytes the person discarded.
+ */
+private const val SDK_STAGING_DIRECTORY_NAME = ".sc-staging"
 private const val DOWNLOAD_LOG_TAG = "WallHubDownload"
+
+/**
+ * The SDK's own staging directory for one task's destination, or null when that name cannot be trusted.
+ *
+ * Only a directory that really is `<storage root>/.sc-staging/wallhub-workshop/<taskId>` is returned. The
+ * id comes from the task record, so it must never be able to name a directory the SDK never wrote.
+ */
+internal fun sdkStagingDirectory(
+    storageRoot: File,
+    taskId: String,
+): File? {
+    if (taskId.isBlank()) return null
+    return runCatching {
+        val root = File(storageRoot, SDK_STAGING_DIRECTORY_NAME).canonicalFile
+        val parent = File(root, WORKSHOP_STAGING_DIRECTORY_NAME).canonicalFile
+        File(parent, taskId).canonicalFile.takeIf { it.parentFile?.path == parent.path }
+    }.getOrNull()
+}
 
 internal object ActiveFormalWorkshopDownloadWorkers {
     private val taskIds = ConcurrentHashMap.newKeySet<String>()
@@ -163,6 +191,10 @@ class FormalWorkshopDownloadWorker
                         ?.let(::File)
                         ?.takeIf(::isManagedStagingDirectory)
                         ?.deleteRecursively()
+                    // The SDK's staging is where an SDK-backed download's partial bytes really are, so a
+                    // cancel that deletes only the destination would leave the checkpoint a retry resumes
+                    // from. The destination is kept as a fallback for a direct-file item's own partials.
+                    deleteSdkStagingDirectory(taskId)
                     persist(
                         task,
                         status = DownloadStatus.CANCELLED,
@@ -281,6 +313,26 @@ class FormalWorkshopDownloadWorker
                             "Failed to create Workshop download staging directory"
                         }
                         check(resolvedDirectory.isDirectory) { "Workshop download staging path is not a directory" }
+                        // The SDK keys its resume journal by the content identity, so a run whose identity
+                        // is unchanged finds the paused run's committed chunks and skips them. Its committed
+                        // counter still starts at zero for the new run and only moves when a freshly fetched
+                        // chunk is reported, so the checkpoint this task already holds is the floor the app
+                        // publishes against. Without that floor a resumed run would move the durable reading
+                        // back to zero and read as a restart. A run that cannot reuse the checkpoint - a
+                        // changed identity, or staging the SDK no longer has - has no floor and starts from
+                        // whatever the SDK reports.
+                        val reusableCheckpointBytes = task.downloadedBytes.coerceAtLeast(0L)
+                        val sdkStagingPresent =
+                            sdkStagingDirectory(applicationContext.filesDir, taskId)?.isDirectory == true
+                        val durableCheckpointBytes =
+                            if (manifestChanged || !sdkStagingPresent) 0L else reusableCheckpointBytes
+                        if (durableCheckpointBytes > 0L) {
+                            Log.i(
+                                DOWNLOAD_LOG_TAG,
+                                "taskId=$taskId resume checkpoint=$durableCheckpointBytes bytes " +
+                                    "staging=${resolvedDirectory.absolutePath}",
+                            )
+                        }
                         task =
                             persist(
                                 task,
@@ -360,10 +412,19 @@ class FormalWorkshopDownloadWorker
                                             status = progress.toDownloadStatus(),
                                             downloadedBytes =
                                                 if (progress.phase == SteamDownloadPhase.DOWNLOADING) {
-                                                    progress.completedBytes
+                                                    // The resumed run's own counter restarts at zero, so
+                                                    // what it reports is a continuation only against the
+                                                    // checkpoint this task already holds.
+                                                    durableDownloadedBytes(
+                                                        checkpointBytes = durableCheckpointBytes,
+                                                        reportedBytes = progress.completedBytes,
+                                                    )
                                                 } else {
                                                     task.downloadedBytes
                                                 },
+                                            // The SDK reports no decoded total of its own until its first durable
+                                            // reading, so the item's own size stays the denominator instead of a
+                                            // zero that would leave the bar with no fraction to show.
                                             totalBytes = progress.totalBytes.takeIf { it > 0L } ?: task.totalBytes,
                                             bytesPerSecond = speed,
                                             message = progress.toMessage(credential != null),
@@ -379,8 +440,13 @@ class FormalWorkshopDownloadWorker
                                             context = timingContext,
                                         )
                                     }
-                                    lastSpeedAt = now
-                                    lastSpeedBytes = progress.completedBytes
+                                    // The next rate is measured from the last durable reading, not from the
+                                    // last persist: a window that committed nothing leaves the baseline alone
+                                    // so the next measurement spans the interval the bytes actually arrived in.
+                                    if (progress.completedBytes > lastSpeedBytes) {
+                                        lastSpeedAt = now
+                                        lastSpeedBytes = progress.completedBytes
+                                    }
                                     previousPhase = progress.phase
                                     lastPersistedAt = now
                                 }
@@ -448,6 +514,13 @@ class FormalWorkshopDownloadWorker
                         Result.success()
                     }
                 } catch (error: SteamDownloadPausedException) {
+                    // The one line a device reading needs to tell a pause from a restart: the durable
+                    // checkpoint the paused run reached. No path, title, or key is logged.
+                    Log.i(
+                        DOWNLOAD_LOG_TAG,
+                        "taskId=$taskId paused committed=${task.downloadedBytes} bytes; " +
+                            "staging and the SDK checkpoint are kept",
+                    )
                     taskDao.acknowledgeControlAction(
                         taskId = taskId,
                         expectedAction = DownloadAction.PAUSE.name,
@@ -458,6 +531,7 @@ class FormalWorkshopDownloadWorker
                     Result.success()
                 } catch (error: SteamDownloadCancelledException) {
                     stagingDirectory?.takeIf(::isManagedStagingDirectory)?.deleteRecursively()
+                    deleteSdkStagingDirectory(taskId)
                     acknowledgeCancellation(taskId)
                     Result.success()
                 } catch (error: CancellationException) {
@@ -481,6 +555,7 @@ class FormalWorkshopDownloadWorker
                                     "status=${latest?.status}",
                             )
                             stagingDirectory?.takeIf(::isManagedStagingDirectory)?.deleteRecursively()
+                            deleteSdkStagingDirectory(taskId)
                             acknowledgeCancellation(taskId)
                         } else {
                             // The system (or the ROM's job policy) stopped the worker; keep
@@ -764,6 +839,18 @@ class FormalWorkshopDownloadWorker
                 directory = directory,
             )
 
+        /**
+         * Removes the SDK's staging for this task, so cancelling really discards the partial bytes.
+         *
+         * The SDK's journal is keyed by the content identity, not by the task, so it is not this
+         * directory's name that makes the bytes resumable. Removing the staged chunks is what makes every
+         * record in that journal fail its checksum check, which is what a retry after a cancel must see
+         * instead of continuing bytes the person cancelled.
+         */
+        private fun deleteSdkStagingDirectory(taskId: String) {
+            sdkStagingDirectory(applicationContext.filesDir, taskId)?.deleteRecursively()
+        }
+
         private class TaskControlProbe(
             private val taskDao: FormalTaskRecordDao,
             private val taskId: String,
@@ -801,6 +888,25 @@ class FormalWorkshopDownloadWorker
         }
     }
 
+/**
+ * How long the last measured rate stands after the SDK stops reporting newly committed bytes.
+ *
+ * A window that committed nothing is not a measurement of zero: committed bytes advance only when the
+ * SDK has durably recorded a chunk, so its own commit granularity, not the link, is what leaves a
+ * window empty. Past this silence the transfer is no longer demonstrably moving and the rate reads as
+ * unknown (zero) rather than as a stale measurement.
+ */
+internal const val DOWNLOAD_SPEED_STALE_AFTER_MS = 10_000L
+
+/**
+ * The rate to publish for one progress reading.
+ *
+ * A new committed reading is measured over the whole interval since the previous one, so a coarse
+ * commit cadence still yields a real average instead of a rate sampled from a window nothing happened
+ * in. A window with no new committed bytes keeps the last measurement until
+ * [DOWNLOAD_SPEED_STALE_AFTER_MS] of silence, and a rate nobody ever measured stays zero: zero is the
+ * app's "unknown", which the card hides rather than renders.
+ */
 internal fun downloadSpeedBytesPerSecond(
     phase: SteamDownloadPhase,
     completedBytes: Long,
@@ -808,10 +914,12 @@ internal fun downloadSpeedBytesPerSecond(
     elapsedMs: Long,
     previousSpeed: Long,
 ): Long =
-    if (phase == SteamDownloadPhase.DOWNLOADING && elapsedMs > 0L && completedBytes >= previousBytes) {
-        ((completedBytes - previousBytes) * 1_000L / elapsedMs).coerceAtLeast(0L)
-    } else {
-        previousSpeed
+    when {
+        phase != SteamDownloadPhase.DOWNLOADING || elapsedMs <= 0L -> previousSpeed
+        completedBytes > previousBytes ->
+            ((completedBytes - previousBytes) * 1_000L / elapsedMs).coerceAtLeast(0L)
+        elapsedMs >= DOWNLOAD_SPEED_STALE_AFTER_MS -> 0L
+        else -> previousSpeed
     }
 
 /**
@@ -840,6 +948,21 @@ internal fun mayPublishDownloadProgress(
     nextStatus: DownloadStatus,
 ): Boolean =
     currentStatus != DownloadStatus.CANCELLED.name || nextStatus == DownloadStatus.CANCELLED
+
+/**
+ * The durable reading one run publishes, against the checkpoint the task already holds.
+ *
+ * The SDK reports committed bytes for a single run: a resumed run's counter starts at zero again and
+ * only moves when it reports a freshly fetched chunk, even though the journal already covers everything
+ * the paused run committed. Publishing that counter as it comes would move the task's durable reading
+ * back to zero, so a resume would read as a restart and the card would show no progress until a new
+ * chunk landed. The checkpoint the task already holds is the floor. A run whose checkpoint cannot be
+ * reused passes zero, and then what the SDK reports is the whole reading.
+ */
+internal fun durableDownloadedBytes(
+    checkpointBytes: Long,
+    reportedBytes: Long,
+): Long = maxOf(checkpointBytes.coerceAtLeast(0L), reportedBytes.coerceAtLeast(0L))
 
 private data class DependencyDownloadResult(
     val downloadedBytes: Long,

@@ -2,6 +2,7 @@ package com.wallhub.android.data.downloads
 
 import android.util.Log
 import com.wallhub.android.core.model.SteamContentCredential
+import io.steamcontent.sdk.TaskEventKind
 import io.steamcontent.sdk.TaskFailure
 import io.steamcontent.sdk.TaskState
 import java.io.Closeable
@@ -288,13 +289,29 @@ internal class SteamContentSdkWorkshopTransfer
                     }
 
                     SteamDownloadControl.PAUSE -> {
-                        task.pause()
+                        // The pause is the SDK's own cooperative call, so the run stops at its next durable
+                        // chunk boundary with the journal in place instead of merely stopping this poll loop.
+                        // A refusal is not a failed download: the SDK refuses only when the run already
+                        // ended or its handle is gone, and the durable checkpoint survives either way, so
+                        // the app still reports the pause and lets the next run continue from it.
+                        try {
+                            task.pause()
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Throwable) {
+                            Log.w(TAG, "the SDK refused a pause; the durable checkpoint still stands", error)
+                        }
                         throw SteamDownloadPausedException()
                     }
 
                     SteamDownloadControl.CONTINUE -> Unit
                 }
                 val status = task.status()
+                // Durable committed bytes are the one progress reading this contract publishes. The SDK's
+                // counters are per run: a resumed run starts them at zero again and only moves committed
+                // bytes when it reports a freshly fetched chunk, even though its journal already covers the
+                // paused run's chunks. The max keeps one run's reading monotonic; carrying the task's
+                // reading across runs is the worker's checkpoint floor, not this loop's.
                 committedBytes = maxOf(committedBytes, status.committedBytes.coerceAtLeast(0L))
                 totalBytes = maxOf(totalBytes, status.totalDecodedBytes.coerceAtLeast(0L))
                 when (status.state) {
@@ -349,12 +366,15 @@ internal class SteamContentSdkWorkshopTransfer
                         // The SDK publishes the task events this loop currently drops, and the event kind is the
                         // only reading that splits the resolving phase: session obtain, the app's own workshop
                         // read, then the manager's request code, server list, depot key and per-record token
-                        // calls, the manifest fetch and its decode, then the source opening. Ordinals only, no
-                        // host, token or URL, and only when an event actually arrives.
+                        // calls, the manifest fetch and its decode, then the source opening. The name is the
+                        // SDK's own kind constant, so an ordinal in a device reading cannot be mistaken for
+                        // per-chunk progress: a session-backed run publishes CHUNK_PROGRESS nowhere, and
+                        // CHECKPOINT_COMMITTED is its one byte-carrying event, published when the run ends.
+                        // Ordinals and one byte count only, no host, token or URL.
                         task.pollEvent(SDK_EVENT_POLL_MS)?.let { event ->
                             Log.i(
                                 TAG,
-                                "task event kind=${event.kind} value=${event.value}",
+                                "task event kind=${sdkTaskEventName(event.kind)} value=${event.value}",
                             )
                         }
                     }
@@ -405,6 +425,31 @@ internal fun sdkFailureName(ordinal: Long): String? =
         TaskFailure.INVALID_INPUT -> "invalid input"
         TaskFailure.INTERNAL -> "internal"
         else -> "failure $ordinal"
+    }
+
+/**
+ * Names an SDK task event kind by the SDK's own constant.
+ *
+ * A device reading that shows a bare ordinal cannot be acted on, and the two byte-carrying kinds read
+ * very differently: [TaskEventKind.CHECKPOINT_COMMITTED] is the durable checkpoint a run publishes when
+ * it stops, while [TaskEventKind.CHUNK_PROGRESS] is the per-chunk reading a session-backed run does not
+ * publish at all. An unknown kind stays an ordinal because the SDK appends kinds and this app must not
+ * rename a number it does not know.
+ */
+internal fun sdkTaskEventName(kind: Int): String =
+    when (kind) {
+        TaskEventKind.PHASE_CHANGED -> "PHASE_CHANGED"
+        TaskEventKind.MANIFEST_RESOLVED -> "MANIFEST_RESOLVED"
+        TaskEventKind.CHUNK_PROGRESS -> "CHUNK_PROGRESS"
+        TaskEventKind.CHECKPOINT_COMMITTED -> "CHECKPOINT_COMMITTED"
+        TaskEventKind.RETRY_SCHEDULED -> "RETRY_SCHEDULED"
+        TaskEventKind.THROUGHPUT_UPDATED -> "THROUGHPUT_UPDATED"
+        TaskEventKind.COMPLETED -> "COMPLETED"
+        TaskEventKind.FAILED -> "FAILED"
+        TaskEventKind.CANCELLED -> "CANCELLED"
+        TaskEventKind.PAUSED -> "PAUSED"
+        TaskEventKind.RESUMED -> "RESUMED"
+        else -> "kind $kind"
     }
 
 /**

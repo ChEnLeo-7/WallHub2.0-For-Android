@@ -641,7 +641,6 @@
     <string name='downloads_enqueue_failed'>无法加入下载队列</string>
     <string name='downloads_title'>下载</string>
     <string name='downloads_empty'>暂无下载任务</string>
-    <string name='downloads_measuring'>正在测速</string>
     <string name='downloads_play_video'>播放视频</string>
     <string name='downloads_filter_all'>全部</string>
     <string name='downloads_filter_completed'>已完成</string>
