@@ -654,6 +654,11 @@ class SteamContentSdkSessionBackendTest {
             return SteamContentSdkReconnect()
         }
 
+        /** The profile the engine reports for the signed-in account; null stands for one it cannot answer. */
+        var accountProfile: SteamContentSdkAccountProfile? = null
+
+        override fun accountProfile(): SteamContentSdkAccountProfile? = accountProfile
+
         override fun challengeId(): ByteArray? = pendingChallengeId
 
         override fun refreshToken(): ByteArray? = retainedToken?.copyOf()

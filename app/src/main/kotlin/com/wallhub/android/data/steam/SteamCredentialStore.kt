@@ -124,6 +124,17 @@ internal fun ByteArray.toSteamAvatarUrl(): String? {
     return "https://avatars.fastly.steamstatic.com/${hash}_medium.jpg"
 }
 
+/**
+ * Converts a Steam avatar hash the service reported as text into the matching CDN URL.
+ *
+ * The SDK hands an avatar across as the hash and never as a URL, and the player family reports that hash as
+ * text, so this is where every such URL is built rather than each call site spelling one out.
+ */
+internal fun String?.toSteamAvatarUrl(): String? =
+    this?.trim()?.takeIf(String::isNotBlank)?.let { hash ->
+        "https://avatars.fastly.steamstatic.com/${hash}_medium.jpg"
+    }
+
 internal data class SteamProfile(
     val displayName: String,
     val avatarUrl: String? = null,

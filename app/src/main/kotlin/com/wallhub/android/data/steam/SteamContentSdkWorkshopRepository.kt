@@ -884,11 +884,6 @@ private fun String?.tagOrNull(): String? = this?.trim()?.takeIf(String::isNotBla
  * URL, so constructing the URL stays the product rule it already is on the kSteam path. The old path
  * hex-encoded the digest bytes; the SDK has already done that step, so only the URL is left to build here.
  */
-private fun String?.toSteamAvatarUrl(): String? =
-    this?.trim()?.takeIf(String::isNotBlank)?.let { hash ->
-        "https://avatars.fastly.steamstatic.com/${hash}_medium.jpg"
-    }
-
 /**
  * Normalises a public query the way the kSteam path does before either transport sees it, so the page, size,
  * search text, author form, and tag bounds stay the same and the SDK's own request preconditions hold.

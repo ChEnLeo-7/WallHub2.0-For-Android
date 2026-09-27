@@ -3,6 +3,7 @@ package com.wallhub.android.data.steam
 import com.wallhub.android.core.model.SteamSessionPhase
 import io.steamcontent.sdk.ChallengeField
 import io.steamcontent.sdk.ChallengeKind
+import io.steamcontent.sdk.PlayerProfileField
 import io.steamcontent.sdk.SessionCapabilityBits
 import io.steamcontent.sdk.SessionEventKind
 import io.steamcontent.sdk.SessionFailure
@@ -86,6 +87,17 @@ internal data class SteamContentSdkPump(
 internal data class SteamContentSdkReconnect(
     val replayableRequests: Long = 0L,
     val abandonedRequests: Long = 0L,
+)
+
+/**
+ * The signed-in account's own Steam profile.
+ *
+ * The SDK reports an avatar as the hash the service sent rather than a URL, so the URL is built at this seam
+ * and nothing above it has to know how one is spelled.
+ */
+internal data class SteamContentSdkAccountProfile(
+    val personaName: String?,
+    val avatarUrl: String?,
 )
 
 /**
@@ -275,9 +287,16 @@ internal interface SteamContentSdkPlatformSession : Closeable {
     /** Re-establishes the session from the retained token. Nothing is re-sent automatically. */
     fun reconnect(): SteamContentSdkReconnect
 
+    /**
+     * The signed-in account's own profile, or null when no account is signed in or the engine cannot answer.
+     *
+     * This is what the profile screen shows as the account's name and avatar; without it the screen has only
+     * the account name it was given at logon, and no picture at all.
+     */
+    fun accountProfile(): SteamContentSdkAccountProfile?
+
     /** The pending challenge identifier, or null when the SDK reports none. An opaque value, never logged. */
     fun challengeId(): ByteArray?
-
     /**
      * The refresh token the SDK retained after a logon, or null when it retained none.
      *
@@ -375,6 +394,22 @@ private class SteamContentSdkEnginePlatformSession(
 
     override fun state(): SteamContentSdkSessionState =
         steamContentSdkSessionState(session.state()).also(::publishWhenAuthenticated)
+
+    override fun accountProfile(): SteamContentSdkAccountProfile? {
+        val accountId = runCatching { session.accountId() }.getOrNull() ?: return null
+        if (accountId <= 0L) return null
+        // The profile read goes through the same player family the Workshop reads use, so the persona and the
+        // avatar are the service's own answer rather than anything this app derived from a credential.
+        val profiles = runCatching { engine.openPlayerProfiles(longArrayOf(accountId)) }.getOrNull() ?: return null
+        return profiles.use {
+            if (it.count() < 1) return@use null
+            SteamContentSdkAccountProfile(
+                personaName =
+                    it.text(0, PlayerProfileField.PERSONA_NAME)?.trim()?.takeIf(String::isNotBlank),
+                avatarUrl = it.text(0, PlayerProfileField.AVATAR_HASH).toSteamAvatarUrl(),
+            )
+        }
+    }
 
     override fun pollEvent(timeoutMs: Int): SteamContentSdkSessionEvent? =
         session.pollEvent(timeoutMs)?.let { event ->

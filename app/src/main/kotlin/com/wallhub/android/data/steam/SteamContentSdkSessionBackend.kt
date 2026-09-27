@@ -774,11 +774,18 @@ internal class SteamContentSdkSessionBackend(
         // restore alike. The store write happens only when the SDK's retained token differs from the stored
         // one, so a session that is already healthy does not rewrite the encrypted store on every restore.
         val persisted = persistRetainedToken(accountName, stage)
+        // The account's own Steam profile is read here, on the authentication edge, because it is the moment
+        // the service can answer about this account and the moment the profile screen first shows it. The
+        // persona and the avatar are the service's answer, not something derived from a credential.
+        val profile = activeSession.get()?.let { session -> runCatching { session.accountProfile() }.getOrNull() }
+        record("account_profile persona=${profile?.personaName != null} avatar=${profile?.avatarUrl != null}")
         publish(
             SteamSessionPhase.SIGNED_IN,
             messages.signedIn,
             accountName = accountName,
             hasStoredSession = hasStoredSession || persisted,
+            personaName = profile?.personaName,
+            avatarUrl = profile?.avatarUrl,
         )
         // The authentication edge is also where this host takes over the schedule: from here the connection
         // is kept alive by the loop below, because nothing inside the SDK ticks on its own.
@@ -980,14 +987,18 @@ internal class SteamContentSdkSessionBackend(
         requiresCode: Boolean = phase == SteamSessionPhase.WAITING_FOR_CODE,
         awaitingDeviceConfirmation: Boolean = phase == SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
         hasStoredSession: Boolean? = null,
+        personaName: String? = null,
+        avatarUrl: String? = null,
     ) {
         val previous = mutableSession.value
         mutableSession.value =
             SteamSessionState(
                 phase = phase,
                 accountName = accountName ?: previous.accountName,
-                personaName = previous.personaName,
-                avatarUrl = previous.avatarUrl,
+                // The profile is read once, on the authenticated edge; every later phase carries it forward so
+                // a state published for a challenge or a failure does not blank the account's own name.
+                personaName = personaName ?: previous.personaName,
+                avatarUrl = avatarUrl ?: previous.avatarUrl,
                 message = message,
                 requiresCode = requiresCode,
                 awaitingDeviceConfirmation = awaitingDeviceConfirmation,
