@@ -685,3 +685,50 @@ to that AAR's (`sha256=a5b39e19fdf17a11c3500b69768991f22c032a17ec71e326e649730a9
 `lib/arm64-v8a/libsc_content_ffi.so`), and the device's own `lastUpdateTime=2026-09-27 01:15:01` is the install
 recorded above. So what runs on the phone is exactly the clean 0.1.58 SDK plus the application build with the
 collection-children diagnostic - not the earlier probe artifact.
+
+## 2026-09-27 (14) - the collection-children reading, taken on a freshly started session
+
+③'s 合集子项 row needed one device reading and the diagnostic from entry (13) produced it. The app was cold
+started (`phase_signed_in` at `09:30:23.703`), 发现 was opened, and its rails were scrolled through:
+
+```text
+09:30:55.934 I/DiscoverFeed: generation=1 metadata=NETWORK version=b6fe847d4f81ce23 specs=86 focusCreators=78 focusCollections=20
+09:31:31.989 I/WallHubSdkWorkshop: workshop collection children id=1884263373 count=39 ids=[1807555128, 996733973,
+    1436407576, 1334736987, 1457581889, 1245412789, 1487388360, 1508891127, 1195626192, 1592822778, 1823900922, 1136243728]
+09:31:55.524 I/DiscoverFeed: showcase=official:focus-collections pool=20 requested=20 resolved=19 durationMs=59587
+```
+
+**The row is available, not unavailable.** `count=39` - not `null` - so the read succeeded rather than being
+refused, and the ids are the collection's own ordered children (`data/steam/SteamContentSdkWorkshopRepository.kt:219-235`,
+capped at twelve by `MAX_LOGGED_CHILDREN`). The path that reaches it is the discover one, not the detail screen:
+`SteamDiscoverCollectionResolver.kt:54` is the only caller, reached from `DiscoverFeedCoordinator.kt:143-146`
+(a rail whose spec carries a collection id) and `:179-188` (a featured showcase's collection cover fallback),
+and the id itself comes from the official discover descriptor (`DiscoverQueryAdapter.kt:199`). That metadata
+names **20** focus collections (`focusCollections=20`), and the showcase resolved 19 of them, so this is one of
+the feed's own collections.
+
+**The ids are the service's, not the app's.** Four of the twelve were resolved anonymously afterwards with
+`GetPublishedFileDetails`: `1807555128` "Kendo 日式女剑客", `996733973` "森 - 黄昏", `1436407576`
+"Samurai - Motion [3840 x 2160]", `1334736987` "mount fuji in autumn sunrise" - every one `result=1` with
+`consumer_app_id=431960`. One observation is recorded without a diagnosis: the collection id itself is not
+anonymously readable (`GetCollectionDetails` and `GetPublishedFileDetails` both answer `result 9`), while the
+session-authenticated read answered its children, so that item is visible to the signed-in account rather than to
+an anonymous caller.
+
+**Two further device facts from the same session.**
+
+- **The connection died 92 seconds after `phase_signed_in`, during a burst, and said nothing.** The last
+  successful read is `09:31:52.799` (`workshop page rows=20 of 20`), the first refusal is `09:31:55.494`
+  (`temporarily_unavailable: the connection failed before the service answered`), and 28 refusals follow while
+  `WallHubSteamSession` prints **no** line at all after `phase_signed_in` - the session state never moves, which
+  is the entry (9) defect again, now with a much shorter healthy window (~92 s against that reading's ~6 min) and
+  a burst of concurrent detail reads immediately before it (the focus-collections showcase resolves 20
+  collections plus their covers through `getPublicDetails`, which the AAR serves as one single-item read per id,
+  `SteamContentSdkWorkshopRepository.kt:207-208`).
+- **A discover rail asks for a filter the SDK refuses on purpose.** Six refusals read
+  `workshop read unavailable: unsupported: this provider cannot express a content-type or visibility filter`.
+  That is a deliberate refusal rather than a regression (`crates/sc-content/src/workshop_session.rs:26-27` and
+  `:498`), and the only place the app can send a content type is `sdkContentTypes()`
+  (`SteamContentSdkWorkshopRepository.kt:917-930`), which maps `WorkshopType.VIDEO` to
+  `WorkshopContentType.VIDEO` and lets `SCENE`/`WEB` fall through to tags. So a video-narrowed browse on this
+  source is refused rather than served; the rail that asks for it is still to be named.
