@@ -468,15 +468,28 @@ class FormalWorkshopDownloadWorker
                     )
                     var retryable = false
                     withContext(kotlinx.coroutines.NonCancellable) {
-                        val cancellationRequested =
-                            taskDao.find(taskId)?.requestedAction == DownloadAction.CANCEL.name
-                        if (cancellationRequested) {
+                        val latest = taskDao.find(taskId)
+                        val userCancelled =
+                            isUserCancellation(
+                                currentRequestedAction = latest?.requestedAction,
+                                currentStatus = latest?.status,
+                            )
+                        if (userCancelled) {
+                            Log.i(
+                                DOWNLOAD_LOG_TAG,
+                                "taskId=$taskId cancellation observed action=${latest?.requestedAction} " +
+                                    "status=${latest?.status}",
+                            )
                             stagingDirectory?.takeIf(::isManagedStagingDirectory)?.deleteRecursively()
                             acknowledgeCancellation(taskId)
                         } else {
                             // The system (or the ROM's job policy) stopped the worker; keep
                             // the partial staging directory and let WorkManager retry the
                             // run so the task cannot get stuck as QUEUED forever.
+                            Log.w(
+                                DOWNLOAD_LOG_TAG,
+                                "taskId=$taskId interrupted by the system; re-queueing status=${latest?.status}",
+                            )
                             retryable = true
                             persist(
                                 task,
@@ -619,6 +632,12 @@ class FormalWorkshopDownloadWorker
                     DownloadAction.CANCEL.name -> applicationContext.getString(R.string.backend_download_cancelling)
                     else -> message
                 }
+            // A concurrent run for this task can acknowledge a cancellation and clear the request
+            // before this run's last progress write lands. That acknowledgement is terminal: writing
+            // progress over it is what made a cancelled item go back to reading as downloading.
+            if (persisted != null && !mayPublishDownloadProgress(persisted.status, effectiveStatus)) {
+                return persisted
+            }
             val updated =
                 previous.copy(
                     title = title,
@@ -794,6 +813,33 @@ internal fun downloadSpeedBytesPerSecond(
     } else {
         previousSpeed
     }
+
+/**
+ * Whether an interrupted run must be treated as the user's cancel rather than a system stop.
+ *
+ * Reading only the pending request is what let a cancel be mistaken for a system stop: the cancel
+ * path starts a run that observes the request and clears it while acknowledging it, so the run that
+ * was actually interrupted must also treat an already-acknowledged CANCELLED row as the user's
+ * cancel instead of re-queueing the task.
+ */
+internal fun isUserCancellation(
+    currentRequestedAction: String?,
+    currentStatus: String?,
+): Boolean =
+    currentRequestedAction == DownloadAction.CANCEL.name ||
+        currentStatus == DownloadStatus.CANCELLED.name
+
+/**
+ * Whether a progress write may replace the row's current state.
+ *
+ * A cancellation acknowledged while this run was unwinding is terminal for this run too. Publishing
+ * progress over that row is what made a cancelled item go back to reading as downloading.
+ */
+internal fun mayPublishDownloadProgress(
+    currentStatus: String?,
+    nextStatus: DownloadStatus,
+): Boolean =
+    currentStatus != DownloadStatus.CANCELLED.name || nextStatus == DownloadStatus.CANCELLED
 
 private data class DependencyDownloadResult(
     val downloadedBytes: Long,

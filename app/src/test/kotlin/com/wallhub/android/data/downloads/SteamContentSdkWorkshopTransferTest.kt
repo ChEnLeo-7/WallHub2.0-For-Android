@@ -7,7 +7,10 @@ import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -175,6 +178,42 @@ class SteamContentSdkWorkshopTransferTest {
             fixture.close()
         }
     }
+
+    @Test
+    fun stoppingTheCallerCancelsTheSdkTaskBeforeClosingIt() =
+        runBlocking {
+            val fixture = Fixture()
+            try {
+                fixture.task.statuses +=
+                    SteamContentSdkTaskStatus(
+                        state = TaskState.DOWNLOADING,
+                        committedBytes = 5L,
+                        totalDecodedBytes = 9L,
+                        errorOrdinal = TaskFailure.NONE,
+                    )
+                val reachedTransfer = CompletableDeferred<Unit>()
+                val downloader =
+                    launch {
+                        fixture.download(
+                            onProgress = { progress ->
+                                if (progress.phase == SteamDownloadPhase.DOWNLOADING) {
+                                    reachedTransfer.complete(Unit)
+                                    awaitCancellation()
+                                }
+                            },
+                        )
+                    }
+                reachedTransfer.await()
+                downloader.cancelAndJoin()
+
+                // The worker is stopped by WorkManager on this path, not by the control probe, so
+                // closing the task is all that used to happen and the SDK transfer kept running.
+                assertEquals(1, fixture.task.cancelCalls)
+                assertEquals(1, fixture.task.closeCalls)
+            } finally {
+                fixture.close()
+            }
+        }
 
     @Test
     fun anSdkPausedTaskIsResumedWhileTheAppKeepsDownloading() =

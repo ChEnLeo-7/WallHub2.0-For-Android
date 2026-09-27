@@ -8,6 +8,7 @@ import java.io.Closeable
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -254,6 +255,12 @@ internal class SteamContentSdkWorkshopTransfer
                         )
                     try {
                         runTask(task, destinationDirectory, control, onProgress)
+                    } catch (error: CancellationException) {
+                        // The worker was stopped mid-transfer rather than asked to cancel through the
+                        // control probe, so closing the task is not enough: the SDK's own transfer is
+                        // still running and would keep pulling bytes after the app stopped watching.
+                        runCatching { task.cancel() }
+                        throw error
                     } finally {
                         runCatching { task.close() }
                     }
