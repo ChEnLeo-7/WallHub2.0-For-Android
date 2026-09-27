@@ -1087,3 +1087,27 @@ logon failure is retried twice where these tests expect one live-candidate retry
 finding, recorded here rather than papered over - neither the test nor the retry policy was changed without a
 reading that says which one is wrong. The eleven download-transfer tests now pass, including the new
 `overlappingDownloadsShareOneSessionInsteadOfQueueingOnIt`.
+
+## 2026-09-27 (25) - the chunk concurrency floor was 12, and the experiment needed 1
+
+Three items were queued on the AAR 0.1.62 build to take the readings entry (23) owed. None of them overlapped
+in time, so the two-item concurrency reading is still owed, and each failed differently:
+
+- `3790379688` failed with `content corrupted: content resolution failed at manifest_decode
+  (manifest=manifest_non_portable_path)` - a manifest with a non-ASCII file name, which the SDK refused
+  outright; fixed on the SDK side and waiting for a build;
+- `3776778760` failed with `Chunk source refused the request: CDN candidate cdn-2-https transport failed:
+  InvalidResponse` **58 seconds into a real download**, and `3799142774` had failed the same way earlier at
+  `18:43:55`: two items, two times, one candidate, so the transient CDN failure is not a one-off. Two SDK fixes
+  target it (retry inside the run, and rotating each pooled client's starting candidate so a 48-chunk window
+  does not aim 48 connections at one host), neither built yet;
+- `3779168864` (the item that used to fail on the journal) failed with `invalid task handle` from
+  `NativeBindings.taskGetStatus`, i.e. the task token was already released when the app polled it. Separate
+  lifecycle finding, not yet diagnosed.
+
+The diagnostic experiment - retry the CDN failure at **one** chunk at a time - turned out to be impossible from
+the app: the settings row offers `12, 16, 24, 32, 48` (`DownloadSettingsContent.kt`) and `safeChunkConcurrency`
+clamps everything into `12..48` (`SteamDownloadModels.kt`). The floor is now 1 and the row offers `1, 2, 4, 8, 12,
+16, 24, 32, 48`: the link, not the product, decides how many connections a depot can take, the SDK's own window
+is exactly this value, and its client pool (`MAX_LIVE_CLIENTS = 48`) is the ceiling, so nothing offered is
+silently reduced. `theChunkConcurrencyRangeIsTheSdkOne` pins the range.

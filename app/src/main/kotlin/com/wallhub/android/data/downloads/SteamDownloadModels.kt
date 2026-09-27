@@ -64,7 +64,15 @@ internal fun safeChunkConcurrency(
     @Suppress("UNUSED_PARAMETER") maxHeapBytes: Long,
 ): Int = configuredConcurrency.coerceIn(MIN_CONFIGURED_CHUNK_CONCURRENCY, MAX_CONFIGURED_CHUNK_CONCURRENCY)
 
-internal const val MIN_CONFIGURED_CHUNK_CONCURRENCY = 12
+/**
+ * The chunk concurrency a download may ask the SDK for.
+ *
+ * The floor is 1 rather than 12 because the link, not the product, decides how many connections a depot can
+ * take: a device or a CDN host that refuses a burst needs a setting that says "one chunk at a time", and the
+ * SDK's own window is exactly this number (`MAX_LIVE_CLIENTS` caps the clients a run can hold). The ceiling is
+ * the top of the SDK's client pool, so no value offered here is silently reduced.
+ */
+internal const val MIN_CONFIGURED_CHUNK_CONCURRENCY = 1
 internal const val MAX_CONFIGURED_CHUNK_CONCURRENCY = 48
 
 /** Reads the caller's control callback and turns a pause or a cancel into the matching exception. */

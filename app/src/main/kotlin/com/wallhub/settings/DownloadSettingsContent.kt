@@ -107,7 +107,9 @@ internal fun DownloadSettingsContent(
     SettingChoiceRow(
         title = stringResource(R.string.settings_chunks_per_download),
         selectedValue = preferences.chunkDownloadConcurrency,
-        values = listOf(12, 16, 24, 32, 48),
+        // Low values are offered on purpose: a link that cannot take a burst of connections needs a way to
+        // say so, and the diagnostic difference between one chunk at a time and twelve is worth a setting.
+        values = listOf(1, 2, 4, 8, 12, 16, 24, 32, 48),
         label = { value -> pluralStringResource(R.plurals.settings_chunk_count, value, value) },
         onSelected = { value -> saveDownloadPreferences(chunkConcurrency = value) },
         position = PreferencePosition.Bottom,

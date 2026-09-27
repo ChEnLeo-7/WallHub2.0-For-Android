@@ -18,6 +18,15 @@ class MemoryHeavyWorkGovernorTest {
         assertEquals(24, safeChunkConcurrency(configuredConcurrency = 24, maxHeapBytes = 512L * 1024L * 1024L))
     }
 
+    /// The offered range is the window the SDK is actually given: one chunk at a time has to be selectable, and
+    /// the ceiling has to stay inside the SDK's own client pool so no setting is silently reduced.
+    @Test
+    fun theChunkConcurrencyRangeIsTheSdkOne() {
+        assertEquals(1, safeChunkConcurrency(configuredConcurrency = 1, maxHeapBytes = 512L * 1024L * 1024L))
+        assertEquals(1, safeChunkConcurrency(configuredConcurrency = 0, maxHeapBytes = 512L * 1024L * 1024L))
+        assertEquals(48, safeChunkConcurrency(configuredConcurrency = 96, maxHeapBytes = 512L * 1024L * 1024L))
+    }
+
     @Test
     fun chunkMemoryEstimateIncludesSteamNetworkCopies() {
         val mebibyte = 1024 * 1024
