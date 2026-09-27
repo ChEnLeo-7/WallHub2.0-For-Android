@@ -11,6 +11,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 
@@ -496,6 +497,38 @@ class SteamContentSdkSessionBackendTest {
             assertFalse(recorded.contains(credential.refreshToken))
         }
 
+    @Test
+    fun theHostDrivesMaintenanceAndReportsAConnectionItCannotRebuild() =
+        runTest {
+            val fixture = Fixture()
+            val credential = PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 11))
+            fixture.storeCredential(credential)
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            fixture.session.stateAfterEvents = SteamContentSdkSessionState.AUTHENTICATED
+            val backend = fixture.backend(this, maintenanceIntervalMs = 1_000L)
+
+            backend.restorePersistedSession()
+            advanceTimeBy(1L)
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+
+            // One tick drains the socket and sends the heartbeat that is due. The SDK runs no loop of its own,
+            // so nothing else would ever do either, and an undrained socket is one the peer closes.
+            advanceTimeBy(1_001L)
+            assertTrue(fixture.session.pumps.isNotEmpty())
+            assertTrue(fixture.session.maintenanceSteps.isNotEmpty())
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+
+            // The connection is gone and cannot be rebuilt from the token the SDK retained. The loss is
+            // published instead of being left as a session that claims to be signed in while every read fails.
+            fixture.session.stateAfterEvents = SteamContentSdkSessionState.DISCONNECTED
+            fixture.session.reconnectSucceeds = false
+            advanceTimeBy(1_001L)
+
+            assertEquals(1, fixture.session.reconnects)
+            assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
+            assertEquals(FakeMessages.sessionConnectionLost, backend.session.value.message)
+        }
+
     private class Fixture {
         val session = FakeSdkSession()
         val platform = FakeSdkPlatform(session)
@@ -503,13 +536,19 @@ class SteamContentSdkSessionBackendTest {
         val credentialStore = EncryptedSteamCredentialStore(store)
         val diagnostics = RecordingDiagnostics()
 
-        fun backend(scope: CoroutineScope): SteamContentSdkSessionBackend =
+        fun backend(
+            scope: CoroutineScope,
+            maintenanceIntervalMs: Long = 0L,
+        ): SteamContentSdkSessionBackend =
             SteamContentSdkSessionBackend(
                 platform = platform,
                 credentialStore = credentialStore,
                 messages = FakeMessages,
                 diagnostics = diagnostics,
                 scope = scope,
+                // Zero by default: a maintenance loop is never idle, so the tests about logon and restore
+                // leave the schedule to the one test that is about it.
+                maintenanceIntervalMs = maintenanceIntervalMs,
             )
 
         fun storeCredential(credential: PersistedSteamCredential) {
@@ -585,6 +624,30 @@ class SteamContentSdkSessionBackendTest {
         override fun state(): SteamContentSdkSessionState = stateAfterEvents
 
         override fun pollEvent(timeoutMs: Int): SteamContentSdkSessionEvent? = events.removeFirstOrNull()
+
+        /** Every maintenance tick the host asked for, so a test can assert the schedule is really driven. */
+        val maintenanceSteps = mutableListOf<SteamContentSdkMaintenanceStep>()
+        val pumps = mutableListOf<SteamContentSdkPumpOutcome>()
+        var reconnects = 0
+            private set
+
+        /** Whether a rebuild succeeds; false stands for a connection that cannot be re-established. */
+        var reconnectSucceeds = true
+
+        override fun maintain(autoReconnect: Boolean): SteamContentSdkMaintenance =
+            SteamContentSdkMaintenance(SteamContentSdkMaintenanceStep.HEARTBEAT_SENT).also {
+                maintenanceSteps += it.step
+            }
+
+        override fun pump(): SteamContentSdkPump =
+            SteamContentSdkPump(SteamContentSdkPumpOutcome.IDLE).also { pumps += it.outcome }
+
+        override fun reconnect(): SteamContentSdkReconnect {
+            reconnects += 1
+            if (!reconnectSucceeds) error("the retained token was refused")
+            stateAfterEvents = SteamContentSdkSessionState.AUTHENTICATED
+            return SteamContentSdkReconnect()
+        }
 
         override fun challengeId(): ByteArray? = pendingChallengeId
 
@@ -678,6 +741,7 @@ class SteamContentSdkSessionBackendTest {
         override val unavailable = "unavailable"
         override val authRejected = "auth-rejected"
         override val networkFailed = "network-failed"
+        override val sessionConnectionLost = "session-connection-lost"
         override val challengeUnsupported = "challenge-unsupported"
         override val noGuardRequest = "no-guard-request"
         override val noManualLogin = "no-manual-login"

@@ -799,4 +799,44 @@ engine that holds the session, and treat a `temporarily_unavailable` read as the
 SDK now publishes reach the UI. Only then is B verifiable, and the reading it owes is named in the SDK's
 `progress.md` §CD5w.
 
+## 2026-09-27 (17) - the host takes over the session schedule
+
+Entry (16) ended with the connection dying 89 seconds after sign-in while the AAR already carried the fix,
+because nothing called the new entry points. This entry is the host half of that: the schedule is now driven
+from the app, and a connection that cannot be rebuilt is reported instead of being left as a session that
+claims to be signed in.
+
+**Why nothing kept it alive.** `SteamContentSdkSessionBackend.pollUntilOutcome` is a per-attempt loop: it polls
+events until the attempt reaches a terminal outcome, and `publishSignedIn` is one of those outcomes, so the
+loop **ends at the moment the session becomes usable** (`SteamContentSdkSessionBackend.kt:437-445`). Nothing
+owned the session after that, which is exactly what ADR 0025 leaves to the host - and what the host was not
+doing: no heartbeat was ever sent, and no closed link was ever observed.
+
+**The change.** `SteamContentSdkPlatformSession` gains `maintain`, `pump`, and `reconnect`, each carrying only
+app-owned values (the three new enums and data classes in `SteamContentSdkSessionPlatform.kt`, with the SDK
+ordinals resolved by total mappers in the same file, so no ordinal crosses the seam). `publishSignedIn` starts
+one loop (`startMaintenance`, `SteamContentSdkSessionBackend.kt`), which every
+`STEAM_SESSION_MAINTENANCE_INTERVAL_MS` (20 s, deliberately under the SDK's own 30 s heartbeat interval) drains
+the socket with `pump` and sends the heartbeat that is due with `maintain(autoReconnect = true)`. A tick that
+finds the session no longer `AUTHENTICATED` publishes `session_lost`, rebuilds once from the token the SDK
+retained, and either logs `session_rebuilt` or - a rebuild that fails - closes the session and publishes
+`SteamSessionPhase.FAILED` with a new user-facing string
+(`backend_steam_session_connection_lost`, both locales). The loop is cancelled by `releaseSession` and by
+`logout`, so it never drives a session being torn down.
+
+**Two deliberate choices.** The cadence is a constructor input rather than a constant in the loop, because
+scheduling is the host's business and because a maintenance loop is never idle: every existing unit test passes
+zero and the one test that is about the cadence passes 1 s, which is also why the schedule needs its own test
+rather than riding on the logon ones. And a rebuild is attempted **once**: the app's existing discipline on both
+logon paths is one retry and no loop, and a rebuild that failed has already used the only token the app holds,
+so a timer would only repeat a refusal.
+
+**Owed reading, and it needs a build.** This entry has not been compiled or run: it is app-side only, so it
+needs one application build on the already-pinned 0.1.59 AAR, no new SDK artifact. The reading it owes is the
+one §CD5w names - an idle connection kept alive past the ~90 seconds it died at before, and a killed link
+publishing `Disconnected`/`FAILED` instead of leaving `phase_signed_in` over a dead socket. The log lines to
+look for are `session_maintenance pump=… step=…`, `session_lost`, and either `session_rebuilt` or
+`session_rebuild_failed`.
+
+
 

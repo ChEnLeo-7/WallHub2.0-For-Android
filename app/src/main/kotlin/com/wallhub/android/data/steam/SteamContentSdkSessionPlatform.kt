@@ -6,6 +6,8 @@ import io.steamcontent.sdk.ChallengeKind
 import io.steamcontent.sdk.SessionCapabilityBits
 import io.steamcontent.sdk.SessionEventKind
 import io.steamcontent.sdk.SessionFailure
+import io.steamcontent.sdk.SessionMaintenanceStep
+import io.steamcontent.sdk.SessionPumpOutcome
 import io.steamcontent.sdk.SessionState
 import io.steamcontent.sdk.SteamSession
 import java.io.Closeable
@@ -49,6 +51,42 @@ internal enum class SteamContentSdkSessionFailure {
     INTERNAL,
     UNKNOWN,
 }
+
+/** What one host-scheduled maintenance step did, with [UNKNOWN] for a step this build does not know. */
+internal enum class SteamContentSdkMaintenanceStep {
+    IDLE,
+    HEARTBEAT_SENT,
+    TIMED_OUT,
+    RECONNECTED,
+    SESSION_ENDED,
+    UNKNOWN,
+}
+
+/** What one host-scheduled drain found, with [UNKNOWN] for an outcome this build does not know. */
+internal enum class SteamContentSdkPumpOutcome {
+    IDLE,
+    READ,
+    UNKNOWN,
+}
+
+/** One maintenance step's result, with the SDK's ordinal already resolved. */
+internal data class SteamContentSdkMaintenance(
+    val step: SteamContentSdkMaintenanceStep,
+    val replayableRequests: Long = 0L,
+    val abandonedRequests: Long = 0L,
+)
+
+/** One drain's result, with the SDK's ordinal already resolved. */
+internal data class SteamContentSdkPump(
+    val outcome: SteamContentSdkPumpOutcome,
+    val messages: Int = 0,
+)
+
+/** What a rebuild abandoned. Rebuilding never re-sends an operation. */
+internal data class SteamContentSdkReconnect(
+    val replayableRequests: Long = 0L,
+    val abandonedRequests: Long = 0L,
+)
 
 /**
  * One session event with its SDK ordinal already resolved.
@@ -116,6 +154,25 @@ internal fun steamContentSdkSessionFailure(ordinal: Long): SteamContentSdkSessio
         SessionFailure.CANCELLED -> SteamContentSdkSessionFailure.CANCELLED
         SessionFailure.INTERNAL -> SteamContentSdkSessionFailure.INTERNAL
         else -> SteamContentSdkSessionFailure.UNKNOWN
+    }
+
+/** Maps the SDK's maintenance-step ordinal onto the app's named step. Total. */
+internal fun steamContentSdkMaintenanceStep(ordinal: Int): SteamContentSdkMaintenanceStep =
+    when (ordinal) {
+        SessionMaintenanceStep.IDLE -> SteamContentSdkMaintenanceStep.IDLE
+        SessionMaintenanceStep.HEARTBEAT_SENT -> SteamContentSdkMaintenanceStep.HEARTBEAT_SENT
+        SessionMaintenanceStep.TIMED_OUT -> SteamContentSdkMaintenanceStep.TIMED_OUT
+        SessionMaintenanceStep.RECONNECTED -> SteamContentSdkMaintenanceStep.RECONNECTED
+        SessionMaintenanceStep.SESSION_ENDED -> SteamContentSdkMaintenanceStep.SESSION_ENDED
+        else -> SteamContentSdkMaintenanceStep.UNKNOWN
+    }
+
+/** Maps the SDK's drain outcome onto the app's named outcome. Total. */
+internal fun steamContentSdkPumpOutcome(ordinal: Int): SteamContentSdkPumpOutcome =
+    when (ordinal) {
+        SessionPumpOutcome.IDLE -> SteamContentSdkPumpOutcome.IDLE
+        SessionPumpOutcome.READ -> SteamContentSdkPumpOutcome.READ
+        else -> SteamContentSdkPumpOutcome.UNKNOWN
     }
 
 /**
@@ -202,6 +259,21 @@ internal interface SteamContentSdkPlatformSession : Closeable {
     fun state(): SteamContentSdkSessionState
 
     fun pollEvent(timeoutMs: Int): SteamContentSdkSessionEvent?
+
+    /**
+     * Performs one host-scheduled maintenance step.
+     *
+     * The SDK runs no background loop of its own, so scheduling belongs here: this is what sends a due
+     * heartbeat and what recovers a connection the peer has stopped answering. [autoReconnect] opts in to
+     * rebuilding the session from the token the SDK retained.
+     */
+    fun maintain(autoReconnect: Boolean): SteamContentSdkMaintenance
+
+    /** Drains whatever the peer already sent. An idle link reports [SteamContentSdkPumpOutcome.IDLE]. */
+    fun pump(): SteamContentSdkPump
+
+    /** Re-establishes the session from the retained token. Nothing is re-sent automatically. */
+    fun reconnect(): SteamContentSdkReconnect
 
     /** The pending challenge identifier, or null when the SDK reports none. An opaque value, never logged. */
     fun challengeId(): ByteArray?
@@ -312,6 +384,31 @@ private class SteamContentSdkEnginePlatformSession(
                 }
             }
         }
+
+    override fun maintain(autoReconnect: Boolean): SteamContentSdkMaintenance {
+        val outcome = session.maintain(autoReconnect)
+        return SteamContentSdkMaintenance(
+            step = steamContentSdkMaintenanceStep(outcome.step),
+            replayableRequests = outcome.replayableRequests,
+            abandonedRequests = outcome.abandonedRequests,
+        )
+    }
+
+    override fun pump(): SteamContentSdkPump {
+        val outcome = session.pump()
+        return SteamContentSdkPump(
+            outcome = steamContentSdkPumpOutcome(outcome.outcome),
+            messages = outcome.messages,
+        )
+    }
+
+    override fun reconnect(): SteamContentSdkReconnect {
+        val outcome = session.reconnect()
+        return SteamContentSdkReconnect(
+            replayableRequests = outcome.replayableRequests,
+            abandonedRequests = outcome.abandonedRequests,
+        )
+    }
 
     /**
      * Publishes this session as borrowable once it authenticates.

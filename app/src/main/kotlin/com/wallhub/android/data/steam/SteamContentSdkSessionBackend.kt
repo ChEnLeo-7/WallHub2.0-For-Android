@@ -13,13 +13,24 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * The cadence of the host-scheduled session maintenance loop.
+ *
+ * Well under the SDK's own 30 s heartbeat interval, so a due heartbeat is never late by more than one tick,
+ * and frequent enough that a connection the peer closed is noticed within seconds rather than when the next
+ * read happens to fail.
+ */
+internal const val STEAM_SESSION_MAINTENANCE_INTERVAL_MS = 20_000L
 
 /**
  * The Steam Content SDK as this app's session owner.
@@ -42,7 +53,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  * A logon or a restore that fails in the transport class - what the SDK reports when its whole candidate
  * pass failed to connect, as "protocol adapter failed" - is retried exactly once against a candidate list
  * read live from the directory. That is the only outcome that can mean the platform's cached endpoint set is
- * the stale input, and one retry is the whole of the policy on either path: there is no loop, a second
+ * the stale input, and one retry is the whole of the policy on either path: there is no retry loop, a second
  * transport failure is reported as it is, and no other failure class is ever retried.
  */
 internal class SteamContentSdkSessionBackend(
@@ -51,6 +62,14 @@ internal class SteamContentSdkSessionBackend(
     private val messages: SteamContentSdkSessionMessages,
     private val diagnostics: DiagnosticRepository,
     private val scope: CoroutineScope,
+    /**
+     * How often an established session is drained and maintained, or zero to leave the schedule to nobody.
+     *
+     * Scheduling belongs to the host, so the cadence is the host's own input rather than a constant buried in
+     * the loop. A JVM test passes zero: a maintenance loop is never idle, so `advanceUntilIdle` would run it
+     * forever, and the tests that are about logon and restore have nothing to say about the cadence.
+     */
+    private val maintenanceIntervalMs: Long = STEAM_SESSION_MAINTENANCE_INTERVAL_MS,
 ) : SteamSessionRepository {
     private val mutableSession = MutableStateFlow(SteamSessionState())
     override val session: StateFlow<SteamSessionState> = mutableSession.asStateFlow()
@@ -60,6 +79,9 @@ internal class SteamContentSdkSessionBackend(
     private val attemptJob = AtomicReference<Job?>(null)
     private val activeSession = AtomicReference<SteamContentSdkPlatformSession?>(null)
     private val pendingChallenge = AtomicReference<PendingChallenge?>(null)
+
+    /** The one host-scheduled loop that keeps an established connection alive, or null while none is. */
+    private val maintenanceJob = AtomicReference<Job?>(null)
 
     /** The failure class of the attempt that just finished, so a transport failure earns one retry. */
     private val lastAttemptFailure = AtomicReference(SteamContentSdkSessionFailure.NONE)
@@ -161,6 +183,8 @@ internal class SteamContentSdkSessionBackend(
         scope.launch {
             try {
                 job?.cancelAndJoin()
+                // The maintenance loop must stop before the session it drives is torn down.
+                maintenanceJob.getAndSet(null)?.cancel()
                 val session = activeSession.getAndSet(null)
                 if (session != null) {
                     withSession { runCatching { session.logout() } }
@@ -400,9 +424,75 @@ internal class SteamContentSdkSessionBackend(
     }
 
     private fun releaseSession() {
+        maintenanceJob.getAndSet(null)?.cancel()
         pendingChallenge.set(null)
         val session = activeSession.getAndSet(null) ?: return
         runCatching { session.close() }
+    }
+
+    /**
+     * Starts the one loop that keeps an established connection alive and notices when it is gone.
+     *
+     * The SDK runs no background loop of its own by design - ADR 0025 keeps session scheduling host-owned -
+     * so a host that never drives maintenance leaves an idle connection to be closed by the peer and never
+     * learns that one was. Until this loop existed the app published `phase_signed_in` and then stopped
+     * looking, which is why a dropped CM left every Workshop read answering `temporarily_unavailable` until
+     * the process was restarted.
+     *
+     * One tick is one drain and one maintenance step: the drain reads whatever the peer already sent, and a
+     * socket nobody reads is one the peer closes, while the step writes the heartbeat that is due. A tick
+     * that finds the session no longer authenticated reports the loss and rebuilds it once from the token
+     * the SDK retained; a rebuild that fails is published rather than retried in a loop, which is the same
+     * one-attempt rule the logon paths already use.
+     */
+    private fun startMaintenance(session: SteamContentSdkPlatformSession) {
+        if (maintenanceIntervalMs <= 0L) return
+        val job =
+            scope.launch {
+                while (isActive) {
+                    delay(maintenanceIntervalMs)
+                    // A session this loop does not own any more - a logout, a new attempt, a release - ends it.
+                    if (activeSession.get() !== session || logoutInProgress.get()) return@launch
+                    val drained = runCatching { session.pump() }
+                    val step = runCatching { session.maintain(autoReconnect = true) }
+                    record(
+                        "session_maintenance",
+                        detail =
+                            "pump=" +
+                                drained.fold({ it.outcome.name.lowercase() }, { "failed" }) +
+                                " step=" +
+                                step.fold({ it.step.name.lowercase() }, { "failed" }),
+                    )
+                    if (session.state() == SteamContentSdkSessionState.AUTHENTICATED) continue
+                    record("session_lost")
+                    if (!rebuildSession(session)) return@launch
+                }
+            }
+        maintenanceJob.getAndSet(job)?.cancel()
+    }
+
+    /** Rebuilds a connection a tick found gone. Returns whether the session is usable again. */
+    private suspend fun rebuildSession(session: SteamContentSdkPlatformSession): Boolean {
+        val rebuilt = runCatching { session.reconnect() }
+        val outcome = rebuilt.getOrNull()
+        if (rebuilt.isSuccess && session.state() == SteamContentSdkSessionState.AUTHENTICATED) {
+            record(
+                "session_rebuilt",
+                detail = "replayable=${outcome?.replayableRequests ?: 0L} abandoned=${outcome?.abandonedRequests ?: 0L}",
+            )
+            return true
+        }
+        // The retained token a rebuild needs is the one this app already stores, so a rebuild that failed has
+        // exhausted what can be tried without the operator. The session is closed and reported rather than
+        // retried on a timer: the next start restores it from the same store.
+        record("session_rebuild_failed", error = rebuilt.exceptionOrNull())
+        releaseSession()
+        publish(
+            SteamSessionPhase.FAILED,
+            messages.sessionConnectionLost,
+            hasStoredSession = true,
+        )
+        return false
     }
 
     private suspend fun driveToOutcome(
@@ -627,6 +717,9 @@ internal class SteamContentSdkSessionBackend(
             accountName = accountName,
             hasStoredSession = hasStoredSession || persisted,
         )
+        // The authentication edge is also where this host takes over the schedule: from here the connection
+        // is kept alive by the loop below, because nothing inside the SDK ticks on its own.
+        activeSession.get()?.let(::startMaintenance)
     }
 
     /**
