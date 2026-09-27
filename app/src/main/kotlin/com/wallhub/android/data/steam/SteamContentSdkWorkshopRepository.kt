@@ -44,6 +44,7 @@ import io.steamcontent.sdk.WorkshopTextField
 import io.steamcontent.sdk.WorkshopTrendWindow
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -831,10 +832,17 @@ internal class SteamContentSdkWorkshopRepository
  * The typed failure is logged before it becomes null: the contract's null/empty answers carry no reason, so
  * without this line a failed read is indistinguishable from an absent capability on the device. The text is
  * the SDK's own redacted error, and it names no credential, token, or URL.
+ *
+ * A cancelled read is not an unavailable read. `JobCancellationException` is itself an
+ * `IllegalStateException`, so catching that alone swallowed every cancellation: it stopped the cancellation
+ * from propagating, and it logged a failure for a read the caller had simply abandoned, with a minified job
+ * class name as the reason (`ne5 was cancelled`). Cancellation is rethrown before the handler below.
  */
 private inline fun <T> runCatchingUnavailable(block: () -> T): T? =
     try {
         block()
+    } catch (error: CancellationException) {
+        throw error
     } catch (error: IllegalStateException) {
         Log.w(TAG, "workshop read unavailable: ${error.message}")
         null

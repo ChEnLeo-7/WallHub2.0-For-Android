@@ -9,6 +9,7 @@ import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -207,6 +208,9 @@ internal class SteamContentSdkSessionBackend(
             return
         }
         scope.launch {
+            // The connection is checked before anything is allowed to read through it, so a link that died
+            // while the app was in the background is repaired now rather than up to an interval later.
+            runMaintenanceStep(session)
             val state = withSession { runCatching { session.state() }.getOrNull() } ?: return@launch
             when (steamContentSdkSessionPhase(state)) {
                 SteamSessionPhase.SIGNED_IN -> Unit
@@ -431,6 +435,34 @@ internal class SteamContentSdkSessionBackend(
     }
 
     /**
+     * One drain, one maintenance step, and the state they left behind.
+     *
+     * Shared by the scheduled loop and the foreground check. The foreground one exists because a link that
+     * died while the app was in the background is otherwise not noticed for up to a whole interval - and the
+     * first screen to load in that window is the one that shows the user an error for a connection the app
+     * was about to repair on its own.
+     *
+     * The state read is the one call here that a tick cannot afford to lose: an exception from it used to end
+     * the loop with nothing in the log, so it is returned as a failure rather than thrown.
+     */
+    private suspend fun runMaintenanceStep(
+        session: SteamContentSdkPlatformSession,
+    ): Result<SteamContentSdkSessionState> =
+        runCatching {
+            val drained = runCatching { session.pump() }
+            val step = runCatching { session.maintain(autoReconnect = true) }
+            record(
+                "session_maintenance",
+                detail =
+                    "pump=" +
+                        drained.fold({ it.outcome.name.lowercase() }, { "failed" }) +
+                        " step=" +
+                        step.fold({ it.step.name.lowercase() }, { "failed" }),
+            )
+            session.state()
+        }
+
+    /**
      * Starts the one loop that keeps an established connection alive and notices when it is gone.
      *
      * The SDK runs no background loop of its own by design - ADR 0025 keeps session scheduling host-owned -
@@ -449,23 +481,37 @@ internal class SteamContentSdkSessionBackend(
         if (maintenanceIntervalMs <= 0L) return
         val job =
             scope.launch {
-                while (isActive) {
-                    delay(maintenanceIntervalMs)
-                    // A session this loop does not own any more - a logout, a new attempt, a release - ends it.
-                    if (activeSession.get() !== session || logoutInProgress.get()) return@launch
-                    val drained = runCatching { session.pump() }
-                    val step = runCatching { session.maintain(autoReconnect = true) }
-                    record(
-                        "session_maintenance",
-                        detail =
-                            "pump=" +
-                                drained.fold({ it.outcome.name.lowercase() }, { "failed" }) +
-                                " step=" +
-                                step.fold({ it.step.name.lowercase() }, { "failed" }),
-                    )
-                    if (session.state() == SteamContentSdkSessionState.AUTHENTICATED) continue
-                    record("session_lost")
-                    if (!rebuildSession(session)) return@launch
+                // Every stop is named. A maintenance loop that simply stops looks exactly like a session with
+                // nothing wrong with it - no tick, no line - and one device reading was precisely that: three
+                // minutes of silence from a live process. So the reason is recorded rather than inferred.
+                try {
+                    while (isActive) {
+                        delay(maintenanceIntervalMs)
+                        if (activeSession.get() !== session) {
+                            record("session_maintenance_stopped replaced")
+                            return@launch
+                        }
+                        if (logoutInProgress.get()) {
+                            record("session_maintenance_stopped logout")
+                            return@launch
+                        }
+                        val tick = runMaintenanceStep(session)
+                        val state = tick.getOrNull()
+                        if (state == null) {
+                            record("session_maintenance_failed", error = tick.exceptionOrNull())
+                            return@launch
+                        }
+                        if (state == SteamContentSdkSessionState.AUTHENTICATED) continue
+                        record("session_lost")
+                        if (!rebuildSession(session)) {
+                            record("session_maintenance_stopped rebuild_failed")
+                            return@launch
+                        }
+                    }
+                } catch (error: CancellationException) {
+                    // A cancellation is the one stop with no other trace of its own, so it is named too.
+                    record("session_maintenance_stopped cancelled")
+                    throw error
                 }
             }
         maintenanceJob.getAndSet(job)?.cancel()

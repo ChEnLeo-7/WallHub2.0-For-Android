@@ -11,6 +11,21 @@ bug, and gap with the reading behind it. Fixes come later, one at a time; this f
   Nothing here is inferred from source alone unless it says so.
 - Evidence captures: `/tmp/sweep.log`, `/tmp/rebuild-read.log`, `/tmp/rebuild-read2.log`.
 
+## 0. Fix batch 1 (source complete, awaiting a device reading)
+
+| Finding | Fix |
+| --- | --- |
+| D2 | `runCatchingUnavailable` rethrows `CancellationException` before its `IllegalStateException` handler. `JobCancellationException` *is* an `IllegalStateException`, so catching that alone had been swallowing every cancellation - breaking structured concurrency and logging an abandoned read as a failure with a minified job class name for a reason. |
+| D4 | The session card no longer claims the session lasts only until a restart; the zh translation that never existed is added. |
+| D6 (partial) | One maintenance step is now shared (`runMaintenanceStep`) and run on `onAppForegrounded` before the state is read, so a link that died in the background is repaired at once instead of up to an interval later. This narrows the window; it does **not** remove the race, because the screen's own read can still start first. |
+| D1 | Instrumentation only, no behaviour change: every stop of the maintenance loop is now named (`session_maintenance_stopped replaced|logout|rebuild_failed|cancelled`), an exception out of the tick logs `session_maintenance_failed`, and the state read that had no handler is returned as a failure instead of ending the loop silently. |
+
+**Deferred, with reasons.** D3 and D6's remaining half (a screen must retry when the session recovers) are Compose
+and view-model changes into a shared app-wide surface, and no compiler for Kotlin exists on the source host - a
+blind edit there is exactly the mistake this campaign keeps catching. D5's fix would change
+`WallHubDropdownMenu`, which every settings dropdown uses, and needs a visual check. D1's actual cause still
+needs the next reading: this batch only makes it say why.
+
 ## 1. Verified working
 
 | # | Surface | Reading |
