@@ -761,3 +761,42 @@ only: no AAR change is needed for this one, so it is not waiting on the SDK batc
 the device reading is still owed: a video-narrowed browse should now answer `workshop page rows=…` instead of
 the `unsupported` line, with the rows' own types still the video ones the tag gate admits.
 
+## 2026-09-27 (16) - the video filter is fixed on the device, and the session fix is not wired yet
+
+The SDK batch was built and published on the worker - **AAR 0.1.59**
+(`sha256=9dec83d8fa4d0bf6d0f00a586bf4f1542c24bc8dc2d204e95f558ea4aa421253`), with the worker's own conformance
+reporting `SC_WIN_ABI_LAYOUT=OK`, `SC_WIN_ABI_SYMBOLS=OK count=84`, `SC_WIN_SDK_CHECK=OK`, `SC_WIN_PARTIAL=none`,
+`SC_WIN_RESULT=OK`. The app pinned it (`e113516`) and the release build succeeded at that revision:
+`/root/builds/wallhub-release-20260927T020342Z-1220717.apk`, whose `lib/arm64-v8a/libsc_content_ffi.so` is
+byte-identical to the AAR's (`883b0cb53d79de1ee5052399a0351726c2c02bc671448644b37f4a29e6391751`). That build is
+the first compiler the entry (15) edit met, and it compiled.
+
+**① is fixed, read on the device.** The same scenario that produced the refusals - cold start, 发现, scroll the
+rails - now produces **none**:
+
+| Reading, same scenario | Before (0.1.58) | After (0.1.59 + the fix) |
+| --- | --- | --- |
+| `unsupported: … content-type or visibility filter` | **6** | **0** |
+| `workshop page rows=…` successes | 8 | **18** |
+| rail fidelity | mostly `EXACT`, 2 `DEGRADED` | mostly `EXACT`, the same 2 `DEGRADED` |
+
+The six refusals could only come from a query whose `effectiveWorkshopTypes()` named `VIDEO`, because
+`sdkContentTypes()` mapped nothing else, so "0 refusals on the same rails" is the video-typed browse being
+served rather than refused. Two side readings: the collection-children diagnostic reproduced the earlier
+reading exactly (`id=1884263373 count=39`, same twelve ids), and the two `DEGRADED` rails
+(`keyword:star wars`, `keyword:dragon ball`) are identical in both builds, so that degradation is pre-existing
+and not something the filter change caused.
+
+**B is carried but not driven, which is what the same log shows.** Only the six startup `WallHubSteamSession`
+lines appear - `phase_signed_in` at `10:10:49.355` and **no state line after it** - and the first
+`temporarily_unavailable` arrives at `10:12:18.211`, **89 seconds after sign-in**, with 26 refusals after it.
+That is the entry (9) defect unchanged, and it is expected here: the AAR now exports `sc_session_maintain`,
+`sc_session_pump`, and `sc_session_reconnect` (verified in the AAR: `SteamSession.maintain/pump/reconnect`),
+but this application never calls them, so no heartbeat is sent and a closed link still publishes nothing.
+
+**Next, and it needs this AAR.** Wire the session maintenance into the app: drive `maintain`/`pump` on the
+engine that holds the session, and treat a `temporarily_unavailable` read as the cue to let the state change the
+SDK now publishes reach the UI. Only then is B verifiable, and the reading it owes is named in the SDK's
+`progress.md` §CD5w.
+
+
