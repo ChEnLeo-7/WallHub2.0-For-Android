@@ -954,7 +954,10 @@ internal fun filterTasks(
 ): List<DownloadTask> =
     tasks
         .asSequence()
-        .filter { task -> task.type in selectedTypes }
+        // The type menu only offers VIDEO, SCENE and WEB, and a workshop row whose tags the service did not
+        // report is stored as UNKNOWN. Filtering that out would leave the download running with no row to
+        // cancel, retry or delete it, so an unclassified task stays visible whatever the selection is.
+        .filter { task -> task.type in selectedTypes || task.type == WorkshopType.UNKNOWN }
         .filter { task ->
             when (filter) {
                 DownloadFilter.ALL -> true

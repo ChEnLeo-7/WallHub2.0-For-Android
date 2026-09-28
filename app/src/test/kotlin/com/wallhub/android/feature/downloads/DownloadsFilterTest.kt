@@ -55,6 +55,29 @@ class DownloadsFilterTest {
     }
 
     @Test
+    fun unclassifiedTaskStaysVisibleUnderAnyTypeSelection() {
+        val unclassified =
+            task("unclassified", DownloadStatus.DOWNLOADING).copy(type = WorkshopType.UNKNOWN)
+
+        assertEquals(
+            listOf("unclassified"),
+            filterTasks(
+                listOf(unclassified),
+                DownloadFilter.DOWNLOADING,
+                setOf(WorkshopType.VIDEO),
+            ).map { it.id },
+        )
+    }
+
+    @Test
+    fun typeSelectionStillHidesKnownTypes() {
+        assertEquals(
+            emptyList<String>(),
+            filterTasks(allTasks, DownloadFilter.DOWNLOADING, setOf(WorkshopType.VIDEO)).map { it.id },
+        )
+    }
+
+    @Test
     fun pendingControlRequestDisablesAllTaskActions() {
         val task =
             task("pending", DownloadStatus.DOWNLOADING).copy(
