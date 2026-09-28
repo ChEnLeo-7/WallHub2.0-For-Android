@@ -1119,3 +1119,109 @@ that decides what the user actually gets, and it had never been told the floor m
 `AppModels.kt` beside the preference it bounds (`MIN_CHUNK_DOWNLOAD_CONCURRENCY`,
 `MAX_CHUNK_DOWNLOAD_CONCURRENCY`, `DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY`, and `safeChunkDownloadConcurrency`), and
 the other two call it, so the row's offer and the stored value cannot disagree again.
+
+## 2026-09-28 (26) - the network was fine, and the app could not trust the gateway
+
+The device failures had been read as CDN trouble for several builds, and the reading that ended that was already
+in the log: `CDN candidate cdn-2-https transport failed: InvalidResponse at transport_tls, candidates=6`. The SDK
+side of that sentence had just been taught to keep the reason (SDK §CD5ah), and the word `transport_tls` says the
+handshake failed on **every** candidate offered - not a timeout, not a DNS answer, not an address-policy refusal.
+
+The device resolves CDN names correctly (Private DNS/DoT to `223.5.5.5`, verified on the phone itself), and the
+gateway terminates TLS with a user-installed CA: the phone's browser trusts it because Android puts user-installed
+CAs in the `AndroidCAStore` entry set. The app did not use that set. `SteamContentSdkEngine.systemTrustBundle()`
+enumerated **only** `/system/etc/security/cacerts`, so the handshake had no issuer it could verify, on every
+candidate, forever - a permanent failure wearing a transient failure's clothes.
+
+`systemTrustBundle()` (`SteamContentSdkEngine.kt:542`) now enumerates `KeyStore.getInstance("AndroidCAStore")`
+(`ANDROID_CA_STORE`, `:553`) and hands the DER blobs to a pure, JVM-testable `trustBundlePem(...)`
+(`:578`) that wraps 64-column PEM with `java.util.Base64` (minSdk 26). The store holds system **and** user
+issuers, aliases are sorted so the bundle is deterministic, and a single unreadable entry no longer fails the
+whole set.
+
+**Reading after the fix: the first device download completed.** Spider-Man (`1633721655`), 19.3 MB, reached
+`COMPLETED` with no `transport_tls` line. That is the reading this campaign was missing: the SDK data plane works
+on this device once the trust input is the platform's actual trust input.
+
+## 2026-09-28 (27) - a desktop-shaped texture is not a reason to keep a blank scene
+
+The second reported defect was a wallpaper that converted "successfully" and rendered as a white screen. The
+item's only texture is 3862x2160, `fmt=0`, `imageFormat=2`, base mip uncompressed - an ordinary desktop JPEG in
+a TEX envelope. It took the retention route (`canRetainOriginal = true`, `TexMobileConverter.kt:124/:140`), so
+the MPKG shipped a texture the mobile renderer does not decode, and what the user saw was the near-white
+`clearcolor` behind it.
+
+Two things in the ETC2 path conspired: it required both axes to be block-aligned, and `locateEmbeddedImage`
+(`:482`) searched for the PNG signature only. The fix is to name neither of those as a reason to skip:
+
+- the encoder pads each axis to a 4-texel ETC2 block and replicates the last row/column (`:161-168`, explained at
+  `:569-580`), and `writeEtc2` declares the padded dimensions;
+- `locateEmbeddedImage` (`:498-506`) accepts a PNG **or** a JPEG SOI (`FF D8 FF`, `JPEG_SIGNATURE`, `:1105`)
+  and takes the first of either.
+
+`TexMobileConverterEmbeddedImageTest` covers the JPEG-backed, unaligned case.
+
+**Still owed (F2): the retention decision is made on the stored length, not the decoded footprint.**
+`MAX_DECOMPRESSED_TEX_BYTES` is `mobileRgbaLimit()` clamped to `2..8 MiB` (`:1112-1122`) and is compared against
+the TEX's *stored* size (`:743`), while the ETC2 route accepts up to 48 Mpx (`MAX_ETC2_PIXELS`, `:1111`). Any
+image-backed TEX whose stored size is under 8 MiB but whose decoded RGBA `w*h*4` exceeds the budget is therefore
+silently retained - about 2.1 Mpx and up, which is most Workshop artwork. The route should be chosen on the
+padded RGBA footprint. Not changed yet: it is a behaviour change on the conversion path and is waiting for an
+explicit decision.
+
+## 2026-09-28 (28) - the download UI now says what the SDK knows, and a pause stays resumable
+
+Three defects, one root each, all in the app's reading of SDK state rather than in the SDK's transfers:
+
+- **the bar did not move.** The session download path never published committed bytes, so the status snapshot
+  stayed at 0 and the determinate bar sat at 0% - a live transfer that looks frozen. The SDK relay now publishes
+  `TaskEvent::ChunkProgress` per committed chunk (SDK `1bccb95`), and the UI asks
+  `downloadProgressFraction(task)` (`DownloadsScreen.kt:1044`): `null` while `DOWNLOADING` with no committed
+  bytes, which renders the indeterminate bar (`:867-880`). A rate is shown only from a strictly positive delta
+  and is dropped after `DOWNLOAD_SPEED_STALE_AFTER_MS = 10_000L` (`FormalWorkshopDownloadWorker.kt:899`,
+  `measuredDownloadSpeed`, `DownloadsScreen.kt:1058`) - a speed nobody measured is zero, not a stale number.
+- **a pause read as a restart.** SDK `committed_bytes` is per-run, and a journal-skipped chunk publishes no
+  event, so the resume point has to come from the durable staging directory:
+  `durableCheckpointBytes`/`durableDownloadedBytes` (`:326-332`) with a `taskId=... resume checkpoint=N bytes`
+  log line. A paused task now resumes from that floor instead of zero.
+- **a cancel did not stay cancelled.** `requestCancellation` wrote only `requestedAction`, and the `REPLACE`
+  worker that started wrote `CANCELLED` while the original worker's handler then wrote `QUEUED` and asked for a
+  retry. `FormalWorkshopDownloadWorker` now identifies a user cancellation (`isUserCancellation`, `:547`),
+  refuses to overwrite `CANCELLED` with a non-terminal status (`mayPublishDownloadProgress`, `:713`), and the
+  transfer calls `task.cancel()` before `close()` so the FFI handle goes away with the work. The SDK side had a
+  matching loss - a cancel after a pause/resume cancelled a stale handle and the run kept fetching - fixed in
+  `7b6595f` and pinned by `a_resumed_run_stops_when_the_host_cancels`.
+
+## 2026-09-28 (29) - the second item can download now: one session, not one lock
+
+"The second item of the same app never downloads" had an app-side root as well as the SDK's journal collision.
+`SteamContentSdkWorkshopTransfer` held one `sessionMutex` across the whole download, so item two queued behind a
+live item and could time out before it ever started. The mutex now guards a **ref-counted lease**
+(`acquireSession`/`releaseSession`, `SteamContentSdkWorkshopTransfer.kt:183/:200`): concurrent downloads share one
+authenticated session and the session closes when the last holder releases. Cancel and delete also remove the
+SDK's staging directory, not just the destination (`deleteManagedDownloadDirectories`,
+`RoomDownloadTaskRepository.kt:518`), so a cancelled item leaves no `.sc-<manifest>-*.part` behind.
+
+The same batch turned the SDK's task-event stream into a device reading: each dropped event is logged as
+`task event kind=<name> value=<n>` (`SteamContentSdkWorkshopTransfer.kt:377`, `sdkTaskEventName`, `:431`). On
+AAR 0.1.67 that produced the number this campaign needed: `download served by=...` to the first `task event
+kind=9` was **25.3 s**, against roughly 3 s of app-side work in a ~28 s tap-to-bytes path. The app was not the
+delay; the resolution window was, which is what the SDK's establishment budget entry (SDK §CD5aj) then bounded.
+
+## 2026-09-28 (30) - build 0.1.68 on the device, and the size of it
+
+AAR **0.1.68** was built on the worker and installed on `192.168.2.234:33445` with `adb install -r` (never
+`pm clear` - the app's session and download state is the thing under test). The install was verified as the
+artifact, not assumed: `base.apk` pulled back hashes `c9e2add7...`, equal to the built artifact, and the packaged
+`libsc_content_ffi.so` hashes `9cdceddf...`, equal to the AAR's `.so`.
+
+Size of the installed APK: **13,498,661 bytes (12.87 MiB)** - `classes.dex` 6.79 MiB,
+`libsc_content_ffi.so` 6.53 MiB, `resources.arsc` 1.23 MiB. The SDK's Rust core is half the download, and it is
+arm64-v8a only, which is the whole preview-AAR story rather than a packaging defect.
+
+Unit tests, on the worker: `:app:testDebugUnitTest` **225 run / 2 failed**, both failures in
+`SteamContentSdkSessionBackendTest` and both `expected:<1> but was:<2>`. The cause is the fixture, not the
+product: `FakeSdkPlatform.openWithLiveCandidates()` increments `liveOpenCalls` and then calls `open()`, which
+increments `openCalls` as well (`SteamContentSdkSessionBackendTest.kt:597-600`), while the tests assert both
+counters are 1 (`:285-286`, `:307-308`). Fix owed: don't funnel the live open through `open()`. Every new
+download/mpkg test in entries (26)-(29) passes.
