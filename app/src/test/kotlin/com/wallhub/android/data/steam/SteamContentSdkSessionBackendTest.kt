@@ -590,13 +590,21 @@ class SteamContentSdkSessionBackendTest {
 
         override suspend fun open(): SteamContentSdkPlatformSession? {
             openCalls += 1
-            openFailure?.let { throw it }
-            return session
+            return openSession()
         }
 
         override suspend fun openWithLiveCandidates(): SteamContentSdkPlatformSession? {
             liveOpenCalls += 1
-            return open()
+            return openSession()
+        }
+
+        /**
+         * The two entry points count separately on purpose: a live-candidate open is the retry's own route, so
+         * an `openCalls` that also counted it could not tell "one attempt, one retry" from "two plain attempts".
+         */
+        private fun openSession(): SteamContentSdkPlatformSession? {
+            openFailure?.let { throw it }
+            return session
         }
     }
 
