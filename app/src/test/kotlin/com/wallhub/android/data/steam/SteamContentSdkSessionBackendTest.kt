@@ -537,6 +537,30 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
+    fun closingTheBackendStopsTheMaintenanceLoop() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 233)),
+            )
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            fixture.session.stateAfterEvents = SteamContentSdkSessionState.AUTHENTICATED
+            val backend = fixture.backend(this, maintenanceIntervalMs = 1_000L)
+
+            backend.restorePersistedSession()
+            advanceTimeBy(1_001L)
+            assertTrue(fixture.session.maintenanceSteps.isNotEmpty())
+
+            backend.close()
+            val stepsWhenClosed = fixture.session.maintenanceSteps.size
+            advanceTimeBy(5_000L)
+
+            // The loop drives the session this closed, so it has to stop with it rather than tick against a
+            // closed session until the next interval notices.
+            assertEquals(stepsWhenClosed, fixture.session.maintenanceSteps.size)
+        }
+
+    @Test
     fun aGuardAnswerInFlightIsCancelledByANewerSignIn() =
         runTest {
             val fixture = Fixture()

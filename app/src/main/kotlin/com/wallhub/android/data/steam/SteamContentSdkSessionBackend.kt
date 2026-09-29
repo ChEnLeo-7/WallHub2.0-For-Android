@@ -314,6 +314,10 @@ internal class SteamContentSdkSessionBackend(
     /** Releases the live SDK session. The interface has no shutdown hook, so this is the explicit close path. */
     internal fun close() {
         attemptJob.getAndSet(null)?.cancel()
+        // The maintenance loop drives the session this is about to close, so it stops first - the same order
+        // releaseSession uses. Leaving it running leaves it ticking against a closed session for up to one
+        // interval, which is the leak this path had.
+        maintenanceJob.getAndSet(null)?.cancel()
         // Nothing is left to hand the gate to on the shutdown path, so it is opened here rather than by the
         // cancelled attempt's completion handler (which no longer owns it).
         attemptInProgress.set(false)
