@@ -259,6 +259,22 @@ internal fun steamContentSdkChallengePhase(kind: SteamContentSdkChallengeKind): 
         SteamContentSdkChallengeKind.UNKNOWN -> SteamSessionPhase.FAILED
     }
 
+/**
+ * Whether the SDK's own detail says the *service* judged this credential.
+ *
+ * The failure class alone must never authorise deleting the stored account, and the device showed why: the
+ * SDK reports a CM route failure as an authentication failure too, so a route hiccup arrived as
+ * `authentication failed during AccessTokenLogon cause=CmRoute (result=None)` and the stored sign-in was
+ * thrown away for it. Only a detail naming the remote result is evidence that the service answered - a
+ * refusal - and anything unrecognised, including no detail at all, keeps the credential. Keeping a dead token
+ * costs one refused restore; deleting a live one costs the user a full sign-in with a Guard code.
+ */
+internal fun serviceRefusedCredential(detail: String?): Boolean =
+    detail != null && detail.contains(REMOTE_RESULT_CAUSE_MARKER)
+
+/** The cause marker the SDK prints when Steam itself answered about the credential. */
+private const val REMOTE_RESULT_CAUSE_MARKER = "cause=RemoteResult"
+
 /** Maps an SDK session failure onto the phase the app publishes for it. */
 internal fun steamContentSdkFailurePhase(failure: SteamContentSdkSessionFailure): SteamSessionPhase =
     when (failure) {

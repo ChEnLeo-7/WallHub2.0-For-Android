@@ -7,7 +7,9 @@ import io.steamcontent.sdk.SessionFailure
 import io.steamcontent.sdk.SessionState
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * The SDK reports ordinals; the app does not. These tests hold every mirrored ordinal to a named value and
@@ -185,5 +187,16 @@ class SteamContentSdkSessionMappingTest {
             steamContentSdkSessionPhase(SteamContentSdkSessionState.UNKNOWN),
         )
         assertIs<SteamContentSdkSessionState>(SteamContentSdkSessionState.CLOSED)
+    }
+
+    @Test
+    fun `only a remote result authorises deleting the stored credential`() {
+        // The device reading: a CM route failure arrives with the same authentication class as a refusal, and
+        // clearing on that class deleted a working account.
+        assertTrue(serviceRefusedCredential("authentication failed during AccessTokenLogon cause=RemoteResult (result=Some(15))"))
+        assertFalse(serviceRefusedCredential("authentication failed during AccessTokenLogon cause=CmRoute (result=None)"))
+        assertFalse(serviceRefusedCredential("authentication failed during AccessTokenLogon cause=RemoteClosed (result=None)"))
+        assertFalse(serviceRefusedCredential(""))
+        assertFalse(serviceRefusedCredential(null))
     }
 }

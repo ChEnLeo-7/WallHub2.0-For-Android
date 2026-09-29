@@ -632,6 +632,9 @@ class SteamContentSdkSessionBackendTest {
             fixture.storeCredential(
                 PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 149)),
             )
+            // The service itself answered about the token, which is the only thing that makes it dead.
+            fixture.session.lastFailure =
+                "authentication failed during AccessTokenLogon cause=RemoteResult (result=Some(15))"
             fixture.session.events +=
                 SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.AUTHENTICATION_FAILED)
             val backend = fixture.backend(this)
@@ -645,6 +648,51 @@ class SteamContentSdkSessionBackendTest {
             assertEquals(FakeMessages.credentialsExpired, backend.session.value.message)
             assertEquals(1, fixture.store.clearCalls)
             assertFalse(backend.session.value.hasStoredSession)
+        }
+
+    @Test
+    fun aRouteFailureDoesNotDeleteTheStoredCredential() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 239)),
+            )
+            // The device reading this pins: a route failure wears the authentication class but says nothing
+            // about the credential - `result=None`, because no service ever saw it. Clearing on the class
+            // alone deleted a working account over a route hiccup.
+            fixture.session.lastFailure =
+                "authentication failed during AccessTokenLogon cause=CmRoute (result=None)"
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.AUTHENTICATION_FAILED)
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+
+            assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
+            assertEquals(0, fixture.store.clearCalls)
+            assertTrue(backend.session.value.hasStoredSession)
+        }
+
+    @Test
+    fun aCredentialFailureWithNoDetailAtAllKeepsTheStoredCredential() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 241)),
+            )
+            fixture.session.lastFailure = null
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.AUTHENTICATION_FAILED)
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+
+            // No evidence that anything judged the credential: keeping it costs one refused restore later,
+            // and deleting it costs the user a full sign-in.
+            assertEquals(0, fixture.store.clearCalls)
+            assertTrue(backend.session.value.hasStoredSession)
         }
 
     @Test

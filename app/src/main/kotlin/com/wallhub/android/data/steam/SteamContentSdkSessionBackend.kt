@@ -1099,11 +1099,15 @@ internal class SteamContentSdkSessionBackend(
         recordClassifiedFailure(failure, restore, sdkDetail)
         // A restore the service refused is a dead stored credential, not a transport problem: the same bytes
         // would be refused again, so it is cleared and reported as expired instead of being replayed on every
-        // start and every library refresh. Only the credential class qualifies - a transport, schema or
-        // internal failure says nothing about whether the token is good - and only on the restore path,
-        // because a refused logon is a wrong password, not a reason to delete what is already stored.
+        // start and every library refresh. Three things have to hold, and the third is what a device reading
+        // taught: the failure class must be the credential one, it must be a restore (a refused logon is a
+        // wrong password, not a reason to delete what is already stored), and the SDK's own detail must say
+        // the service answered - a route failure wears the same class and must not cost the account.
         val refusedStoredCredential =
-            restore && hasStoredSession && failure == SteamContentSdkSessionFailure.AUTHENTICATION_FAILED
+            restore &&
+                hasStoredSession &&
+                failure == SteamContentSdkSessionFailure.AUTHENTICATION_FAILED &&
+                serviceRefusedCredential(sdkDetail)
         when {
             steamContentSdkFailurePhase(failure) == SteamSessionPhase.EXPIRED || refusedStoredCredential -> {
                 val cleared = clearStoredCredential(attemptCredentialGuard())
