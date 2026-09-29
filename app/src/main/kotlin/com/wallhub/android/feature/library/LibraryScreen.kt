@@ -633,7 +633,7 @@ class LibraryViewModel
             val session = mutableState.value.session
             if (session.phase != SteamSessionPhase.SIGNED_IN) {
                 refreshWhenSignedIn = true
-                if (session.isRestoreRetryable) {
+                if (session.shouldAutoRestore(System.currentTimeMillis())) {
                     steamSessionRepository.restorePersistedSession()
                 }
                 return
@@ -1979,6 +1979,24 @@ private val SteamSessionState.isRestoreRetryable: Boolean
             (
                 phase == SteamSessionPhase.RESTORABLE || phase == SteamSessionPhase.FAILED
             )
+
+/**
+ * The shortest gap between two *automatic* restore attempts.
+ *
+ * A failed restore leaves the state retry-eligible so the user can ask again, but [refresh] runs at UI rate:
+ * without a floor, one bad network produced a fresh logon against Steam on every refresh. The floor is on the
+ * automatic path only - a tap on the restore affordance calls the repository directly and is never delayed.
+ */
+internal const val RESTORE_RETRY_MIN_INTERVAL_MS = 10_000L
+
+/**
+ * Whether a refresh may start another restore attempt now.
+ *
+ * [SteamSessionState.updatedAt] moves on every publish, so it is the time of the failure that made the state
+ * retry-eligible: a state younger than the floor is one that was just attempted.
+ */
+internal fun SteamSessionState.shouldAutoRestore(nowMs: Long): Boolean =
+    isRestoreRetryable && nowMs - updatedAt >= RESTORE_RETRY_MIN_INTERVAL_MS
 
 @Composable
 private fun WorkshopType.label(): String =

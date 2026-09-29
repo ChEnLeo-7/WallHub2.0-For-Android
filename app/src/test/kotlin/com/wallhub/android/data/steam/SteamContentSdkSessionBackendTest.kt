@@ -440,7 +440,9 @@ class SteamContentSdkSessionBackendTest {
             val details = fixture.diagnostics.events.mapNotNull { it.attributes["sdk_detail"] }.single()
             assertEquals(fixture.session.lastFailure, details)
             assertTrue(stages.contains("attempt failure class=2 stage=restore"))
-            assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
+            // The class is the credential one, and this is a restore, so the stored credential is refused
+            // rather than merely un-attempted: it is cleared and reported as expired.
+            assertEquals(SteamSessionPhase.EXPIRED, backend.session.value.phase)
         }
 
     @Test
@@ -534,6 +536,142 @@ class SteamContentSdkSessionBackendTest {
             assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
         }
 
+    @Test
+    fun aRefusedStoredCredentialIsClearedAndReportedExpired() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 149)),
+            )
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.AUTHENTICATION_FAILED)
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+
+            // The service refused this token, so replaying it on every start and every library refresh is what
+            // the app used to do forever. It is cleared once and reported as expired.
+            assertEquals(SteamSessionPhase.EXPIRED, backend.session.value.phase)
+            assertEquals(FakeMessages.credentialsExpired, backend.session.value.message)
+            assertEquals(1, fixture.store.clearCalls)
+            assertFalse(backend.session.value.hasStoredSession)
+        }
+
+    @Test
+    fun aRefusedLogonLeavesTheStoredCredentialAlone() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "stored", refreshToken = opaqueValue(seed = 151)),
+            )
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.AUTHENTICATION_FAILED)
+            val backend = fixture.backend(this)
+
+            // A refused logon is a wrong password for the account being typed, not a verdict on what is stored:
+            // clearing there would delete a working account because someone mistyped another one.
+            backend.login("other", opaqueValue(seed = 157))
+            advanceUntilIdle()
+
+            assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
+            assertEquals(0, fixture.store.clearCalls)
+        }
+
+    @Test
+    fun aSignOutThatCouldNotClearTheStoreDoesNotClaimItDid() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 163)),
+            )
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            fixture.store.clearFailure = IllegalStateException("commit failed")
+            val backend = fixture.backend(this)
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+
+            backend.logout()
+            advanceUntilIdle()
+
+            assertEquals(SteamSessionPhase.SIGNED_OUT, backend.session.value.phase)
+            assertEquals(FakeMessages.signOutIncomplete, backend.session.value.message)
+            // The credential really is still there, and the state now says so: without this the next launch
+            // would sign the user back in after a sign-out that reported success.
+            assertTrue(backend.session.value.hasStoredSession)
+        }
+
+    @Test
+    fun aLostConnectionWithAStoredCredentialIsRestorableRatherThanSignedOut() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 167)),
+            )
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            val backend = fixture.backend(this)
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+            val opensAfterSignIn = fixture.platform.openCalls
+
+            // The peer side of the connection is gone: the next foreground finds the live session closed.
+            fixture.session.stateAfterEvents = SteamContentSdkSessionState.CLOSED
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            backend.onAppForegrounded()
+            advanceUntilIdle()
+
+            val stages = fixture.diagnostics.events.mapNotNull { it.attributes["stage"] }
+            // Not a sign-out: the credential is still stored, the session is restored again, and that restore is
+            // also what reopens the SDK engine every Workshop read in the app goes through.
+            assertTrue(stages.contains("phase_restorable"))
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+            assertTrue(fixture.platform.openCalls > opensAfterSignIn)
+        }
+
+    @Test
+    fun aSignInRequestedWhileAnAttemptRunsReplacesItInsteadOfBeingDropped() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 173)),
+            )
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            val backend = fixture.backend(this)
+
+            // The restore takes the gate before it runs a single step, so the sign-in below really does arrive
+            // while an attempt is in progress - the case that used to vanish without a trace.
+            backend.restorePersistedSession()
+            backend.login("account", opaqueValue(seed = 179))
+            advanceUntilIdle()
+
+            val stages = fixture.diagnostics.events.mapNotNull { it.attributes["stage"] }
+            assertTrue(stages.contains("attempt_superseded"))
+            assertEquals(0, fixture.session.restores.size)
+            assertEquals(1, fixture.session.logons.size)
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+        }
+
+    @Test
+    fun aRestoreRequestedWhileAnAttemptRunsIsQueuedRatherThanDropped() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 181)),
+            )
+            val backend = fixture.backend(this)
+
+            // Neither attempt can authenticate: the fake reports the session closed with no events queued.
+            backend.restorePersistedSession()
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+
+            val stages = fixture.diagnostics.events.mapNotNull { it.attributes["stage"] }
+            assertTrue(stages.contains("attempt_queued"))
+            // Both ran, which is the whole point: the second request waited for the gate instead of being lost.
+            assertEquals(2, fixture.platform.openCalls)
+        }
+
     private class Fixture {
         val session = FakeSdkSession()
         val platform = FakeSdkPlatform(session)
@@ -568,6 +706,9 @@ class SteamContentSdkSessionBackendTest {
         var writeCalls = 0
             private set
 
+        /** Stands for a preferences commit that failed: the record is still there afterwards. */
+        var clearFailure: Throwable? = null
+
         override fun read(): EncryptedStringReadResult = payload
 
         override fun write(value: String) {
@@ -576,6 +717,7 @@ class SteamContentSdkSessionBackendTest {
         }
 
         override fun clear() {
+            clearFailure?.let { throw it }
             clearCalls += 1
             payload = EncryptedStringReadResult.Missing
         }
@@ -762,6 +904,7 @@ class SteamContentSdkSessionBackendTest {
         override val codeSubmitted = "code-submitted"
         override val signedIn = "signed-in"
         override val signedOut = "signed-out"
+        override val signOutIncomplete = "sign-out-incomplete"
         override val credentialsExpired = "credentials-expired"
         override val sessionStorageUnavailable = "session-storage-unavailable"
         override val restoreFailed = "restore-failed"

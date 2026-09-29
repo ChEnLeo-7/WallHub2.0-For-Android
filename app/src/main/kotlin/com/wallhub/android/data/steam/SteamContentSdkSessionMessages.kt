@@ -29,6 +29,13 @@ internal interface SteamContentSdkSessionMessages {
 
     val signedOut: String
 
+    /**
+     * Shown when the sign-out itself completed but the saved credential could not be removed from the
+     * device, so the next launch may still find it. The distinction matters: the plain [signedOut] text
+     * claims the local session is gone.
+     */
+    val signOutIncomplete: String
+
     val credentialsExpired: String
 
     val sessionStorageUnavailable: String
@@ -80,6 +87,9 @@ internal class AndroidSteamContentSdkSessionMessages(
 
     override val signedOut: String
         get() = context.getString(R.string.backend_steam_signed_out)
+
+    override val signOutIncomplete: String
+        get() = context.getString(R.string.backend_steam_sign_out_incomplete)
 
     override val credentialsExpired: String
         get() = context.getString(R.string.backend_steam_credentials_expired)

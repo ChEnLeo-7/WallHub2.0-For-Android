@@ -938,6 +938,7 @@
     <string name='backend_steam_session_storage_unavailable'>无法读取保存的 Steam 登录状态，请重新登录以替换它。</string>
     <string name='backend_steam_signed_in_account'>已登录 Steam 账户 %1$s</string>
     <string name='backend_steam_signed_out'>已退出 Steam 登录，并清除本机保存的登录状态。</string>
+    <string name='backend_steam_sign_out_incomplete'>已退出 Steam 登录，但无法从本机移除已保存的登录状态。</string>
     <string name='backend_steam_sdk_session_only'>已登录 Steam。WallHub 会维持该会话，并在连接中断时自动重连。</string>
     <string name='backend_steam_sdk_session_unavailable'>此设备上 Steam Content SDK 会话不可用。</string>
     <string name='workshop_placeholder_title'>壁纸 %1$d</string>

@@ -8,6 +8,7 @@ import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -81,6 +82,24 @@ internal class SteamContentSdkSessionBackend(
     private val activeSession = AtomicReference<SteamContentSdkPlatformSession?>(null)
     private val pendingChallenge = AtomicReference<PendingChallenge?>(null)
 
+    /**
+     * The newest request that arrived while an attempt was already running.
+     *
+     * Only one is kept, and a later request replaces an earlier one, so the user's last intent is the one
+     * that runs. Dropping it instead is what made a tap on sign-in do nothing at all while a background
+     * restore held the gate for up to its whole five-minute deadline.
+     */
+    private val pendingAttempt = AtomicReference<(suspend () -> Unit)?>(null)
+
+    /**
+     * The credential-store generation the running attempt read its stored credential at, or
+     * [NO_CREDENTIAL_GENERATION] when the attempt never read one.
+     *
+     * A decision to clear a refused credential is only valid for the value it was taken against: if a
+     * logged-on credential was written in the meantime, that newer one must survive the stale clear.
+     */
+    private val attemptCredentialGeneration = AtomicLong(NO_CREDENTIAL_GENERATION)
+
     /** The one host-scheduled loop that keeps an established connection alive, or null while none is. */
     private val maintenanceJob = AtomicReference<Job?>(null)
 
@@ -98,8 +117,11 @@ internal class SteamContentSdkSessionBackend(
     // ------------------------------------------------------------------
 
     override fun restorePersistedSession() {
-        if (mutableSession.value.phase == SteamSessionPhase.SIGNED_IN) return
-        launchAttempt { restoreStoredSession() }
+        // The check is inside the block so it is re-read when the attempt actually runs: a queued restore
+        // that was overtaken by a successful sign-in has nothing left to do.
+        launchAttempt {
+            if (mutableSession.value.phase != SteamSessionPhase.SIGNED_IN) restoreStoredSession()
+        }
     }
 
     override fun login(
@@ -115,7 +137,9 @@ internal class SteamContentSdkSessionBackend(
             )
             return
         }
-        launchAttempt { logon(trimmed, password) }
+        // A sign-in the user asked for takes precedence over whatever attempt is running: it supersedes it
+        // rather than waiting behind it, because waiting means a tap that does nothing for up to five minutes.
+        launchAttempt(supersedes = true) { logon(trimmed, password) }
     }
 
     override fun submitSteamGuardCode(code: String) {
@@ -217,11 +241,19 @@ internal class SteamContentSdkSessionBackend(
                     runCatching { session.close() }
                 }
                 pendingChallenge.set(null)
-                clearStoredCredential()
-                publish(SteamSessionPhase.SIGNED_OUT, messages.signedOut, hasStoredSession = false)
+                // The claim the UI shows is about the store, so it is the store's answer that is published:
+                // telling the user the saved sign-in is gone when it could not be removed is what let a
+                // "signed out" app sign itself back in on the next launch.
+                val cleared = clearStoredCredential()
+                publish(
+                    SteamSessionPhase.SIGNED_OUT,
+                    if (cleared) messages.signedOut else messages.signOutIncomplete,
+                    hasStoredSession = !cleared,
+                )
             } finally {
                 attemptInProgress.set(false)
                 logoutInProgress.set(false)
+                drainPendingAttempt()
             }
         }
     }
@@ -242,9 +274,20 @@ internal class SteamContentSdkSessionBackend(
                 SteamSessionPhase.FAILED,
                 SteamSessionPhase.SIGNED_OUT,
                 -> {
+                    // The connection is gone but a stored credential may still be perfectly good, so this is
+                    // the restorable state, not a sign-out: publishing SIGNED_OUT here claimed the user had
+                    // left while their credential sat in the store, and the sign-out also closed the engine
+                    // every Workshop read in the app goes through. RESTORABLE is the phase the library's
+                    // restore affordance and its automatic retry already key on.
                     releaseSession()
-                    publish(SteamSessionPhase.SIGNED_OUT, messages.signedOut, hasStoredSession = true)
+                    publish(
+                        SteamSessionPhase.RESTORABLE,
+                        messages.restoreFailed,
+                        hasStoredSession = true,
+                    )
+                    restorePersistedSession()
                 }
+
                 else -> Unit
             }
         }
@@ -253,6 +296,10 @@ internal class SteamContentSdkSessionBackend(
     /** Releases the live SDK session. The interface has no shutdown hook, so this is the explicit close path. */
     internal fun close() {
         attemptJob.getAndSet(null)?.cancel()
+        // Nothing is left to hand the gate to on the shutdown path, so it is opened here rather than by the
+        // cancelled attempt's completion handler (which no longer owns it).
+        attemptInProgress.set(false)
+        pendingAttempt.set(null)
         val session = activeSession.getAndSet(null)
         if (session != null) {
             runCatching { session.close() }
@@ -264,25 +311,70 @@ internal class SteamContentSdkSessionBackend(
     // Flows
     // ------------------------------------------------------------------
 
-    private fun launchAttempt(block: suspend () -> Unit) {
-        if (logoutInProgress.get()) return
-        if (!attemptInProgress.compareAndSet(false, true)) return
-        val job =
-            scope.launch(start = CoroutineStart.LAZY) {
-                try {
-                    block()
-                } finally {
-                    attemptInProgress.set(false)
-                    attemptJob.set(null)
-                }
-            }
+    /**
+     * Starts [block] as the one running attempt, queueing it when another attempt already holds the gate.
+     *
+     * The gate is what keeps one SDK session from being driven by two flows at once, and it stays. What
+     * changed is that a request arriving under it is no longer discarded: it is kept as the pending attempt
+     * and runs when the current one finishes, and a request the user made herself ([supersedes]) also ends
+     * the attempt it collided with instead of waiting for its deadline.
+     */
+    private fun launchAttempt(
+        supersedes: Boolean = false,
+        block: suspend () -> Unit,
+    ) {
+        if (logoutInProgress.get()) {
+            // A sign-in that arrived during a sign-out runs after the teardown, which is what the user asked
+            // for; it is not run inside the teardown, where the session it needs is being closed.
+            pendingAttempt.set(block)
+            record("attempt_held_by_logout")
+            return
+        }
+        if (attemptInProgress.compareAndSet(false, true)) {
+            startAttempt(block)
+            return
+        }
+        pendingAttempt.set(block)
+        if (supersedes) {
+            record("attempt_superseded")
+            // Cancelled rather than cleared from [attemptJob]: the completion handler below is the single place
+            // the gate opens, so a superseded attempt still hands it to the request that replaced it.
+            attemptJob.get()?.cancel()
+        } else {
+            record("attempt_queued")
+        }
+    }
+
+    private fun startAttempt(block: suspend () -> Unit) {
+        attemptCredentialGeneration.set(NO_CREDENTIAL_GENERATION)
+        val job = scope.launch(start = CoroutineStart.LAZY) { block() }
         attemptJob.set(job)
+        // The gate opens here and nowhere else: this runs whether the attempt finished, threw, was cancelled
+        // mid-flight, or was cancelled before its body ever ran. A release written as the body's own `finally`
+        // silently misses that last case, and the gate would then stay closed for good.
+        job.invokeOnCompletion {
+            if (attemptJob.compareAndSet(job, null)) {
+                attemptInProgress.set(false)
+                drainPendingAttempt()
+            }
+        }
         job.start()
+    }
+
+    /** Runs the request that arrived while the gate was held, if there still is one. */
+    private fun drainPendingAttempt() {
+        val next = pendingAttempt.getAndSet(null) ?: return
+        if (logoutInProgress.get()) {
+            pendingAttempt.set(next)
+            return
+        }
+        if (attemptInProgress.compareAndSet(false, true)) startAttempt(next) else pendingAttempt.set(next)
     }
 
     private suspend fun restoreStoredSession() {
         // The read result is kept in one value so the one load-time diagnostic below and the branch both read
         // the same store result: the store is still read exactly once per attempt.
+        attemptCredentialGeneration.set(credentialStore.generation())
         val credential = credentialStore.read()
         recordCredentialLoad(credential)
         when (credential) {
@@ -793,6 +885,14 @@ internal class SteamContentSdkSessionBackend(
         hasStoredSession: Boolean,
         stage: String,
     ) {
+        if (logoutInProgress.get()) {
+            // The session this edge belongs to is being torn down. A Guard answer runs in its own coroutine
+            // rather than under the attempt gate, so it can reach here after logout has already published
+            // SIGNED_OUT; publishing SIGNED_IN over that would claim a session that no longer exists.
+            record("auth_edge_after_logout")
+            releaseSession()
+            return
+        }
         pendingChallenge.set(null)
         // The authentication edge is the one moment the app can keep a session across a restart, so the token
         // the SDK retained is stored here on every path that reaches this state - logon, a Guard answer, and a
@@ -866,7 +966,9 @@ internal class SteamContentSdkSessionBackend(
                     stored?.fill(0)
                 }
             if (!unchanged) {
-                credentialStore.save(
+                // The compare runs once more inside the store, under its lock, so a clear that landed between
+                // this read and this write cannot be reverted by the write.
+                credentialStore.saveIfChanged(
                     PersistedSteamCredential(
                         accountName = accountName,
                         refreshToken = token.toString(Charsets.UTF_8),
@@ -905,12 +1007,14 @@ internal class SteamContentSdkSessionBackend(
     ) {
         pendingChallenge.set(null)
         if (revoked) {
-            clearStoredCredential()
+            // The service revoked the credential, so this is the one path where clearing it is not a claim
+            // but the point: what the UI is told about the store is what the store actually did.
+            val cleared = clearStoredCredential()
             publish(
                 SteamSessionPhase.EXPIRED,
                 messages.credentialsExpired,
                 accountName = accountName,
-                hasStoredSession = false,
+                hasStoredSession = !cleared,
             )
         } else {
             publish(
@@ -967,18 +1071,28 @@ internal class SteamContentSdkSessionBackend(
     ): Boolean {
         lastAttemptFailure.set(failure)
         recordClassifiedFailure(failure, restore, sdkDetail)
-        when (steamContentSdkFailurePhase(failure)) {
-            SteamSessionPhase.EXPIRED -> {
-                clearStoredCredential()
+        // A restore the service refused is a dead stored credential, not a transport problem: the same bytes
+        // would be refused again, so it is cleared and reported as expired instead of being replayed on every
+        // start and every library refresh. Only the credential class qualifies - a transport, schema or
+        // internal failure says nothing about whether the token is good - and only on the restore path,
+        // because a refused logon is a wrong password, not a reason to delete what is already stored.
+        val refusedStoredCredential =
+            restore && hasStoredSession && failure == SteamContentSdkSessionFailure.AUTHENTICATION_FAILED
+        when {
+            steamContentSdkFailurePhase(failure) == SteamSessionPhase.EXPIRED || refusedStoredCredential -> {
+                val cleared = clearStoredCredential(attemptCredentialGuard())
+                record("credential_cleared cleared=$cleared refused=$refusedStoredCredential")
                 publish(
                     SteamSessionPhase.EXPIRED,
                     messages.credentialsExpired,
                     accountName = accountName,
-                    hasStoredSession = false,
+                    // A clear that failed leaves the credential on disk, and saying otherwise is exactly the
+                    // claim that made a refused token look handled while it was still being replayed.
+                    hasStoredSession = !cleared,
                 )
             }
 
-            SteamSessionPhase.SIGNED_OUT ->
+            steamContentSdkFailurePhase(failure) == SteamSessionPhase.SIGNED_OUT ->
                 publish(
                     SteamSessionPhase.SIGNED_OUT,
                     messages.signedOut,
@@ -1032,9 +1146,26 @@ internal class SteamContentSdkSessionBackend(
         record("phase_${phase.name.lowercase()}")
     }
 
-    private fun clearStoredCredential() {
-        runCatching { credentialStore.clear() }
-    }
+    private fun clearStoredCredential(guard: Long? = null): Boolean =
+        try {
+            if (guard == null) {
+                credentialStore.clear()
+                true
+            } else {
+                // The guarded form refuses when a newer credential was written since the guard was taken, so
+                // a decision about one stored credential can never delete a later one.
+                credentialStore.clearIfUnchanged(guard)
+            }
+        } catch (error: Throwable) {
+            // Never swallowed: the caller publishes a claim about the store, and a clear that failed makes
+            // that claim false - the token is still there and the next launch would sign the user back in.
+            record("credential_clear_failure", error)
+            false
+        }
+
+    /** The generation the running attempt read its stored credential at, or null when it never read one. */
+    private fun attemptCredentialGuard(): Long? =
+        attemptCredentialGeneration.get().takeIf { it != NO_CREDENTIAL_GENERATION }
 
     /**
      * Records one stage line.
@@ -1134,6 +1265,9 @@ internal class SteamContentSdkSessionBackend(
         const val SESSION_ATTEMPT_TIMEOUT_MS = 5 * 60_000L
         const val SHORT_TOKEN_LENGTH = 32
         const val LONG_TOKEN_LENGTH = 256
+
+        /** "This attempt never read a stored credential", distinct from generation 0, which is a real one. */
+        const val NO_CREDENTIAL_GENERATION = -1L
 
         /** How much of the SDK's rebuild refusal is kept; the bridge already bounds and redacts its own text. */
         const val REBUILD_REASON_LENGTH = 240

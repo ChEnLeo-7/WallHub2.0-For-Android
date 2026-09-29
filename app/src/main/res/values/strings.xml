@@ -993,6 +993,7 @@
     <string name='backend_steam_sdk_session_unavailable'>The Steam Content SDK session is unavailable on this device.</string>
     <string name='backend_steam_signed_in_account'>signed-in Steam account %1$s</string>
     <string name='backend_steam_signed_out'>Signed out of Steam and removed the saved local session.</string>
+    <string name='backend_steam_sign_out_incomplete'>Signed out of Steam, but the saved local sign-in could not be removed from this device.</string>
     <string name='workshop_placeholder_title'>Wallpaper %1$d</string>
     <string name='workshop_placeholder_steam_user'>Steam user</string>
     <string name='workshop_placeholder_steam_user_with_id'>Steam user %1$s</string>

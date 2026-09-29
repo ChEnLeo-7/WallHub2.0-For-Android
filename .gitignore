@@ -75,6 +75,9 @@ signing.properties
 /app/src/test/kotlin/com/wallhub/android/feature/discover/*
 !/app/src/test/kotlin/com/wallhub/android/feature/discover/DiscoverQueryAdapterTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/downloads/
+!/app/src/test/kotlin/com/wallhub/android/feature/library/
+/app/src/test/kotlin/com/wallhub/android/feature/library/*
+!/app/src/test/kotlin/com/wallhub/android/feature/library/SteamSessionRestoreRetryTest.kt
 /app/src/test/kotlin/com/wallhub/android/feature/downloads/*
 !/app/src/test/kotlin/com/wallhub/android/feature/downloads/DownloadsFilterTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/downloads/DownloadProgressCardTest.kt
