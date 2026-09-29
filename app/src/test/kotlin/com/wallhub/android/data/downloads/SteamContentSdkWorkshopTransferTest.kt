@@ -576,4 +576,15 @@ class SteamContentSdkWorkshopTransferTest {
             calls += "close"
         }
     }
+
+    @Test
+    fun `every published failure ordinal has a name, and the refusal is not a network one`() {
+        // The ordinals are the published vocabulary; an unnamed one renders as a bare number in the UI.
+        assertEquals("cancelled", sdkFailureName(TaskFailure.CANCELLED))
+        assertEquals("network", sdkFailureName(TaskFailure.NETWORK))
+        assertEquals("authorization", sdkFailureName(TaskFailure.AUTHORIZATION))
+        // The device reading this pins: a permanent source refusal used to arrive as `NETWORK`, so the user was
+        // told to retry what the service had already refused.
+        assertEquals("cdn refused", sdkFailureName(TaskFailure.CDN_REFUSED))
+    }
 }

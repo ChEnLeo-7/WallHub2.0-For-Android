@@ -424,6 +424,10 @@ internal fun sdkFailureName(ordinal: Long): String? =
         TaskFailure.AUTHORIZATION -> "authorization"
         TaskFailure.INVALID_INPUT -> "invalid input"
         TaskFailure.INTERNAL -> "internal"
+        // A source that refused this request and will keep refusing it. Its own family, because reading it as
+        // "network" told the user to retry something that cannot succeed without the content or the account
+        // changing.
+        TaskFailure.CDN_REFUSED -> "cdn refused"
         else -> "failure $ordinal"
     }
 
