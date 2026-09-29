@@ -47,6 +47,9 @@ signing.properties
 /app/src/test/kotlin/com/wallhub/android/data/*
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/
 !/app/src/test/kotlin/com/wallhub/android/data/settings/
+!/app/src/test/kotlin/com/wallhub/android/data/security/
+/app/src/test/kotlin/com/wallhub/android/data/security/*
+!/app/src/test/kotlin/com/wallhub/android/data/security/AndroidKeystoreEncryptedStringStoreTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/steam/
 !/app/src/test/kotlin/com/wallhub/android/data/steamaccess/
 !/app/src/test/kotlin/com/wallhub/android/data/update/

@@ -25,9 +25,20 @@ internal sealed interface SteamCredentialReadResult {
     ) : SteamCredentialReadResult
 }
 
+/**
+ * The one durable copy of the account this install stays signed in as.
+ *
+ * Every mutation is a compare-and-replace under this instance's own lock. Callers outside cannot make a
+ * read/compare/write atomic by locking around three calls, and the two writers that exist - an attempt
+ * that just authenticated, and a clear issued for a credential the service refused - can interleave, so a
+ * stale clear must be able to say *which* state it decided against and be refused when that state has
+ * moved on. [generation] is that state: it advances on every write and every successful clear.
+ */
 internal class EncryptedSteamCredentialStore(
     private val encryptedStore: EncryptedStringStore,
 ) {
+    private var generation = 0L
+
     constructor(context: Context) : this(
         AndroidKeystoreEncryptedStringStore(
             context = context,
@@ -58,12 +69,50 @@ internal class EncryptedSteamCredentialStore(
         require(credential.accountName.isNotBlank()) { "Steam account name is required" }
         require(credential.refreshToken.isNotBlank()) { "Steam refresh token is required" }
         encryptedStore.write(encodeSteamCredential(credential))
+        generation += 1
     }
 
+    /**
+     * Writes [credential] unless the store already holds that same refresh token.
+     *
+     * The compare runs inside this store's lock, so a clear between a caller's read and its write can no
+     * longer be reverted by the write, and two writers cannot both decide they are changing the value.
+     * Returns whether the store holds [credential]'s token afterwards; a failure to write throws, as
+     * [save] does, and the caller reports it.
+     */
+    @Synchronized
+    fun saveIfChanged(credential: PersistedSteamCredential): Boolean {
+        val stored = (read() as? SteamCredentialReadResult.Value)?.credential?.refreshToken
+        val unchanged = stored != null && stored == credential.refreshToken
+        if (!unchanged) save(credential)
+        return true
+    }
+
+    /** Clears the stored credential. Throws when the underlying store could not be cleared. */
     @Synchronized
     fun clear() {
         encryptedStore.clear()
+        generation += 1
     }
+
+    /**
+     * Clears only when nothing has been written since [generationAtDecision].
+     *
+     * Used by a decision taken against one specific stored credential - "the service refused this token" -
+     * so that a newer credential written while that decision was in flight is not the one that gets wiped.
+     * Returns whether the store is empty *and* this call is what emptied it, or that it refused because the
+     * state had moved on.
+     */
+    @Synchronized
+    fun clearIfUnchanged(generationAtDecision: Long): Boolean {
+        if (generation != generationAtDecision) return false
+        clear()
+        return true
+    }
+
+    /** The value a caller captures before deciding that the credential it read should be cleared. */
+    @Synchronized
+    fun generation(): Long = generation
 
     private companion object {
         const val PREFERENCES_NAME = "wallhub_formal_steam_session"
