@@ -48,6 +48,9 @@ class SteamApiCredentialRepository internal constructor(
     private val state = MutableStateFlow<String?>(null)
     private val migrationMutex = Mutex()
 
+    /** Whether the one migration pass has run; a read that failed is retried by the next collection. */
+    private var migrated = false
+
     val apiKey: Flow<String> =
         flow {
             ensureMigrated()
@@ -60,41 +63,73 @@ class SteamApiCredentialRepository internal constructor(
         migrationMutex.withLock {
             if (normalized.isEmpty()) {
                 secureStore.clear()
+                clearLegacyCopy()
             } else {
                 secureStore.write(normalized)
+                // The plaintext copy from an older build is not kept once an encrypted value exists: leaving
+                // it behind is the whole point of the migration.
+                clearLegacyCopy()
             }
             state.value = normalized
         }
     }
 
+    /**
+     * Resolves the stored key once, preferring the encrypted store and treating the plaintext DataStore entry
+     * as a one-time migration input.
+     *
+     * The important rule is what happens when the encrypted value cannot be read: it is **kept**, nothing is
+     * written, and the legacy plaintext value is *not* adopted. Clearing it destroyed the user's key over a
+     * transient key-store failure, and falling back to the legacy entry then replaced the current key with an
+     * older one; both were one code path. The flow answers empty so the screen can ask for the key again, and
+     * because the pass is not marked done the read is retried on the next collection.
+     */
     internal suspend fun ensureMigrated() {
-        if (state.value != null) return
+        if (migrated) return
         migrationMutex.withLock {
-            if (state.value != null) return
-            val encryptedValue =
-                when (val encrypted = secureStore.read()) {
-                    EncryptedStringReadResult.Missing -> null
-                    is EncryptedStringReadResult.Value -> encrypted.value.trim()
-                    is EncryptedStringReadResult.Unreadable -> {
-                        runCatching {
-                            Log.w(TAG, "Encrypted Steam API credential could not be read", encrypted.cause)
-                        }
-                        secureStore.clear()
-                        null
-                    }
-                }
+            if (migrated) return
+            val encrypted = secureStore.read()
+            val encryptedValue = (encrypted as? EncryptedStringReadResult.Value)?.value?.trim()
             if (!encryptedValue.isNullOrEmpty()) {
                 state.value = encryptedValue
+                clearLegacyCopy()
+                migrated = true
+                return
+            }
+            if (encrypted is EncryptedStringReadResult.Unreadable) {
+                runCatching {
+                    Log.w(TAG, "Encrypted Steam API credential could not be read; it was kept", encrypted.cause)
+                }
+                state.value = ""
                 return
             }
 
             val legacyValue = legacyStore.read().trim()
             if (legacyValue.isNotEmpty()) {
                 secureStore.write(legacyValue)
-                legacyStore.clear()
+                state.value = legacyValue
+                // Only after the encrypted write succeeded: the plaintext entry is the only copy until then,
+                // which is the one thing the previous ordering got right.
+                clearLegacyCopy()
+            } else {
+                state.value = ""
             }
-            state.value = legacyValue
+            migrated = true
         }
+    }
+
+    /**
+     * Removes the plaintext DataStore copy, reporting a failure.
+     *
+     * A failed clear used to be skipped forever afterwards, because the migration only ran on the branch where
+     * the encrypted value was empty. It is attempted whenever a readable encrypted value exists, so a
+     * leftover plaintext key does not survive the next start.
+     */
+    private suspend fun clearLegacyCopy() {
+        runCatching { legacyStore.clear() }
+            .onFailure { error ->
+                runCatching { Log.w(TAG, "The legacy plaintext Steam API credential could not be removed", error) }
+            }
     }
 
     private companion object {
