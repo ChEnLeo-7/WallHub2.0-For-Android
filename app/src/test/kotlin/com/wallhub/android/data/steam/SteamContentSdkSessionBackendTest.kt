@@ -537,6 +537,71 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
+    fun aGuardAnswerInFlightIsCancelledByANewerSignIn() =
+        runTest {
+            val fixture = Fixture()
+            fixture.session.pendingChallengeId = opaqueValue(seed = 191).toByteArray(Charsets.UTF_8)
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.AuthenticationChallenge(SteamContentSdkChallengeKind.EMAIL)
+            val backend = fixture.backend(this)
+            backend.login("account", opaqueValue(seed = 193))
+            advanceUntilIdle()
+            assertEquals(SteamSessionPhase.WAITING_FOR_CODE, backend.session.value.phase)
+
+            // The answer is now a tracked attempt, so the sign-in the user asked for next cancels it instead of
+            // racing it. A coroutine of its own - the shape this used to have - could not be cancelled by
+            // anything, which is how an answer kept reaching the SDK after its session was gone.
+            backend.submitSteamGuardCode(opaqueValue(seed = 197))
+            backend.login("account", opaqueValue(seed = 199))
+            advanceUntilIdle()
+
+            assertEquals(0, fixture.session.answers.size)
+            val stages = fixture.diagnostics.events.mapNotNull { it.attributes["stage"] }
+            assertTrue(stages.contains("attempt_superseded"))
+        }
+
+    @Test
+    fun aSignOutAfterAGuardAnswerStillEndsSignedOut() =
+        runTest {
+            val fixture = Fixture()
+            fixture.session.pendingChallengeId = opaqueValue(seed = 211).toByteArray(Charsets.UTF_8)
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.AuthenticationChallenge(SteamContentSdkChallengeKind.EMAIL)
+            val backend = fixture.backend(this)
+            backend.login("account", opaqueValue(seed = 223))
+            advanceUntilIdle()
+
+            // Which of the two is dispatched first is the dispatcher's business; what has to hold is that the
+            // sign-out is what stands and the stored sign-in is gone.
+            backend.submitSteamGuardCode(opaqueValue(seed = 227))
+            backend.logout()
+            advanceUntilIdle()
+
+            assertEquals(SteamSessionPhase.SIGNED_OUT, backend.session.value.phase)
+            assertEquals(1, fixture.store.clearCalls)
+        }
+
+    @Test
+    fun anUnrevokedServiceLogoutKeepsReportingTheStoredCredential() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 199)),
+            )
+            fixture.session.events += SteamContentSdkSessionEvent.LoggedOut(revoked = false)
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+
+            // The service ended the session without revoking the credential: the phase says the session is over
+            // and the flag says what is stored, which is what the next launch will act on.
+            assertEquals(SteamSessionPhase.SIGNED_OUT, backend.session.value.phase)
+            assertTrue(backend.session.value.hasStoredSession)
+            assertEquals(0, fixture.store.clearCalls)
+        }
+
+    @Test
     fun aRefusedStoredCredentialIsClearedAndReportedExpired() =
         runTest {
             val fixture = Fixture()

@@ -110,6 +110,8 @@ internal class SteamContentSdkSessionBackend(
     private class PendingChallenge(
         val kind: SteamContentSdkChallengeKind,
         val id: ByteArray,
+        /** The session that asked for this challenge, so an answer can never be sent to a later one. */
+        val session: SteamContentSdkPlatformSession,
     )
 
     // ------------------------------------------------------------------
@@ -144,35 +146,51 @@ internal class SteamContentSdkSessionBackend(
 
     override fun submitSteamGuardCode(code: String) {
         val answerText = code.trim()
-        // Claiming the pending challenge atomically keeps a second submission from answering twice. This
-        // runs outside the attempt guard because the attempt that published the code prompt has already
-        // stopped polling by then.
+        // Claiming the pending challenge atomically keeps a second submission from answering twice.
         val challenge = pendingChallenge.getAndSet(null)
         if (answerText.isEmpty() || challenge == null || logoutInProgress.get()) {
             publish(SteamSessionPhase.FAILED, messages.noGuardRequest)
             return
         }
-        scope.launch {
+        // The answer runs as an attempt like every other flow. It used to run in a coroutine of its own, which
+        // no sign-out cancelled and which could release the session a newer attempt had since opened; a typed
+        // code is also a user action, so it supersedes whatever attempt collided with it.
+        launchAttempt(supersedes = true) {
             val session = activeSession.get()
-            if (session == null) {
-                publish(SteamSessionPhase.FAILED, messages.noGuardRequest)
-                return@launch
+            if (session == null || session !== challenge.session) {
+                // The challenge belongs to a session that is no longer the live one: answering it would either
+                // fail against a session that never asked, or be answered into a session nobody is looking at.
+                record("guard_answer_stale")
+                // A failure is only published when there is still a sign-in to report it against: a queued
+                // answer that arrives after a sign-out must not overwrite the phase the sign-out published.
+                if (!logoutInProgress.get()) publish(SteamSessionPhase.FAILED, messages.noGuardRequest)
+                return@launchAttempt
             }
             val answer = answerText.toByteArray(Charsets.UTF_8)
             val accepted =
                 try {
                     withSession { session.respondToChallenge(challenge.id, answer) }
                     true
+                } catch (cancelled: CancellationException) {
+                    // A cancellation is not a refused answer: reporting it as one would publish a failure over
+                    // whatever the cancelling flow is doing.
+                    throw cancelled
                 } catch (error: Throwable) {
                     record("guard_answer_failure", error)
                     false
                 } finally {
                     answer.fill(0)
                 }
+            if (activeSession.get() !== session) {
+                // A newer attempt replaced the session while the answer was in flight; its outcome is not this
+                // one's to publish, and releasing here would close a session this answer does not own.
+                record("guard_answer_superseded")
+                return@launchAttempt
+            }
             if (!accepted) {
                 releaseSession()
                 publish(SteamSessionPhase.FAILED, messages.authRejected)
-                return@launch
+                return@launchAttempt
             }
             publish(SteamSessionPhase.SIGNING_IN, messages.codeSubmitted)
             driveToOutcome(
@@ -827,7 +845,7 @@ internal class SteamContentSdkSessionBackend(
                 if (id == null) {
                     failChallenge(accountName, hasStoredSession)
                 } else {
-                    pendingChallenge.set(PendingChallenge(kind, id))
+                    pendingChallenge.set(PendingChallenge(kind, id, session))
                     publish(
                         SteamSessionPhase.WAITING_FOR_CODE,
                         messages.enterGuardCode,
@@ -1017,11 +1035,15 @@ internal class SteamContentSdkSessionBackend(
                 hasStoredSession = !cleared,
             )
         } else {
+            // The service ended the session without revoking the credential, so this is not a sign-out of the
+            // store: the token is still on disk, and claiming otherwise contradicted the sign-out wording and
+            // the next launch, which would restore it. The phase says the session is over; the flag says what
+            // is stored.
             publish(
                 SteamSessionPhase.SIGNED_OUT,
                 messages.signedOut,
                 accountName = accountName,
-                hasStoredSession = false,
+                hasStoredSession = true,
             )
         }
     }
