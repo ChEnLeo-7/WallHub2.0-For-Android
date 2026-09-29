@@ -275,6 +275,18 @@ internal fun serviceRefusedCredential(detail: String?): Boolean =
 /** The cause marker the SDK prints when Steam itself answered about the credential. */
 private const val REMOTE_RESULT_CAUSE_MARKER = "cause=RemoteResult"
 
+/**
+ * Whether the session domain is in the middle of an attempt.
+ *
+ * A download must not open its own session while an attempt is in flight: that asks for a second live session
+ * for the same account, which the peer refuses, and the device reading shows the cost - a paused task resuming
+ * into a session rebuild was answered `protocol adapter failed` and the download failed.
+ */
+internal fun SteamSessionPhase.isAttemptInFlight(): Boolean =
+    this == SteamSessionPhase.SIGNING_IN ||
+        this == SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION ||
+        this == SteamSessionPhase.WAITING_FOR_CODE
+
 /** Maps an SDK session failure onto the phase the app publishes for it. */
 internal fun steamContentSdkFailurePhase(failure: SteamContentSdkSessionFailure): SteamSessionPhase =
     when (failure) {

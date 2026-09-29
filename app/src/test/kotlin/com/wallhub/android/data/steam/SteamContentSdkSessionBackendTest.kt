@@ -561,6 +561,59 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
+    fun aTransientRestoreFailureIsRetriedAndTheScheduleIsBounded() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 251)),
+            )
+            repeat(24) {
+                fixture.session.events +=
+                    SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.NETWORK)
+            }
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            // Explicit steps rather than advanceUntilIdle: the schedule is time-based, and a test that drains
+            // everything hides whether a retry was scheduled at all.
+            advanceTimeBy(1L)
+            runCurrent()
+            val stages = fixture.diagnostics.events.mapNotNull { it.attributes["stage"] }
+            // The device reading this answers: a single restore attempt failed, and the app then sat in FAILED -
+            // signed out, with downloads failing - until a human retried four minutes later. The stage carries
+            // its parameters, so this matches the name rather than the whole line.
+            assertTrue(
+                stages.any { it.startsWith("session_recovery_scheduled") },
+                "no retry was scheduled: $stages",
+            )
+            val openCallsAfterFirstAttempt = fixture.platform.openCalls
+
+            // The first retry is five seconds out, and it does run.
+            advanceTimeBy(5_001L)
+            runCurrent()
+            assertTrue(
+                fixture.platform.openCalls > openCallsAfterFirstAttempt,
+                "the scheduled recovery attempt did not run",
+            )
+
+            // The whole schedule is 5s + 15s + 30s; past it nothing more is asked for, so a network that is
+            // really down is reported rather than hammered.
+            advanceTimeBy(60_000L)
+            runCurrent()
+            val afterSchedule = fixture.platform.openCalls
+            assertTrue(
+                stages.any { it.startsWith("session_recovery_exhausted") } ||
+                    fixture.diagnostics.events
+                        .mapNotNull { it.attributes["stage"] }
+                        .any { it.startsWith("session_recovery_exhausted") },
+                "the schedule never ended",
+            )
+            advanceTimeBy(120_000L)
+            runCurrent()
+            assertEquals(afterSchedule, fixture.platform.openCalls)
+        }
+
+    @Test
     fun aGuardAnswerInFlightIsCancelledByANewerSignIn() =
         runTest {
             val fixture = Fixture()

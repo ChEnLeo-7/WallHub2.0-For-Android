@@ -199,4 +199,18 @@ class SteamContentSdkSessionMappingTest {
         assertFalse(serviceRefusedCredential(""))
         assertFalse(serviceRefusedCredential(null))
     }
+
+    @Test
+    fun `only an attempt in progress makes a download wait`() {
+        // The predicate decides whether a download waits for the account session instead of opening a competing
+        // one, so it must cover exactly the phases that mean "an attempt is running".
+        assertTrue(SteamSessionPhase.SIGNING_IN.isAttemptInFlight())
+        assertTrue(SteamSessionPhase.WAITING_FOR_CODE.isAttemptInFlight())
+        assertTrue(SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION.isAttemptInFlight())
+        assertFalse(SteamSessionPhase.SIGNED_IN.isAttemptInFlight())
+        assertFalse(SteamSessionPhase.SIGNED_OUT.isAttemptInFlight())
+        assertFalse(SteamSessionPhase.FAILED.isAttemptInFlight())
+        assertFalse(SteamSessionPhase.RESTORABLE.isAttemptInFlight())
+        assertFalse(SteamSessionPhase.EXPIRED.isAttemptInFlight())
+    }
 }

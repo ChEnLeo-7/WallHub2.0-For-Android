@@ -2,9 +2,11 @@ package com.wallhub.android.data.downloads
 
 import android.util.Log
 import com.wallhub.android.core.model.SteamContentCredential
+import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.data.steam.SteamContentSdkEngine
 import com.wallhub.android.data.steam.SteamContentSdkLiveSession
 import com.wallhub.android.data.steam.SteamContentSdkRouteFactory
+import com.wallhub.android.data.steam.isAttemptInFlight
 import io.steamcontent.sdk.DepotRangeStream
 import io.steamcontent.sdk.SessionEventKind
 import io.steamcontent.sdk.SessionFailure
@@ -13,7 +15,9 @@ import io.steamcontent.sdk.SteamDownloadTask
 import io.steamcontent.sdk.SteamSession
 import java.io.File
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -41,6 +45,7 @@ internal class SteamContentSdkEngineSessionOpener
     constructor(
         private val engine: SteamContentSdkEngine,
         private val routes: SteamContentSdkRouteFactory,
+        private val sessionRepository: Provider<SteamSessionRepository>,
     ) : SteamContentSdkSessionOpener {
         override suspend fun open(credential: SteamContentCredential): SteamContentSdkSession =
             withContext(Dispatchers.IO) {
@@ -55,6 +60,15 @@ internal class SteamContentSdkEngineSessionOpener
                 if (live != null) {
                     Log.i(TAG, "content session reused=true")
                     return@withContext SteamContentSdkEngineSession(live, ownsEngine = false)
+                }
+                // No live session, but the account session may be mid-attempt. Opening our own then asks for a
+                // second live session for the same account, which the peer refuses - the device reading showed
+                // exactly that, as `protocol adapter failed`, while a paused task resumed into a session
+                // rebuild. Waiting for the attempt to settle is what keeps the two planes from competing.
+                val recovered = awaitAttemptToSettle(credential.accountName)
+                if (recovered != null) {
+                    Log.i(TAG, "content session reused=after-recovery")
+                    return@withContext SteamContentSdkEngineSession(recovered, ownsEngine = false)
                 }
                 Log.i(TAG, "content session reused=false")
                 return@withContext try {
@@ -72,6 +86,25 @@ internal class SteamContentSdkEngineSessionOpener
                     }
                 }
             }
+
+        /**
+         * Waits, for a bounded time, for an in-flight account attempt to produce a session this path can borrow.
+         *
+         * Returns null when no attempt was in flight, when the attempt settled without a session, or when the
+         * wait ran out - in every one of those cases the caller falls back to restoring its own session, which is
+         * what a download does when the session domain is not holding one.
+         */
+        private suspend fun awaitAttemptToSettle(accountName: String): SteamContentSdkEngine? {
+            if (!sessionRepository.get().session.value.phase.isAttemptInFlight()) return null
+            Log.i(TAG, "content session waiting for the account attempt to settle")
+            val deadline = System.nanoTime() + RECOVERY_WAIT_NANOS
+            while (System.nanoTime() < deadline) {
+                delay(RECOVERY_POLL_MS)
+                SteamContentSdkLiveSession.authenticated(accountName)?.let { return it }
+                if (!sessionRepository.get().session.value.phase.isAttemptInFlight()) return null
+            }
+            return null
+        }
 
         /**
          * Opens the engine on the platform route and restores one stored account.
@@ -263,3 +296,9 @@ private class SteamContentSdkEngineTask(
         task.close()
     }
 }
+
+/** How long a download waits for an in-flight account attempt before restoring its own session. */
+private const val RECOVERY_WAIT_NANOS = 20_000_000_000L
+
+/** How often that wait re-checks whether the account session has come back. */
+private const val RECOVERY_POLL_MS = 250L

@@ -8,6 +8,7 @@ import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
@@ -90,6 +91,10 @@ internal class SteamContentSdkSessionBackend(
      * restore held the gate for up to its whole five-minute deadline.
      */
     private val pendingAttempt = AtomicReference<(suspend () -> Unit)?>(null)
+
+    /** How many recovery retries the current outage has spent, and the one waiting to run. */
+    private val recoveryAttempts = AtomicInteger(0)
+    private val recoveryJob = AtomicReference<Job?>(null)
 
     /**
      * The credential-store generation the running attempt read its stored credential at, or
@@ -594,9 +599,11 @@ internal class SteamContentSdkSessionBackend(
                 "session_maintenance",
                 detail =
                     "pump=" +
-                        drained.fold({ it.outcome.name.lowercase() }, { "failed" }) +
+                        drained.fold({ it.outcome.name.lowercase() }, ::maintenanceFailure) +
                         " step=" +
-                        step.fold({ it.step.name.lowercase() }, { "failed" }),
+                        step.fold({ it.step.name.lowercase() }, ::maintenanceFailure) +
+                        " error=" +
+                        (sdkFailureDetail(session)?.let { "sdk" } ?: "none"),
             )
             session.state()
         }
@@ -907,6 +914,9 @@ internal class SteamContentSdkSessionBackend(
         hasStoredSession: Boolean,
         stage: String,
     ) {
+        // A signed-in session ends whatever outage the retries were riding out.
+        recoveryAttempts.set(0)
+        recoveryJob.getAndSet(null)?.cancel()
         if (logoutInProgress.get()) {
             // The session this edge belongs to is being torn down. A Guard answer runs in its own coroutine
             // rather than under the attempt gate, so it can reach here after logout has already published
@@ -1142,6 +1152,13 @@ internal class SteamContentSdkSessionBackend(
                     hasStoredSession = hasStoredSession,
                 )
         }
+        // A transient failure on the restore path is retried a bounded number of times. The device showed
+        // what one unretried failure costs: a CM link died silently, the in-place rebuild was refused, the
+        // single restore attempt failed the same way, and the app then sat in FAILED - signed out, with
+        // downloads failing - until a human retried four minutes later.
+        if (restore && hasStoredSession && failure == SteamContentSdkSessionFailure.NETWORK) {
+            scheduleRecoveryRetry()
+        }
         return true
     }
 
@@ -1277,6 +1294,48 @@ internal class SteamContentSdkSessionBackend(
         )
     }
 
+    /**
+     * Schedules one retry of a restore that failed for a reason that can clear.
+     *
+     * Bounded on purpose: a network that is really down should be reported to the user rather than hammered, so
+     * the attempts are counted, spaced out, and dropped as soon as an attempt signs in.
+     */
+    private fun scheduleRecoveryRetry() {
+        val attempt = recoveryAttempts.incrementAndGet()
+        if (attempt > SESSION_RECOVERY_ATTEMPTS) {
+            recoveryAttempts.set(0)
+            record("session_recovery_exhausted attempts=$SESSION_RECOVERY_ATTEMPTS")
+            return
+        }
+        val delayMs =
+            SESSION_RECOVERY_DELAYS_MS.getOrElse(attempt - 1) { SESSION_RECOVERY_DELAYS_MS.last() }
+        record("session_recovery_scheduled attempt=$attempt delay_ms=$delayMs")
+        val job =
+            scope.launch {
+                delay(delayMs)
+                if (mutableSession.value.phase == SteamSessionPhase.SIGNED_IN) return@launch
+                restorePersistedSession()
+            }
+        recoveryJob.getAndSet(job)?.cancel()
+    }
+
+    /**
+     * Names why a maintenance call failed.
+     *
+     * A device reading that only says `pump=failed` cannot tell a link the peer closed from a session handle
+     * that was already gone, and the two need different answers. The message is the SDK's own bounded text, so
+     * it is passed on with control characters removed and nothing else added.
+     */
+    private fun maintenanceFailure(error: Throwable): String {
+        val detail =
+            error.message
+                ?.filter { !it.isISOControl() }
+                ?.trim()
+                ?.take(MAINTENANCE_REASON_LENGTH)
+                ?.takeIf { it.isNotEmpty() }
+        return "failed:" + (detail ?: error.javaClass.simpleName)
+    }
+
     /** The stage name the device reading uses, from the same flag the failure line and the store compare use. */
     private fun restoreStage(restore: Boolean): String = if (restore) "restore" else "logon"
 
@@ -1298,6 +1357,15 @@ internal class SteamContentSdkSessionBackend(
 
         /** "This attempt never read a stored credential", distinct from generation 0, which is a real one. */
         const val NO_CREDENTIAL_GENERATION = -1L
+
+        /** How much of a maintenance failure's own text a device reading keeps. */
+        const val MAINTENANCE_REASON_LENGTH = 160
+
+        /** How many times a transient restore failure is retried before the failure is left standing. */
+        const val SESSION_RECOVERY_ATTEMPTS = 3
+
+        /** The gaps between those retries: long enough for a gateway hiccup to pass, short enough to notice. */
+        val SESSION_RECOVERY_DELAYS_MS = longArrayOf(5_000L, 15_000L, 30_000L)
 
         /** How much of the SDK's rebuild refusal is kept; the bridge already bounds and redacts its own text. */
         const val REBUILD_REASON_LENGTH = 240
