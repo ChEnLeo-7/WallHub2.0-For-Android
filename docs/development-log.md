@@ -1359,3 +1359,59 @@ one call and zeroed (`:137-147`, `:355-370`, `:421-431`); `SIGNED_IN` is publish
 `:316-326`); the success message never claims a save that did not happen, because `messages.signedIn` is
 `backend_steam_sdk_session_only` (`SteamContentSdkSessionMessages.kt:78-79`) - the string that does claim it,
 `backend_steam_login_success`, is dead and can be deleted with its `zh-rCN` entry.
+
+## 2026-09-29 (33) - all eight account-persistence findings are fixed, and none of them on a device yet
+
+The review in entry (32) left eight findings and two smaller inconsistencies. They are now all addressed, in two
+rounds and nine commits. The readings below are unit-level; the device checks this path still owes are listed at
+the end, and until they are taken none of this is a device conclusion.
+
+**Round one** (`c8e94be`, `b0ac460`, `57726f9`): F1, F2, the engine/session-loss state bug, F3a, F4's first half
+and F6.
+
+**Round two** (`ea103c2`, `054d1cf`, `0c6e6c5`, `c0112d3`, `23622f0`, `c8c21fd`):
+
+- **F5** - the API-key store kept none of its promises. An unreadable encrypted value was cleared, destroying
+  the user's key over a transient key-store failure; the legacy plaintext value was then adopted, silently
+  replacing the current key with an older one; and a legacy clear that failed was skipped forever afterwards,
+  because the migration only ran when the encrypted value was empty. An unreadable value is now kept and the
+  pass retries, the plaintext entry is consulted only when the encrypted store is empty, and it is removed
+  whenever a readable encrypted value exists.
+- **F4's second half** - `submitSteamGuardCode` ran in a coroutine of its own, which no sign-out cancelled and
+  which could release a session a newer attempt had opened. It is an attempt now, `PendingChallenge` carries the
+  session that asked for the challenge, a cancellation is rethrown instead of being reported as a refused code,
+  and a queued answer that arrives after a sign-out is recorded rather than publishing a failure over the phase
+  the sign-out just set. That last part is a defect this batch's own test exposed: the first version of the
+  routing published `FAILED` over `SIGNED_OUT`.
+- **F7** - the provider collapsed `Unreadable` into null through `load()`, so the download and range arms
+  reported "none was read" while an undecryptable record sat in the store. It answers null only for a store that
+  holds nothing and throws a named failure otherwise.
+- **F8** - `PersistedSteamCredential` and `SteamContentCredential` are data classes whose generated `toString()`
+  printed the refresh token. Both are hand-redacted now, as `AppPreferences` already was.
+- **the unrevoked service logout** published `hasStoredSession=false` without clearing the store; it now reports
+  what is stored.
+- **the dead `backend_steam_login_success` string** is gone from both locales, referenced by nothing.
+- **the shutdown path leaked the maintenance loop**: `close()` cancelled the attempt but not the loop driving the
+  session it was about to close, so the loop kept ticking until its next interval noticed. This one was not in the
+  review list - it was found re-reading the file - and it is fixed with a test that asserts no tick happens after
+  the backend is closed.
+
+Two hazards inside the batch are worth keeping in mind for any future work on the attempt gate. The first: the
+gate must open from `Job.invokeOnCompletion`, not from the attempt body's own `finally` - a job cancelled before
+its body ever runs never enters that `finally`, which leaves the gate closed for good; the first implementation
+did exactly that. The second: `cancelAndJoin` means a *tracked* attempt can never publish after a sign-out, so the
+only way a stale auth edge could land was the untracked Guard coroutine, which is what this batch removed.
+
+Verification: `:app:testDebugUnitTest` + `:app:lintDebug` on the worker, `TESTS_EXIT=0`, **270 tests, 0 failures,
+0 errors**, `BUILD SUCCESSFUL` with `Task :app:lintDebug` actually executed. The suite grew 227 -> 270 across the
+two rounds, and the keystore layer - which had no test at all - now has ten.
+
+**Device readings still owed for this path**, because nothing here has run on the phone yet:
+
+1. an existing stored session still restores with no unexpected re-login (the one check that covers the
+   `java.util.Base64` swap and the keystore seams, which only the device exercises);
+2. a refused credential is cleared once and reported expired, and is not replayed on the next start;
+3. a sign-out reports `sign_out_incomplete` only when the store really could not be cleared;
+4. a lost connection lands in `RESTORABLE`, re-restores, and Workshop reads work again afterwards (the browse
+   path needs the engine the session domain reopens);
+5. pause -> resume, cancel, and a paused-then-cancelled task, which exercise the gate changes.
