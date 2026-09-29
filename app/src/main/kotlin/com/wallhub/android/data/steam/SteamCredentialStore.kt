@@ -11,7 +11,17 @@ internal data class PersistedSteamCredential(
     val refreshToken: String,
     val personaName: String? = null,
     val avatarUrl: String? = null,
-)
+) {
+    /**
+     * The token is the account, and a `data class` would otherwise print it.
+     *
+     * Every other secret in this app is redacted by hand for the same reason (`AppPreferences`), and the one
+     * careless `"$credential"` in a log or an exception message is all it takes.
+     */
+    override fun toString(): String =
+        "PersistedSteamCredential(accountName=$accountName, refreshToken=<redacted>, " +
+            "personaName=$personaName, avatarUrl=$avatarUrl)"
+}
 
 internal sealed interface SteamCredentialReadResult {
     data object Missing : SteamCredentialReadResult

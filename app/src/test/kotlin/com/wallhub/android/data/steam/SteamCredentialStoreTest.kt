@@ -1,5 +1,6 @@
 package com.wallhub.android.data.steam
 
+import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.data.security.EncryptedStringReadResult
 import com.wallhub.android.data.security.EncryptedStringStore
 import kotlin.test.Test
@@ -123,6 +124,29 @@ class SteamCredentialStoreTest {
 
         // A clear that threw is a clear that did not happen, and the caller publishes on that distinction.
         assertEquals(credential, store.load())
+    }
+
+    @Test
+    fun `the stored credential does not print its token`() {
+        val credential = PersistedSteamCredential(accountName = "account", refreshToken = "refresh-token-value")
+
+        val rendered = credential.toString()
+
+        // A data class prints every field unless it is told not to, and one `"$credential"` in a log is the
+        // whole account.
+        assertFalse(rendered.contains("refresh-token-value"))
+        assertTrue(rendered.contains("<redacted>"))
+    }
+
+    @Test
+    fun `the content credential does not print its token`() {
+        val credential =
+            SteamContentCredential(
+                accountName = "account",
+                refreshToken = "refresh-token-value",
+            )
+
+        assertFalse(credential.toString().contains("refresh-token-value"))
     }
 
     private class FakeEncryptedStringStore(

@@ -107,7 +107,11 @@ data class SteamSessionState(
 data class SteamContentCredential(
     val accountName: String,
     val refreshToken: String,
-)
+) {
+    /** Redacted like every other holder of this token: the generated `toString()` would print it. */
+    override fun toString(): String =
+        "SteamContentCredential(accountName=$accountName, refreshToken=<redacted>)"
+}
 
 const val DEFAULT_HOME_PAGE_SIZE = 30
 val HOME_PAGE_SIZE_OPTIONS = listOf(10, 15, 30, 50)
