@@ -1260,3 +1260,102 @@ invocation died in 5 seconds with `IOException: 文件名、目录名或卷标�
 `SdkLocator.validateSdkPath`. The cause was my own `local.properties`, written as `sdk.dir=F:\AI-Studio\.android-sdk`.
 A `.properties` file treats `\` as an escape character, so that reads back as `F:AI-Studio.android-sdk`. The
 worker daemon writes `F\:\\AI-Studio\\.android-sdk` for exactly this reason; the hand-run must too.
+
+## 2026-09-29 (32) - the account-persistence review: one dead cleanup path, and three silent failures
+
+A read-only review of the "staying signed in" path (`AndroidKeystoreEncryptedStringStore`, `SteamCredentialStore`,
+`SteamContentSdkCredentialProvider`, the credential half of `SteamContentSdkSessionBackend`, its DI wiring, the
+backup rules, and the sibling API-key store) produced the findings below. Two independent adversarial reviews ran
+against the same surface; where they disagreed with the code, the code won and the correction is in the finding.
+
+**F1 (highest) - the only path that clears a dead credential cannot be reached, so a revoked token is replayed
+forever.** `publishAttemptFailure` clears the store only for `SteamSessionPhase.EXPIRED`
+(`SteamContentSdkSessionBackend.kt:971-979`); every other class, including `AUTHENTICATION_FAILED`, publishes
+FAILED with `hasStoredSession` unchanged (`:989-999`), and `SteamContentSdkFailurePhase` maps
+`AUTHENTICATION_FAILED` to FAILED (`SteamContentSdkSessionPlatform.kt:268-274`). EXPIRED is reachable only from
+`SESSION_EXPIRED`, which the SDK emits for `ErrorCode::SessionExpired | AuthenticationRequired`
+(`Steam Content SDK/crates/sc-content-ffi/src/session.rs:390`) - and `SessionExpired` is **never constructed
+anywhere in the workspace** (only the variant, its display string, its retry advice, and the two consumers:
+`sc-types/src/lib.rs:327/356/389`, `download.rs:261`, `session.rs:390`). The one real producer of
+`AuthenticationRequired` is the content-target layer for `NotAuthenticated | SessionUnavailable`
+(`crates/sc-content/src/content_target.rs:78`), not a logon rejection, which the SDK classifies as
+`AuthenticationFailure` -> `AUTHENTICATION_FAILED` (`session.rs:375-376`). Meanwhile `LibraryScreen.refresh()`
+calls `restorePersistedSession()` whenever `hasStoredSession && phase in (RESTORABLE, FAILED)`
+(`LibraryScreen.kt:634-638`, `:1976-1981`), so the rejected token is re-presented on every refresh with no
+backoff and no cap. Minimal fix: on the **restore** path, treat `AUTHENTICATION_FAILED`/`UNSUPPORTED` as a dead
+stored credential - clear it and publish EXPIRED/`hasStoredSession=false` exactly as the EXPIRED branch does.
+
+**F2 - `logout()` can fail to clear and still claim it did.** `clearStoredCredential()` is
+`runCatching { credentialStore.clear() }` (`:1035-1037`), and `clear()` raises when the preferences commit fails
+(`AndroidKeystoreEncryptedStringStore.kt:80`). Logout then publishes `SIGNED_OUT` with
+`hasStoredSession = false` (`:221`) regardless, so the next launch restores the account the user just signed out
+of. Minimal fix: make clear() report success and only publish the signed-out claim when it really cleared.
+
+**F3 - `SteamDeviceSeedStore.seed()` returns a seed it failed to persist.** `runCatching { file.writeBytes(...) }`
+swallows the failure and the generated seed is returned anyway (`SteamDeviceSeedStore.kt:35-43`). `seed()` is
+called on every engine creation (`SteamContentSdkEngine.kt:135`), so on a device where that write fails the
+derived `machine_id` changes on every open - the exact "Steam Guard sees a new device" failure the class's own
+documentation exists to prevent - silently. Minimal fix: report the write failure instead of discarding it.
+
+**F4 - a user-initiated sign-in is silently dropped while any attempt is running.** `launchAttempt` returns
+without a trace when `attemptInProgress` or `logoutInProgress` is set (`:267-269`), and a background restore can
+hold that gate for up to `SESSION_ATTEMPT_TIMEOUT_MS = 5 min` (`:1134`). `login()` (`:118`) and
+`restorePersistedSession()` (`:102`) both go through it, so a tap can produce nothing at all. Minimal fix: keep
+the single-attempt invariant but publish a visible reason, or supersede the running attempt when the user asks for
+one.
+
+**F5 - the sibling API-key store destroys what it cannot read, and can resurrect an older plaintext key.** On
+`Unreadable`, `ensureMigrated` clears the encrypted blob (`SteamApiCredentialRepository.kt:78-84`) and then falls
+back to the legacy plaintext DataStore (`:91-95`), so a transient keystore read failure both loses the current key
+and can adopt a stale one. That policy is deliberate for the API key (pinned by
+`SteamApiCredentialRepositoryTest.kt:55-62`), but the resurrection half is not: it is reachable precisely because
+the legacy clear is skipped whenever the encrypted value is already non-empty (`:86-89`), so a legacy plaintext
+key that survived an earlier failed clear stays on disk forever and is preferred the first time the encrypted read
+fails. The Steam session store takes the opposite and better policy - an unreadable session is retained, never
+cleared (`SteamCredentialStoreTest.kt:21-39`).
+
+**F6 - the persistence test asserts a transaction the product does not implement.**
+`SteamCredentialTransactionTest.kt:58-98` defines its own `FakeCredentialStore` with a generation counter, so
+"stale expired-session clear cannot remove a newer login" (`:47-56`) holds only inside the test file. Production
+has no generation guard: `writeRetainedToken` reads, compares, then saves (`:856-875`) with per-call locking only,
+and the only `deleteKey()` caller is the recovery branch at `AndroidKeystoreEncryptedStringStore.kt:73`. There is
+also no test of `AndroidKeystoreEncryptedStringStore` at all. This is a record-integrity finding: the suite reads
+as if the guarantee were covered.
+
+**F7 (low, latent) - unreadable state reaches the data plane as "no credential".** `load()` collapses `Unreadable`
+to null (`SteamCredentialStore.kt:53-54`), so the download and range arms report "the stored Steam refresh token;
+none was read" (`SteamContentSdkWorkshopTransfer.kt:221-226`, `SteamWorkshopVideoStreamRepository.kt:118-121`)
+when the blob exists but cannot be decrypted - a different and less honest statement than the session layer's
+`sessionStorageUnavailable` (`:294-301`).
+
+**F8 (low, latent) - `PersistedSteamCredential` and `SteamContentCredential` are `data class`es whose generated
+`toString()` prints the refresh token** (`SteamCredentialStore.kt:9-14`, `AppModels.kt:107-110`), unlike
+`AppPreferences`, which hand-redacts its secrets (`AppModels.kt:157-177`). No current call site interpolates them,
+so nothing leaks today.
+
+**Corrections to the cross-checks, after reading the code:** (a) the recovery branch in `write()` cannot destroy a
+*valid* stored account - it fires only on `KeyPermanentlyInvalidatedException`, i.e. on a key that has already made
+the old ciphertext undecryptable, and for this non-auth-bound key that exception is unlikely to be thrown at all;
+the real gap is that any *other* unusable-key condition is an unrecoverable, silent dead end because
+`getOrCreateKey()` never replaces an existing key (`:88-105`); (b) overwriting a store that read as `Unreadable`
+(`SteamContentSdkSessionBackend.kt:851-875`) is a documented recovery, and it discards nothing recoverable - the
+only loss would be the currently-stored value, which in that state is already undecryptable; (c) logout does not
+leave a stored credential behind: `persistRetainedToken` re-reads `activeSession` (`:833`), which logout has
+already cleared, so the late write is skipped - what survives is the stale *publish*, since
+`publishSignedIn` (`:801`, `:809`) never consults `logoutInProgress` and the Guard-answer coroutine
+(`:131`) is not tracked by `attemptJob`, so a `SIGNED_IN` can land after `SIGNED_OUT` over a session that is
+already closed; (d) the production credential store has exactly one constructor call site
+(`SteamSessionBackendModule.kt:67`), so the "two writers" concern is not a duplicate-instance bug - the
+check-then-act window in F6 is the real one, and it needs overlapping attempts to be reachable.
+
+Reviewed and clean, so it is not re-audited: AES-256-GCM with a provider-generated per-write IV persisted in the
+same `commit()` as the ciphertext and no nonce reuse (`AndroidKeystoreEncryptedStringStore.kt:107-121`);
+`allowBackup="false"` plus blanket excludes in `backup_rules.xml` and `data_extraction_rules.xml`; the `\u001F`
+record framing cannot be injected because every v2 field is Base64 (`SteamCredentialStore.kt:74-92`); malformed
+records become `Unreadable`, never an empty credential (`:94-113`); no token reaches logcat or diagnostics (only a
+coarse length bucket, `SteamContentSdkSessionBackend.kt:1109-1129`); passwords and Guard answers are converted for
+one call and zeroed (`:137-147`, `:355-370`, `:421-431`); `SIGNED_IN` is published only from an SDK
+`AUTHENTICATED` state (`:633-636`, `:704-707`); one live-candidate retry and no retry loop (`:388-391`,
+`:316-326`); the success message never claims a save that did not happen, because `messages.signedIn` is
+`backend_steam_sdk_session_only` (`SteamContentSdkSessionMessages.kt:78-79`) - the string that does claim it,
+`backend_steam_login_success`, is dead and can be deleted with its `zh-rCN` entry.
