@@ -96,6 +96,9 @@ class SteamContentSdkEngine
         private var engine: SteamContentEngine? = null
         private var session: SteamSession? = null
 
+        /** The route the live engine was created for, so a reopen can tell a reconnect from a config change. */
+        private var engineRoute: Route? = null
+
         /** Reports whether the preview AAR's native library can be used at all on this device. */
         val available: Boolean =
             runCatching { SteamContentEngine.nativeAbiMajor() }
@@ -110,6 +113,18 @@ class SteamContentSdkEngine
         @Synchronized
         fun open(route: Route = Route()): SteamSession? {
             if (!available) return null
+            // A reopen for the same route keeps the engine and replaces only its session. Closing the engine
+            // here - which is what this used to do unconditionally - dropped every task another holder had
+            // started on it, because the SDK keeps tasks per engine and releases them with it: a download
+            // that had borrowed this engine then polled a released handle and failed with
+            // `invalid task handle`. The configuration is immutable per engine, so a route change is still a
+            // restart.
+            val existing = engine
+            if (existing != null && canReuseEngine(engineRoute, route)) {
+                runCatching { session?.close() }
+                session = null
+                return runCatching { existing.openSession() }.getOrNull()?.also { session = it }
+            }
             close()
             val roots =
                 if (route.extraTrustRootPem.isNullOrEmpty()) {
@@ -137,7 +152,22 @@ class SteamContentSdkEngine
                 )
             created.start()
             engine = created
+            engineRoute = route
             return created.openSession().also { session = it }
+        }
+
+        /**
+         * Releases the open session and keeps the engine.
+         *
+         * The engine owns the data plane: download tasks and range streams belong to it and the SDK releases
+         * them only when the engine itself is closed. A session is dropped whenever the connection is lost or
+         * an attempt ends, so it must be releasable on its own - otherwise losing the account connection
+         * takes every running transfer with it.
+         */
+        @Synchronized
+        fun closeSession() {
+            runCatching { session?.close() }
+            session = null
         }
 
         /** Returns the open session, or null when the engine is closed. */
@@ -286,6 +316,7 @@ class SteamContentSdkEngine
             runCatching { engine?.close() }
             session = null
             engine = null
+            engineRoute = null
         }
 
         /**
@@ -594,3 +625,15 @@ internal fun trustBundlePem(derCertificates: List<ByteArray>): ByteArray {
 
 /** The line length PEM bodies use, in characters of Base64 text. */
 private const val PEM_LINE_LENGTH = 64
+
+/**
+ * Whether a reopen may keep the engine that is already live.
+ *
+ * The engine's settings are immutable once it is created - transport, candidates, proxies and trust roots are
+ * all baked in - so only a request for the same route may reuse it. Everything else is a restart, and a
+ * restart is what drops the tasks the engine owns.
+ */
+internal fun canReuseEngine(
+    openRoute: SteamContentSdkEngine.Route?,
+    requested: SteamContentSdkEngine.Route,
+): Boolean = openRoute != null && openRoute == requested

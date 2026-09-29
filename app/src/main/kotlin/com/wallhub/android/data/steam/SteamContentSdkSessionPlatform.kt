@@ -536,6 +536,9 @@ private class SteamContentSdkEnginePlatformSession(
 
     override fun close() {
         SteamContentSdkLiveSession.clear(engine)
-        engine.close()
+        // Only the session. This engine is the process-wide session engine, and a download or a range stream
+        // may have borrowed it; closing the engine here is what turned a lost connection into
+        // `invalid task handle` on a transfer that was still running.
+        engine.closeSession()
     }
 }
