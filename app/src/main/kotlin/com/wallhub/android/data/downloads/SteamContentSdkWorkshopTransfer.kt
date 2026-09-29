@@ -368,8 +368,8 @@ internal class SteamContentSdkWorkshopTransfer
                         // read, then the manager's request code, server list, depot key and per-record token
                         // calls, the manifest fetch and its decode, then the source opening. The name is the
                         // SDK's own kind constant, so an ordinal in a device reading cannot be mistaken for
-                        // per-chunk progress: a session-backed run publishes CHUNK_PROGRESS nowhere, and
-                        // CHECKPOINT_COMMITTED is its one byte-carrying event, published when the run ends.
+                        // per-chunk progress: a session-backed run now publishes CHUNK_PROGRESS per committed
+                        // chunk, and CHECKPOINT_COMMITTED is the durable checkpoint it publishes when it stops.
                         // Ordinals and one byte count only, no host, token or URL.
                         task.pollEvent(SDK_EVENT_POLL_MS)?.let { event ->
                             Log.i(
@@ -432,8 +432,8 @@ internal fun sdkFailureName(ordinal: Long): String? =
  *
  * A device reading that shows a bare ordinal cannot be acted on, and the two byte-carrying kinds read
  * very differently: [TaskEventKind.CHECKPOINT_COMMITTED] is the durable checkpoint a run publishes when
- * it stops, while [TaskEventKind.CHUNK_PROGRESS] is the per-chunk reading a session-backed run does not
- * publish at all. An unknown kind stays an ordinal because the SDK appends kinds and this app must not
+ * it stops, while [TaskEventKind.CHUNK_PROGRESS] is the per-chunk reading a session-backed run publishes
+ * while it fetches. An unknown kind stays an ordinal because the SDK appends kinds and this app must not
  * rename a number it does not know.
  */
 internal fun sdkTaskEventName(kind: Int): String =
