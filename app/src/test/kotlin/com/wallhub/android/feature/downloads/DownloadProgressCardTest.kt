@@ -10,10 +10,9 @@ import org.junit.Test
 /**
  * Pins what the download card may show while the SDK is transferring.
  *
- * A session-backed download reports no durably committed byte until its run ends, so for the whole
- * transfer the card has no percentage and no measured rate. A determinate 0% bar and a 正在测速
- * (measuring) line are both claims the app cannot support: the card must move without inventing a
- * number, and must fall back to the plain status until it has a real reading.
+ * Until the first durable byte reading arrives the card has no percentage and no measured rate. It shows an
+ * empty, still bar and the phase line - not an invented number, and not a sweeping animation either, because
+ * that is motion the transfer has not produced.
  */
 class DownloadProgressCardTest {
     private fun task(
@@ -34,7 +33,8 @@ class DownloadProgressCardTest {
         )
 
     @Test
-    fun `a running download with no committed bytes asks for an indeterminate bar`() {
+    fun `a running download with no committed bytes has no measured fraction`() {
+        // Null is "nothing measured yet": the card draws its bar empty and still until this answers a number.
         assertNull(
             downloadProgressFraction(
                 task(status = DownloadStatus.DOWNLOADING, totalBytes = 43_388_068L),

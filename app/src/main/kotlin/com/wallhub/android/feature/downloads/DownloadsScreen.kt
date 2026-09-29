@@ -872,10 +872,11 @@ private fun DownloadTaskCard(
                             trackColor = progressBarTrack,
                         )
                     } else {
-                        // No durable byte reading exists yet, so the card animates rather than pinning a
-                        // determinate bar at zero: a 0% bar on a transfer that is really moving is what made
-                        // it read as frozen.
+                        // No durable byte reading exists yet. The bar is drawn empty and still rather than
+                        // animating: a sweeping indeterminate bar is motion the transfer has not produced, and
+                        // the phase line beside it is what says the download is running.
                         LinearProgressIndicator(
+                            progress = { 0f },
                             modifier = progressBarModifier,
                             trackColor = progressBarTrack,
                         )
