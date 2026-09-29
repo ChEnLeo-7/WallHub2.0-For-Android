@@ -95,15 +95,27 @@ internal class SteamContentSdkEngineSessionOpener
          * what a download does when the session domain is not holding one.
          */
         private suspend fun awaitAttemptToSettle(accountName: String): SteamContentSdkEngine? {
-            if (!sessionRepository.get().session.value.phase.isAttemptInFlight()) return null
+            if (!accountAttemptInFlight()) return null
             Log.i(TAG, "content session waiting for the account attempt to settle")
             val deadline = System.nanoTime() + RECOVERY_WAIT_NANOS
             while (System.nanoTime() < deadline) {
                 delay(RECOVERY_POLL_MS)
                 SteamContentSdkLiveSession.authenticated(accountName)?.let { return it }
-                if (!sessionRepository.get().session.value.phase.isAttemptInFlight()) return null
+                if (!accountAttemptInFlight()) return null
             }
             return null
+        }
+
+        /**
+         * Whether the session domain is busy with an attempt.
+         *
+         * The gate is asked first because it is the truth about whether a session slot is taken, and the phase
+         * is still asked because a phase of SIGNING_IN is a claim the app has already made to its screens and
+         * its readers - a download that ignored it would be contradicting what the user is being shown.
+         */
+        private fun accountAttemptInFlight(): Boolean {
+            val repository = sessionRepository.get()
+            return repository.isAttemptInFlight() || repository.session.value.phase.isAttemptInFlight()
         }
 
         /**

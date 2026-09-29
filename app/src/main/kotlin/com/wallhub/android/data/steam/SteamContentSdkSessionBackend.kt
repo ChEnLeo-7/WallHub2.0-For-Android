@@ -258,6 +258,12 @@ internal class SteamContentSdkSessionBackend(
                 job?.cancelAndJoin()
                 // The maintenance loop must stop before the session it drives is torn down.
                 maintenanceJob.getAndSet(null)?.cancel()
+                // A pending recovery retry is a standing plan to sign this account back in, which is the
+                // opposite of what this call is doing. It matters most in the failing case below: when the
+                // store cannot be cleared the credential is still there, so a retry left running would read
+                // it and sign the user back in after they had signed out.
+                recoveryJob.getAndSet(null)?.cancel()
+                recoveryAttempts.set(0)
                 val session = activeSession.getAndSet(null)
                 if (session != null) {
                     withSession { runCatching { session.logout() } }
@@ -316,9 +322,20 @@ internal class SteamContentSdkSessionBackend(
         }
     }
 
+    override fun isAttemptInFlight(): Boolean =
+        // The running attempt and the one queued behind it, which are the two states in which the SDK's one
+        // session slot is already spoken for. A scheduled recovery retry is deliberately not counted: it holds
+        // no slot while it waits, and a download that waited for it would wait for a timer rather than a session.
+        attemptInProgress.get() || pendingAttempt.get() != null
+
     /** Releases the live SDK session. The interface has no shutdown hook, so this is the explicit close path. */
     internal fun close() {
         attemptJob.getAndSet(null)?.cancel()
+        // A scheduled recovery retry is a live plan to reopen a session, so it does not outlive the shutdown
+        // that closed one: without this it would fire up to eight minutes later against a backend that is gone
+        // and open the very thing close() just released. It is cancelled before the gate is opened so a retry
+        // already inside restorePersistedSession is torn down with the rest.
+        recoveryJob.getAndSet(null)?.cancel()
         // The maintenance loop drives the session this is about to close, so it stops first - the same order
         // releaseSession uses. Leaving it running leaves it ticking against a closed session for up to one
         // interval, which is the leak this path had.
@@ -419,16 +436,7 @@ internal class SteamContentSdkSessionBackend(
                 )
             }
 
-            is SteamCredentialReadResult.Value -> {
-                val stored = credential.credential
-                publish(
-                    SteamSessionPhase.SIGNING_IN,
-                    messages.restoringSession,
-                    accountName = stored.accountName,
-                    hasStoredSession = true,
-                )
-                restore(stored)
-            }
+            is SteamCredentialReadResult.Value -> restore(credential.credential)
         }
     }
 
@@ -442,12 +450,33 @@ internal class SteamContentSdkSessionBackend(
         // and kSteam is never consulted.
         record("restore_retry_live_candidates")
         restoreOnce(stored, refreshLive = true)
+        // One schedule per restore, not one per attempt. Scheduling from the first attempt's failure meant the
+        // live-candidate retry's own failure replaced the five-second retry with a fifteen-second one, so the
+        // schedule the log advertised was not the schedule that ran: the first retry to actually happen was
+        // the second one listed. A transient restore failure that has now spent both attempts is what a
+        // recovery retry is for, and a network still down after the whole schedule is reported rather than
+        // hammered forever.
+        if (lastAttemptFailure.get() == SteamContentSdkSessionFailure.NETWORK) {
+            scheduleRecoveryRetry()
+        }
     }
 
     private suspend fun restoreOnce(
         stored: PersistedSteamCredential,
         refreshLive: Boolean,
     ) {
+        // Every attempt announces itself, which `logonOnPlatformRoute` already did and this path did not. The
+        // device read is the reason: the first attempt published FAILED while the live-candidate retry was
+        // still connecting, so for six seconds the app told every other plane "nobody is signing in". A
+        // download that asked for a session inside that window opened its own route over the retry that was
+        // working, the retry then failed, and the app sat signed out for 7m36s. A retry that is running is
+        // signed in as far as any reader is concerned, and the phase has to say so.
+        publish(
+            SteamSessionPhase.SIGNING_IN,
+            messages.restoringSession,
+            accountName = stored.accountName,
+            hasStoredSession = true,
+        )
         // The class belongs to one attempt: a previous attempt's transport failure must not decide this
         // one's outcome, which is what let a successful live retry still be read as a transport failure.
         lastAttemptFailure.set(SteamContentSdkSessionFailure.NONE)
@@ -1152,13 +1181,6 @@ internal class SteamContentSdkSessionBackend(
                     hasStoredSession = hasStoredSession,
                 )
         }
-        // A transient failure on the restore path is retried a bounded number of times. The device showed
-        // what one unretried failure costs: a CM link died silently, the in-place rebuild was refused, the
-        // single restore attempt failed the same way, and the app then sat in FAILED - signed out, with
-        // downloads failing - until a human retried four minutes later.
-        if (restore && hasStoredSession && failure == SteamContentSdkSessionFailure.NETWORK) {
-            scheduleRecoveryRetry()
-        }
         return true
     }
 
@@ -1302,13 +1324,12 @@ internal class SteamContentSdkSessionBackend(
      */
     private fun scheduleRecoveryRetry() {
         val attempt = recoveryAttempts.incrementAndGet()
-        if (attempt > SESSION_RECOVERY_ATTEMPTS) {
+        if (attempt > SESSION_RECOVERY_DELAYS_MS.size) {
             recoveryAttempts.set(0)
-            record("session_recovery_exhausted attempts=$SESSION_RECOVERY_ATTEMPTS")
+            record("session_recovery_exhausted attempts=${SESSION_RECOVERY_DELAYS_MS.size}")
             return
         }
-        val delayMs =
-            SESSION_RECOVERY_DELAYS_MS.getOrElse(attempt - 1) { SESSION_RECOVERY_DELAYS_MS.last() }
+        val delayMs = SESSION_RECOVERY_DELAYS_MS[attempt - 1]
         record("session_recovery_scheduled attempt=$attempt delay_ms=$delayMs")
         val job =
             scope.launch {
@@ -1361,11 +1382,17 @@ internal class SteamContentSdkSessionBackend(
         /** How much of a maintenance failure's own text a device reading keeps. */
         const val MAINTENANCE_REASON_LENGTH = 160
 
-        /** How many times a transient restore failure is retried before the failure is left standing. */
-        const val SESSION_RECOVERY_ATTEMPTS = 3
-
-        /** The gaps between those retries: long enough for a gateway hiccup to pass, short enough to notice. */
-        val SESSION_RECOVERY_DELAYS_MS = longArrayOf(5_000L, 15_000L, 30_000L)
+        /**
+         * The gaps between those retries.
+         *
+         * Sized from the device, not from taste: one outage in the 0.1.71 capture ran 7m36s before a human
+         * retried it by hand, and the whole point of the schedule is that nobody has to. The last gap lands
+         * the final attempt at 7m50s, which covers that reading with a little room; a network still down
+         * after it is reported. The first gap is short so an ordinary hiccup - the ones the same capture
+         * shows recovering in three seconds - is invisible.
+         */
+        val SESSION_RECOVERY_DELAYS_MS =
+            longArrayOf(5_000L, 15_000L, 30_000L, 60_000L, 120_000L, 240_000L)
 
         /** How much of the SDK's rebuild refusal is kept; the bridge already bounds and redacts its own text. */
         const val REBUILD_REASON_LENGTH = 240

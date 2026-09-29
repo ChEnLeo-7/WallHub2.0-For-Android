@@ -1415,3 +1415,93 @@ two rounds, and the keystore layer - which had no test at all - now has ten.
 4. a lost connection lands in `RESTORABLE`, re-restores, and Workshop reads work again afterwards (the browse
    path needs the engine the session domain reopens);
 5. pause -> resume, cancel, and a paused-then-cancelled task, which exercise the gate changes.
+
+## 2026-09-30 (34) - the session that drops every few minutes, and the phase that lied while it recovered
+
+The report was "登录会掉 while a Workshop download runs". Two hours of 0.1.71 capture say it is not occasional
+and not caused by the download: the stored session is lost and recovered on a cycle, and the download is what
+turns a recoverable cycle into a long sign-out.
+
+**What 0.1.71 showed, 21:45 - 22:24.** Six `session_lost` events with 400 / 500 / 500 / 610 s between them.
+Every one recovered through `restore_retry_live_candidates` in 3 s to 2m19s - except the first, at 21:37:57,
+which stayed down for **7m36s** until the user retried by hand. The mechanism, from the 21:38 window:
+
+```
+21:38:10.050  phase_failed                        <- the first restore attempt failed
+21:38:10.050  restore_retry_live_candidates
+21:38:10.972  WallHubSdkRoute cm candidates=4 source=live retry=true
+21:38:16.994  content session reused=false        <- the download plane opens its own route
+21:38:17.006  WallHubSdkRoute cm candidates=4 source=cache
+21:38:20.997  phase_failed                        <- the retry that was working is gone
+```
+
+The published phase was `FAILED` from 21:38:10.050 to 21:38:20.997 with **no `SIGNING_IN` in between**, while a
+live-candidate retry was still connecting. The download path asked the phase, was told nobody was signing in, and
+opened a competing session on the engine's single slot - which is what destroyed the retry that was working.
+
+**Batch one (`e84dc96`, APK `e7ee8859`, installed 23:48).** The maintenance line now carries the SDK's own reason
+(`pump=failed:<text> step=<text> error=sdk|none`), a transient restore failure is retried on a bounded schedule,
+and the download path waits up to 20 s for an in-flight account attempt before opening its own session. The
+diagnostic is what the rest of this entry rests on: 0.1.71 could only say `pump=failed`, which does not separate
+"the link dropped and the SDK reconnected" from "the link dropped and the reconnect failed". On the 0.1.72-dev
+build both appear - `step=reconnected` at 23:49:31 with no session loss at all, `step=failed` at 00:26:37 with
+one - and only the second is an outage.
+
+**What that build then showed, 23:48 - 00:39.** Four losses (00:10:51, 00:18:03, 00:26:37, 00:39:21), each
+recovered on its own in 10 - 24 s, with **0 `credential_cleared`** and **0 `invalid task handle`** in the whole
+window. One cycle in full:
+
+```
+00:26:37.555  session_maintenance sdk=pump=failed:protocol adapter failed step=failed:protocol adapter failed error=none
+00:26:37.555  session_lost
+00:26:46.398  session_rebuild_failed ... sdk=authentication failed during AccessTokenLogon cause=CmRoute (result=None)
+00:26:59.191  attempt failure class=3 stage=restore sdk=... cause=CmRoute (result=None)
+00:26:59.192  phase_failed
+00:26:59.192  session_recovery_scheduled attempt=1 delay_ms=5000
+00:26:59.192  restore_retry_live_candidates
+00:26:59.993  WallHubSdkRoute cm candidates=4 source=live retry=true
+00:27:01.053  phase_signed_in
+```
+
+Two honest notes about that. The recovery itself is the pre-existing live-candidate retry, not the new schedule -
+the schedule was recorded and then stood down, which is what it is for. And the same 1.9 s hole is visible here
+(`phase_failed` at 00:26:59.192, `phase_signed_in` at 00:27:01.053, no `SIGNING_IN` between), so the bug batch
+two fixes was reproduced live on the build batch one produced.
+
+**Batch two (not yet on a device).** Four changes, all from these readings:
+
+1. **every restore attempt announces itself.** `restoreOnce` publishes `SIGNING_IN` as `logonOnPlatformRoute`
+   already did; the phase can no longer report a failure while a retry is connecting. This alone closes the
+   21:38 window.
+2. **the download path asks the gate, not the phase.** `SteamSessionRepository.isAttemptInFlight()` reports
+   `attemptInProgress || pendingAttempt != null`, which is true from the moment the request is made rather than
+   from the first publish, and the phase is still consulted as a second signal.
+3. **the schedule spans the outage the device showed.** 5 / 15 / 30 / 60 / 120 / 240 s = 7m50s. The first version
+   stopped at 50 s, which does not cover the 7m36s the 0.1.71 capture contains.
+4. **one schedule per restore, not one per attempt.** The first version scheduled from the first attempt's
+   failure, so the live-candidate retry's own failure immediately replaced the 5 s retry with the 15 s one: the
+   schedule the log advertised was not the schedule that ran. The schedule test found this, not a reading.
+
+Two shutdown holes in the same mechanism went with it. `close()` now cancels the pending retry - without it a
+retry would fire up to eight minutes later against a backend that is gone and open the session `close()` had just
+released. `logout()` cancels it too, and that one was a real defect: when the store refuses the clear the
+credential is still there, so a retry left running would have read it and **signed the user back in after they
+signed out**. `aSignedOutAccountIsNotSignedBackInByTheRecoveryItHadScheduled` covers it.
+
+**Verification.** `:app:testDebugUnitTest` on the worker: `GRADLE_EXIT=0`, **283 tests, 0 failures, 0 errors**
+across 42 result files, `BUILD SUCCESSFUL in 1m 16s`. The backend test file grew 38 -> 41 `@Test`.
+
+Two traps in the harness itself, both now avoided rather than remembered. First: `roboCopy` excludes `build`, and
+the test-results directory survives across runs, so a *failed compile* leaves the previous run's green summary in
+place - `e84dc96`'s message reports 278 tests from a run whose result files were the 21:12 run's, and the honest
+number for a tree containing that revision is the 283 above. The script now empties the results directory before
+it runs. Second: a fixture that answers an exhausted event queue with `DISCONNECTED` is one the backend is right
+to keep waiting on, so a recovery retry that reaches that state never ends and `runTest` waits for it forever;
+`aTransportFailureOnRestoreRetriesWhenTheSessionIsLeftDisconnected` now closes the backend, and the two new
+schedule tests step the clock explicitly instead of draining it.
+
+**Still owed:** a device run of batch two - specifically that the phase reads `SIGNING_IN` through a live retry
+(the 00:26 shape above should lose its gap), that a download arriving in that window logs
+`content session waiting for the account attempt to settle` and then `content session reused=after-recovery`, and
+that a `session_recovery_scheduled` retry beyond the first actually runs. The five device checks listed at the end
+of entry (33) are still owed too.

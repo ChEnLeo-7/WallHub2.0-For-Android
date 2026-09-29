@@ -135,6 +135,16 @@ interface SteamSessionRepository {
 
     /** Closes the live CM session and deletes the encrypted refresh token. */
     fun logout()
+
+    /**
+     * Whether an attempt is running right now, or is held to run next.
+     *
+     * This is the gate itself, not the published phase. The phase reports how the last attempt ended, and the
+     * device showed the difference: a restore published FAILED and then kept a live-candidate retry running
+     * for six more seconds, in which the phase said nobody was signing in while somebody was. A caller that
+     * must not open a second session for the same account asks this instead.
+     */
+    fun isAttemptInFlight(): Boolean = false
 }
 
 data class SteamAppPlaytime(

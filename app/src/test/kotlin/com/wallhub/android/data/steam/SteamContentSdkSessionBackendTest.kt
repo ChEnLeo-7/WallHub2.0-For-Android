@@ -13,6 +13,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -369,12 +370,64 @@ class SteamContentSdkSessionBackendTest {
             val backend = fixture.backend(this)
 
             backend.restorePersistedSession()
-            advanceUntilIdle()
+            // Stopped before the recovery schedule's first retry rather than drained with advanceUntilIdle:
+            // the schedule's retries would appear in the counts below as restores this test never asked for.
+            // The backend is then closed, because a fixture that answers an exhausted event queue with
+            // DISCONNECTED is one the backend is right to keep waiting on - so a recovery retry that reaches
+            // that state would never end, and runTest waits for every coroutine the test started.
+            advanceTimeBy(1L)
+            runCurrent()
 
             assertEquals(1, fixture.platform.liveOpenCalls)
             assertEquals(2, fixture.session.restores.size)
             assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
             assertEquals(FakeMessages.restoreFailed, backend.session.value.message)
+
+            backend.close()
+        }
+
+    @Test
+    fun aSignedOutAccountIsNotSignedBackInByTheRecoveryItHadScheduled() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 269)),
+            )
+            // The store refuses this sign-out, so the credential stays behind. That is the case that matters:
+            // with nothing stored, a recovery retry left running can only publish SIGNED_OUT again, but with
+            // the credential still there it reads it and signs the user back in after they signed out.
+            fixture.store.clearFailure = IllegalStateException("the store refused the clear")
+            repeat(2) {
+                fixture.session.events +=
+                    SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.NETWORK)
+            }
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            advanceTimeBy(1L)
+            runCurrent()
+            val opensAfterTheFailedRestore = fixture.platform.openCalls
+            assertTrue(
+                fixture.diagnostics.events
+                    .mapNotNull { it.attributes["stage"] }
+                    .any { it.startsWith("session_recovery_scheduled") },
+                "no recovery retry was scheduled, so this test proves nothing",
+            )
+
+            backend.logout()
+            runCurrent()
+            assertEquals(SteamSessionPhase.SIGNED_OUT, backend.session.value.phase)
+            assertEquals(FakeMessages.signOutIncomplete, backend.session.value.message)
+
+            // Well past the first retry's five seconds, and past the whole schedule: the sign-out the user
+            // asked for stands, and the retry the app had queued does not undo it.
+            advanceTimeBy(600_000L)
+            runCurrent()
+            assertEquals(opensAfterTheFailedRestore, fixture.platform.openCalls)
+            assertEquals(SteamSessionPhase.SIGNED_OUT, backend.session.value.phase)
+
+            backend.close()
         }
 
     @Test
@@ -561,7 +614,7 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
-    fun aTransientRestoreFailureIsRetriedAndTheScheduleIsBounded() =
+    fun aTransientRestoreFailureIsRetriedPastTheOutageTheDeviceShowed() =
         runTest {
             val fixture = Fixture()
             fixture.storeCredential(
@@ -579,9 +632,6 @@ class SteamContentSdkSessionBackendTest {
             advanceTimeBy(1L)
             runCurrent()
             val stages = fixture.diagnostics.events.mapNotNull { it.attributes["stage"] }
-            // The device reading this answers: a single restore attempt failed, and the app then sat in FAILED -
-            // signed out, with downloads failing - until a human retried four minutes later. The stage carries
-            // its parameters, so this matches the name rather than the whole line.
             assertTrue(
                 stages.any { it.startsWith("session_recovery_scheduled") },
                 "no retry was scheduled: $stages",
@@ -596,21 +646,88 @@ class SteamContentSdkSessionBackendTest {
                 "the scheduled recovery attempt did not run",
             )
 
-            // The whole schedule is 5s + 15s + 30s; past it nothing more is asked for, so a network that is
-            // really down is reported rather than hammered.
-            advanceTimeBy(60_000L)
+            // The outage this schedule exists for: the 0.1.71 capture shows one running 7m36s before a human
+            // retried it by hand. Six minutes in, the app must still be trying - nobody should have to.
+            advanceTimeBy(360_000L)
             runCurrent()
-            val afterSchedule = fixture.platform.openCalls
             assertTrue(
-                stages.any { it.startsWith("session_recovery_exhausted") } ||
-                    fixture.diagnostics.events
-                        .mapNotNull { it.attributes["stage"] }
-                        .any { it.startsWith("session_recovery_exhausted") },
+                fixture.diagnostics.events
+                    .mapNotNull { it.attributes["stage"] }
+                    .none { it.startsWith("session_recovery_exhausted") },
+                "the schedule gave up inside the outage the device showed",
+            )
+
+            // ...and it does end. A network that is really down is reported rather than hammered forever.
+            advanceTimeBy(300_000L)
+            runCurrent()
+            assertTrue(
+                fixture.diagnostics.events
+                    .mapNotNull { it.attributes["stage"] }
+                    .any { it.startsWith("session_recovery_exhausted") },
                 "the schedule never ended",
             )
-            advanceTimeBy(120_000L)
+            val afterSchedule = fixture.platform.openCalls
+            advanceTimeBy(600_000L)
             runCurrent()
             assertEquals(afterSchedule, fixture.platform.openCalls)
+        }
+
+    @Test
+    fun theLiveCandidateRetryAnnouncesItselfInsteadOfLeavingFailedStanding() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 257)),
+            )
+            repeat(4) {
+                fixture.session.events +=
+                    SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.NETWORK)
+            }
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            // Stops before the recovery schedule's first retry, so what is left is the two attempts of one
+            // restore and nothing else.
+            advanceTimeBy(1L)
+            runCurrent()
+
+            // The device reading this answers: the first restore published FAILED and then kept a live-candidate
+            // retry connecting for six more seconds. Every reader of the phase - the screens, and the download
+            // path deciding whether to open a session of its own - was told nobody was signing in while somebody
+            // was; a download that acted on that opened its own route over the retry that was working, the retry
+            // then failed, and the app sat signed out for 7m36s.
+            val stages = fixture.diagnostics.events.mapNotNull { it.attributes["stage"] }
+            val retryAt = stages.indexOf("restore_retry_live_candidates")
+            assertTrue(retryAt >= 0, "the live-candidate retry was never announced: $stages")
+            assertEquals(
+                "phase_signing_in",
+                stages.drop(retryAt).firstOrNull { it.startsWith("phase_") },
+                "the retry left FAILED standing while it was still connecting: $stages",
+            )
+        }
+
+    @Test
+    fun theAttemptGateIsTakenWithTheRequestRatherThanWithThePhase() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 263)),
+            )
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            val backend = fixture.backend(this)
+
+            assertFalse(backend.isAttemptInFlight(), "an idle backend reported an attempt")
+
+            backend.restorePersistedSession()
+            // The gate is taken synchronously with the request; the first phase is not published until the
+            // coroutine runs. That gap is the one the download path has to respect, and it is why the gate is
+            // what it asks instead of the phase.
+            assertTrue(backend.isAttemptInFlight(), "the gate was not held by the attempt it had just started")
+            assertEquals(SteamSessionPhase.SIGNED_OUT, backend.session.value.phase)
+
+            advanceUntilIdle()
+            assertFalse(backend.isAttemptInFlight(), "the gate stayed held after the attempt finished")
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
         }
 
     @Test
