@@ -1225,3 +1225,38 @@ product: `FakeSdkPlatform.openWithLiveCandidates()` increments `liveOpenCalls` a
 increments `openCalls` as well (`SteamContentSdkSessionBackendTest.kt:597-600`), while the tests assert both
 counters are 1 (`:285-286`, `:307-308`). Fix owed: don't funnel the live open through `open()`. Every new
 download/mpkg test in entries (26)-(29) passes.
+
+## 2026-09-29 (31) - AAR 0.1.69: the audit fixes reach the device, and lint had never run
+
+The audit batch (`7b6595f`, `72fa580`) was built on the worker as **AAR 0.1.69**
+(`SC_WIN_SDK_CHECK=OK`, `SC_WIN_SDK_AAR_BUILD=OK`, `SC_WIN_PARTIAL=none`, `SC_WIN_RESULT=OK`, published
+`sha256=0731cd8cc2a0b8e400e8860e848362b188122a42b1e0028ef347f8dcde76a34f`) and pinned at `4244d79`. The Windows
+worker is the second platform in this check: it runs the SDK's own suite there, so the same commit is green on
+both toolchains.
+
+The app release APK built from that pin and was installed with `adb install -r`:
+
+- artifact `/root/builds/wallhub-release-20260929T041752Z-1982620740.apk`, sha256 `99ee43c4...`;
+- the device's `base.apk`, pulled back and hashed, is the same `99ee43c4...` - the install is the artifact;
+- the packaged `lib/arm64-v8a/libsc_content_ffi.so` is `9388cb77...`, equal to the `.so` inside AAR 0.1.69
+  (0.1.68's was `9cdceddf...`), so the native core really changed;
+- size **13,498,661 bytes**, the same as 0.1.68: the audit fixes are Rust-source changes, not new payload.
+
+**Unit tests: 227 tests, 0 failures, 0 errors** (37 JUnit XML files) on the worker. That closes the two
+`expected:<1> but was:<2>` failures for good: the fixture counted one live-candidate open twice
+(`2f3ae1e`), and with the counter fixed the retry policy's own assertions pass unchanged - the test was wrong,
+not the product. The earlier 225/2 reading was a different scope (`:app:testDebugUnitTest` only); this run is the
+repo's documented `testDebugUnitTest lintDebug`.
+
+**`lintDebug` had not been run in this campaign, and it failed: 4 `MissingTranslation` errors.** All four are the
+newest `backend_steam_*` strings, present in `values/strings.xml` and absent from `values-zh-rCN/strings.xml`:
+`backend_steam_auth_rejected` (`:960`), `backend_steam_challenge_unsupported` (`:961`), `backend_steam_network_failed`
+(`:981`), `backend_steam_sdk_session_unavailable` (`:993`). The Chinese strings were added at `636d49a`, and
+`:app:lintDebug` is now `BUILD SUCCESSFUL` (exit 0). The installed APK predates that commit, so these four
+display strings are English on the device until the next build; nothing about the download path depends on them.
+
+One trap worth recording because it looks like a product failure and is not: the first `:app:testDebugUnitTest`
+invocation died in 5 seconds with `IOException: 文件名、目录名或卷标语法不正确` from
+`SdkLocator.validateSdkPath`. The cause was my own `local.properties`, written as `sdk.dir=F:\AI-Studio\.android-sdk`.
+A `.properties` file treats `\` as an escape character, so that reads back as `F:AI-Studio.android-sdk`. The
+worker daemon writes `F\:\\AI-Studio\\.android-sdk` for exactly this reason; the hand-run must too.
