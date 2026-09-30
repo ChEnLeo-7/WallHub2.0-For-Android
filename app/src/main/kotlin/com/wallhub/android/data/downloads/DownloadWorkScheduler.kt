@@ -184,6 +184,8 @@ internal class WallHubDownloadWorkerFactory
                         appContext = appContext,
                         params = workerParameters,
                         commandDao = commandDao,
+                        host = downloadHostCoordinator,
+                        runner = formalDownloadRunner,
                     )
 
                 FormalWorkshopDownloadWorker::class.java.name ->
