@@ -316,7 +316,7 @@ interface DownloadCommandDao {
     @Query(
         "UPDATE download_commands SET claimedEpoch = :epoch, claimedAt = :claimedAt " +
             "WHERE commandId = :commandId AND acknowledgedAt IS NULL " +
-            "AND (claimedEpoch IS NULL OR claimedEpoch < :epoch)",
+            "AND (claimedEpoch IS NULL OR claimedEpoch <= :epoch)",
     )
     suspend fun claim(
         commandId: String,
@@ -346,8 +346,9 @@ interface DownloadCommandDao {
             "quiescedIntentRevision = CASE WHEN :quiesced = 1 AND quiescedIntentRevision < :intentRevision " +
             "THEN :intentRevision ELSE quiescedIntentRevision END, " +
             "lastReceiptSequence = :receiptSequence, engineEpoch = :engineEpoch, updatedAt = :acknowledgedAt " +
-            "WHERE taskId = :taskId AND lastReceiptSequence < :receiptSequence " +
-            "AND desiredIntentRevision >= :intentRevision",
+            "WHERE taskId = :taskId AND desiredIntentRevision >= :intentRevision " +
+            "AND (engineEpoch IS NULL OR engineEpoch < :engineEpoch " +
+            "OR (engineEpoch = :engineEpoch AND lastReceiptSequence < :receiptSequence))",
     )
     suspend fun applyReceiptProjection(
         taskId: String,

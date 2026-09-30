@@ -1,13 +1,17 @@
 package com.wallhub.android.data.downloads
 
 import android.content.Context
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.wallhub.android.core.database.DownloadCommandDao
+import java.util.concurrent.TimeUnit
 
 /**
  * WorkManager wake-up adapter for the durable download host.
@@ -28,6 +32,8 @@ internal class DownloadHostWakeWorker(
             val request =
                 OneTimeWorkRequestBuilder<FormalWorkshopDownloadWorker>()
                     .setInputData(workDataOf(FormalWorkshopDownloadWorker.KEY_TASK_ID to taskId))
+                    .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                    .setBackoffCriteria(BackoffPolicy.LINEAR, 10_000L, TimeUnit.MILLISECONDS)
                     .addTag(FormalWorkshopDownloadWorker.WORK_TAG_PREFIX + taskId)
                     .build()
             manager.enqueueUniqueWork(
