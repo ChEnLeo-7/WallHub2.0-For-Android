@@ -30,7 +30,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
-import com.wallhub.android.core.model.DownloadTaskRepository
+import com.wallhub.android.core.model.WorkshopDownloads
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,7 +53,7 @@ class LocalVideoPlayerViewModel
     @Inject
     constructor(
         savedStateHandle: SavedStateHandle,
-        private val downloadTaskRepository: DownloadTaskRepository,
+        private val workshopDownloads: WorkshopDownloads,
     ) : ViewModel() {
         private val taskId = checkNotNull(savedStateHandle.get<String>("taskId"))
         private val mutableState = MutableStateFlow(LocalVideoPlayerUiState())
@@ -69,7 +69,7 @@ class LocalVideoPlayerViewModel
                 mutableState.value = mutableState.value.copy(isLoading = true, error = null)
                 runCatching {
                     val task =
-                        downloadTaskRepository.find(taskId)
+                        workshopDownloads.find(taskId)
                             ?: throw DetailUiTextException(R.string.detail_download_task_missing)
                     val root =
                         task.stagingDirectory

@@ -12,7 +12,7 @@ import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
-import com.wallhub.android.core.model.DownloadTaskRepository
+import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamContentCredentialProvider
@@ -41,7 +41,7 @@ internal class RoomDownloadTaskRepository private constructor(
     private val steamWorkshopContentClient: SteamWorkshopContentClient,
     private val queuedMessage: () -> String,
     private val enqueueFailedMessage: (String) -> String,
-) : DownloadTaskRepository {
+) : WorkshopDownloads {
     @Inject
     constructor(
         @ApplicationContext context: Context,
@@ -98,10 +98,6 @@ internal class RoomDownloadTaskRepository private constructor(
             }
 
         override suspend fun find(taskId: String): DownloadTask? = taskDao.find(taskId)?.toModel()
-
-        override suspend fun upsert(task: DownloadTask) {
-            taskDao.upsertPreservingExecutionIntent(task.toEntity())
-        }
 
         override suspend fun enqueue(request: DownloadRequest): DownloadEnqueueResult = taskMutationMutex.withLock {
             require(request.workshopId > 0L) { "Invalid Workshop item ID" }
@@ -182,7 +178,7 @@ internal class RoomDownloadTaskRepository private constructor(
             }
         }
 
-        override suspend fun prewarmDownload(workshopId: Long) {
+        override suspend fun prewarm(workshopId: Long) {
             if (workshopId <= 0L) return
             val preferences = settingsRepository.preferences.first()
             val proxyUrl =
@@ -193,6 +189,19 @@ internal class RoomDownloadTaskRepository private constructor(
             // same read. The depot side needs no warm-up here, because the Steam Content SDK resolves the
             // item and completes its own key/token handoff inside the task that downloads it.
             steamWorkshopContentClient.fetchContentTarget(workshopId, proxyUrl)
+        }
+
+        override suspend fun requestExport(
+            taskId: String,
+            format: ExportFormat,
+        ) = taskMutationMutex.withLock {
+            val task = requireNotNull(find(taskId)) { "Download task no longer exists" }
+            require(DownloadAction.EXPORT in task.availableActions) {
+                "Task status ${task.status} does not support export"
+            }
+            val configured = task.copy(exportFormat = format, updatedAt = System.currentTimeMillis())
+            taskDao.upsertPreservingExecutionIntent(configured.toEntity())
+            requestExport(configured)
         }
 
         override suspend fun requestAction(

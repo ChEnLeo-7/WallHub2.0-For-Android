@@ -316,44 +316,34 @@ interface AccountWorkshopRepository {
     )
 }
 
-/** Deep download-control module used by UI and notification callers. */
+/** The single deep download intent, query and administration module used by product callers. */
 interface WorkshopDownloads {
     val tasks: Flow<List<DownloadTask>>
 
+    suspend fun find(taskId: String): DownloadTask?
+
     suspend fun enqueue(request: DownloadRequest): DownloadEnqueueResult
+
+    suspend fun prewarm(workshopId: Long)
 
     suspend fun requestAction(
         taskId: String,
         action: DownloadAction,
     )
 
-    suspend fun reorder(taskIds: List<String>)
-}
-
-/** Compatibility seam for storage/admin operations while callers migrate to [WorkshopDownloads]. */
-interface DownloadTaskRepository : WorkshopDownloads {
-    override val tasks: Flow<List<DownloadTask>>
-
-    suspend fun find(taskId: String): DownloadTask?
-
-    suspend fun upsert(task: DownloadTask)
-
-    override suspend fun enqueue(request: DownloadRequest): DownloadEnqueueResult
-
-    suspend fun prewarmDownload(workshopId: Long) = Unit
-
-    override suspend fun requestAction(
+    /** Persists the export option before accepting the conversion intent under one mutation authority. */
+    suspend fun requestExport(
         taskId: String,
-        action: DownloadAction,
+        format: ExportFormat,
     )
 
-    override suspend fun reorder(taskIds: List<String>)
+    suspend fun reorder(taskIds: List<String>)
 
     suspend fun clearFinishedHistory(): Int
 
-    suspend fun clearCompletedHistory(): Int = 0
+    suspend fun clearCompletedHistory(): Int
 
-    suspend fun retryFailedTasks(): Int = 0
+    suspend fun retryFailedTasks(): Int
 }
 
 interface LocalWallpaperRepository {

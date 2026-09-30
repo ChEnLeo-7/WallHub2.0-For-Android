@@ -5,7 +5,6 @@ import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.AppUpdateRepository
 import com.wallhub.android.core.model.DiagnosticExportRepository
 import com.wallhub.android.core.model.DiagnosticRepository
-import com.wallhub.android.core.model.DownloadTaskRepository
 import com.wallhub.android.core.model.LauncherIconController
 import com.wallhub.android.core.model.LocalWallpaperRepository
 import com.wallhub.android.core.model.SettingsRepository
@@ -107,10 +106,6 @@ internal abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindWorkshopRepository(repository: CommunityWorkshopRepository): WorkshopRepository
-
-    @Binds
-    @Singleton
-    abstract fun bindDownloadTaskRepository(repository: RoomDownloadTaskRepository): DownloadTaskRepository
 
     @Binds
     @Singleton

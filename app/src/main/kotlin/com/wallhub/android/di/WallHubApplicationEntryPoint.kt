@@ -1,6 +1,6 @@
 package com.wallhub.android
 
-import com.wallhub.android.core.model.DownloadTaskRepository
+import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.WorkshopRepository
 import dagger.hilt.EntryPoint
@@ -13,7 +13,7 @@ import dagger.hilt.components.SingletonComponent
 interface WallHubApplicationEntryPoint {
     fun workshopRepository(): WorkshopRepository
 
-    fun downloadTaskRepository(): DownloadTaskRepository
+    fun workshopDownloads(): WorkshopDownloads
 
     fun steamAccessRepository(): SteamAccessRepository
 }

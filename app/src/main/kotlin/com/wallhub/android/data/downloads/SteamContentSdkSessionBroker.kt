@@ -62,15 +62,12 @@ internal class SteamContentSdkSessionBroker
         suspend fun acquire(credential: SteamContentCredential): Lease {
             val key = credential.accountName.trim().lowercase(Locale.ROOT)
             require(key.isNotEmpty()) { "Steam account scope must not be empty" }
-            synchronized(lock) {
-                entries[key]?.let { entry ->
-                    entry.users += 1
-                    return lease(entry)
-                }
-            }
-
             val opening =
                 synchronized(lock) {
+                    entries[key]?.let { entry ->
+                        entry.users += 1
+                        return lease(entry)
+                    }
                     openings.getOrPut(key) {
                         startOpening(key, credential)
                     }.also { it.reservations += 1 }

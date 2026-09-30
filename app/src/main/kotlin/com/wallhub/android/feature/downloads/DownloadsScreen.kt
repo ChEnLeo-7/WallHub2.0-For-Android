@@ -93,7 +93,6 @@ import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
-import com.wallhub.android.core.model.DownloadTaskRepository
 import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SettingsRepository
@@ -212,7 +211,6 @@ class DownloadsViewModel
     @Inject
     constructor(
         @ApplicationContext private val applicationContext: Context,
-        private val taskRepository: DownloadTaskRepository,
         private val workshopDownloads: WorkshopDownloads,
         private val settingsRepository: SettingsRepository,
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
@@ -239,7 +237,7 @@ class DownloadsViewModel
                     }
                 DownloadsAction.ClearFinishedHistory ->
                     viewModelScope.launch {
-                        val count = taskRepository.clearFinishedHistory()
+                        val count = workshopDownloads.clearFinishedHistory()
                         effectChannel.send(
                             DownloadsEffect.ShowMessage(
                                 R.string.downloads_finished_cleared,
@@ -249,7 +247,7 @@ class DownloadsViewModel
                     }
                 DownloadsAction.ClearCompletedHistory ->
                     viewModelScope.launch {
-                        val count = taskRepository.clearCompletedHistory()
+                        val count = workshopDownloads.clearCompletedHistory()
                         effectChannel.send(
                             DownloadsEffect.ShowMessage(
                                 R.string.downloads_completed_cleared,
@@ -289,7 +287,7 @@ class DownloadsViewModel
             action: DownloadAction,
         ) {
             viewModelScope.launch {
-                val task = taskRepository.find(taskId)
+                val task = workshopDownloads.find(taskId)
                 val requiresPermission =
                     action == DownloadAction.EXPORT ||
                         (action == DownloadAction.RETRY && !task?.stagingDirectory.isNullOrBlank())
@@ -316,7 +314,7 @@ class DownloadsViewModel
 
         private fun retryFailedTasks() {
             viewModelScope.launch {
-                val count = taskRepository.retryFailedTasks()
+                val count = workshopDownloads.retryFailedTasks()
                 effectChannel.send(
                     DownloadsEffect.ShowMessage(
                         R.string.downloads_failed_retried,
@@ -386,7 +384,7 @@ class DownloadsViewModel
     }
 
 internal class DownloadsStateSource(
-    private val taskRepository: WorkshopDownloads,
+    private val workshopDownloads: WorkshopDownloads,
     private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
 ) {
     private val selectedFilter =
@@ -395,7 +393,7 @@ internal class DownloadsStateSource(
 
     val states =
         combine(
-            taskRepository.tasks,
+            workshopDownloads.tasks,
             selectedFilter,
             selectedTypes,
         ) { tasks, filter, types ->

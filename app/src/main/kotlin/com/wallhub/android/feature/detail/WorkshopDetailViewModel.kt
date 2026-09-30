@@ -16,7 +16,6 @@ import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
-import com.wallhub.android.core.model.DownloadTaskRepository
 import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.FavoriteState
@@ -54,7 +53,6 @@ class WorkshopDetailViewModel
         private val workshopRepository: WorkshopRepository,
         private val accountWorkshopRepository: AccountWorkshopRepository,
         private val steamSessionRepository: SteamSessionRepository,
-        private val downloadTaskRepository: DownloadTaskRepository,
         private val workshopDownloads: WorkshopDownloads,
         private val settingsRepository: SettingsRepository,
         private val videoStreamRepository: WorkshopVideoStreamRepository,
@@ -211,7 +209,7 @@ class WorkshopDetailViewModel
                         refreshInteraction()
                         loadComments(refresh = true)
                         viewModelScope.launch {
-                            runCatching { downloadTaskRepository.prewarmDownload(workshopId) }
+                            runCatching { workshopDownloads.prewarm(workshopId) }
                         }
                     }.onFailure { error ->
                         mutableState.value =
@@ -553,11 +551,7 @@ class WorkshopDetailViewModel
             val taskId = mutableState.value.stagedTaskId ?: return
             viewModelScope.launch {
                 runCatching {
-                    val task =
-                        downloadTaskRepository.find(taskId)
-                            ?: throw DetailUiTextException(R.string.detail_download_task_missing)
-                    downloadTaskRepository.upsert(task.copy(exportFormat = format))
-                    workshopDownloads.requestAction(taskId, DownloadAction.EXPORT)
+                    workshopDownloads.requestExport(taskId, format)
                 }.onSuccess {
                     mutableState.value =
                         mutableState.value.copy(

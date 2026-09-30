@@ -8,7 +8,7 @@ import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
-import com.wallhub.android.core.model.DownloadTaskRepository
+import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.core.model.SteamContentCredentialProvider
@@ -94,7 +94,7 @@ class RoomDownloadTaskRepositoryTest {
     private fun repository(
         dao: FakeTaskDao,
         scheduler: DownloadWorkScheduler,
-    ): DownloadTaskRepository =
+    ): WorkshopDownloads =
         RoomDownloadTaskRepository(
             context = ContextWrapper(null),
             taskDao = dao.proxy,
