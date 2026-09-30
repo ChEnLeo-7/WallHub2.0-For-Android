@@ -372,7 +372,11 @@ internal class RoomDownloadTaskRepository private constructor(
                         commandId = UUID.randomUUID().toString(),
                     ),
                 ) { "Download state changed before cancellation could be requested" }
-                workScheduler.wake()
+                try {
+                    workScheduler.wake()
+                } catch (error: Throwable) {
+                    Log.e(LOG_TAG, "Unable to wake host for durable CANCEL taskId=${task.id}", error)
+                }
             }
         }
 

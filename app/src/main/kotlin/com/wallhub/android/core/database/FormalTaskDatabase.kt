@@ -676,6 +676,10 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                             "AND desiredIntent != requestedAction",
                     )
                     database.execSQL(
+                        "UPDATE formal_task_records SET desiredIntentRevision = 1 " +
+                            "WHERE requestedAction IN ('PAUSE', 'CANCEL') AND desiredIntentRevision < 1",
+                    )
+                    database.execSQL(
                         "INSERT OR IGNORE INTO download_commands " +
                             "(commandId, taskId, revision, attempt, command, createdAt) " +
                             "SELECT 'room-v9-' || taskId, taskId, desiredIntentRevision, attempt, " +
