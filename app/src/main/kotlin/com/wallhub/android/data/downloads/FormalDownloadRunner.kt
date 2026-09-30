@@ -406,23 +406,28 @@ internal class FormalDownloadRunner
                     settlement.cancel(taskId, stagingDirectory)
                 } catch (error: CancellationException) {
                     Log.w(DOWNLOAD_LOG_TAG, "Formal Steam download cancelled taskId=$taskId", error)
-                    withContext(kotlinx.coroutines.NonCancellable) {
-                        val latest = taskDao.find(taskId)
-                        val currentControl = controlInbox.current()
-                        val userCancelled =
-                            isUserCancellation(
-                                currentRequestedAction =
-                                    DownloadAction.CANCEL.name.takeIf {
-                                        currentControl == SteamDownloadControl.CANCEL
-                                    },
-                                currentStatus = latest?.status,
-                            )
-                        if (userCancelled) {
-                            settlement.cancel(taskId, stagingDirectory)
-                        } else {
-                            settlement.interrupted(task)
+                    val retryable =
+                        withContext(kotlinx.coroutines.NonCancellable) {
+                            val latest = taskDao.find(taskId)
+                            val currentControl = controlInbox.current()
+                            val userCancelled =
+                                isUserCancellation(
+                                    currentRequestedAction =
+                                        DownloadAction.CANCEL.name.takeIf {
+                                            currentControl == SteamDownloadControl.CANCEL
+                                        },
+                                    currentStatus = latest?.status,
+                                )
+                            if (userCancelled) {
+                                settlement.cancel(taskId, stagingDirectory)
+                                false
+                            } else {
+                                settlement.interrupted(task)
+                                true
+                            }
                         }
-                    }
+                    if (retryable) return@withContext DownloadHostRunResult.RETRY
+                    throw error
                 } catch (error: Throwable) {
                     settlement.failed(task, error)
                 }
