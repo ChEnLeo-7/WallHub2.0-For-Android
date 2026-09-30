@@ -61,14 +61,17 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
                         .distinctBy { it.commandId }
                         .sortedBy { it.revision }
                 commands.forEach { command ->
-                    val sequence = receiptSequences.compute(taskId) { _, value -> (value ?: 0L) + 1L } ?: 1L
-                    commandStore?.acknowledge(
-                        command = command,
-                        epoch = currentEpoch,
-                        receiptSequence = sequence,
-                        result = result.toString(),
-                        quiesced = command.command != "RUN",
-                    )
+                    val sequence = (receiptSequences[taskId] ?: 0L) + 1L
+                    val acknowledged =
+                        commandStore?.acknowledge(
+                            command = command,
+                            epoch = currentEpoch,
+                            receiptSequence = sequence,
+                            result = result.toString(),
+                            quiesced = command.command != "RUN",
+                        ) ?: true
+                    check(acknowledged) { "Command receipt was rejected for taskId=$taskId sequence=$sequence" }
+                    receiptSequences[taskId] = sequence
                 }
                 result
             }

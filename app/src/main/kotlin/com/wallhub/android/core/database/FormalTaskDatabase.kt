@@ -347,8 +347,9 @@ interface DownloadCommandDao {
             "THEN :intentRevision ELSE quiescedIntentRevision END, " +
             "lastReceiptSequence = :receiptSequence, engineEpoch = :engineEpoch, updatedAt = :acknowledgedAt " +
             "WHERE taskId = :taskId AND desiredIntentRevision >= :intentRevision " +
-            "AND (engineEpoch IS NULL OR engineEpoch < :engineEpoch " +
-            "OR (engineEpoch = :engineEpoch AND lastReceiptSequence < :receiptSequence))",
+            "AND ((engineEpoch IS NULL AND :receiptSequence = 1) " +
+            "OR (engineEpoch < :engineEpoch AND :receiptSequence = 1) " +
+            "OR (engineEpoch = :engineEpoch AND lastReceiptSequence + 1 = :receiptSequence))",
     )
     suspend fun applyReceiptProjection(
         taskId: String,
