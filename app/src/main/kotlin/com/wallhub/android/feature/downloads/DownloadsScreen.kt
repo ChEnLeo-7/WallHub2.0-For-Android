@@ -94,6 +94,7 @@ import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
 import com.wallhub.android.core.model.DownloadTaskRepository
+import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.WorkshopSummary
@@ -212,10 +213,11 @@ class DownloadsViewModel
     constructor(
         @ApplicationContext private val applicationContext: Context,
         private val taskRepository: DownloadTaskRepository,
+        private val workshopDownloads: WorkshopDownloads,
         private val settingsRepository: SettingsRepository,
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
     ) : ViewModel() {
-        private val stateSource = DownloadsStateSource(taskRepository, savedStateHandle)
+        private val stateSource = DownloadsStateSource(workshopDownloads, savedStateHandle)
         private val effectChannel = Channel<DownloadsEffect>(capacity = Channel.BUFFERED)
 
         val uiState: StateFlow<DownloadsUiState> =
@@ -233,7 +235,7 @@ class DownloadsViewModel
                 is DownloadsAction.RequestTaskAction -> prepareTaskAction(action.taskId, action.action)
                 is DownloadsAction.ReorderTasks ->
                     viewModelScope.launch {
-                        taskRepository.reorder(action.taskIds)
+                        workshopDownloads.reorder(action.taskIds)
                     }
                 DownloadsAction.ClearFinishedHistory ->
                     viewModelScope.launch {
@@ -329,7 +331,7 @@ class DownloadsViewModel
             action: DownloadAction,
         ) {
             viewModelScope.launch {
-                runCatching { taskRepository.requestAction(taskId, action) }
+                runCatching { workshopDownloads.requestAction(taskId, action) }
                     .onSuccess {
                         if (action == DownloadAction.EXPORT) {
                             effectChannel.send(
@@ -348,7 +350,7 @@ class DownloadsViewModel
             viewModelScope.launch {
                 runCatching {
                     val outputTreeUri = settingsRepository.preferences.first().outputTreeUri
-                    taskRepository.enqueue(
+                    workshopDownloads.enqueue(
                         DownloadRequest(
                             workshopId = item.id,
                             title = applicationContext.localizedTitle(item),
@@ -384,7 +386,7 @@ class DownloadsViewModel
     }
 
 internal class DownloadsStateSource(
-    private val taskRepository: DownloadTaskRepository,
+    private val taskRepository: WorkshopDownloads,
     private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
 ) {
     private val selectedFilter =
