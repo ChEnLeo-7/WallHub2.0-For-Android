@@ -48,7 +48,8 @@ internal class SteamContentSdkSessionBroker
         private val openings = mutableMapOf<String, CompletableDeferred<Unit>>()
 
         suspend fun acquire(credential: SteamContentCredential): Lease {
-            val key = credential.accountName.orEmpty().lowercase()
+            val key = credential.accountName.trim().lowercase()
+            require(key.isNotEmpty()) { "Steam account scope must not be empty" }
             while (true) {
                 var existing: Entry? = null
                 var waiting: CompletableDeferred<Unit>? = null

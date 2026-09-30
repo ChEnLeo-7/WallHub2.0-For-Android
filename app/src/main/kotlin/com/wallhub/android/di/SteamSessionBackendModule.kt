@@ -5,6 +5,7 @@ import com.wallhub.android.core.model.DiagnosticRepository
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.data.steam.AndroidSteamContentSdkSessionMessages
 import com.wallhub.android.data.steam.EncryptedSteamCredentialStore
+import com.wallhub.android.data.steam.SteamContentSdkAuthenticatedSessionRegistry
 import com.wallhub.android.data.steam.SteamContentSdkEngine
 import com.wallhub.android.data.steam.SteamContentSdkEnginePlatform
 import com.wallhub.android.data.steam.SteamContentSdkPlatform
@@ -58,7 +59,8 @@ internal object SteamSessionBackendModule {
     internal fun provideSteamContentSdkPlatform(
         @SteamSessionSdkEngine engine: SteamContentSdkEngine,
         routes: SteamContentSdkRouteFactory,
-    ): SteamContentSdkPlatform = SteamContentSdkEnginePlatform(engine, routes)
+        authenticatedSessions: SteamContentSdkAuthenticatedSessionRegistry,
+    ): SteamContentSdkPlatform = SteamContentSdkEnginePlatform(engine, routes, authenticatedSessions)
 
     @Provides
     @Singleton

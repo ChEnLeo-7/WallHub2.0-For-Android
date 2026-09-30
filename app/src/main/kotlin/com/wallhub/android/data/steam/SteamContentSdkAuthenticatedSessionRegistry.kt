@@ -15,7 +15,10 @@ import io.steamcontent.sdk.SessionState
  * token, no event, and no session handle. It is cleared when the owning session closes, and a lender
  * re-checks the engine's own state before lending, so a stale record cannot hand out a dead session.
  */
-internal object SteamContentSdkLiveSession {
+@javax.inject.Singleton
+internal class SteamContentSdkAuthenticatedSessionRegistry
+    @javax.inject.Inject
+    constructor() {
     private val lock = Any()
     private var accountName: String? = null
     private var engine: SteamContentSdkEngine? = null

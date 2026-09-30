@@ -416,6 +416,7 @@ internal fun interface SteamContentSdkPlatform {
 internal class SteamContentSdkEnginePlatform(
     private val engine: SteamContentSdkEngine,
     private val routes: SteamContentSdkRouteFactory,
+    private val authenticatedSessions: SteamContentSdkAuthenticatedSessionRegistry,
 ) : SteamContentSdkPlatform {
     override suspend fun open(): SteamContentSdkPlatformSession = openPlatformRoute(refreshLive = false)
 
@@ -429,13 +430,14 @@ internal class SteamContentSdkEnginePlatform(
         val handle =
             engine.openHandle(route)
                 ?: error("The Steam Content SDK session is unavailable on this device")
-        return SteamContentSdkEnginePlatformSession(engine, handle)
+        return SteamContentSdkEnginePlatformSession(engine, handle, authenticatedSessions)
     }
 }
 
 private class SteamContentSdkEnginePlatformSession(
     private val engine: SteamContentSdkEngine,
     private val sessionOwner: GenerationHandleOwner.Handle<SteamSession>,
+    private val authenticatedSessions: SteamContentSdkAuthenticatedSessionRegistry,
 ) : SteamContentSdkPlatformSession {
     private val session: SteamSession
         get() = sessionOwner.value
@@ -520,7 +522,7 @@ private class SteamContentSdkEnginePlatformSession(
     private fun publishWhenAuthenticated(state: SteamContentSdkSessionState) {
         val name = accountName ?: return
         if (state == SteamContentSdkSessionState.AUTHENTICATED) {
-            SteamContentSdkLiveSession.publish(name, engine)
+            authenticatedSessions.publish(name, engine)
         }
     }
 
@@ -565,7 +567,7 @@ private class SteamContentSdkEnginePlatformSession(
     override fun logout() = session.logout()
 
     override fun close() {
-        SteamContentSdkLiveSession.clear(engine)
+        authenticatedSessions.clear(engine)
         // Only the session. This engine is the process-wide session engine, and a download or a range stream
         // may have borrowed it; closing the engine here is what turned a lost connection into
         // `invalid task handle` on a transfer that was still running.

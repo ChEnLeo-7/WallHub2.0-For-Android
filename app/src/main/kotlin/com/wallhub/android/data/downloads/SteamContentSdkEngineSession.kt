@@ -5,7 +5,7 @@ import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.data.steam.GenerationHandleOwner
 import com.wallhub.android.data.steam.SteamContentSdkEngine
-import com.wallhub.android.data.steam.SteamContentSdkLiveSession
+import com.wallhub.android.data.steam.SteamContentSdkAuthenticatedSessionRegistry
 import com.wallhub.android.data.steam.SteamContentSdkRouteFactory
 import com.wallhub.android.data.steam.isAttemptInFlight
 import io.steamcontent.sdk.DepotRangeStream
@@ -48,6 +48,7 @@ internal class SteamContentSdkEngineSessionOpener
         private val engine: SteamContentSdkEngine,
         private val routes: SteamContentSdkRouteFactory,
         private val sessionRepository: Provider<SteamSessionRepository>,
+        private val authenticatedSessions: SteamContentSdkAuthenticatedSessionRegistry,
     ) : SteamContentSdkSessionOpener {
         override suspend fun open(credential: SteamContentCredential): SteamContentSdkSession =
             withContext(Dispatchers.IO) {
@@ -58,7 +59,7 @@ internal class SteamContentSdkEngineSessionOpener
                 // instead of restoring a competing one - and then must not close it. The one line this
                 // logs is whether it borrowed, so a device run can separate "the restore was refused"
                 // from "no restore was attempted".
-                val live = SteamContentSdkLiveSession.authenticated(credential.accountName)
+                val live = authenticatedSessions.authenticated(credential.accountName)
                 if (live != null) {
                     Log.i(TAG, "content session reused=true")
                     return@withContext SteamContentSdkEngineSession(live, ownsEngine = false)
@@ -102,7 +103,7 @@ internal class SteamContentSdkEngineSessionOpener
             val deadline = System.nanoTime() + RECOVERY_WAIT_NANOS
             while (System.nanoTime() < deadline) {
                 delay(RECOVERY_POLL_MS)
-                SteamContentSdkLiveSession.authenticated(accountName)?.let { return it }
+                authenticatedSessions.authenticated(accountName)?.let { return it }
                 if (!accountAttemptInFlight()) return null
             }
             return null
