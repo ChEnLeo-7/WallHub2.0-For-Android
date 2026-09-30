@@ -225,7 +225,6 @@ internal class FormalDownloadRunner
                             persist(
                                 task,
                                 status = DownloadStatus.PAUSED,
-                                requestedAction = null,
                                 message = applicationContext.getString(R.string.backend_download_switch_account, "unknown account"),
                             )
                             return@withSlot DownloadHostRunResult.SUCCESS
@@ -239,7 +238,6 @@ internal class FormalDownloadRunner
                             persist(
                                 task,
                                 status = DownloadStatus.PAUSED,
-                                requestedAction = null,
                                 message = applicationContext.getString(R.string.backend_download_switch_account, task.accountName),
                             )
                             return@withSlot DownloadHostRunResult.SUCCESS
@@ -667,7 +665,7 @@ internal class FormalDownloadRunner
         ): FormalTaskRecordEntity {
             val persisted = taskDao.find(previous.taskId)
             val effectiveAction =
-                if (clearRequestedAction) {
+                if (previous.executorVersion == "NEW" || clearRequestedAction) {
                     null
                 } else {
                     requestedAction?.name ?: persisted?.requestedAction ?: previous.requestedAction
