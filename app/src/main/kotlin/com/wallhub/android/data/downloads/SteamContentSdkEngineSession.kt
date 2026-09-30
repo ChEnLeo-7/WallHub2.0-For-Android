@@ -62,7 +62,7 @@ internal class SteamContentSdkEngineSessionOpener
                 val live = authenticatedSessions.authenticated(credential.accountName)
                 if (live != null) {
                     Log.i(TAG, "content session reused=true")
-                    return@withContext SteamContentSdkEngineSession(live, ownsEngine = false)
+                    return@withContext SteamContentSdkEngineSession.borrowed(live)
                 }
                 // No live session, but the account session may be mid-attempt. Opening our own then asks for a
                 // second live session for the same account, which the peer refuses - the device reading showed
@@ -71,7 +71,7 @@ internal class SteamContentSdkEngineSessionOpener
                 val recovered = awaitAttemptToSettle(credential.accountName)
                 if (recovered != null) {
                     Log.i(TAG, "content session reused=after-recovery")
-                    return@withContext SteamContentSdkEngineSession(recovered, ownsEngine = false)
+                    return@withContext SteamContentSdkEngineSession.borrowed(recovered)
                 }
                 Log.i(TAG, "content session reused=false")
                 return@withContext try {
@@ -144,7 +144,7 @@ internal class SteamContentSdkEngineSessionOpener
                 }
                 session.restore(accountName.toByteArray(Charsets.UTF_8), token.toByteArray(Charsets.UTF_8))
                 awaitAuthenticated(session)
-                return SteamContentSdkEngineSession(engine, sessionOwner = sessionOwner)
+                return SteamContentSdkEngineSession.owned(engine, sessionOwner)
             } catch (error: Throwable) {
                 sessionOwner.close()
                 throw error
@@ -197,13 +197,12 @@ private class SteamContentSdkTransportFailure(
 /**
  * The engine-backed session a download holds for the length of one transfer.
  *
- * [ownsEngine] is false when the session was borrowed from the session domain's already-authenticated
- * engine: the download must not close an engine it does not own, or it would end the UI's session.
+ * A borrowed session has no close authority. An owned session holds exactly the generation handle opened for
+ * content restore; closing it never closes the process-wide engine or another domain's session.
  */
-private class SteamContentSdkEngineSession(
+private class SteamContentSdkEngineSession private constructor(
     private val engine: SteamContentSdkEngine,
-    private val ownsEngine: Boolean = true,
-    private val sessionOwner: GenerationHandleOwner.Handle<SteamSession>? = null,
+    private val lifetime: SessionLifetime,
 ) : SteamContentSdkSession {
     override val storageRoot: File
         get() = engine.storageRoot
@@ -271,9 +270,34 @@ private class SteamContentSdkEngineSession(
         )
 
     override fun close() {
-        // A download owns at most the session generation it restored. The engine is process-wide and owns
-        // every task/range handle, so a download must never close it. Borrowed wrappers own neither.
-        if (ownsEngine) sessionOwner?.close()
+        lifetime.close()
+    }
+
+    private sealed interface SessionLifetime {
+        fun close()
+
+        data object Borrowed : SessionLifetime {
+            override fun close() = Unit
+        }
+
+        class Owned(
+            private val generation: GenerationHandleOwner.Handle<SteamSession>,
+        ) : SessionLifetime {
+            override fun close() {
+                generation.close()
+            }
+        }
+    }
+
+    companion object {
+        fun borrowed(engine: SteamContentSdkEngine): SteamContentSdkEngineSession =
+            SteamContentSdkEngineSession(engine, SessionLifetime.Borrowed)
+
+        fun owned(
+            engine: SteamContentSdkEngine,
+            generation: GenerationHandleOwner.Handle<SteamSession>,
+        ): SteamContentSdkEngineSession =
+            SteamContentSdkEngineSession(engine, SessionLifetime.Owned(generation))
     }
 }
 
