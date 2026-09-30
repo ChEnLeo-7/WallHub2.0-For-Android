@@ -201,9 +201,6 @@ internal class RoomDownloadTaskRepository private constructor(
             action: DownloadAction,
         ) = taskMutationMutex.withLock {
             val task = requireNotNull(find(taskId)) { "Download task no longer exists" }
-            require(task.requestedAction == null || action == DownloadAction.CANCEL) {
-                "Task already has a pending ${task.requestedAction} request"
-            }
             require(action == DownloadAction.CANCEL || action in task.availableActions) {
                 "Task status ${task.status} does not support the ${action.name} action"
             }
