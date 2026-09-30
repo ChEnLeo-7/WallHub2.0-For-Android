@@ -153,7 +153,7 @@ interface FormalTaskRecordDao {
     }
 
     @Transaction
-    suspend fun upsertPreservingRequestedAction(task: FormalTaskRecordEntity): FormalTaskRecordEntity {
+    suspend fun upsertPreservingExecutionIntent(task: FormalTaskRecordEntity): FormalTaskRecordEntity {
         val current = find(task.taskId) ?: return task
         val merged =
             task.copy(
@@ -285,17 +285,38 @@ interface FormalTaskRecordDao {
         return true
     }
 
-    @Query(
-        "UPDATE formal_task_records SET requestedAction = 'CANCEL', message = :message, updatedAt = :updatedAt " +
-            "WHERE taskId = :taskId AND (requestedAction IS NULL OR requestedAction != 'CANCEL') " +
-            "AND status IN (:allowedStatuses)",
-    )
-    suspend fun requestCancellation(
+    /** Persists conversion cancellation without creating a download-host command. */
+    @Transaction
+    suspend fun requestConversionCancellation(
         taskId: String,
         message: String,
         updatedAt: Long,
-        allowedStatuses: List<String>,
-    ): Int
+    ): Boolean {
+        val current = find(taskId) ?: return false
+        if (current.status != "CONVERTING" || current.desiredIntent == "CANCEL") return false
+        upsert(
+            current.copy(
+                executorVersion = "NEW",
+                requestedAction = null,
+                desiredIntent = "CANCEL",
+                desiredIntentRevision = current.desiredIntentRevision + 1L,
+                message = message,
+                updatedAt = updatedAt,
+            ),
+        )
+        return true
+    }
+
+    @Query(
+        "UPDATE formal_task_records SET executorVersion = 'NEW', requestedAction = NULL, " +
+            "desiredIntent = 'CANCEL', " +
+            "desiredIntentRevision = CASE WHEN desiredIntentRevision < 1 THEN 1 ELSE desiredIntentRevision END, " +
+            "appliedIntentRevision = CASE WHEN desiredIntentRevision < 1 THEN 1 ELSE desiredIntentRevision END, " +
+            "quiescedIntentRevision = CASE WHEN desiredIntentRevision < 1 THEN 1 ELSE desiredIntentRevision END " +
+            "WHERE taskId = :taskId AND status = 'CANCELLED' " +
+            "AND (desiredIntent = 'CANCEL' OR requestedAction = 'CANCEL')",
+    )
+    suspend fun settleConversionCancellation(taskId: String): Int
 
     @Query("SELECT COALESCE(MAX(queuePosition), 0) + 1 FROM formal_task_records")
     suspend fun nextQueuePosition(): Long

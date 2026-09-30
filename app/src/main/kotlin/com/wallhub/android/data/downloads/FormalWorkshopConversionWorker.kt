@@ -100,7 +100,7 @@ internal class FormalWorkshopConversionWorker(
                     FormalWorkshopConversionCancellation.clear(taskId)
                 }
             }
-            if (task.requestedAction == DownloadAction.CANCEL.name) {
+            if (task.isCancellationRequested()) {
                 temporaryDirectory.deleteRecursively()
                 FormalWorkshopConversionCancellation.clear(taskId)
                 return@withContext cancelTask(task, sourceDirectory)
@@ -111,7 +111,6 @@ internal class FormalWorkshopConversionWorker(
                     update(
                         task,
                         status = DownloadStatus.CONVERTING,
-                        requestedAction = null,
                         message = applicationContext.getString(R.string.backend_conversion_progress, task.title),
                     )
                 temporaryDirectory.deleteRecursively()
@@ -184,8 +183,6 @@ internal class FormalWorkshopConversionWorker(
                             outputUri = exportedFile.uri,
                             outputLabel = exportedFile.label,
                             message = conversion.message(applicationContext, exportedFile.uri),
-                            requestedAction = null,
-                            clearRequestedAction = true,
                         )
                     // Keep completed output recoverable even if best-effort source cleanup fails.
                     if (!keepVideoSourceForLocalPlayback && sourceDirectory.deleteRecursively()) {
@@ -198,7 +195,7 @@ internal class FormalWorkshopConversionWorker(
                     val userCancelled = FormalWorkshopConversionCancellation.claimCancellation(taskId)
                     val latest = taskDao.find(taskId)
                     if (
-                        latest?.requestedAction == DownloadAction.CANCEL.name ||
+                        latest?.isCancellationRequested() == true ||
                         userCancelled
                     ) {
                         cancelTask(latest ?: task, sourceDirectory)
@@ -210,7 +207,7 @@ internal class FormalWorkshopConversionWorker(
                 withContext(NonCancellable) {
                     val userCancelled = FormalWorkshopConversionCancellation.claimCancellation(taskId)
                     val latest = taskDao.find(taskId)
-                    if (latest?.requestedAction == DownloadAction.CANCEL.name || userCancelled) {
+                    if (latest?.isCancellationRequested() == true || userCancelled) {
                         cancelTask(latest ?: task, sourceDirectory)
                     } else {
                         fail(
@@ -358,10 +355,11 @@ internal class FormalWorkshopConversionWorker(
             downloadedBytes = 0L,
             bytesPerSecond = 0L,
             stagingDirectory = null,
-            requestedAction = null,
-            clearRequestedAction = true,
             message = applicationContext.getString(R.string.backend_conversion_cancelled_cleaned),
         )
+        check(taskDao.settleConversionCancellation(task.taskId) == 1) {
+            "Conversion cancellation intent changed before settlement"
+        }
         return Result.success()
     }
 
@@ -374,7 +372,7 @@ internal class FormalWorkshopConversionWorker(
         withContext(NonCancellable) {
             val userCancelled = FormalWorkshopConversionCancellation.claimCancellation(taskId)
             val latest = taskDao.find(taskId)
-            if (latest?.requestedAction == DownloadAction.CANCEL.name || userCancelled) {
+            if (latest?.isCancellationRequested() == true || userCancelled) {
                 cancelTask(latest ?: task, sourceDirectory)
             } else {
                 fail(latest ?: task, message)
@@ -389,8 +387,6 @@ internal class FormalWorkshopConversionWorker(
             task,
             status = DownloadStatus.FAILED,
             bytesPerSecond = 0L,
-            requestedAction = null,
-            clearRequestedAction = true,
             message = message,
         )
         return Result.success()
@@ -405,16 +401,7 @@ internal class FormalWorkshopConversionWorker(
         outputUri: String? = previous.outputUri,
         outputLabel: String? = previous.outputLabel,
         message: String? = previous.message,
-        requestedAction: DownloadAction? = previous.requestedAction?.toDownloadAction(),
-        clearRequestedAction: Boolean = false,
     ): FormalTaskRecordEntity {
-        val current = taskDao.find(previous.taskId)
-        val effectiveRequestedAction =
-            if (clearRequestedAction) {
-                null
-            } else {
-                current?.requestedAction ?: requestedAction?.name
-            }
         val updated =
             previous.copy(
                 status = status.name,
@@ -424,11 +411,10 @@ internal class FormalWorkshopConversionWorker(
                 outputUri = outputUri,
                 outputLabel = outputLabel,
                 message = message,
-                requestedAction = effectiveRequestedAction,
+                requestedAction = null,
                 updatedAt = System.currentTimeMillis(),
             )
-        taskDao.upsert(updated)
-        return updated
+        return taskDao.upsertPreservingExecutionIntent(updated)
     }
 
     private fun outputName(
@@ -749,9 +735,8 @@ private fun String.toExportFormat(): ExportFormat =
         .firstOrNull { it.name == this }
         ?: ExportFormat.AUTO
 
-private fun String.toDownloadAction(): DownloadAction? =
-    enumValues<DownloadAction>()
-        .firstOrNull { it.name == this }
+private fun FormalTaskRecordEntity.isCancellationRequested(): Boolean =
+    desiredIntent == DownloadAction.CANCEL.name || requestedAction == DownloadAction.CANCEL.name
 
 private const val MAX_CONVERSION_OUTPUT_BYTES = 4L * 1024L * 1024L * 1024L
 private const val CONVERSION_DISK_MULTIPLIER = 2L

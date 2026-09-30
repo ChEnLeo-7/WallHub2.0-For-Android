@@ -100,7 +100,7 @@ internal class RoomDownloadTaskRepository private constructor(
         override suspend fun find(taskId: String): DownloadTask? = taskDao.find(taskId)?.toModel()
 
         override suspend fun upsert(task: DownloadTask) {
-            taskDao.upsertPreservingRequestedAction(task.toEntity())
+            taskDao.upsertPreservingExecutionIntent(task.toEntity())
         }
 
         override suspend fun enqueue(request: DownloadRequest): DownloadEnqueueResult = taskMutationMutex.withLock {
@@ -352,12 +352,11 @@ internal class RoomDownloadTaskRepository private constructor(
                 try {
                     withContext(NonCancellable) {
                         check(
-                            taskDao.requestCancellation(
+                            taskDao.requestConversionCancellation(
                                 taskId = task.id,
                                 message = context.getString(R.string.backend_conversion_cancelling),
                                 updatedAt = System.currentTimeMillis(),
-                                allowedStatuses = listOf(DownloadStatus.CONVERTING.name),
-                            ) == 1,
+                            ),
                         ) { "Conversion state changed before cancellation could be requested" }
                         FormalWorkshopConversionCancellation.completeRequest(task.id)
                     }

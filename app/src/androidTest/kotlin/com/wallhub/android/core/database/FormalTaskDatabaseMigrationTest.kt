@@ -165,6 +165,44 @@ class FormalTaskDatabaseMigrationTest {
     }
 
     @Test
+    fun conversionCancellationSurvivesProjectionWritesAndSettlesItsRevision() {
+        val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
+        try {
+            val dao = database.taskRecordDao()
+            kotlinx.coroutines.runBlocking {
+                val converting =
+                    FormalTaskRecordEntity(
+                        taskId = "conversion",
+                        workshopId = 1,
+                        title = "conversion",
+                        type = "scene",
+                        status = "CONVERTING",
+                        createdAt = 1,
+                        updatedAt = 1,
+                        executorVersion = "NEW",
+                    )
+                dao.upsert(converting)
+                assertTrue(dao.requestConversionCancellation("conversion", "cancelling", 2))
+
+                dao.upsertPreservingExecutionIntent(
+                    converting.copy(status = "CANCELLED", message = "cancelled", updatedAt = 3),
+                )
+                val cancelled = requireNotNull(dao.find("conversion"))
+                assertEquals("CANCEL", cancelled.desiredIntent)
+                assertEquals(1L, cancelled.desiredIntentRevision)
+                assertEquals(0L, cancelled.appliedIntentRevision)
+
+                assertEquals(1, dao.settleConversionCancellation("conversion"))
+                val settled = requireNotNull(dao.find("conversion"))
+                assertEquals(1L, settled.appliedIntentRevision)
+                assertEquals(1L, settled.quiescedIntentRevision)
+            }
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun newerEngineEpochImmediatelyFencesOldCommandClaims() {
         val database =
             Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE)

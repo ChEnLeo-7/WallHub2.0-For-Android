@@ -712,7 +712,7 @@ internal class FormalDownloadRunner
                 taskDao.upsert(updated)
                 updated
             } else {
-                taskDao.upsertPreservingRequestedAction(updated)
+                taskDao.upsertPreservingExecutionIntent(updated)
             }
         }
 
@@ -737,7 +737,7 @@ internal class FormalDownloadRunner
                     updatedAt = System.currentTimeMillis(),
                 )
             if (isNew) {
-                taskDao.upsertPreservingRequestedAction(cancelled)
+                taskDao.upsertPreservingExecutionIntent(cancelled)
             } else {
                 taskDao.upsert(cancelled)
             }
