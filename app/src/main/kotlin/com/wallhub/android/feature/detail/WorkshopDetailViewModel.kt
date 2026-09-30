@@ -17,6 +17,7 @@ import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTaskRepository
+import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.FavoriteState
 import com.wallhub.android.core.model.SettingsRepository
@@ -54,6 +55,7 @@ class WorkshopDetailViewModel
         private val accountWorkshopRepository: AccountWorkshopRepository,
         private val steamSessionRepository: SteamSessionRepository,
         private val downloadTaskRepository: DownloadTaskRepository,
+        private val workshopDownloads: WorkshopDownloads,
         private val settingsRepository: SettingsRepository,
         private val videoStreamRepository: WorkshopVideoStreamRepository,
     ) : ViewModel() {
@@ -125,7 +127,7 @@ class WorkshopDetailViewModel
                 }
             }
             viewModelScope.launch {
-                downloadTaskRepository.tasks.collect { tasks ->
+                workshopDownloads.tasks.collect { tasks ->
                     val localVideoTask =
                         tasks.firstOrNull { task ->
                             task.workshopId == workshopId &&
@@ -477,7 +479,7 @@ class WorkshopDetailViewModel
                         downloadMessage = null,
                     )
                 runCatching {
-                    downloadTaskRepository.enqueue(
+                    workshopDownloads.enqueue(
                         DownloadRequest(
                             workshopId = detail.summary.id,
                             title = applicationContext.localizedTitle(detail.summary),
@@ -555,7 +557,7 @@ class WorkshopDetailViewModel
                         downloadTaskRepository.find(taskId)
                             ?: throw DetailUiTextException(R.string.detail_download_task_missing)
                     downloadTaskRepository.upsert(task.copy(exportFormat = format))
-                    downloadTaskRepository.requestAction(taskId, DownloadAction.EXPORT)
+                    workshopDownloads.requestAction(taskId, DownloadAction.EXPORT)
                 }.onSuccess {
                     mutableState.value =
                         mutableState.value.copy(
