@@ -1505,3 +1505,30 @@ schedule tests step the clock explicitly instead of draining it.
 `content session waiting for the account attempt to settle` and then `content session reused=after-recovery`, and
 that a `session_recovery_scheduled` retry beyond the first actually runs. The five device checks listed at the end
 of entry (33) are still owed too.
+
+## 2026-09-30 (35) - download control moved behind durable commands and one live host
+
+The first control-plane migration from `docs/download-engine-architecture.md` is now live. Room schema 8 keeps v7
+rows as `LEGACY`, while a new task is accepted by one transaction that writes the task projection and a versioned
+`RUN` row in `download_commands`. `PAUSE`, `CANCEL`, `RESUME`, and transfer `RETRY` likewise append an intent revision;
+WorkManager enqueue failure is only a failed wake-up, not a reason to rewrite an already durable job as failed.
+
+One `SingleProcessDownloadHostCoordinator` owns live runs by task id. Concurrent wake-ups join its Deferred instead
+of opening another SDK task. Its first run acquires a durable Engine Epoch; commands are claimed by that epoch and
+acknowledged with per-task receipt sequences. Command acknowledgement and projection of applied/quiesced revisions
+are one Room transaction. Late controls are claimed again when a transfer settles, same-epoch claims may be replayed
+after a stopped adapter, and an older epoch cannot acknowledge a command reclaimed by a new process.
+
+For NEW tasks WorkManager now schedules one `wallhub_download_host_reconcile` wake worker. That worker owns no Steam
+session, native handle, buffers, or files; during the compatibility cut it starts the old per-task body, which must
+enter the singleton host before touching the transfer. Existing v7 tasks stay on the LEGACY route. The external
+`WorkshopDownloads` seam now exposes observe/enqueue/control/reorder while `DownloadTaskRepository` temporarily keeps
+storage/admin calls.
+
+Evidence: Room 7→8 upgraded in-place on the OnePlus 5T; Release builds succeeded through revision `b8c6ecb`; the
+worker's `testDebugUnitTest` completed successfully. A real NEW task `8f8e8cef-f0f7-40ab-99ff-9181c8785d0c`
+(Workshop `3799142774`) reached SDK `MANIFEST_RESOLVED`, `DOWNLOADING`, durable `CHUNK_PROGRESS`, and an interval-derived
+`THROUGHPUT_UPDATED=137211`. The first nonzero speed was persisted. Force-stopping the process mid-transfer and
+starting the activity produced a new PID and the same task resumed through `RESOLVING -> DOWNLOADING`, with no fatal
+exception. The compatibility runner is still a per-task WorkRequest behind the singleton host and is the next piece
+to extract; this entry does not claim that deletion gate is closed.
