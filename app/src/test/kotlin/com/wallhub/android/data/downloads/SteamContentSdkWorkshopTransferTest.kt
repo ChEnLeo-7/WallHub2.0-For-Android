@@ -171,13 +171,19 @@ class SteamContentSdkWorkshopTransferTest {
      * boundary and not a close that only aborts it.
      */
     @Test
-    fun thePauseIsRequestedBeforeTheTaskIsClosed() {
+    fun thePauseWaitsForTheSdkPausedStateBeforeTheTaskIsClosed() {
         val fixture = Fixture()
         try {
+            fixture.task.statuses +=
+                SteamContentSdkTaskStatus(TaskState.DOWNLOADING, 4L, 9L, TaskFailure.NONE)
+            fixture.task.statuses +=
+                SteamContentSdkTaskStatus(TaskState.PAUSED, 4L, 9L, TaskFailure.NONE)
+
             assertThrows(SteamDownloadPausedException::class.java) {
                 runBlocking { fixture.download(control = { SteamDownloadControl.PAUSE }) }
             }
-            assertEquals(listOf("pause", "close"), fixture.task.calls)
+
+            assertEquals(listOf("pause", "status", "status", "close"), fixture.task.calls)
         } finally {
             fixture.close()
         }
@@ -206,13 +212,20 @@ class SteamContentSdkWorkshopTransferTest {
     }
 
     @Test
-    fun cancelReachesTheSdkTaskAndRaisesTheAppCancelSignal() {
+    fun cancelWaitsForTheSdkCancelledStateBeforeTheTaskIsClosed() {
         val fixture = Fixture()
         try {
+            fixture.task.statuses +=
+                SteamContentSdkTaskStatus(TaskState.DOWNLOADING, 4L, 9L, TaskFailure.NONE)
+            fixture.task.statuses +=
+                SteamContentSdkTaskStatus(TaskState.CANCELLED, 4L, 9L, TaskFailure.CANCELLED)
+
             assertThrows(SteamDownloadCancelledException::class.java) {
                 runBlocking { fixture.download(control = { SteamDownloadControl.CANCEL }) }
             }
+
             assertEquals(1, fixture.task.cancelCalls)
+            assertEquals(listOf("cancel", "status", "status", "close"), fixture.task.calls)
         } finally {
             fixture.close()
         }
@@ -543,13 +556,15 @@ class SteamContentSdkWorkshopTransferTest {
         /** What the SDK's pause call throws, if it refuses the request. */
         var pauseFailure: Throwable? = null
 
-        override fun status(): SteamContentSdkTaskStatus =
-            statuses.removeFirstOrNull() ?: SteamContentSdkTaskStatus(
-                state = TaskState.COMPLETED,
+        override fun status(): SteamContentSdkTaskStatus {
+            calls += "status"
+            return statuses.removeFirstOrNull() ?: SteamContentSdkTaskStatus(
+                state = if (pauseCalls > 0) TaskState.PAUSED else if (cancelCalls > 0) TaskState.CANCELLED else TaskState.COMPLETED,
                 committedBytes = 0L,
                 totalDecodedBytes = 0L,
-                errorOrdinal = TaskFailure.NONE,
+                errorOrdinal = if (cancelCalls > 0) TaskFailure.CANCELLED else TaskFailure.NONE,
             )
+        }
 
         override fun pollEvent(timeoutMs: Int): SteamContentSdkTaskEvent? = null
 

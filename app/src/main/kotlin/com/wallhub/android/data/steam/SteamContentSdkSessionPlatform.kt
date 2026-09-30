@@ -426,17 +426,19 @@ internal class SteamContentSdkEnginePlatform(
         val route =
             routes.platformRoute(refreshLive = refreshLive)
                 ?: error("The platform's Steam route is unavailable; the Steam Content SDK session cannot start")
-        val session =
-            engine.open(route)
+        val handle =
+            engine.openHandle(route)
                 ?: error("The Steam Content SDK session is unavailable on this device")
-        return SteamContentSdkEnginePlatformSession(engine, session)
+        return SteamContentSdkEnginePlatformSession(engine, handle)
     }
 }
 
 private class SteamContentSdkEnginePlatformSession(
     private val engine: SteamContentSdkEngine,
-    private val session: SteamSession,
+    private val sessionOwner: GenerationHandleOwner.Handle<SteamSession>,
 ) : SteamContentSdkPlatformSession {
+    private val session: SteamSession
+        get() = sessionOwner.value
     /**
      * The account this session was started for, so the authenticated session can be published as one the
      * content path may borrow. Set by the logon and restore that started it, and never logged.
@@ -535,9 +537,10 @@ private class SteamContentSdkEnginePlatformSession(
         accountName: String,
         password: ByteArray,
     ) {
-        check(engine.logon(accountName, password)) {
+        check(session.capabilities().supports(SessionCapabilityBits.ACCOUNT_LOGIN)) {
             "The Steam Content SDK session cannot begin an account logon"
         }
+        session.beginAccountLogon(accountName.toByteArray(Charsets.UTF_8), password)
         this.accountName = accountName
     }
 
@@ -545,9 +548,10 @@ private class SteamContentSdkEnginePlatformSession(
         accountName: String,
         refreshToken: ByteArray,
     ) {
-        check(engine.restore(accountName, refreshToken)) {
+        check(session.capabilities().supports(SessionCapabilityBits.RESTORE)) {
             "The Steam Content SDK session cannot restore a stored account"
         }
+        session.restore(accountName.toByteArray(Charsets.UTF_8), refreshToken)
         this.accountName = accountName
     }
 
@@ -555,18 +559,16 @@ private class SteamContentSdkEnginePlatformSession(
         challengeId: ByteArray,
         answer: ByteArray,
     ) {
-        check(engine.submitGuardAnswer(challengeId, answer)) {
-            "The Steam Content SDK session refused a Guard answer"
-        }
+        session.respondToChallenge(challengeId, answer)
     }
 
-    override fun logout() = engine.logout()
+    override fun logout() = session.logout()
 
     override fun close() {
         SteamContentSdkLiveSession.clear(engine)
         // Only the session. This engine is the process-wide session engine, and a download or a range stream
         // may have borrowed it; closing the engine here is what turned a lost connection into
         // `invalid task handle` on a transfer that was still running.
-        engine.closeSession()
+        sessionOwner.close()
     }
 }

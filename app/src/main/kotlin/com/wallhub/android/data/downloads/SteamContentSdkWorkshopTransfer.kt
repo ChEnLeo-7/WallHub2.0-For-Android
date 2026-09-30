@@ -11,6 +11,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
@@ -258,9 +259,12 @@ internal class SteamContentSdkWorkshopTransfer
                         runTask(task, destinationDirectory, control, onProgress)
                     } catch (error: CancellationException) {
                         // The worker was stopped mid-transfer rather than asked to cancel through the
-                        // control probe, so closing the task is not enough: the SDK's own transfer is
-                        // still running and would keep pulling bytes after the app stopped watching.
-                        runCatching { task.cancel() }
+                        // control probe. Keep cleanup non-cancellable until the SDK confirms its own task
+                        // reached CANCELLED; closing a still-running handle can release the app wrapper while
+                        // the native transfer continues pulling bytes.
+                        withContext(NonCancellable) {
+                            cancelAndAwaitTerminal(task)
+                        }
                         throw error
                     } finally {
                         runCatching { task.close() }
@@ -284,23 +288,12 @@ internal class SteamContentSdkWorkshopTransfer
                 currentCoroutineContext().ensureActive()
                 when (control()) {
                     SteamDownloadControl.CANCEL -> {
-                        task.cancel()
+                        cancelAndAwaitTerminal(task)
                         throw SteamDownloadCancelledException()
                     }
 
                     SteamDownloadControl.PAUSE -> {
-                        // The pause is the SDK's own cooperative call, so the run stops at its next durable
-                        // chunk boundary with the journal in place instead of merely stopping this poll loop.
-                        // A refusal is not a failed download: the SDK refuses only when the run already
-                        // ended or its handle is gone, and the durable checkpoint survives either way, so
-                        // the app still reports the pause and lets the next run continue from it.
-                        try {
-                            task.pause()
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (error: Throwable) {
-                            Log.w(TAG, "the SDK refused a pause; the durable checkpoint still stands", error)
-                        }
+                        pauseAndAwaitTerminal(task)
                         throw SteamDownloadPausedException()
                     }
 
@@ -345,7 +338,7 @@ internal class SteamContentSdkWorkshopTransfer
                         // abandoning durable work, and let an explicit cancel still win.
                         when (control()) {
                             SteamDownloadControl.CANCEL -> {
-                                task.cancel()
+                                cancelAndAwaitTerminal(task)
                                 throw SteamDownloadCancelledException()
                             }
 
@@ -379,6 +372,46 @@ internal class SteamContentSdkWorkshopTransfer
                         }
                     }
                 }
+            }
+        }
+
+        /** Requests a durable pause and does not let the task handle close before the SDK confirms it. */
+        private fun pauseAndAwaitTerminal(task: SteamContentSdkTask) {
+            try {
+                task.pause()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                // A refused request can race a terminal state. Observe that state rather than converting a
+                // completed or failed task into an app pause merely because the control probe ran first.
+                Log.w(TAG, "the SDK refused a pause; reading its terminal state", error)
+            }
+            while (true) {
+                val status = task.status()
+                when (status.state) {
+                    TaskState.PAUSED -> return
+                    TaskState.CANCELLED -> throw SteamDownloadCancelledException()
+                    TaskState.FAILED -> throw sdkFailure(task, status)
+                    TaskState.COMPLETED -> error("The Steam Content SDK download completed before it paused")
+                }
+                task.pollEvent(SDK_EVENT_POLL_MS)
+            }
+        }
+
+        /** Requests cancellation and waits until the SDK reports its terminal CANCELLED state. */
+        private fun cancelAndAwaitTerminal(task: SteamContentSdkTask) {
+            runCatching { task.cancel() }
+            while (true) {
+                val status = task.status()
+                when (status.state) {
+                    TaskState.CANCELLED -> return
+                    TaskState.FAILED -> {
+                        if (status.errorOrdinal == TaskFailure.CANCELLED) return
+                        throw sdkFailure(task, status)
+                    }
+                    TaskState.COMPLETED -> return
+                }
+                task.pollEvent(SDK_EVENT_POLL_MS)
             }
         }
 

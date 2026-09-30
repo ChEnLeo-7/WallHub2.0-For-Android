@@ -13,6 +13,7 @@ import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.DownloadAction
+import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTaskRepository
@@ -487,19 +488,27 @@ class WorkshopDetailViewModel
                             exportFormat = mutableState.value.exportFormat,
                         ),
                     )
-                }.onSuccess { task ->
+                }.onSuccess { result ->
                     mutableState.value =
                         mutableState.value.copy(
                             isEnqueuingDownload = false,
                             waitingForLocalVideoPlayback = playWhenReady,
                             downloadMessage =
-                                if (playWhenReady) {
-                                    DetailUiText.Resource(R.string.detail_video_queued_for_playback)
-                                } else {
-                                    DetailUiText.Resource(
-                                        R.string.detail_added_to_download_queue,
-                                        listOf(task.title),
-                                    )
+                                when {
+                                    playWhenReady && result is DownloadEnqueueResult.Created ->
+                                        DetailUiText.Resource(R.string.detail_video_queued_for_playback)
+                                    playWhenReady ->
+                                        DetailUiText.Resource(R.string.detail_video_downloading_for_playback)
+                                    result is DownloadEnqueueResult.Created ->
+                                        DetailUiText.Resource(
+                                            R.string.detail_added_to_download_queue,
+                                            listOf(result.task.title),
+                                        )
+                                    else ->
+                                        DetailUiText.Resource(
+                                            R.string.download_already_active,
+                                            listOf(result.task.title),
+                                        )
                                 },
                         )
                 }.onFailure { error ->

@@ -45,6 +45,18 @@ data class DownloadRequest(
     val exportFormat: ExportFormat = ExportFormat.AUTO,
 )
 
+sealed interface DownloadEnqueueResult {
+    val task: DownloadTask
+
+    data class Created(
+        override val task: DownloadTask,
+    ) : DownloadEnqueueResult
+
+    data class AlreadyActive(
+        override val task: DownloadTask,
+    ) : DownloadEnqueueResult
+}
+
 data class DownloadTask(
     val id: String,
     val workshopId: Long,

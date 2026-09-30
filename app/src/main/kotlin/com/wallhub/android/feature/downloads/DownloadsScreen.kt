@@ -89,6 +89,7 @@ import com.wallhub.android.core.format.formatByteSize
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
 import com.wallhub.android.core.model.DownloadAction
+import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
@@ -358,11 +359,15 @@ class DownloadsViewModel
                             exportFormat = ExportFormat.AUTO,
                         ),
                     )
-                }.onSuccess { task ->
+                }.onSuccess { result ->
                     effectChannel.send(
                         DownloadsEffect.ShowMessage(
-                            R.string.downloads_added_to_queue,
-                            listOf(task.title),
+                            if (result is DownloadEnqueueResult.Created) {
+                                R.string.downloads_added_to_queue
+                            } else {
+                                R.string.download_already_active
+                            },
+                            listOf(result.task.title),
                         ),
                     )
                 }.onFailure {

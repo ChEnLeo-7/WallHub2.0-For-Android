@@ -93,6 +93,7 @@ import com.wallhub.android.core.designsystem.localizedAuthor
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
 import com.wallhub.android.core.model.WorkshopBrowseQuery
+import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadTaskRepository
 import com.wallhub.android.core.model.ExportFormat
@@ -308,11 +309,15 @@ class DiscoverResultsViewModel
                             exportFormat = ExportFormat.AUTO,
                         ),
                     )
-                }.onSuccess { task ->
+                }.onSuccess { result ->
                     effectChannel.send(
                         DiscoverResultsEffect.ShowMessage(
-                            R.string.home_added_to_download_queue,
-                            listOf(task.title),
+                            if (result is DownloadEnqueueResult.Created) {
+                                R.string.home_added_to_download_queue
+                            } else {
+                                R.string.download_already_active
+                            },
+                            listOf(result.task.title),
                         ),
                     )
                 }.onFailure {

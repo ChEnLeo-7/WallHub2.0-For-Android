@@ -323,7 +323,7 @@ interface DownloadTaskRepository {
 
     suspend fun upsert(task: DownloadTask)
 
-    suspend fun enqueue(request: DownloadRequest): DownloadTask
+    suspend fun enqueue(request: DownloadRequest): DownloadEnqueueResult
 
     suspend fun prewarmDownload(workshopId: Long) = Unit
 

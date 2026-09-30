@@ -12,6 +12,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.localizedTitle
+import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadTaskRepository
 import com.wallhub.android.core.model.ExportFormat
@@ -327,7 +328,8 @@ class HomeViewModel
                             exportFormat = ExportFormat.AUTO,
                         ),
                     )
-                }.onSuccess { task ->
+                }.onSuccess { result ->
+                    val task = result.task
                     DownloadTimingTelemetry.log(
                         event = DownloadTimingTelemetry.HOMEPAGE_DOWNLOAD_CLICK,
                         taskId = task.id,
@@ -336,7 +338,11 @@ class HomeViewModel
                     )
                     effectChannel.send(
                         HomeEffect.ShowMessage(
-                            R.string.home_added_to_download_queue,
+                            if (result is DownloadEnqueueResult.Created) {
+                                R.string.home_added_to_download_queue
+                            } else {
+                                R.string.download_already_active
+                            },
                             listOf(task.title),
                         ),
                     )

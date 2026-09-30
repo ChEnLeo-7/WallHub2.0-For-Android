@@ -3,11 +3,13 @@ package com.wallhub.android.data.downloads
 import android.util.Log
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.core.model.SteamSessionRepository
+import com.wallhub.android.data.steam.GenerationHandleOwner
 import com.wallhub.android.data.steam.SteamContentSdkEngine
 import com.wallhub.android.data.steam.SteamContentSdkLiveSession
 import com.wallhub.android.data.steam.SteamContentSdkRouteFactory
 import com.wallhub.android.data.steam.isAttemptInFlight
 import io.steamcontent.sdk.DepotRangeStream
+import io.steamcontent.sdk.SessionCapabilityBits
 import io.steamcontent.sdk.SessionEventKind
 import io.steamcontent.sdk.SessionFailure
 import io.steamcontent.sdk.SessionState
@@ -132,18 +134,26 @@ internal class SteamContentSdkEngineSessionOpener
             val route =
                 routes.platformRoute(refreshLive = refreshLive)
                     ?: error("The platform's Steam route is unavailable; the Steam Content SDK path cannot start")
-            val session = engine.open(route) ?: error("The Steam Content SDK is unavailable on this device")
-            check(engine.restore(accountName, token.toByteArray(Charsets.UTF_8))) {
-                "The Steam Content SDK session cannot restore a stored account"
+            val sessionOwner =
+                engine.openHandle(route) ?: error("The Steam Content SDK is unavailable on this device")
+            val session = sessionOwner.value
+            try {
+                check(session.capabilities().supports(SessionCapabilityBits.RESTORE)) {
+                    "The Steam Content SDK session cannot restore a stored account"
+                }
+                session.restore(accountName.toByteArray(Charsets.UTF_8), token.toByteArray(Charsets.UTF_8))
+                awaitAuthenticated(session)
+                return SteamContentSdkEngineSession(engine, sessionOwner = sessionOwner)
+            } catch (error: Throwable) {
+                sessionOwner.close()
+                throw error
             }
-            awaitAuthenticated(session)
-            return SteamContentSdkEngineSession(engine)
         }
 
         private suspend fun awaitAuthenticated(session: SteamSession) {
             val deadline = System.nanoTime() + AUTHENTICATION_TIMEOUT_NANOS
             while (true) {
-                when (engine.state()) {
+                when (session.state()) {
                     SessionState.AUTHENTICATED -> return
                     SessionState.CLOSED -> error("The Steam Content SDK session closed before it authenticated")
                 }
@@ -192,6 +202,7 @@ private class SteamContentSdkTransportFailure(
 private class SteamContentSdkEngineSession(
     private val engine: SteamContentSdkEngine,
     private val ownsEngine: Boolean = true,
+    private val sessionOwner: GenerationHandleOwner.Handle<SteamSession>? = null,
 ) : SteamContentSdkSession {
     override val storageRoot: File
         get() = engine.storageRoot
@@ -259,7 +270,9 @@ private class SteamContentSdkEngineSession(
         )
 
     override fun close() {
-        if (ownsEngine) engine.close()
+        // A download owns at most the session generation it restored. The engine is process-wide and owns
+        // every task/range handle, so a download must never close it. Borrowed wrappers own neither.
+        if (ownsEngine) sessionOwner?.close()
     }
 }
 

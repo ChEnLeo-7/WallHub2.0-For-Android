@@ -483,6 +483,7 @@
     <string name='home_favorites'>Favorites</string>
     <string name='home_storage_permission_denied'>Storage permission was not granted. Cannot export to Download/WallHub.</string>
     <string name='home_added_to_download_queue'>Added to download queue: %1$s</string>
+    <string name='download_already_active'>Download already active: %1$s</string>
     <string name='home_unable_to_queue_download'>Unable to add to the download queue</string>
     <string name='home_steam_ip_prewarm_failed'>Steam IP prewarm failed. Check your network and retry.</string>
     <string name='home_unable_to_load_workshop'>Unable to load Steam Workshop. Try again later.</string>

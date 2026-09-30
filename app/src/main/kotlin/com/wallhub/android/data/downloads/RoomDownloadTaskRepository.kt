@@ -7,6 +7,7 @@ import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.database.FormalTaskRecordEntity
 import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadCredentialMode
+import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
@@ -28,18 +29,66 @@ import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 
-internal class RoomDownloadTaskRepository
+internal class RoomDownloadTaskRepository private constructor(
+    private val context: Context,
+    private val taskDao: FormalTaskRecordDao,
+    private val credentialProvider: SteamContentCredentialProvider,
+    private val workScheduler: DownloadWorkScheduler,
+    private val conversionScheduler: ConversionWorkScheduler,
+    private val settingsRepository: SettingsRepository,
+    private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
+    private val steamWorkshopContentClient: SteamWorkshopContentClient,
+    private val queuedMessage: () -> String,
+    private val enqueueFailedMessage: (String) -> String,
+) : DownloadTaskRepository {
     @Inject
     constructor(
-        @ApplicationContext private val context: Context,
-        private val taskDao: FormalTaskRecordDao,
-        private val credentialProvider: SteamContentCredentialProvider,
-        private val workScheduler: DownloadWorkScheduler,
-        private val conversionScheduler: ConversionWorkScheduler,
-        private val settingsRepository: SettingsRepository,
-        private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
-        private val steamWorkshopContentClient: SteamWorkshopContentClient,
-    ) : DownloadTaskRepository {
+        @ApplicationContext context: Context,
+        taskDao: FormalTaskRecordDao,
+        credentialProvider: SteamContentCredentialProvider,
+        workScheduler: DownloadWorkScheduler,
+        conversionScheduler: ConversionWorkScheduler,
+        settingsRepository: SettingsRepository,
+        downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
+        steamWorkshopContentClient: SteamWorkshopContentClient,
+    ) : this(
+        context = context,
+        taskDao = taskDao,
+        credentialProvider = credentialProvider,
+        workScheduler = workScheduler,
+        conversionScheduler = conversionScheduler,
+        settingsRepository = settingsRepository,
+        downloadConcurrencyGovernor = downloadConcurrencyGovernor,
+        steamWorkshopContentClient = steamWorkshopContentClient,
+        queuedMessage = { context.getString(R.string.backend_download_queued) },
+        enqueueFailedMessage = { errorType ->
+            context.getString(R.string.backend_download_start_failed, errorType)
+        },
+    )
+
+    internal constructor(
+        context: Context,
+        taskDao: FormalTaskRecordDao,
+        credentialProvider: SteamContentCredentialProvider,
+        workScheduler: DownloadWorkScheduler,
+        conversionScheduler: ConversionWorkScheduler,
+        settingsRepository: SettingsRepository,
+        downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
+        steamWorkshopContentClient: SteamWorkshopContentClient,
+        queuedMessage: String,
+        enqueueFailedMessage: (String) -> String,
+    ) : this(
+        context,
+        taskDao,
+        credentialProvider,
+        workScheduler,
+        conversionScheduler,
+        settingsRepository,
+        downloadConcurrencyGovernor,
+        steamWorkshopContentClient,
+        { queuedMessage },
+        enqueueFailedMessage,
+    )
         private val taskMutationMutex = Mutex()
 
         override val tasks: Flow<List<DownloadTask>> =
@@ -53,9 +102,24 @@ internal class RoomDownloadTaskRepository
             taskDao.upsert(task.toEntity())
         }
 
-        override suspend fun enqueue(request: DownloadRequest): DownloadTask = taskMutationMutex.withLock {
+        override suspend fun enqueue(request: DownloadRequest): DownloadEnqueueResult = taskMutationMutex.withLock {
             require(request.workshopId > 0L) { "Invalid Workshop item ID" }
-            taskDao.findActiveForWorkshop(request.workshopId)?.toModel()?.let { return it }
+            taskDao.findActiveForWorkshop(request.workshopId)?.toModel()?.let { activeTask ->
+                if (activeTask.status in DOWNLOAD_WORK_STATUSES) {
+                    try {
+                        // KEEP repairs a persisted row whose unique work was lost to process death,
+                        // while leaving an existing WorkManager run untouched.
+                        workScheduler.enqueue(activeTask.id)
+                    } catch (error: Throwable) {
+                        Log.e(
+                            LOG_TAG,
+                            "Unable to ensure formal Steam download taskId=${activeTask.id}, type=${error.javaClass.name}",
+                        )
+                        throw error
+                    }
+                }
+                return DownloadEnqueueResult.AlreadyActive(activeTask)
+            }
             val now = System.currentTimeMillis()
             // Do not hold the task mutation lock while waiting up to 30 seconds for Steam
             // restoration. The worker performs the authoritative credential resolution.
@@ -78,7 +142,7 @@ internal class RoomDownloadTaskRepository
                         },
                     outputTreeUri = request.outputTreeUri,
                     exportFormat = request.exportFormat,
-                    message = context.getString(R.string.backend_download_queued),
+                    message = queuedMessage(),
                     queuePosition = taskDao.nextQueuePosition(),
                     createdAt = now,
                     updatedAt = now,
@@ -92,21 +156,28 @@ internal class RoomDownloadTaskRepository
                     taskId = task.id,
                     workshopId = task.workshopId,
                 )
-                task
+                DownloadEnqueueResult.Created(task)
             } catch (error: Throwable) {
-                val failed =
-                    task.copy(
-                        status = DownloadStatus.FAILED,
-                        message = context.getString(R.string.backend_download_start_failed, error.javaClass.simpleName),
-                        updatedAt = System.currentTimeMillis(),
-                    )
-                upsert(failed)
-                Log.e(
-                    LOG_TAG,
-                    "Unable to queue formal Steam download taskId=${task.id}, type=${error.javaClass.name}",
-                )
-                failed
+                markEnqueueFailed(task, error)
+                throw error
             }
+        }
+
+        private suspend fun markEnqueueFailed(
+            task: DownloadTask,
+            error: Throwable,
+        ) {
+            upsert(
+                task.copy(
+                    status = DownloadStatus.FAILED,
+                    message = enqueueFailedMessage(error.javaClass.simpleName),
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+            Log.e(
+                LOG_TAG,
+                "Unable to queue formal Steam download taskId=${task.id}, type=${error.javaClass.name}",
+            )
         }
 
         override suspend fun prewarmDownload(workshopId: Long) {
@@ -539,4 +610,10 @@ private val DOWNLOAD_CONTROL_STATUSES =
         DownloadStatus.QUEUED.name,
         DownloadStatus.RESOLVING.name,
         DownloadStatus.DOWNLOADING.name,
+    )
+private val DOWNLOAD_WORK_STATUSES =
+    setOf(
+        DownloadStatus.QUEUED,
+        DownloadStatus.RESOLVING,
+        DownloadStatus.DOWNLOADING,
     )

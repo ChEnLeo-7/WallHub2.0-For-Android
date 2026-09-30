@@ -124,6 +124,7 @@ import com.wallhub.android.core.designsystem.rememberWallHubDirectionalCollapseC
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
+import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadTaskRepository
 import com.wallhub.android.core.model.ExportFormat
@@ -544,11 +545,16 @@ class LibraryViewModel
                             exportFormat = ExportFormat.AUTO,
                         ),
                     )
-                }.onSuccess { task ->
+                }.onSuccess { result ->
                     emitEffect(
                         LibraryEffect.ShowMessage(
-                            messageRes = R.string.home_added_to_download_queue,
-                            formatArgs = listOf(task.title),
+                            messageRes =
+                                if (result is DownloadEnqueueResult.Created) {
+                                    R.string.home_added_to_download_queue
+                                } else {
+                                    R.string.download_already_active
+                                },
+                            formatArgs = listOf(result.task.title),
                         ),
                     )
                 }.onFailure {

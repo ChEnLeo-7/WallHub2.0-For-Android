@@ -94,7 +94,7 @@ class SteamContentSdkEngine
         private val trustBundle: ByteArray by lazy { systemTrustBundle() }
 
         private var engine: SteamContentEngine? = null
-        private var session: SteamSession? = null
+        private val sessions = GenerationHandleOwner<SteamSession>()
 
         /** The route the live engine was created for, so a reopen can tell a reconnect from a config change. */
         private var engineRoute: Route? = null
@@ -121,9 +121,8 @@ class SteamContentSdkEngine
             // restart.
             val existing = engine
             if (existing != null && canReuseEngine(engineRoute, route)) {
-                runCatching { session?.close() }
-                session = null
-                return runCatching { existing.openSession() }.getOrNull()?.also { session = it }
+                sessions.closeCurrent()
+                return runCatching { existing.openSession() }.getOrNull()?.let(sessions::replace)?.value
             }
             close()
             val roots =
@@ -153,7 +152,14 @@ class SteamContentSdkEngine
             created.start()
             engine = created
             engineRoute = route
-            return created.openSession().also { session = it }
+            return sessions.replace(created.openSession()).value
+        }
+
+        /** Opens a session and captures ownership of that exact generation before another opener can replace it. */
+        @Synchronized
+        internal fun openHandle(route: Route = Route()): GenerationHandleOwner.Handle<SteamSession>? {
+            val opened = open(route) ?: return null
+            return sessionHandle(opened)
         }
 
         /**
@@ -166,13 +172,22 @@ class SteamContentSdkEngine
          */
         @Synchronized
         fun closeSession() {
-            runCatching { session?.close() }
-            session = null
+            sessions.closeCurrent()
         }
+
+        /**
+         * Returns an owner for the current session generation.
+         *
+         * The wrapper closes exactly this session. If another open replaces it first, closing this owner cannot
+         * clear or close the replacement and never closes the process-wide engine.
+         */
+        @Synchronized
+        internal fun sessionHandle(session: SteamSession): GenerationHandleOwner.Handle<SteamSession>? =
+            sessions.currentHandle()?.takeIf { it.value === session }
 
         /** Returns the open session, or null when the engine is closed. */
         @Synchronized
-        fun currentSession(): SteamSession? = session
+        fun currentSession(): SteamSession? = sessions.currentValue()
 
         /** Reports what the SDK says it can do on this device, for diagnostics and negotiation. */
         @Synchronized
@@ -270,7 +285,7 @@ class SteamContentSdkEngine
          */
         @Synchronized
         fun logon(accountName: String, password: ByteArray): Boolean {
-            val open = session ?: return false
+            val open = sessions.currentValue() ?: return false
             if (!open.capabilities().supports(SessionCapabilityBits.ACCOUNT_LOGIN)) return false
             open.beginAccountLogon(accountName.toByteArray(Charsets.UTF_8), password)
             return true
@@ -288,7 +303,7 @@ class SteamContentSdkEngine
             accountName: String,
             refreshToken: ByteArray,
         ): Boolean {
-            val open = session ?: return false
+            val open = sessions.currentValue() ?: return false
             if (!open.capabilities().supports(SessionCapabilityBits.RESTORE)) return false
             open.restore(accountName.toByteArray(Charsets.UTF_8), refreshToken)
             return true
@@ -297,24 +312,23 @@ class SteamContentSdkEngine
         /** Submits one Guard answer. The answer is not retained here. */
         @Synchronized
         fun submitGuardAnswer(challengeId: ByteArray, answer: ByteArray): Boolean {
-            val open = session ?: return false
+            val open = sessions.currentValue() ?: return false
             open.respondToChallenge(challengeId, answer)
             return true
         }
 
         @Synchronized
-        fun state(): Int = session?.state() ?: SessionState.DISCONNECTED
+        fun state(): Int = sessions.currentValue()?.state() ?: SessionState.DISCONNECTED
 
         @Synchronized
         fun logout() {
-            session?.logout()
+            sessions.currentValue()?.logout()
         }
 
         @Synchronized
         fun close() {
-            runCatching { session?.close() }
+            sessions.closeCurrent()
             runCatching { engine?.close() }
-            session = null
             engine = null
             engineRoute = null
         }
