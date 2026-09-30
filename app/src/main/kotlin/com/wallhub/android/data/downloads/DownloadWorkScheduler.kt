@@ -11,6 +11,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.wallhub.android.core.database.DownloadCommandDao
 import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -42,6 +43,7 @@ class WorkManagerDownloadWorkScheduler
     @Inject
     constructor(
         @ApplicationContext private val context: Context,
+        private val taskDao: FormalTaskRecordDao,
     ) : DownloadWorkScheduler {
         override suspend fun enqueue(taskId: String) {
             enqueue(taskId, ExistingWorkPolicy.KEEP)
@@ -55,6 +57,19 @@ class WorkManagerDownloadWorkScheduler
             taskId: String,
             policy: ExistingWorkPolicy,
         ) {
+            if (taskDao.find(taskId)?.executorVersion == "NEW") {
+                val wake =
+                    OneTimeWorkRequestBuilder<DownloadHostWakeWorker>()
+                        .setConstraints(
+                            Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
+                        ).setBackoffCriteria(BackoffPolicy.LINEAR, 10_000L, TimeUnit.MILLISECONDS)
+                        .addTag(FORMAL_DOWNLOAD_TAG)
+                        .build()
+                WorkManager.getInstance(context)
+                    .enqueueUniqueWork(DOWNLOAD_HOST_WAKE_WORK, ExistingWorkPolicy.KEEP, wake)
+                    .awaitCompletion()
+                return
+            }
             val request =
                 OneTimeWorkRequestBuilder<FormalWorkshopDownloadWorker>()
                     .setInputData(workDataOf(FormalWorkshopDownloadWorker.KEY_TASK_ID to taskId))
@@ -89,6 +104,7 @@ class WorkManagerDownloadWorkScheduler
 
         private companion object {
             const val FORMAL_DOWNLOAD_TAG = "wallhub_formal_workshop_download"
+            const val DOWNLOAD_HOST_WAKE_WORK = "wallhub_download_host_reconcile"
         }
     }
 
@@ -151,6 +167,7 @@ internal class WallHubDownloadWorkerFactory
     @Inject
     constructor(
         private val taskDao: FormalTaskRecordDao,
+        private val commandDao: DownloadCommandDao,
         private val credentialProvider: SteamContentCredentialProvider,
         private val conversionScheduler: ConversionWorkScheduler,
         private val settingsRepository: com.wallhub.android.core.model.SettingsRepository,
@@ -165,6 +182,13 @@ internal class WallHubDownloadWorkerFactory
             workerParameters: WorkerParameters,
         ): androidx.work.ListenableWorker? =
             when (workerClassName) {
+                DownloadHostWakeWorker::class.java.name ->
+                    DownloadHostWakeWorker(
+                        appContext = appContext,
+                        params = workerParameters,
+                        commandDao = commandDao,
+                    )
+
                 FormalWorkshopDownloadWorker::class.java.name ->
                     FormalWorkshopDownloadWorker(
                         appContext = appContext,

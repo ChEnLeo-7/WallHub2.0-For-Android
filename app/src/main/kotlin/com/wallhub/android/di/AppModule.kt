@@ -45,7 +45,8 @@ object AppModule {
     @Singleton
     fun provideDownloadWorkScheduler(
         @ApplicationContext context: Context,
-    ): DownloadWorkScheduler = WorkManagerDownloadWorkScheduler(context)
+        taskDao: FormalTaskRecordDao,
+    ): DownloadWorkScheduler = WorkManagerDownloadWorkScheduler(context, taskDao)
 
     @Provides
     @Singleton

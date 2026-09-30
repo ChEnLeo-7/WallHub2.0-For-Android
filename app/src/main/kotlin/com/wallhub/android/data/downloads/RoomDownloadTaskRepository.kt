@@ -350,6 +350,23 @@ internal class RoomDownloadTaskRepository private constructor(
                 }
                 return
             }
+            if (taskDao.find(task.id)?.executorVersion == "NEW") {
+                withContext(NonCancellable) {
+                    check(
+                        taskDao.appendIntentCommand(
+                            taskId = task.id,
+                            action = DownloadAction.CANCEL.name,
+                            desiredIntent = "CANCEL",
+                            message = context.getString(R.string.backend_download_cancelling),
+                            updatedAt = System.currentTimeMillis(),
+                            allowedStatuses = DOWNLOAD_CONTROL_STATUSES + DownloadStatus.PAUSED.name,
+                            commandId = UUID.randomUUID().toString(),
+                        ),
+                    ) { "Download state changed before cancellation could be requested" }
+                    workScheduler.replace(task.id)
+                }
+                return
+            }
             withContext(NonCancellable) {
                 check(
                     taskDao.requestCancellation(
