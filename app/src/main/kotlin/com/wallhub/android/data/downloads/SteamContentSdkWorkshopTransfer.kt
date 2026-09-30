@@ -169,8 +169,7 @@ internal class SteamContentSdkWorkshopTransfer
             onProgress: suspend (SteamDownloadProgress) -> Unit,
         ): SteamContentDownloadResult =
             withContext(Dispatchers.IO) {
-                require(target.appId > 0) { "Invalid Steam App ID" }
-                require(target.contentManifestId != 0L) { "Invalid Steam manifest ID" }
+                require(target.publishedFileId > 0L) { "Invalid Workshop item ID" }
                 val effectiveCredential = credential
                 check(effectiveCredential != null) {
                     "The Steam Content SDK download path needs the stored Steam refresh token; none was read"

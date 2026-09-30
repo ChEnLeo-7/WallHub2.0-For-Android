@@ -65,7 +65,7 @@ class SteamRemoteVideoStreamTest {
         assertEquals("https://cdn.example/preview.jpg", target.previewUrl)
         assertEquals(999L, target.contentManifestId)
         assertEquals("video", target.contentTypeHint)
-        assertEquals(WorkshopDownloadSource.DIRECT_FILE, workshopDownloadSource(target))
+        assertEquals(WorkshopDelivery.DirectFile::class, workshopDelivery(target)::class)
     }
 
     @Test
@@ -79,7 +79,7 @@ class SteamRemoteVideoStreamTest {
         val parsed = SteamWorkshopContentApi(OkHttpClient.Builder()).parseTarget(body, 42L)
         assertEquals(16566827351488351196UL.toLong(), parsed.contentManifestId)
         assertEquals("16566827351488351196", parsed.contentManifestId.toULong().toString())
-        assertEquals(WorkshopDownloadSource.STEAM_PIPE, workshopDownloadSource(parsed))
+        assertEquals(WorkshopDelivery.DepotContent::class, workshopDelivery(parsed)::class)
     }
 
     @Test

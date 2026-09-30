@@ -55,9 +55,10 @@ internal class FormalSteamWorkshopContentGateway(
         control: suspend () -> SteamDownloadControl,
         onProgress: suspend (SteamDownloadProgress) -> Unit,
     ): SteamContentDownloadResult {
-        if (workshopDownloadSource(target) == WorkshopDownloadSource.DIRECT_FILE) {
+        val delivery = workshopDelivery(target)
+        if (delivery is WorkshopDelivery.DirectFile) {
             return downloadDirectVideo(
-                target = target,
+                target = delivery.target,
                 destinationDirectory = destinationDirectory,
                 proxyUrl = options.proxyUrl,
                 control = control,
@@ -173,13 +174,24 @@ internal class FormalSteamWorkshopContentGateway(
         }
 }
 
-internal enum class WorkshopDownloadSource {
-    DIRECT_FILE,
-    STEAM_PIPE,
+internal sealed interface WorkshopDelivery {
+    val target: WorkshopContentTarget
+
+    data class DirectFile(
+        override val target: WorkshopContentTarget,
+        val remoteUrl: String,
+    ) : WorkshopDelivery
+
+    data class DepotContent(
+        override val target: WorkshopContentTarget,
+        val workshopId: Long,
+    ) : WorkshopDelivery
 }
 
-internal fun workshopDownloadSource(target: WorkshopContentTarget): WorkshopDownloadSource =
-    if (target.fileUrl.isNotBlank()) WorkshopDownloadSource.DIRECT_FILE else WorkshopDownloadSource.STEAM_PIPE
+/** The single app-side authority that distinguishes an explicit file URL from SDK-owned depot identity. */
+internal fun workshopDelivery(target: WorkshopContentTarget): WorkshopDelivery =
+    remoteVideoUrlOrNull(target)?.let { remoteUrl -> WorkshopDelivery.DirectFile(target, remoteUrl) }
+        ?: WorkshopDelivery.DepotContent(target, target.publishedFileId)
 
 internal fun directVideoFileName(
     target: WorkshopContentTarget,

@@ -48,12 +48,8 @@ internal class SteamWorkshopVideoStreamRepository
                     // so the product's own HTTP range reader serves it, exactly as the direct-file download
                     // path does. Every depot-backed item is resolved and served by the SDK range arm, which
                     // reads no Depot Key, CDN token, or URL of ours.
-                    val directUrl =
-                        if (workshopDownloadSource(target) == WorkshopDownloadSource.DIRECT_FILE) {
-                            remoteVideoUrlOrNull(target)
-                        } else {
-                            null
-                        }
+                    val delivery = workshopDelivery(target)
+                    val directUrl = (delivery as? WorkshopDelivery.DirectFile)?.remoteUrl
                     if (directUrl != null) {
                         val remoteSession =
                             runCatching {
