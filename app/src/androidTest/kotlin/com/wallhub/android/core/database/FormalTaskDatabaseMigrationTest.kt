@@ -1,5 +1,6 @@
 package com.wallhub.android.core.database
 
+import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -47,6 +48,29 @@ class FormalTaskDatabaseMigrationTest {
                 assertTrue(cursor.moveToFirst())
                 assertEquals(0, cursor.getInt(0))
             }
+        }
+    }
+
+    @Test
+    fun newerEngineEpochImmediatelyFencesOldCommandClaims() {
+        val database =
+            Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE)
+                .addMigrations(*FormalTaskDatabase.migrations)
+                .build()
+        try {
+            val dao = database.downloadCommandDao()
+            val first = kotlinx.coroutines.runBlocking { dao.acquireEngineEpoch("first", 1) }
+            database.openHelper.writableDatabase.execSQL(
+                "INSERT INTO download_commands " +
+                    "(commandId, taskId, revision, attempt, command, createdAt) " +
+                    "VALUES ('command', 'task', 1, 0, 'RUN', 1)",
+            )
+            assertEquals(1, kotlinx.coroutines.runBlocking { dao.claim("command", first.epoch, 2) })
+            val second = kotlinx.coroutines.runBlocking { dao.acquireEngineEpoch("second", 3) }
+            assertEquals(2L, second.epoch)
+            assertEquals(0, kotlinx.coroutines.runBlocking { dao.claim("command", first.epoch, 4) })
+        } finally {
+            database.close()
         }
     }
 

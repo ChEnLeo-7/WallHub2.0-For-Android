@@ -316,7 +316,9 @@ interface DownloadCommandDao {
     @Query(
         "UPDATE download_commands SET claimedEpoch = :epoch, claimedAt = :claimedAt " +
             "WHERE commandId = :commandId AND acknowledgedAt IS NULL " +
-            "AND (claimedEpoch IS NULL OR claimedEpoch <= :epoch)",
+            "AND (claimedEpoch IS NULL OR claimedEpoch <= :epoch) " +
+            "AND EXISTS (SELECT 1 FROM download_engine_state " +
+            "WHERE singletonId = 1 AND epoch = :epoch)",
     )
     suspend fun claim(
         commandId: String,
@@ -327,7 +329,9 @@ interface DownloadCommandDao {
     @Query(
         "UPDATE download_commands SET receiptSequence = :receiptSequence, result = :result, " +
             "acknowledgedAt = :acknowledgedAt WHERE commandId = :commandId " +
-            "AND claimedEpoch = :epoch AND acknowledgedAt IS NULL",
+            "AND claimedEpoch = :epoch AND acknowledgedAt IS NULL " +
+            "AND EXISTS (SELECT 1 FROM download_engine_state " +
+            "WHERE singletonId = 1 AND epoch = :epoch)",
     )
     suspend fun acknowledge(
         commandId: String,
