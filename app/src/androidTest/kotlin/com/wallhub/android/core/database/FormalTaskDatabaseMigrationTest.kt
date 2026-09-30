@@ -52,6 +52,42 @@ class FormalTaskDatabaseMigrationTest {
     }
 
     @Test
+    fun deletingATerminalTaskAlsoDeletesItsPendingCommands() {
+        val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
+        try {
+            val dao = database.taskRecordDao()
+            kotlinx.coroutines.runBlocking {
+                dao.upsertWithCommand(
+                    task =
+                        FormalTaskRecordEntity(
+                            taskId = "task",
+                            workshopId = 1,
+                            title = "task",
+                            type = "scene",
+                            status = "FAILED",
+                            createdAt = 1,
+                            updatedAt = 1,
+                        ),
+                    command =
+                        DownloadCommandEntity(
+                            commandId = "command",
+                            taskId = "task",
+                            revision = 1,
+                            attempt = 0,
+                            command = "RUN",
+                            createdAt = 1,
+                        ),
+                )
+                assertEquals(1, dao.deleteTerminalWithCommands("task"))
+                assertEquals(null, dao.find("task"))
+                assertTrue(database.downloadCommandDao().pending(10).isEmpty())
+            }
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun newerEngineEpochImmediatelyFencesOldCommandClaims() {
         val database =
             Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE)
