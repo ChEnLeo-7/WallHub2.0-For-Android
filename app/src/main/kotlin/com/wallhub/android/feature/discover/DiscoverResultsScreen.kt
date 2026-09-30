@@ -95,7 +95,7 @@ import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermiss
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
-import com.wallhub.android.core.model.DownloadTaskRepository
+import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.WorkshopRepository
@@ -169,7 +169,7 @@ class DiscoverResultsViewModel
         private val workshopRepository: WorkshopRepository,
         private val collectionResolver: DiscoverCollectionResolver,
         private val networkBudget: DiscoverNetworkBudget,
-        private val downloadTaskRepository: DownloadTaskRepository,
+        private val downloadTaskRepository: WorkshopDownloads,
         private val settingsRepository: SettingsRepository,
     ) : ViewModel() {
         internal val destination = savedStateHandle.toRoute<DiscoverResultsDestination>()

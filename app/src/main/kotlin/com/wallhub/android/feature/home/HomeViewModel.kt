@@ -14,7 +14,7 @@ import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
-import com.wallhub.android.core.model.DownloadTaskRepository
+import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.SettingsRepository
@@ -52,7 +52,7 @@ class HomeViewModel
         private val workshopRepository: WorkshopRepository,
         private val settingsRepository: SettingsRepository,
         private val steamAccessRepository: SteamAccessRepository,
-        private val downloadTaskRepository: DownloadTaskRepository,
+        private val downloadTaskRepository: WorkshopDownloads,
         savedStateHandle: SavedStateHandle,
     ) : ViewModel() {
         private val mutableState =

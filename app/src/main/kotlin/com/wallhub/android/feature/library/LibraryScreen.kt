@@ -126,7 +126,7 @@ import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
-import com.wallhub.android.core.model.DownloadTaskRepository
+import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.SettingsRepository
@@ -355,7 +355,7 @@ class LibraryViewModel
         @ApplicationContext private val applicationContext: Context,
         private val steamSessionRepository: SteamSessionRepository,
         private val accountWorkshopRepository: AccountWorkshopRepository,
-        private val downloadTaskRepository: DownloadTaskRepository,
+        private val downloadTaskRepository: WorkshopDownloads,
         private val settingsRepository: SettingsRepository,
         private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
     ) : ViewModel() {
