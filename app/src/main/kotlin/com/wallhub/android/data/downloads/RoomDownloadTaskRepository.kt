@@ -276,17 +276,44 @@ internal class RoomDownloadTaskRepository private constructor(
                 }
                 return
             }
-            upsert(
+            val resumed =
                 recoveredTask.copy(
                     status = DownloadStatus.QUEUED,
                     requestedAction = null,
                     message = context.getString(R.string.backend_download_resuming_queue),
                     updatedAt = System.currentTimeMillis(),
-                ),
+                )
+            val current = requireNotNull(taskDao.find(task.id))
+            val revision = current.desiredIntentRevision + 1L
+            taskDao.upsertWithCommand(
+                task =
+                    resumed.toEntity().copy(
+                        executorVersion = current.executorVersion,
+                        attempt = if (action == DownloadAction.RETRY) current.attempt + 1L else current.attempt,
+                        desiredIntent = "RUN",
+                        desiredIntentRevision = revision,
+                        appliedIntentRevision = current.appliedIntentRevision,
+                        quiescedIntentRevision = current.quiescedIntentRevision,
+                        lastReceiptSequence = current.lastReceiptSequence,
+                        engineEpoch = current.engineEpoch,
+                    ),
+                command =
+                    DownloadCommandEntity(
+                        commandId = UUID.randomUUID().toString(),
+                        taskId = task.id,
+                        revision = revision,
+                        attempt = if (action == DownloadAction.RETRY) current.attempt + 1L else current.attempt,
+                        command = "RUN",
+                        createdAt = resumed.updatedAt,
+                    ),
             )
             try {
                 workScheduler.replace(recoveredTask.id)
             } catch (error: Throwable) {
+                if (current.executorVersion == "NEW") {
+                    Log.e(LOG_TAG, "Unable to wake host for durable RUN taskId=${task.id}", error)
+                    return
+                }
                 upsert(
                     recoveredTask.copy(
                         status = DownloadStatus.FAILED,

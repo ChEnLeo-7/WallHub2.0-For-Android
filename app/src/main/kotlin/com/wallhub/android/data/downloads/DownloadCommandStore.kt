@@ -38,19 +38,21 @@ internal class DownloadCommandStore
             }
 
         suspend fun acknowledge(
-            commandId: String,
+            command: DownloadCommandEntity,
             epoch: Long,
             receiptSequence: Long,
             result: String,
+            quiesced: Boolean,
             now: Long = System.currentTimeMillis(),
         ): Boolean =
-            dao.acknowledge(
-                commandId = commandId,
+            dao.acknowledgeAndProject(
+                command = command,
                 epoch = epoch,
                 receiptSequence = receiptSequence,
                 result = result,
                 acknowledgedAt = now,
-            ) == 1
+                quiesced = quiesced,
+            )
 
         private companion object {
             const val DEFAULT_BATCH_SIZE = 32

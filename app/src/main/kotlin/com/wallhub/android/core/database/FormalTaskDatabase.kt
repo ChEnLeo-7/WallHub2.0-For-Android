@@ -340,6 +340,52 @@ interface DownloadCommandDao {
     @Query("SELECT * FROM download_commands WHERE taskId = :taskId ORDER BY revision ASC")
     suspend fun forTask(taskId: String): List<DownloadCommandEntity>
 
+    @Query(
+        "UPDATE formal_task_records SET " +
+            "appliedIntentRevision = CASE WHEN appliedIntentRevision < :intentRevision THEN :intentRevision ELSE appliedIntentRevision END, " +
+            "quiescedIntentRevision = CASE WHEN :quiesced = 1 AND quiescedIntentRevision < :intentRevision " +
+            "THEN :intentRevision ELSE quiescedIntentRevision END, " +
+            "lastReceiptSequence = :receiptSequence, engineEpoch = :engineEpoch, updatedAt = :acknowledgedAt " +
+            "WHERE taskId = :taskId AND lastReceiptSequence < :receiptSequence " +
+            "AND desiredIntentRevision >= :intentRevision",
+    )
+    suspend fun applyReceiptProjection(
+        taskId: String,
+        intentRevision: Long,
+        receiptSequence: Long,
+        engineEpoch: Long,
+        quiesced: Boolean,
+        acknowledgedAt: Long,
+    ): Int
+
+    @Transaction
+    suspend fun acknowledgeAndProject(
+        command: DownloadCommandEntity,
+        epoch: Long,
+        receiptSequence: Long,
+        result: String,
+        acknowledgedAt: Long,
+        quiesced: Boolean,
+    ): Boolean {
+        if (
+            acknowledge(
+                commandId = command.commandId,
+                epoch = epoch,
+                receiptSequence = receiptSequence,
+                result = result,
+                acknowledgedAt = acknowledgedAt,
+            ) != 1
+        ) return false
+        return applyReceiptProjection(
+            taskId = command.taskId,
+            intentRevision = command.revision,
+            receiptSequence = receiptSequence,
+            engineEpoch = epoch,
+            quiesced = quiesced,
+            acknowledgedAt = acknowledgedAt,
+        ) == 1
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun writeEngineState(state: DownloadEngineStateEntity)
 

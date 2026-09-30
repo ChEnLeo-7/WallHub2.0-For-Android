@@ -57,10 +57,11 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
                 val result = launch()
                 commands.forEach { command ->
                     commandStore?.acknowledge(
-                        commandId = command.commandId,
+                        command = command,
                         epoch = currentEpoch,
                         receiptSequence = receiptSequence.incrementAndGet(),
                         result = result.toString(),
+                        quiesced = command.command != "RUN",
                     )
                 }
                 result
