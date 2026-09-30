@@ -3,7 +3,6 @@ package com.wallhub.android
 import android.util.Log
 import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.AppUpdateRepository
-import com.wallhub.android.core.model.DepotDownloader
 import com.wallhub.android.core.model.DiagnosticExportRepository
 import com.wallhub.android.core.model.DiagnosticRepository
 import com.wallhub.android.core.model.DownloadTaskRepository
@@ -21,7 +20,6 @@ import com.wallhub.android.data.diagnostics.FileDiagnosticRepository
 import com.wallhub.android.data.discover.HttpOfficialDiscoverMetadataRepository
 import com.wallhub.android.data.downloads.LocalWallpaperFileRepository
 import com.wallhub.android.data.downloads.RoomDownloadTaskRepository
-import com.wallhub.android.data.downloads.SteamContentSdkDepotDownloader
 import com.wallhub.android.data.downloads.SteamContentSdkEngineSessionOpener
 import com.wallhub.android.data.downloads.SteamContentSdkSessionOpener
 import com.wallhub.android.data.downloads.SteamWorkshopVideoStreamRepository
@@ -86,14 +84,6 @@ internal abstract class RepositoryModule {
             return sdk
         }
 
-        @Provides
-        @Singleton
-        internal fun provideDepotDownloader(
-            sdkEngine: SteamContentSdkDepotDownloader,
-        ): DepotDownloader {
-            Log.i("WallHubSdkDepot", "depot engine selected=steam-content-sdk")
-            return sdkEngine
-        }
     }
 
     @Binds

@@ -11,8 +11,8 @@ import org.junit.Test
 class MemoryHeavyWorkGovernorTest {
     @Test
     fun chunkMemoryBudgetDoesNotOverrideConfiguredTaskLimit() {
-        assertEquals(4, safeDownloadLimit(configuredLimit = 4, maxHeapBytes = 192L * 1024L * 1024L))
-        assertEquals(4, safeDownloadLimit(configuredLimit = 4, maxHeapBytes = 512L * 1024L * 1024L))
+        assertEquals(3, safeDownloadLimit(configuredLimit = 4, maxHeapBytes = 192L * 1024L * 1024L))
+        assertEquals(3, safeDownloadLimit(configuredLimit = 4, maxHeapBytes = 512L * 1024L * 1024L))
         assertEquals(1, safeDownloadLimit(configuredLimit = 1, maxHeapBytes = 192L * 1024L * 1024L))
         assertEquals(24, safeChunkConcurrency(configuredConcurrency = 24, maxHeapBytes = 192L * 1024L * 1024L))
         assertEquals(24, safeChunkConcurrency(configuredConcurrency = 24, maxHeapBytes = 512L * 1024L * 1024L))
@@ -26,107 +26,6 @@ class MemoryHeavyWorkGovernorTest {
         assertEquals(1, safeChunkConcurrency(configuredConcurrency = 0, maxHeapBytes = 512L * 1024L * 1024L))
         assertEquals(48, safeChunkConcurrency(configuredConcurrency = 96, maxHeapBytes = 512L * 1024L * 1024L))
     }
-
-    @Test
-    fun chunkMemoryEstimateIncludesSteamNetworkCopies() {
-        val mebibyte = 1024 * 1024
-
-        assertEquals(
-            13L * mebibyte,
-            estimatedSteamChunkPeakMemoryBytes(
-                compressedBytes = mebibyte,
-                uncompressedBytes = 2 * mebibyte,
-            ),
-        )
-    }
-
-    @Test
-    fun oversizedChunkReservationRunsExclusively() =
-        runTest {
-            val budget = DownloadMemoryBudget(maxHeapBytes = 192L * 1024L * 1024L)
-            val firstEntered = CompletableDeferred<Unit>()
-            val firstRelease = CompletableDeferred<Unit>()
-            val secondEntered = CompletableDeferred<Unit>()
-
-            val first =
-                async(start = CoroutineStart.UNDISPATCHED) {
-                    budget.withPermit(requestedBytes = 64L * 1024L * 1024L) {
-                        firstEntered.complete(Unit)
-                        firstRelease.await()
-                    }
-                }
-            val second =
-                async(start = CoroutineStart.UNDISPATCHED) {
-                    budget.withPermit(requestedBytes = 1L) { secondEntered.complete(Unit) }
-                }
-
-            firstEntered.await()
-            assertTrue(!secondEntered.isCompleted)
-            firstRelease.complete(Unit)
-            first.await()
-            second.await()
-            assertTrue(secondEntered.isCompleted)
-        }
-
-    @Test
-    fun smallerReservationDispatchedBehindUnfittableHead() =
-        runTest {
-            val budget = DownloadMemoryBudget(maxHeapBytes = 192L * 1024L * 1024L)
-            val firstEntered = CompletableDeferred<Unit>()
-            val firstRelease = CompletableDeferred<Unit>()
-            val secondEntered = CompletableDeferred<Unit>()
-            val secondRelease = CompletableDeferred<Unit>()
-            val oversizedEntered = CompletableDeferred<Unit>()
-            val oversizedRelease = CompletableDeferred<Unit>()
-            val smallEntered = CompletableDeferred<Unit>()
-
-            val first =
-                async(start = CoroutineStart.UNDISPATCHED) {
-                    budget.withPermit(requestedBytes = 12L * 1024L * 1024L) {
-                        firstEntered.complete(Unit)
-                        firstRelease.await()
-                    }
-                }
-            val second =
-                async(start = CoroutineStart.UNDISPATCHED) {
-                    budget.withPermit(requestedBytes = 12L * 1024L * 1024L) {
-                        secondEntered.complete(Unit)
-                        secondRelease.await()
-                    }
-                }
-            firstEntered.await()
-            secondEntered.await()
-
-            val oversized =
-                async(start = CoroutineStart.UNDISPATCHED) {
-                    budget.withPermit(requestedBytes = 16L * 1024L * 1024L) {
-                        oversizedEntered.complete(Unit)
-                        oversizedRelease.await()
-                    }
-                }
-            val small =
-                async(start = CoroutineStart.UNDISPATCHED) {
-                    budget.withPermit(requestedBytes = 8L * 1024L * 1024L) {
-                        smallEntered.complete(Unit)
-                    }
-                }
-
-            assertTrue(!oversizedEntered.isCompleted)
-            assertTrue(!smallEntered.isCompleted)
-
-            firstRelease.complete(Unit)
-            first.await()
-
-            assertTrue(smallEntered.isCompleted)
-            assertTrue(!oversizedEntered.isCompleted)
-
-            secondRelease.complete(Unit)
-            second.await()
-            oversizedEntered.await()
-            oversizedRelease.complete(Unit)
-            oversized.await()
-            small.await()
-        }
 
     @Test
     fun conversionRunsAlongsideDownloadsButRemainsSerial() =

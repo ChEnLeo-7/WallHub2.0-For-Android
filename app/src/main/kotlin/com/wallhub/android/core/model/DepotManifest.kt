@@ -24,6 +24,32 @@ enum class DepotFileFlag(val code: Int) {
     }
 }
 
+/** Immutable depot chunk metadata retained for manifest compatibility. */
+class DepotChunkSpec(
+    val chunkId: ByteArray? = null,
+    val checksum: Int,
+    val offset: Long,
+    val compressedLength: Int,
+    val uncompressedLength: Int,
+) {
+    override fun equals(other: Any?): Boolean =
+        other is DepotChunkSpec &&
+            (chunkId?.contentEquals(other.chunkId) ?: (other.chunkId == null)) &&
+            checksum == other.checksum &&
+            offset == other.offset &&
+            compressedLength == other.compressedLength &&
+            uncompressedLength == other.uncompressedLength
+
+    override fun hashCode(): Int {
+        var result = chunkId?.contentHashCode() ?: 0
+        result = 31 * result + checksum
+        result = 31 * result + offset.hashCode()
+        result = 31 * result + compressedLength
+        result = 31 * result + uncompressedLength
+        return result
+    }
+}
+
 /** Engine-neutral depot file record replacing JavaSteam's FileData. */
 class DepotFileSpec(
     var fileName: String,
