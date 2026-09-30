@@ -88,6 +88,50 @@ class FormalTaskDatabaseMigrationTest {
     }
 
     @Test
+    fun firstDurableCommandPromotesALegacyTaskAtomically() {
+        val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
+        try {
+            val dao = database.taskRecordDao()
+            kotlinx.coroutines.runBlocking {
+                dao.upsert(
+                    FormalTaskRecordEntity(
+                        taskId = "legacy",
+                        workshopId = 1,
+                        title = "legacy",
+                        type = "scene",
+                        status = "DOWNLOADING",
+                        requestedAction = "PAUSE",
+                        createdAt = 1,
+                        updatedAt = 1,
+                        executorVersion = "LEGACY",
+                    ),
+                )
+                assertTrue(
+                    dao.appendIntentCommand(
+                        taskId = "legacy",
+                        desiredIntent = "CANCEL",
+                        message = "cancelling",
+                        updatedAt = 2,
+                        allowedStatuses = listOf("DOWNLOADING"),
+                        commandId = "cancel-command",
+                    ),
+                )
+
+                val promoted = requireNotNull(dao.find("legacy"))
+                assertEquals("NEW", promoted.executorVersion)
+                assertEquals(null, promoted.requestedAction)
+                assertEquals("CANCEL", promoted.desiredIntent)
+                assertEquals(1L, promoted.desiredIntentRevision)
+                val command = database.downloadCommandDao().latestPendingForTask("legacy")
+                assertEquals("CANCEL", command?.command)
+                assertEquals(1L, command?.revision)
+            }
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun newerEngineEpochImmediatelyFencesOldCommandClaims() {
         val database =
             Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE)

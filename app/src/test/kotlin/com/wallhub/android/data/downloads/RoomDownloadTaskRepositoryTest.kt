@@ -146,7 +146,6 @@ class RoomDownloadTaskRepositoryTest {
 
         override suspend fun replace(taskId: String) = Unit
 
-        override suspend fun cancel(taskId: String) = Unit
     }
 
     private class FakeTaskDao(vararg initial: FormalTaskRecordEntity) {
@@ -191,7 +190,6 @@ class RoomDownloadTaskRepositoryTest {
     private object NoOpConversionScheduler : ConversionWorkScheduler {
         override suspend fun enqueue(taskId: String) = Unit
         override suspend fun replace(taskId: String) = Unit
-        override suspend fun cancel(taskId: String) = Unit
     }
 
     private object TestSettingsRepository : SettingsRepository {

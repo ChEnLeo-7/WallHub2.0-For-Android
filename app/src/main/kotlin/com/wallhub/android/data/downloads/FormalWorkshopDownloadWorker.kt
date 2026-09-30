@@ -57,7 +57,6 @@ class FormalWorkshopDownloadWorker
 
         companion object {
             const val KEY_TASK_ID = "task_id"
-            const val UNIQUE_DOWNLOAD_WORK_PREFIX = "wallhub_formal_workshop_download_"
             const val WORK_TAG_PREFIX = "wallhub_formal_workshop_download_task_"
             private const val NOTIFICATION_CHANNEL_ID = "wallhub_workshop_download"
             private const val NOTIFICATION_ID = 4202

@@ -214,7 +214,6 @@ interface FormalTaskRecordDao {
     @Transaction
     suspend fun appendIntentCommand(
         taskId: String,
-        action: String,
         desiredIntent: String,
         message: String,
         updatedAt: Long,
@@ -224,11 +223,11 @@ interface FormalTaskRecordDao {
         val current = find(taskId) ?: return false
         if (current.status !in allowedStatuses) return false
         if (current.executorVersion == "NEW" && current.desiredIntent == desiredIntent) return false
-        if (current.executorVersion == "LEGACY" && current.requestedAction != null && action != "CANCEL") return false
         val revision = current.desiredIntentRevision + 1L
         upsert(
             current.copy(
-                requestedAction = if (current.executorVersion == "LEGACY") action else current.requestedAction,
+                executorVersion = "NEW",
+                requestedAction = null,
                 desiredIntent = desiredIntent,
                 desiredIntentRevision = revision,
                 message = message,

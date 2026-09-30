@@ -222,7 +222,6 @@ internal class RoomDownloadTaskRepository private constructor(
             check(
                 taskDao.appendIntentCommand(
                     taskId = task.id,
-                    action = DownloadAction.PAUSE.name,
                     desiredIntent = "PAUSE",
                     message = context.getString(R.string.backend_download_pause_requested),
                     updatedAt = System.currentTimeMillis(),
@@ -233,7 +232,6 @@ internal class RoomDownloadTaskRepository private constructor(
             try {
                 workScheduler.replace(task.id)
             } catch (error: Throwable) {
-                if (taskDao.find(task.id)?.executorVersion != "NEW") throw error
                 Log.e(LOG_TAG, "Unable to wake host for durable PAUSE taskId=${task.id}", error)
             }
         }
@@ -294,7 +292,7 @@ internal class RoomDownloadTaskRepository private constructor(
             taskDao.upsertWithCommand(
                 task =
                     resumed.toEntity().copy(
-                        executorVersion = current.executorVersion,
+                        executorVersion = "NEW",
                         attempt = if (action == DownloadAction.RETRY) current.attempt + 1L else current.attempt,
                         desiredIntent = "RUN",
                         desiredIntentRevision = revision,
@@ -316,19 +314,8 @@ internal class RoomDownloadTaskRepository private constructor(
             try {
                 workScheduler.replace(recoveredTask.id)
             } catch (error: Throwable) {
-                if (current.executorVersion == "NEW") {
-                    Log.e(LOG_TAG, "Unable to wake host for durable RUN taskId=${task.id}", error)
-                    return
-                }
-                upsert(
-                    recoveredTask.copy(
-                        status = DownloadStatus.FAILED,
-                        requestedAction = null,
-                        message = context.getString(R.string.backend_download_start_failed, error.javaClass.simpleName),
-                        updatedAt = System.currentTimeMillis(),
-                    ),
-                )
-                throw error
+                // The RUN command is durable and startup reconciliation will deliver it later.
+                Log.e(LOG_TAG, "Unable to wake host for durable RUN taskId=${task.id}", error)
             }
         }
 
@@ -383,36 +370,17 @@ internal class RoomDownloadTaskRepository private constructor(
                 }
                 return
             }
-            if (taskDao.find(task.id)?.executorVersion == "NEW") {
-                withContext(NonCancellable) {
-                    check(
-                        taskDao.appendIntentCommand(
-                            taskId = task.id,
-                            action = DownloadAction.CANCEL.name,
-                            desiredIntent = "CANCEL",
-                            message = context.getString(R.string.backend_download_cancelling),
-                            updatedAt = System.currentTimeMillis(),
-                            allowedStatuses = DOWNLOAD_CONTROL_STATUSES + DownloadStatus.PAUSED.name,
-                            commandId = UUID.randomUUID().toString(),
-                        ),
-                    ) { "Download state changed before cancellation could be requested" }
-                    workScheduler.replace(task.id)
-                }
-                return
-            }
             withContext(NonCancellable) {
                 check(
-                    taskDao.requestCancellation(
+                    taskDao.appendIntentCommand(
                         taskId = task.id,
+                        desiredIntent = "CANCEL",
                         message = context.getString(R.string.backend_download_cancelling),
                         updatedAt = System.currentTimeMillis(),
                         allowedStatuses = DOWNLOAD_CONTROL_STATUSES + DownloadStatus.PAUSED.name,
-                    ) == 1,
+                        commandId = UUID.randomUUID().toString(),
+                    ),
                 ) { "Download state changed before cancellation could be requested" }
-                // The worker's own cancel acknowledgement removes the SDK's staging too; doing it here as
-                // well makes the cancel effective even when the scheduled run never starts, for instance
-                // with no network to satisfy the work's constraint.
-                deleteManagedDownloadDirectories(context, task.id, task.stagingDirectory)
                 workScheduler.replace(task.id)
             }
         }

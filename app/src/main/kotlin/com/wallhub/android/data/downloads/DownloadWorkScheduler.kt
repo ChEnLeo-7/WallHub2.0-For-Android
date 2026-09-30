@@ -2,16 +2,13 @@ package com.wallhub.android.data.downloads
 
 import android.content.Context
 import androidx.work.BackoffPolicy
-import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.wallhub.android.core.database.DownloadCommandDao
-import com.wallhub.android.core.database.FormalTaskRecordDao
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -24,8 +21,6 @@ interface DownloadWorkScheduler {
     suspend fun enqueue(taskId: String)
 
     suspend fun replace(taskId: String)
-
-    suspend fun cancel(taskId: String)
 }
 
 interface ConversionWorkScheduler {
@@ -41,57 +36,21 @@ class WorkManagerDownloadWorkScheduler
     @Inject
     constructor(
         @ApplicationContext private val context: Context,
-        private val taskDao: FormalTaskRecordDao,
     ) : DownloadWorkScheduler {
-        override suspend fun enqueue(taskId: String) {
-            enqueue(taskId, ExistingWorkPolicy.KEEP)
-        }
+        override suspend fun enqueue(taskId: String) = wakeHost()
 
-        override suspend fun replace(taskId: String) {
-            enqueue(taskId, ExistingWorkPolicy.REPLACE)
-        }
+        override suspend fun replace(taskId: String) = wakeHost()
 
-        private suspend fun enqueue(
-            taskId: String,
-            policy: ExistingWorkPolicy,
-        ) {
-            if (taskDao.find(taskId)?.executorVersion == "NEW") {
-                // Reconciliation itself must run offline so PAUSE/CANCEL can settle and release local writers.
-                // RUN commands that still require the network return RETRY and use this request's backoff.
-                val wake =
-                    OneTimeWorkRequestBuilder<DownloadHostWakeWorker>()
-                        .setBackoffCriteria(BackoffPolicy.LINEAR, 10_000L, TimeUnit.MILLISECONDS)
-                        .addTag(FORMAL_DOWNLOAD_TAG)
-                        .build()
-                WorkManager.getInstance(context)
-                    .enqueueUniqueWork(DOWNLOAD_HOST_WAKE_WORK, ExistingWorkPolicy.KEEP, wake)
-                    .awaitCompletion()
-                return
-            }
-            val request =
-                OneTimeWorkRequestBuilder<FormalWorkshopDownloadWorker>()
-                    .setInputData(workDataOf(FormalWorkshopDownloadWorker.KEY_TASK_ID to taskId))
-                    .setConstraints(
-                        Constraints
-                            .Builder()
-                            .setRequiredNetworkType(NetworkType.CONNECTED)
-                            .build(),
-                    )
+        private suspend fun wakeHost() {
+            // Reconciliation itself must run offline so PAUSE/CANCEL can settle and release local writers.
+            // RUN commands that still require the network return RETRY and use this request's backoff.
+            val wake =
+                OneTimeWorkRequestBuilder<DownloadHostWakeWorker>()
                     .setBackoffCriteria(BackoffPolicy.LINEAR, 10_000L, TimeUnit.MILLISECONDS)
                     .addTag(FORMAL_DOWNLOAD_TAG)
-                    .addTag(FormalWorkshopDownloadWorker.WORK_TAG_PREFIX + taskId)
                     .build()
             WorkManager.getInstance(context)
-                .enqueueUniqueWork(
-                    FormalWorkshopDownloadWorker.UNIQUE_DOWNLOAD_WORK_PREFIX + taskId,
-                    policy,
-                    request,
-                ).awaitCompletion()
-        }
-
-        override suspend fun cancel(taskId: String) {
-            WorkManager.getInstance(context)
-                .cancelUniqueWork(FormalWorkshopDownloadWorker.UNIQUE_DOWNLOAD_WORK_PREFIX + taskId)
+                .enqueueUniqueWork(DOWNLOAD_HOST_WAKE_WORK, ExistingWorkPolicy.KEEP, wake)
                 .awaitCompletion()
         }
 

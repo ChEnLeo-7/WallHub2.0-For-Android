@@ -55,8 +55,8 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
                 Log.i(HOST_LOG_TAG, "host reconcile taskId=$taskId epoch=$currentEpoch commands=${before.map { it.revision }}")
                 val result = launch()
                 if (!result.settlesCommand) return@async result
-                // Controls may arrive while the transfer is running. The runner observes the compatibility
-                // projection; claiming again binds those late commands to this same settled outcome.
+                // Controls may arrive while the transfer is running. The runner observes the durable inbox;
+                // claiming again binds those late commands to this same settled outcome.
                 val commands =
                     (before + commandStore?.claimTask(taskId, currentEpoch).orEmpty())
                         .distinctBy { it.commandId }
