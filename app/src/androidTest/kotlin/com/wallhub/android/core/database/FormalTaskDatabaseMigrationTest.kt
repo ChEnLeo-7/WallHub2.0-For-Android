@@ -132,6 +132,39 @@ class FormalTaskDatabaseMigrationTest {
     }
 
     @Test
+    fun wakingALegacyTaskPromotesItToADurableRun() {
+        val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
+        try {
+            val dao = database.taskRecordDao()
+            kotlinx.coroutines.runBlocking {
+                dao.upsert(
+                    FormalTaskRecordEntity(
+                        taskId = "legacy-run",
+                        workshopId = 1,
+                        title = "legacy",
+                        type = "scene",
+                        status = "QUEUED",
+                        createdAt = 1,
+                        updatedAt = 1,
+                        executorVersion = "LEGACY",
+                    ),
+                )
+                assertTrue(dao.promoteLegacyTask("legacy-run", "run-command", 2))
+
+                val promoted = requireNotNull(dao.find("legacy-run"))
+                assertEquals("NEW", promoted.executorVersion)
+                assertEquals("RUN", promoted.desiredIntent)
+                assertEquals(1L, promoted.desiredIntentRevision)
+                val command = database.downloadCommandDao().latestPendingForTask("legacy-run")
+                assertEquals("RUN", command?.command)
+                assertEquals(1L, command?.revision)
+            }
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun newerEngineEpochImmediatelyFencesOldCommandClaims() {
         val database =
             Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE)

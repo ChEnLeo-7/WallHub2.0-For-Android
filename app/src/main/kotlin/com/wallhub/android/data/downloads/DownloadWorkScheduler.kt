@@ -9,7 +9,9 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.wallhub.android.core.database.DownloadCommandDao
+import com.wallhub.android.core.database.FormalTaskRecordDao
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -36,12 +38,14 @@ class WorkManagerDownloadWorkScheduler
     @Inject
     constructor(
         @ApplicationContext private val context: Context,
+        private val taskDao: FormalTaskRecordDao,
     ) : DownloadWorkScheduler {
-        override suspend fun enqueue(taskId: String) = wakeHost()
+        override suspend fun enqueue(taskId: String) = wakeHost(taskId)
 
-        override suspend fun replace(taskId: String) = wakeHost()
+        override suspend fun replace(taskId: String) = wakeHost(taskId)
 
-        private suspend fun wakeHost() {
+        private suspend fun wakeHost(taskId: String) {
+            taskDao.promoteLegacyTask(taskId, UUID.randomUUID().toString(), System.currentTimeMillis())
             // Reconciliation itself must run offline so PAUSE/CANCEL can settle and release local writers.
             // RUN commands that still require the network return RETRY and use this request's backoff.
             val wake =

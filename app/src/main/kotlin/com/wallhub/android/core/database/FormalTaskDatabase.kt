@@ -247,6 +247,44 @@ interface FormalTaskRecordDao {
         return true
     }
 
+    /** Converts one persisted pre-host task into a durable command before the global host is woken. */
+    @Transaction
+    suspend fun promoteLegacyTask(
+        taskId: String,
+        commandId: String,
+        now: Long,
+    ): Boolean {
+        val current = find(taskId) ?: return false
+        if (current.executorVersion == "NEW") return false
+        val intent =
+            when (current.requestedAction) {
+                "PAUSE" -> "PAUSE"
+                "CANCEL" -> "CANCEL"
+                else -> "RUN"
+            }
+        val revision = current.desiredIntentRevision + 1L
+        upsert(
+            current.copy(
+                executorVersion = "NEW",
+                requestedAction = null,
+                desiredIntent = intent,
+                desiredIntentRevision = revision,
+                updatedAt = now,
+            ),
+        )
+        insertCommand(
+            DownloadCommandEntity(
+                commandId = commandId,
+                taskId = taskId,
+                revision = revision,
+                attempt = current.attempt,
+                command = intent,
+                createdAt = now,
+            ),
+        )
+        return true
+    }
+
     @Query(
         "UPDATE formal_task_records SET requestedAction = :action, message = :message, updatedAt = :updatedAt " +
             "WHERE taskId = :taskId AND requestedAction IS NULL AND status IN (:allowedStatuses)",
