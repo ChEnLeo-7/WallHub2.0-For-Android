@@ -176,13 +176,14 @@ internal class FormalDownloadRunner
                     return@withContext DownloadHostRunResult.FAILURE
                 }
                 var task: FormalTaskRecordEntity = found
+                val controlInbox = DurableDownloadControlInbox(taskDao, commandDao, taskId)
                 Log.i(DOWNLOAD_LOG_TAG, "Started host-owned formal Steam runner taskId=$taskId")
                 val timingContext = DownloadTimingContext(taskId = taskId, workshopId = task.workshopId)
                 DownloadTimingTelemetry.log(
                     event = DownloadTimingTelemetry.WORKER_STARTED,
                     context = timingContext,
                 )
-                if (task.requestedAction == DownloadAction.CANCEL.name) {
+                if (controlInbox.current() == SteamDownloadControl.CANCEL) {
                     task.stagingDirectory
                         ?.let(::File)
                         ?.takeIf(::isManagedStagingDirectory)
@@ -353,7 +354,6 @@ internal class FormalDownloadRunner
                         var lastSpeedAt = SystemClock.elapsedRealtime()
                         var lastSpeedBytes = task.downloadedBytes
                         var firstNonzeroSpeedPersisted = task.bytesPerSecond > 0L
-                        val controlProbe = DurableDownloadControlInbox(taskDao, commandDao, taskId)
                         val download =
                             steamWorkshopContentClient.download(
                                 target = target,
@@ -371,7 +371,7 @@ internal class FormalDownloadRunner
                                             )
                                         },
                                     ),
-                                control = controlProbe::current,
+                                control = controlInbox::current,
                             ) { progress ->
                                 DownloadTimingTelemetry.log(
                                     event = DownloadTimingTelemetry.PROGRESS_CALLBACK_STARTED,
@@ -462,7 +462,7 @@ internal class FormalDownloadRunner
                                         proxyUrl = activeProxyUrl,
                                     ),
                                 proxyUrl = activeProxyUrl,
-                                control = controlProbe::current,
+                                control = controlInbox::current,
                             ) { completedBytes, totalBytes, dependencyTitle ->
                                 val now = System.currentTimeMillis()
                                 if (now - lastPersistedAt >= PROGRESS_PERSIST_INTERVAL_MS || completedBytes >= totalBytes) {
@@ -478,7 +478,7 @@ internal class FormalDownloadRunner
                                     lastPersistedAt = now
                                 }
                             }
-                        awaitTaskControl(controlProbe)
+                        awaitTaskControl(controlInbox)
                         val conversionMessage =
                             applicationContext.resources.getQuantityString(
                                 if (download.usedAuthenticatedSession) {
@@ -499,10 +499,10 @@ internal class FormalDownloadRunner
                                 updatedAt = System.currentTimeMillis(),
                             )
                         if (transitioned != 1) {
-                            when (taskDao.find(taskId)?.requestedAction) {
-                                DownloadAction.PAUSE.name -> throw SteamDownloadPausedException()
-                                DownloadAction.CANCEL.name -> throw SteamDownloadCancelledException()
-                                else -> return@withSlot DownloadHostRunResult.SUCCESS
+                            when (controlInbox.current()) {
+                                SteamDownloadControl.PAUSE -> throw SteamDownloadPausedException()
+                                SteamDownloadControl.CANCEL -> throw SteamDownloadCancelledException()
+                                SteamDownloadControl.CONTINUE -> return@withSlot DownloadHostRunResult.SUCCESS
                             }
                         }
                         task = requireNotNull(taskDao.find(taskId))
@@ -517,13 +517,23 @@ internal class FormalDownloadRunner
                         "taskId=$taskId paused committed=${task.downloadedBytes} bytes; " +
                             "staging and the SDK checkpoint are kept",
                     )
-                    taskDao.acknowledgeControlAction(
-                        taskId = taskId,
-                        expectedAction = DownloadAction.PAUSE.name,
-                        status = DownloadStatus.PAUSED.name,
-                        message = applicationContext.getString(R.string.backend_download_paused),
-                        updatedAt = System.currentTimeMillis(),
-                    )
+                    if (task.executorVersion == "NEW") {
+                        taskDao.settleDesiredIntentProjection(
+                            taskId = taskId,
+                            expectedIntent = DownloadAction.PAUSE.name,
+                            status = DownloadStatus.PAUSED.name,
+                            message = applicationContext.getString(R.string.backend_download_paused),
+                            updatedAt = System.currentTimeMillis(),
+                        )
+                    } else {
+                        taskDao.acknowledgeControlAction(
+                            taskId = taskId,
+                            expectedAction = DownloadAction.PAUSE.name,
+                            status = DownloadStatus.PAUSED.name,
+                            message = applicationContext.getString(R.string.backend_download_paused),
+                            updatedAt = System.currentTimeMillis(),
+                        )
+                    }
                     DownloadHostRunResult.SUCCESS
                 } catch (error: SteamDownloadCancelledException) {
                     stagingDirectory?.takeIf(::isManagedStagingDirectory)?.deleteRecursively()
@@ -539,15 +549,19 @@ internal class FormalDownloadRunner
                     var retryable = false
                     withContext(kotlinx.coroutines.NonCancellable) {
                         val latest = taskDao.find(taskId)
+                        val currentControl = controlInbox.current()
                         val userCancelled =
                             isUserCancellation(
-                                currentRequestedAction = latest?.requestedAction,
+                                currentRequestedAction =
+                                    DownloadAction.CANCEL.name.takeIf {
+                                        currentControl == SteamDownloadControl.CANCEL
+                                    },
                                 currentStatus = latest?.status,
                             )
                         if (userCancelled) {
                             Log.i(
                                 DOWNLOAD_LOG_TAG,
-                                "taskId=$taskId cancellation observed action=${latest?.requestedAction} " +
+                                "taskId=$taskId cancellation observed control=$currentControl " +
                                     "status=${latest?.status}",
                             )
                             stagingDirectory?.takeIf(::isManagedStagingDirectory)?.deleteRecursively()
@@ -739,8 +753,15 @@ internal class FormalDownloadRunner
 
         private suspend fun acknowledgeCancellation(taskId: String) {
             val latest = taskDao.find(taskId) ?: return
-            if (latest.requestedAction != DownloadAction.CANCEL.name) return
-            taskDao.upsert(
+            val isNew = latest.executorVersion == "NEW"
+            val cancelRequested =
+                if (isNew) {
+                    latest.desiredIntent == DownloadAction.CANCEL.name
+                } else {
+                    latest.requestedAction == DownloadAction.CANCEL.name
+                }
+            if (!cancelRequested) return
+            val cancelled =
                 latest.copy(
                     status = DownloadStatus.CANCELLED.name,
                     stagingDirectory = null,
@@ -749,8 +770,12 @@ internal class FormalDownloadRunner
                     requestedAction = null,
                     message = applicationContext.getString(R.string.backend_download_cancelled_cleaned),
                     updatedAt = System.currentTimeMillis(),
-                ),
-            )
+                )
+            if (isNew) {
+                taskDao.upsertPreservingRequestedAction(cancelled)
+            } else {
+                taskDao.upsert(cancelled)
+            }
         }
 
         private fun SteamDownloadProgress.toDownloadStatus(): DownloadStatus =

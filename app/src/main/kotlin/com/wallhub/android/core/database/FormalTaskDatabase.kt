@@ -185,6 +185,19 @@ interface FormalTaskRecordDao {
     ): Int
 
     @Query(
+        "UPDATE formal_task_records SET status = :status, message = :message, bytesPerSecond = 0, " +
+            "updatedAt = :updatedAt WHERE taskId = :taskId AND executorVersion = 'NEW' " +
+            "AND desiredIntent = :expectedIntent",
+    )
+    suspend fun settleDesiredIntentProjection(
+        taskId: String,
+        expectedIntent: String,
+        status: String,
+        message: String,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
         "UPDATE formal_task_records SET status = 'CONVERTING', downloadedBytes = :downloadedBytes, " +
             "totalBytes = :totalBytes, bytesPerSecond = 0, outputLabel = NULL, message = :message, " +
             "updatedAt = :updatedAt WHERE taskId = :taskId AND requestedAction IS NULL " +
@@ -210,11 +223,12 @@ interface FormalTaskRecordDao {
     ): Boolean {
         val current = find(taskId) ?: return false
         if (current.status !in allowedStatuses) return false
-        if (current.requestedAction != null && action != "CANCEL") return false
+        if (current.executorVersion == "NEW" && current.desiredIntent == desiredIntent) return false
+        if (current.executorVersion == "LEGACY" && current.requestedAction != null && action != "CANCEL") return false
         val revision = current.desiredIntentRevision + 1L
         upsert(
             current.copy(
-                requestedAction = action,
+                requestedAction = if (current.executorVersion == "LEGACY") action else current.requestedAction,
                 desiredIntent = desiredIntent,
                 desiredIntentRevision = revision,
                 message = message,
