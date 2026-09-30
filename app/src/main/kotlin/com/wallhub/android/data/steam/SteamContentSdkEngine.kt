@@ -152,7 +152,11 @@ class SteamContentSdkEngine
             created.start()
             engine = created
             engineRoute = route
-            return sessions.replace(created.openSession()).value
+            val opened = created.openSession() ?: run {
+                close()
+                return null
+            }
+            return sessions.replace(opened).value
         }
 
         /** Opens a session and captures ownership of that exact generation before another opener can replace it. */
