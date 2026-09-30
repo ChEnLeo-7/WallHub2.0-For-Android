@@ -1516,14 +1516,14 @@ WorkManager enqueue failure is only a failed wake-up, not a reason to rewrite an
 One `SingleProcessDownloadHostCoordinator` owns live runs by task id. Concurrent wake-ups join its Deferred instead
 of opening another SDK task. Its first run acquires a durable Engine Epoch; commands are claimed by that epoch and
 acknowledged with per-task receipt sequences. Command acknowledgement and projection of applied/quiesced revisions
-are one Room transaction. Late controls are claimed again when a transfer settles, same-epoch claims may be replayed
-after a stopped adapter, and an older epoch cannot acknowledge a command reclaimed by a new process.
+are one Room transaction. This paragraph records the v8 intermediate design: later convergence stopped attributing
+late opposing commands to an earlier run, bound the owned run to the WorkManager execution window, and queued a
+successor global wake for commands accepted during that run.
 
-For NEW tasks WorkManager now schedules one `wallhub_download_host_reconcile` wake worker. That worker owns no Steam
-session, native handle, buffers, or files; during the compatibility cut it starts the old per-task body, which must
-enter the singleton host before touching the transfer. Existing v7 tasks stay on the LEGACY route. The external
-`WorkshopDownloads` seam now exposes observe/enqueue/control/reorder while `DownloadTaskRepository` temporarily keeps
-storage/admin calls.
+The v8 cut initially kept NEW and LEGACY routes plus a compatibility repository. Room v9 supersedes that cut: it
+absorbs legacy actions into Desired Intent, creates missing Durable Commands, physically removes both routing columns,
+and exposes one `WorkshopDownloads` intent/query/admin interface. The old per-task Worker remains loadable only to
+drain WorkSpecs persisted by pre-v9 installations and must enter the same Host/Runner seam.
 
 Evidence: Room 7→8 upgraded in-place on the OnePlus 5T; Release builds succeeded through revision `b8c6ecb`; the
 worker's `testDebugUnitTest` completed successfully. A real NEW task `8f8e8cef-f0f7-40ab-99ff-9181c8785d0c`
