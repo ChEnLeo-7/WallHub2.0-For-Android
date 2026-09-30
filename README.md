@@ -12,8 +12,8 @@ WallHub for Android 是面向 Wallpaper Engine 创意工坊的独立原生客户
 - **原生 Material 3 体验**：发现、详情、管理、设置与播放器均为 Compose 原生界面，支持深浅主题、系统动态配色、紧凑与宽屏布局。
 - **完整创意工坊发现能力**：支持搜索、排序、时间、类型、年龄评级、主题、官方标签、分辨率筛选，以及瀑布流与 Web 页码模式。
 - **Steam 账户与资料库**：支持 Steam 登录、会话加密恢复、个人订阅/收藏读取、订阅与收藏写操作、作者结果与评论。
-- **在线与本地播放**：使用 Media3 播放本地视频，也可通过 kSteam Depot 分块读取实现在线播放与有界缓存。
-- **可靠下载流水线**：WorkManager 前台任务、并发分块下载、校验、暂停/续传、队列排序、失败重试和持久化任务状态。
+- **在线与本地播放**：使用 Media3 播放本地视频；Depot 内容由 Steam Content SDK Range Stream 提供在线播放与有界缓存，Steam 发布的直链视频使用独立 HTTP Range 路径。
+- **可靠下载流水线**：Room 持久命令与单一 DownloadHost 协调执行，WorkManager 只负责唤醒/对账；Steam Content SDK 负责并发分块、校验、暂停/续传与原子发布。
 - **移动端格式转换**：支持视频/场景 MPKG 与网站 ZIP 导出，包含 PKG 索引读取、TEX 移动端转换、定向 Shader 兼容与原子写入。
 - **本地壁纸管理**：扫描公共下载目录与 SAF 目录，支持格式分类、搜索、筛选、排序、收藏、标签、批量操作、分享、删除与 Wallpaper Engine 导入。
 - **安全与可诊断性**：Steam refresh token 使用 Android Keystore 加密，诊断日志在落盘前脱敏，导出和路径处理包含原子替换与目录穿越防护。
@@ -80,7 +80,7 @@ app/build/outputs/apk/debug/app-debug.apk
 本项目基于并感谢以下开源项目与平台：
 
 - [Android Jetpack Compose](https://developer.android.com/compose) 与 [Material 3](https://m3.material.io/)
-- [kSteam](https://github.com/iTaysonLab/kSteam)
+- Steam Content SDK（本项目同级维护的 Rust 内容引擎）
 - [AndroidX Media3](https://developer.android.com/media/media3)
 - [Room](https://developer.android.com/training/data-storage/room)、[WorkManager](https://developer.android.com/topic/libraries/architecture/workmanager) 与 [DataStore](https://developer.android.com/topic/libraries/architecture/datastore)
 - [Coil](https://coil-kt.github.io/coil/)、[Multiplatform Markdown Renderer](https://github.com/mikepenz/multiplatform-markdown-renderer) 与 [Haze](https://github.com/chrisbanes/haze)
