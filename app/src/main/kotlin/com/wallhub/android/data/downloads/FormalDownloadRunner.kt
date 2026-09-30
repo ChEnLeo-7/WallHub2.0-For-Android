@@ -141,6 +141,8 @@ internal class FormalDownloadRunner
         private val conversionScheduler: ConversionWorkScheduler,
         private val settingsRepository: SettingsRepository,
         private val stagingManager: DownloadStagingManager,
+        private val projections: FormalTaskProjectionStore,
+        private val settlement: FormalDownloadAttemptSettlement,
         private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
         private val steamWorkshopContentClient: SteamWorkshopContentClient,
         private val presetDependencies: WorkshopPresetDependencyDownloader,
@@ -163,14 +165,14 @@ internal class FormalDownloadRunner
                 if (controlInbox.current() == SteamDownloadControl.CANCEL) {
                     // Both the app destination and SDK checkpoint staging are one deletion unit.
                     stagingManager.discardTask(taskId, task.stagingDirectory?.let(::File))
-                    persist(
+                    projections.persist(
                         task,
                         status = DownloadStatus.CANCELLED,
                         stagingDirectory = null,
                         downloadedBytes = 0L,
                         bytesPerSecond = 0L,
                         message = applicationContext.getString(R.string.backend_download_cancelled_cleaned),
-                        clearRequestedAction = true,
+                        clearLegacyRequestedAction = true,
                     )
                     return@withContext DownloadHostRunResult.SUCCESS
                 }
@@ -185,7 +187,7 @@ internal class FormalDownloadRunner
                     // covers any residual system stops.
                     val downloadPreferences = settingsRepository.preferences.first()
                     task =
-                        persist(
+                        projections.persist(
                             task,
                             status = DownloadStatus.QUEUED,
                             message = applicationContext.getString(R.string.backend_download_queued),
@@ -200,7 +202,7 @@ internal class FormalDownloadRunner
                             context = timingContext,
                         )
                         task =
-                            persist(
+                            projections.persist(
                                 task,
                                 status = DownloadStatus.RESOLVING,
                                 message = applicationContext.getString(R.string.backend_download_reading_workshop_details),
@@ -221,7 +223,7 @@ internal class FormalDownloadRunner
                             )
                         val directDownload = target.fileUrl.isNotBlank()
                         if (!directDownload && task.credentialMode == DownloadCredentialMode.LEGACY_UNKNOWN.name) {
-                            persist(
+                            projections.persist(
                                 task,
                                 status = DownloadStatus.PAUSED,
                                 message = applicationContext.getString(R.string.backend_download_switch_account, "unknown account"),
@@ -234,7 +236,7 @@ internal class FormalDownloadRunner
                             (!task.accountName.isNullOrBlank() &&
                                 !task.accountName.equals(credential?.accountName, ignoreCase = true))
                         ) {
-                            persist(
+                            projections.persist(
                                 task,
                                 status = DownloadStatus.PAUSED,
                                 message = applicationContext.getString(R.string.backend_download_switch_account, task.accountName),
@@ -244,7 +246,7 @@ internal class FormalDownloadRunner
                         val effectiveCredential = credential
                         if (effectiveCredential != null && task.credentialMode != DownloadCredentialMode.ACCOUNT.name) {
                             task =
-                                persist(
+                                projections.persist(
                                     task,
                                     accountName = effectiveCredential.accountName,
                                     credentialMode = DownloadCredentialMode.ACCOUNT.name,
@@ -299,7 +301,7 @@ internal class FormalDownloadRunner
                             )
                         }
                         task =
-                            persist(
+                            projections.persist(
                                 task,
                                 title = target.title,
                                 type = target.contentTypeHint.toWorkshopType().name,
@@ -325,7 +327,7 @@ internal class FormalDownloadRunner
                                 authenticated = credential != null,
                                 timingContext = timingContext,
                             ) { previous, write ->
-                                persist(
+                                projections.persist(
                                     previous,
                                     status = write.status,
                                     downloadedBytes = write.downloadedBytes,
@@ -409,43 +411,12 @@ internal class FormalDownloadRunner
                         conversionScheduler.enqueue(taskId)
                         DownloadHostRunResult.SUCCESS
                     }
-                } catch (error: SteamDownloadPausedException) {
-                    // The one line a device reading needs to tell a pause from a restart: the durable
-                    // checkpoint the paused run reached. No path, title, or key is logged.
-                    Log.i(
-                        DOWNLOAD_LOG_TAG,
-                        "taskId=$taskId paused committed=${task.downloadedBytes} bytes; " +
-                            "staging and the SDK checkpoint are kept",
-                    )
-                    if (task.executorVersion == "NEW") {
-                        taskDao.settleDesiredIntentProjection(
-                            taskId = taskId,
-                            expectedIntent = DownloadAction.PAUSE.name,
-                            status = DownloadStatus.PAUSED.name,
-                            message = applicationContext.getString(R.string.backend_download_paused),
-                            updatedAt = System.currentTimeMillis(),
-                        )
-                    } else {
-                        taskDao.acknowledgeControlAction(
-                            taskId = taskId,
-                            expectedAction = DownloadAction.PAUSE.name,
-                            status = DownloadStatus.PAUSED.name,
-                            message = applicationContext.getString(R.string.backend_download_paused),
-                            updatedAt = System.currentTimeMillis(),
-                        )
-                    }
-                    DownloadHostRunResult.SUCCESS
-                } catch (error: SteamDownloadCancelledException) {
-                    stagingManager.discardTask(taskId, stagingDirectory)
-                    acknowledgeCancellation(taskId)
-                    DownloadHostRunResult.SUCCESS
+                } catch (_: SteamDownloadPausedException) {
+                    settlement.pause(task)
+                } catch (_: SteamDownloadCancelledException) {
+                    settlement.cancel(taskId, stagingDirectory)
                 } catch (error: CancellationException) {
-                    Log.w(
-                        DOWNLOAD_LOG_TAG,
-                        "Formal Steam download worker cancelled taskId=$taskId",
-                        error,
-                    )
-                    var retryable = false
+                    Log.w(DOWNLOAD_LOG_TAG, "Formal Steam download cancelled taskId=$taskId", error)
                     withContext(kotlinx.coroutines.NonCancellable) {
                         val latest = taskDao.find(taskId)
                         val currentControl = controlInbox.current()
@@ -458,48 +429,13 @@ internal class FormalDownloadRunner
                                 currentStatus = latest?.status,
                             )
                         if (userCancelled) {
-                            Log.i(
-                                DOWNLOAD_LOG_TAG,
-                                "taskId=$taskId cancellation observed control=$currentControl " +
-                                    "status=${latest?.status}",
-                            )
-                            stagingManager.discardTask(taskId, stagingDirectory)
-                            acknowledgeCancellation(taskId)
+                            settlement.cancel(taskId, stagingDirectory)
                         } else {
-                            // The system (or the ROM's job policy) stopped the worker; keep
-                            // the partial staging directory and let WorkManager retry the
-                            // run so the task cannot get stuck as QUEUED forever.
-                            Log.w(
-                                DOWNLOAD_LOG_TAG,
-                                "taskId=$taskId interrupted by the system; re-queueing status=${latest?.status}",
-                            )
-                            retryable = true
-                            persist(
-                                task,
-                                status = DownloadStatus.QUEUED,
-                                message = applicationContext.getString(R.string.backend_download_interrupted),
-                            )
+                            settlement.interrupted(task)
                         }
                     }
-                    if (retryable) {
-                        DownloadHostRunResult.RETRY
-                    } else {
-                        throw error
-                    }
                 } catch (error: Throwable) {
-                    steamWorkshopContentClient.invalidateContentTarget(task.workshopId)
-                    Log.e(
-                        DOWNLOAD_LOG_TAG,
-                        "Formal Steam download worker failed taskId=$taskId, type=${error.javaClass.name}",
-                        error,
-                    )
-                    persist(
-                        task,
-                        status = DownloadStatus.FAILED,
-                        bytesPerSecond = 0L,
-                        message = error.message ?: error.javaClass.simpleName,
-                    )
-                    DownloadHostRunResult.SUCCESS
+                    settlement.failed(task, error)
                 }
             }
 
@@ -510,105 +446,6 @@ internal class FormalDownloadRunner
                     SteamDownloadControl.PAUSE -> throw SteamDownloadPausedException()
                     SteamDownloadControl.CANCEL -> throw SteamDownloadCancelledException()
                 }
-            }
-        }
-
-        private suspend fun persist(
-            previous: FormalTaskRecordEntity,
-            title: String = previous.title,
-            type: String = previous.type,
-            previewUrl: String? = previous.previewUrl,
-            appId: Int = previous.appId,
-            contentManifestId: Long = previous.contentManifestId,
-            stagingDirectory: String? = previous.stagingDirectory,
-            accountName: String? = previous.accountName,
-            credentialMode: String = previous.credentialMode,
-            status: DownloadStatus = previous.status.toDownloadStatus(),
-            downloadedBytes: Long = previous.downloadedBytes,
-            totalBytes: Long = previous.totalBytes,
-            bytesPerSecond: Long = previous.bytesPerSecond,
-            outputLabel: String? = previous.outputLabel,
-            message: String? = previous.message,
-            requestedAction: DownloadAction? = null,
-            clearRequestedAction: Boolean = false,
-        ): FormalTaskRecordEntity {
-            val persisted = taskDao.find(previous.taskId)
-            val effectiveAction =
-                if (previous.executorVersion == "NEW" || clearRequestedAction) {
-                    null
-                } else {
-                    requestedAction?.name ?: persisted?.requestedAction ?: previous.requestedAction
-                }
-            val effectiveStatus =
-                when (effectiveAction) {
-                    DownloadAction.PAUSE.name -> DownloadStatus.PAUSED
-                    DownloadAction.CANCEL.name -> DownloadStatus.CANCELLED
-                    else -> status
-                }
-            val effectiveMessage =
-                when (effectiveAction) {
-                    DownloadAction.PAUSE.name -> applicationContext.getString(R.string.backend_download_pausing)
-                    DownloadAction.CANCEL.name -> applicationContext.getString(R.string.backend_download_cancelling)
-                    else -> message
-                }
-            // A concurrent run for this task can acknowledge a cancellation and clear the request
-            // before this run's last progress write lands. That acknowledgement is terminal: writing
-            // progress over it is what made a cancelled item go back to reading as downloading.
-            if (persisted != null && !mayPublishDownloadProgress(persisted.status, effectiveStatus)) {
-                return persisted
-            }
-            val updated =
-                previous.copy(
-                    title = title,
-                    type = type,
-                    previewUrl = previewUrl,
-                    appId = appId,
-                    contentManifestId = contentManifestId,
-                    stagingDirectory = stagingDirectory,
-                    accountName = accountName,
-                    credentialMode = credentialMode,
-                    status = effectiveStatus.name,
-                    downloadedBytes = downloadedBytes,
-                    totalBytes = totalBytes,
-                    bytesPerSecond = bytesPerSecond,
-                    outputLabel = outputLabel,
-                    message = effectiveMessage,
-                    requestedAction = effectiveAction,
-                    queuePosition = persisted?.queuePosition ?: previous.queuePosition,
-                    updatedAt = System.currentTimeMillis(),
-                )
-            return if (clearRequestedAction) {
-                taskDao.upsert(updated)
-                updated
-            } else {
-                taskDao.upsertPreservingExecutionIntent(updated)
-            }
-        }
-
-        private suspend fun acknowledgeCancellation(taskId: String) {
-            val latest = taskDao.find(taskId) ?: return
-            val isNew = latest.executorVersion == "NEW"
-            val cancelRequested =
-                if (isNew) {
-                    latest.desiredIntent == DownloadAction.CANCEL.name
-                } else {
-                    latest.requestedAction == DownloadAction.CANCEL.name
-                }
-            if (!cancelRequested) return
-            val cancelled =
-                latest.copy(
-                    status = DownloadStatus.CANCELLED.name,
-                    stagingDirectory = null,
-                    downloadedBytes = 0L,
-                    bytesPerSecond = 0L,
-                    requestedAction = null,
-                    message = applicationContext.getString(R.string.backend_download_cancelled_cleaned),
-                    updatedAt = System.currentTimeMillis(),
-                )
-            if (isNew) {
-                taskDao.upsertPreservingExecutionIntent(cancelled)
-            } else {
-                taskDao.upsert(cancelled)
             }
         }
 
