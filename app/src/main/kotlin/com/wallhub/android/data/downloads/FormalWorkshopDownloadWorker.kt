@@ -200,10 +200,10 @@ internal class FormalDownloadRunner
                         message = applicationContext.getString(R.string.backend_download_cancelled_cleaned),
                         clearRequestedAction = true,
                     )
-                    return@withContext androidx.work.ListenableWorker.androidx.work.ListenableWorker.Result.success()
+                    return@withContext androidx.work.ListenableWorker.Result.success()
                 }
                 if (task.status in setOf(DownloadStatus.COMPLETED.name, DownloadStatus.CANCELLED.name)) {
-                    return@withContext androidx.work.ListenableWorker.androidx.work.ListenableWorker.Result.success()
+                    return@withContext androidx.work.ListenableWorker.Result.success()
                 }
                 ActiveFormalWorkshopDownloadWorkers.markActive(taskId)
                 var stagingDirectory: File? = null
