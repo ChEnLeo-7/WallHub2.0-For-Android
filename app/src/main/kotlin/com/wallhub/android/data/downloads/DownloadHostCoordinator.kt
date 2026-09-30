@@ -1,5 +1,6 @@
 package com.wallhub.android.data.downloads
 
+import android.util.Log
 import androidx.work.ListenableWorker
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -53,6 +54,7 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
             scope.async(start = CoroutineStart.LAZY) {
                 val currentEpoch = epoch.await()
                 val before = commandStore?.claimTask(taskId, currentEpoch).orEmpty()
+                Log.i(HOST_LOG_TAG, "host reconcile taskId=$taskId epoch=$currentEpoch commands=${before.map { it.revision }}")
                 val result = launch()
                 // Controls may arrive while the transfer is running. The runner observes the compatibility
                 // projection; claiming again binds those late commands to this same settled outcome.
@@ -72,6 +74,10 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
                         ) ?: true
                     check(acknowledged) { "Command receipt was rejected for taskId=$taskId sequence=$sequence" }
                     receiptSequences[taskId] = sequence
+                    Log.i(
+                        HOST_LOG_TAG,
+                        "host receipt taskId=$taskId epoch=$currentEpoch revision=${command.revision} sequence=$sequence",
+                    )
                 }
                 result
             }
@@ -85,4 +91,8 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
     }
 
     override fun isActive(taskId: String): Boolean = active.containsKey(taskId)
+
+    private companion object {
+        const val HOST_LOG_TAG = "WallHubDownloadHost"
+    }
 }
