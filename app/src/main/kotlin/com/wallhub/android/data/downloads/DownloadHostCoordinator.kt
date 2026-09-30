@@ -2,7 +2,6 @@ package com.wallhub.android.data.downloads
 
 import androidx.work.ListenableWorker
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -43,7 +42,7 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
         commandStore?.acquireEngineEpoch() ?: 0L
     }
     private val active = ConcurrentHashMap<String, Deferred<ListenableWorker.Result>>()
-    private val receiptSequence = AtomicLong()
+    private val receiptSequences = ConcurrentHashMap<String, Long>()
 
     override suspend fun reconcile(
         taskId: String,
@@ -53,13 +52,20 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
         val candidate =
             scope.async(start = CoroutineStart.LAZY) {
                 val currentEpoch = epoch.await()
-                val commands = commandStore?.claimTask(taskId, currentEpoch).orEmpty()
+                val before = commandStore?.claimTask(taskId, currentEpoch).orEmpty()
                 val result = launch()
+                // Controls may arrive while the transfer is running. The runner observes the compatibility
+                // projection; claiming again binds those late commands to this same settled outcome.
+                val commands =
+                    (before + commandStore?.claimTask(taskId, currentEpoch).orEmpty())
+                        .distinctBy { it.commandId }
+                        .sortedBy { it.revision }
                 commands.forEach { command ->
+                    val sequence = receiptSequences.compute(taskId) { _, value -> (value ?: 0L) + 1L } ?: 1L
                     commandStore?.acknowledge(
                         command = command,
                         epoch = currentEpoch,
-                        receiptSequence = receiptSequence.incrementAndGet(),
+                        receiptSequence = sequence,
                         result = result.toString(),
                         quiesced = command.command != "RUN",
                     )
