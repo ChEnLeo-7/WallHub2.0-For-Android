@@ -23,11 +23,11 @@ internal class DownloadHostWakeWorker(
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result =
         coroutineScope {
-            commandDao.pending(MAX_COMMANDS_PER_WAKE)
-                .map { it.taskId }
-                .distinct()
-                .map { taskId -> async { host.reconcile(taskId) { runner.run(taskId) } } }
-                .awaitAll()
+            var taskIds = commandDao.pending(MAX_COMMANDS_PER_WAKE).map { it.taskId }.distinct()
+            while (taskIds.isNotEmpty()) {
+                taskIds.map { taskId -> async { host.reconcile(taskId) { runner.run(taskId) } } }.awaitAll()
+                taskIds = commandDao.pending(MAX_COMMANDS_PER_WAKE).map { it.taskId }.distinct()
+            }
             Result.success()
         }
 

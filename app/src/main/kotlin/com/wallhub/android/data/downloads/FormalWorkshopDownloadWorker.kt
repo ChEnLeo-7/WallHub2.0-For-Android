@@ -176,7 +176,7 @@ internal class FormalDownloadRunner
                     return@withContext androidx.work.ListenableWorker.Result.failure()
                 }
                 var task: FormalTaskRecordEntity = found
-                Log.i(DOWNLOAD_LOG_TAG, "Started formal Steam download worker taskId=$taskId")
+                Log.i(DOWNLOAD_LOG_TAG, "Started host-owned formal Steam runner taskId=$taskId")
                 val timingContext = DownloadTimingContext(taskId = taskId, workshopId = task.workshopId)
                 DownloadTimingTelemetry.log(
                     event = DownloadTimingTelemetry.WORKER_STARTED,
