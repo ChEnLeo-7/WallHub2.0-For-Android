@@ -1,7 +1,6 @@
 package com.wallhub.android.data.downloads
 
 import android.util.Log
-import androidx.work.ListenableWorker
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,8 +21,8 @@ import kotlinx.coroutines.async
 internal interface DownloadHostCoordinator {
     suspend fun reconcile(
         taskId: String,
-        launch: suspend () -> ListenableWorker.Result,
-    ): ListenableWorker.Result
+        launch: suspend () -> DownloadHostRunResult,
+    ): DownloadHostRunResult
 
     fun isActive(taskId: String): Boolean
 }
@@ -42,13 +41,13 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
     private val epoch = scope.async(start = CoroutineStart.LAZY) {
         commandStore?.acquireEngineEpoch() ?: 0L
     }
-    private val active = ConcurrentHashMap<String, Deferred<ListenableWorker.Result>>()
+    private val active = ConcurrentHashMap<String, Deferred<DownloadHostRunResult>>()
     private val receiptSequences = ConcurrentHashMap<String, Long>()
 
     override suspend fun reconcile(
         taskId: String,
-        launch: suspend () -> ListenableWorker.Result,
-    ): ListenableWorker.Result {
+        launch: suspend () -> DownloadHostRunResult,
+    ): DownloadHostRunResult {
         require(taskId.isNotBlank()) { "Download task ID must not be blank" }
         val candidate =
             scope.async(start = CoroutineStart.LAZY) {
@@ -56,6 +55,7 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
                 val before = commandStore?.claimTask(taskId, currentEpoch).orEmpty()
                 Log.i(HOST_LOG_TAG, "host reconcile taskId=$taskId epoch=$currentEpoch commands=${before.map { it.revision }}")
                 val result = launch()
+                if (!result.settlesCommand) return@async result
                 // Controls may arrive while the transfer is running. The runner observes the compatibility
                 // projection; claiming again binds those late commands to this same settled outcome.
                 val commands =

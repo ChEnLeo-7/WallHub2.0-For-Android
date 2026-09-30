@@ -1,6 +1,5 @@
 package com.wallhub.android.data.downloads
 
-import androidx.work.ListenableWorker
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -23,14 +22,14 @@ class DownloadHostCoordinatorTest {
                 launches.incrementAndGet()
                 entered.complete(Unit)
                 release.await()
-                ListenableWorker.Result.success()
+                DownloadHostRunResult.SUCCESS
             }
         }
         entered.await()
         val second = async {
             coordinator.reconcile("task-1") {
                 launches.incrementAndGet()
-                ListenableWorker.Result.failure()
+                DownloadHostRunResult.FAILURE
             }
         }
 
@@ -48,7 +47,7 @@ class DownloadHostCoordinatorTest {
         repeat(2) {
             coordinator.reconcile("task-1") {
                 launches.incrementAndGet()
-                ListenableWorker.Result.success()
+                DownloadHostRunResult.SUCCESS
             }
         }
 

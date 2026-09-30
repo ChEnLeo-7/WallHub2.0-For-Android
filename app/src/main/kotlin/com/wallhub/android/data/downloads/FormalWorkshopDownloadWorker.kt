@@ -168,12 +168,12 @@ internal class FormalDownloadRunner
         private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
         private val steamWorkshopContentClient: SteamWorkshopContentClient,
     ) {
-        suspend fun run(taskId: String): androidx.work.ListenableWorker.Result =
+        suspend fun run(taskId: String): DownloadHostRunResult =
             withContext(Dispatchers.IO) {
                 val found = taskDao.find(taskId)
                 if (found == null) {
                     Log.w(DOWNLOAD_LOG_TAG, "doWork task record missing taskId=$taskId")
-                    return@withContext androidx.work.ListenableWorker.Result.failure()
+                    return@withContext DownloadHostRunResult.FAILURE
                 }
                 var task: FormalTaskRecordEntity = found
                 Log.i(DOWNLOAD_LOG_TAG, "Started host-owned formal Steam runner taskId=$taskId")
@@ -200,17 +200,17 @@ internal class FormalDownloadRunner
                         message = applicationContext.getString(R.string.backend_download_cancelled_cleaned),
                         clearRequestedAction = true,
                     )
-                    return@withContext androidx.work.ListenableWorker.Result.success()
+                    return@withContext DownloadHostRunResult.SUCCESS
                 }
                 if (task.status in setOf(DownloadStatus.COMPLETED.name, DownloadStatus.CANCELLED.name)) {
-                    return@withContext androidx.work.ListenableWorker.Result.success()
+                    return@withContext DownloadHostRunResult.SUCCESS
                 }
                 ActiveFormalWorkshopDownloadWorkers.markActive(taskId)
                 var stagingDirectory: File? = null
                 try {
                     // No setForeground() here: this ROM treats the WorkManager FGS as
                     // typeless and force-stops it after ~4 seconds, which cancelled the
-                    // worker mid-run. A plain JobScheduler job survives; androidx.work.ListenableWorker.Result.retry()
+                    // worker mid-run. A plain JobScheduler job survives; DownloadHostRunResult.RETRY
                     // covers any residual system stops.
                     val downloadPreferences = settingsRepository.preferences.first()
                     task =
@@ -256,7 +256,7 @@ internal class FormalDownloadRunner
                                 requestedAction = null,
                                 message = applicationContext.getString(R.string.backend_download_switch_account, "unknown account"),
                             )
-                            return@withSlot androidx.work.ListenableWorker.Result.success()
+                            return@withSlot DownloadHostRunResult.SUCCESS
                         }
                         if (
                             !directDownload &&
@@ -270,7 +270,7 @@ internal class FormalDownloadRunner
                                 requestedAction = null,
                                 message = applicationContext.getString(R.string.backend_download_switch_account, task.accountName),
                             )
-                            return@withSlot androidx.work.ListenableWorker.Result.success()
+                            return@withSlot DownloadHostRunResult.SUCCESS
                         }
                         val effectiveCredential = credential
                         if (effectiveCredential != null && task.credentialMode != DownloadCredentialMode.ACCOUNT.name) {
@@ -502,12 +502,12 @@ internal class FormalDownloadRunner
                             when (taskDao.find(taskId)?.requestedAction) {
                                 DownloadAction.PAUSE.name -> throw SteamDownloadPausedException()
                                 DownloadAction.CANCEL.name -> throw SteamDownloadCancelledException()
-                                else -> return@withSlot androidx.work.ListenableWorker.Result.success()
+                                else -> return@withSlot DownloadHostRunResult.SUCCESS
                             }
                         }
                         task = requireNotNull(taskDao.find(taskId))
                         conversionScheduler.enqueue(taskId)
-                        androidx.work.ListenableWorker.Result.success()
+                        DownloadHostRunResult.SUCCESS
                     }
                 } catch (error: SteamDownloadPausedException) {
                     // The one line a device reading needs to tell a pause from a restart: the durable
@@ -524,12 +524,12 @@ internal class FormalDownloadRunner
                         message = applicationContext.getString(R.string.backend_download_paused),
                         updatedAt = System.currentTimeMillis(),
                     )
-                    androidx.work.ListenableWorker.Result.success()
+                    DownloadHostRunResult.SUCCESS
                 } catch (error: SteamDownloadCancelledException) {
                     stagingDirectory?.takeIf(::isManagedStagingDirectory)?.deleteRecursively()
                     deleteSdkStagingDirectory(taskId)
                     acknowledgeCancellation(taskId)
-                    androidx.work.ListenableWorker.Result.success()
+                    DownloadHostRunResult.SUCCESS
                 } catch (error: CancellationException) {
                     Log.w(
                         DOWNLOAD_LOG_TAG,
@@ -570,7 +570,7 @@ internal class FormalDownloadRunner
                         }
                     }
                     if (retryable) {
-                        androidx.work.ListenableWorker.Result.retry()
+                        DownloadHostRunResult.RETRY
                     } else {
                         throw error
                     }
@@ -587,7 +587,7 @@ internal class FormalDownloadRunner
                         bytesPerSecond = 0L,
                         message = error.message ?: error.javaClass.simpleName,
                     )
-                    androidx.work.ListenableWorker.Result.success()
+                    DownloadHostRunResult.SUCCESS
                 } finally {
                     ActiveFormalWorkshopDownloadWorkers.markInactive(taskId)
                 }
@@ -867,7 +867,7 @@ class FormalWorkshopDownloadWorker
                 Log.w(DOWNLOAD_LOG_TAG, "doWork missing input data; keys=${inputData.keyValueMap.keys}")
                 return Result.failure()
             }
-            return downloadHostCoordinator.reconcile(taskId) { runner.run(taskId) }
+            return downloadHostCoordinator.reconcile(taskId) { runner.run(taskId) }.toWorkerResult()
         }
 
         override suspend fun getForegroundInfo(): ForegroundInfo = createForegroundInfo()

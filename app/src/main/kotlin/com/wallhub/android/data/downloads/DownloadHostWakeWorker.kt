@@ -25,7 +25,9 @@ internal class DownloadHostWakeWorker(
         coroutineScope {
             var taskIds = commandDao.pending(MAX_COMMANDS_PER_WAKE).map { it.taskId }.distinct()
             while (taskIds.isNotEmpty()) {
-                taskIds.map { taskId -> async { host.reconcile(taskId) { runner.run(taskId) } } }.awaitAll()
+                val results =
+                    taskIds.map { taskId -> async { host.reconcile(taskId) { runner.run(taskId) } } }.awaitAll()
+                if (DownloadHostRunResult.RETRY in results) return@coroutineScope Result.retry()
                 taskIds = commandDao.pending(MAX_COMMANDS_PER_WAKE).map { it.taskId }.distinct()
             }
             Result.success()
