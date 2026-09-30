@@ -39,15 +39,13 @@ internal class FormalTaskProjectionStore
             bytesPerSecond: Long = previous.bytesPerSecond,
             outputLabel: String? = previous.outputLabel,
             message: String? = previous.message,
-            legacyRequestedAction: DownloadAction? = null,
-            clearLegacyRequestedAction: Boolean = false,
         ): FormalTaskRecordEntity {
             val persisted = taskDao.find(previous.taskId)
             val effectiveAction =
-                if (previous.executorVersion == "NEW" || clearLegacyRequestedAction) {
+                if (previous.executorVersion == "NEW") {
                     null
                 } else {
-                    legacyRequestedAction?.name ?: persisted?.requestedAction ?: previous.requestedAction
+                    persisted?.requestedAction ?: previous.requestedAction
                 }
             val effectiveStatus =
                 when (effectiveAction) {
@@ -84,12 +82,7 @@ internal class FormalTaskProjectionStore
                     queuePosition = persisted?.queuePosition ?: previous.queuePosition,
                     updatedAt = System.currentTimeMillis(),
                 )
-            return if (clearLegacyRequestedAction) {
-                taskDao.upsert(updated)
-                updated
-            } else {
-                taskDao.upsertPreservingExecutionIntent(updated)
-            }
+            return taskDao.upsertPreservingExecutionIntent(updated)
         }
 
         private fun String.toDownloadStatus(): DownloadStatus =
