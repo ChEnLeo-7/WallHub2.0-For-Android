@@ -168,11 +168,8 @@ internal class WallHubDownloadWorkerFactory
     constructor(
         private val taskDao: FormalTaskRecordDao,
         private val commandDao: DownloadCommandDao,
-        private val credentialProvider: SteamContentCredentialProvider,
-        private val conversionScheduler: ConversionWorkScheduler,
-        private val settingsRepository: com.wallhub.android.core.model.SettingsRepository,
+        private val formalDownloadRunner: FormalDownloadRunner,
         private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
-        private val steamWorkshopContentClient: SteamWorkshopContentClient,
         private val downloadHostCoordinator: SingleProcessDownloadHostCoordinator,
         private val playbackCoordinator: PlaybackDownloadCoordinator,
     ) : WorkerFactory() {
@@ -193,12 +190,7 @@ internal class WallHubDownloadWorkerFactory
                     FormalWorkshopDownloadWorker(
                         appContext = appContext,
                         params = workerParameters,
-                        taskDao = taskDao,
-                        credentialProvider = credentialProvider,
-                        conversionScheduler = conversionScheduler,
-                        settingsRepository = settingsRepository,
-                        downloadConcurrencyGovernor = downloadConcurrencyGovernor,
-                        steamWorkshopContentClient = steamWorkshopContentClient,
+                        runner = formalDownloadRunner,
                         downloadHostCoordinator = downloadHostCoordinator,
                     )
 

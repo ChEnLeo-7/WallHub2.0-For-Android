@@ -156,30 +156,24 @@ private fun managedTaskDirectory(
     return candidate
 }
 
-class FormalWorkshopDownloadWorker
-    internal constructor(
-        appContext: Context,
-        params: WorkerParameters,
+@javax.inject.Singleton
+internal class FormalDownloadRunner
+    @javax.inject.Inject
+    constructor(
+        @dagger.hilt.android.qualifiers.ApplicationContext private val applicationContext: Context,
         private val taskDao: FormalTaskRecordDao,
         private val credentialProvider: SteamContentCredentialProvider,
         private val conversionScheduler: ConversionWorkScheduler,
         private val settingsRepository: SettingsRepository,
         private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
         private val steamWorkshopContentClient: SteamWorkshopContentClient,
-        private val downloadHostCoordinator: DownloadHostCoordinator,
-    ) : CoroutineWorker(appContext, params) {
-        override suspend fun doWork(): Result =
+    ) {
+        suspend fun run(taskId: String): androidx.work.ListenableWorker.Result =
             withContext(Dispatchers.IO) {
-                val taskId = resolveDownloadTaskId(inputData.getString(KEY_TASK_ID), tags)
-                if (taskId == null) {
-                    Log.w(DOWNLOAD_LOG_TAG, "doWork missing input data; keys=${inputData.keyValueMap.keys}")
-                    return@withContext Result.failure()
-                }
-                downloadHostCoordinator.reconcile(taskId) {
                 val found = taskDao.find(taskId)
                 if (found == null) {
                     Log.w(DOWNLOAD_LOG_TAG, "doWork task record missing taskId=$taskId")
-                    return@reconcile Result.failure()
+                    return@withContext androidx.work.ListenableWorker.Result.failure()
                 }
                 var task: FormalTaskRecordEntity = found
                 Log.i(DOWNLOAD_LOG_TAG, "Started formal Steam download worker taskId=$taskId")
@@ -206,17 +200,17 @@ class FormalWorkshopDownloadWorker
                         message = applicationContext.getString(R.string.backend_download_cancelled_cleaned),
                         clearRequestedAction = true,
                     )
-                    return@reconcile Result.success()
+                    return@withContext androidx.work.ListenableWorker.androidx.work.ListenableWorker.Result.success()
                 }
                 if (task.status in setOf(DownloadStatus.COMPLETED.name, DownloadStatus.CANCELLED.name)) {
-                    return@reconcile Result.success()
+                    return@withContext androidx.work.ListenableWorker.androidx.work.ListenableWorker.Result.success()
                 }
                 ActiveFormalWorkshopDownloadWorkers.markActive(taskId)
                 var stagingDirectory: File? = null
                 try {
                     // No setForeground() here: this ROM treats the WorkManager FGS as
                     // typeless and force-stops it after ~4 seconds, which cancelled the
-                    // worker mid-run. A plain JobScheduler job survives; Result.retry()
+                    // worker mid-run. A plain JobScheduler job survives; androidx.work.ListenableWorker.Result.retry()
                     // covers any residual system stops.
                     val downloadPreferences = settingsRepository.preferences.first()
                     task =
@@ -262,7 +256,7 @@ class FormalWorkshopDownloadWorker
                                 requestedAction = null,
                                 message = applicationContext.getString(R.string.backend_download_switch_account, "unknown account"),
                             )
-                            return@withSlot Result.success()
+                            return@withSlot androidx.work.ListenableWorker.Result.success()
                         }
                         if (
                             !directDownload &&
@@ -276,7 +270,7 @@ class FormalWorkshopDownloadWorker
                                 requestedAction = null,
                                 message = applicationContext.getString(R.string.backend_download_switch_account, task.accountName),
                             )
-                            return@withSlot Result.success()
+                            return@withSlot androidx.work.ListenableWorker.Result.success()
                         }
                         val effectiveCredential = credential
                         if (effectiveCredential != null && task.credentialMode != DownloadCredentialMode.ACCOUNT.name) {
@@ -508,12 +502,12 @@ class FormalWorkshopDownloadWorker
                             when (taskDao.find(taskId)?.requestedAction) {
                                 DownloadAction.PAUSE.name -> throw SteamDownloadPausedException()
                                 DownloadAction.CANCEL.name -> throw SteamDownloadCancelledException()
-                                else -> return@withSlot Result.success()
+                                else -> return@withSlot androidx.work.ListenableWorker.Result.success()
                             }
                         }
                         task = requireNotNull(taskDao.find(taskId))
                         conversionScheduler.enqueue(taskId)
-                        Result.success()
+                        androidx.work.ListenableWorker.Result.success()
                     }
                 } catch (error: SteamDownloadPausedException) {
                     // The one line a device reading needs to tell a pause from a restart: the durable
@@ -530,12 +524,12 @@ class FormalWorkshopDownloadWorker
                         message = applicationContext.getString(R.string.backend_download_paused),
                         updatedAt = System.currentTimeMillis(),
                     )
-                    Result.success()
+                    androidx.work.ListenableWorker.Result.success()
                 } catch (error: SteamDownloadCancelledException) {
                     stagingDirectory?.takeIf(::isManagedStagingDirectory)?.deleteRecursively()
                     deleteSdkStagingDirectory(taskId)
                     acknowledgeCancellation(taskId)
-                    Result.success()
+                    androidx.work.ListenableWorker.Result.success()
                 } catch (error: CancellationException) {
                     Log.w(
                         DOWNLOAD_LOG_TAG,
@@ -576,7 +570,7 @@ class FormalWorkshopDownloadWorker
                         }
                     }
                     if (retryable) {
-                        Result.retry()
+                        androidx.work.ListenableWorker.Result.retry()
                     } else {
                         throw error
                     }
@@ -593,10 +587,9 @@ class FormalWorkshopDownloadWorker
                         bytesPerSecond = 0L,
                         message = error.message ?: error.javaClass.simpleName,
                     )
-                    Result.success()
+                    androidx.work.ListenableWorker.Result.success()
                 } finally {
                     ActiveFormalWorkshopDownloadWorkers.markInactive(taskId)
-                }
                 }
             }
 
@@ -809,32 +802,6 @@ class FormalWorkshopDownloadWorker
                 }
             }
 
-        override suspend fun getForegroundInfo(): ForegroundInfo = createForegroundInfo()
-
-        private fun createForegroundInfo(): ForegroundInfo {
-            val manager = applicationContext.getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(
-                NotificationChannel(
-                    NOTIFICATION_CHANNEL_ID,
-                    applicationContext.getString(R.string.backend_download_notification_channel),
-                    NotificationManager.IMPORTANCE_LOW,
-                ),
-            )
-            val notification =
-                NotificationCompat
-                    .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
-                    .setSmallIcon(R.drawable.ic_wallhub_notification)
-                    .setContentTitle(applicationContext.getString(R.string.backend_download_notification_title))
-                    .setContentText(applicationContext.getString(R.string.backend_download_notification_text))
-                    .setOngoing(true)
-                    .build()
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                ForegroundInfo(NOTIFICATION_ID, notification)
-            }
-        }
-
         private fun isManagedStagingDirectory(directory: File): Boolean =
             isManagedWorkshopStagingDirectory(
                 persistentRoot = File(applicationContext.filesDir, WORKSHOP_STAGING_DIRECTORY_NAME),
@@ -878,16 +845,63 @@ class FormalWorkshopDownloadWorker
                 }
         }
 
+        private companion object {
+            const val PROGRESS_PERSIST_INTERVAL_MS = 750L
+            private const val CONTROL_POLL_INTERVAL_MS = 300L
+            private const val PAUSE_POLL_INTERVAL_MS = 250L
+            private const val MAX_PRESET_DEPENDENCY_DEPTH = 4
+        }
+    }
+
+/** Thin LEGACY/compatibility WorkManager adapter; transfer ownership lives in [FormalDownloadRunner]. */
+class FormalWorkshopDownloadWorker
+    internal constructor(
+        appContext: Context,
+        params: WorkerParameters,
+        private val runner: FormalDownloadRunner,
+        private val downloadHostCoordinator: DownloadHostCoordinator,
+    ) : CoroutineWorker(appContext, params) {
+        override suspend fun doWork(): Result {
+            val taskId = resolveDownloadTaskId(inputData.getString(KEY_TASK_ID), tags)
+            if (taskId == null) {
+                Log.w(DOWNLOAD_LOG_TAG, "doWork missing input data; keys=${inputData.keyValueMap.keys}")
+                return Result.failure()
+            }
+            return downloadHostCoordinator.reconcile(taskId) { runner.run(taskId) }
+        }
+
+        override suspend fun getForegroundInfo(): ForegroundInfo = createForegroundInfo()
+
+        private fun createForegroundInfo(): ForegroundInfo {
+            val manager = applicationContext.getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    NOTIFICATION_CHANNEL_ID,
+                    applicationContext.getString(R.string.backend_download_notification_channel),
+                    NotificationManager.IMPORTANCE_LOW,
+                ),
+            )
+            val notification =
+                NotificationCompat
+                    .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_wallhub_notification)
+                    .setContentTitle(applicationContext.getString(R.string.backend_download_notification_title))
+                    .setContentText(applicationContext.getString(R.string.backend_download_notification_text))
+                    .setOngoing(true)
+                    .build()
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
+                ForegroundInfo(NOTIFICATION_ID, notification)
+            }
+        }
+
         companion object {
             const val KEY_TASK_ID = "task_id"
             const val UNIQUE_DOWNLOAD_WORK_PREFIX = "wallhub_formal_workshop_download_"
             const val WORK_TAG_PREFIX = "wallhub_formal_workshop_download_task_"
             private const val NOTIFICATION_CHANNEL_ID = "wallhub_workshop_download"
             private const val NOTIFICATION_ID = 4202
-            private const val PROGRESS_PERSIST_INTERVAL_MS = 750L
-            private const val CONTROL_POLL_INTERVAL_MS = 300L
-            private const val PAUSE_POLL_INTERVAL_MS = 250L
-            private const val MAX_PRESET_DEPENDENCY_DEPTH = 4
         }
     }
 
