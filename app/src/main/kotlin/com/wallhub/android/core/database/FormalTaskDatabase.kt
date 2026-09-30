@@ -49,6 +49,44 @@ data class FormalTaskRecordEntity(
     val queuePosition: Long = 0L,
     val createdAt: Long,
     val updatedAt: Long,
+    val executorVersion: String = "LEGACY",
+    val attempt: Long = 0L,
+    val desiredIntent: String = "RUN",
+    val desiredIntentRevision: Long = 0L,
+    val appliedIntentRevision: Long = 0L,
+    val quiescedIntentRevision: Long = 0L,
+    val lastReceiptSequence: Long = 0L,
+    val engineEpoch: Long? = null,
+)
+
+@Entity(
+    tableName = "download_commands",
+    indices = [
+        Index(value = ["taskId"]),
+        Index(value = ["taskId", "revision"], unique = true),
+        Index(value = ["claimedEpoch", "acknowledgedAt"]),
+    ],
+)
+data class DownloadCommandEntity(
+    @PrimaryKey val commandId: String,
+    val taskId: String,
+    val revision: Long,
+    val attempt: Long,
+    val command: String,
+    val createdAt: Long,
+    val claimedEpoch: Long? = null,
+    val claimedAt: Long? = null,
+    val receiptSequence: Long? = null,
+    val result: String? = null,
+    val acknowledgedAt: Long? = null,
+)
+
+@Entity(tableName = "download_engine_state")
+data class DownloadEngineStateEntity(
+    @PrimaryKey val singletonId: Int = 1,
+    val epoch: Long,
+    val ownerId: String,
+    val acquiredAt: Long,
 )
 
 @Entity(tableName = "local_wallpaper_states")
@@ -101,10 +139,34 @@ interface FormalTaskRecordDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(task: FormalTaskRecordEntity)
 
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertCommand(command: DownloadCommandEntity)
+
+    /** Persists the observable task and its execution intent as one durable acceptance transaction. */
+    @Transaction
+    suspend fun upsertWithCommand(
+        task: FormalTaskRecordEntity,
+        command: DownloadCommandEntity,
+    ) {
+        upsert(task)
+        insertCommand(command)
+    }
+
     @Transaction
     suspend fun upsertPreservingRequestedAction(task: FormalTaskRecordEntity): FormalTaskRecordEntity {
         val current = find(task.taskId) ?: return task
-        val merged = task.copy(requestedAction = current.requestedAction ?: task.requestedAction)
+        val merged =
+            task.copy(
+                requestedAction = current.requestedAction ?: task.requestedAction,
+                executorVersion = current.executorVersion,
+                attempt = current.attempt,
+                desiredIntent = current.desiredIntent,
+                desiredIntentRevision = current.desiredIntentRevision,
+                appliedIntentRevision = current.appliedIntentRevision,
+                quiescedIntentRevision = current.quiescedIntentRevision,
+                lastReceiptSequence = current.lastReceiptSequence,
+                engineEpoch = current.engineEpoch,
+            )
         upsert(merged)
         return merged
     }
@@ -135,6 +197,42 @@ interface FormalTaskRecordDao {
         message: String,
         updatedAt: Long,
     ): Int
+
+    @Transaction
+    suspend fun appendIntentCommand(
+        taskId: String,
+        action: String,
+        desiredIntent: String,
+        message: String,
+        updatedAt: Long,
+        allowedStatuses: List<String>,
+        commandId: String,
+    ): Boolean {
+        val current = find(taskId) ?: return false
+        if (current.status !in allowedStatuses) return false
+        if (current.requestedAction != null && action != "CANCEL") return false
+        val revision = current.desiredIntentRevision + 1L
+        upsert(
+            current.copy(
+                requestedAction = action,
+                desiredIntent = desiredIntent,
+                desiredIntentRevision = revision,
+                message = message,
+                updatedAt = updatedAt,
+            ),
+        )
+        insertCommand(
+            DownloadCommandEntity(
+                commandId = commandId,
+                taskId = taskId,
+                revision = revision,
+                attempt = current.attempt,
+                command = desiredIntent,
+                createdAt = updatedAt,
+            ),
+        )
+        return true
+    }
 
     @Query(
         "UPDATE formal_task_records SET requestedAction = :action, message = :message, updatedAt = :updatedAt " +
@@ -199,6 +297,59 @@ interface FormalTaskRecordDao {
 }
 
 @Dao
+interface DownloadCommandDao {
+    @Query(
+        "SELECT * FROM download_commands WHERE acknowledgedAt IS NULL " +
+            "ORDER BY createdAt ASC, revision ASC LIMIT :limit",
+    )
+    suspend fun pending(limit: Int): List<DownloadCommandEntity>
+
+    @Query(
+        "UPDATE download_commands SET claimedEpoch = :epoch, claimedAt = :claimedAt " +
+            "WHERE commandId = :commandId AND acknowledgedAt IS NULL " +
+            "AND (claimedEpoch IS NULL OR claimedEpoch < :epoch)",
+    )
+    suspend fun claim(
+        commandId: String,
+        epoch: Long,
+        claimedAt: Long,
+    ): Int
+
+    @Query(
+        "UPDATE download_commands SET receiptSequence = :receiptSequence, result = :result, " +
+            "acknowledgedAt = :acknowledgedAt WHERE commandId = :commandId " +
+            "AND claimedEpoch = :epoch AND acknowledgedAt IS NULL",
+    )
+    suspend fun acknowledge(
+        commandId: String,
+        epoch: Long,
+        receiptSequence: Long,
+        result: String,
+        acknowledgedAt: Long,
+    ): Int
+
+    @Query("SELECT * FROM download_commands WHERE taskId = :taskId ORDER BY revision ASC")
+    suspend fun forTask(taskId: String): List<DownloadCommandEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun writeEngineState(state: DownloadEngineStateEntity)
+
+    @Query("SELECT * FROM download_engine_state WHERE singletonId = 1 LIMIT 1")
+    suspend fun engineState(): DownloadEngineStateEntity?
+
+    @Transaction
+    suspend fun acquireEngineEpoch(
+        ownerId: String,
+        now: Long,
+    ): DownloadEngineStateEntity {
+        val next = (engineState()?.epoch ?: 0L) + 1L
+        return DownloadEngineStateEntity(epoch = next, ownerId = ownerId, acquiredAt = now).also {
+            writeEngineState(it)
+        }
+    }
+}
+
+@Dao
 interface LocalWallpaperMetadataDao {
     @Query("SELECT * FROM local_wallpaper_states")
     suspend fun listStates(): List<LocalWallpaperStateEntity>
@@ -253,14 +404,18 @@ interface LocalWallpaperMetadataDao {
 @Database(
     entities = [
         FormalTaskRecordEntity::class,
+        DownloadCommandEntity::class,
+        DownloadEngineStateEntity::class,
         LocalWallpaperStateEntity::class,
         LocalWallpaperTagEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class FormalTaskDatabase : RoomDatabase() {
     abstract fun taskRecordDao(): FormalTaskRecordDao
+
+    abstract fun downloadCommandDao(): DownloadCommandDao
 
     abstract fun localWallpaperMetadataDao(): LocalWallpaperMetadataDao
 
@@ -373,6 +528,35 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 }
             }
 
+        private val MIGRATION_7_8 =
+            object : Migration(7, 8) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN executorVersion TEXT NOT NULL DEFAULT 'LEGACY'")
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0")
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN desiredIntent TEXT NOT NULL DEFAULT 'RUN'")
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN desiredIntentRevision INTEGER NOT NULL DEFAULT 0")
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN appliedIntentRevision INTEGER NOT NULL DEFAULT 0")
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN quiescedIntentRevision INTEGER NOT NULL DEFAULT 0")
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN lastReceiptSequence INTEGER NOT NULL DEFAULT 0")
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN engineEpoch INTEGER")
+                    database.execSQL(
+                        "CREATE TABLE IF NOT EXISTS download_commands (" +
+                            "commandId TEXT NOT NULL, taskId TEXT NOT NULL, revision INTEGER NOT NULL, " +
+                            "attempt INTEGER NOT NULL, command TEXT NOT NULL, createdAt INTEGER NOT NULL, " +
+                            "claimedEpoch INTEGER, claimedAt INTEGER, receiptSequence INTEGER, " +
+                            "result TEXT, acknowledgedAt INTEGER, PRIMARY KEY(commandId))",
+                    )
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_download_commands_taskId ON download_commands(taskId)")
+                    database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_download_commands_taskId_revision ON download_commands(taskId, revision)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_download_commands_claimedEpoch_acknowledgedAt ON download_commands(claimedEpoch, acknowledgedAt)")
+                    database.execSQL(
+                        "CREATE TABLE IF NOT EXISTS download_engine_state (" +
+                            "singletonId INTEGER NOT NULL, epoch INTEGER NOT NULL, ownerId TEXT NOT NULL, " +
+                            "acquiredAt INTEGER NOT NULL, PRIMARY KEY(singletonId))",
+                    )
+                }
+            }
+
         internal val migrations: Array<Migration> =
             arrayOf(
                 MIGRATION_1_2,
@@ -381,6 +565,7 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 MIGRATION_4_5,
                 MIGRATION_5_6,
                 MIGRATION_6_7,
+                MIGRATION_7_8,
             )
 
         @Volatile

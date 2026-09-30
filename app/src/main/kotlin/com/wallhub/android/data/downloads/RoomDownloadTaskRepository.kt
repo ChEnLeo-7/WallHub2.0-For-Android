@@ -3,6 +3,7 @@ package com.wallhub.android.data.downloads
 import android.content.Context
 import android.util.Log
 import com.wallhub.android.R
+import com.wallhub.android.core.database.DownloadCommandEntity
 import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.database.FormalTaskRecordEntity
 import com.wallhub.android.core.model.DownloadAction
@@ -99,7 +100,7 @@ internal class RoomDownloadTaskRepository private constructor(
         override suspend fun find(taskId: String): DownloadTask? = taskDao.find(taskId)?.toModel()
 
         override suspend fun upsert(task: DownloadTask) {
-            taskDao.upsert(task.toEntity())
+            taskDao.upsertPreservingRequestedAction(task.toEntity())
         }
 
         override suspend fun enqueue(request: DownloadRequest): DownloadEnqueueResult = taskMutationMutex.withLock {
@@ -147,7 +148,24 @@ internal class RoomDownloadTaskRepository private constructor(
                     createdAt = now,
                     updatedAt = now,
                 )
-            upsert(task)
+            val commandId = UUID.randomUUID().toString()
+            taskDao.upsertWithCommand(
+                task =
+                    task.toEntity().copy(
+                        executorVersion = "NEW",
+                        desiredIntent = "RUN",
+                        desiredIntentRevision = 1L,
+                    ),
+                command =
+                    DownloadCommandEntity(
+                        commandId = commandId,
+                        taskId = task.id,
+                        revision = 1L,
+                        attempt = 0L,
+                        command = "RUN",
+                        createdAt = now,
+                    ),
+            )
             return try {
                 workScheduler.enqueue(task.id)
                 Log.i(LOG_TAG, "Queued formal Steam download taskId=${task.id}")
@@ -158,26 +176,11 @@ internal class RoomDownloadTaskRepository private constructor(
                 )
                 DownloadEnqueueResult.Created(task)
             } catch (error: Throwable) {
-                markEnqueueFailed(task, error)
-                throw error
+                // The RUN command is already durable. WorkManager is only a wake-up adapter; reconciliation on
+                // process start, connectivity change, or another command can deliver it later.
+                Log.e(LOG_TAG, "Unable to wake download host for durable taskId=${task.id}", error)
+                DownloadEnqueueResult.Created(task)
             }
-        }
-
-        private suspend fun markEnqueueFailed(
-            task: DownloadTask,
-            error: Throwable,
-        ) {
-            upsert(
-                task.copy(
-                    status = DownloadStatus.FAILED,
-                    message = enqueueFailedMessage(error.javaClass.simpleName),
-                    updatedAt = System.currentTimeMillis(),
-                ),
-            )
-            Log.e(
-                LOG_TAG,
-                "Unable to queue formal Steam download taskId=${task.id}, type=${error.javaClass.name}",
-            )
         }
 
         override suspend fun prewarmDownload(workshopId: Long) {
@@ -217,13 +220,15 @@ internal class RoomDownloadTaskRepository private constructor(
 
         private suspend fun requestPause(task: DownloadTask) {
             check(
-                taskDao.requestControlAction(
+                taskDao.appendIntentCommand(
                     taskId = task.id,
                     action = DownloadAction.PAUSE.name,
+                    desiredIntent = "PAUSE",
                     message = context.getString(R.string.backend_download_pause_requested),
                     updatedAt = System.currentTimeMillis(),
                     allowedStatuses = DOWNLOAD_CONTROL_STATUSES,
-                ) == 1,
+                    commandId = UUID.randomUUID().toString(),
+                ),
             ) { "Download state changed before pause could be requested" }
         }
 

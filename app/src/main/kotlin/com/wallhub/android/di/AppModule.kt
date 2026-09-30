@@ -2,6 +2,7 @@ package com.wallhub.android
 
 import android.content.Context
 import com.wallhub.android.core.database.AppPreferencesStore
+import com.wallhub.android.core.database.DownloadCommandDao
 import com.wallhub.android.core.database.FormalTaskDatabase
 import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.database.LocalWallpaperMetadataDao
@@ -33,6 +34,9 @@ object AppModule {
 
     @Provides
     fun provideFormalTaskRecordDao(database: FormalTaskDatabase): FormalTaskRecordDao = database.taskRecordDao()
+
+    @Provides
+    fun provideDownloadCommandDao(database: FormalTaskDatabase): DownloadCommandDao = database.downloadCommandDao()
 
     @Provides
     fun provideLocalWallpaperMetadataDao(database: FormalTaskDatabase): LocalWallpaperMetadataDao = database.localWallpaperMetadataDao()

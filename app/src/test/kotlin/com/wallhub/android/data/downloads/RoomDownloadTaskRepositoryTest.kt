@@ -52,16 +52,17 @@ class RoomDownloadTaskRepositoryTest {
     }
 
     @Test
-    fun `enqueue throws when scheduling new task fails and persists failed state`() = runTest {
+    fun `enqueue remains durably accepted when wake scheduling fails`() = runTest {
         val dao = FakeTaskDao()
         val failure = IllegalStateException("scheduler rejected work")
         val repository = repository(dao, RecordingScheduler(failure))
 
-        val thrown = runCatching { repository.enqueue(request(taskId = "failed-task")) }.exceptionOrNull()
+        val result = repository.enqueue(request(taskId = "durable-task"))
 
-        assertSame(failure, thrown)
-        assertEquals(DownloadStatus.FAILED.name, dao.records.single().status)
-        assertEquals("enqueue failed: IllegalStateException", dao.records.single().message)
+        assertTrue(result is DownloadEnqueueResult.Created)
+        assertEquals(DownloadStatus.QUEUED.name, dao.records.single().status)
+        assertEquals("NEW", dao.records.single().executorVersion)
+        assertEquals(listOf("RUN"), dao.commands.map { it.command })
     }
 
     @Test
@@ -150,6 +151,7 @@ class RoomDownloadTaskRepositoryTest {
 
     private class FakeTaskDao(vararg initial: FormalTaskRecordEntity) {
         val records = initial.toMutableList()
+        val commands = mutableListOf<com.wallhub.android.core.database.DownloadCommandEntity>()
         private val observed = MutableStateFlow(records.toList())
 
         val proxy: FormalTaskRecordDao =
@@ -166,11 +168,18 @@ class RoomDownloadTaskRepositoryTest {
                             .filter { it.status in ACTIVE_STATUSES }
                             .maxByOrNull(FormalTaskRecordEntity::updatedAt)
                     "listAll" -> records.toList()
-                    "upsert" -> {
+                    "upsert", "upsertWithCommand" -> {
                         val record = args!![0] as FormalTaskRecordEntity
                         records.removeAll { it.taskId == record.taskId }
                         records += record
+                        if (method.name == "upsertWithCommand") {
+                            commands += args[1] as com.wallhub.android.core.database.DownloadCommandEntity
+                        }
                         observed.value = records.toList()
+                        Unit
+                    }
+                    "insertCommand" -> {
+                        commands += args!![0] as com.wallhub.android.core.database.DownloadCommandEntity
                         Unit
                     }
                     "nextQueuePosition" -> (records.maxOfOrNull { it.queuePosition } ?: 0L) + 1L
