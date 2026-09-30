@@ -2,6 +2,7 @@ package com.wallhub.android.data.downloads
 
 import com.wallhub.android.core.model.SteamContentCredential
 import java.io.Closeable
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -48,7 +49,7 @@ internal class SteamContentSdkSessionBroker
         private val openings = mutableMapOf<String, CompletableDeferred<Unit>>()
 
         suspend fun acquire(credential: SteamContentCredential): Lease {
-            val key = credential.accountName.trim().lowercase()
+            val key = credential.accountName.trim().lowercase(Locale.ROOT)
             require(key.isNotEmpty()) { "Steam account scope must not be empty" }
             while (true) {
                 var existing: Entry? = null

@@ -286,18 +286,6 @@ interface FormalTaskRecordDao {
     }
 
     @Query(
-        "UPDATE formal_task_records SET requestedAction = :action, message = :message, updatedAt = :updatedAt " +
-            "WHERE taskId = :taskId AND requestedAction IS NULL AND status IN (:allowedStatuses)",
-    )
-    suspend fun requestControlAction(
-        taskId: String,
-        action: String,
-        message: String,
-        updatedAt: Long,
-        allowedStatuses: List<String>,
-    ): Int
-
-    @Query(
         "UPDATE formal_task_records SET requestedAction = 'CANCEL', message = :message, updatedAt = :updatedAt " +
             "WHERE taskId = :taskId AND (requestedAction IS NULL OR requestedAction != 'CANCEL') " +
             "AND status IN (:allowedStatuses)",
