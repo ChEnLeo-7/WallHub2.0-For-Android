@@ -1,7 +1,6 @@
 package com.wallhub.android.data.downloads
 
 import android.content.Context
-import android.os.SystemClock
 import android.util.Log
 import com.wallhub.android.R
 import com.wallhub.android.core.database.DownloadCommandDao
@@ -318,11 +317,23 @@ internal class FormalDownloadRunner
                                     ),
                             )
 
-                        var previousPhase: SteamDownloadPhase? = null
-                        var lastPersistedAt = 0L
-                        var lastSpeedAt = SystemClock.elapsedRealtime()
-                        var lastSpeedBytes = task.downloadedBytes
-                        var firstNonzeroSpeedPersisted = task.bytesPerSecond > 0L
+                        val progressProjector =
+                            FormalDownloadProgressProjector(
+                                context = applicationContext,
+                                initialTask = task,
+                                durableCheckpointBytes = durableCheckpointBytes,
+                                authenticated = credential != null,
+                                timingContext = timingContext,
+                            ) { previous, write ->
+                                persist(
+                                    previous,
+                                    status = write.status,
+                                    downloadedBytes = write.downloadedBytes,
+                                    totalBytes = write.totalBytes,
+                                    bytesPerSecond = write.bytesPerSecond,
+                                    message = write.message,
+                                )
+                            }
                         val download =
                             steamWorkshopContentClient.download(
                                 target = target,
@@ -342,84 +353,9 @@ internal class FormalDownloadRunner
                                     ),
                                 control = controlInbox::current,
                             ) { progress ->
-                                DownloadTimingTelemetry.log(
-                                    event = DownloadTimingTelemetry.PROGRESS_CALLBACK_STARTED,
-                                    context = timingContext,
-                                )
-                                val now = SystemClock.elapsedRealtime()
-                                if (progress.phase != previousPhase) {
-                                    Log.i(
-                                        DOWNLOAD_LOG_TAG,
-                                        "taskId=$taskId phase ${previousPhase} -> ${progress.phase} " +
-                                            "(${progress.completedBytes}/${progress.totalBytes} bytes)",
-                                    )
-                                }
-                                val shouldPersist =
-                                    progress.phase != previousPhase ||
-                                        now - lastPersistedAt >= PROGRESS_PERSIST_INTERVAL_MS ||
-                                        (progress.totalBytes > 0L && progress.completedBytes >= progress.totalBytes)
-                                if (shouldPersist) {
-                                    val speed =
-                                        downloadSpeedBytesPerSecond(
-                                            phase = progress.phase,
-                                            completedBytes = progress.completedBytes,
-                                            previousBytes = lastSpeedBytes,
-                                            elapsedMs = now - lastSpeedAt,
-                                            previousSpeed = task.bytesPerSecond,
-                                        )
-                                    DownloadTimingTelemetry.log(
-                                        event = DownloadTimingTelemetry.PROGRESS_PERSIST_STARTED,
-                                        context = timingContext,
-                                    )
-                                    task =
-                                        persist(
-                                            task,
-                                            status = progress.toDownloadStatus(),
-                                            downloadedBytes =
-                                                if (progress.phase == SteamDownloadPhase.DOWNLOADING) {
-                                                    // The resumed run's own counter restarts at zero, so
-                                                    // what it reports is a continuation only against the
-                                                    // checkpoint this task already holds.
-                                                    durableDownloadedBytes(
-                                                        checkpointBytes = durableCheckpointBytes,
-                                                        reportedBytes = progress.completedBytes,
-                                                    )
-                                                } else {
-                                                    task.downloadedBytes
-                                                },
-                                            // The SDK reports no decoded total of its own until its first durable
-                                            // reading, so the item's own size stays the denominator instead of a
-                                            // zero that would leave the bar with no fraction to show.
-                                            totalBytes = progress.totalBytes.takeIf { it > 0L } ?: task.totalBytes,
-                                            bytesPerSecond = speed,
-                                            message = progress.toMessage(credential != null),
-                                        )
-                                    DownloadTimingTelemetry.log(
-                                        event = DownloadTimingTelemetry.PROGRESS_PERSIST_COMPLETED,
-                                        context = timingContext,
-                                    )
-                                    if (!firstNonzeroSpeedPersisted && speed > 0L) {
-                                        firstNonzeroSpeedPersisted = true
-                                        DownloadTimingTelemetry.log(
-                                            event = DownloadTimingTelemetry.FIRST_NONZERO_SPEED_PERSISTED,
-                                            context = timingContext,
-                                        )
-                                    }
-                                    // The next rate is measured from the last durable reading, not from the
-                                    // last persist: a window that committed nothing leaves the baseline alone
-                                    // so the next measurement spans the interval the bytes actually arrived in.
-                                    if (progress.completedBytes > lastSpeedBytes) {
-                                        lastSpeedAt = now
-                                        lastSpeedBytes = progress.completedBytes
-                                    }
-                                    previousPhase = progress.phase
-                                    lastPersistedAt = now
-                                }
-                                DownloadTimingTelemetry.log(
-                                    event = DownloadTimingTelemetry.PROGRESS_CALLBACK_ENDED,
-                                    context = timingContext,
-                                )
+                                progressProjector.accept(progress)
                             }
+                        task = progressProjector.task
                         val dependencyDownload =
                             presetDependencies.download(
                                 sourceDirectory = resolvedDirectory,
@@ -433,20 +369,15 @@ internal class FormalDownloadRunner
                                 proxyUrl = activeProxyUrl,
                                 control = controlInbox::current,
                             ) { completedBytes, totalBytes, dependencyTitle ->
-                                val now = System.currentTimeMillis()
-                                if (now - lastPersistedAt >= PROGRESS_PERSIST_INTERVAL_MS || completedBytes >= totalBytes) {
-                                    task =
-                                        persist(
-                                            task,
-                                            status = DownloadStatus.DOWNLOADING,
-                                            downloadedBytes = download.downloadedBytes + completedBytes,
-                                            totalBytes = download.totalBytes + totalBytes,
-                                            bytesPerSecond = 0L,
-                                            message = "正在下载依赖项目：$dependencyTitle",
-                                        )
-                                    lastPersistedAt = now
-                                }
+                                progressProjector.acceptDependency(
+                                    primaryDownloadedBytes = download.downloadedBytes,
+                                    primaryTotalBytes = download.totalBytes,
+                                    completedBytes = completedBytes,
+                                    totalBytes = totalBytes,
+                                    dependencyTitle = dependencyTitle,
+                                )
                             }
+                        task = progressProjector.task
                         awaitTaskControl(controlInbox)
                         val conversionMessage =
                             applicationContext.resources.getQuantityString(
@@ -681,57 +612,7 @@ internal class FormalDownloadRunner
             }
         }
 
-        private fun SteamDownloadProgress.toDownloadStatus(): DownloadStatus =
-            when (phase) {
-                SteamDownloadPhase.CONNECTING,
-                SteamDownloadPhase.AUTHENTICATING,
-                SteamDownloadPhase.RESOLVING,
-                -> DownloadStatus.RESOLVING
-
-                SteamDownloadPhase.PREPARING_DOWNLOAD,
-                SteamDownloadPhase.DOWNLOADING -> DownloadStatus.DOWNLOADING
-            }
-
-        private fun SteamDownloadProgress.toMessage(usingAuthenticatedSession: Boolean): String =
-            when (phase) {
-                SteamDownloadPhase.CONNECTING -> {
-                    applicationContext.getString(
-                        if (usingAuthenticatedSession) {
-                            R.string.backend_download_connecting_authenticated
-                        } else {
-                            R.string.backend_download_connecting_anonymous
-                        },
-                    )
-                }
-
-                SteamDownloadPhase.AUTHENTICATING ->
-                    applicationContext.getString(R.string.backend_download_authenticating)
-                SteamDownloadPhase.RESOLVING -> applicationContext.getString(R.string.backend_download_resolving_content)
-                SteamDownloadPhase.PREPARING_DOWNLOAD ->
-                    applicationContext.getString(
-                        R.string.backend_download_preparing_transfer,
-                        totalFiles,
-                    )
-                SteamDownloadPhase.DOWNLOADING -> {
-                    if (currentFile.isNullOrBlank()) {
-                        applicationContext.getString(
-                            R.string.backend_download_progress,
-                            completedFiles,
-                            totalFiles,
-                        )
-                    } else {
-                        applicationContext.getString(
-                            R.string.backend_download_progress_file,
-                            completedFiles,
-                            totalFiles,
-                            currentFile,
-                        )
-                    }
-                }
-            }
-
         private companion object {
-            const val PROGRESS_PERSIST_INTERVAL_MS = 750L
             private const val PAUSE_POLL_INTERVAL_MS = 250L
         }
     }
