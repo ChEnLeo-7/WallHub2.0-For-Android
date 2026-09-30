@@ -37,6 +37,11 @@ internal class DownloadCommandStore
                 dao.claim(command.commandId, epoch, now) == 1
             }
 
+        suspend fun receiptSequenceBase(
+            taskId: String,
+            epoch: Long,
+        ): Long = dao.receiptSequenceBase(taskId, epoch) ?: 0L
+
         suspend fun acknowledge(
             command: DownloadCommandEntity,
             epoch: Long,

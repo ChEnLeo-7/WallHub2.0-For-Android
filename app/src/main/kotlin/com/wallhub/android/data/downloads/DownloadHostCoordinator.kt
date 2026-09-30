@@ -42,7 +42,6 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
         commandStore?.acquireEngineEpoch() ?: 0L
     }
     private val active = ConcurrentHashMap<String, Deferred<DownloadHostRunResult>>()
-    private val receiptSequences = ConcurrentHashMap<String, Long>()
 
     override suspend fun reconcile(
         taskId: String,
@@ -62,8 +61,9 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
                     (before + commandStore?.claimTask(taskId, currentEpoch).orEmpty())
                         .distinctBy { it.commandId }
                         .sortedBy { it.revision }
+                var sequence = commandStore?.receiptSequenceBase(taskId, currentEpoch) ?: 0L
                 commands.forEach { command ->
-                    val sequence = (receiptSequences[taskId] ?: 0L) + 1L
+                    sequence = Math.addExact(sequence, 1L)
                     val acknowledged =
                         commandStore?.acknowledge(
                             command = command,
@@ -73,7 +73,6 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
                             quiesced = command.command != "RUN",
                         ) ?: true
                     check(acknowledged) { "Command receipt was rejected for taskId=$taskId sequence=$sequence" }
-                    receiptSequences[taskId] = sequence
                     Log.i(
                         HOST_LOG_TAG,
                         "host receipt taskId=$taskId epoch=$currentEpoch revision=${command.revision} sequence=$sequence",
@@ -82,12 +81,13 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
                 result
             }
         val owned = active.putIfAbsent(taskId, candidate) ?: candidate
-        if (owned === candidate) candidate.start() else candidate.cancel()
-        return try {
-            owned.await()
-        } finally {
-            active.remove(taskId, owned)
+        if (owned === candidate) {
+            candidate.invokeOnCompletion { active.remove(taskId, candidate) }
+            candidate.start()
+        } else {
+            candidate.cancel()
         }
+        return owned.await()
     }
 
     override fun isActive(taskId: String): Boolean = active.containsKey(taskId)

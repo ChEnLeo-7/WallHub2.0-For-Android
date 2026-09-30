@@ -130,7 +130,7 @@ class AppPreferencesStore(
         mediaCacheLimitMb: Int,
     ) {
         applicationContext.dataStore.edit { preferences ->
-            preferences[Keys.maxConcurrentDownloads] = maxConcurrentDownloads.coerceIn(1, 4)
+            preferences[Keys.maxConcurrentDownloads] = maxConcurrentDownloads.coerceIn(1, 3)
             preferences[Keys.chunkDownloadConcurrency] = safeChunkDownloadConcurrency(chunkDownloadConcurrency)
             preferences[Keys.downloadProxyUrl] = proxyUrl.trim()
             if (!isSupportedDownloadProxyUrl(proxyUrl)) preferences[Keys.downloadProxyEnabled] = false

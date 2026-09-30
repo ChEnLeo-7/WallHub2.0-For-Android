@@ -422,7 +422,9 @@ internal class RoomDownloadTaskRepository private constructor(
                 task.status in setOf(DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELLED),
             ) { "An active download cannot be deleted; cancel the task first" }
             deleteManagedDownloadDirectories(context, task.id, task.stagingDirectory)
-            taskDao.delete(task.id)
+            check(taskDao.deleteTerminalWithCommands(task.id) == 1) {
+                "Download task changed before it could be deleted"
+            }
         }
 
         override suspend fun reorder(taskIds: List<String>) {
@@ -483,7 +485,7 @@ internal class RoomDownloadTaskRepository private constructor(
 
         private suspend fun deleteHistoryTasks(tasks: List<FormalTaskRecordEntity>): Int =
             tasks.sumOf { task ->
-                val deleted = taskDao.deleteTerminal(task.taskId)
+                val deleted = taskDao.deleteTerminalWithCommands(task.taskId)
                 if (deleted > 0) {
                     deleteManagedDownloadDirectories(context, task.taskId, task.stagingDirectory)
                     File(context.cacheDir, "wallhub-conversion/${task.taskId}").deleteRecursively()

@@ -286,6 +286,18 @@ interface FormalTaskRecordDao {
     )
     suspend fun deleteTerminal(taskId: String): Int
 
+    @Query("DELETE FROM download_commands WHERE taskId = :taskId")
+    suspend fun deleteCommands(taskId: String): Int
+
+    /** Removes one terminal job and every receipt/pending command atomically, so no orphan can poison reconcile. */
+    @Transaction
+    suspend fun deleteTerminalWithCommands(taskId: String): Int {
+        val current = find(taskId) ?: return 0
+        if (current.status !in setOf("COMPLETED", "FAILED", "CANCELLED")) return 0
+        deleteCommands(taskId)
+        return deleteTerminal(taskId)
+    }
+
     @Query(
         "DELETE FROM formal_task_records " +
             "WHERE status IN ('COMPLETED', 'FAILED', 'CANCELLED')",
@@ -343,6 +355,15 @@ interface DownloadCommandDao {
 
     @Query("SELECT * FROM download_commands WHERE taskId = :taskId ORDER BY revision ASC")
     suspend fun forTask(taskId: String): List<DownloadCommandEntity>
+
+    @Query(
+        "SELECT CASE WHEN engineEpoch = :epoch THEN lastReceiptSequence ELSE 0 END " +
+            "FROM formal_task_records WHERE taskId = :taskId LIMIT 1",
+    )
+    suspend fun receiptSequenceBase(
+        taskId: String,
+        epoch: Long,
+    ): Long?
 
     @Query(
         "UPDATE formal_task_records SET " +

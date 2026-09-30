@@ -1,7 +1,6 @@
 package com.wallhub.android.data.downloads
 
 import android.content.Context
-import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -13,7 +12,6 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.wallhub.android.core.database.DownloadCommandDao
 import com.wallhub.android.core.database.FormalTaskRecordDao
-import com.wallhub.android.core.model.SteamContentCredentialProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -58,11 +56,11 @@ class WorkManagerDownloadWorkScheduler
             policy: ExistingWorkPolicy,
         ) {
             if (taskDao.find(taskId)?.executorVersion == "NEW") {
+                // Reconciliation itself must run offline so PAUSE/CANCEL can settle and release local writers.
+                // RUN commands that still require the network return RETRY and use this request's backoff.
                 val wake =
                     OneTimeWorkRequestBuilder<DownloadHostWakeWorker>()
-                        .setConstraints(
-                            Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
-                        ).setBackoffCriteria(BackoffPolicy.LINEAR, 10_000L, TimeUnit.MILLISECONDS)
+                        .setBackoffCriteria(BackoffPolicy.LINEAR, 10_000L, TimeUnit.MILLISECONDS)
                         .addTag(FORMAL_DOWNLOAD_TAG)
                         .build()
                 WorkManager.getInstance(context)
@@ -92,11 +90,6 @@ class WorkManagerDownloadWorkScheduler
         }
 
         override suspend fun cancel(taskId: String) {
-            Log.w(
-                "WallHubDownloadScheduler",
-                "cancel($taskId) requested",
-                Exception("cancel trace"),
-            )
             WorkManager.getInstance(context)
                 .cancelUniqueWork(FormalWorkshopDownloadWorker.UNIQUE_DOWNLOAD_WORK_PREFIX + taskId)
                 .awaitCompletion()

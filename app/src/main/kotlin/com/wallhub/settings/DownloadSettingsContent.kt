@@ -97,7 +97,7 @@ internal fun DownloadSettingsContent(
     SettingChoiceRow(
         title = stringResource(R.string.settings_concurrent_downloads),
         selectedValue = preferences.maxConcurrentDownloads,
-        values = listOf(1, 2, 3, 4),
+        values = listOf(1, 2, 3),
         label = { pluralStringResource(R.plurals.settings_download_task_count, it, it) },
         onSelected = { value -> saveDownloadPreferences(maxDownloads = value) },
         position = PreferencePosition.Top,
