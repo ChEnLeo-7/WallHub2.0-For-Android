@@ -163,18 +163,7 @@ internal class FormalDownloadRunner
                     context = timingContext,
                 )
                 if (controlInbox.current() == SteamDownloadControl.CANCEL) {
-                    // Both the app destination and SDK checkpoint staging are one deletion unit.
-                    stagingManager.discardTask(taskId, task.stagingDirectory?.let(::File))
-                    projections.persist(
-                        task,
-                        status = DownloadStatus.CANCELLED,
-                        stagingDirectory = null,
-                        downloadedBytes = 0L,
-                        bytesPerSecond = 0L,
-                        message = applicationContext.getString(R.string.backend_download_cancelled_cleaned),
-                        clearLegacyRequestedAction = true,
-                    )
-                    return@withContext DownloadHostRunResult.SUCCESS
+                    return@withContext settlement.cancel(taskId, task.stagingDirectory?.let(::File))
                 }
                 if (task.status in setOf(DownloadStatus.COMPLETED.name, DownloadStatus.CANCELLED.name)) {
                     return@withContext DownloadHostRunResult.SUCCESS
