@@ -12,6 +12,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.wallhub.android.R
+import com.wallhub.android.core.database.DownloadCommandDao
 import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.database.FormalTaskRecordEntity
 import com.wallhub.android.core.format.formatByteSize
@@ -28,8 +29,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.supervisorScope
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -162,6 +161,7 @@ internal class FormalDownloadRunner
     constructor(
         @dagger.hilt.android.qualifiers.ApplicationContext private val applicationContext: Context,
         private val taskDao: FormalTaskRecordDao,
+        private val commandDao: DownloadCommandDao,
         private val credentialProvider: SteamContentCredentialProvider,
         private val conversionScheduler: ConversionWorkScheduler,
         private val settingsRepository: SettingsRepository,
@@ -353,7 +353,7 @@ internal class FormalDownloadRunner
                         var lastSpeedAt = SystemClock.elapsedRealtime()
                         var lastSpeedBytes = task.downloadedBytes
                         var firstNonzeroSpeedPersisted = task.bytesPerSecond > 0L
-                        val controlProbe = TaskControlProbe(taskDao, taskId)
+                        val controlProbe = DurableDownloadControlInbox(taskDao, commandDao, taskId)
                         val download =
                             steamWorkshopContentClient.download(
                                 target = target,
@@ -655,7 +655,7 @@ internal class FormalDownloadRunner
                 ?: error("Workshop preset has no valid dependency ID")
         }
 
-        private suspend fun awaitTaskControl(controlProbe: TaskControlProbe) {
+        private suspend fun awaitTaskControl(controlProbe: DurableDownloadControlInbox) {
             while (true) {
                 when (controlProbe.current()) {
                     SteamDownloadControl.CONTINUE -> return
@@ -821,33 +821,8 @@ internal class FormalDownloadRunner
             sdkStagingDirectory(applicationContext.filesDir, taskId)?.deleteRecursively()
         }
 
-        private class TaskControlProbe(
-            private val taskDao: FormalTaskRecordDao,
-            private val taskId: String,
-        ) {
-            private val mutex = Mutex()
-            private var cachedControl = SteamDownloadControl.CONTINUE
-            private var nextRefreshAt = 0L
-
-            suspend fun current(): SteamDownloadControl =
-                mutex.withLock {
-                    val now = SystemClock.elapsedRealtime()
-                    if (now >= nextRefreshAt) {
-                        cachedControl =
-                            when (taskDao.find(taskId)?.requestedAction) {
-                                DownloadAction.PAUSE.name -> SteamDownloadControl.PAUSE
-                                DownloadAction.CANCEL.name -> SteamDownloadControl.CANCEL
-                                else -> SteamDownloadControl.CONTINUE
-                            }
-                        nextRefreshAt = now + CONTROL_POLL_INTERVAL_MS
-                    }
-                    cachedControl
-                }
-        }
-
         private companion object {
             const val PROGRESS_PERSIST_INTERVAL_MS = 750L
-            private const val CONTROL_POLL_INTERVAL_MS = 300L
             private const val PAUSE_POLL_INTERVAL_MS = 250L
             private const val MAX_PRESET_DEPENDENCY_DEPTH = 4
         }

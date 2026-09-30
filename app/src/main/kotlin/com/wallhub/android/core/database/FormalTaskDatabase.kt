@@ -326,6 +326,12 @@ interface DownloadCommandDao {
     ): List<DownloadCommandEntity>
 
     @Query(
+        "SELECT * FROM download_commands WHERE taskId = :taskId AND acknowledgedAt IS NULL " +
+            "ORDER BY revision DESC LIMIT 1",
+    )
+    suspend fun latestPendingForTask(taskId: String): DownloadCommandEntity?
+
+    @Query(
         "UPDATE download_commands SET claimedEpoch = :epoch, claimedAt = :claimedAt " +
             "WHERE commandId = :commandId AND acknowledgedAt IS NULL " +
             "AND (claimedEpoch IS NULL OR claimedEpoch <= :epoch) " +
