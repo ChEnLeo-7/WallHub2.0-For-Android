@@ -27,6 +27,16 @@ internal class DownloadCommandStore
                 dao.claim(command.commandId, epoch, now) == 1
             }
 
+        suspend fun claimTask(
+            taskId: String,
+            epoch: Long,
+            limit: Int = DEFAULT_BATCH_SIZE,
+            now: Long = System.currentTimeMillis(),
+        ): List<DownloadCommandEntity> =
+            dao.pendingForTask(taskId, limit.coerceIn(1, MAX_BATCH_SIZE)).filter { command ->
+                dao.claim(command.commandId, epoch, now) == 1
+            }
+
         suspend fun acknowledge(
             commandId: String,
             epoch: Long,

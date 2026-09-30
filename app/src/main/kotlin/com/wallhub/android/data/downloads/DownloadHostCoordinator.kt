@@ -2,6 +2,7 @@ package com.wallhub.android.data.downloads
 
 import androidx.work.ListenableWorker
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -30,18 +31,40 @@ internal interface DownloadHostCoordinator {
 @Singleton
 internal class SingleProcessDownloadHostCoordinator internal constructor(
     private val scope: CoroutineScope,
+    private val commandStore: DownloadCommandStore? = null,
 ) : DownloadHostCoordinator {
     @Inject
-    constructor() : this(CoroutineScope(SupervisorJob() + Dispatchers.IO))
+    constructor(commandStore: DownloadCommandStore) : this(
+        CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        commandStore,
+    )
 
+    private val epoch = scope.async(start = CoroutineStart.LAZY) {
+        commandStore?.acquireEngineEpoch() ?: 0L
+    }
     private val active = ConcurrentHashMap<String, Deferred<ListenableWorker.Result>>()
+    private val receiptSequence = AtomicLong()
 
     override suspend fun reconcile(
         taskId: String,
         launch: suspend () -> ListenableWorker.Result,
     ): ListenableWorker.Result {
         require(taskId.isNotBlank()) { "Download task ID must not be blank" }
-        val candidate = scope.async(start = CoroutineStart.LAZY) { launch() }
+        val candidate =
+            scope.async(start = CoroutineStart.LAZY) {
+                val currentEpoch = epoch.await()
+                val commands = commandStore?.claimTask(taskId, currentEpoch).orEmpty()
+                val result = launch()
+                commands.forEach { command ->
+                    commandStore?.acknowledge(
+                        commandId = command.commandId,
+                        epoch = currentEpoch,
+                        receiptSequence = receiptSequence.incrementAndGet(),
+                        result = result.toString(),
+                    )
+                }
+                result
+            }
         val owned = active.putIfAbsent(taskId, candidate) ?: candidate
         if (owned === candidate) candidate.start() else candidate.cancel()
         return try {

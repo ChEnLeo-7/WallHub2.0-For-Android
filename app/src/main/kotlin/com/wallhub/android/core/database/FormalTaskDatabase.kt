@@ -305,6 +305,15 @@ interface DownloadCommandDao {
     suspend fun pending(limit: Int): List<DownloadCommandEntity>
 
     @Query(
+        "SELECT * FROM download_commands WHERE taskId = :taskId AND acknowledgedAt IS NULL " +
+            "ORDER BY revision ASC LIMIT :limit",
+    )
+    suspend fun pendingForTask(
+        taskId: String,
+        limit: Int,
+    ): List<DownloadCommandEntity>
+
+    @Query(
         "UPDATE download_commands SET claimedEpoch = :epoch, claimedAt = :claimedAt " +
             "WHERE commandId = :commandId AND acknowledgedAt IS NULL " +
             "AND (claimedEpoch IS NULL OR claimedEpoch < :epoch)",
