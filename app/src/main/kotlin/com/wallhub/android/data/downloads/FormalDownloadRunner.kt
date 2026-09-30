@@ -24,7 +24,6 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
 
 internal const val WORKSHOP_STAGING_DIRECTORY_NAME = "wallhub-workshop"
 
@@ -55,20 +54,6 @@ internal fun sdkStagingDirectory(
         val parent = File(root, WORKSHOP_STAGING_DIRECTORY_NAME).canonicalFile
         File(parent, taskId).canonicalFile.takeIf { it.parentFile?.path == parent.path }
     }.getOrNull()
-}
-
-internal object ActiveFormalWorkshopDownloadWorkers {
-    private val taskIds = ConcurrentHashMap.newKeySet<String>()
-
-    fun markActive(taskId: String) {
-        taskIds += taskId
-    }
-
-    fun markInactive(taskId: String) {
-        taskIds -= taskId
-    }
-
-    fun isActive(taskId: String): Boolean = taskId in taskIds
 }
 
 internal fun resolveDownloadTaskId(
@@ -157,6 +142,7 @@ internal class FormalDownloadRunner
         private val credentialProvider: SteamContentCredentialProvider,
         private val conversionScheduler: ConversionWorkScheduler,
         private val settingsRepository: SettingsRepository,
+        private val stagingManager: DownloadStagingManager,
         private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
         private val steamWorkshopContentClient: SteamWorkshopContentClient,
     ) {
@@ -176,14 +162,8 @@ internal class FormalDownloadRunner
                     context = timingContext,
                 )
                 if (controlInbox.current() == SteamDownloadControl.CANCEL) {
-                    task.stagingDirectory
-                        ?.let(::File)
-                        ?.takeIf(::isManagedStagingDirectory)
-                        ?.deleteRecursively()
-                    // The SDK's staging is where an SDK-backed download's partial bytes really are, so a
-                    // cancel that deletes only the destination would leave the checkpoint a retry resumes
-                    // from. The destination is kept as a fallback for a direct-file item's own partials.
-                    deleteSdkStagingDirectory(taskId)
+                    // Both the app destination and SDK checkpoint staging are one deletion unit.
+                    stagingManager.discardTask(taskId, task.stagingDirectory?.let(::File))
                     persist(
                         task,
                         status = DownloadStatus.CANCELLED,
@@ -198,7 +178,6 @@ internal class FormalDownloadRunner
                 if (task.status in setOf(DownloadStatus.COMPLETED.name, DownloadStatus.CANCELLED.name)) {
                     return@withContext DownloadHostRunResult.SUCCESS
                 }
-                ActiveFormalWorkshopDownloadWorkers.markActive(taskId)
                 var stagingDirectory: File? = null
                 try {
                     // No setForeground() here: this ROM treats the WorkManager FGS as
@@ -279,8 +258,8 @@ internal class FormalDownloadRunner
                             effectiveCredential?.let {
                                 applicationContext.getString(R.string.backend_steam_signed_in_account, it.accountName)
                             } ?: applicationContext.getString(R.string.backend_steam_anonymous_account)
-                        val persistentRoot = File(applicationContext.filesDir, WORKSHOP_STAGING_DIRECTORY_NAME).canonicalFile
-                        val legacyRoot = File(applicationContext.cacheDir, WORKSHOP_STAGING_DIRECTORY_NAME).canonicalFile
+                        val persistentRoot = stagingManager.persistentRoot
+                        val legacyRoot = stagingManager.legacyRoot
                         val resolvedDirectory =
                             resolveWorkshopStagingDirectory(
                                 persistentRoot = persistentRoot,
@@ -312,7 +291,7 @@ internal class FormalDownloadRunner
                         // whatever the SDK reports.
                         val reusableCheckpointBytes = task.downloadedBytes.coerceAtLeast(0L)
                         val sdkStagingPresent =
-                            sdkStagingDirectory(applicationContext.filesDir, taskId)?.isDirectory == true
+                            stagingManager.sdkDirectory(taskId)?.isDirectory == true
                         val durableCheckpointBytes =
                             if (manifestChanged || !sdkStagingPresent) 0L else reusableCheckpointBytes
                         if (durableCheckpointBytes > 0L) {
@@ -528,8 +507,7 @@ internal class FormalDownloadRunner
                     }
                     DownloadHostRunResult.SUCCESS
                 } catch (error: SteamDownloadCancelledException) {
-                    stagingDirectory?.takeIf(::isManagedStagingDirectory)?.deleteRecursively()
-                    deleteSdkStagingDirectory(taskId)
+                    stagingManager.discardTask(taskId, stagingDirectory)
                     acknowledgeCancellation(taskId)
                     DownloadHostRunResult.SUCCESS
                 } catch (error: CancellationException) {
@@ -556,8 +534,7 @@ internal class FormalDownloadRunner
                                 "taskId=$taskId cancellation observed control=$currentControl " +
                                     "status=${latest?.status}",
                             )
-                            stagingDirectory?.takeIf(::isManagedStagingDirectory)?.deleteRecursively()
-                            deleteSdkStagingDirectory(taskId)
+                            stagingManager.discardTask(taskId, stagingDirectory)
                             acknowledgeCancellation(taskId)
                         } else {
                             // The system (or the ROM's job policy) stopped the worker; keep
@@ -594,8 +571,6 @@ internal class FormalDownloadRunner
                         message = error.message ?: error.javaClass.simpleName,
                     )
                     DownloadHostRunResult.SUCCESS
-                } finally {
-                    ActiveFormalWorkshopDownloadWorkers.markInactive(taskId)
                 }
             }
 
@@ -818,25 +793,6 @@ internal class FormalDownloadRunner
                     }
                 }
             }
-
-        private fun isManagedStagingDirectory(directory: File): Boolean =
-            isManagedWorkshopStagingDirectory(
-                persistentRoot = File(applicationContext.filesDir, WORKSHOP_STAGING_DIRECTORY_NAME),
-                legacyRoot = File(applicationContext.cacheDir, WORKSHOP_STAGING_DIRECTORY_NAME),
-                directory = directory,
-            )
-
-        /**
-         * Removes the SDK's staging for this task, so cancelling really discards the partial bytes.
-         *
-         * The SDK's journal is keyed by the content identity, not by the task, so it is not this
-         * directory's name that makes the bytes resumable. Removing the staged chunks is what makes every
-         * record in that journal fail its checksum check, which is what a retry after a cancel must see
-         * instead of continuing bytes the person cancelled.
-         */
-        private fun deleteSdkStagingDirectory(taskId: String) {
-            sdkStagingDirectory(applicationContext.filesDir, taskId)?.deleteRecursively()
-        }
 
         private companion object {
             const val PROGRESS_PERSIST_INTERVAL_MS = 750L
