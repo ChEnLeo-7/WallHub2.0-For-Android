@@ -158,9 +158,9 @@ internal class SteamContentSdkWorkshopTransfer
     @Inject
     constructor(
         private val sessionBroker: SteamContentSdkSessionBroker,
-    ) : WorkshopContentTransfer {
+    ) {
 
-        override suspend fun download(
+        suspend fun download(
             target: WorkshopContentTarget,
             destinationDirectory: File,
             credential: SteamContentCredential?,

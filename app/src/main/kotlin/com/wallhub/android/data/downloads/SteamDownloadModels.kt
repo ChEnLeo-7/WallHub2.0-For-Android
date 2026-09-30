@@ -8,7 +8,7 @@ import java.io.File
  *
  * These types used to sit beside the kSteam-backed `SteamContentDownloader`. That implementation is gone and
  * the Steam Content SDK serves every depot download, but the vocabulary stayed because it is the product's
- * own: [WorkshopContentTransfer] and its SDK implementation, the download worker, the direct-file path, and
+ * own: the SDK depot transfer, the download runner, the direct-file path, and
  * the progress UI all pass these values around.
  */
 
