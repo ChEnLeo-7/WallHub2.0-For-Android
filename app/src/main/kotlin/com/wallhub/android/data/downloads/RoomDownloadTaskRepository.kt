@@ -230,6 +230,12 @@ internal class RoomDownloadTaskRepository private constructor(
                     commandId = UUID.randomUUID().toString(),
                 ),
             ) { "Download state changed before pause could be requested" }
+            try {
+                workScheduler.replace(task.id)
+            } catch (error: Throwable) {
+                if (taskDao.find(task.id)?.executorVersion != "NEW") throw error
+                Log.e(LOG_TAG, "Unable to wake host for durable PAUSE taskId=${task.id}", error)
+            }
         }
 
         private suspend fun requestResumeOrRetry(

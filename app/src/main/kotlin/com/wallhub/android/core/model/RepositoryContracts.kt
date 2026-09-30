@@ -316,16 +316,11 @@ interface AccountWorkshopRepository {
     )
 }
 
-interface DownloadTaskRepository {
+/** Deep download-control module used by UI and notification callers. */
+interface WorkshopDownloads {
     val tasks: Flow<List<DownloadTask>>
 
-    suspend fun find(taskId: String): DownloadTask?
-
-    suspend fun upsert(task: DownloadTask)
-
     suspend fun enqueue(request: DownloadRequest): DownloadEnqueueResult
-
-    suspend fun prewarmDownload(workshopId: Long) = Unit
 
     suspend fun requestAction(
         taskId: String,
@@ -333,6 +328,26 @@ interface DownloadTaskRepository {
     )
 
     suspend fun reorder(taskIds: List<String>)
+}
+
+/** Compatibility seam for storage/admin operations while callers migrate to [WorkshopDownloads]. */
+interface DownloadTaskRepository : WorkshopDownloads {
+    override val tasks: Flow<List<DownloadTask>>
+
+    suspend fun find(taskId: String): DownloadTask?
+
+    suspend fun upsert(task: DownloadTask)
+
+    override suspend fun enqueue(request: DownloadRequest): DownloadEnqueueResult
+
+    suspend fun prewarmDownload(workshopId: Long) = Unit
+
+    override suspend fun requestAction(
+        taskId: String,
+        action: DownloadAction,
+    )
+
+    override suspend fun reorder(taskIds: List<String>)
 
     suspend fun clearFinishedHistory(): Int
 

@@ -14,6 +14,7 @@ import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.SteamPlaytimeRepository
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
+import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.WorkshopRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.data.diagnostics.FileDiagnosticRepository
@@ -120,6 +121,10 @@ internal abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindDownloadTaskRepository(repository: RoomDownloadTaskRepository): DownloadTaskRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindWorkshopDownloads(repository: RoomDownloadTaskRepository): WorkshopDownloads
 
     @Binds
     @Singleton

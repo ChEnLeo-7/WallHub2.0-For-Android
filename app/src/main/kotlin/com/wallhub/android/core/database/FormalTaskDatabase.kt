@@ -377,14 +377,17 @@ interface DownloadCommandDao {
                 acknowledgedAt = acknowledgedAt,
             ) != 1
         ) return false
-        return applyReceiptProjection(
-            taskId = command.taskId,
-            intentRevision = command.revision,
-            receiptSequence = receiptSequence,
-            engineEpoch = epoch,
-            quiesced = quiesced,
-            acknowledgedAt = acknowledgedAt,
-        ) == 1
+        check(
+            applyReceiptProjection(
+                taskId = command.taskId,
+                intentRevision = command.revision,
+                receiptSequence = receiptSequence,
+                engineEpoch = epoch,
+                quiesced = quiesced,
+                acknowledgedAt = acknowledgedAt,
+            ) == 1,
+        ) { "Receipt projection rejected an acknowledged command" }
+        return true
     }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
