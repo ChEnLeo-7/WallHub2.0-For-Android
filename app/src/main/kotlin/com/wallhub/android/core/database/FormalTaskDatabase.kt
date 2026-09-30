@@ -38,7 +38,6 @@ data class FormalTaskRecordEntity(
     val credentialMode: String = "LEGACY_UNKNOWN",
     val outputLabel: String? = null,
     val message: String? = null,
-    val requestedAction: String? = null,
     val isResumable: Boolean = true,
     val contentManifestId: Long = 0L,
     val appId: Int = 0,
@@ -49,7 +48,6 @@ data class FormalTaskRecordEntity(
     val queuePosition: Long = 0L,
     val createdAt: Long,
     val updatedAt: Long,
-    val executorVersion: String = "LEGACY",
     val attempt: Long = 0L,
     val desiredIntent: String = "RUN",
     val desiredIntentRevision: Long = 0L,
@@ -154,11 +152,13 @@ interface FormalTaskRecordDao {
 
     @Transaction
     suspend fun upsertPreservingExecutionIntent(task: FormalTaskRecordEntity): FormalTaskRecordEntity {
-        val current = find(task.taskId) ?: return task
+        val current = find(task.taskId)
+        if (current == null) {
+            upsert(task)
+            return task
+        }
         val merged =
             task.copy(
-                requestedAction = current.requestedAction ?: task.requestedAction,
-                executorVersion = current.executorVersion,
                 attempt = current.attempt,
                 desiredIntent = current.desiredIntent,
                 desiredIntentRevision = current.desiredIntentRevision,
@@ -172,22 +172,8 @@ interface FormalTaskRecordDao {
     }
 
     @Query(
-        "UPDATE formal_task_records SET status = :status, requestedAction = NULL, message = :message, " +
-            "bytesPerSecond = 0, updatedAt = :updatedAt " +
-            "WHERE taskId = :taskId AND requestedAction = :expectedAction",
-    )
-    suspend fun acknowledgeControlAction(
-        taskId: String,
-        expectedAction: String,
-        status: String,
-        message: String,
-        updatedAt: Long,
-    ): Int
-
-    @Query(
         "UPDATE formal_task_records SET status = :status, message = :message, bytesPerSecond = 0, " +
-            "updatedAt = :updatedAt WHERE taskId = :taskId AND executorVersion = 'NEW' " +
-            "AND desiredIntent = :expectedIntent",
+            "updatedAt = :updatedAt WHERE taskId = :taskId AND desiredIntent = :expectedIntent",
     )
     suspend fun settleDesiredIntentProjection(
         taskId: String,
@@ -200,7 +186,7 @@ interface FormalTaskRecordDao {
     @Query(
         "UPDATE formal_task_records SET status = 'CONVERTING', downloadedBytes = :downloadedBytes, " +
             "totalBytes = :totalBytes, bytesPerSecond = 0, outputLabel = NULL, message = :message, " +
-            "updatedAt = :updatedAt WHERE taskId = :taskId AND requestedAction IS NULL " +
+            "updatedAt = :updatedAt WHERE taskId = :taskId AND desiredIntent = 'RUN' " +
             "AND status IN ('QUEUED', 'RESOLVING', 'DOWNLOADING')",
     )
     suspend fun transitionToConverting(
@@ -222,12 +208,10 @@ interface FormalTaskRecordDao {
     ): Boolean {
         val current = find(taskId) ?: return false
         if (current.status !in allowedStatuses) return false
-        if (current.executorVersion == "NEW" && current.desiredIntent == desiredIntent) return false
+        if (current.desiredIntent == desiredIntent) return false
         val revision = current.desiredIntentRevision + 1L
         upsert(
             current.copy(
-                executorVersion = "NEW",
-                requestedAction = null,
                 desiredIntent = desiredIntent,
                 desiredIntentRevision = revision,
                 message = message,
@@ -247,44 +231,6 @@ interface FormalTaskRecordDao {
         return true
     }
 
-    /** Converts one persisted pre-host task into a durable command before the global host is woken. */
-    @Transaction
-    suspend fun promoteLegacyTask(
-        taskId: String,
-        commandId: String,
-        now: Long,
-    ): Boolean {
-        val current = find(taskId) ?: return false
-        if (current.executorVersion == "NEW") return false
-        val intent =
-            when (current.requestedAction) {
-                "PAUSE" -> "PAUSE"
-                "CANCEL" -> "CANCEL"
-                else -> "RUN"
-            }
-        val revision = current.desiredIntentRevision + 1L
-        upsert(
-            current.copy(
-                executorVersion = "NEW",
-                requestedAction = null,
-                desiredIntent = intent,
-                desiredIntentRevision = revision,
-                updatedAt = now,
-            ),
-        )
-        insertCommand(
-            DownloadCommandEntity(
-                commandId = commandId,
-                taskId = taskId,
-                revision = revision,
-                attempt = current.attempt,
-                command = intent,
-                createdAt = now,
-            ),
-        )
-        return true
-    }
-
     /** Persists conversion cancellation without creating a download-host command. */
     @Transaction
     suspend fun requestConversionCancellation(
@@ -296,8 +242,6 @@ interface FormalTaskRecordDao {
         if (current.status != "CONVERTING" || current.desiredIntent == "CANCEL") return false
         upsert(
             current.copy(
-                executorVersion = "NEW",
-                requestedAction = null,
                 desiredIntent = "CANCEL",
                 desiredIntentRevision = current.desiredIntentRevision + 1L,
                 message = message,
@@ -308,13 +252,11 @@ interface FormalTaskRecordDao {
     }
 
     @Query(
-        "UPDATE formal_task_records SET executorVersion = 'NEW', requestedAction = NULL, " +
-            "desiredIntent = 'CANCEL', " +
+        "UPDATE formal_task_records SET desiredIntent = 'CANCEL', " +
             "desiredIntentRevision = CASE WHEN desiredIntentRevision < 1 THEN 1 ELSE desiredIntentRevision END, " +
             "appliedIntentRevision = CASE WHEN desiredIntentRevision < 1 THEN 1 ELSE desiredIntentRevision END, " +
             "quiescedIntentRevision = CASE WHEN desiredIntentRevision < 1 THEN 1 ELSE desiredIntentRevision END " +
-            "WHERE taskId = :taskId AND status = 'CANCELLED' " +
-            "AND (desiredIntent = 'CANCEL' OR requestedAction = 'CANCEL')",
+            "WHERE taskId = :taskId AND status = 'CANCELLED' AND desiredIntent = 'CANCEL'",
     )
     suspend fun settleConversionCancellation(taskId: String): Int
 
@@ -560,7 +502,7 @@ interface LocalWallpaperMetadataDao {
         LocalWallpaperStateEntity::class,
         LocalWallpaperTagEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class FormalTaskDatabase : RoomDatabase() {
@@ -708,6 +650,85 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 }
             }
 
+        internal val MIGRATION_8_9 =
+            object : Migration(8, 9) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    val migratedIntent =
+                        "CASE " +
+                            "WHEN requestedAction = 'CANCEL' THEN 'CANCEL' " +
+                            "WHEN requestedAction = 'PAUSE' OR status = 'PAUSED' THEN 'PAUSE' " +
+                            "ELSE desiredIntent END"
+                    database.execSQL(
+                        "UPDATE formal_task_records SET desiredIntent = $migratedIntent, " +
+                            "desiredIntentRevision = CASE WHEN desiredIntentRevision < 1 " +
+                            "THEN 1 ELSE desiredIntentRevision END WHERE executorVersion = 'LEGACY'",
+                    )
+                    database.execSQL(
+                        "UPDATE formal_task_records SET appliedIntentRevision = desiredIntentRevision, " +
+                            "quiescedIntentRevision = desiredIntentRevision " +
+                            "WHERE executorVersion = 'LEGACY' " +
+                            "AND status IN ('COMPLETED', 'FAILED', 'CANCELLED')",
+                    )
+                    database.execSQL(
+                        "UPDATE formal_task_records SET desiredIntent = requestedAction, " +
+                            "desiredIntentRevision = desiredIntentRevision + 1 " +
+                            "WHERE requestedAction IN ('PAUSE', 'CANCEL') " +
+                            "AND desiredIntent != requestedAction",
+                    )
+                    database.execSQL(
+                        "INSERT OR IGNORE INTO download_commands " +
+                            "(commandId, taskId, revision, attempt, command, createdAt) " +
+                            "SELECT 'room-v9-' || taskId, taskId, desiredIntentRevision, attempt, " +
+                            "desiredIntent, updatedAt FROM formal_task_records " +
+                            "WHERE (executorVersion = 'LEGACY' OR requestedAction IS NOT NULL) " +
+                            "AND status IN ('QUEUED', 'RESOLVING', 'DOWNLOADING', 'PAUSED')",
+                    )
+                    database.execSQL(
+                        "CREATE TABLE formal_task_records_new (" +
+                            "taskId TEXT NOT NULL, workshopId INTEGER NOT NULL, title TEXT NOT NULL, " +
+                            "type TEXT NOT NULL, status TEXT NOT NULL, previewUrl TEXT, " +
+                            "downloadedBytes INTEGER NOT NULL, totalBytes INTEGER NOT NULL, " +
+                            "bytesPerSecond INTEGER NOT NULL, accountName TEXT, credentialMode TEXT NOT NULL, " +
+                            "outputLabel TEXT, message TEXT, isResumable INTEGER NOT NULL, " +
+                            "contentManifestId INTEGER NOT NULL, appId INTEGER NOT NULL, stagingDirectory TEXT, " +
+                            "outputTreeUri TEXT, outputUri TEXT, exportFormat TEXT NOT NULL, " +
+                            "queuePosition INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, " +
+                            "attempt INTEGER NOT NULL, desiredIntent TEXT NOT NULL, " +
+                            "desiredIntentRevision INTEGER NOT NULL, appliedIntentRevision INTEGER NOT NULL, " +
+                            "quiescedIntentRevision INTEGER NOT NULL, lastReceiptSequence INTEGER NOT NULL, " +
+                            "engineEpoch INTEGER, PRIMARY KEY(taskId))",
+                    )
+                    database.execSQL(
+                        "INSERT INTO formal_task_records_new (" +
+                            "taskId, workshopId, title, type, status, previewUrl, downloadedBytes, totalBytes, " +
+                            "bytesPerSecond, accountName, credentialMode, outputLabel, message, isResumable, " +
+                            "contentManifestId, appId, stagingDirectory, outputTreeUri, outputUri, exportFormat, " +
+                            "queuePosition, createdAt, updatedAt, attempt, desiredIntent, desiredIntentRevision, " +
+                            "appliedIntentRevision, quiescedIntentRevision, lastReceiptSequence, engineEpoch) " +
+                            "SELECT taskId, workshopId, title, type, status, previewUrl, downloadedBytes, " +
+                            "totalBytes, bytesPerSecond, accountName, credentialMode, outputLabel, message, " +
+                            "isResumable, contentManifestId, appId, stagingDirectory, outputTreeUri, outputUri, " +
+                            "exportFormat, queuePosition, createdAt, updatedAt, attempt, desiredIntent, " +
+                            "desiredIntentRevision, appliedIntentRevision, quiescedIntentRevision, " +
+                            "lastReceiptSequence, engineEpoch FROM formal_task_records",
+                    )
+                    database.execSQL("DROP TABLE formal_task_records")
+                    database.execSQL("ALTER TABLE formal_task_records_new RENAME TO formal_task_records")
+                    database.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_formal_task_records_workshopId " +
+                            "ON formal_task_records(workshopId)",
+                    )
+                    database.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_formal_task_records_updatedAt " +
+                            "ON formal_task_records(updatedAt)",
+                    )
+                    database.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_formal_task_records_queuePosition " +
+                            "ON formal_task_records(queuePosition)",
+                    )
+                }
+            }
+
         internal val migrations: Array<Migration> =
             arrayOf(
                 MIGRATION_1_2,
@@ -717,6 +738,7 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 MIGRATION_5_6,
                 MIGRATION_6_7,
                 MIGRATION_7_8,
+                MIGRATION_8_9,
             )
 
         @Volatile

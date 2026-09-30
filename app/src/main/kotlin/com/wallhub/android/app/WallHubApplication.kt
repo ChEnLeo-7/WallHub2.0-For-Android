@@ -14,6 +14,7 @@ import coil.decode.ImageDecoderDecoder
 import com.wallhub.android.core.model.LauncherIconController
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionRepository
+import com.wallhub.android.data.downloads.DownloadWorkScheduler
 import com.wallhub.android.data.downloads.WallHubDownloadWorkerFactory
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import dagger.hilt.android.HiltAndroidApp
@@ -47,10 +48,23 @@ class WallHubApplication :
     @Inject
     lateinit var steamSessionRepository: SteamSessionRepository
 
+    @Inject
+    internal lateinit var downloadWorkScheduler: DownloadWorkScheduler
+
     override fun onCreate() {
         super.onCreate()
         CrashDiagnostics.install(this)
         steamSessionRepository.restorePersistedSession()
+        applicationScope.launch {
+            try {
+                downloadWorkScheduler.wake()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                // Commands are durable; a later process start or user action will submit another wake.
+                Log.e(TAG, "Unable to wake the durable download host during startup", error)
+            }
+        }
         ProcessLifecycleOwner
             .get()
             .lifecycle

@@ -1054,15 +1054,16 @@ workshop-downloads
 
 ## 19. 分阶段迁移路线
 
-迁移期间必须遵守 Single-Writer Cutover：
+迁移期间采用 Single-Writer Cutover；Room v8 曾以 `executorVersion = LEGACY | NEW` 隔离两条路径。质量收口后的 Room v9 完成最终切换：
 
-- 每个 Job 持久化 `executorVersion = LEGACY | NEW`，创建后不可在同一 Attempt 中静默切换；
-- 新旧执行器使用不同的 Staging Root、Checkpoint 格式和 Work Name；
-- 只有持久 Cutover Transaction 能把尚未开始的 Job 交给新执行器；
-- 已有 Legacy 非终态 Job 默认由 Legacy 完成；若需要迁移，先 Pause/Quiesce，验证并导入 Checkpoint，再写 Executor Version，任何失败都回滚为 Legacy Paused；
-- 任一执行器启动前必须检查 Executor Version 和 Engine Epoch；错误执行器只能退出，不得碰文件；
-- Legacy Adapter 只能承诺它实际支持的 Capability。新 Interface 中的 Durable Receipt、Revision 或精确 Pause 语义若旧链路无法满足，必须通过 Capability/版本显式降级，不能伪装满足；
-- 回滚只切换尚未开始的新 Job；已经由新格式写入的数据必须通过明确的回滚/导出工具处理，不能让旧实现直接打开。
+- v8→v9 事务先把旧 `requestedAction` 吸收到 Desired Intent/Revision；
+- 旧下载执行态生成唯一 Durable Command，旧 Conversion Cancel 只生成 Conversion Desired Intent；
+- 随后重建 Job 表并物理删除 `requestedAction`、`executorVersion`；
+- 新任务和迁移任务都只由一个 DownloadHost 消费 Durable Command；
+- WorkManager 只提供一个全局 Wake/Reconcile 执行窗口，不再创建 per-project Download Work；
+- 旧 `FormalWorkshopDownloadWorker` 仅用于排空升级前已存在于系统 WorkManager 数据库中的 WorkSpec，不再是调度入口；
+- Engine Epoch 继续约束 Command Claim/Ack，错误 Epoch 无写权；
+- 回滚不得重新启用旧写路径；需要回滚的数据必须通过明确导出工具处理。
 
 ### Phase 0：建立基线
 
@@ -1091,7 +1092,7 @@ workshop-downloads
 - 一个 Host；
 - WorkManager 只唤醒 Host。
 
-仅对 `executorVersion = NEW` 的试验 Job 禁用旧的 Per-Project WorkManager 并由一个 Host 调用现有 Native Transfer；Legacy Job 原样运行。不得让新 Host 和旧 Worker 同时认领同一 Job。
+该阶段最初以版本字段隔离试验 Job；Room v9 已完成 Cutover，所有 Job 都由唯一 Host 调用 Native Transfer。升级前残留 Worker 也必须进入同一个 Host/Runner Seam，不得自行拥有执行权。
 
 ### Phase 3：SessionSupervisor 和 PreparationRegistry
 

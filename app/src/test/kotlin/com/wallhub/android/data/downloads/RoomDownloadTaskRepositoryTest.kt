@@ -46,7 +46,7 @@ class RoomDownloadTaskRepositoryTest {
 
         assertTrue(result is DownloadEnqueueResult.Created)
         assertEquals("created-task", result.task.id)
-        assertEquals(listOf("created-task"), scheduler.enqueuedTaskIds)
+        assertEquals(1, scheduler.wakeCount)
         assertEquals(DownloadStatus.QUEUED.name, dao.records.single().status)
     }
 
@@ -61,7 +61,7 @@ class RoomDownloadTaskRepositoryTest {
 
         assertTrue(result is DownloadEnqueueResult.AlreadyActive)
         assertEquals(existing.taskId, result.task.id)
-        assertEquals(listOf(existing.taskId), scheduler.enqueuedTaskIds)
+        assertEquals(1, scheduler.wakeCount)
         assertSame(existing, dao.records.single())
     }
 
@@ -75,7 +75,6 @@ class RoomDownloadTaskRepositoryTest {
 
         assertTrue(result is DownloadEnqueueResult.Created)
         assertEquals(DownloadStatus.QUEUED.name, dao.records.single().status)
-        assertEquals("NEW", dao.records.single().executorVersion)
         assertEquals(listOf("RUN"), dao.commands.map { it.command })
     }
 
@@ -151,15 +150,12 @@ class RoomDownloadTaskRepositoryTest {
     private class RecordingScheduler(
         private val failure: Throwable? = null,
     ) : DownloadWorkScheduler {
-        val enqueuedTaskIds = mutableListOf<String>()
+        var wakeCount = 0
 
-        override suspend fun enqueue(taskId: String) {
-            enqueuedTaskIds += taskId
+        override suspend fun wake() {
+            wakeCount += 1
             failure?.let { throw it }
         }
-
-        override suspend fun replace(taskId: String) = Unit
-
     }
 
     private class FakeTaskDao(vararg initial: FormalTaskRecordEntity) {
@@ -204,6 +200,7 @@ class RoomDownloadTaskRepositoryTest {
     private object NoOpConversionScheduler : ConversionWorkScheduler {
         override suspend fun enqueue(taskId: String) = Unit
         override suspend fun replace(taskId: String) = Unit
+        override suspend fun cancel(taskId: String) = Unit
     }
 
     private object TestSettingsRepository : SettingsRepository {

@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -44,9 +45,47 @@ class FormalTaskDatabaseMigrationTest {
                 assertTrue(cursor.moveToFirst())
                 assertEquals(0, cursor.getInt(0))
             }
-            database.query("SELECT COUNT(*) FROM download_engine_state").use { cursor ->
+        }
+    }
+
+    @Test
+    fun migration8To9AbsorbsLegacyAuthorityAndDropsCompatibilityColumns() {
+        helper.createDatabase(TEST_DATABASE, 8).use { database ->
+            insertLegacyTask(database, taskId = "queued", status = "QUEUED", requestedAction = "CANCEL")
+            insertLegacyTask(database, taskId = "conversion", status = "CONVERTING", requestedAction = "CANCEL")
+            FormalTaskDatabase.MIGRATION_8_9.migrate(database)
+
+            database.query("PRAGMA table_info(formal_task_records)").use { cursor ->
+                val columns = mutableSetOf<String>()
+                while (cursor.moveToNext()) columns += cursor.getString(cursor.getColumnIndexOrThrow("name"))
+                assertFalse("requestedAction" in columns)
+                assertFalse("executorVersion" in columns)
+                assertTrue("desiredIntentRevision" in columns)
+            }
+            database.query(
+                "SELECT desiredIntent, desiredIntentRevision FROM formal_task_records WHERE taskId = 'queued'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("CANCEL", cursor.getString(0))
+                assertEquals(1L, cursor.getLong(1))
+            }
+            database.query(
+                "SELECT command, revision FROM download_commands WHERE taskId = 'queued'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("CANCEL", cursor.getString(0))
+                assertEquals(1L, cursor.getLong(1))
+            }
+            database.query("SELECT COUNT(*) FROM download_commands WHERE taskId = 'conversion'").use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals(0, cursor.getInt(0))
+            }
+            database.query(
+                "SELECT desiredIntent, desiredIntentRevision FROM formal_task_records WHERE taskId = 'conversion'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("CANCEL", cursor.getString(0))
+                assertEquals(1L, cursor.getLong(1))
             }
         }
     }
@@ -58,16 +97,7 @@ class FormalTaskDatabaseMigrationTest {
             val dao = database.taskRecordDao()
             kotlinx.coroutines.runBlocking {
                 dao.upsertWithCommand(
-                    task =
-                        FormalTaskRecordEntity(
-                            taskId = "task",
-                            workshopId = 1,
-                            title = "task",
-                            type = "scene",
-                            status = "FAILED",
-                            createdAt = 1,
-                            updatedAt = 1,
-                        ),
+                    task = task("task", "FAILED"),
                     command =
                         DownloadCommandEntity(
                             commandId = "command",
@@ -88,102 +118,14 @@ class FormalTaskDatabaseMigrationTest {
     }
 
     @Test
-    fun firstDurableCommandPromotesALegacyTaskAtomically() {
-        val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
-        try {
-            val dao = database.taskRecordDao()
-            kotlinx.coroutines.runBlocking {
-                dao.upsert(
-                    FormalTaskRecordEntity(
-                        taskId = "legacy",
-                        workshopId = 1,
-                        title = "legacy",
-                        type = "scene",
-                        status = "DOWNLOADING",
-                        requestedAction = "PAUSE",
-                        createdAt = 1,
-                        updatedAt = 1,
-                        executorVersion = "LEGACY",
-                    ),
-                )
-                assertTrue(
-                    dao.appendIntentCommand(
-                        taskId = "legacy",
-                        desiredIntent = "CANCEL",
-                        message = "cancelling",
-                        updatedAt = 2,
-                        allowedStatuses = listOf("DOWNLOADING"),
-                        commandId = "cancel-command",
-                    ),
-                )
-
-                val promoted = requireNotNull(dao.find("legacy"))
-                assertEquals("NEW", promoted.executorVersion)
-                assertEquals(null, promoted.requestedAction)
-                assertEquals("CANCEL", promoted.desiredIntent)
-                assertEquals(1L, promoted.desiredIntentRevision)
-                val command = database.downloadCommandDao().latestPendingForTask("legacy")
-                assertEquals("CANCEL", command?.command)
-                assertEquals(1L, command?.revision)
-            }
-        } finally {
-            database.close()
-        }
-    }
-
-    @Test
-    fun wakingALegacyTaskPromotesItToADurableRun() {
-        val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
-        try {
-            val dao = database.taskRecordDao()
-            kotlinx.coroutines.runBlocking {
-                dao.upsert(
-                    FormalTaskRecordEntity(
-                        taskId = "legacy-run",
-                        workshopId = 1,
-                        title = "legacy",
-                        type = "scene",
-                        status = "QUEUED",
-                        createdAt = 1,
-                        updatedAt = 1,
-                        executorVersion = "LEGACY",
-                    ),
-                )
-                assertTrue(dao.promoteLegacyTask("legacy-run", "run-command", 2))
-
-                val promoted = requireNotNull(dao.find("legacy-run"))
-                assertEquals("NEW", promoted.executorVersion)
-                assertEquals("RUN", promoted.desiredIntent)
-                assertEquals(1L, promoted.desiredIntentRevision)
-                val command = database.downloadCommandDao().latestPendingForTask("legacy-run")
-                assertEquals("RUN", command?.command)
-                assertEquals(1L, command?.revision)
-            }
-        } finally {
-            database.close()
-        }
-    }
-
-    @Test
     fun conversionCancellationSurvivesProjectionWritesAndSettlesItsRevision() {
         val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
         try {
             val dao = database.taskRecordDao()
             kotlinx.coroutines.runBlocking {
-                val converting =
-                    FormalTaskRecordEntity(
-                        taskId = "conversion",
-                        workshopId = 1,
-                        title = "conversion",
-                        type = "scene",
-                        status = "CONVERTING",
-                        createdAt = 1,
-                        updatedAt = 1,
-                        executorVersion = "NEW",
-                    )
+                val converting = task("conversion", "CONVERTING")
                 dao.upsert(converting)
                 assertTrue(dao.requestConversionCancellation("conversion", "cancelling", 2))
-
                 dao.upsertPreservingExecutionIntent(
                     converting.copy(status = "CANCELLED", message = "cancelled", updatedAt = 3),
                 )
@@ -223,6 +165,38 @@ class FormalTaskDatabaseMigrationTest {
         } finally {
             database.close()
         }
+    }
+
+    private fun task(
+        taskId: String,
+        status: String,
+    ) =
+        FormalTaskRecordEntity(
+            taskId = taskId,
+            workshopId = 1,
+            title = taskId,
+            type = "scene",
+            status = status,
+            createdAt = 1,
+            updatedAt = 1,
+        )
+
+    private fun insertLegacyTask(
+        database: androidx.sqlite.db.SupportSQLiteDatabase,
+        taskId: String,
+        status: String,
+        requestedAction: String?,
+    ) {
+        database.execSQL(
+            "INSERT INTO formal_task_records (" +
+                "taskId, workshopId, title, type, status, downloadedBytes, totalBytes, bytesPerSecond, " +
+                "credentialMode, requestedAction, isResumable, contentManifestId, appId, exportFormat, " +
+                "queuePosition, createdAt, updatedAt, executorVersion, attempt, desiredIntent, " +
+                "desiredIntentRevision, appliedIntentRevision, quiescedIntentRevision, lastReceiptSequence) " +
+                "VALUES (?, 1, ?, 'scene', ?, 0, 0, 0, 'LEGACY_UNKNOWN', ?, 1, 0, 0, 'AUTO', " +
+                "0, 1, 1, 'LEGACY', 0, 'RUN', 0, 0, 0, 0)",
+            arrayOf(taskId, taskId, status, requestedAction),
+        )
     }
 
     private companion object {

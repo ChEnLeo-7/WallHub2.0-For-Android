@@ -55,14 +55,11 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
                 Log.i(HOST_LOG_TAG, "host reconcile taskId=$taskId epoch=$currentEpoch commands=${before.map { it.revision }}")
                 val result = launch()
                 if (!result.settlesCommand) return@async result
-                // Controls may arrive while the transfer is running. The runner observes the durable inbox;
-                // claiming again binds those late commands to this same settled outcome.
-                val commands =
-                    (before + commandStore?.claimTask(taskId, currentEpoch).orEmpty())
-                        .distinctBy { it.commandId }
-                        .sortedBy { it.revision }
+                // Only commands claimed before this run are represented by its result. Commands accepted while
+                // it was running stay pending for the successor wake; acknowledging opposing late intent with
+                // this result would violate revision semantics (for example PAUSE followed by RUN).
                 var sequence = commandStore?.receiptSequenceBase(taskId, currentEpoch) ?: 0L
-                commands.forEach { command ->
+                before.sortedBy { it.revision }.forEach { command ->
                     sequence = Math.addExact(sequence, 1L)
                     val acknowledged =
                         commandStore?.acknowledge(

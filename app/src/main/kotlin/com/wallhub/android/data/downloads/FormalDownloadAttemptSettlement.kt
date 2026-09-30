@@ -29,23 +29,13 @@ internal class FormalDownloadAttemptSettlement
                 "taskId=${task.taskId} paused committed=${task.downloadedBytes} bytes; " +
                     "staging and the SDK checkpoint are kept",
             )
-            if (task.executorVersion == "NEW") {
-                taskDao.settleDesiredIntentProjection(
-                    taskId = task.taskId,
-                    expectedIntent = DownloadAction.PAUSE.name,
-                    status = DownloadStatus.PAUSED.name,
-                    message = context.getString(R.string.backend_download_paused),
-                    updatedAt = System.currentTimeMillis(),
-                )
-            } else {
-                taskDao.acknowledgeControlAction(
-                    taskId = task.taskId,
-                    expectedAction = DownloadAction.PAUSE.name,
-                    status = DownloadStatus.PAUSED.name,
-                    message = context.getString(R.string.backend_download_paused),
-                    updatedAt = System.currentTimeMillis(),
-                )
-            }
+            taskDao.settleDesiredIntentProjection(
+                taskId = task.taskId,
+                expectedIntent = DownloadAction.PAUSE.name,
+                status = DownloadStatus.PAUSED.name,
+                message = context.getString(R.string.backend_download_paused),
+                updatedAt = System.currentTimeMillis(),
+            )
             return DownloadHostRunResult.SUCCESS
         }
 
@@ -93,28 +83,16 @@ internal class FormalDownloadAttemptSettlement
 
         private suspend fun acknowledgeCancellation(taskId: String) {
             val latest = taskDao.find(taskId) ?: return
-            val isNew = latest.executorVersion == "NEW"
-            val cancelRequested =
-                if (isNew) {
-                    latest.desiredIntent == DownloadAction.CANCEL.name
-                } else {
-                    latest.requestedAction == DownloadAction.CANCEL.name
-                }
-            if (!cancelRequested) return
+            if (latest.desiredIntent != DownloadAction.CANCEL.name) return
             val cancelled =
                 latest.copy(
                     status = DownloadStatus.CANCELLED.name,
                     stagingDirectory = null,
                     downloadedBytes = 0L,
                     bytesPerSecond = 0L,
-                    requestedAction = null,
                     message = context.getString(R.string.backend_download_cancelled_cleaned),
                     updatedAt = System.currentTimeMillis(),
                 )
-            if (isNew) {
-                taskDao.upsertPreservingExecutionIntent(cancelled)
-            } else {
-                taskDao.upsert(cancelled)
-            }
+            taskDao.upsertPreservingExecutionIntent(cancelled)
         }
     }

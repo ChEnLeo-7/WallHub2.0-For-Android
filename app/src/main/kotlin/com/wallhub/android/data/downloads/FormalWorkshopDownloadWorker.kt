@@ -12,7 +12,7 @@ import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.wallhub.android.R
 
-/** Thin LEGACY/compatibility WorkManager adapter; transfer ownership lives in [FormalDownloadRunner]. */
+/** Upgrade-drain adapter for per-task WorkSpecs created before Room v9; no new work uses this class. */
 class FormalWorkshopDownloadWorker
     internal constructor(
         appContext: Context,

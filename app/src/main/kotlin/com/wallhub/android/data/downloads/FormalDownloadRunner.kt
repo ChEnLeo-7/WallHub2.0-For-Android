@@ -155,15 +155,18 @@ internal class FormalDownloadRunner
                     return@withContext DownloadHostRunResult.FAILURE
                 }
                 var task: FormalTaskRecordEntity = found
-                val controlInbox = DurableDownloadControlInbox(taskDao, commandDao, taskId)
+                val controlInbox = DurableDownloadControlInbox(commandDao, taskId)
                 Log.i(DOWNLOAD_LOG_TAG, "Started host-owned formal Steam runner taskId=$taskId")
                 val timingContext = DownloadTimingContext(taskId = taskId, workshopId = task.workshopId)
                 DownloadTimingTelemetry.log(
                     event = DownloadTimingTelemetry.WORKER_STARTED,
                     context = timingContext,
                 )
-                if (controlInbox.current() == SteamDownloadControl.CANCEL) {
-                    return@withContext settlement.cancel(taskId, task.stagingDirectory?.let(::File))
+                when (controlInbox.current()) {
+                    SteamDownloadControl.CANCEL ->
+                        return@withContext settlement.cancel(taskId, task.stagingDirectory?.let(::File))
+                    SteamDownloadControl.PAUSE -> return@withContext settlement.pause(task)
+                    SteamDownloadControl.CONTINUE -> Unit
                 }
                 if (task.status in setOf(DownloadStatus.COMPLETED.name, DownloadStatus.CANCELLED.name)) {
                     return@withContext DownloadHostRunResult.SUCCESS

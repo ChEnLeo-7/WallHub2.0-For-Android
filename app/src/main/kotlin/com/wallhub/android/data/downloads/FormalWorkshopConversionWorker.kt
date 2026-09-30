@@ -411,7 +411,6 @@ internal class FormalWorkshopConversionWorker(
                 outputUri = outputUri,
                 outputLabel = outputLabel,
                 message = message,
-                requestedAction = null,
                 updatedAt = System.currentTimeMillis(),
             )
         return taskDao.upsertPreservingExecutionIntent(updated)
@@ -736,7 +735,7 @@ private fun String.toExportFormat(): ExportFormat =
         ?: ExportFormat.AUTO
 
 private fun FormalTaskRecordEntity.isCancellationRequested(): Boolean =
-    desiredIntent == DownloadAction.CANCEL.name || requestedAction == DownloadAction.CANCEL.name
+    desiredIntent == DownloadAction.CANCEL.name
 
 private const val MAX_CONVERSION_OUTPUT_BYTES = 4L * 1024L * 1024L * 1024L
 private const val CONVERSION_DISK_MULTIPLIER = 2L

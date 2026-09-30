@@ -108,9 +108,9 @@ internal class RoomDownloadTaskRepository private constructor(
             taskDao.findActiveForWorkshop(request.workshopId)?.toModel()?.let { activeTask ->
                 if (activeTask.status in DOWNLOAD_WORK_STATUSES) {
                     try {
-                        // KEEP repairs a persisted row whose unique work was lost to process death,
-                        // while leaving an existing WorkManager run untouched.
-                        workScheduler.enqueue(activeTask.id)
+                        // A global successor wake repairs a persisted row whose execution window was lost
+                        // to process death without creating per-task work.
+                        workScheduler.wake()
                     } catch (error: Throwable) {
                         Log.e(
                             LOG_TAG,
@@ -152,7 +152,6 @@ internal class RoomDownloadTaskRepository private constructor(
             taskDao.upsertWithCommand(
                 task =
                     task.toEntity().copy(
-                        executorVersion = "NEW",
                         desiredIntent = "RUN",
                         desiredIntentRevision = 1L,
                     ),
@@ -167,7 +166,7 @@ internal class RoomDownloadTaskRepository private constructor(
                     ),
             )
             return try {
-                workScheduler.enqueue(task.id)
+                workScheduler.wake()
                 Log.i(LOG_TAG, "Queued formal Steam download taskId=${task.id}")
                 DownloadTimingTelemetry.log(
                     event = DownloadTimingTelemetry.TASK_ENQUEUED,
@@ -227,7 +226,7 @@ internal class RoomDownloadTaskRepository private constructor(
                 ),
             ) { "Download state changed before pause could be requested" }
             try {
-                workScheduler.replace(task.id)
+                workScheduler.wake()
             } catch (error: Throwable) {
                 Log.e(LOG_TAG, "Unable to wake host for durable PAUSE taskId=${task.id}", error)
             }
@@ -255,7 +254,6 @@ internal class RoomDownloadTaskRepository private constructor(
             if (action == DownloadAction.RETRY && recoveredTask.hasCompleteStagingDownload()) {
                 val converting = recoveredTask.copy(
                     status = DownloadStatus.CONVERTING,
-                    requestedAction = null,
                     message = context.getString(R.string.backend_conversion_retrying),
                     updatedAt = System.currentTimeMillis(),
                 )
@@ -280,7 +278,6 @@ internal class RoomDownloadTaskRepository private constructor(
             val resumed =
                 recoveredTask.copy(
                     status = DownloadStatus.QUEUED,
-                    requestedAction = null,
                     message = context.getString(R.string.backend_download_resuming_queue),
                     updatedAt = System.currentTimeMillis(),
                 )
@@ -289,7 +286,6 @@ internal class RoomDownloadTaskRepository private constructor(
             taskDao.upsertWithCommand(
                 task =
                     resumed.toEntity().copy(
-                        executorVersion = "NEW",
                         attempt = if (action == DownloadAction.RETRY) current.attempt + 1L else current.attempt,
                         desiredIntent = "RUN",
                         desiredIntentRevision = revision,
@@ -309,7 +305,7 @@ internal class RoomDownloadTaskRepository private constructor(
                     ),
             )
             try {
-                workScheduler.replace(recoveredTask.id)
+                workScheduler.wake()
             } catch (error: Throwable) {
                 // The RUN command is durable and startup reconciliation will deliver it later.
                 Log.e(LOG_TAG, "Unable to wake host for durable RUN taskId=${task.id}", error)
@@ -323,7 +319,6 @@ internal class RoomDownloadTaskRepository private constructor(
                 status = DownloadStatus.CONVERTING,
                 outputTreeUri = settingsRepository.preferences.first().outputTreeUri,
                 outputUri = null,
-                requestedAction = null,
                 message = context.getString(R.string.backend_conversion_preparing),
                 updatedAt = System.currentTimeMillis(),
             )
@@ -377,7 +372,7 @@ internal class RoomDownloadTaskRepository private constructor(
                         commandId = UUID.randomUUID().toString(),
                     ),
                 ) { "Download state changed before cancellation could be requested" }
-                workScheduler.replace(task.id)
+                workScheduler.wake()
             }
         }
 
@@ -524,10 +519,8 @@ internal fun FormalTaskRecordEntity.toModel(): DownloadTask =
         outputUri = outputUri,
         exportFormat = exportFormat.toExportFormat(),
         pendingControl =
-            if (desiredIntentRevision > appliedIntentRevision) {
-                desiredIntent.toPendingControl()
-            } else {
-                requestedAction?.toDownloadAction()
+            desiredIntent.toPendingControl().takeIf {
+                desiredIntentRevision > appliedIntentRevision
             },
         isResumable = isResumable,
         queuePosition = queuePosition,
@@ -556,7 +549,6 @@ internal fun DownloadTask.toEntity(): FormalTaskRecordEntity =
         outputUri = outputUri,
         exportFormat = exportFormat.name,
         message = message,
-        requestedAction = null,
         isResumable = isResumable,
         queuePosition = queuePosition,
         createdAt = createdAt,
@@ -577,10 +569,6 @@ private fun String.toDownloadCredentialMode(): DownloadCredentialMode =
     enumValues<DownloadCredentialMode>()
         .firstOrNull { it.name == this }
         ?: DownloadCredentialMode.LEGACY_UNKNOWN
-
-private fun String.toDownloadAction(): DownloadAction? =
-    enumValues<DownloadAction>()
-        .firstOrNull { it.name == this }
 
 private fun String.toPendingControl(): DownloadAction? =
     when (this) {

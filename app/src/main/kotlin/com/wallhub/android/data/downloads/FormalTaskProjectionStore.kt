@@ -1,12 +1,8 @@
 package com.wallhub.android.data.downloads
 
-import android.content.Context
-import com.wallhub.android.R
 import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.database.FormalTaskRecordEntity
-import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadStatus
-import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,7 +16,6 @@ import javax.inject.Singleton
 internal class FormalTaskProjectionStore
     @Inject
     constructor(
-        @ApplicationContext private val context: Context,
         private val taskDao: FormalTaskRecordDao,
     ) {
         suspend fun persist(
@@ -41,25 +36,7 @@ internal class FormalTaskProjectionStore
             message: String? = previous.message,
         ): FormalTaskRecordEntity {
             val persisted = taskDao.find(previous.taskId)
-            val effectiveAction =
-                if (previous.executorVersion == "NEW") {
-                    null
-                } else {
-                    persisted?.requestedAction ?: previous.requestedAction
-                }
-            val effectiveStatus =
-                when (effectiveAction) {
-                    DownloadAction.PAUSE.name -> DownloadStatus.PAUSED
-                    DownloadAction.CANCEL.name -> DownloadStatus.CANCELLED
-                    else -> status
-                }
-            val effectiveMessage =
-                when (effectiveAction) {
-                    DownloadAction.PAUSE.name -> context.getString(R.string.backend_download_pausing)
-                    DownloadAction.CANCEL.name -> context.getString(R.string.backend_download_cancelling)
-                    else -> message
-                }
-            if (persisted != null && !mayPublishDownloadProgress(persisted.status, effectiveStatus)) {
+            if (persisted != null && !mayPublishDownloadProgress(persisted.status, status)) {
                 return persisted
             }
             val updated =
@@ -72,13 +49,12 @@ internal class FormalTaskProjectionStore
                     stagingDirectory = stagingDirectory,
                     accountName = accountName,
                     credentialMode = credentialMode,
-                    status = effectiveStatus.name,
+                    status = status.name,
                     downloadedBytes = downloadedBytes,
                     totalBytes = totalBytes,
                     bytesPerSecond = bytesPerSecond,
                     outputLabel = outputLabel,
-                    message = effectiveMessage,
-                    requestedAction = effectiveAction,
+                    message = message,
                     queuePosition = persisted?.queuePosition ?: previous.queuePosition,
                     updatedAt = System.currentTimeMillis(),
                 )

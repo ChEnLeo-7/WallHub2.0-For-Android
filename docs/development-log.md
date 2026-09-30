@@ -1540,7 +1540,8 @@ tags, WorkerParameters, Worker ID, or WorkManager lifecycle API. `FormalWorkshop
 LEGACY adapter that resolves a task ID and enters the same host/runner seam. NEW commands are read by the one unique
 `DownloadHostWakeWorker`, reconciled concurrently through the singleton host, and run directly by the runner while
 the one wake WorkRequest holds the OS execution grant. The wake worker drains another pending-command wave after
-each cohort, so `ExistingWorkPolicy.KEEP` cannot strand a task submitted while the unique wake is already running.
+each cohort. Quality convergence later changed wake submission to `APPEND_OR_REPLACE`, closing the final empty-read /
+late-command race by guaranteeing a successor reconcile window.
 
 Device evidence on the OnePlus 5T for task `2a35de1f-5f0d-4e52-a998-ff066661d06d`: WorkManager started only
 `DownloadHostWakeWorker`; the host logged `epoch=2 commands=[1]`, the runner executed, and the host wrote
@@ -1549,3 +1550,18 @@ Release `a10f6fa` built successfully and the complete JVM unit suite passed at t
 7→8 instrumentation migration also passed one test before this cut. The local Steam credential was intentionally
 absent after instrumentation reset, so authenticated transfer/Pause/Resume/Cancel remains a separate device check;
 no credential was requested or copied into the test environment.
+
+## 2026-10-01 (37) - Quality convergence removes dual download authority in source
+
+The source-only convergence phase made Durable Command/Desired Intent the only download-control authority, moved
+Conversion Cancel to the same revision model, and derived UI Pending Control from unapplied revisions. Download and
+playback now share one application `SteamContentSdkSessionBroker`; Workshop delivery routing has one Direct/Depot
+classifier; Staging, preset dependencies, progress projection, task projection, and attempt settlement are deep
+modules behind the runner. WorkManager exposes only one global `wake()` interface. The upgrade-drain per-task Worker
+remains loadable solely for WorkSpecs persisted by older installations and cannot create new per-task download work.
+
+Room v9 source migration absorbs v8 `requestedAction` into Desired Intent, creates Durable Commands for old active
+downloads, preserves Conversion control without waking the download runner, rebuilds the task table, and deletes
+`requestedAction` plus `executorVersion`. The migration test source asserts the data conversion directly. The exported
+`FormalTaskDatabase/9.json` and Room identity validation are intentionally pending the authorized Windows Gradle/Room
+schema run; this entry is source evidence only and does not claim build or device verification.
