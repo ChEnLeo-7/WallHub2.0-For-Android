@@ -22,7 +22,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.io.File
 
 internal const val WORKSHOP_STAGING_DIRECTORY_NAME = "wallhub-workshop"
@@ -145,6 +144,7 @@ internal class FormalDownloadRunner
         private val stagingManager: DownloadStagingManager,
         private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
         private val steamWorkshopContentClient: SteamWorkshopContentClient,
+        private val presetDependencies: WorkshopPresetDependencyDownloader,
     ) {
         suspend fun run(taskId: String): DownloadHostRunResult =
             withContext(Dispatchers.IO) {
@@ -421,7 +421,7 @@ internal class FormalDownloadRunner
                                 )
                             }
                         val dependencyDownload =
-                            downloadPresetDependencies(
+                            presetDependencies.download(
                                 sourceDirectory = resolvedDirectory,
                                 rootWorkshopId = task.workshopId,
                                 credential = credential.takeIf { task.credentialMode == DownloadCredentialMode.ACCOUNT.name },
@@ -571,68 +571,6 @@ internal class FormalDownloadRunner
                     DownloadHostRunResult.SUCCESS
                 }
             }
-
-        private suspend fun downloadPresetDependencies(
-            sourceDirectory: File,
-            rootWorkshopId: Long,
-            credential: com.wallhub.android.core.model.SteamContentCredential?,
-            options: SteamContentDownloadOptions,
-            proxyUrl: String,
-            control: suspend () -> SteamDownloadControl,
-            onProgress: suspend (completedBytes: Long, totalBytes: Long, dependencyTitle: String) -> Unit,
-        ): DependencyDownloadResult {
-            var currentDirectory = sourceDirectory
-            var downloadedBytes = 0L
-            var totalBytes = 0L
-            val visited = linkedSetOf(rootWorkshopId)
-            repeat(MAX_PRESET_DEPENDENCY_DEPTH) {
-                val dependencyId = readPresetDependencyId(currentDirectory) ?: return DependencyDownloadResult(downloadedBytes, totalBytes)
-                check(visited.add(dependencyId)) { "Workshop preset dependency cycle detected: $dependencyId" }
-                val target = steamWorkshopContentClient.fetchContentTarget(dependencyId, proxyUrl)
-                check(target.contentTypeHint.equals("scene", ignoreCase = true)) {
-                    "Workshop preset dependency $dependencyId is not a scene wallpaper"
-                }
-                val dependencyDirectory = resolvePresetDependencyDirectory(currentDirectory, dependencyId)
-                val completedBefore = downloadedBytes
-                val totalBefore = totalBytes
-                val result =
-                    steamWorkshopContentClient.download(
-                        target = target,
-                        destinationDirectory = dependencyDirectory,
-                        credential = credential,
-                        options = options,
-                        control = control,
-                    ) { progress ->
-                        if (progress.phase == SteamDownloadPhase.DOWNLOADING) {
-                            onProgress(
-                                completedBefore + progress.completedBytes,
-                                totalBefore + progress.totalBytes,
-                                target.title,
-                            )
-                        }
-                    }
-                downloadedBytes += result.downloadedBytes
-                totalBytes += result.totalBytes
-                currentDirectory = dependencyDirectory
-            }
-            check(readPresetDependencyId(currentDirectory) == null) {
-                "Workshop preset dependency depth exceeds $MAX_PRESET_DEPENDENCY_DEPTH"
-            }
-            return DependencyDownloadResult(downloadedBytes, totalBytes)
-        }
-
-        private fun readPresetDependencyId(directory: File): Long? {
-            val projectFile = File(directory, "project.json")
-            if (!projectFile.isFile) return null
-            val project = JSONObject(readProjectJson(projectFile))
-            if (!project.has("preset")) return null
-            return project.opt("dependency")
-                ?.toString()
-                ?.trim()
-                ?.toLongOrNull()
-                ?.takeIf { it > 0L }
-                ?: error("Workshop preset has no valid dependency ID")
-        }
 
         private suspend fun awaitTaskControl(controlProbe: DurableDownloadControlInbox) {
             while (true) {
@@ -795,7 +733,6 @@ internal class FormalDownloadRunner
         private companion object {
             const val PROGRESS_PERSIST_INTERVAL_MS = 750L
             private const val PAUSE_POLL_INTERVAL_MS = 250L
-            private const val MAX_PRESET_DEPENDENCY_DEPTH = 4
         }
     }
 
@@ -874,11 +811,6 @@ internal fun durableDownloadedBytes(
     checkpointBytes: Long,
     reportedBytes: Long,
 ): Long = maxOf(checkpointBytes.coerceAtLeast(0L), reportedBytes.coerceAtLeast(0L))
-
-private data class DependencyDownloadResult(
-    val downloadedBytes: Long,
-    val totalBytes: Long,
-)
 
 internal fun resolvePresetDependencyDirectory(
     currentDirectory: File,
