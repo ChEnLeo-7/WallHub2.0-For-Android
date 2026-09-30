@@ -16,7 +16,7 @@ import kotlinx.coroutines.withContext
  * read past the end answers zero - the same end-of-file answer the contract's other implementations give.
  */
 internal class SteamContentSdkVideoStreamSession(
-    private val session: SteamContentSdkSession,
+    private val sessionLease: SteamContentSdkSessionBroker.Lease,
     private val stream: SteamContentSdkRangeStream,
     override val title: String,
     override val fileName: String,
@@ -47,7 +47,7 @@ internal class SteamContentSdkVideoStreamSession(
         try {
             stream.close()
         } finally {
-            session.close()
+            sessionLease.close()
         }
     }
 }

@@ -7,7 +7,6 @@ import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamSession
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
-import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -28,7 +27,7 @@ internal class SteamWorkshopVideoStreamRepository
         private val settingsRepository: SettingsRepository,
         private val steamHttpClientFactory: SteamHttpClientFactory,
         private val playbackCoordinator: PlaybackDownloadCoordinator,
-        private val sdkSessionOpener: Lazy<SteamContentSdkSessionOpener>,
+        private val sdkSessionBroker: SteamContentSdkSessionBroker,
     ) : WorkshopVideoStreamRepository {
         private val cacheRootDirectory: File
             get() = File(context.cacheDir, STREAM_CACHE_DIRECTORY)
@@ -119,7 +118,8 @@ internal class SteamWorkshopVideoStreamRepository
             check(credential != null && credential.refreshToken.isNotBlank()) {
                 "The Steam Content SDK range path needs the stored Steam refresh token; none was read"
             }
-            val session = sdkSessionOpener.get().open(credential)
+            val sessionLease = sdkSessionBroker.acquire(credential)
+            val session = sessionLease.session
             try {
                 val resolved = session.resolveWorkshop(target.publishedFileId)
                 check(resolved.resolved) {
@@ -156,7 +156,7 @@ internal class SteamWorkshopVideoStreamRepository
                     )
                 return CoordinatedVideoStreamSession(
                     SteamContentSdkVideoStreamSession(
-                        session = session,
+                        sessionLease = sessionLease,
                         stream = stream,
                         title = target.title,
                         fileName = videoFile.path,
@@ -165,7 +165,7 @@ internal class SteamWorkshopVideoStreamRepository
                     playbackCoordinator.registerPlayback(),
                 )
             } catch (error: Throwable) {
-                runCatching { session.close() }
+                runCatching { sessionLease.close() }
                 throw error
             }
         }

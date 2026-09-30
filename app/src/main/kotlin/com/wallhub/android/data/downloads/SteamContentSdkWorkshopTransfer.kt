@@ -14,8 +14,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /** One Workshop item the SDK resolved to the content identity a download accepts. */
@@ -159,53 +157,8 @@ internal fun interface SteamContentSdkSessionOpener {
 internal class SteamContentSdkWorkshopTransfer
     @Inject
     constructor(
-        private val sessionOpener: SteamContentSdkSessionOpener,
+        private val sessionBroker: SteamContentSdkSessionBroker,
     ) : WorkshopContentTransfer {
-        /** One session shared by every download that overlaps in time. */
-        private class SessionLease(
-            val key: String,
-            val session: SteamContentSdkSession,
-        ) {
-            /** Downloads currently holding it; the last one out closes the session. */
-            var users = 0
-        }
-
-        private val sessionMutex = Mutex()
-        private val sessionLeases = mutableMapOf<String, SessionLease>()
-
-        /**
-         * Borrows, or opens, the session for one account and counts one more holder of it.
-         *
-         * The lease is what decouples the session's lifetime from a single download: the first download to
-         * finish must not close a session its peers are still reading, and the last one out must close a
-         * session this path opened rather than leaking it. A session the session domain owns ignores `close`,
-         * so borrowing costs nothing here.
-         */
-        private suspend fun acquireSession(credential: SteamContentCredential): SessionLease =
-            sessionMutex.withLock {
-                val key = credential.accountName.orEmpty().lowercase()
-                val existing = sessionLeases[key]
-                if (existing != null) {
-                    existing.users += 1
-                    existing
-                } else {
-                    val opened = sessionOpener.open(credential)
-                    SessionLease(key, opened).also { lease ->
-                        lease.users = 1
-                        sessionLeases[key] = lease
-                    }
-                }
-            }
-
-        /** Releases one holder, closing the session when it was the last one. */
-        private suspend fun releaseSession(lease: SessionLease) {
-            sessionMutex.withLock {
-                lease.users -= 1
-                if (lease.users > 0) return@withLock
-                sessionLeases.remove(lease.key)
-                runCatching { lease.session.close() }
-            }
-        }
 
         override suspend fun download(
             target: WorkshopContentTarget,
@@ -226,7 +179,7 @@ internal class SteamContentSdkWorkshopTransfer
                     "The Steam Content SDK download path needs the stored Steam refresh token; none was read"
                 }
                 onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.CONNECTING))
-                val lease = acquireSession(effectiveCredential)
+                val lease = sessionBroker.acquire(effectiveCredential)
                 try {
                     val session = lease.session
                     onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
@@ -272,7 +225,7 @@ internal class SteamContentSdkWorkshopTransfer
                 } finally {
                     // The lease, not this download, owns the session: closing it here would take it away from
                     // the downloads that are still running beside this one.
-                    releaseSession(lease)
+                    lease.close()
                 }
             }
 

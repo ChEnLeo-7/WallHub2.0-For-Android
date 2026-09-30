@@ -442,13 +442,16 @@ class SteamContentSdkWorkshopTransferTest {
         private var opener: suspend (SteamContentCredential) -> SteamContentSdkSession = { session }
         private val transfer =
             SteamContentSdkWorkshopTransfer(
-                sessionOpener =
-                    object : SteamContentSdkSessionOpener {
-                        override suspend fun open(credential: SteamContentCredential): SteamContentSdkSession {
-                            openerCalls += 1
-                            return opener(credential)
-                        }
-                    },
+                sessionBroker =
+                    SteamContentSdkSessionBroker(
+                        opener =
+                            object : SteamContentSdkSessionOpener {
+                                override suspend fun open(credential: SteamContentCredential): SteamContentSdkSession {
+                                    openerCalls += 1
+                                    return opener(credential)
+                                }
+                            },
+                    ),
             )
         val target =
             WorkshopContentTarget(
