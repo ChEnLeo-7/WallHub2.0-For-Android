@@ -176,7 +176,7 @@ android {
     }
     sourceSets.named("androidTest") {
         kotlin.directories += "src/androidTest/kotlin"
-        assets.directories += file("$projectDir/schemas")
+        assets.directories += "$projectDir/schemas"
     }
 }
 
