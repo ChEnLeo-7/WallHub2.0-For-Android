@@ -18,15 +18,6 @@ internal class DownloadCommandStore
             now: Long = System.currentTimeMillis(),
         ): Long = dao.acquireEngineEpoch(ownerId, now).epoch
 
-        suspend fun claimPending(
-            epoch: Long,
-            limit: Int = DEFAULT_BATCH_SIZE,
-            now: Long = System.currentTimeMillis(),
-        ): List<DownloadCommandEntity> =
-            dao.pending(limit.coerceIn(1, MAX_BATCH_SIZE)).filter { command ->
-                dao.claim(command.commandId, epoch, now) == 1
-            }
-
         suspend fun claimTask(
             taskId: String,
             epoch: Long,

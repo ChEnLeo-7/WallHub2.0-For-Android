@@ -80,11 +80,12 @@ internal suspend fun resolveDownloadTargetAndCredential(
             }
         }
     val target = targetDeferred.await()
-    if (target.fileUrl.isNotBlank()) {
-        credentialDeferred.cancel()
-        target to null
-    } else {
-        target to credentialDeferred.await().getOrThrow()
+    when (workshopDelivery(target)) {
+        is WorkshopDelivery.DirectFile -> {
+            credentialDeferred.cancel()
+            target to null
+        }
+        is WorkshopDelivery.DepotContent -> target to credentialDeferred.await().getOrThrow()
     }
 }
 
@@ -171,6 +172,10 @@ internal class FormalDownloadRunner
                 if (task.status in setOf(DownloadStatus.COMPLETED.name, DownloadStatus.CANCELLED.name)) {
                     return@withContext DownloadHostRunResult.SUCCESS
                 }
+                if (task.status in setOf(DownloadStatus.CONVERTING.name, DownloadStatus.EXPORTING.name)) {
+                    conversionScheduler.enqueue(taskId)
+                    return@withContext DownloadHostRunResult.SUCCESS
+                }
                 var stagingDirectory: File? = null
                 try {
                     // No setForeground() here: this ROM treats the WorkManager FGS as
@@ -188,6 +193,9 @@ internal class FormalDownloadRunner
                         taskId = taskId,
                         priority = task.queuePosition,
                         limit = downloadPreferences.maxConcurrentDownloads,
+                        whileWaiting = {
+                            controlInbox.current() == SteamDownloadControl.CONTINUE
+                        },
                     ) {
                         DownloadTimingTelemetry.log(
                             event = DownloadTimingTelemetry.RESOLVING_STARTED,
@@ -213,7 +221,7 @@ internal class FormalDownloadRunner
                                 },
                                 resolveCredential = credentialProvider::resolveContentCredential,
                             )
-                        val directDownload = target.fileUrl.isNotBlank()
+                        val directDownload = workshopDelivery(target) is WorkshopDelivery.DirectFile
                         if (!directDownload && task.credentialMode == DownloadCredentialMode.LEGACY_UNKNOWN.name) {
                             projections.persist(
                                 task,
@@ -402,6 +410,12 @@ internal class FormalDownloadRunner
                         task = requireNotNull(taskDao.find(taskId))
                         conversionScheduler.enqueue(taskId)
                         DownloadHostRunResult.SUCCESS
+                    }
+                } catch (_: DownloadAdmissionWithdrawnException) {
+                    when (controlInbox.current()) {
+                        SteamDownloadControl.PAUSE -> settlement.pause(task)
+                        SteamDownloadControl.CANCEL -> settlement.cancel(taskId, stagingDirectory)
+                        SteamDownloadControl.CONTINUE -> DownloadHostRunResult.RETRY
                     }
                 } catch (_: SteamDownloadPausedException) {
                     settlement.pause(task)

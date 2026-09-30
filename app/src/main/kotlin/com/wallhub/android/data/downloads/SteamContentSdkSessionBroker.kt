@@ -6,7 +6,12 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 
 /**
  * The single application-level owner of shared SDK content-session leases.
@@ -44,69 +49,102 @@ internal class SteamContentSdkSessionBroker
             }
         }
 
+        private class Opening(
+            val result: Deferred<SteamContentSdkSession>,
+            var reservations: Int,
+        )
+
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         private val lock = Any()
         private val entries = mutableMapOf<String, Entry>()
-        private val openings = mutableMapOf<String, CompletableDeferred<Unit>>()
+        private val openings = mutableMapOf<String, Opening>()
 
         suspend fun acquire(credential: SteamContentCredential): Lease {
             val key = credential.accountName.trim().lowercase(Locale.ROOT)
             require(key.isNotEmpty()) { "Steam account scope must not be empty" }
-            while (true) {
-                var existing: Entry? = null
-                var waiting: CompletableDeferred<Unit>? = null
-                var producer: CompletableDeferred<Unit>? = null
+            synchronized(lock) {
+                entries[key]?.let { entry ->
+                    entry.users += 1
+                    return lease(entry)
+                }
+            }
+
+            val opening =
                 synchronized(lock) {
-                    existing = entries[key]
-                    if (existing != null) {
-                        existing!!.users += 1
-                    } else {
-                        waiting = openings[key]
-                        if (waiting == null) {
-                            producer = CompletableDeferred()
-                            openings[key] = producer!!
+                    openings.getOrPut(key) {
+                        startOpening(key, credential)
+                    }.also { it.reservations += 1 }
+                }
+            val opened =
+                try {
+                    opening.result.await()
+                } catch (error: Throwable) {
+                    abandonReservation(key, opening)
+                    throw error
+                }
+            val entry =
+                synchronized(lock) {
+                    opening.reservations -= 1
+                    check(opening.reservations >= 0) { "SDK session opening reservation underflow" }
+                    entries[key]?.also { existing ->
+                        existing.users += 1
+                    } ?: Entry(key, opened, users = 1).also { created ->
+                        entries[key] = created
+                    }.also {
+                        if (opening.reservations == 0) openings.remove(key, opening)
+                    }
+                }
+            return lease(entry)
+        }
+
+        private fun startOpening(
+            key: String,
+            credential: SteamContentCredential,
+        ): Opening =
+            Opening(scope.async { opener.open(credential) }, reservations = 0).also { opening ->
+                scope.launch {
+                    val opened = runCatching { opening.result.await() }.getOrNull()
+                    synchronized(lock) {
+                        if (opening.reservations == 0 && entries[key] == null) {
+                            openings.remove(key, opening)
+                            runCatching { opened?.close() }
                         }
                     }
                 }
-                existing?.let { return lease(it) }
-                waiting?.let {
-                    it.await()
-                    continue
-                }
+            }
 
-                val signal = requireNotNull(producer)
-                try {
-                    val opened = opener.open(credential)
-                    val entry = Entry(key, opened, users = 1)
-                    synchronized(lock) {
-                        openings.remove(key, signal)
-                        entries[key] = entry
-                    }
-                    signal.complete(Unit)
-                    return lease(entry)
-                } catch (error: Throwable) {
-                    synchronized(lock) { openings.remove(key, signal) }
-                    signal.completeExceptionally(error)
-                    throw error
-                }
+        private fun abandonReservation(
+            key: String,
+            opening: Opening,
+        ) {
+            synchronized(lock) {
+                opening.reservations -= 1
+                check(opening.reservations >= 0) { "SDK session opening reservation underflow" }
+                if (opening.reservations == 0 && opening.result.isCompleted) openings.remove(key, opening)
+                closeIdleEntry(key)
             }
         }
 
         private fun lease(entry: Entry): Lease = Lease.create(entry.session) { release(entry) }
 
         private fun release(entry: Entry) {
-            val close =
-                synchronized(lock) {
-                    val current = entries[entry.key]
-                    if (current !== entry) return
-                    check(entry.users > 0) { "SDK session lease released too many times" }
-                    entry.users -= 1
-                    if (entry.users == 0) {
-                        entries.remove(entry.key)
-                        true
-                    } else {
-                        false
-                    }
-                }
-            if (close) runCatching { entry.session.close() }
+            synchronized(lock) {
+                val current = entries[entry.key]
+                if (current !== entry) return
+                check(entry.users > 0) { "SDK session lease released too many times" }
+                entry.users -= 1
+                closeIdleEntry(entry.key)
+            }
+        }
+
+        private fun closeIdleEntry(key: String) {
+            val entry = entries[key] ?: return
+            val reserved = openings[key]?.reservations ?: 0
+            if (entry.users != 0 || reserved != 0) return
+            // Steam refuses overlapping account sessions. Keep the account lock until close completes,
+            // then remove the entry so a subsequent acquire cannot open while this session is still live.
+            runCatching { entry.session.close() }
+            entries.remove(key, entry)
+            openings.remove(key)
         }
     }

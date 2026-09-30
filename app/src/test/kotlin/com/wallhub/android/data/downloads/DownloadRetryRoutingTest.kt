@@ -2,6 +2,7 @@ package com.wallhub.android.data.downloads
 
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
+import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.core.model.WorkshopType
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicBoolean
@@ -65,6 +66,31 @@ class DownloadRetryRoutingTest {
 
         assertEquals(target, result.first)
         assertEquals(null, result.second)
+    }
+
+    @Test
+    fun `unsupported file url remains depot delivery and keeps its credential`() = runBlocking {
+        val target =
+            WorkshopContentTarget(
+                publishedFileId = 42L,
+                title = "Scene",
+                appId = 431960,
+                contentManifestId = 99L,
+                expectedSize = 10L,
+                contentTypeHint = "scene",
+                fileUrl = "https://cdn.example/project.pkg",
+            )
+        val credential = SteamContentCredential("account", "token")
+
+        val result =
+            resolveDownloadTargetAndCredential(
+                fetchTarget = { target },
+                resolveCredential = { credential },
+            )
+
+        assertEquals(target, result.first)
+        assertEquals(credential, result.second)
+        assertTrue(workshopDelivery(target) is WorkshopDelivery.DepotContent)
     }
 
     @Test

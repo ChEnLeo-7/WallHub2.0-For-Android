@@ -4,53 +4,47 @@ import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Process-wide owner for one live execution of a persisted download task.
  *
- * WorkManager, UI and future OS adapters are wake-up sources, not execution owners. Concurrent wake-ups for the
- * same durable task join one coordinator-owned run; a finished run is removed so reconciliation may launch it
- * again after process restart, retry or another durable command.
+ * WorkManager owns the execution window. Concurrent wake-ups for the same durable task join the one run created by
+ * the winning worker; cancelling a joiner cannot cancel that run, while stopping the owning worker does cancel its
+ * transfer so the runner can project an interruption and return the command to reconciliation.
  */
 internal interface DownloadHostCoordinator {
     suspend fun reconcile(
         taskId: String,
         launch: suspend () -> DownloadHostRunResult,
     ): DownloadHostRunResult
-
-    fun isActive(taskId: String): Boolean
 }
 
 @Singleton
 internal class SingleProcessDownloadHostCoordinator internal constructor(
-    private val scope: CoroutineScope,
-    private val commandStore: DownloadCommandStore? = null,
+    private val commandStore: DownloadCommandStore?,
+    @Suppress("UNUSED_PARAMETER") testOnly: Boolean,
 ) : DownloadHostCoordinator {
     @Inject
-    constructor(commandStore: DownloadCommandStore) : this(
-        CoroutineScope(SupervisorJob() + Dispatchers.IO),
-        commandStore,
-    )
+    constructor(commandStore: DownloadCommandStore) : this(commandStore, false)
 
-    private val epoch = scope.async(start = CoroutineStart.LAZY) {
-        commandStore?.acquireEngineEpoch() ?: 0L
-    }
+    private var epoch: Long? = null
+    private val epochMutex = Mutex()
     private val active = ConcurrentHashMap<String, Deferred<DownloadHostRunResult>>()
 
     override suspend fun reconcile(
         taskId: String,
         launch: suspend () -> DownloadHostRunResult,
-    ): DownloadHostRunResult {
+    ): DownloadHostRunResult = coroutineScope {
         require(taskId.isNotBlank()) { "Download task ID must not be blank" }
         val candidate =
-            scope.async(start = CoroutineStart.LAZY) {
-                val currentEpoch = epoch.await()
+            async(start = CoroutineStart.LAZY) {
+                val currentEpoch = currentEpoch()
                 val before = commandStore?.claimTask(taskId, currentEpoch).orEmpty()
                 Log.i(HOST_LOG_TAG, "host reconcile taskId=$taskId epoch=$currentEpoch commands=${before.map { it.revision }}")
                 val result = launch()
@@ -84,10 +78,13 @@ internal class SingleProcessDownloadHostCoordinator internal constructor(
         } else {
             candidate.cancel()
         }
-        return owned.await()
+        owned.await()
     }
 
-    override fun isActive(taskId: String): Boolean = active.containsKey(taskId)
+    private suspend fun currentEpoch(): Long =
+        epoch ?: epochMutex.withLock {
+            epoch ?: (commandStore?.acquireEngineEpoch() ?: 0L).also { acquired -> epoch = acquired }
+        }
 
     private companion object {
         const val HOST_LOG_TAG = "WallHubDownloadHost"

@@ -3,6 +3,8 @@ package com.wallhub.android.data.downloads
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -25,6 +27,43 @@ class MemoryHeavyWorkGovernorTest {
         assertEquals(1, safeChunkConcurrency(configuredConcurrency = 1, maxHeapBytes = 512L * 1024L * 1024L))
         assertEquals(1, safeChunkConcurrency(configuredConcurrency = 0, maxHeapBytes = 512L * 1024L * 1024L))
         assertEquals(48, safeChunkConcurrency(configuredConcurrency = 96, maxHeapBytes = 512L * 1024L * 1024L))
+    }
+
+    @Test
+    fun queuedControlWithdrawsBeforeTakingADownloadSlot() = runTest {
+        val governor = DownloadConcurrencyGovernor()
+        val firstRelease = CompletableDeferred<Unit>()
+        val withdrawnBlockEntered = CompletableDeferred<Unit>()
+        val successorEntered = CompletableDeferred<Unit>()
+        val first =
+            async(start = CoroutineStart.UNDISPATCHED) {
+                governor.withSlot("first", 0, 1) { firstRelease.await() }
+            }
+        val withdrawn =
+            async(start = CoroutineStart.UNDISPATCHED) {
+                runCatching {
+                    governor.withSlot(
+                        taskId = "withdrawn",
+                        priority = 1,
+                        limit = 1,
+                        whileWaiting = { false },
+                    ) { withdrawnBlockEntered.complete(Unit) }
+                }.exceptionOrNull()
+            }
+        val successor =
+            async(start = CoroutineStart.UNDISPATCHED) {
+                governor.withSlot("successor", 2, 1) { successorEntered.complete(Unit) }
+            }
+
+        advanceTimeBy(251)
+        runCurrent()
+        assertTrue(withdrawn.await() is DownloadAdmissionWithdrawnException)
+        assertTrue(!withdrawnBlockEntered.isCompleted)
+        firstRelease.complete(Unit)
+        successorEntered.await()
+
+        first.await()
+        successor.await()
     }
 
     @Test

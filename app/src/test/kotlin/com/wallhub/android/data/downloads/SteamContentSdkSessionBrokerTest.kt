@@ -3,6 +3,9 @@ package com.wallhub.android.data.downloads
 import com.wallhub.android.core.model.SteamContentCredential
 import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -26,6 +29,34 @@ class SteamContentSdkSessionBrokerTest {
         second.close()
         assertEquals(1, closes.get())
         second.close()
+        assertEquals(1, closes.get())
+    }
+
+    @Test
+    fun `cancelling the first waiter does not cancel the shared session open`() = runTest {
+        val opens = AtomicInteger()
+        val closes = AtomicInteger()
+        val openStarted = CompletableDeferred<Unit>()
+        val releaseOpen = CompletableDeferred<Unit>()
+        val session = fakeSession(closes)
+        val broker =
+            SteamContentSdkSessionBroker {
+                opens.incrementAndGet()
+                openStarted.complete(Unit)
+                releaseOpen.await()
+                session
+            }
+
+        val first = async { broker.acquire(SteamContentCredential("account", "token")) }
+        openStarted.await()
+        val second = async { broker.acquire(SteamContentCredential("ACCOUNT", "token")) }
+        first.cancelAndJoin()
+        releaseOpen.complete(Unit)
+
+        val lease = second.await()
+        assertSame(session, lease.session)
+        assertEquals(1, opens.get())
+        lease.close()
         assertEquals(1, closes.get())
     }
 

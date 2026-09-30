@@ -6,20 +6,19 @@ import com.wallhub.android.core.database.DownloadEngineStateEntity
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
 class DownloadHostCoordinatorTest {
     @Test
     fun `concurrent wakeups for one task share one owned launch`() = runTest {
-        val coordinator = SingleProcessDownloadHostCoordinator(this)
+        val coordinator = SingleProcessDownloadHostCoordinator(null, true)
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val launches = AtomicInteger()
@@ -43,12 +42,34 @@ class DownloadHostCoordinatorTest {
         release.complete(Unit)
         assertSame(first.await(), second.await())
         assertEquals(1, launches.get())
-        assertFalse(coordinator.isActive("task-1"))
+    }
+
+    @Test
+    fun `cancelling the owning execution window cancels the transfer`() = runTest {
+        val coordinator = SingleProcessDownloadHostCoordinator(null, true)
+        val entered = CompletableDeferred<Unit>()
+        val cancelled = CompletableDeferred<Unit>()
+        val owner =
+            async {
+                coordinator.reconcile("task-1") {
+                    entered.complete(Unit)
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        cancelled.complete(Unit)
+                    }
+                }
+            }
+
+        entered.await()
+        owner.cancelAndJoin()
+
+        cancelled.await()
     }
 
     @Test
     fun `cancelling a joiner cannot evict the owned run`() = runTest {
-        val coordinator = SingleProcessDownloadHostCoordinator(this)
+        val coordinator = SingleProcessDownloadHostCoordinator(null, true)
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val launches = AtomicInteger()
@@ -78,12 +99,10 @@ class DownloadHostCoordinatorTest {
         }
         yield()
         assertEquals(1, launches.get())
-        assertTrue(coordinator.isActive("task-1"))
 
         release.complete(Unit)
         assertSame(DownloadHostRunResult.SUCCESS, owner.await())
         assertSame(DownloadHostRunResult.SUCCESS, third.await())
-        assertFalse(coordinator.isActive("task-1"))
     }
 
     @Test
@@ -91,7 +110,7 @@ class DownloadHostCoordinatorTest {
         val commands = mutableListOf(command("run", 1, "RUN"))
         val acknowledged = mutableListOf<String>()
         val dao = commandDao(commands, acknowledged)
-        val coordinator = SingleProcessDownloadHostCoordinator(this, DownloadCommandStore(dao))
+        val coordinator = SingleProcessDownloadHostCoordinator(DownloadCommandStore(dao), true)
 
         coordinator.reconcile("task-1") {
             commands += command("cancel", 2, "CANCEL")
@@ -104,7 +123,7 @@ class DownloadHostCoordinatorTest {
 
     @Test
     fun `a later wakeup launches again after the owned task finishes`() = runTest {
-        val coordinator = SingleProcessDownloadHostCoordinator(this)
+        val coordinator = SingleProcessDownloadHostCoordinator(null, true)
         val launches = AtomicInteger()
 
         repeat(2) {

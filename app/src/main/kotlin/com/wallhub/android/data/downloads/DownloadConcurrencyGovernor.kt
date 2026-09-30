@@ -5,6 +5,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,10 +21,13 @@ class DownloadConcurrencyGovernor
             taskId: String,
             priority: Long,
             limit: Int,
+            whileWaiting: suspend () -> Boolean = { true },
             block: suspend () -> T,
         ): T {
             val effectiveLimit = safeDownloadLimit(limit, Runtime.getRuntime().maxMemory())
-            acquire(taskId, priority, effectiveLimit)
+            if (!acquire(taskId, priority, effectiveLimit, whileWaiting)) {
+                throw DownloadAdmissionWithdrawnException()
+            }
             return try {
                 block()
             } finally {
@@ -46,7 +50,8 @@ class DownloadConcurrencyGovernor
             taskId: String,
             priority: Long,
             limit: Int,
-        ) {
+            whileWaiting: suspend () -> Boolean,
+        ): Boolean {
             val waiter =
                 mutex.withLock {
                     if (activeDownloads < limit) {
@@ -56,9 +61,18 @@ class DownloadConcurrencyGovernor
                         Waiter(taskId, priority, limit, CompletableDeferred()).also(waiters::addLast)
                     }
                 }
-            if (waiter == null) return
+            if (waiter == null) return true
             try {
-                waiter.signal.await()
+                while (true) {
+                    if (withTimeoutOrNull(CONTROL_POLL_MILLIS) { waiter.signal.await() } != null) return true
+                    if (!whileWaiting()) {
+                        withContext(NonCancellable) {
+                            val removed = mutex.withLock { waiters.remove(waiter) }
+                            if (!removed) release()
+                        }
+                        return false
+                    }
+                }
             } catch (error: Throwable) {
                 withContext(NonCancellable) {
                     val removed = mutex.withLock { waiters.remove(waiter) }
@@ -96,7 +110,13 @@ class DownloadConcurrencyGovernor
         )
 
         private var priorityOverrides: Map<String, Long> = emptyMap()
+
+        private companion object {
+            const val CONTROL_POLL_MILLIS = 250L
+        }
     }
+
+internal class DownloadAdmissionWithdrawnException : RuntimeException()
 
 internal fun safeDownloadLimit(
     configuredLimit: Int,

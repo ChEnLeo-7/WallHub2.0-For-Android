@@ -9,7 +9,6 @@ import com.wallhub.android.core.model.WorkshopVideoStreamSession
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -48,40 +47,25 @@ internal class SteamWorkshopVideoStreamRepository
                     // so the product's own HTTP range reader serves it, exactly as the direct-file download
                     // path does. Every depot-backed item is resolved and served by the SDK range arm, which
                     // reads no Depot Key, CDN token, or URL of ours.
-                    val delivery = workshopDelivery(target)
-                    val directUrl = (delivery as? WorkshopDelivery.DirectFile)?.remoteUrl
-                    if (directUrl != null) {
-                        val remoteSession =
-                            runCatching {
+                    val stream =
+                        when (val delivery = workshopDelivery(target)) {
+                            is WorkshopDelivery.DirectFile ->
                                 SteamRemoteVideoStream.open(
                                     title = target.title,
                                     fileName =
                                         target.rawFileName.ifBlank {
-                                            directUrl.substringAfterLast('/').substringBefore('?')
+                                            delivery.remoteUrl.substringAfterLast('/').substringBefore('?')
                                         },
-                                    remoteUrl = directUrl,
+                                    remoteUrl = delivery.remoteUrl,
                                     expectedSize = target.expectedSize,
                                     clientBuilder =
                                         steamHttpClientFactory.newBuilder().applyDownloadProxy(activeProxyUrl),
                                 )
-                            }.onFailure { error ->
-                                if (error is CancellationException) throw error
-                                Log.w(
-                                    "SteamVideoStream",
-                                    "Direct file_url stream unavailable: ${error.message}",
-                                )
-                            }.getOrNull()
-                        if (remoteSession != null) {
-                            val coordinated = CoordinatedVideoStreamSession(remoteSession, playbackCoordinator.registerPlayback())
-                            openedStream = coordinated
-                            return@withContext coordinated
+                            is WorkshopDelivery.DepotContent -> openSdkVideoStream(target)
                         }
-                        // A direct file the range reader cannot open has no depot behind it either, so it is
-                        // the SDK arm's error to report rather than a silent fall-through.
-                    }
-                    val sdkSession = openSdkVideoStream(target)
-                    openedStream = sdkSession
-                    return@withContext sdkSession
+                    val coordinated = CoordinatedVideoStreamSession(stream, playbackCoordinator.registerPlayback())
+                    openedStream = coordinated
+                    return@withContext coordinated
                 }.also { openedStream = null }
             } finally {
                 openedStream?.close()
