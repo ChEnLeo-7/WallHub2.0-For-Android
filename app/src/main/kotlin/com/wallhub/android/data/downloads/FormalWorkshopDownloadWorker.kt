@@ -166,6 +166,7 @@ class FormalWorkshopDownloadWorker
         private val settingsRepository: SettingsRepository,
         private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
         private val steamWorkshopContentClient: SteamWorkshopContentClient,
+        private val downloadHostCoordinator: DownloadHostCoordinator,
     ) : CoroutineWorker(appContext, params) {
         override suspend fun doWork(): Result =
             withContext(Dispatchers.IO) {
@@ -174,10 +175,11 @@ class FormalWorkshopDownloadWorker
                     Log.w(DOWNLOAD_LOG_TAG, "doWork missing input data; keys=${inputData.keyValueMap.keys}")
                     return@withContext Result.failure()
                 }
+                downloadHostCoordinator.reconcile(taskId) {
                 val found = taskDao.find(taskId)
                 if (found == null) {
                     Log.w(DOWNLOAD_LOG_TAG, "doWork task record missing taskId=$taskId")
-                    return@withContext Result.failure()
+                    return@reconcile Result.failure()
                 }
                 var task: FormalTaskRecordEntity = found
                 Log.i(DOWNLOAD_LOG_TAG, "Started formal Steam download worker taskId=$taskId")
@@ -204,10 +206,10 @@ class FormalWorkshopDownloadWorker
                         message = applicationContext.getString(R.string.backend_download_cancelled_cleaned),
                         clearRequestedAction = true,
                     )
-                    return@withContext Result.success()
+                    return@reconcile Result.success()
                 }
                 if (task.status in setOf(DownloadStatus.COMPLETED.name, DownloadStatus.CANCELLED.name)) {
-                    return@withContext Result.success()
+                    return@reconcile Result.success()
                 }
                 ActiveFormalWorkshopDownloadWorkers.markActive(taskId)
                 var stagingDirectory: File? = null
@@ -594,6 +596,7 @@ class FormalWorkshopDownloadWorker
                     Result.success()
                 } finally {
                     ActiveFormalWorkshopDownloadWorkers.markInactive(taskId)
+                }
                 }
             }
 

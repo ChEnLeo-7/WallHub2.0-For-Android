@@ -156,6 +156,7 @@ internal class WallHubDownloadWorkerFactory
         private val settingsRepository: com.wallhub.android.core.model.SettingsRepository,
         private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
         private val steamWorkshopContentClient: SteamWorkshopContentClient,
+        private val downloadHostCoordinator: DownloadHostCoordinator,
         private val playbackCoordinator: PlaybackDownloadCoordinator,
     ) : WorkerFactory() {
         override fun createWorker(
@@ -174,6 +175,7 @@ internal class WallHubDownloadWorkerFactory
                         settingsRepository = settingsRepository,
                         downloadConcurrencyGovernor = downloadConcurrencyGovernor,
                         steamWorkshopContentClient = steamWorkshopContentClient,
+                        downloadHostCoordinator = downloadHostCoordinator,
                     )
 
                 FormalWorkshopConversionWorker::class.java.name ->
