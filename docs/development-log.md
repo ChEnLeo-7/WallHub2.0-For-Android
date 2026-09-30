@@ -1532,3 +1532,20 @@ worker's `testDebugUnitTest` completed successfully. A real NEW task `8f8e8cef-f
 starting the activity produced a new PID and the same task resumed through `RESOLVING -> DOWNLOADING`, with no fatal
 exception. The compatibility runner is still a per-task WorkRequest behind the singleton host and is the next piece
 to extract; this entry does not claim that deletion gate is closed.
+
+## 2026-09-30 (36) - NEW downloads no longer create per-task WorkRequests
+
+The compatibility transfer body is now an injected application-scoped `FormalDownloadRunner`; it has no input data,
+tags, WorkerParameters, Worker ID, or WorkManager lifecycle API. `FormalWorkshopDownloadWorker` is reduced to the
+LEGACY adapter that resolves a task ID and enters the same host/runner seam. NEW commands are read by the one unique
+`DownloadHostWakeWorker`, reconciled concurrently through the singleton host, and run directly by the runner while
+the one wake WorkRequest holds the OS execution grant. The wake worker drains another pending-command wave after
+each cohort, so `ExistingWorkPolicy.KEEP` cannot strand a task submitted while the unique wake is already running.
+
+Device evidence on the OnePlus 5T for task `2a35de1f-5f0d-4e52-a998-ff066661d06d`: WorkManager started only
+`DownloadHostWakeWorker`; the host logged `epoch=2 commands=[1]`, the runner executed, and the host wrote
+`revision=1 sequence=1`. The only WorkManager completion tag was the singleton wake tag, not a per-task worker tag.
+Release `a10f6fa` built successfully and the complete JVM unit suite passed at the direct-host cut. The device Room
+7→8 instrumentation migration also passed one test before this cut. The local Steam credential was intentionally
+absent after instrumentation reset, so authenticated transfer/Pause/Resume/Cancel remains a separate device check;
+no credential was requested or copied into the test environment.
