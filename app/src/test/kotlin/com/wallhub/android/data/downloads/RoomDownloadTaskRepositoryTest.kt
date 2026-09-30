@@ -4,6 +4,7 @@ import android.content.ContextWrapper
 import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.database.FormalTaskRecordEntity
 import com.wallhub.android.core.model.AppPreferences
+import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
@@ -22,6 +23,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RoomDownloadTaskRepositoryTest {
+    @Test
+    fun `pending UI control is derived from unapplied durable intent`() {
+        val task =
+            queuedRecord(taskId = "pending-cancel").copy(
+                desiredIntent = "CANCEL",
+                desiredIntentRevision = 2,
+                appliedIntentRevision = 1,
+            ).toModel()
+
+        assertEquals(DownloadAction.CANCEL, task.pendingControl)
+        assertTrue(task.availableActions.isEmpty())
+    }
+
     @Test
     fun `enqueue creates persisted task only after scheduler accepts unique work`() = runTest {
         val dao = FakeTaskDao()

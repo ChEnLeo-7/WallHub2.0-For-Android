@@ -78,7 +78,7 @@ data class DownloadTask(
     val outputTreeUri: String? = null,
     val outputUri: String? = null,
     val exportFormat: ExportFormat = ExportFormat.AUTO,
-    val requestedAction: DownloadAction? = null,
+    val pendingControl: DownloadAction? = null,
     val isResumable: Boolean = true,
     val queuePosition: Long = 0L,
     val createdAt: Long = 0L,
@@ -96,7 +96,7 @@ data class DownloadTask(
 
     val availableActions: Set<DownloadAction>
         get() =
-            if (requestedAction != null) {
+            if (pendingControl != null) {
                 emptySet()
             } else {
                 when (status) {

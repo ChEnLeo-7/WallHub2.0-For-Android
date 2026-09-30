@@ -523,7 +523,12 @@ internal fun FormalTaskRecordEntity.toModel(): DownloadTask =
         outputTreeUri = outputTreeUri,
         outputUri = outputUri,
         exportFormat = exportFormat.toExportFormat(),
-        requestedAction = requestedAction?.toDownloadAction(),
+        pendingControl =
+            if (desiredIntentRevision > appliedIntentRevision) {
+                desiredIntent.toPendingControl()
+            } else {
+                requestedAction?.toDownloadAction()
+            },
         isResumable = isResumable,
         queuePosition = queuePosition,
         createdAt = createdAt,
@@ -551,7 +556,7 @@ internal fun DownloadTask.toEntity(): FormalTaskRecordEntity =
         outputUri = outputUri,
         exportFormat = exportFormat.name,
         message = message,
-        requestedAction = requestedAction?.name,
+        requestedAction = null,
         isResumable = isResumable,
         queuePosition = queuePosition,
         createdAt = createdAt,
@@ -576,6 +581,13 @@ private fun String.toDownloadCredentialMode(): DownloadCredentialMode =
 private fun String.toDownloadAction(): DownloadAction? =
     enumValues<DownloadAction>()
         .firstOrNull { it.name == this }
+
+private fun String.toPendingControl(): DownloadAction? =
+    when (this) {
+        DownloadAction.PAUSE.name -> DownloadAction.PAUSE
+        DownloadAction.CANCEL.name -> DownloadAction.CANCEL
+        else -> null
+    }
 
 private fun String.toExportFormat(): ExportFormat =
     enumValues<ExportFormat>()

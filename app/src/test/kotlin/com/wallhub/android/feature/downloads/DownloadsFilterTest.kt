@@ -81,7 +81,7 @@ class DownloadsFilterTest {
     fun pendingControlRequestDisablesAllTaskActions() {
         val task =
             task("pending", DownloadStatus.DOWNLOADING).copy(
-                requestedAction = DownloadAction.PAUSE,
+                pendingControl = DownloadAction.PAUSE,
             )
 
         assertEquals(emptySet<DownloadAction>(), task.availableActions)
