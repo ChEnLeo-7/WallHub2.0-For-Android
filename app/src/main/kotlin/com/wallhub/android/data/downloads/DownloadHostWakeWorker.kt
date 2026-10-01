@@ -4,9 +4,6 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.wallhub.android.core.database.DownloadCommandDao
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 
 /**
  * WorkManager wake-up/reconcile adapter for the durable download host.
@@ -19,19 +16,19 @@ internal class DownloadHostWakeWorker(
     params: WorkerParameters,
     private val commandDao: DownloadCommandDao,
     private val host: SingleProcessDownloadHostCoordinator,
+    private val wakeSignal: DownloadHostWakeSignal,
     private val runner: FormalDownloadRunner,
 ) : CoroutineWorker(appContext, params) {
-    override suspend fun doWork(): Result =
-        coroutineScope {
-            var taskIds = commandDao.pending(MAX_COMMANDS_PER_WAKE).map { it.taskId }.distinct()
-            while (taskIds.isNotEmpty()) {
-                val results =
-                    taskIds.map { taskId -> async { host.reconcile(taskId) { runner.run(taskId) } } }.awaitAll()
-                if (DownloadHostRunResult.RETRY in results) return@coroutineScope Result.retry()
-                taskIds = commandDao.pending(MAX_COMMANDS_PER_WAKE).map { it.taskId }.distinct()
-            }
-            Result.success()
-        }
+    override suspend fun doWork(): Result {
+        val result =
+            DownloadHostReconciler(
+                pendingTaskIds = { commandDao.pending(MAX_COMMANDS_PER_WAKE).map { it.taskId } },
+                host = host,
+                signal = wakeSignal,
+                launchTask = runner::run,
+            ).reconcile()
+        return if (result == DownloadHostRunResult.RETRY) Result.retry() else Result.success()
+    }
 
     private companion object {
         const val MAX_COMMANDS_PER_WAKE = 128

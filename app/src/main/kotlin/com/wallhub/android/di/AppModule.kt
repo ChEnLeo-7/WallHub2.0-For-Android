@@ -8,6 +8,7 @@ import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.database.LocalWallpaperMetadataDao
 import com.wallhub.android.data.downloads.ConversionWorkScheduler
 import com.wallhub.android.data.downloads.DownloadWorkScheduler
+import com.wallhub.android.data.downloads.ProcessDownloadHostWakeSignal
 import com.wallhub.android.data.downloads.WorkManagerConversionWorkScheduler
 import com.wallhub.android.data.downloads.WorkManagerDownloadHostWakeScheduler
 import dagger.Module
@@ -43,9 +44,10 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideDownloadWorkScheduler(
+    internal fun provideDownloadWorkScheduler(
         @ApplicationContext context: Context,
-    ): DownloadWorkScheduler = WorkManagerDownloadHostWakeScheduler(context)
+        wakeSignal: ProcessDownloadHostWakeSignal,
+    ): DownloadWorkScheduler = WorkManagerDownloadHostWakeScheduler(context, wakeSignal)
 
     @Provides
     @Singleton

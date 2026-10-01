@@ -68,6 +68,7 @@ signing.properties
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamContentSdkVideoFileSelectionTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/DownloadResumeCheckpointTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/DownloadLiveTelemetryTest.kt
+!/app/src/test/kotlin/com/wallhub/android/data/downloads/DownloadHostReconcilerTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/
 /app/src/test/kotlin/com/wallhub/android/feature/*
 !/app/src/test/kotlin/com/wallhub/android/feature/local/

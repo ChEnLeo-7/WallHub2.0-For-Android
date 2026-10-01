@@ -139,7 +139,7 @@ data class AppPreferences(
     val homeCardAction: HomeCardAction = HomeCardAction.DOWNLOAD,
     val homePaginationMode: HomePaginationMode = HomePaginationMode.INFINITE_SCROLL,
     val matureContentEnabled: Boolean = false,
-    val maxConcurrentDownloads: Int = 1,
+    val maxConcurrentDownloads: Int = DEFAULT_MAX_CONCURRENT_DOWNLOADS,
     val chunkDownloadConcurrency: Int = DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY,
     val downloadProxyUrl: String = "",
     val downloadProxyEnabled: Boolean = false,
@@ -181,6 +181,17 @@ data class AppPreferences(
             "steamApiKey=<redacted>, steamWorkshopDataSource=$steamWorkshopDataSource, " +
             "onlineChunkPlaybackEnabled=$onlineChunkPlaybackEnabled)"
 }
+
+/** The global number of download tasks allowed to run at once. */
+const val MIN_MAX_CONCURRENT_DOWNLOADS = 1
+const val MAX_MAX_CONCURRENT_DOWNLOADS = 8
+const val DEFAULT_MAX_CONCURRENT_DOWNLOADS = 1
+val MAX_CONCURRENT_DOWNLOAD_OPTIONS =
+    (MIN_MAX_CONCURRENT_DOWNLOADS..MAX_MAX_CONCURRENT_DOWNLOADS).toList()
+
+/** Clamps a stored or requested global download limit to the supported range. */
+fun safeMaxConcurrentDownloads(configured: Int): Int =
+    configured.coerceIn(MIN_MAX_CONCURRENT_DOWNLOADS, MAX_MAX_CONCURRENT_DOWNLOADS)
 
 /**
  * The chunk concurrency a download may ask the SDK for, and the only place that range is defined.

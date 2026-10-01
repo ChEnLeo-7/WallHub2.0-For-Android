@@ -18,6 +18,7 @@ import androidx.compose.ui.res.stringResource
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.AppPreferences
+import com.wallhub.android.core.model.MAX_CONCURRENT_DOWNLOAD_OPTIONS
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
 import org.uwuaosp.compose.settingslib.PreferencePosition
 import org.uwuaosp.compose.settingslib.PreferenceRow
@@ -97,7 +98,7 @@ internal fun DownloadSettingsContent(
     SettingChoiceRow(
         title = stringResource(R.string.settings_concurrent_downloads),
         selectedValue = preferences.maxConcurrentDownloads,
-        values = listOf(1, 2, 3),
+        values = MAX_CONCURRENT_DOWNLOAD_OPTIONS,
         label = { pluralStringResource(R.plurals.settings_download_task_count, it, it) },
         onSelected = { value -> saveDownloadPreferences(maxDownloads = value) },
         position = PreferencePosition.Top,

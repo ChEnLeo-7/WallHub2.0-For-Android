@@ -14,6 +14,7 @@ import com.wallhub.android.core.model.AccentPreference
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY
 import com.wallhub.android.core.model.DEFAULT_HOME_PAGE_SIZE
+import com.wallhub.android.core.model.DEFAULT_MAX_CONCURRENT_DOWNLOADS
 import com.wallhub.android.core.model.DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
@@ -22,9 +23,10 @@ import com.wallhub.android.core.model.SteamAccessMode
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
+import com.wallhub.android.core.model.normalizeSteamAccessDohEndpoints
 import com.wallhub.android.core.model.normalizedHomePageSize
 import com.wallhub.android.core.model.safeChunkDownloadConcurrency
-import com.wallhub.android.core.model.normalizeSteamAccessDohEndpoints
+import com.wallhub.android.core.model.safeMaxConcurrentDownloads
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -130,7 +132,7 @@ class AppPreferencesStore(
         mediaCacheLimitMb: Int,
     ) {
         applicationContext.dataStore.edit { preferences ->
-            preferences[Keys.maxConcurrentDownloads] = maxConcurrentDownloads.coerceIn(1, 3)
+            preferences[Keys.maxConcurrentDownloads] = safeMaxConcurrentDownloads(maxConcurrentDownloads)
             preferences[Keys.chunkDownloadConcurrency] = safeChunkDownloadConcurrency(chunkDownloadConcurrency)
             preferences[Keys.downloadProxyUrl] = proxyUrl.trim()
             if (!isSupportedDownloadProxyUrl(proxyUrl)) preferences[Keys.downloadProxyEnabled] = false
@@ -312,7 +314,10 @@ class AppPreferencesStore(
                     HomePaginationMode.INFINITE_SCROLL,
                 ),
             matureContentEnabled = preferences[Keys.matureContentEnabled] ?: false,
-            maxConcurrentDownloads = (preferences[Keys.maxConcurrentDownloads] ?: 1).coerceIn(1, 4),
+            maxConcurrentDownloads =
+                safeMaxConcurrentDownloads(
+                    preferences[Keys.maxConcurrentDownloads] ?: DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+                ),
             chunkDownloadConcurrency =
                 safeChunkDownloadConcurrency(
                     preferences[Keys.chunkDownloadConcurrency] ?: DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY,

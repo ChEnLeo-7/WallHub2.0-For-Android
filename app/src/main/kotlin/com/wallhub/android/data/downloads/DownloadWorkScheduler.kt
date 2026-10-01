@@ -31,12 +31,16 @@ interface ConversionWorkScheduler {
 }
 
 @Singleton
-class WorkManagerDownloadHostWakeScheduler
+internal class WorkManagerDownloadHostWakeScheduler
     @Inject
     constructor(
         @ApplicationContext private val context: Context,
+        private val wakeSignal: ProcessDownloadHostWakeSignal,
     ) : DownloadWorkScheduler {
         override suspend fun wake() {
+            // Let an already-running execution window discover the newly durable command immediately. The
+            // WorkRequest below remains the authoritative OS wake and process-death recovery mechanism.
+            wakeSignal.signal()
             // Reconciliation itself must run offline so PAUSE/CANCEL can settle and release local writers.
             // RUN commands that still require the network return RETRY and use this request's backoff.
             val wake =
@@ -118,6 +122,7 @@ internal class WallHubDownloadWorkerFactory
         private val formalDownloadRunner: FormalDownloadRunner,
         private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
         private val downloadHostCoordinator: SingleProcessDownloadHostCoordinator,
+        private val downloadHostWakeSignal: ProcessDownloadHostWakeSignal,
         private val playbackCoordinator: PlaybackDownloadCoordinator,
     ) : WorkerFactory() {
         override fun createWorker(
@@ -132,6 +137,7 @@ internal class WallHubDownloadWorkerFactory
                         params = workerParameters,
                         commandDao = commandDao,
                         host = downloadHostCoordinator,
+                        wakeSignal = downloadHostWakeSignal,
                         runner = formalDownloadRunner,
                     )
 
