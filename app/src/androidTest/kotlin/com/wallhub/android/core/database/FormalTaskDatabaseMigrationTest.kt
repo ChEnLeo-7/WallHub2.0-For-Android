@@ -53,8 +53,14 @@ class FormalTaskDatabaseMigrationTest {
         helper.createDatabase(TEST_DATABASE, 8).use { database ->
             insertLegacyTask(database, taskId = "queued", status = "QUEUED", requestedAction = "CANCEL")
             insertLegacyTask(database, taskId = "conversion", status = "CONVERTING", requestedAction = "CANCEL")
-            FormalTaskDatabase.MIGRATION_8_9.migrate(database)
+        }
 
+        helper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            9,
+            true,
+            FormalTaskDatabase.MIGRATION_8_9,
+        ).use { database ->
             database.query("PRAGMA table_info(formal_task_records)").use { cursor ->
                 val columns = mutableSetOf<String>()
                 while (cursor.moveToNext()) columns += cursor.getString(cursor.getColumnIndexOrThrow("name"))
