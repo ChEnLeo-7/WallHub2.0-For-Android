@@ -37,7 +37,7 @@ internal object DownloadTimingTelemetry {
         elapsedRealtimeMs: Long = SystemClock.elapsedRealtime(),
     ) {
         Log.i(
-            DOWNLOAD_LOG_TAG,
+            TIMING_LOG_TAG,
             "timing event=$event taskId=$taskId workshopId=$workshopId " +
                 "elapsedRealtimeMs=$elapsedRealtimeMs",
         )
@@ -52,7 +52,7 @@ internal object DownloadTimingTelemetry {
         elapsedRealtimeMs: Long = SystemClock.elapsedRealtime(),
     ) {
         Log.i(
-            DOWNLOAD_LOG_TAG,
+            TIMING_LOG_TAG,
             "timing event=$event taskId=${context.taskId} workshopId=${context.workshopId} " +
                 "chunkOffset=$chunkOffset compressedBytes=$compressedBytes " +
                 "uncompressedBytes=$uncompressedBytes elapsedRealtimeMs=$elapsedRealtimeMs",
@@ -76,4 +76,4 @@ internal object DownloadTimingTelemetry {
     }
 }
 
-private const val DOWNLOAD_LOG_TAG = "WallHubDownload"
+private const val TIMING_LOG_TAG = "WallHubDownload"

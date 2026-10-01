@@ -99,6 +99,10 @@ internal class RoomDownloadTaskRepository private constructor(
 
         override suspend fun find(taskId: String): DownloadTask? = taskDao.find(taskId)?.toModel()
 
+        private suspend fun upsert(task: DownloadTask) {
+            taskDao.upsertPreservingExecutionIntent(task.toEntity())
+        }
+
         override suspend fun enqueue(request: DownloadRequest): DownloadEnqueueResult = taskMutationMutex.withLock {
             require(request.workshopId > 0L) { "Invalid Workshop item ID" }
             taskDao.findActiveForWorkshop(request.workshopId)?.toModel()?.let { activeTask ->

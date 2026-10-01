@@ -34,7 +34,7 @@ internal const val WORKSHOP_STAGING_DIRECTORY_NAME = "wallhub-workshop"
  * checkpoint a later retry resumes from, so the cancel would keep bytes the person discarded.
  */
 private const val SDK_STAGING_DIRECTORY_NAME = ".sc-staging"
-private const val DOWNLOAD_LOG_TAG = "WallHubDownload"
+internal const val DOWNLOAD_LOG_TAG = "WallHubDownload"
 
 /**
  * The SDK's own staging directory for one task's destination, or null when that name cannot be trusted.
