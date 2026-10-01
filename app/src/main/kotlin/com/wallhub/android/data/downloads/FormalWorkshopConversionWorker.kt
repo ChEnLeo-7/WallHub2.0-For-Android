@@ -764,8 +764,9 @@ internal object SafExportGateway {
                 }
             }
         transaction.backupUri?.let { backupUri ->
+            val outputName = requireNotNull(transaction.outputName)
             val backup = DocumentFile.fromSingleUri(context, Uri.parse(backupUri))
-            check(backup != null && (backup.name == transaction.outputName || backup.renameTo(transaction.outputName))) {
+            check(backup != null && (backup.name == outputName || backup.renameTo(outputName))) {
                 "Failed to restore the previous export; backup remains at $backupUri"
             }
         }
