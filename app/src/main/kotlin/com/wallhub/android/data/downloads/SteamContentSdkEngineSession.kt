@@ -327,6 +327,9 @@ private class SteamContentSdkEngineTask(
             state = status.state,
             committedBytes = status.committedBytes,
             totalDecodedBytes = status.totalDecodedBytes,
+            networkBytes = status.networkBytes,
+            networkBytesPerSecond = status.networkBytesPerSecond,
+            firstContentReceived = status.firstContentReceived,
             errorOrdinal = status.errorOrdinal,
         )
     }

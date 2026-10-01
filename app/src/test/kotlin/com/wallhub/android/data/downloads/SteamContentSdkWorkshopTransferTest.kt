@@ -63,6 +63,9 @@ class SteamContentSdkWorkshopTransferTest {
                         state = TaskState.DOWNLOADING,
                         committedBytes = 4L,
                         totalDecodedBytes = 9L,
+                        networkBytes = 3L,
+                        networkBytesPerSecond = 2L,
+                        firstContentReceived = true,
                         errorOrdinal = TaskFailure.NONE,
                     )
                 fixture.task.statuses += completed(committedBytes = 9L)
@@ -76,12 +79,15 @@ class SteamContentSdkWorkshopTransferTest {
                         SteamDownloadPhase.RESOLVING,
                         SteamDownloadPhase.PREPARING_DOWNLOAD,
                         SteamDownloadPhase.DOWNLOADING,
-                        SteamDownloadPhase.DOWNLOADING,
+                        SteamDownloadPhase.VERIFYING,
                     ),
                     progress.map { it.phase },
                 )
                 assertEquals(4L, progress[3].completedBytes)
                 assertEquals(9L, progress[3].totalBytes)
+                assertEquals(3L, progress[3].networkBytes)
+                assertEquals(2L, progress[3].networkBytesPerSecond)
+                assertTrue(progress[3].firstContentReceived)
                 assertEquals(9L, progress[4].completedBytes)
             } finally {
                 fixture.close()
@@ -175,9 +181,19 @@ class SteamContentSdkWorkshopTransferTest {
         val fixture = Fixture()
         try {
             fixture.task.statuses +=
-                SteamContentSdkTaskStatus(TaskState.DOWNLOADING, 4L, 9L, TaskFailure.NONE)
+                SteamContentSdkTaskStatus(
+                    state = TaskState.DOWNLOADING,
+                    committedBytes = 4L,
+                    totalDecodedBytes = 9L,
+                    errorOrdinal = TaskFailure.NONE,
+                )
             fixture.task.statuses +=
-                SteamContentSdkTaskStatus(TaskState.PAUSED, 4L, 9L, TaskFailure.NONE)
+                SteamContentSdkTaskStatus(
+                    state = TaskState.PAUSED,
+                    committedBytes = 4L,
+                    totalDecodedBytes = 9L,
+                    errorOrdinal = TaskFailure.NONE,
+                )
 
             assertThrows(SteamDownloadPausedException::class.java) {
                 runBlocking { fixture.download(control = { SteamDownloadControl.PAUSE }) }
@@ -216,9 +232,19 @@ class SteamContentSdkWorkshopTransferTest {
         val fixture = Fixture()
         try {
             fixture.task.statuses +=
-                SteamContentSdkTaskStatus(TaskState.DOWNLOADING, 4L, 9L, TaskFailure.NONE)
+                SteamContentSdkTaskStatus(
+                    state = TaskState.DOWNLOADING,
+                    committedBytes = 4L,
+                    totalDecodedBytes = 9L,
+                    errorOrdinal = TaskFailure.NONE,
+                )
             fixture.task.statuses +=
-                SteamContentSdkTaskStatus(TaskState.CANCELLED, 4L, 9L, TaskFailure.CANCELLED)
+                SteamContentSdkTaskStatus(
+                    state = TaskState.CANCELLED,
+                    committedBytes = 4L,
+                    totalDecodedBytes = 9L,
+                    errorOrdinal = TaskFailure.CANCELLED,
+                )
 
             assertThrows(SteamDownloadCancelledException::class.java) {
                 runBlocking { fixture.download(control = { SteamDownloadControl.CANCEL }) }
@@ -272,7 +298,13 @@ class SteamContentSdkWorkshopTransferTest {
         runBlocking {
             val fixture = Fixture()
             try {
-                fixture.task.statuses += SteamContentSdkTaskStatus(TaskState.PAUSED, 0L, 0L, TaskFailure.NONE)
+                fixture.task.statuses +=
+                    SteamContentSdkTaskStatus(
+                        state = TaskState.PAUSED,
+                        committedBytes = 0L,
+                        totalDecodedBytes = 0L,
+                        errorOrdinal = TaskFailure.NONE,
+                    )
                 fixture.task.statuses += completed(committedBytes = 9L)
 
                 fixture.download()

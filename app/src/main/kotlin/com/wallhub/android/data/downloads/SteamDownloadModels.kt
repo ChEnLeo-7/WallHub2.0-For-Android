@@ -18,6 +18,7 @@ internal enum class SteamDownloadPhase {
     RESOLVING,
     PREPARING_DOWNLOAD,
     DOWNLOADING,
+    VERIFYING,
 }
 
 internal enum class SteamDownloadControl {
@@ -37,6 +38,9 @@ internal data class SteamDownloadProgress(
     val totalBytes: Long = 0L,
     val completedFiles: Int = 0,
     val totalFiles: Int = 0,
+    val networkBytes: Long = 0L,
+    val networkBytesPerSecond: Long = 0L,
+    val firstContentReceived: Boolean = false,
 )
 
 internal data class SteamContentDownloadResult(

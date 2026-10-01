@@ -683,6 +683,9 @@
     <string name='downloads_status_queued'>Queued</string>
     <string name='downloads_status_resolving'>Resolving</string>
     <string name='downloads_status_downloading'>Downloading</string>
+    <string name='downloads_activity_preparing'>Preparing download</string>
+    <string name='downloads_activity_waiting'>Waiting for the next data block</string>
+    <string name='downloads_activity_verifying'>Verifying and saving files</string>
     <string name='downloads_status_paused'>Paused</string>
     <string name='downloads_status_converting'>Converting</string>
     <string name='downloads_status_exporting'>Exporting</string>

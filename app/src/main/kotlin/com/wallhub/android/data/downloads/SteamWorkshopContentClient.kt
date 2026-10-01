@@ -98,6 +98,7 @@ internal class FormalSteamWorkshopContentGateway(
             val client = httpClientFactory.newBuilder().applyDownloadProxy(proxyUrl).build()
             try {
                 onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
+                val networkTelemetry = DirectNetworkTelemetry()
                 val videoFile = WorkshopStagingPath.resolve(destinationDirectory, videoName)
                 val downloadedBytes =
                     downloadDirectFile(
@@ -108,7 +109,8 @@ internal class FormalSteamWorkshopContentGateway(
                         control = control,
                         playbackCoordinator = playbackCoordinator,
                         onChunkCommitted = onFirstChunkCommitted,
-                    ) { completedBytes, totalBytes ->
+                    ) { completedBytes, totalBytes, networkBytesRead ->
+                        val network = networkTelemetry.record(networkBytesRead)
                         onProgress(
                             SteamDownloadProgress(
                                 phase = SteamDownloadPhase.DOWNLOADING,
@@ -116,10 +118,22 @@ internal class FormalSteamWorkshopContentGateway(
                                 completedBytes = completedBytes,
                                 totalBytes = totalBytes,
                                 totalFiles = 1,
+                                networkBytes = network.bytes,
+                                networkBytesPerSecond = network.bytesPerSecond,
+                                firstContentReceived = network.firstContentReceived,
                             ),
                         )
                     }
                 val previewCandidate = WorkshopStagingPath.resolve(destinationDirectory, directPreviewFileName(previewUrl))
+                onProgress(
+                    networkTelemetry.progress(
+                        phase = SteamDownloadPhase.DOWNLOADING,
+                        currentFile = previewCandidate.name,
+                        completedBytes = downloadedBytes,
+                        totalBytes = downloadedBytes,
+                        totalFiles = 1,
+                    ),
+                )
                 downloadDirectFile(
                     client = client,
                     url = previewUrl,
@@ -128,7 +142,30 @@ internal class FormalSteamWorkshopContentGateway(
                     maxBytes = MAX_DIRECT_PREVIEW_BYTES,
                     control = control,
                     playbackCoordinator = playbackCoordinator,
-                    onProgress = { _, _ -> },
+                    onProgress = { _, _, networkBytesRead ->
+                        val network = networkTelemetry.record(networkBytesRead)
+                        onProgress(
+                            SteamDownloadProgress(
+                                phase = SteamDownloadPhase.DOWNLOADING,
+                                currentFile = previewCandidate.name,
+                                completedBytes = downloadedBytes,
+                                totalBytes = downloadedBytes,
+                                totalFiles = 1,
+                                networkBytes = network.bytes,
+                                networkBytesPerSecond = network.bytesPerSecond,
+                                firstContentReceived = network.firstContentReceived,
+                            ),
+                        )
+                    },
+                )
+                onProgress(
+                    networkTelemetry.progress(
+                        phase = SteamDownloadPhase.VERIFYING,
+                        currentFile = previewCandidate.name,
+                        completedBytes = downloadedBytes,
+                        totalBytes = downloadedBytes,
+                        totalFiles = 1,
+                    ),
                 )
                 val previewExtension = validatedPreviewExtension(previewCandidate)
                 if (previewExtension == null) {
@@ -152,8 +189,8 @@ internal class FormalSteamWorkshopContentGateway(
                 if (projectFile.exists()) check(projectFile.delete()) { "Failed to replace stale project.json" }
                 check(temporaryProjectFile.renameTo(projectFile)) { "Failed to finalize project.json" }
                 onProgress(
-                    SteamDownloadProgress(
-                        phase = SteamDownloadPhase.DOWNLOADING,
+                    networkTelemetry.progress(
+                        phase = SteamDownloadPhase.VERIFYING,
                         currentFile = videoName,
                         completedBytes = downloadedBytes,
                         totalBytes = downloadedBytes,
@@ -233,6 +270,64 @@ internal fun validatedPreviewExtension(file: File): String? {
     }
 }
 
+private data class DirectNetworkReading(
+    val bytes: Long,
+    val bytesPerSecond: Long,
+    val firstContentReceived: Boolean,
+)
+
+/** Process-local telemetry for direct HTTP response-body bytes; none of this is a durable checkpoint. */
+private class DirectNetworkTelemetry(
+    private val nowNanos: () -> Long = System::nanoTime,
+) {
+    private var bytes = 0L
+    private var lastReadAtNanos: Long? = null
+    private var bytesPerSecond = 0L
+
+    fun record(bytesRead: Long): DirectNetworkReading {
+        if (bytesRead > 0L) {
+            val now = nowNanos()
+            val previousReadAt = lastReadAtNanos
+            bytes += bytesRead
+            bytesPerSecond =
+                if (previousReadAt != null && now > previousReadAt) {
+                    (bytesRead * NANOS_PER_SECOND / (now - previousReadAt)).coerceAtLeast(0L)
+                } else {
+                    0L
+                }
+            lastReadAtNanos = now
+        }
+        return reading()
+    }
+
+    fun progress(
+        phase: SteamDownloadPhase,
+        currentFile: String?,
+        completedBytes: Long,
+        totalBytes: Long,
+        completedFiles: Int = 0,
+        totalFiles: Int = 0,
+    ): SteamDownloadProgress =
+        SteamDownloadProgress(
+            phase = phase,
+            currentFile = currentFile,
+            completedBytes = completedBytes,
+            totalBytes = totalBytes,
+            completedFiles = completedFiles,
+            totalFiles = totalFiles,
+            networkBytes = bytes,
+            networkBytesPerSecond = 0L,
+            firstContentReceived = bytes > 0L,
+        )
+
+    private fun reading(): DirectNetworkReading =
+        DirectNetworkReading(
+            bytes = bytes,
+            bytesPerSecond = bytesPerSecond,
+            firstContentReceived = bytes > 0L,
+        )
+}
+
 private suspend fun downloadDirectFile(
     client: okhttp3.OkHttpClient,
     url: String,
@@ -242,12 +337,12 @@ private suspend fun downloadDirectFile(
     control: suspend () -> SteamDownloadControl,
     playbackCoordinator: PlaybackDownloadCoordinator? = null,
     onChunkCommitted: (suspend () -> Unit)? = null,
-    onProgress: suspend (completedBytes: Long, totalBytes: Long) -> Unit,
+    onProgress: suspend (completedBytes: Long, totalBytes: Long, networkBytesRead: Long) -> Unit,
 ): Long {
     checkDownloadControl(control)
     val temporary = File(destination.parentFile, "${destination.name}.wallhub.part")
     if (expectedSize > 0L && destination.isFile && destination.length() == expectedSize) {
-        onProgress(expectedSize, expectedSize)
+        onProgress(expectedSize, expectedSize, 0L)
         return expectedSize
     }
     if (destination.exists()) check(destination.delete()) { "Failed to replace stale Steam direct file" }
@@ -282,7 +377,7 @@ private suspend fun downloadDirectFile(
         var copied = if (resumed) resumeOffset else 0L
         response.body.byteStream().use { input ->
             FileOutputStream(temporary, resumed).use { output ->
-                if (resumed) onProgress(copied, totalBytes.coerceAtLeast(copied))
+                if (resumed) onProgress(copied, totalBytes.coerceAtLeast(copied), 0L)
                 val buffer = ByteArray(DIRECT_FILE_BUFFER_SIZE)
                 while (true) {
                     currentCoroutineContext().ensureActive()
@@ -294,7 +389,7 @@ private suspend fun downloadDirectFile(
                     onChunkCommitted?.invoke()
                     copied += read
                     require(copied <= maxBytes) { "Steam direct file exceeds size limit" }
-                    onProgress(copied, totalBytes.coerceAtLeast(copied))
+                    onProgress(copied, totalBytes.coerceAtLeast(copied), read.toLong())
                 }
             }
         }
@@ -323,6 +418,7 @@ internal fun parseDirectContentRange(value: String?): DirectContentRange? {
 }
 
 private const val DIRECT_FILE_BUFFER_SIZE = 64 * 1024
+private const val NANOS_PER_SECOND = 1_000_000_000L
 private const val DIRECT_FILE_USER_AGENT = "WallHub-Android/0.8 (Workshop Direct Download)"
 private const val MAX_DIRECT_FILE_STEM_LENGTH = 120
 internal const val MAX_DIRECT_PREVIEW_BYTES = 32L * 1024L * 1024L

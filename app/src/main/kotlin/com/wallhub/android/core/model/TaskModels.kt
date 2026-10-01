@@ -57,6 +57,13 @@ sealed interface DownloadEnqueueResult {
     ) : DownloadEnqueueResult
 }
 
+enum class DownloadLiveActivity {
+    PREPARING,
+    RECEIVING,
+    WAITING,
+    VERIFYING,
+}
+
 data class DownloadTask(
     val id: String,
     val workshopId: Long,
@@ -66,6 +73,11 @@ data class DownloadTask(
     val previewUrl: String? = null,
     val downloadedBytes: Long = 0L,
     val totalBytes: Long = 0L,
+    /** Process-local network activity; never persisted or restored from Room. */
+    val liveActivity: DownloadLiveActivity? = null,
+    /** Fresh process-local network rate; null when no current network movement is observed. */
+    val liveNetworkBytesPerSecond: Long? = null,
+    /** Legacy persisted commit throughput retained only for Room schema compatibility. */
     val bytesPerSecond: Long = 0L,
     val accountName: String? = null,
     val credentialMode: DownloadCredentialMode =

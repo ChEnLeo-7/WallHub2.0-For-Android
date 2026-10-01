@@ -90,6 +90,7 @@ import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
 import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadEnqueueResult
+import com.wallhub.android.core.model.DownloadLiveActivity
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
@@ -1057,18 +1058,31 @@ internal fun downloadProgressFraction(task: DownloadTask): Float? =
 /**
  * The rate the card may show, or null while no rate has been measured.
  *
- * A download whose rate is still unknown reads as its plain status. The SDK derives a rate from two
- * durable commit readings, so until it has reported both there is no measurement to show, and a card
- * that announces 正在测速 for the whole transfer is claiming one it does not have.
+ * Durable bytes drive the progress bar; the process-local SDK network reading alone drives this rate.
+ * Preparing, waiting and verifying never expose a historical rate, and process restart restores no rate.
  */
 internal fun measuredDownloadSpeed(task: DownloadTask): Long? =
-    task.bytesPerSecond.takeIf { task.status == DownloadStatus.DOWNLOADING && it > 0L }
+    task.liveNetworkBytesPerSecond
+        ?.takeIf {
+            task.status == DownloadStatus.DOWNLOADING &&
+                task.liveActivity == DownloadLiveActivity.RECEIVING &&
+                it > 0L
+        }
 
 @Composable
-private fun DownloadTask.statusDescription(): String =
-    measuredDownloadSpeed(this)
-        ?.let { "${formatByteSize(it)}/s" }
-        ?: status.label()
+private fun DownloadTask.statusDescription(): String {
+    val phaseLabel =
+        when (liveActivity) {
+            DownloadLiveActivity.PREPARING -> stringResource(R.string.downloads_activity_preparing)
+            DownloadLiveActivity.RECEIVING -> stringResource(R.string.downloads_status_downloading)
+            DownloadLiveActivity.WAITING -> stringResource(R.string.downloads_activity_waiting)
+            DownloadLiveActivity.VERIFYING -> stringResource(R.string.downloads_activity_verifying)
+            null -> status.label()
+        }
+    return measuredDownloadSpeed(this)
+        ?.let { "$phaseLabel · ${formatByteSize(it)}/s" }
+        ?: phaseLabel
+}
 
 private val REORDERABLE_DOWNLOAD_STATUSES =
     setOf(

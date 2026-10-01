@@ -30,6 +30,9 @@ internal data class SteamContentSdkTaskStatus(
     val state: Int,
     val committedBytes: Long,
     val totalDecodedBytes: Long,
+    val networkBytes: Long = 0L,
+    val networkBytesPerSecond: Long = 0L,
+    val firstContentReceived: Boolean = false,
     val errorOrdinal: Long,
 )
 
@@ -236,6 +239,7 @@ internal class SteamContentSdkWorkshopTransfer
         ): SteamContentDownloadResult {
             var committedBytes = 0L
             var totalBytes = 0L
+            var manifestResolved = false
             while (true) {
                 currentCoroutineContext().ensureActive()
                 when (control()) {
@@ -264,11 +268,14 @@ internal class SteamContentSdkWorkshopTransfer
                         val finalTotal = maxOf(totalBytes, committedBytes)
                         onProgress(
                             SteamDownloadProgress(
-                                phase = SteamDownloadPhase.DOWNLOADING,
+                                phase = SteamDownloadPhase.VERIFYING,
                                 completedBytes = committedBytes,
                                 totalBytes = finalTotal,
                                 completedFiles = 0,
                                 totalFiles = 0,
+                                networkBytes = status.networkBytes,
+                                networkBytesPerSecond = status.networkBytesPerSecond,
+                                firstContentReceived = status.firstContentReceived,
                             ),
                         )
                         return SteamContentDownloadResult(
@@ -303,9 +310,12 @@ internal class SteamContentSdkWorkshopTransfer
                     else -> {
                         onProgress(
                             SteamDownloadProgress(
-                                phase = sdkProgressPhase(status.state) ?: SteamDownloadPhase.DOWNLOADING,
+                                phase = sdkProgressPhase(status, manifestResolved),
                                 completedBytes = committedBytes,
                                 totalBytes = totalBytes,
+                                networkBytes = status.networkBytes,
+                                networkBytesPerSecond = status.networkBytesPerSecond,
+                                firstContentReceived = status.firstContentReceived,
                             ),
                         )
                         // The SDK publishes the task events this loop currently drops, and the event kind is the
@@ -317,6 +327,7 @@ internal class SteamContentSdkWorkshopTransfer
                         // chunk, and CHECKPOINT_COMMITTED is the durable checkpoint it publishes when it stops.
                         // Ordinals and one byte count only, no host, token or URL.
                         task.pollEvent(SDK_EVENT_POLL_MS)?.let { event ->
+                            if (event.kind == TaskEventKind.MANIFEST_RESOLVED) manifestResolved = true
                             Log.i(
                                 TAG,
                                 "task event kind=${sdkTaskEventName(event.kind)} value=${event.value}",
@@ -389,13 +400,20 @@ internal class SteamContentSdkWorkshopTransfer
     }
 
 /** Maps an SDK task state onto the phase vocabulary the app's progress contract already publishes. */
-internal fun sdkProgressPhase(state: Int): SteamDownloadPhase? =
-    when (state) {
-        TaskState.QUEUED -> SteamDownloadPhase.CONNECTING
-        TaskState.RESOLVING -> SteamDownloadPhase.RESOLVING
-        TaskState.AUTHENTICATING -> SteamDownloadPhase.AUTHENTICATING
-        TaskState.DOWNLOADING, TaskState.VERIFYING, TaskState.COMMITTING -> SteamDownloadPhase.DOWNLOADING
-        else -> null
+internal fun sdkProgressPhase(
+    status: SteamContentSdkTaskStatus,
+    manifestResolved: Boolean,
+): SteamDownloadPhase =
+    when {
+        status.state == TaskState.RESOLVING && manifestResolved -> SteamDownloadPhase.PREPARING_DOWNLOAD
+        status.state == TaskState.RESOLVING -> SteamDownloadPhase.RESOLVING
+        status.state == TaskState.AUTHENTICATING -> SteamDownloadPhase.AUTHENTICATING
+        status.state == TaskState.VERIFYING || status.state == TaskState.COMMITTING -> SteamDownloadPhase.VERIFYING
+        status.state == TaskState.DOWNLOADING &&
+            status.totalDecodedBytes > 0L &&
+            status.committedBytes >= status.totalDecodedBytes -> SteamDownloadPhase.VERIFYING
+        status.state == TaskState.DOWNLOADING -> SteamDownloadPhase.DOWNLOADING
+        else -> SteamDownloadPhase.PREPARING_DOWNLOAD
     }
 
 /** Names a stable SDK failure ordinal without carrying any SDK-owned material into a message. */

@@ -35,9 +35,6 @@ internal class FormalDownloadProgressProjector(
 
     private var previousPhase: SteamDownloadPhase? = null
     private var lastPersistedAt = 0L
-    private var lastSpeedAt = nowMs()
-    private var lastSpeedBytes = initialTask.downloadedBytes
-    private var firstNonzeroSpeedPersisted = initialTask.bytesPerSecond > 0L
 
     suspend fun accept(progress: SteamDownloadProgress) {
         DownloadTimingTelemetry.log(
@@ -57,14 +54,6 @@ internal class FormalDownloadProgressProjector(
                 now - lastPersistedAt >= PROGRESS_PERSIST_INTERVAL_MS ||
                 (progress.totalBytes > 0L && progress.completedBytes >= progress.totalBytes)
         if (shouldPersist) {
-            val speed =
-                downloadSpeedBytesPerSecond(
-                    phase = progress.phase,
-                    completedBytes = progress.completedBytes,
-                    previousBytes = lastSpeedBytes,
-                    elapsedMs = now - lastSpeedAt,
-                    previousSpeed = task.bytesPerSecond,
-                )
             DownloadTimingTelemetry.log(
                 event = DownloadTimingTelemetry.PROGRESS_PERSIST_STARTED,
                 context = timingContext,
@@ -75,13 +64,16 @@ internal class FormalDownloadProgressProjector(
                     ProgressProjectionWrite(
                         status = progress.toDownloadStatus(),
                         downloadedBytes =
-                            if (progress.phase == SteamDownloadPhase.DOWNLOADING) {
+                            if (
+                                progress.phase == SteamDownloadPhase.DOWNLOADING ||
+                                progress.phase == SteamDownloadPhase.VERIFYING
+                            ) {
                                 durableDownloadedBytes(durableCheckpointBytes, progress.completedBytes)
                             } else {
                                 task.downloadedBytes
                             },
                         totalBytes = progress.totalBytes.takeIf { it > 0L } ?: task.totalBytes,
-                        bytesPerSecond = speed,
+                        bytesPerSecond = 0L,
                         message = progress.toMessage(context, authenticated),
                     ),
                 )
@@ -89,17 +81,6 @@ internal class FormalDownloadProgressProjector(
                 event = DownloadTimingTelemetry.PROGRESS_PERSIST_COMPLETED,
                 context = timingContext,
             )
-            if (!firstNonzeroSpeedPersisted && speed > 0L) {
-                firstNonzeroSpeedPersisted = true
-                DownloadTimingTelemetry.log(
-                    event = DownloadTimingTelemetry.FIRST_NONZERO_SPEED_PERSISTED,
-                    context = timingContext,
-                )
-            }
-            if (progress.completedBytes > lastSpeedBytes) {
-                lastSpeedAt = now
-                lastSpeedBytes = progress.completedBytes
-            }
             previousPhase = progress.phase
             lastPersistedAt = now
         }
@@ -141,6 +122,7 @@ internal class FormalDownloadProgressProjector(
 
             SteamDownloadPhase.PREPARING_DOWNLOAD,
             SteamDownloadPhase.DOWNLOADING,
+            SteamDownloadPhase.VERIFYING,
             -> DownloadStatus.DOWNLOADING
         }
 
@@ -161,6 +143,7 @@ internal class FormalDownloadProgressProjector(
             SteamDownloadPhase.RESOLVING -> context.getString(R.string.backend_download_resolving_content)
             SteamDownloadPhase.PREPARING_DOWNLOAD ->
                 context.getString(R.string.backend_download_preparing_transfer, totalFiles)
+            SteamDownloadPhase.VERIFYING -> context.getString(R.string.downloads_activity_verifying)
             SteamDownloadPhase.DOWNLOADING ->
                 if (currentFile.isNullOrBlank()) {
                     context.getString(R.string.backend_download_progress, completedFiles, totalFiles)

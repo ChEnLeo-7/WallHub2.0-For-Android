@@ -20,8 +20,8 @@ import com.wallhub.android.core.model.WorkshopType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -39,6 +39,7 @@ internal class RoomDownloadTaskRepository private constructor(
     private val settingsRepository: SettingsRepository,
     private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
     private val steamWorkshopContentClient: SteamWorkshopContentClient,
+    private val liveTelemetry: DownloadLiveTelemetry,
     private val queuedMessage: () -> String,
     private val enqueueFailedMessage: (String) -> String,
 ) : WorkshopDownloads {
@@ -52,6 +53,7 @@ internal class RoomDownloadTaskRepository private constructor(
         settingsRepository: SettingsRepository,
         downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
         steamWorkshopContentClient: SteamWorkshopContentClient,
+        liveTelemetry: DownloadLiveTelemetry,
     ) : this(
         context = context,
         taskDao = taskDao,
@@ -61,6 +63,7 @@ internal class RoomDownloadTaskRepository private constructor(
         settingsRepository = settingsRepository,
         downloadConcurrencyGovernor = downloadConcurrencyGovernor,
         steamWorkshopContentClient = steamWorkshopContentClient,
+        liveTelemetry = liveTelemetry,
         queuedMessage = { context.getString(R.string.backend_download_queued) },
         enqueueFailedMessage = { errorType ->
             context.getString(R.string.backend_download_start_failed, errorType)
@@ -76,6 +79,7 @@ internal class RoomDownloadTaskRepository private constructor(
         settingsRepository: SettingsRepository,
         downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
         steamWorkshopContentClient: SteamWorkshopContentClient,
+        liveTelemetry: DownloadLiveTelemetry = DownloadLiveTelemetry(),
         queuedMessage: String,
         enqueueFailedMessage: (String) -> String,
     ) : this(
@@ -87,17 +91,19 @@ internal class RoomDownloadTaskRepository private constructor(
         settingsRepository,
         downloadConcurrencyGovernor,
         steamWorkshopContentClient,
+        liveTelemetry,
         { queuedMessage },
         enqueueFailedMessage,
     )
         private val taskMutationMutex = Mutex()
 
         override val tasks: Flow<List<DownloadTask>> =
-            taskDao.observeAll().map { records ->
-                records.map(FormalTaskRecordEntity::toModel)
+            combine(taskDao.observeAll(), liveTelemetry.readings) { records, _ ->
+                records.map { record -> liveTelemetry.enrich(record.toModel()) }
             }
 
-        override suspend fun find(taskId: String): DownloadTask? = taskDao.find(taskId)?.toModel()
+        override suspend fun find(taskId: String): DownloadTask? =
+            taskDao.find(taskId)?.toModel()?.let(liveTelemetry::enrich)
 
         private suspend fun upsert(task: DownloadTask) {
             taskDao.upsertPreservingExecutionIntent(task.toEntity())
@@ -105,7 +111,7 @@ internal class RoomDownloadTaskRepository private constructor(
 
         override suspend fun enqueue(request: DownloadRequest): DownloadEnqueueResult = taskMutationMutex.withLock {
             require(request.workshopId > 0L) { "Invalid Workshop item ID" }
-            taskDao.findActiveForWorkshop(request.workshopId)?.toModel()?.let { activeTask ->
+            taskDao.findActiveForWorkshop(request.workshopId)?.toModel()?.let(liveTelemetry::enrich)?.let { activeTask ->
                 if (activeTask.status in DOWNLOAD_WORK_STATUSES) {
                     try {
                         // A global successor wake repairs a persisted row whose execution window was lost
@@ -524,7 +530,8 @@ internal fun FormalTaskRecordEntity.toModel(): DownloadTask =
         previewUrl = previewUrl,
         downloadedBytes = downloadedBytes,
         totalBytes = totalBytes,
-        bytesPerSecond = bytesPerSecond,
+        // Persisted throughput predates SDK live telemetry and must never be restored as current speed.
+        bytesPerSecond = 0L,
         accountName = accountName,
         credentialMode = credentialMode.toDownloadCredentialMode(),
         message = message,
@@ -555,7 +562,8 @@ internal fun DownloadTask.toEntity(): FormalTaskRecordEntity =
         previewUrl = previewUrl,
         downloadedBytes = downloadedBytes,
         totalBytes = totalBytes,
-        bytesPerSecond = bytesPerSecond,
+        // Keep the legacy Room column inert; speed is process-local SDK network telemetry.
+        bytesPerSecond = 0L,
         accountName = accountName,
         credentialMode = credentialMode.name,
         outputLabel = outputLabel,

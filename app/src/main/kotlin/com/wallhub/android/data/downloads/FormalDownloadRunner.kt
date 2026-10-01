@@ -147,6 +147,7 @@ internal class FormalDownloadRunner
         private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
         private val steamWorkshopContentClient: SteamWorkshopContentClient,
         private val presetDependencies: WorkshopPresetDependencyDownloader,
+        private val liveTelemetry: DownloadLiveTelemetry,
     ) {
         suspend fun run(taskId: String): DownloadHostRunResult =
             withContext(Dispatchers.IO) {
@@ -156,6 +157,7 @@ internal class FormalDownloadRunner
                     return@withContext DownloadHostRunResult.FAILURE
                 }
                 var task: FormalTaskRecordEntity = found
+                liveTelemetry.clear(taskId)
                 val controlInbox = DurableDownloadControlInbox(commandDao, taskId)
                 Log.i(DOWNLOAD_LOG_TAG, "Started host-owned formal Steam runner taskId=$taskId")
                 val timingContext = DownloadTimingContext(taskId = taskId, workshopId = task.workshopId)
@@ -355,9 +357,11 @@ internal class FormalDownloadRunner
                                     ),
                                 control = controlInbox::current,
                             ) { progress ->
+                                liveTelemetry.accept(taskId, progress)
                                 progressProjector.accept(progress)
                             }
                         task = progressProjector.task
+                        liveTelemetry.clear(taskId)
                         val dependencyDownload =
                             presetDependencies.download(
                                 sourceDirectory = resolvedDirectory,
@@ -370,15 +374,19 @@ internal class FormalDownloadRunner
                                     ),
                                 proxyUrl = activeProxyUrl,
                                 control = controlInbox::current,
-                            ) { completedBytes, totalBytes, dependencyTitle ->
-                                progressProjector.acceptDependency(
-                                    primaryDownloadedBytes = download.downloadedBytes,
-                                    primaryTotalBytes = download.totalBytes,
-                                    completedBytes = completedBytes,
-                                    totalBytes = totalBytes,
-                                    dependencyTitle = dependencyTitle,
-                                )
-                            }
+                                onProgress = { progress ->
+                                    liveTelemetry.accept(taskId, progress)
+                                },
+                                onCommittedProgress = { completedBytes, totalBytes, dependencyTitle ->
+                                    progressProjector.acceptDependency(
+                                        primaryDownloadedBytes = download.downloadedBytes,
+                                        primaryTotalBytes = download.totalBytes,
+                                        completedBytes = completedBytes,
+                                        totalBytes = totalBytes,
+                                        dependencyTitle = dependencyTitle,
+                                    )
+                                },
+                            )
                         task = progressProjector.task
                         awaitTaskControl(controlInbox)
                         val conversionMessage =
@@ -447,6 +455,8 @@ internal class FormalDownloadRunner
                     throw error
                 } catch (error: Throwable) {
                     settlement.failed(task, error)
+                } finally {
+                    liveTelemetry.clear(taskId)
                 }
             }
 
@@ -463,40 +473,6 @@ internal class FormalDownloadRunner
         private companion object {
             private const val PAUSE_POLL_INTERVAL_MS = 250L
         }
-    }
-
-/**
- * How long the last measured rate stands after the SDK stops reporting newly committed bytes.
- *
- * A window that committed nothing is not a measurement of zero: committed bytes advance only when the
- * SDK has durably recorded a chunk, so its own commit granularity, not the link, is what leaves a
- * window empty. Past this silence the transfer is no longer demonstrably moving and the rate reads as
- * unknown (zero) rather than as a stale measurement.
- */
-internal const val DOWNLOAD_SPEED_STALE_AFTER_MS = 10_000L
-
-/**
- * The rate to publish for one progress reading.
- *
- * A new committed reading is measured over the whole interval since the previous one, so a coarse
- * commit cadence still yields a real average instead of a rate sampled from a window nothing happened
- * in. A window with no new committed bytes keeps the last measurement until
- * [DOWNLOAD_SPEED_STALE_AFTER_MS] of silence, and a rate nobody ever measured stays zero: zero is the
- * app's "unknown", which the card hides rather than renders.
- */
-internal fun downloadSpeedBytesPerSecond(
-    phase: SteamDownloadPhase,
-    completedBytes: Long,
-    previousBytes: Long,
-    elapsedMs: Long,
-    previousSpeed: Long,
-): Long =
-    when {
-        phase != SteamDownloadPhase.DOWNLOADING || elapsedMs <= 0L -> previousSpeed
-        completedBytes > previousBytes ->
-            ((completedBytes - previousBytes) * 1_000L / elapsedMs).coerceAtLeast(0L)
-        elapsedMs >= DOWNLOAD_SPEED_STALE_AFTER_MS -> 0L
-        else -> previousSpeed
     }
 
 /**

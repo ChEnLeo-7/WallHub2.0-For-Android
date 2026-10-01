@@ -1,5 +1,6 @@
 package com.wallhub.android.feature.downloads
 
+import com.wallhub.android.core.model.DownloadLiveActivity
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
 import com.wallhub.android.core.model.WorkshopType
@@ -10,16 +11,17 @@ import org.junit.Test
 /**
  * Pins what the download card may show while the SDK is transferring.
  *
- * Until the first durable byte reading arrives the card has no percentage and no measured rate. It shows an
- * empty, still bar and the phase line - not an invented number, and not a sweeping animation either, because
- * that is motion the transfer has not produced.
+ * Durable committed bytes alone drive the progress bar, while fresh process-local SDK network telemetry
+ * alone drives the measured rate. Before the first durable reading the bar stays empty and still even when
+ * receiving telemetry can already show a speed.
  */
 class DownloadProgressCardTest {
     private fun task(
         status: DownloadStatus,
         downloadedBytes: Long = 0L,
         totalBytes: Long = 0L,
-        bytesPerSecond: Long = 0L,
+        liveActivity: DownloadLiveActivity? = null,
+        liveNetworkBytesPerSecond: Long? = null,
     ): DownloadTask =
         DownloadTask(
             id = "task-1",
@@ -29,7 +31,8 @@ class DownloadProgressCardTest {
             status = status,
             downloadedBytes = downloadedBytes,
             totalBytes = totalBytes,
-            bytesPerSecond = bytesPerSecond,
+            liveActivity = liveActivity,
+            liveNetworkBytesPerSecond = liveNetworkBytesPerSecond,
         )
 
     @Test
@@ -83,9 +86,44 @@ class DownloadProgressCardTest {
         assertEquals(
             2_048L,
             measuredDownloadSpeed(
-                task(status = DownloadStatus.DOWNLOADING, downloadedBytes = 1_024L, bytesPerSecond = 2_048L),
+                task(
+                    status = DownloadStatus.DOWNLOADING,
+                    downloadedBytes = 1_024L,
+                    liveActivity = DownloadLiveActivity.RECEIVING,
+                    liveNetworkBytesPerSecond = 2_048L,
+                ),
             ),
         )
+    }
+
+    @Test
+    fun `receiving speed does not change the durable progress bar`() {
+        val receiving =
+            task(
+                status = DownloadStatus.DOWNLOADING,
+                downloadedBytes = 5_000L,
+                totalBytes = 10_000L,
+                liveActivity = DownloadLiveActivity.RECEIVING,
+                liveNetworkBytesPerSecond = 2_048L,
+            )
+
+        assertEquals(0.5f, downloadProgressFraction(receiving)!!, 1e-6f)
+        assertEquals(2_048L, measuredDownloadSpeed(receiving))
+    }
+
+    @Test
+    fun `waiting and verifying do not show a stale receiving speed`() {
+        listOf(DownloadLiveActivity.WAITING, DownloadLiveActivity.VERIFYING).forEach { activity ->
+            assertNull(
+                measuredDownloadSpeed(
+                    task(
+                        status = DownloadStatus.DOWNLOADING,
+                        liveActivity = activity,
+                        liveNetworkBytesPerSecond = 2_048L,
+                    ),
+                ),
+            )
+        }
     }
 
     @Test
@@ -96,7 +134,8 @@ class DownloadProgressCardTest {
                     status = DownloadStatus.COMPLETED,
                     downloadedBytes = 10_000L,
                     totalBytes = 10_000L,
-                    bytesPerSecond = 2_048L,
+                    liveActivity = DownloadLiveActivity.RECEIVING,
+                    liveNetworkBytesPerSecond = 2_048L,
                 ),
             ),
         )

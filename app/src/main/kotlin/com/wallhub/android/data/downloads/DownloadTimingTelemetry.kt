@@ -17,7 +17,6 @@ internal object DownloadTimingTelemetry {
     const val MANIFEST_REQUEST_STARTED = "manifest_request_started"
     const val MANIFEST_COMPLETED = "manifest_completed"
     const val FIRST_CHUNK_COMMITTED = "first_chunk_committed"
-    const val FIRST_NONZERO_SPEED_PERSISTED = "first_nonzero_speed_persisted"
     const val FIRST_NONZERO_SPEED_VISIBLE = "first_nonzero_speed_visible"
     const val PROGRESS_CALLBACK_STARTED = "progress_callback_started"
     const val PROGRESS_CALLBACK_ENDED = "progress_callback_ended"

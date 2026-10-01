@@ -18,7 +18,12 @@ internal class WorkshopPresetDependencyDownloader
             options: SteamContentDownloadOptions,
             proxyUrl: String,
             control: suspend () -> SteamDownloadControl,
-            onProgress: suspend (completedBytes: Long, totalBytes: Long, dependencyTitle: String) -> Unit,
+            onProgress: suspend (SteamDownloadProgress) -> Unit,
+            onCommittedProgress: suspend (
+                completedBytes: Long,
+                totalBytes: Long,
+                dependencyTitle: String,
+            ) -> Unit,
         ): DependencyDownloadResult {
             var currentDirectory = sourceDirectory
             var downloadedBytes = 0L
@@ -43,8 +48,9 @@ internal class WorkshopPresetDependencyDownloader
                         options = options,
                         control = control,
                     ) { progress ->
+                        onProgress(progress)
                         if (progress.phase == SteamDownloadPhase.DOWNLOADING) {
-                            onProgress(
+                            onCommittedProgress(
                                 completedBefore + progress.completedBytes,
                                 totalBefore + progress.totalBytes,
                                 target.title,
