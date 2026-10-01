@@ -17,6 +17,7 @@ import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.prototype.mpkg.PresetDependencyResolver
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
@@ -25,7 +26,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 import javax.inject.Inject
@@ -497,28 +497,7 @@ internal fun DownloadTask.hasCompleteStagingDownload(): Boolean {
 }
 
 internal fun hasCompletePresetDependency(directory: File): Boolean =
-    hasCompletePresetDependency(directory, depth = 0, visited = mutableSetOf())
-
-private fun hasCompletePresetDependency(
-    directory: File,
-    depth: Int,
-    visited: MutableSet<String>,
-): Boolean {
-    if (depth > MAX_PRESET_DEPENDENCY_DEPTH) return false
-    val canonicalDirectory = runCatching { directory.canonicalFile.path }.getOrNull() ?: return false
-    if (!visited.add(canonicalDirectory)) return false
-    val projectFile = File(directory, "project.json")
-    if (!projectFile.isFile) return true
-    val project = runCatching {
-        JSONObject(readProjectJson(projectFile))
-    }.getOrNull() ?: return false
-    if (!project.has("preset")) return true
-    val dependencyId = project.opt("dependency")?.toString()?.trim()?.toLongOrNull() ?: return false
-    val dependencyRoot = File(directory, ".wallhub-dependencies").canonicalFile
-    val dependency = File(dependencyRoot, dependencyId.toString()).canonicalFile
-    if (!dependency.toPath().startsWith(dependencyRoot.toPath()) || !dependency.isDirectory) return false
-    return hasCompletePresetDependency(dependency, depth + 1, visited)
-}
+    PresetDependencyResolver.resolve(directory).isSuccess
 
 internal fun FormalTaskRecordEntity.toModel(): DownloadTask =
     DownloadTask(
@@ -642,7 +621,6 @@ private fun deleteManagedDownloadDirectories(
 }
 
 private const val LOG_TAG = "WallHubDownload"
-private const val MAX_PRESET_DEPENDENCY_DEPTH = 4
 private const val PARTIAL_DOWNLOAD_SUFFIX = ".wallhub.part"
 private val REORDERABLE_STATUSES =
     setOf(

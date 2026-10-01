@@ -57,24 +57,25 @@ internal class FormalWorkshopConversionWorker(
         withContext(Dispatchers.IO) {
             val taskId = inputData.getString(KEY_TASK_ID) ?: return@withContext Result.failure()
             var task = taskDao.find(taskId) ?: return@withContext Result.failure()
-            if (task.status == DownloadStatus.COMPLETED.name) {
+            if (
+                task.status == DownloadStatus.COMPLETED.name &&
+                task.exportBackupUri.isNullOrBlank()
+            ) {
                 FormalWorkshopConversionCancellation.clear(taskId)
                 return@withContext Result.success()
             }
             FormalWorkshopConversionCancellation.start(taskId)
             val temporaryDirectory = File(applicationContext.cacheDir, "wallhub-conversion/$taskId")
-            if (task.status == DownloadStatus.EXPORTING.name) {
-                try {
-                    temporaryDirectory.deleteRecursively()
-                    return@withContext failOrCancelBeforeConversion(
-                        taskId = taskId,
-                        task = task,
-                        sourceDirectory = null,
-                        message = applicationContext.getString(R.string.backend_conversion_previous_interrupted),
-                    )
-                } finally {
+            if (
+                task.status == DownloadStatus.EXPORTING.name ||
+                task.exportTransactionState != ExportTransactionState.NONE.name
+            ) {
+                val recovered = reconcileInterruptedExport(task)
+                if (recovered != null) {
                     FormalWorkshopConversionCancellation.clear(taskId)
+                    return@withContext recovered
                 }
+                task = requireNotNull(taskDao.find(taskId))
             }
             val sourceDirectory: File
             try {
@@ -148,6 +149,16 @@ internal class FormalWorkshopConversionWorker(
                                     applicationContext.getString(R.string.backend_conversion_exporting_selected)
                                 },
                         )
+                    val transaction =
+                        ExportTransaction(
+                            state = ExportTransactionState.PREPARED,
+                            outputName = conversion.outputFile.name,
+                            mimeType = conversion.mimeType,
+                        )
+                    task = update(task, exportTransaction = transaction)
+                    val persistTransaction: suspend (ExportTransaction) -> Unit = { next ->
+                        task = update(task, exportTransaction = next)
+                    }
                     val exportedFile =
                         task.outputTreeUri
                             ?.takeIf(String::isNotBlank)
@@ -158,8 +169,8 @@ internal class FormalWorkshopConversionWorker(
                                             context = applicationContext,
                                             outputTreeUri = Uri.parse(outputTreeUri),
                                             source = conversion.outputFile,
-                                            outputName = conversion.outputFile.name,
-                                            mimeType = conversion.mimeType,
+                                            transaction = transaction,
+                                            persistTransaction = persistTransaction,
                                         ),
                                     label = applicationContext.getString(R.string.backend_conversion_selected_label),
                                 )
@@ -167,8 +178,8 @@ internal class FormalWorkshopConversionWorker(
                             ?: PublicDownloadsExportGateway.exportFile(
                                 context = applicationContext,
                                 source = conversion.outputFile,
-                                outputName = conversion.outputFile.name,
-                                mimeType = conversion.mimeType,
+                                transaction = transaction,
+                                persistTransaction = persistTransaction,
                             )
                     val keepVideoSourceForLocalPlayback =
                         task.type.equals(
@@ -188,7 +199,7 @@ internal class FormalWorkshopConversionWorker(
                     if (!keepVideoSourceForLocalPlayback && sourceDirectory.deleteRecursively()) {
                         runCatching { taskDao.clearStagingDirectory(completed.taskId) }
                     }
-                    Result.success()
+                    if (completed.exportBackupUri == null) Result.success() else Result.retry()
                 }
             } catch (error: CancellationException) {
                 withContext(NonCancellable) {
@@ -209,6 +220,13 @@ internal class FormalWorkshopConversionWorker(
                     val latest = taskDao.find(taskId)
                     if (latest?.isCancellationRequested() == true || userCancelled) {
                         cancelTask(latest ?: task, sourceDirectory)
+                    } else if (
+                        latest?.status == DownloadStatus.EXPORTING.name &&
+                        latest.exportTransactionState != ExportTransactionState.NONE.name
+                    ) {
+                        // Keep the durable export transaction authoritative. A retry will reconcile a
+                        // published target or clean an incomplete artifact without duplicating output.
+                        Result.retry()
                     } else {
                         fail(
                             task = latest ?: task,
@@ -221,6 +239,65 @@ internal class FormalWorkshopConversionWorker(
                 temporaryDirectory.deleteRecursively()
             }
         }
+
+    private suspend fun reconcileInterruptedExport(task: FormalTaskRecordEntity): Result? {
+        val transaction = task.exportTransaction()
+        if (transaction.state == ExportTransactionState.NONE || transaction.outputName == null) {
+            return fail(
+                task,
+                applicationContext.getString(R.string.backend_conversion_previous_interrupted),
+            )
+        }
+        val isSaf = !task.outputTreeUri.isNullOrBlank()
+        val snapshot =
+            if (isSaf) {
+                SafExportGateway.inspect(applicationContext, transaction)
+            } else {
+                PublicDownloadsExportGateway.inspect(applicationContext, transaction)
+            }
+        return when (decideExportRecovery(transaction.state.name, snapshot, transaction.outputName)) {
+            ExportRecoveryDecision.PROJECT_COMPLETED -> {
+                val targetUri = requireNotNull(transaction.targetUri)
+                val kindLabel = transaction.outputName.substringAfterLast('.', "MPKG").uppercase(Locale.ROOT)
+                val finalizedTransaction =
+                    if (isSaf) SafExportGateway.cleanCommittedBackup(applicationContext, transaction) else transaction
+                update(
+                    task,
+                    status = DownloadStatus.COMPLETED,
+                    outputUri = targetUri,
+                    outputLabel =
+                        if (isSaf) {
+                            applicationContext.getString(R.string.backend_conversion_selected_label)
+                        } else {
+                            PublicDownloadsExportGateway.OUTPUT_LABEL
+                        },
+                    message =
+                        applicationContext.getString(
+                            R.string.backend_conversion_complete,
+                            kindLabel,
+                            "",
+                            "",
+                            targetUri,
+                        ),
+                    exportTransaction = finalizedTransaction.copy(state = ExportTransactionState.COMMITTED),
+                )
+                if (finalizedTransaction.backupUri == null) Result.success() else Result.retry()
+            }
+
+            ExportRecoveryDecision.CLEAN_AND_RESTART -> {
+                if (isSaf) {
+                    SafExportGateway.cleanInterrupted(applicationContext, transaction)
+                } else {
+                    PublicDownloadsExportGateway.cleanInterrupted(applicationContext, transaction)
+                }
+                update(task, exportTransaction = ExportTransaction())
+                null
+            }
+
+            ExportRecoveryDecision.FAIL_RECOVERABLY ->
+                fail(task, applicationContext.getString(R.string.backend_conversion_previous_interrupted))
+        }
+    }
 
     private fun convert(
         task: FormalTaskRecordEntity,
@@ -255,7 +332,7 @@ internal class FormalWorkshopConversionWorker(
                 writeZip(sourceDirectory, outputFile, checkCancellation)
                 ConversionResult(
                     outputFile = outputFile,
-                    mimeType = "application/zip",
+                    mimeType = WorkshopExportMimeTypes.ZIP,
                     kindLabel = "ZIP",
                 )
             }
@@ -290,7 +367,7 @@ internal class FormalWorkshopConversionWorker(
             )
         return ConversionResult(
             outputFile = report.outputFile,
-            mimeType = if (report.kind == WorkshopKind.WEB) "application/zip" else "application/octet-stream",
+            mimeType = if (report.kind == WorkshopKind.WEB) WorkshopExportMimeTypes.ZIP else WorkshopExportMimeTypes.MPKG,
             kindLabel = report.kind.outputExtension.uppercase(Locale.ROOT),
             convertedTextures = report.convertedTextures,
             copiedTextures = report.copiedTextures,
@@ -401,6 +478,7 @@ internal class FormalWorkshopConversionWorker(
         outputUri: String? = previous.outputUri,
         outputLabel: String? = previous.outputLabel,
         message: String? = previous.message,
+        exportTransaction: ExportTransaction = previous.exportTransaction(),
     ): FormalTaskRecordEntity {
         val updated =
             previous.copy(
@@ -411,9 +489,14 @@ internal class FormalWorkshopConversionWorker(
                 outputUri = outputUri,
                 outputLabel = outputLabel,
                 message = message,
+                exportTransactionState = exportTransaction.state.name,
+                exportTargetUri = exportTransaction.targetUri,
+                exportBackupUri = exportTransaction.backupUri,
+                exportOutputName = exportTransaction.outputName,
+                exportMimeType = exportTransaction.mimeType,
                 updatedAt = System.currentTimeMillis(),
             )
-        return taskDao.upsertPreservingExecutionIntent(updated)
+        return taskDao.upsertPreservingExecutionIntent(updated, preserveExportTransaction = false)
     }
 
     private fun outputName(
@@ -582,22 +665,28 @@ internal data class ExportedFile(
 internal object SafExportGateway {
     private const val COPY_BUFFER_SIZE = 1024 * 1024
 
-    fun exportFile(
+    suspend fun exportFile(
         context: Context,
         outputTreeUri: Uri,
         source: File,
-        outputName: String,
-        mimeType: String,
+        transaction: ExportTransaction,
+        persistTransaction: suspend (ExportTransaction) -> Unit,
     ): String {
+        val outputName = requireNotNull(transaction.outputName)
+        val mimeType = requireNotNull(transaction.mimeType)
         val root =
             DocumentFile.fromTreeUri(context, outputTreeUri)
                 ?: error("Failed to access the selected export directory")
         val previous = root.findFile(outputName)
-        val pendingName = ".wallhub-${UUID.randomUUID()}.tmp"
         val target =
-            root.createFile(mimeType, pendingName)
+            root.createFile(mimeType, ".wallhub-${UUID.randomUUID()}.tmp")
                 ?: error("Failed to create an output file in the selected directory")
-        var previousRenamed = false
+        var durable =
+            transaction.copy(
+                state = ExportTransactionState.WRITING,
+                targetUri = target.uri.toString(),
+            )
+        persistTransaction(durable)
         try {
             context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                 BufferedInputStream(FileInputStream(source)).use { input ->
@@ -605,72 +694,138 @@ internal object SafExportGateway {
                 }
             } ?: error("Failed to write the export file")
             if (previous != null) {
-                previousRenamed = previous.renameTo(".wallhub-backup-${UUID.randomUUID()}.tmp")
-                check(previousRenamed) { "Failed to prepare the existing file for replacement in the selected directory" }
+                durable = durable.copy(backupUri = previous.uri.toString())
+                persistTransaction(durable)
+                check(previous.renameTo(".wallhub-backup-${UUID.randomUUID()}.tmp")) {
+                    "Failed to prepare the existing file for replacement in the selected directory"
+                }
             }
-            if (!target.renameTo(outputName)) {
-                if (previousRenamed) previous?.renameTo(outputName)
-                error("Failed to replace the file in the selected directory")
+            check(target.renameTo(outputName)) { "Failed to replace the file in the selected directory" }
+            durable = durable.copy(state = ExportTransactionState.COMMITTED)
+            persistTransaction(durable)
+            // Publication is already durable. Keep the persisted backup URI for restart cleanup if
+            // this provider cannot remove the old document immediately.
+            if (previous != null && previous.delete()) {
+                durable = durable.copy(backupUri = null)
+                persistTransaction(durable)
             }
-            if (previousRenamed) previous?.delete()
             return target.uri.toString()
         } catch (error: Throwable) {
+            if (target.name == outputName) throw error
             target.delete()
-            if (previousRenamed && previous?.name != outputName) previous?.renameTo(outputName)
+            val restored =
+                durable.backupUri?.let { backupUri ->
+                    val backup = DocumentFile.fromSingleUri(context, Uri.parse(backupUri))
+                    backup != null && (backup.name == outputName || backup.renameTo(outputName))
+                } ?: true
+            persistTransaction(durable.afterRollback(restored))
+            if (!restored) {
+                throw IllegalStateException(
+                    "Failed to restore the previous export; backup remains at ${durable.backupUri}",
+                    error,
+                )
+            }
             throw error
+        }
+    }
+
+    fun cleanCommittedBackup(
+        context: Context,
+        transaction: ExportTransaction,
+    ): ExportTransaction {
+        val backupUri = transaction.backupUri ?: return transaction
+        val backup = DocumentFile.fromSingleUri(context, Uri.parse(backupUri))
+        val removed = backup == null || !backup.exists() || backup.delete()
+        return if (removed) transaction.copy(backupUri = null) else transaction
+    }
+
+    fun inspect(
+        context: Context,
+        transaction: ExportTransaction,
+    ): ExportArtifactSnapshot {
+        val target = transaction.targetUri?.let { DocumentFile.fromSingleUri(context, Uri.parse(it)) }
+        return ExportArtifactSnapshot(
+            exists = target?.exists() == true,
+            isPending = null,
+            displayName = target?.name,
+        )
+    }
+
+    fun cleanInterrupted(
+        context: Context,
+        transaction: ExportTransaction,
+    ) {
+        transaction.targetUri
+            ?.let { DocumentFile.fromSingleUri(context, Uri.parse(it)) }
+            ?.takeIf { it.name != transaction.outputName }
+            ?.let { target ->
+                check(!target.exists() || target.delete()) {
+                    "Failed to remove interrupted export; temporary document remains at ${target.uri}"
+                }
+            }
+        transaction.backupUri?.let { backupUri ->
+            val backup = DocumentFile.fromSingleUri(context, Uri.parse(backupUri))
+            check(backup != null && (backup.name == transaction.outputName || backup.renameTo(transaction.outputName))) {
+                "Failed to restore the previous export; backup remains at $backupUri"
+            }
         }
     }
 }
 
 internal object PublicDownloadsExportGateway {
     private const val DIRECTORY_NAME = "WallHub"
-    private const val OUTPUT_LABEL = "Download/WallHub"
+    internal const val OUTPUT_LABEL = "Download/WallHub"
 
-    fun exportFile(
+    suspend fun exportFile(
         context: Context,
         source: File,
-        outputName: String,
-        mimeType: String,
+        transaction: ExportTransaction,
+        persistTransaction: suspend (ExportTransaction) -> Unit,
     ): ExportedFile =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            exportWithMediaStore(context, source, outputName, mimeType)
+            exportWithMediaStore(context, source, transaction, persistTransaction)
         } else {
-            exportWithLegacyStorage(context, source, outputName, mimeType)
+            exportWithLegacyStorage(context, source, transaction, persistTransaction)
         }
 
     @RequiresApi(Build.VERSION_CODES.Q)
-    private fun exportWithMediaStore(
+    private suspend fun exportWithMediaStore(
         context: Context,
         source: File,
-        outputName: String,
-        mimeType: String,
+        transaction: ExportTransaction,
+        persistTransaction: suspend (ExportTransaction) -> Unit,
     ): ExportedFile {
+        val outputName = requireNotNull(transaction.outputName)
+        val mimeType = requireNotNull(transaction.mimeType)
         val values =
             ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, outputName)
                 put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                put(
-                    MediaStore.MediaColumns.RELATIVE_PATH,
-                    "${Environment.DIRECTORY_DOWNLOADS}/$DIRECTORY_NAME/",
-                )
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/$DIRECTORY_NAME/")
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
         val resolver = context.contentResolver
         val targetUri =
             resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 ?: error("Failed to create an export file in $OUTPUT_LABEL")
+        var durable = transaction.copy(state = ExportTransactionState.WRITING, targetUri = targetUri.toString())
+        persistTransaction(durable)
         try {
             resolver.openOutputStream(targetUri, "w")?.use { output ->
                 BufferedInputStream(FileInputStream(source)).use { input ->
                     input.copyTo(output, bufferSize = COPY_BUFFER_SIZE)
                 }
             } ?: error("Failed to write to $OUTPUT_LABEL")
-            resolver.update(
-                targetUri,
-                ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
-                null,
-                null,
-            )
+            check(
+                resolver.update(
+                    targetUri,
+                    ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
+                    null,
+                    null,
+                ) == 1,
+            ) { "Failed to publish the export in $OUTPUT_LABEL" }
+            durable = durable.copy(state = ExportTransactionState.COMMITTED)
+            persistTransaction(durable)
             return ExportedFile(targetUri.toString(), OUTPUT_LABEL)
         } catch (error: Throwable) {
             resolver.delete(targetUri, null, null)
@@ -678,39 +833,73 @@ internal object PublicDownloadsExportGateway {
         }
     }
 
-    private fun exportWithLegacyStorage(
+    private suspend fun exportWithLegacyStorage(
         context: Context,
         source: File,
-        outputName: String,
-        mimeType: String,
+        transaction: ExportTransaction,
+        persistTransaction: suspend (ExportTransaction) -> Unit,
     ): ExportedFile {
-        check(
-            context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
-                PackageManager.PERMISSION_GRANTED,
-        ) {
+        val outputName = requireNotNull(transaction.outputName)
+        val mimeType = requireNotNull(transaction.mimeType)
+        check(context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
             "Storage permission is required to export to $OUTPUT_LABEL; grant it and try again"
         }
-        val directory =
-            File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                DIRECTORY_NAME,
-            )
+        val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), DIRECTORY_NAME)
         check(directory.exists() || directory.mkdirs()) { "Failed to create $OUTPUT_LABEL" }
         val target = File(directory, outputName)
+        val targetUri = Uri.fromFile(target)
+        persistTransaction(transaction.copy(state = ExportTransactionState.WRITING, targetUri = targetUri.toString()))
         writeAtomically(target) { temporaryFile ->
             BufferedOutputStream(FileOutputStream(temporaryFile)).use { output ->
-                BufferedInputStream(FileInputStream(source)).use { input ->
-                    input.copyTo(output, bufferSize = COPY_BUFFER_SIZE)
-                }
+                BufferedInputStream(FileInputStream(source)).use { input -> input.copyTo(output, bufferSize = COPY_BUFFER_SIZE) }
             }
         }
-        MediaScannerConnection.scanFile(
-            context,
-            arrayOf(target.absolutePath),
-            arrayOf(mimeType),
-            null,
-        )
-        return ExportedFile(Uri.fromFile(target).toString(), OUTPUT_LABEL)
+        persistTransaction(transaction.copy(state = ExportTransactionState.COMMITTED, targetUri = targetUri.toString()))
+        MediaScannerConnection.scanFile(context, arrayOf(target.absolutePath), arrayOf(mimeType), null)
+        return ExportedFile(targetUri.toString(), OUTPUT_LABEL)
+    }
+
+    fun inspect(
+        context: Context,
+        transaction: ExportTransaction,
+    ): ExportArtifactSnapshot {
+        val targetUri = transaction.targetUri ?: return ExportArtifactSnapshot(false, null, null)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            val file = Uri.parse(targetUri).path?.let(::File)
+            return ExportArtifactSnapshot(
+                exists = transaction.state == ExportTransactionState.COMMITTED && file?.isFile == true,
+                isPending = null,
+                displayName = file?.name,
+            )
+        }
+        return runCatching {
+            context.contentResolver.query(
+                Uri.parse(targetUri),
+                arrayOf(MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.IS_PENDING),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use ExportArtifactSnapshot(false, null, null)
+                ExportArtifactSnapshot(
+                    exists = true,
+                    isPending = cursor.getInt(1) != 0,
+                    displayName = cursor.getString(0),
+                )
+            } ?: ExportArtifactSnapshot(false, null, null)
+        }.getOrDefault(ExportArtifactSnapshot(false, null, null))
+    }
+
+    fun cleanInterrupted(
+        context: Context,
+        transaction: ExportTransaction,
+    ) {
+        val targetUri = transaction.targetUri ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            context.contentResolver.delete(Uri.parse(targetUri), null, null)
+        } else if (transaction.state != ExportTransactionState.COMMITTED) {
+            Uri.parse(targetUri).path?.let(::File)?.delete()
+        }
     }
 
     private const val COPY_BUFFER_SIZE = 1024 * 1024
@@ -736,6 +925,65 @@ private fun String.toExportFormat(): ExportFormat =
 
 private fun FormalTaskRecordEntity.isCancellationRequested(): Boolean =
     desiredIntent == DownloadAction.CANCEL.name
+
+internal object WorkshopExportMimeTypes {
+    const val MPKG = "application/vnd.mpkg"
+    const val ZIP = "application/zip"
+}
+
+internal enum class ExportTransactionState {
+    NONE,
+    PREPARED,
+    WRITING,
+    COMMITTED,
+}
+
+internal data class ExportTransaction(
+    val state: ExportTransactionState = ExportTransactionState.NONE,
+    val targetUri: String? = null,
+    val backupUri: String? = null,
+    val outputName: String? = null,
+    val mimeType: String? = null,
+) {
+    fun afterRollback(restoredBackup: Boolean): ExportTransaction =
+        if (restoredBackup) ExportTransaction() else this
+}
+
+internal data class ExportArtifactSnapshot(
+    val exists: Boolean,
+    val isPending: Boolean?,
+    val displayName: String?,
+)
+
+internal enum class ExportRecoveryDecision {
+    PROJECT_COMPLETED,
+    CLEAN_AND_RESTART,
+    FAIL_RECOVERABLY,
+}
+
+internal fun decideExportRecovery(
+    transactionState: String,
+    target: ExportArtifactSnapshot,
+    expectedOutputName: String,
+): ExportRecoveryDecision {
+    val state = runCatching { ExportTransactionState.valueOf(transactionState) }.getOrDefault(ExportTransactionState.NONE)
+    if (target.exists && target.isPending != true && target.displayName == expectedOutputName) {
+        return ExportRecoveryDecision.PROJECT_COMPLETED
+    }
+    if (state == ExportTransactionState.PREPARED || state == ExportTransactionState.WRITING || state == ExportTransactionState.COMMITTED) {
+        return ExportRecoveryDecision.CLEAN_AND_RESTART
+    }
+    return ExportRecoveryDecision.FAIL_RECOVERABLY
+}
+
+private fun FormalTaskRecordEntity.exportTransaction(): ExportTransaction =
+    ExportTransaction(
+        state = runCatching { ExportTransactionState.valueOf(exportTransactionState) }.getOrDefault(ExportTransactionState.NONE),
+        targetUri = exportTargetUri,
+        backupUri = exportBackupUri,
+        outputName = exportOutputName,
+        mimeType = exportMimeType,
+    )
 
 private const val MAX_CONVERSION_OUTPUT_BYTES = 4L * 1024L * 1024L * 1024L
 private const val CONVERSION_DISK_MULTIPLIER = 2L

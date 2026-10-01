@@ -14,6 +14,7 @@ import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.prototype.mpkg.PresetDependencyResolver
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -520,15 +521,7 @@ internal fun durableDownloadedBytes(
 internal fun resolvePresetDependencyDirectory(
     currentDirectory: File,
     dependencyId: Long,
-): File {
-    require(dependencyId > 0L) { "Invalid Workshop preset dependency ID" }
-    val dependencyRoot = File(currentDirectory, ".wallhub-dependencies").canonicalFile
-    val dependencyDirectory = File(dependencyRoot, dependencyId.toString()).canonicalFile
-    check(dependencyDirectory.toPath().startsWith(dependencyRoot.toPath())) {
-        "Invalid Workshop preset dependency directory"
-    }
-    return dependencyDirectory
-}
+): File = PresetDependencyResolver.dependencyDirectory(currentDirectory, dependencyId)
 
 private fun String.toDownloadStatus(): DownloadStatus =
     enumValues<DownloadStatus>()

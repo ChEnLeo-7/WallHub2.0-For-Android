@@ -20,6 +20,8 @@ import com.wallhub.android.core.model.LocalWallpaperScanIssue
 import com.wallhub.android.core.model.LocalWallpaperScanSnapshot
 import com.wallhub.android.core.model.LocalWallpaperSource
 import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.prototype.mpkg.SCENE_MPKG_MAGIC
+import com.wallhub.prototype.mpkg.VIDEO_MPKG_MAGIC
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.json.JSONObject
@@ -432,12 +434,7 @@ internal fun LocalWallpaperFileRepository.inspectMpkg(node: ScanNode): PackageIn
                     channel.readUnsignedIntLe()
                     channel.readUnsignedIntLe()
                 }
-                val workshopType =
-                    when (magic) {
-                        SCENE_MPKG_MAGIC -> WorkshopType.SCENE
-                        VIDEO_MPKG_MAGIC -> WorkshopType.VIDEO
-                        else -> WorkshopType.UNKNOWN
-                    }
+                val workshopType = workshopTypeForMpkgMagic(magic)
                 PackageInspection(
                     format = LocalWallpaperFormat.MPKG,
                     workshopType = workshopType,
@@ -460,6 +457,13 @@ internal fun LocalWallpaperFileRepository.inspectMpkg(node: ScanNode): PackageIn
                     error.message ?: error.javaClass.simpleName,
                 ),
         )
+    }
+
+internal fun workshopTypeForMpkgMagic(magic: String): WorkshopType =
+    when (magic) {
+        SCENE_MPKG_MAGIC -> WorkshopType.SCENE
+        VIDEO_MPKG_MAGIC -> WorkshopType.VIDEO
+        else -> WorkshopType.UNKNOWN
     }
 
 internal fun LocalWallpaperFileRepository.inspectZip(node: ScanNode): PackageInspection {
@@ -668,8 +672,6 @@ internal const val MAX_PACKAGE_PATH_LENGTH = 16 * 1024
 internal const val MAX_PACKAGE_ENTRY_COUNT = 200_000L
 internal const val MAX_ZIP_ENTRIES_TO_INSPECT = 4_096
 internal const val MAX_PROJECT_JSON_BYTES = 256 * 1024
-internal const val SCENE_MPKG_MAGIC = "PKGM0020"
-internal const val VIDEO_MPKG_MAGIC = "PKGM0014"
 internal val WORKSHOP_ID_PATTERN = Regex("(?:^|[-_ ])(\\d{5,})(?=$|[-_ ])")
 internal val VIDEO_EXTENSIONS = setOf("mp4", "webm", "mkv", "mov", "avi", "m4v")
 internal val HTML_EXTENSIONS = setOf("html", "htm")

@@ -9,10 +9,11 @@ import org.junit.Test
 
 class AnimatedTextureRetentionTest {
     @Test
-    fun animatedTextureCanBeRetainedWithoutFlatteningItsFrames() {
+    fun verifiedMobileAnimatedTextureCanBeRetainedWithoutFlatteningItsFrames() {
         val output = Files.createTempFile("wallhub-animated", ".tex").toFile()
         try {
-            val result = TexMobileConverter.convertToFile(animatedRgbaTex(), output)
+            val tex = TexMobileConverter.writeMobileRgba(flags = 4, width = 1, height = 1, rgba = byteArrayOf(1, 2, 3, -1))
+            val result = TexMobileConverter.convertToFile(tex, output)
 
             assertFalse(result.converted)
             assertTrue(result.canRetainOriginal)
@@ -23,13 +24,13 @@ class AnimatedTextureRetentionTest {
     }
 
     @Test
-    fun validTextureWithoutUnambiguousBaseMipmapCanBeRetained() {
+    fun structurallyValidButUnverifiedTextureWithoutUnambiguousBaseMipmapCannotBeRetained() {
         val output = Files.createTempFile("wallhub-mipmap", ".tex").toFile()
         try {
             val result = TexMobileConverter.convertToFile(ambiguousBaseMipmapTex(), output)
 
             assertFalse(result.converted)
-            assertTrue(result.canRetainOriginal)
+            assertFalse(result.canRetainOriginal)
             assertFalse(output.exists())
         } finally {
             output.delete()
@@ -51,13 +52,13 @@ class AnimatedTextureRetentionTest {
     }
 
     @Test
-    fun structurallyValidDesktopPayloadMismatchCanBeRetained() {
+    fun structurallyValidDesktopPayloadMismatchCannotBeRetained() {
         val output = Files.createTempFile("wallhub-desktop-layout", ".tex").toFile()
         try {
             val result = TexMobileConverter.convertToFile(desktopPayloadMismatchTex(), output)
 
             assertFalse(result.converted)
-            assertTrue(result.canRetainOriginal)
+            assertFalse(result.canRetainOriginal)
             assertFalse(output.exists())
         } finally {
             output.delete()
@@ -65,13 +66,13 @@ class AnimatedTextureRetentionTest {
     }
 
     @Test
-    fun oversizedDimensionsRetainAValidTextureInsteadOfAllocatingRgbaPeak() {
+    fun oversizedDimensionsCannotRetainAnUnverifiedDesktopTexture() {
         val output = Files.createTempFile("wallhub-large-texture", ".tex").toFile()
         try {
             val result = TexMobileConverter.convertToFile(largeEnvelopeOnlyTex(), output)
 
             assertFalse(result.converted)
-            assertTrue(result.canRetainOriginal)
+            assertFalse(result.canRetainOriginal)
             assertFalse(output.exists())
         } finally {
             output.delete()

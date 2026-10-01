@@ -97,6 +97,28 @@ class FormalTaskDatabaseMigrationTest {
     }
 
     @Test
+    fun migration9To10AddsDurableExportTransactionColumns() {
+        helper.createDatabase(TEST_DATABASE, 9).close()
+
+        helper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            10,
+            true,
+            FormalTaskDatabase.MIGRATION_9_10,
+        ).use { database ->
+            database.query("PRAGMA table_info(formal_task_records)").use { cursor ->
+                val columns = mutableSetOf<String>()
+                while (cursor.moveToNext()) columns += cursor.getString(cursor.getColumnIndexOrThrow("name"))
+                assertTrue("exportTransactionState" in columns)
+                assertTrue("exportTargetUri" in columns)
+                assertTrue("exportBackupUri" in columns)
+                assertTrue("exportOutputName" in columns)
+                assertTrue("exportMimeType" in columns)
+            }
+        }
+    }
+
+    @Test
     fun deletingATerminalTaskAlsoDeletesItsPendingCommands() {
         val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
         try {

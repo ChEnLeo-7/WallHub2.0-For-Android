@@ -98,6 +98,7 @@ import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubDropdownMenu
 import com.wallhub.android.core.designsystem.WallHubDropdownMenuItem
 import com.wallhub.android.core.designsystem.WallHubToolbarSearchTitle
+import com.wallhub.android.data.downloads.WorkshopExportMimeTypes
 import com.wallhub.android.core.format.formatByteSize
 import com.wallhub.android.core.designsystem.rememberWallHubDirectionalCollapseConnection
 import com.wallhub.android.core.model.LocalWallpaperFormat
@@ -1715,7 +1716,7 @@ private fun launchWallpaperEngineImport(
     val intent =
         Intent(Intent.ACTION_VIEW).apply {
             this.component = component
-            setDataAndType(uri, WALLPAPER_ENGINE_MPKG_MIME_TYPE)
+            setDataAndType(uri, WorkshopExportMimeTypes.MPKG)
             clipData = ClipData.newRawUri(resource.displayName, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
@@ -1817,4 +1818,3 @@ private enum class LocalHeaderMode {
 
 private const val WALLPAPER_ENGINE_PACKAGE = "io.wallpaperengine.weclient"
 private const val WALLPAPER_ENGINE_IMPORT_ACTIVITY = "io.wallpaperengine.weclient.BrowseActivity"
-private const val WALLPAPER_ENGINE_MPKG_MIME_TYPE = "application/vnd.mpkg"

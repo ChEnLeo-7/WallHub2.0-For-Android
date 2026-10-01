@@ -7,6 +7,7 @@ import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.util.Locale
 
 const val SCENE_MPKG_MAGIC = "PKGM0020"
 const val VIDEO_MPKG_MAGIC = "PKGM0014"
@@ -16,6 +17,7 @@ sealed interface MpkgPayload {
 
     fun writeTo(
         output: BufferedOutputStream,
+        copyBuffer: ByteArray,
         checkCancellation: () -> Unit = {},
     )
 }
@@ -27,6 +29,7 @@ data class ByteArrayPayload(
 
     override fun writeTo(
         output: BufferedOutputStream,
+        copyBuffer: ByteArray,
         checkCancellation: () -> Unit,
     ) {
         checkCancellation()
@@ -45,16 +48,16 @@ data class FilePayload(
 
     override fun writeTo(
         output: BufferedOutputStream,
+        copyBuffer: ByteArray,
         checkCancellation: () -> Unit,
     ) {
         FileInputStream(file).use { input ->
-            val buffer = ByteArray(COPY_BUFFER_SIZE)
             var remaining = length
             while (remaining > 0L) {
                 checkCancellation()
-                val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                val read = input.read(copyBuffer, 0, minOf(copyBuffer.size.toLong(), remaining).toInt())
                 require(read > 0) { "Unexpected end of MPKG source file: $file" }
-                output.write(buffer, 0, read)
+                output.write(copyBuffer, 0, read)
                 remaining -= read
             }
         }
@@ -75,17 +78,17 @@ data class FileSlicePayload(
 
     override fun writeTo(
         output: BufferedOutputStream,
+        copyBuffer: ByteArray,
         checkCancellation: () -> Unit,
     ) {
         RandomAccessFile(file, "r").use { input ->
             input.seek(offset)
-            val buffer = ByteArray(COPY_BUFFER_SIZE)
             var remaining = length
             while (remaining > 0L) {
                 checkCancellation()
-                val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                val read = input.read(copyBuffer, 0, minOf(copyBuffer.size.toLong(), remaining).toInt())
                 require(read > 0) { "Unexpected end of MPKG source file: $file" }
-                output.write(buffer, 0, read)
+                output.write(copyBuffer, 0, read)
                 remaining -= read
             }
         }
@@ -109,6 +112,9 @@ data class MpkgManifest(
 )
 
 object MpkgWriter {
+    internal const val MAX_ENTRY_COUNT = 50_000
+    internal const val MAX_PATH_BYTES = 4 * 1024
+    internal const val MAX_INDEX_BYTES = 16L * 1024L * 1024L
     private const val MAX_U32 = 0xffff_ffffL
 
     fun write(
@@ -118,7 +124,10 @@ object MpkgWriter {
         checkCancellation: () -> Unit = {},
     ): MpkgManifest {
         require(magic.startsWith("PKGM")) { "Unsupported MPKG magic: $magic" }
-        val normalized = linkedMapOf<String, MpkgInputEntry>()
+        require(entries.size <= MAX_ENTRY_COUNT) {
+            "MPKG entry count exceeds the $MAX_ENTRY_COUNT-entry mobile index budget: ${entries.size}"
+        }
+        val normalized = LinkedHashMap<String, MpkgInputEntry>(entries.size)
         entries.forEach { entry ->
             checkCancellation()
             val path = normalizePath(entry.path)
@@ -127,33 +136,37 @@ object MpkgWriter {
             }
         }
         val ordered =
-            normalized.values.sortedWith(
-                compareBy<MpkgInputEntry> { it.path.substringBeforeLast('/', "").lowercase() }
-                    .thenBy { it.path.substringAfterLast('/').lowercase() },
-            )
-        require(ordered.size <= Int.MAX_VALUE) { "Too many MPKG files" }
-
-        var offset = 0L
-        val manifestEntries =
-            ordered.map { entry ->
-                require(entry.payload.length in 0..MAX_U32) { "MPKG entry is too large: ${entry.path}" }
-                val item = MpkgEntryInfo(entry.path, entry.payload.length, offset)
-                offset += entry.payload.length
-                require(offset <= MAX_U32) { "MPKG payload exceeds 4 GiB format limit" }
-                item
+            normalized.values
+                .map { entry ->
+                    val directory = entry.path.substringBeforeLast('/', "").lowercase(Locale.ROOT)
+                    val name = entry.path.substringAfterLast('/').lowercase(Locale.ROOT)
+                    Triple(directory, name, entry)
+                }.sortedWith(compareBy<Triple<String, String, MpkgInputEntry>> { it.first }.thenBy { it.second })
+                .map { it.third }
+        var payloadBytes = 0L
+        var indexBytes = 0L
+        val encodedPaths = ArrayList<ByteArray>(ordered.size)
+        val manifestEntries = ArrayList<MpkgEntryInfo>(ordered.size)
+        ordered.forEach { entry ->
+            checkCancellation()
+            val name = entry.path.toByteArray(Charsets.UTF_8)
+            require(name.size <= MAX_PATH_BYTES) {
+                "MPKG entry path exceeds the $MAX_PATH_BYTES-byte limit: ${entry.path}"
             }
-        val table =
-            byteArrayOutput {
-                manifestEntries.forEach { entry ->
-                    val name = entry.path.toByteArray(Charsets.UTF_8)
-                    writeIntLe(name.size)
-                    write(name)
-                    writeIntLe(entry.offset.toInt())
-                    writeIntLe(entry.length.toInt())
-                }
+            indexBytes += Integer.BYTES.toLong() * 3L + name.size.toLong()
+            require(indexBytes <= MAX_INDEX_BYTES && indexBytes <= MAX_U32) {
+                "MPKG index exceeds the $MAX_INDEX_BYTES-byte mobile budget"
             }
-        val headerBytes = Integer.BYTES.toLong() * 2L + magic.toByteArray(Charsets.US_ASCII).size
-        val outputBytes = headerBytes + table.size.toLong() + offset
+            require(entry.payload.length in 0..MAX_U32) { "MPKG entry is too large: ${entry.path}" }
+            manifestEntries += MpkgEntryInfo(entry.path, entry.payload.length, payloadBytes)
+            encodedPaths += name
+            payloadBytes += entry.payload.length
+            require(payloadBytes <= MAX_U32) { "MPKG payload exceeds 4 GiB format limit" }
+        }
+        val magicBytes = magic.toByteArray(Charsets.US_ASCII)
+        require(magicBytes.size <= MAX_PATH_BYTES) { "MPKG magic is too large" }
+        val headerBytes = Integer.BYTES.toLong() * 2L + magicBytes.size.toLong()
+        val outputBytes = headerBytes + indexBytes + payloadBytes
         val parent = outputFile.absoluteFile.parentFile ?: error("Output file has no parent directory")
         check(parent.exists() || parent.mkdirs()) { "Unable to create MPKG output directory: $parent" }
         val reserve = MIN_MPKG_FREE_SPACE_BYTES.coerceAtMost(parent.totalSpace / 20L)
@@ -163,14 +176,22 @@ object MpkgWriter {
         }
         writeAtomically(outputFile) { temporaryFile ->
             BufferedOutputStream(FileOutputStream(temporaryFile)).use { output ->
-                val magicBytes = magic.toByteArray(Charsets.US_ASCII)
                 output.writeIntLe(magicBytes.size)
                 output.write(magicBytes)
                 output.writeIntLe(manifestEntries.size)
-                output.write(table)
+                manifestEntries.indices.forEach { index ->
+                    checkCancellation()
+                    val entry = manifestEntries[index]
+                    val name = encodedPaths[index]
+                    output.writeIntLe(name.size)
+                    output.write(name)
+                    output.writeIntLe(entry.offset.toInt())
+                    output.writeIntLe(entry.length.toInt())
+                }
+                val copyBuffer = ByteArray(COPY_BUFFER_SIZE)
                 ordered.forEach { entry ->
                     checkCancellation()
-                    entry.payload.writeTo(output, checkCancellation)
+                    entry.payload.writeTo(output, copyBuffer, checkCancellation)
                 }
             }
         }

@@ -30,7 +30,8 @@ data class PkgArchive(
 object PkgReader {
     internal const val MAX_ENTRY_COUNT = 50_000
     internal const val MAX_PATH_LENGTH = 4 * 1024
-    internal const val MAX_INDEX_BYTES = 64L * 1024L * 1024L
+    internal const val MAX_INDEX_BYTES = 16L * 1024L * 1024L
+    private const val MIN_ENTRY_INDEX_BYTES = Integer.BYTES.toLong() * 3L
 
     fun readIndex(file: File): PkgArchive {
         RandomAccessFile(file, "r").use { input ->
@@ -38,14 +39,23 @@ object PkgReader {
             require(magic.startsWith("PKGV")) { "Unsupported PKG magic: $magic" }
             val count = input.readIntLe()
             require(count in 0..MAX_ENTRY_COUNT) { "Invalid PKG entry count: $count" }
+            val minimumIndexBytes = count.toLong() * MIN_ENTRY_INDEX_BYTES
+            require(minimumIndexBytes <= MAX_INDEX_BYTES) {
+                "PKG entry count exceeds the $MAX_INDEX_BYTES-byte mobile index budget: $count"
+            }
             val index = ArrayList<IndexedPkgEntry>(count)
             var indexBytes = 0L
             repeat(count) {
-                val path = MpkgWriter.normalizePath(input.readLengthString(MAX_PATH_LENGTH))
+                val encodedPathLength = input.readIntLe()
+                require(encodedPathLength in 0..MAX_PATH_LENGTH) { "Invalid string length: $encodedPathLength" }
+                val nextIndexBytes = indexBytes + MIN_ENTRY_INDEX_BYTES + encodedPathLength.toLong()
+                require(nextIndexBytes <= MAX_INDEX_BYTES) { "PKG index exceeds $MAX_INDEX_BYTES bytes" }
+                val encodedPath = ByteArray(encodedPathLength)
+                input.readFully(encodedPath)
+                val path = MpkgWriter.normalizePath(encodedPath.toString(Charsets.UTF_8))
                 val offset = input.readUIntLe()
                 val length = input.readUIntLe()
-                indexBytes += Integer.BYTES.toLong() * 3L + path.toByteArray(Charsets.UTF_8).size
-                require(indexBytes <= MAX_INDEX_BYTES) { "PKG index exceeds $MAX_INDEX_BYTES bytes" }
+                indexBytes = nextIndexBytes
                 index += IndexedPkgEntry(path, offset, length)
             }
             val dataStart = input.filePointer

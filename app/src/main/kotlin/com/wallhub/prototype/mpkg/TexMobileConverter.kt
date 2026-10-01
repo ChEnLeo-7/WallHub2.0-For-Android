@@ -10,6 +10,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
+import java.util.concurrent.CancellationException
 import kotlin.math.min
 
 private const val TEX_FORMAT_RGBA8888 = 0
@@ -68,18 +69,30 @@ private data class TexMipmap(
 )
 
 private data class TexEntryMetadata(
+    val format: Int,
     val flags: Int,
     val unknown: Int,
     val imageWidth: Int,
     val imageHeight: Int,
     val imageFormat: Int,
     val isMp4: Boolean,
+    val container: String,
+    val mipmapCount: Int,
     val baseWidth: Int,
     val baseHeight: Int,
     val baseCompressed: Boolean,
-    val imageStart: Long,
-    val imageLength: Long,
+    val baseDecompressedSize: Int,
+    val baseStoredSize: Int,
+    val payloadStart: Long,
+    val payloadLength: Long,
 )
+
+internal enum class TexEntryRoute {
+    CONVERT_IN_MEMORY,
+    CONVERT_IMAGE_TO_ETC2,
+    RETAIN_VERIFIED_MOBILE,
+    UNSUPPORTED,
+}
 
 /**
  * A compatibility path for WallHub's mobile MPKG texture profile.
@@ -113,15 +126,17 @@ object TexMobileConverter {
     fun convertToFile(
         source: ByteArray,
         outputFile: File,
+        checkCancellation: () -> Unit = {},
     ): TexFileConversionResult {
         return runCatching {
-            val prepared = prepare(source)
+            checkCancellation()
+            val prepared = prepare(source, checkCancellation)
             val texture =
                 prepared.texture
                     ?: return TexFileConversionResult(
                         converted = false,
                         reason = prepared.reason,
-                        canRetainOriginal = true,
+                        canRetainOriginal = isVerifiedMobileCompatible(source),
                     ).also { outputFile.delete() }
             writeMobileRgba(
                 outputFile = outputFile,
@@ -131,13 +146,15 @@ object TexMobileConverter {
                 unknown = texture.unknown,
                 rgba = texture.rgba,
             )
+            checkCancellation()
             TexFileConversionResult(true, prepared.reason)
         }.getOrElse { error ->
             outputFile.delete()
+            if (error is CancellationException) throw error
             TexFileConversionResult(
                 converted = false,
                 reason = error.message ?: error.javaClass.simpleName,
-                canRetainOriginal = hasValidTexEnvelope(source),
+                canRetainOriginal = isVerifiedMobileCompatible(source),
             )
         }
     }
@@ -147,8 +164,10 @@ object TexMobileConverter {
         offset: Long,
         length: Long,
         outputFile: File,
+        checkCancellation: () -> Unit = {},
     ): TexFileConversionResult =
         runCatching {
+            checkCancellation()
             val metadata = readTexEntryMetadata(sourceFile, offset, length)
             require(metadata.imageFormat >= 0) { "TEX payload is not image-backed" }
             require(!metadata.isMp4 && metadata.flags and TEX_FLAG_GIF == 0 && metadata.flags and TEX_FLAG_VIDEO == 0) {
@@ -168,16 +187,75 @@ object TexMobileConverter {
             }
             val tempImage = File(outputFile.parentFile, "${outputFile.name}.image")
             try {
-                copyImagePayload(sourceFile, metadata.imageStart, metadata.imageLength, tempImage)
-                writeEtc2(tempImage, metadata.flags, metadata.unknown, metadata.imageWidth, metadata.imageHeight, outputFile)
+                val imageStart = locateEmbeddedImage(sourceFile, metadata.payloadStart, metadata.payloadLength)
+                val imageLength = metadata.payloadStart + metadata.payloadLength - imageStart
+                copyImagePayload(sourceFile, imageStart, imageLength, tempImage, checkCancellation)
+                writeEtc2(
+                    tempImage,
+                    metadata.flags,
+                    metadata.unknown,
+                    metadata.imageWidth,
+                    metadata.imageHeight,
+                    outputFile,
+                    checkCancellation,
+                )
                 TexFileConversionResult(true, "ETC2 RGBA8 + LZ4 HC3")
             } finally {
                 tempImage.delete()
             }
         }.getOrElse { error ->
             outputFile.delete()
+            if (error is CancellationException) throw error
             TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
         }
+
+    internal fun inspectEntryRoute(
+        sourceFile: File,
+        offset: Long,
+        length: Long,
+    ): TexEntryRoute =
+        runCatching {
+            val metadata = readTexEntryMetadata(sourceFile, offset, length)
+            when {
+                isVerifiedMobileCompatible(metadata) -> TexEntryRoute.RETAIN_VERIFIED_MOBILE
+                metadata.flags and (TEX_FLAG_GIF or TEX_FLAG_VIDEO) != 0 || metadata.isMp4 -> TexEntryRoute.UNSUPPORTED
+                metadata.imageFormat >= 0 && !metadata.baseCompressed &&
+                    metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight ->
+                    TexEntryRoute.CONVERT_IMAGE_TO_ETC2
+                metadata.format in CONVERTIBLE_STATIC_FORMATS -> TexEntryRoute.CONVERT_IN_MEMORY
+                else -> TexEntryRoute.UNSUPPORTED
+            }
+        }.getOrDefault(TexEntryRoute.UNSUPPORTED)
+
+    private fun isVerifiedMobileCompatible(source: ByteArray): Boolean =
+        runCatching {
+            val tex = parse(source)
+            require(tex.tailData.isEmpty() && tex.mipmaps.size == 1)
+            val base = tex.mipmaps.single()
+            require(base.width == tex.textureWidth && base.height == tex.textureHeight)
+            require(tex.imageFormat == -1 && !tex.isMp4)
+            require(tex.format == TEX_FORMAT_RGBA8888 || tex.format == TEX_FORMAT_ETC2_RGBA8_LZ4)
+            if (tex.format == TEX_FORMAT_RGBA8888) {
+                require(base.data.size == checkedPayloadSize(base.width, base.height, 4))
+            }
+            true
+        }.getOrDefault(false)
+
+    private fun isVerifiedMobileCompatible(metadata: TexEntryMetadata): Boolean {
+        if (metadata.container != "TEXB0004" || metadata.mipmapCount != 1 || metadata.imageFormat != -1 || metadata.isMp4) {
+            return false
+        }
+        if (!metadata.baseCompressed || metadata.baseWidth != metadata.imageWidth || metadata.baseHeight != metadata.imageHeight) {
+            return false
+        }
+        val expected =
+            when (metadata.format) {
+                TEX_FORMAT_RGBA8888 -> checkedPayloadSize(metadata.baseWidth, metadata.baseHeight, 4)
+                TEX_FORMAT_ETC2_RGBA8_LZ4 -> checkedPayloadSize(metadata.baseWidth, metadata.baseHeight, 1)
+                else -> return false
+            }
+        return metadata.baseDecompressedSize == expected && metadata.baseStoredSize > 0
+    }
 
     internal fun hasValidTexEnvelope(source: ByteArray): Boolean =
         runCatching {
@@ -312,8 +390,13 @@ object TexMobileConverter {
         }
     }
 
-    private fun prepare(source: ByteArray): PreparedTexConversion {
+    private fun prepare(
+        source: ByteArray,
+        checkCancellation: () -> Unit = {},
+    ): PreparedTexConversion {
+        checkCancellation()
         val tex = parse(source)
+        checkCancellation()
         if (tex.mipmaps.isEmpty()) return PreparedTexConversion(null, "empty texture")
         if (tex.flags and TEX_FLAG_GIF != 0 || tex.flags and TEX_FLAG_VIDEO != 0 || tex.isMp4) {
             return PreparedTexConversion(null, ANIMATED_TEXTURE_REASON)
@@ -408,7 +491,7 @@ object TexMobileConverter {
             input.seek(offset)
             require(input.readBoundedCString(end) == "TEXV0005") { "Invalid TEX version" }
             require(input.readBoundedCString(end) == "TEXI0001") { "Invalid TEX metadata" }
-            input.readBoundedIntLe(end)
+            val format = input.readBoundedIntLe(end)
             val flags = input.readBoundedIntLe(end)
             val textureWidth = input.readBoundedIntLe(end)
             val textureHeight = input.readBoundedIntLe(end)
@@ -436,6 +519,8 @@ object TexMobileConverter {
             var baseWidth = 0
             var baseHeight = 0
             var baseCompressed = false
+            var baseDecompressedSize = 0
+            var baseStoredSize = 0
             var payloadStart = 0L
             var payloadLength = 0L
             repeat(mipCount) { index ->
@@ -443,12 +528,13 @@ object TexMobileConverter {
                 val height = input.readBoundedIntLe(end)
                 require(width > 0 && height > 0) { "Invalid TEX mipmap dimensions" }
                 var compressed = false
+                var decompressedSize = 0
                 val storedSize =
                     if (container == "TEXB0001") {
                         input.readBoundedIntLe(end)
                     } else {
                         compressed = input.readBoundedIntLe(end) == 1
-                        input.readBoundedIntLe(end)
+                        decompressedSize = input.readBoundedIntLe(end)
                         input.readBoundedIntLe(end)
                     }
                 require(storedSize >= 0) { "Invalid TEX payload size" }
@@ -457,27 +543,39 @@ object TexMobileConverter {
                     baseWidth = width
                     baseHeight = height
                     baseCompressed = compressed
+                    baseDecompressedSize = decompressedSize
+                    baseStoredSize = storedSize
                     payloadStart = input.filePointer
                     payloadLength = storedSize.toLong()
                 }
                 input.seek(input.filePointer + storedSize)
             }
             require(input.filePointer == end) { "TEX entry has trailing data" }
-            val imageStart = locateEmbeddedImage(input, payloadStart, payloadLength)
             TexEntryMetadata(
+                format = format,
                 flags = flags,
                 unknown = unknown,
                 imageWidth = imageWidth,
                 imageHeight = imageHeight,
                 imageFormat = imageFormat,
                 isMp4 = isMp4,
+                container = container,
+                mipmapCount = mipCount,
                 baseWidth = baseWidth,
                 baseHeight = baseHeight,
                 baseCompressed = baseCompressed,
-                imageStart = imageStart,
-                imageLength = payloadStart + payloadLength - imageStart,
+                baseDecompressedSize = baseDecompressedSize,
+                baseStoredSize = baseStoredSize,
+                payloadStart = payloadStart,
+                payloadLength = payloadLength,
             )
         }
+
+    private fun locateEmbeddedImage(
+        sourceFile: File,
+        payloadStart: Long,
+        payloadLength: Long,
+    ): Long = RandomAccessFile(sourceFile, "r").use { input -> locateEmbeddedImage(input, payloadStart, payloadLength) }
 
     private fun locateEmbeddedImage(
         input: RandomAccessFile,
@@ -521,6 +619,7 @@ object TexMobileConverter {
         imageStart: Long,
         imageLength: Long,
         outputFile: File,
+        checkCancellation: () -> Unit,
     ) {
         RandomAccessFile(sourceFile, "r").use { input ->
             input.seek(imageStart)
@@ -528,6 +627,7 @@ object TexMobileConverter {
                 val buffer = ByteArray(IMAGE_COPY_BUFFER_BYTES)
                 var remaining = imageLength
                 while (remaining > 0) {
+                    checkCancellation()
                     val chunk = min(buffer.size.toLong(), remaining).toInt()
                     input.readFully(buffer, 0, chunk)
                     output.write(buffer, 0, chunk)
@@ -544,8 +644,9 @@ object TexMobileConverter {
         width: Int,
         height: Int,
         outputFile: File,
+        checkCancellation: () -> Unit,
     ) {
-        val etc2 = encodeEtc2(imageFile, width, height)
+        val etc2 = encodeEtc2(imageFile, width, height, checkCancellation)
         val (compressed, compressedLength) = compress(etc2)
         outputFile.parentFile?.let { parent ->
             check(parent.exists() || parent.mkdirs()) { "Unable to create TEX output directory" }
@@ -584,6 +685,7 @@ object TexMobileConverter {
         imageFile: File,
         width: Int,
         height: Int,
+        checkCancellation: () -> Unit,
     ): ByteArray {
         val alignedWidth = etc2BlockAligned(width)
         val alignedHeight = etc2BlockAligned(height)
@@ -595,11 +697,15 @@ object TexMobileConverter {
                 require(decoder.width == width && decoder.height == height) {
                     "Embedded image dimensions do not match TEX metadata"
                 }
+                require(width.toLong() * min(ETC2_STRIP_HEIGHT, alignedHeight).toLong() * 8L <= MAX_ETC2_TILE_WORKING_BYTES) {
+                    "Embedded image row is too wide for bounded ETC2 conversion"
+                }
                 val stripHeight = min(ETC2_STRIP_HEIGHT, alignedHeight)
                 val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
                 var stripTop = 0
                 var etc2Offset = 0
                 while (stripTop < alignedHeight) {
+                    checkCancellation()
                     val rows = min(stripHeight, alignedHeight - stripTop)
                     require(rows % ETC2_BLOCK_EDGE == 0) { "ETC2 strip is not aligned to block edges" }
                     val sourceTop = min(stripTop, height - 1)
@@ -797,6 +903,15 @@ object TexMobileConverter {
         targetWidth: Int,
         targetHeight: Int,
     ): ByteArray {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(payload, 0, payload.size, bounds)
+        require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Unsupported image-backed TEX payload" }
+        require(bounds.outWidth == targetWidth && bounds.outHeight == targetHeight) {
+            "Image-backed TEX dimensions do not match metadata"
+        }
+        require(checkedPayloadSize(bounds.outWidth, bounds.outHeight, 4) <= mobileRgbaLimit()) {
+            "Image-backed TEX exceeds mobile conversion memory limit"
+        }
         val bitmap =
             BitmapFactory.decodeByteArray(payload, 0, payload.size)
                 ?: error("Unsupported image-backed TEX payload")
@@ -1109,6 +1224,8 @@ private const val IMAGE_COPY_BUFFER_BYTES = 128 * 1024
 private const val ETC2_STRIP_HEIGHT = 256
 private const val ETC2_BLOCK_EDGE = 4
 private const val MAX_ETC2_PIXELS = 48L * 1024 * 1024
+private const val MAX_ETC2_TILE_WORKING_BYTES = 64L * 1024 * 1024
+private val CONVERTIBLE_STATIC_FORMATS = setOf(TEX_FORMAT_RGBA8888, TEX_FORMAT_DXT1, TEX_FORMAT_DXT3, TEX_FORMAT_DXT5, TEX_FORMAT_RG88, TEX_FORMAT_R8)
 private fun mobileRgbaLimit(maxHeapBytes: Long = Runtime.getRuntime().maxMemory()): Int =
     (maxHeapBytes / TEX_RGBA_HEAP_DIVISOR)
         .coerceIn(MIN_MOBILE_RGBA_BYTES.toLong(), MAX_MOBILE_RGBA_BYTES.toLong())

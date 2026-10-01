@@ -1,6 +1,7 @@
 package com.wallhub.android.core.database
 
 import android.content.Context
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -45,6 +46,11 @@ data class FormalTaskRecordEntity(
     val outputTreeUri: String? = null,
     val outputUri: String? = null,
     val exportFormat: String = "AUTO",
+    @ColumnInfo(defaultValue = "'NONE'") val exportTransactionState: String = "NONE",
+    val exportTargetUri: String? = null,
+    val exportBackupUri: String? = null,
+    val exportOutputName: String? = null,
+    val exportMimeType: String? = null,
     val queuePosition: Long = 0L,
     val createdAt: Long,
     val updatedAt: Long,
@@ -151,7 +157,10 @@ interface FormalTaskRecordDao {
     }
 
     @Transaction
-    suspend fun upsertPreservingExecutionIntent(task: FormalTaskRecordEntity): FormalTaskRecordEntity {
+    suspend fun upsertPreservingExecutionIntent(
+        task: FormalTaskRecordEntity,
+        preserveExportTransaction: Boolean = true,
+    ): FormalTaskRecordEntity {
         val current = find(task.taskId)
         if (current == null) {
             upsert(task)
@@ -166,6 +175,11 @@ interface FormalTaskRecordDao {
                 quiescedIntentRevision = current.quiescedIntentRevision,
                 lastReceiptSequence = current.lastReceiptSequence,
                 engineEpoch = current.engineEpoch,
+                exportTransactionState = if (preserveExportTransaction) current.exportTransactionState else task.exportTransactionState,
+                exportTargetUri = if (preserveExportTransaction) current.exportTargetUri else task.exportTargetUri,
+                exportBackupUri = if (preserveExportTransaction) current.exportBackupUri else task.exportBackupUri,
+                exportOutputName = if (preserveExportTransaction) current.exportOutputName else task.exportOutputName,
+                exportMimeType = if (preserveExportTransaction) current.exportMimeType else task.exportMimeType,
             )
         upsert(merged)
         return merged
@@ -502,7 +516,7 @@ interface LocalWallpaperMetadataDao {
         LocalWallpaperStateEntity::class,
         LocalWallpaperTagEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 abstract class FormalTaskDatabase : RoomDatabase() {
@@ -733,6 +747,20 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 }
             }
 
+        internal val MIGRATION_9_10 =
+            object : Migration(9, 10) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records " +
+                            "ADD COLUMN exportTransactionState TEXT NOT NULL DEFAULT 'NONE'",
+                    )
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN exportTargetUri TEXT")
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN exportBackupUri TEXT")
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN exportOutputName TEXT")
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN exportMimeType TEXT")
+                }
+            }
+
         internal val migrations: Array<Migration> =
             arrayOf(
                 MIGRATION_1_2,
@@ -743,6 +771,7 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 MIGRATION_6_7,
                 MIGRATION_7_8,
                 MIGRATION_8_9,
+                MIGRATION_9_10,
             )
 
         @Volatile

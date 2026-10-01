@@ -104,7 +104,7 @@ object WorkshopConverter {
         require(projectFile.isFile) { "Scene workshop is missing project.json" }
         val preview = findPreview(inputDir) ?: error("Scene workshop is missing preview.*")
         val project = readProject(inputDir)
-        val presetResolution = resolvePresetChain(inputDir)
+        val presetResolution = PresetDependencyResolver.resolve(inputDir).getOrThrow()
         val presetDependency = presetResolution?.sceneRoot
         val sceneRoot = presetDependency ?: inputDir
         val sceneProject = readProject(sceneRoot)
@@ -118,7 +118,10 @@ object WorkshopConverter {
         val archive = PkgReader.readIndex(scenePackage)
         val transformedDirectory = createConversionDirectory(outputFile)
         try {
-            val entries = mutableListOf<MpkgInputEntry>()
+            val entriesByPath = LinkedHashMap<String, MpkgInputEntry>(archive.entries.size)
+            fun putEntry(entry: MpkgInputEntry) {
+                entriesByPath[entry.path] = entry
+            }
             archive.entries.forEachIndexed { index, entry ->
                 checkCancellation()
                 val extension = entry.path.substringAfterLast('.', "").lowercase(Locale.ROOT)
@@ -128,64 +131,69 @@ object WorkshopConverter {
                 }
                 when (extension) {
                     "tex" -> {
-                        if (entry.length > texConversionInputLimit()) {
-                            checkCancellation()
-                            Log.i("WallhubMpkg", "Oversized texture ${entry.path} (${entry.length} bytes); attempting ETC2 re-encode")
-                            val etc2 = File(transformedDirectory, "$index-etc2.tex")
-                            val etc2Result = TexMobileConverter.convertToEtc2File(scenePackage, entry.offset, entry.length, etc2)
-                            if (etc2Result.converted) {
-                                convertedTextures += 1
-                                warnings += "Re-encoded oversized texture as ETC2 RGBA8 + LZ4: ${entry.path}"
-                                Log.i("WallhubMpkg", "ETC2 re-encode succeeded for ${entry.path}")
-                                entries += MpkgInputEntry(entry.path, FilePayload(etc2))
-                                return@forEachIndexed
-                            }
-                            warnings += "ETC2 re-encode failed for oversized texture (${etc2Result.reason}): ${entry.path}"
-                            Log.w("WallhubMpkg", "ETC2 re-encode failed for oversized texture (${etc2Result.reason}): ${entry.path}")
-                            require(TexMobileConverter.hasValidTexEnvelope(scenePackage, entry.offset, entry.length)) {
-                                "Failed to retain oversized texture ${entry.path}: invalid TEX structure"
-                            }
-                            copiedTextures += 1
-                            warnings += "Retained texture without mobile recompression (file exceeds conversion memory limit): ${entry.path}"
-                            entries += MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length))
-                            return@forEachIndexed
-                        }
-                        val transformed = File(transformedDirectory, "$index.tex")
-                        val result = TexMobileConverter.convertToFile(archive.readBytes(entry), transformed)
-                        if (!result.converted) {
-                            if (result.canRetainOriginal) {
+                        when (TexMobileConverter.inspectEntryRoute(scenePackage, entry.offset, entry.length)) {
+                            TexEntryRoute.RETAIN_VERIFIED_MOBILE -> {
                                 copiedTextures += 1
-                                warnings += "Retained texture without mobile recompression (${result.reason}): ${entry.path}"
-                                entries +=
-                                    MpkgInputEntry(
-                                        entry.path,
-                                        FileSlicePayload(scenePackage, entry.offset, entry.length),
-                                    )
-                                return@forEachIndexed
+                                putEntry(MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length)))
                             }
-                            error("Failed to convert mobile texture ${entry.path}: ${result.reason}")
+                            TexEntryRoute.CONVERT_IMAGE_TO_ETC2 -> {
+                                val transformed = File(transformedDirectory, "$index-etc2.tex")
+                                val result =
+                                    TexMobileConverter.convertToEtc2File(
+                                        scenePackage,
+                                        entry.offset,
+                                        entry.length,
+                                        transformed,
+                                        checkCancellation,
+                                    )
+                                check(result.converted) {
+                                    "Failed to convert image-backed texture ${entry.path}: ${result.reason}"
+                                }
+                                convertedTextures += 1
+                                warnings += "Re-encoded texture as ETC2 RGBA8 + LZ4: ${entry.path}"
+                                Log.i("WallhubMpkg", "ETC2 re-encode succeeded for ${entry.path}")
+                                putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
+                            }
+                            TexEntryRoute.CONVERT_IN_MEMORY -> {
+                                require(entry.length <= texConversionInputLimit()) {
+                                    "Static texture ${entry.path} exceeds the bounded in-memory conversion limit"
+                                }
+                                val transformed = File(transformedDirectory, "$index.tex")
+                                val result =
+                                    TexMobileConverter.convertToFile(
+                                        archive.readBytes(entry, texConversionInputLimit()),
+                                        transformed,
+                                        checkCancellation,
+                                    )
+                                check(result.converted) {
+                                    "Failed to convert texture ${entry.path}: ${result.reason}"
+                                }
+                                convertedTextures += 1
+                                putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
+                            }
+                            TexEntryRoute.UNSUPPORTED ->
+                                error("Texture ${entry.path} is not verified as mobile-compatible and cannot be converted safely")
                         }
-                        convertedTextures += 1
-                        entries += MpkgInputEntry(entry.path, FilePayload(transformed))
                     }
                     "frag", "vert" -> {
                         checkCancellation()
                         val original = archive.readBytes(entry, MAX_SHADER_SOURCE_BYTES).toString(Charsets.UTF_8)
                         checkCancellation()
-                        val rewritten = ShaderCompatibility.rewrite(original)
+                        val rewritten = ShaderCompatibility.rewrite(original, checkCancellation)
                         checkCancellation()
                         if (rewritten != original) rewrittenShaders += 1
                         val transformed = File(transformedDirectory, "$index.$extension")
                         transformed.writeText(rewritten, Charsets.UTF_8)
                         checkCancellation()
-                        entries += MpkgInputEntry(entry.path, FilePayload(transformed))
+                        putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
                     }
                     else ->
-                        entries +=
+                        putEntry(
                             MpkgInputEntry(
                                 entry.path,
                                 FileSlicePayload(scenePackage, entry.offset, entry.length),
-                            )
+                            ),
+                        )
                 }
             }
             if (presetDependency != null) {
@@ -198,8 +206,7 @@ object WorkshopConverter {
                                 file.canonicalFile.toPath().startsWith(dependencyPath)
                         }.forEach { file ->
                             val path = relativePath(presetRoot, file)
-                            entries.removeAll { entry -> entry.path == path }
-                            entries += MpkgInputEntry(path, FilePayload(file))
+                            putEntry(MpkgInputEntry(path, FilePayload(file)))
                         }
                 }
             }
@@ -209,9 +216,9 @@ object WorkshopConverter {
                 } else {
                     ByteArrayPayload(mergePresetProject(sceneRoot, presetResolution!!.presetRoots, preview.name))
                 }
-            entries += MpkgInputEntry("project.json", outputProject)
-            entries += MpkgInputEntry(preview.name, FilePayload(preview))
-            MpkgWriter.write(entries, outputFile, SCENE_MPKG_MAGIC, checkCancellation)
+            putEntry(MpkgInputEntry("project.json", outputProject))
+            putEntry(MpkgInputEntry(preview.name, FilePayload(preview)))
+            MpkgWriter.write(entriesByPath.values.toList(), outputFile, SCENE_MPKG_MAGIC, checkCancellation)
         } finally {
             transformedDirectory.deleteRecursively()
         }
@@ -320,43 +327,8 @@ object WorkshopConverter {
         return candidate
     }
 
-    internal fun resolvePresetDependency(root: File): File? = resolvePresetChain(root)?.sceneRoot
-
-    private fun resolvePresetChain(root: File): PresetResolution? {
-        val presetRoots = mutableListOf<File>()
-        var current = root
-        val visited = mutableSetOf<String>()
-        repeat(MAX_PRESET_CHAIN_DEPTH) {
-            val projectFile = File(current, "project.json")
-            if (!projectFile.isFile) return if (presetRoots.isEmpty()) null else PresetResolution(current, presetRoots)
-            val project = JSONObject(readProjectJson(projectFile))
-            if (!project.has("preset")) return if (presetRoots.isEmpty()) null else PresetResolution(current, presetRoots)
-            check(visited.add(current.canonicalPath)) { "Workshop preset dependency cycle detected" }
-            presetRoots += current
-            val dependencyId =
-                project.opt("dependency")
-                    ?.toString()
-                    ?.trim()
-                    ?.toLongOrNull()
-                    ?.takeIf { it > 0L }
-                    ?: error("Workshop preset has no valid dependency ID")
-            val dependencyRoot = File(current, PRESET_DEPENDENCY_DIRECTORY_NAME).canonicalFile
-            val dependency = File(dependencyRoot, dependencyId.toString()).canonicalFile
-            require(dependency.toPath().startsWith(dependencyRoot.toPath())) { "Invalid Workshop preset dependency path" }
-            require(dependency.isDirectory) { "Workshop preset dependency $dependencyId is missing" }
-            current = dependency
-        }
-        val finalProject = File(current, "project.json")
-        if (finalProject.isFile && !JSONObject(readProjectJson(finalProject)).has("preset")) {
-            return PresetResolution(current, presetRoots)
-        }
-        error("Workshop preset dependency depth exceeds $MAX_PRESET_CHAIN_DEPTH")
-    }
-
-    private data class PresetResolution(
-        val sceneRoot: File,
-        val presetRoots: List<File>,
-    )
+    internal fun resolvePresetDependency(root: File): File? =
+        PresetDependencyResolver.resolve(root).getOrThrow()?.sceneRoot
 
     internal fun mergePresetProject(
         sceneRoot: File,
@@ -479,10 +451,14 @@ object ShaderCompatibility {
     private const val HIDDEN_TEXTURE_DECLARATION = "uniform sampler2D g_Texture0; // {\"hidden\":true}"
     private const val HIDDEN_TEXTURE_MARKER = " // {\"hidden\":true}"
 
-    fun rewrite(source: String): String {
+    fun rewrite(
+        source: String,
+        checkCancellation: () -> Unit = {},
+    ): String {
         require(source.toByteArray(Charsets.UTF_8).size <= MAX_SHADER_SOURCE_BYTES) {
             "Shader source exceeds the $MAX_SHADER_SOURCE_BYTES-byte rewrite limit"
         }
+        checkCancellation()
         var output = source.replace(Regex("\\bsample\\b"), "_sample")
         mapOf(
             Regex("(?<![A-Za-z0-9_])vec4\\(1, 0, 0, 1\\)") to "vec4(1.0, 0.0, 0.0, 1.0)",
@@ -500,8 +476,11 @@ object ShaderCompatibility {
             "30 / 8.0" to "30.0 / 8.0",
             "30 / 15.0" to "30.0 / 15.0",
         ).forEach { (old, new) -> output = output.replace(old, new) }
+        checkCancellation()
         output = rewriteVectorIntegerArithmetic(output)
+        checkCancellation()
         output = rewriteMixArguments(output)
+        checkCancellation()
         output =
             output
                 .replace(
@@ -539,21 +518,17 @@ object ShaderCompatibility {
                 .mapNotNull { it.groupValues.getOrNull(1) }
                 .toSet()
         if (vectorNames.isEmpty()) return source
-        var output = source
-        vectorNames.forEach { name ->
-            val escapedName = Regex.escape(name)
-            val trailingExpression =
-                Regex(
-                    """(?<![A-Za-z0-9_])($escapedName(?:\.\w+)?(?:\s*[*+/\-]\s*\d+)(?:\s*[*+/\-]\s*\d+)*)""",
-                )
-            output = trailingExpression.replace(output) { match -> floatArguments(match.value) }
-            val leadingExpression =
-                Regex(
-                    """(?<![A-Za-z0-9_.])((?:\d+\s*[*+/\-]\s*)+$escapedName(?:\.\w+)?)""",
-                )
-            output = leadingExpression.replace(output) { match -> floatArguments(match.value) }
-        }
-        return output
+        val vectorName = vectorNames.joinToString("|") { Regex.escape(it) }
+        val trailingExpression =
+            Regex(
+                """(?<![A-Za-z0-9_])((?:$vectorName)(?:\.\w+)?(?:\s*[*+/\-]\s*\d+)(?:\s*[*+/\-]\s*\d+)*)""",
+            )
+        val leadingExpression =
+            Regex(
+                """(?<![A-Za-z0-9_.])((?:\d+\s*[*+/\-]\s*)+(?:$vectorName)(?:\.\w+)?)""",
+            )
+        val trailingRewritten = trailingExpression.replace(source) { match -> floatArguments(match.value) }
+        return leadingExpression.replace(trailingRewritten) { match -> floatArguments(match.value) }
     }
 
     private fun floatArguments(expression: String): String =
@@ -644,5 +619,3 @@ private const val MIN_TEX_CONVERSION_INPUT_BYTES = 2L * 1024L * 1024L
 private const val MAX_TEX_CONVERSION_INPUT_BYTES = 8L * 1024L * 1024L
 internal const val MAX_SHADER_SOURCE_BYTES = 8L * 1024L * 1024L
 private const val COPY_BUFFER_SIZE = 1024 * 1024
-private const val PRESET_DEPENDENCY_DIRECTORY_NAME = ".wallhub-dependencies"
-private const val MAX_PRESET_CHAIN_DEPTH = 4

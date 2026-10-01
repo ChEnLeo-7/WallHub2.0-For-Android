@@ -1,6 +1,5 @@
 package com.wallhub.prototype.mpkg
 
-import java.io.ByteArrayOutputStream
 import java.io.EOFException
 import java.io.OutputStream
 import java.io.RandomAccessFile
@@ -85,9 +84,3 @@ internal class ByteCursor(
         if (position + length > data.size) throw EOFException("Unexpected end of binary data")
     }
 }
-
-internal fun byteArrayOutput(block: ByteArrayOutputStream.() -> Unit): ByteArray =
-    ByteArrayOutputStream().use { output ->
-        output.block()
-        output.toByteArray()
-    }
