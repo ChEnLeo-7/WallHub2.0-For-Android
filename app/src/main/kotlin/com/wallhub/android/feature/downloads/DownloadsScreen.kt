@@ -1075,7 +1075,6 @@ private fun DownloadTask.statusDescription(): String {
         when (liveActivity) {
             DownloadLiveActivity.PREPARING -> stringResource(R.string.downloads_activity_preparing)
             DownloadLiveActivity.RECEIVING -> stringResource(R.string.downloads_status_downloading)
-            DownloadLiveActivity.WAITING -> stringResource(R.string.downloads_activity_waiting)
             DownloadLiveActivity.VERIFYING -> stringResource(R.string.downloads_activity_verifying)
             null -> status.label()
         }

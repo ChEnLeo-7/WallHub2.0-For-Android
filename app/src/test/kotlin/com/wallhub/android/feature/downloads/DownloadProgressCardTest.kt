@@ -112,18 +112,16 @@ class DownloadProgressCardTest {
     }
 
     @Test
-    fun `waiting and verifying do not show a stale receiving speed`() {
-        listOf(DownloadLiveActivity.WAITING, DownloadLiveActivity.VERIFYING).forEach { activity ->
-            assertNull(
-                measuredDownloadSpeed(
-                    task(
-                        status = DownloadStatus.DOWNLOADING,
-                        liveActivity = activity,
-                        liveNetworkBytesPerSecond = 2_048L,
-                    ),
+    fun `verifying does not show a stale receiving speed`() {
+        assertNull(
+            measuredDownloadSpeed(
+                task(
+                    status = DownloadStatus.DOWNLOADING,
+                    liveActivity = DownloadLiveActivity.VERIFYING,
+                    liveNetworkBytesPerSecond = 2_048L,
                 ),
-            )
-        }
+            ),
+        )
     }
 
     @Test

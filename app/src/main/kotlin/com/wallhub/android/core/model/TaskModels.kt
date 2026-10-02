@@ -60,7 +60,6 @@ sealed interface DownloadEnqueueResult {
 enum class DownloadLiveActivity {
     PREPARING,
     RECEIVING,
-    WAITING,
     VERIFYING,
 }
 

@@ -76,10 +76,10 @@ internal class DownloadLiveTelemetry internal constructor(
                                     now - lastActivityAt < NETWORK_ACTIVITY_STALE_AFTER_MS
                             DownloadLiveReading(
                                 activity =
-                                    when {
-                                        !progress.firstContentReceived -> DownloadLiveActivity.PREPARING
-                                        fresh -> DownloadLiveActivity.RECEIVING
-                                        else -> DownloadLiveActivity.WAITING
+                                    if (progress.firstContentReceived) {
+                                        DownloadLiveActivity.RECEIVING
+                                    } else {
+                                        DownloadLiveActivity.PREPARING
                                     },
                                 networkBytesPerSecond =
                                     progress.networkBytesPerSecond
@@ -111,7 +111,10 @@ internal class DownloadLiveTelemetry internal constructor(
                 val nextActivityAt =
                     mutableReadings.value.values
                         .asSequence()
-                        .filter { it.activity == DownloadLiveActivity.RECEIVING }
+                        .filter {
+                            it.activity == DownloadLiveActivity.RECEIVING &&
+                                it.networkBytesPerSecond != null
+                        }
                         .mapNotNull { it.lastNetworkActivityAt }
                         .minOrNull()
                 expirationJob =
@@ -134,13 +137,11 @@ internal class DownloadLiveTelemetry internal constructor(
                 current.mapValues { (_, reading) ->
                     if (
                         reading.activity == DownloadLiveActivity.RECEIVING &&
+                        reading.networkBytesPerSecond != null &&
                         reading.lastNetworkActivityAt != null &&
                         now - reading.lastNetworkActivityAt >= NETWORK_ACTIVITY_STALE_AFTER_MS
                     ) {
-                        reading.copy(
-                            activity = DownloadLiveActivity.WAITING,
-                            networkBytesPerSecond = null,
-                        )
+                        reading.copy(networkBytesPerSecond = null)
                     } else {
                         reading
                     }

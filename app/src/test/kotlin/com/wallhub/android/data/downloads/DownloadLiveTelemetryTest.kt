@@ -11,7 +11,7 @@ import org.junit.Test
 
 class DownloadLiveTelemetryTest {
     @Test
-    fun `network activity becomes waiting after two seconds without received bytes`() = runTest {
+    fun `downloading remains receiving when measured speed ages out`() = runTest {
         var now = 1_000L
         val telemetry =
             DownloadLiveTelemetry(
@@ -56,12 +56,12 @@ class DownloadLiveTelemetryTest {
             ),
         )
 
-        assertEquals(DownloadLiveActivity.WAITING, telemetry.current("task")?.activity)
+        assertEquals(DownloadLiveActivity.RECEIVING, telemetry.current("task")?.activity)
         assertNull(telemetry.current("task")?.networkBytesPerSecond)
     }
 
     @Test
-    fun `timer expires receiving without another progress callback`() = runTest {
+    fun `timer clears measured speed without changing downloading activity`() = runTest {
         val telemetry =
             DownloadLiveTelemetry(
                 nowMs = { testScheduler.currentTime },
@@ -87,7 +87,7 @@ class DownloadLiveTelemetryTest {
 
         advanceTimeBy(1L)
         runCurrent()
-        assertEquals(DownloadLiveActivity.WAITING, telemetry.current("task")?.activity)
+        assertEquals(DownloadLiveActivity.RECEIVING, telemetry.current("task")?.activity)
         assertNull(telemetry.current("task")?.networkBytesPerSecond)
     }
 
@@ -122,7 +122,7 @@ class DownloadLiveTelemetryTest {
                 firstContentReceived = true,
             ),
         )
-        assertEquals(DownloadLiveActivity.WAITING, telemetry.current("task")?.activity)
+        assertEquals(DownloadLiveActivity.RECEIVING, telemetry.current("task")?.activity)
         assertNull(telemetry.current("task")?.networkBytesPerSecond)
 
         now += 100L
@@ -135,7 +135,7 @@ class DownloadLiveTelemetryTest {
                 firstContentReceived = true,
             ),
         )
-        assertEquals(DownloadLiveActivity.WAITING, telemetry.current("task")?.activity)
+        assertEquals(DownloadLiveActivity.RECEIVING, telemetry.current("task")?.activity)
         assertNull(telemetry.current("task")?.networkBytesPerSecond)
 
         telemetry.accept(
@@ -178,7 +178,7 @@ class DownloadLiveTelemetryTest {
                 firstContentReceived = true,
             ),
         )
-        assertEquals(DownloadLiveActivity.WAITING, telemetry.current("task")?.activity)
+        assertEquals(DownloadLiveActivity.RECEIVING, telemetry.current("task")?.activity)
         assertNull(telemetry.current("task")?.networkBytesPerSecond)
 
         telemetry.accept(
