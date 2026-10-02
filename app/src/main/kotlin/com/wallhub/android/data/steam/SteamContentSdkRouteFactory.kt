@@ -110,4 +110,3 @@ internal fun sdkHttpProxyAuthority(raw: String): String {
 }
 
 private const val DEFAULT_HTTP_PROXY_PORT = 80
-private const val MAX_CM_CANDIDATES = 4
