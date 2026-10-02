@@ -9,6 +9,7 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.OutputStream
 import java.io.RandomAccessFile
 import java.util.concurrent.CancellationException
 import kotlin.math.min
@@ -85,6 +86,9 @@ private data class TexEntryMetadata(
     val baseStoredSize: Int,
     val payloadStart: Long,
     val payloadLength: Long,
+    val animationTailStart: Long,
+    val animationTailLength: Long,
+    val hasVerifiedAnimationTail: Boolean,
 )
 
 internal enum class TexEntryRoute {
@@ -170,8 +174,9 @@ object TexMobileConverter {
             checkCancellation()
             val metadata = readTexEntryMetadata(sourceFile, offset, length)
             require(metadata.imageFormat >= 0) { "TEX payload is not image-backed" }
-            require(!metadata.isMp4 && metadata.flags and TEX_FLAG_GIF == 0 && metadata.flags and TEX_FLAG_VIDEO == 0) {
-                ANIMATED_TEXTURE_REASON
+            require(!metadata.isMp4 && metadata.flags and TEX_FLAG_VIDEO == 0) { ANIMATED_TEXTURE_REASON }
+            if (metadata.flags and TEX_FLAG_GIF != 0) {
+                require(metadata.hasVerifiedAnimationTail) { "Animated TEX does not carry a verified TEXS0003 descriptor" }
             }
             require(!metadata.baseCompressed) { "Compressed TEX payload is unsupported for ETC2 conversion" }
             require(metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight) {
@@ -198,6 +203,9 @@ object TexMobileConverter {
                     metadata.imageHeight,
                     outputFile,
                     checkCancellation,
+                    sourceFile = sourceFile,
+                    animationTailStart = metadata.animationTailStart,
+                    animationTailLength = metadata.animationTailLength,
                 )
                 TexFileConversionResult(true, "ETC2 RGBA8 + LZ4 HC3")
             } finally {
@@ -216,12 +224,18 @@ object TexMobileConverter {
     ): TexEntryRoute =
         runCatching {
             val metadata = readTexEntryMetadata(sourceFile, offset, length)
+            val animated = metadata.flags and TEX_FLAG_GIF != 0
             when {
+                metadata.isMp4 || metadata.flags and TEX_FLAG_VIDEO != 0 -> TexEntryRoute.UNSUPPORTED
                 isVerifiedMobileCompatible(metadata) -> TexEntryRoute.RETAIN_VERIFIED_MOBILE
-                metadata.flags and (TEX_FLAG_GIF or TEX_FLAG_VIDEO) != 0 || metadata.isMp4 -> TexEntryRoute.UNSUPPORTED
+                animated &&
+                    (!metadata.hasVerifiedAnimationTail ||
+                        metadata.imageWidth != etc2BlockAligned(metadata.imageWidth) ||
+                        metadata.imageHeight != etc2BlockAligned(metadata.imageHeight)) -> TexEntryRoute.UNSUPPORTED
                 metadata.imageFormat >= 0 && !metadata.baseCompressed &&
                     metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight ->
                     TexEntryRoute.CONVERT_IMAGE_TO_ETC2
+                animated -> TexEntryRoute.UNSUPPORTED
                 metadata.format in CONVERTIBLE_STATIC_FORMATS -> TexEntryRoute.CONVERT_IN_MEMORY
                 else -> TexEntryRoute.UNSUPPORTED
             }
@@ -550,7 +564,33 @@ object TexMobileConverter {
                 }
                 input.seek(input.filePointer + storedSize)
             }
-            require(input.filePointer == end) { "TEX entry has trailing data" }
+            val animationTailStart = input.filePointer
+            val animationTailLength = end - animationTailStart
+            val hasVerifiedAnimationTail =
+                if (animationTailLength == 0L) {
+                    false
+                } else {
+                    require(flags and TEX_FLAG_GIF != 0) { "TEX entry has unexpected trailing data" }
+                    require(animationTailLength <= MAX_ANIMATION_DESCRIPTOR_BYTES) {
+                        "TEX animation descriptor exceeds the bounded size"
+                    }
+                    input.seek(animationTailStart)
+                    require(input.readBoundedCString(end) == ANIMATION_DESCRIPTOR_MAGIC) {
+                        "Unsupported TEX animation descriptor"
+                    }
+                    val frameCount = input.readBoundedIntLe(end)
+                    val frameWidth = input.readBoundedIntLe(end)
+                    val frameHeight = input.readBoundedIntLe(end)
+                    require(frameCount in 1..MAX_ANIMATION_FRAMES && frameWidth > 0 && frameHeight > 0) {
+                        "Invalid TEX animation descriptor"
+                    }
+                    val frameBytes = frameCount.toLong() * ANIMATION_FRAME_DESCRIPTOR_BYTES
+                    require(input.filePointer <= end && end - input.filePointer == frameBytes) {
+                        "Invalid TEX animation descriptor length"
+                    }
+                    input.seek(end)
+                    true
+                }
             TexEntryMetadata(
                 format = format,
                 flags = flags,
@@ -568,6 +608,9 @@ object TexMobileConverter {
                 baseStoredSize = baseStoredSize,
                 payloadStart = payloadStart,
                 payloadLength = payloadLength,
+                animationTailStart = animationTailStart,
+                animationTailLength = animationTailLength,
+                hasVerifiedAnimationTail = hasVerifiedAnimationTail,
             )
         }
 
@@ -637,6 +680,30 @@ object TexMobileConverter {
         }
     }
 
+    private fun copyFileRange(
+        sourceFile: File,
+        offset: Long,
+        length: Long,
+        output: OutputStream,
+        checkCancellation: () -> Unit,
+    ) {
+        require(offset >= 0L && length >= 0L && offset <= sourceFile.length() - length) {
+            "Invalid TEX animation descriptor range"
+        }
+        RandomAccessFile(sourceFile, "r").use { input ->
+            input.seek(offset)
+            val buffer = ByteArray(IMAGE_COPY_BUFFER_BYTES)
+            var remaining = length
+            while (remaining > 0L) {
+                checkCancellation()
+                val count = min(buffer.size.toLong(), remaining).toInt()
+                input.readFully(buffer, 0, count)
+                output.write(buffer, 0, count)
+                remaining -= count
+            }
+        }
+    }
+
     private fun writeEtc2(
         imageFile: File,
         flags: Int,
@@ -645,6 +712,9 @@ object TexMobileConverter {
         height: Int,
         outputFile: File,
         checkCancellation: () -> Unit,
+        sourceFile: File,
+        animationTailStart: Long,
+        animationTailLength: Long,
     ) {
         val etc2 = encodeEtc2(imageFile, width, height, checkCancellation)
         val (compressed, compressedLength) = compress(etc2)
@@ -663,6 +733,9 @@ object TexMobileConverter {
                 ),
             )
             output.write(compressed, 0, compressedLength)
+            if (animationTailLength > 0L) {
+                copyFileRange(sourceFile, animationTailStart, animationTailLength, output, checkCancellation)
+            }
         }
     }
 
@@ -1215,6 +1288,10 @@ private fun RandomAccessFile.readBoundedCString(end: Long): String {
 
 private const val MOBILE_TEX_HEADER_SIZE = 91
 private const val ANIMATED_TEXTURE_REASON = "animated texture"
+private const val ANIMATION_DESCRIPTOR_MAGIC = "TEXS0003"
+private const val ANIMATION_FRAME_DESCRIPTOR_BYTES = 32L
+private const val MAX_ANIMATION_FRAMES = 16_384
+private const val MAX_ANIMATION_DESCRIPTOR_BYTES = 1024L * 1024L
 private const val LZ4_COMPRESSION_LEVEL = 3
 private val PNG_SIGNATURE = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
 private val JPEG_SIGNATURE = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())
