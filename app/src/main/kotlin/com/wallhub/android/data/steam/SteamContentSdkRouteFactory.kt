@@ -2,6 +2,7 @@ package com.wallhub.android.data.steam
 
 import com.wallhub.android.core.model.SettingsRepository
 import io.steamcontent.sdk.SessionTransportKind
+import java.net.URI
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
@@ -54,10 +55,9 @@ internal class SteamContentSdkRouteFactory
             refreshLive: Boolean = false,
         ): SteamContentSdkEngine.Route? {
             val candidates = cmEndpoints.candidates(refreshLive = refreshLive) ?: return null
-            return SteamContentSdkEngine.Route(
+            return sdkPlatformRoute(
                 cmCandidates = candidates,
-                transport = SessionTransportKind.WEBSOCKET,
-                cdnProxy = cdnProxy ?: configuredCdnProxy(),
+                configuredProxyUri = cdnProxy ?: configuredProxyUri(),
             )
         }
 
@@ -65,21 +65,49 @@ internal class SteamContentSdkRouteFactory
         fun direct(cdnProxy: String? = null): SteamContentSdkEngine.Route =
             SteamContentSdkEngine.Route(cdnProxy = cdnProxy)
 
-        /**
-         * The download proxy the product's own settings name, as the SDK's `host:port`.
-         *
-         * Without this the SDK's CM and CDN traffic would bypass a proxy the user configured even though every
-         * other Steam call the product makes honours it. The URL form the setting accepts is
-         * `http://host:port`, which is what the settings screen validates before it can be enabled.
-         */
-        private suspend fun configuredCdnProxy(): String? {
+        /** The enabled proxy URI from the product's settings, or null for a direct route. */
+        private suspend fun configuredProxyUri(): String? {
             val preferences = settingsRepository.preferences.first()
-            if (!preferences.downloadProxyEnabled) return null
-            return preferences.downloadProxyUrl
-                .trim()
-                .removePrefix("http://")
-                .removePrefix("https://")
-                .trimEnd('/')
-                .takeIf { it.isNotEmpty() }
+            return preferences.downloadProxyUrl.takeIf { preferences.downloadProxyEnabled }
         }
     }
+
+/**
+ * Maps the platform route into the SDK route at the Android/AAR seam.
+ *
+ * The SDK accepts only an HTTP proxy authority. Parsing the URI structurally prevents another proxy kind from
+ * being silently stripped to a plausible-looking `host:port`. The same authority serves both SDK traffic
+ * planes, and this platform supplies no proxy credential.
+ */
+internal fun sdkPlatformRoute(
+    cmCandidates: String,
+    configuredProxyUri: String?,
+): SteamContentSdkEngine.Route {
+    val proxy = configuredProxyUri?.let(::sdkHttpProxyAuthority)
+    return SteamContentSdkEngine.Route(
+        cmCandidates = cmCandidates,
+        connectAttempts = cmCandidates.lineSequence().count { it.isNotBlank() }.coerceAtMost(MAX_CM_CANDIDATES),
+        transport = SessionTransportKind.WEBSOCKET,
+        cdnProxy = proxy,
+        cmProxy = proxy,
+    )
+}
+
+/** Returns the `host:port` accepted by the SDK, rejecting every non-HTTP or credentialed proxy URI. */
+internal fun sdkHttpProxyAuthority(raw: String): String {
+    val uri =
+        runCatching { URI(raw.trim()) }
+            .getOrElse { throw IllegalArgumentException("Invalid SDK proxy URI", it) }
+    require(uri.scheme?.lowercase() == "http") { "The Steam Content SDK supports only an HTTP proxy" }
+    require(!uri.host.isNullOrBlank()) { "The Steam Content SDK proxy URI has no host" }
+    require(uri.userInfo == null) { "The Steam Content SDK route does not accept proxy credentials" }
+    require(uri.query == null && uri.fragment == null) { "The Steam Content SDK proxy URI cannot carry query or fragment data" }
+    require(uri.path.isNullOrEmpty() || uri.path == "/") { "The Steam Content SDK proxy URI cannot carry a path" }
+    require(uri.port == -1 || uri.port in 1..65_535) { "The Steam Content SDK proxy port is invalid" }
+    val port = uri.port.takeIf { it != -1 } ?: DEFAULT_HTTP_PROXY_PORT
+    val host = uri.host.let { if (':' in it) "[$it]" else it }
+    return "$host:$port"
+}
+
+private const val DEFAULT_HTTP_PROXY_PORT = 80
+private const val MAX_CM_CANDIDATES = 4

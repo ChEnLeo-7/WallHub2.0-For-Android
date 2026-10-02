@@ -69,6 +69,7 @@ class SteamContentSdkEngine
          */
         data class Route(
             val cmCandidates: String? = null,
+            val connectAttempts: Int = 0,
             val cdnProxy: String? = null,
             val cmProxy: String? = null,
             val cmProxyAuthorization: String? = null,
@@ -140,6 +141,7 @@ class SteamContentSdkEngine
                         trustRootsPem = roots,
                         sessionMode = SessionMode.ACCOUNT,
                         transport = route.transport,
+                        connectAttempts = route.connectAttempts,
                         cmCandidates = route.cmCandidates,
                         storageRoot = storageRootPath,
                         cdnProxy = route.cdnProxy,
