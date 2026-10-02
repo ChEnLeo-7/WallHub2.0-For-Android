@@ -132,9 +132,11 @@ class TexMobileConverterEmbeddedImageTest {
         ByteArrayOutputStream().use { output ->
             output.writeCString("TEXV0005")
             output.writeCString("TEXI0001")
-            listOf(TEX_FORMAT_RGBA8888, TEX_FLAG_GIF or 2, 1200, 1200, 1200, 1200, -682089).forEach(output::writeIntLe)
+            listOf(TEX_FORMAT_RGBA8888, TEX_FLAG_GIF or 2, 1200, 1200, 1200, 1200, -682089).forEach {
+                output.writeIntLe(it)
+            }
             output.writeCString("TEXB0004")
-            listOf(1, FREE_IMAGE_PNG, 0, 4).forEach(output::writeIntLe)
+            listOf(1, FREE_IMAGE_PNG, 0, 4).forEach { output.writeIntLe(it) }
             listOf(1200 to 1200, 600 to 600, 300 to 300, 150 to 150).forEach { (width, height) ->
                 output.writeIntLe(width)
                 output.writeIntLe(height)
@@ -144,7 +146,7 @@ class TexMobileConverterEmbeddedImageTest {
                 output.write(PNG_SIGNATURE)
             }
             output.writeCString(tailMagic)
-            listOf(25, 240, 240).forEach(output::writeIntLe)
+            listOf(25, 240, 240).forEach { output.writeIntLe(it) }
             output.write(ByteArray(25 * 32))
             output.toByteArray()
         }
