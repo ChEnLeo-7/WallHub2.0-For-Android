@@ -136,6 +136,11 @@ object WorkshopConverter {
                                 copiedTextures += 1
                                 putEntry(MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length)))
                             }
+                            TexEntryRoute.RETAIN_VERIFIED_VIDEO -> {
+                                copiedTextures += 1
+                                warnings += "Preserved validated MP4-backed video texture: ${entry.path}"
+                                putEntry(MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length)))
+                            }
                             TexEntryRoute.CONVERT_IMAGE_TO_ETC2 -> {
                                 val transformed = File(transformedDirectory, "$index-etc2.tex")
                                 val result =
@@ -171,6 +176,10 @@ object WorkshopConverter {
                                 convertedTextures += 1
                                 putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
                             }
+                            TexEntryRoute.UNSUPPORTED_RESOURCE_BUDGET ->
+                                error("Texture ${entry.path} exceeds the format-aware mobile conversion budget")
+                            TexEntryRoute.UNSUPPORTED_VIDEO ->
+                                error("MP4-backed video texture ${entry.path} is not a validated mobile TEX profile")
                             TexEntryRoute.UNSUPPORTED ->
                                 error("Texture ${entry.path} is not verified as mobile-compatible and cannot be converted safely")
                         }

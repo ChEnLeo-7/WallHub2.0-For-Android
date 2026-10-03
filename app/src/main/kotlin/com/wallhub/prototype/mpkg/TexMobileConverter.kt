@@ -95,6 +95,9 @@ internal enum class TexEntryRoute {
     CONVERT_IN_MEMORY,
     CONVERT_IMAGE_TO_ETC2,
     RETAIN_VERIFIED_MOBILE,
+    RETAIN_VERIFIED_VIDEO,
+    UNSUPPORTED_RESOURCE_BUDGET,
+    UNSUPPORTED_VIDEO,
     UNSUPPORTED,
 }
 
@@ -104,7 +107,7 @@ internal enum class TexEntryRoute {
  * textures to ETC2 RGBA8 + LZ4.
  */
 object TexMobileConverter {
-    fun convertOrKeep(source: ByteArray): TexConversionResult {
+    internal fun convertOrKeep(source: ByteArray): TexConversionResult {
         return runCatching {
             val prepared = prepare(source)
             val texture =
@@ -127,7 +130,7 @@ object TexMobileConverter {
         }
     }
 
-    fun convertToFile(
+    internal fun convertToFile(
         source: ByteArray,
         outputFile: File,
         checkCancellation: () -> Unit = {},
@@ -221,12 +224,19 @@ object TexMobileConverter {
         sourceFile: File,
         offset: Long,
         length: Long,
+        maxHeapBytes: Long = Runtime.getRuntime().maxMemory(),
     ): TexEntryRoute =
         runCatching {
             val metadata = readTexEntryMetadata(sourceFile, offset, length)
             val animated = metadata.flags and TEX_FLAG_GIF != 0
+            val video = metadata.isMp4 || metadata.flags and TEX_FLAG_VIDEO != 0
             when {
-                metadata.isMp4 || metadata.flags and TEX_FLAG_VIDEO != 0 -> TexEntryRoute.UNSUPPORTED
+                video ->
+                    if (isVerifiedVideoTex(sourceFile, metadata)) {
+                        TexEntryRoute.RETAIN_VERIFIED_VIDEO
+                    } else {
+                        TexEntryRoute.UNSUPPORTED_VIDEO
+                    }
                 isVerifiedMobileCompatible(metadata) -> TexEntryRoute.RETAIN_VERIFIED_MOBILE
                 animated &&
                     (!metadata.hasVerifiedAnimationTail ||
@@ -236,7 +246,12 @@ object TexMobileConverter {
                     metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight ->
                     TexEntryRoute.CONVERT_IMAGE_TO_ETC2
                 animated -> TexEntryRoute.UNSUPPORTED
-                metadata.format in CONVERTIBLE_STATIC_FORMATS -> TexEntryRoute.CONVERT_IN_MEMORY
+                metadata.format in CONVERTIBLE_STATIC_FORMATS ->
+                    if (fitsStaticConversionBudget(metadata, length, maxHeapBytes)) {
+                        TexEntryRoute.CONVERT_IN_MEMORY
+                    } else {
+                        TexEntryRoute.UNSUPPORTED_RESOURCE_BUDGET
+                    }
                 else -> TexEntryRoute.UNSUPPORTED
             }
         }.getOrDefault(TexEntryRoute.UNSUPPORTED)
@@ -270,6 +285,132 @@ object TexMobileConverter {
             }
         return metadata.baseDecompressedSize == expected && metadata.baseStoredSize > 0
     }
+
+    private fun isVerifiedVideoTex(
+        sourceFile: File,
+        metadata: TexEntryMetadata,
+    ): Boolean {
+        if (
+            metadata.container != "TEXB0004" || metadata.mipmapCount != 1 || metadata.imageFormat != -1 ||
+            metadata.baseCompressed || metadata.baseStoredSize <= 0 || metadata.payloadLength != metadata.baseStoredSize.toLong() ||
+            metadata.baseWidth != metadata.imageWidth || metadata.baseHeight != metadata.imageHeight ||
+            metadata.animationTailLength != 0L
+        ) {
+            return false
+        }
+        return RandomAccessFile(sourceFile, "r").use { input ->
+            val start = metadata.payloadStart
+            val end = Math.addExact(start, metadata.payloadLength)
+            var position = start
+            var first = true
+            var hasMovie = false
+            var hasMediaData = false
+            var recognizedBrand = false
+            while (position < end) {
+                if (end - position < ISO_BMFF_BOX_HEADER_BYTES) return@use false
+                input.seek(position)
+                val header = ByteArray(ISO_BMFF_EXTENDED_HEADER_BYTES)
+                input.readFully(header, 0, ISO_BMFF_BOX_HEADER_BYTES)
+                val size32 = readUIntBe(header, 0)
+                val type = header.copyOfRange(4, 8).toString(Charsets.US_ASCII)
+                val headerBytes: Int
+                val boxBytes: Long
+                when (size32) {
+                    0L -> {
+                        headerBytes = ISO_BMFF_BOX_HEADER_BYTES
+                        boxBytes = end - position
+                    }
+                    1L -> {
+                        if (end - position < ISO_BMFF_EXTENDED_HEADER_BYTES) return@use false
+                        input.readFully(header, ISO_BMFF_BOX_HEADER_BYTES, Long.SIZE_BYTES)
+                        headerBytes = ISO_BMFF_EXTENDED_HEADER_BYTES
+                        boxBytes = readUInt64Be(header, ISO_BMFF_BOX_HEADER_BYTES)
+                    }
+                    else -> {
+                        headerBytes = ISO_BMFF_BOX_HEADER_BYTES
+                        boxBytes = size32
+                    }
+                }
+                if (boxBytes < headerBytes || boxBytes > end - position) return@use false
+                if (first) {
+                    if (type != "ftyp" || boxBytes !in MIN_ISO_BMFF_FTYP_BYTES..MAX_ISO_BMFF_FTYP_BYTES || boxBytes % 4L != 0L) {
+                        return@use false
+                    }
+                    val brandBytes = ByteArray((boxBytes - headerBytes).toInt())
+                    input.readFully(brandBytes)
+                    if (brandBytes.size < 8 || !brandBytes.copyOfRange(0, 4).all(::isIsoBrandByte)) return@use false
+                    val brands = buildList {
+                        add(brandBytes.copyOfRange(0, 4).toString(Charsets.US_ASCII))
+                        for (offset in 8 until brandBytes.size step 4) {
+                            if (offset + 4 > brandBytes.size || !brandBytes.copyOfRange(offset, offset + 4).all(::isIsoBrandByte)) {
+                                return@use false
+                            }
+                            add(brandBytes.copyOfRange(offset, offset + 4).toString(Charsets.US_ASCII))
+                        }
+                    }
+                    recognizedBrand = brands.any { it in MP4_VIDEO_BRANDS }
+                } else {
+                    hasMovie = hasMovie || type == "moov"
+                    hasMediaData = hasMediaData || type == "mdat"
+                }
+                position = Math.addExact(position, boxBytes)
+                first = false
+            }
+            position == end && recognizedBrand && hasMovie && hasMediaData
+        }
+    }
+
+    private fun fitsStaticConversionBudget(
+        metadata: TexEntryMetadata,
+        entryLength: Long,
+        maxHeapBytes: Long,
+    ): Boolean =
+        staticConversionFitsBudget(
+            format = metadata.format,
+            textureWidth = metadata.baseWidth,
+            textureHeight = metadata.baseHeight,
+            imageWidth = metadata.imageWidth,
+            imageHeight = metadata.imageHeight,
+            entryBytes = entryLength,
+            storedBytes = metadata.baseStoredSize.toLong(),
+            decompressedBytes = metadata.baseDecompressedSize.toLong().takeIf { metadata.baseCompressed } ?: metadata.baseStoredSize.toLong(),
+            maxHeapBytes = maxHeapBytes,
+        )
+
+    internal fun staticConversionFitsBudget(
+        format: Int,
+        textureWidth: Int,
+        textureHeight: Int,
+        imageWidth: Int,
+        imageHeight: Int,
+        entryBytes: Long,
+        storedBytes: Long,
+        decompressedBytes: Long,
+        maxHeapBytes: Long,
+    ): Boolean =
+        runCatching {
+            require(format in CONVERTIBLE_STATIC_FORMATS)
+            require(entryBytes > 0L && storedBytes > 0L && decompressedBytes > 0L && maxHeapBytes > 0L)
+            val textureRgba = checkedPayloadSizeLong(textureWidth, textureHeight, 4)
+            val imageRgba = checkedPayloadSizeLong(imageWidth, imageHeight, 4)
+            require(imageRgba <= MAX_STATIC_RGBA_BYTES && decompressedBytes <= MAX_STATIC_DECOMPRESSED_BYTES)
+            val croppedRgba = if (textureWidth == imageWidth && textureHeight == imageHeight) 0L else imageRgba
+            val decodedBytes = if (format == TEX_FORMAT_RGBA8888) 0L else textureRgba
+            val parsePeak = checkedSum(entryBytes, storedBytes, decompressedBytes)
+            val decodePeak = checkedSum(entryBytes, decompressedBytes, decodedBytes, croppedRgba)
+            // ART is not required to collect the decompressed input before LZ4 HC allocates its destination
+            // and tables, so include both plus a fixed compressor allowance in the last phase.
+            val compressionPeak =
+                checkedSum(
+                    entryBytes,
+                    decompressedBytes,
+                    imageRgba,
+                    lz4MaximumOutputBytes(imageRgba),
+                    LZ4_HC_WORKSPACE_ALLOWANCE_BYTES,
+                )
+            val estimatedPeak = maxOf(parsePeak, decodePeak, compressionPeak)
+            estimatedPeak <= Math.multiplyExact(maxHeapBytes, STATIC_CONVERSION_HEAP_NUMERATOR) / STATIC_CONVERSION_HEAP_DENOMINATOR
+        }.getOrDefault(false)
 
     internal fun hasValidTexEnvelope(source: ByteArray): Boolean =
         runCatching {
@@ -547,7 +688,9 @@ object TexMobileConverter {
                     if (container == "TEXB0001") {
                         input.readBoundedIntLe(end)
                     } else {
-                        compressed = input.readBoundedIntLe(end) == 1
+                        val compressionMarker = input.readBoundedIntLe(end)
+                        require(compressionMarker in 0..1) { "Invalid TEX compression marker" }
+                        compressed = compressionMarker == 1
                         decompressedSize = input.readBoundedIntLe(end)
                         input.readBoundedIntLe(end)
                     }
@@ -872,12 +1015,8 @@ object TexMobileConverter {
         require(textureWidth > 0 && textureHeight > 0 && imageWidth > 0 && imageHeight > 0) {
             "Invalid TEX dimensions"
         }
-        require(checkedPayloadSize(imageWidth, imageHeight, 4) <= mobileRgbaLimit()) {
-            "TEX texture exceeds mobile conversion memory limit"
-        }
-        require(checkedPayloadSize(textureWidth, textureHeight, 4) <= mobileRgbaLimit()) {
-            "TEX base mipmap exceeds mobile conversion memory limit"
-        }
+        // Admission is decided from metadata before the full entry is read. Repeating the old single-buffer
+        // 8 MiB test here rejected ordinary 4K DXT/R8 inputs without modelling the conversion's actual peak.
         val unknown = reader.readIntLe()
         val container = reader.readCString()
         val imageCount = reader.readIntLe()
@@ -913,14 +1052,16 @@ object TexMobileConverter {
                         if (isBaseMipmap) reader.readBytes(size) else byteArrayOf().also { reader.skip(size) },
                     )
                 } else {
-                    val compressed = reader.readIntLe() == 1
+                    val compressionMarker = reader.readIntLe()
+                    require(compressionMarker in 0..1) { "Invalid TEX compression marker" }
+                    val compressed = compressionMarker == 1
                     val decompressedSize = reader.readIntLe()
                     val storedSize = reader.readIntLe()
                     require(storedSize >= 0) { "Invalid TEX payload size" }
                     if (compressed) {
                         require(decompressedSize > 0) { "Invalid LZ4 TEX payload size" }
-                        require(decompressedSize <= MAX_DECOMPRESSED_TEX_BYTES) {
-                            "TEX payload exceeds mobile conversion memory limit"
+                        require(decompressedSize.toLong() <= MAX_STATIC_DECOMPRESSED_BYTES) {
+                            "TEX decompressed payload exceeds the static conversion limit"
                         }
                         expectedPayloadSize?.let { expected ->
                             require(decompressedSize == expected) {
@@ -982,8 +1123,8 @@ object TexMobileConverter {
         require(bounds.outWidth == targetWidth && bounds.outHeight == targetHeight) {
             "Image-backed TEX dimensions do not match metadata"
         }
-        require(checkedPayloadSize(bounds.outWidth, bounds.outHeight, 4) <= mobileRgbaLimit()) {
-            "Image-backed TEX exceeds mobile conversion memory limit"
+        require(checkedPayloadSize(bounds.outWidth, bounds.outHeight, 4).toLong() <= MAX_STATIC_RGBA_BYTES) {
+            "Image-backed TEX exceeds the static conversion limit"
         }
         val bitmap =
             BitmapFactory.decodeByteArray(payload, 0, payload.size)
@@ -1124,10 +1265,46 @@ object TexMobileConverter {
         width: Int,
         height: Int,
         bytesPerPixel: Int,
-    ): Int {
-        val size = width.toLong() * height.toLong() * bytesPerPixel
-        require(size in 1..Int.MAX_VALUE.toLong()) { "TEX payload dimensions are too large" }
-        return size.toInt()
+    ): Int = checkedPayloadSizeLong(width, height, bytesPerPixel).also {
+        require(it <= Int.MAX_VALUE) { "TEX payload dimensions are too large" }
+    }.toInt()
+
+    private fun checkedPayloadSizeLong(
+        width: Int,
+        height: Int,
+        bytesPerPixel: Int,
+    ): Long {
+        require(width > 0 && height > 0 && bytesPerPixel > 0) { "TEX payload dimensions are too large" }
+        return Math.multiplyExact(Math.multiplyExact(width.toLong(), height.toLong()), bytesPerPixel.toLong())
+    }
+
+    private fun checkedSum(vararg values: Long): Long = values.fold(0L, Math::addExact)
+
+    private fun lz4MaximumOutputBytes(inputBytes: Long): Long =
+        Math.addExact(Math.addExact(inputBytes, inputBytes / 255L), 16L)
+
+    private fun readUIntBe(
+        bytes: ByteArray,
+        offset: Int,
+    ): Long =
+        ((bytes[offset].toLong() and 0xffL) shl 24) or
+            ((bytes[offset + 1].toLong() and 0xffL) shl 16) or
+            ((bytes[offset + 2].toLong() and 0xffL) shl 8) or
+            (bytes[offset + 3].toLong() and 0xffL)
+
+    private fun readUInt64Be(
+        bytes: ByteArray,
+        offset: Int,
+    ): Long {
+        require(bytes[offset].toInt() and 0x80 == 0) { "ISO BMFF box is too large" }
+        var value = 0L
+        repeat(Long.SIZE_BYTES) { index -> value = (value shl 8) or (bytes[offset + index].toLong() and 0xffL) }
+        return value
+    }
+
+    private fun isIsoBrandByte(value: Byte): Boolean {
+        val unsigned = value.toInt() and 0xff
+        return unsigned in 0x20..0x7e
     }
 
     private fun expectedPayloadSize(
@@ -1303,14 +1480,14 @@ private const val ETC2_BLOCK_EDGE = 4
 private const val MAX_ETC2_PIXELS = 48L * 1024 * 1024
 private const val MAX_ETC2_TILE_WORKING_BYTES = 64L * 1024 * 1024
 private val CONVERTIBLE_STATIC_FORMATS = setOf(TEX_FORMAT_RGBA8888, TEX_FORMAT_DXT1, TEX_FORMAT_DXT3, TEX_FORMAT_DXT5, TEX_FORMAT_RG88, TEX_FORMAT_R8)
-private fun mobileRgbaLimit(maxHeapBytes: Long = Runtime.getRuntime().maxMemory()): Int =
-    (maxHeapBytes / TEX_RGBA_HEAP_DIVISOR)
-        .coerceIn(MIN_MOBILE_RGBA_BYTES.toLong(), MAX_MOBILE_RGBA_BYTES.toLong())
-        .toInt()
-
-private const val TEX_RGBA_HEAP_DIVISOR = 24L
-private const val MIN_MOBILE_RGBA_BYTES = 2 * 1024 * 1024
-private const val MAX_MOBILE_RGBA_BYTES = 8 * 1024 * 1024
-private val MAX_DECOMPRESSED_TEX_BYTES: Int
-    get() = mobileRgbaLimit()
+private const val MAX_STATIC_RGBA_BYTES = 64L * 1024 * 1024
+private const val MAX_STATIC_DECOMPRESSED_BYTES = 64L * 1024 * 1024
+private const val LZ4_HC_WORKSPACE_ALLOWANCE_BYTES = 8L * 1024 * 1024
+private const val STATIC_CONVERSION_HEAP_NUMERATOR = 5L
+private const val STATIC_CONVERSION_HEAP_DENOMINATOR = 8L
+private const val ISO_BMFF_BOX_HEADER_BYTES = 8
+private const val ISO_BMFF_EXTENDED_HEADER_BYTES = 16
+private const val MIN_ISO_BMFF_FTYP_BYTES = 16L
+private const val MAX_ISO_BMFF_FTYP_BYTES = 4096L
+private val MP4_VIDEO_BRANDS = setOf("isom", "iso2", "mp41", "mp42", "avc1", "M4V ")
 private const val MAX_RETAINED_TEX_DECOMPRESSED_BYTES = 64 * 1024 * 1024
