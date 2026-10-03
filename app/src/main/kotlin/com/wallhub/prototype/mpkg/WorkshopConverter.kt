@@ -454,7 +454,8 @@ object ShaderCompatibility {
         Regex("""(?:uniform\s+|attribute\s+|varying\s+)?vec[234]\s+([A-Za-z_][A-Za-z0-9_]*)""")
     private val floatLiteral = Regex("""\d+\.\d*|\.\d+""")
     private val integerLiteral = Regex("""\d+""")
-    private val integerArgument = Regex("""(?<![\w.])\d+(?![\w.])""")
+    private val numericArgument =
+        Regex("""(?<![\w.])(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+\-]?\d+)?(?![\w.])""")
     private val mixCall = Regex("""(?<![A-Za-z0-9_])mix\(""")
     private const val COMMON_BLUR_INCLUDE = "#include \"common_blur.h\""
     private const val HIDDEN_TEXTURE_DECLARATION = "uniform sampler2D g_Texture0; // {\"hidden\":true}"
@@ -528,20 +529,23 @@ object ShaderCompatibility {
                 .toSet()
         if (vectorNames.isEmpty()) return source
         val vectorName = vectorNames.joinToString("|") { Regex.escape(it) }
+        val numericOperand = """(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+\-]?\d+)?"""
         val trailingExpression =
             Regex(
-                """(?<![A-Za-z0-9_])((?:$vectorName)(?:\.\w+)?(?:\s*[*+/\-]\s*\d+)(?:\s*[*+/\-]\s*\d+)*)""",
+                """(?<![A-Za-z0-9_])((?:$vectorName)(?:\.\w+)?(?:\s*[*+/\-]\s*$numericOperand(?![\w.]))+)""",
             )
         val leadingExpression =
             Regex(
-                """(?<![A-Za-z0-9_.])((?:\d+\s*[*+/\-]\s*)+(?:$vectorName)(?:\.\w+)?)""",
+                """(?<![A-Za-z0-9_.])((?:$numericOperand(?![\w.])\s*[*+/\-]\s*)+(?:$vectorName)(?:\.\w+)?)""",
             )
         val trailingRewritten = trailingExpression.replace(source) { match -> floatArguments(match.value) }
         return leadingExpression.replace(trailingRewritten) { match -> floatArguments(match.value) }
     }
 
     private fun floatArguments(expression: String): String =
-        expression.replace(integerArgument) { match -> "${match.value}.0" }
+        expression.replace(numericArgument) { match ->
+            if (match.value.all(Char::isDigit)) "${match.value}.0" else match.value
+        }
 
     private fun rewriteMixArguments(source: String): String {
         val calls = mixCall.findAll(source).toList()

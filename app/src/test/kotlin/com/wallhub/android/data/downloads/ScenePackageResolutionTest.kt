@@ -273,6 +273,46 @@ class ScenePackageResolutionTest {
     }
 
     @Test
+    fun shaderRewritePreservesCompleteDecimalAndScientificOperands() {
+        val source =
+            """
+            varying vec2 uv;
+            varying vec2 texCoordMotion;
+            varying vec2 sines;
+            void main() {
+                uv = uv - 0.5;
+                texCoordMotion = texCoordMotion - 0.5;
+                sines = sines * 0.498 + 0.5;
+                uv = uv + -0.25;
+                uv = uv * 1e-3;
+                uv = 1e-3 * uv;
+                uv = uv * 0.5 + 2;
+                uv = uv * 1e-3 + 2;
+                uv = uv * 2 + 1;
+            }
+            """.trimIndent()
+        val expected =
+            """
+            varying vec2 uv;
+            varying vec2 texCoordMotion;
+            varying vec2 sines;
+            void main() {
+                uv = uv - 0.5;
+                texCoordMotion = texCoordMotion - 0.5;
+                sines = sines * 0.498 + 0.5;
+                uv = uv + -0.25;
+                uv = uv * 1e-3;
+                uv = 1e-3 * uv;
+                uv = uv * 0.5 + 2.0;
+                uv = uv * 1e-3 + 2.0;
+                uv = uv * 2.0 + 1.0;
+            }
+            """.trimIndent()
+
+        assertEquals(expected, ShaderCompatibility.rewrite(source))
+    }
+
+    @Test
     fun nestedPresetParametersMergeFromInnerToOuter() {
         val root = Files.createTempDirectory("wallhub-preset-merge").toFile()
         try {
