@@ -457,6 +457,10 @@ object ShaderCompatibility {
     private val numericArgument =
         Regex("""(?<![\w.])(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+\-]?\d+)?(?![\w.])""")
     private val mixCall = Regex("""(?<![A-Za-z0-9_])mix\(""")
+    private val packedAudioSpectrumIndex =
+        Regex(
+            """(g_AudioSpectrum64(?:Left|Right))\[([A-Za-z_][A-Za-z0-9_]*)\s*/\s*4\]\[\2\s*%\s*4\]""",
+        )
     private const val COMMON_BLUR_INCLUDE = "#include \"common_blur.h\""
     private const val HIDDEN_TEXTURE_DECLARATION = "uniform sampler2D g_Texture0; // {\"hidden\":true}"
     private const val HIDDEN_TEXTURE_MARKER = " // {\"hidden\":true}"
@@ -490,6 +494,8 @@ object ShaderCompatibility {
         output = rewriteVectorIntegerArithmetic(output)
         checkCancellation()
         output = rewriteMixArguments(output)
+        checkCancellation()
+        output = rewritePackedAudioSpectrumIndex(output)
         checkCancellation()
         output =
             output
@@ -577,6 +583,13 @@ object ShaderCompatibility {
         if (coercedArguments == arguments) return normalizedBody
         return coercedArguments.joinToString(",")
     }
+
+    private fun rewritePackedAudioSpectrumIndex(source: String): String =
+        source.replace(packedAudioSpectrumIndex) { match ->
+            val spectrum = match.groupValues[1]
+            val index = match.groupValues[2]
+            "$spectrum[int($index) / 4][int($index) % 4]"
+        }
 
     private fun matchingParenthesis(
         source: String,

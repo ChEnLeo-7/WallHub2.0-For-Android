@@ -289,6 +289,7 @@ class ScenePackageResolutionTest {
                 uv = uv * 0.5 + 2;
                 uv = uv * 1e-3 + 2;
                 uv = uv * 2 + 1;
+                float spectrum = g_AudioSpectrum64Left[barID / 4][barID % 4];
             }
             """.trimIndent()
         val expected =
@@ -306,6 +307,7 @@ class ScenePackageResolutionTest {
                 uv = uv * 0.5 + 2.0;
                 uv = uv * 1e-3 + 2.0;
                 uv = uv * 2.0 + 1.0;
+                float spectrum = g_AudioSpectrum64Left[int(barID) / 4][int(barID) % 4];
             }
             """.trimIndent()
 
