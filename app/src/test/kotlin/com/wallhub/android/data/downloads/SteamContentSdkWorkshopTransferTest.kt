@@ -28,6 +28,14 @@ private fun completed(committedBytes: Long): SteamContentSdkTaskStatus =
         errorOrdinal = TaskFailure.NONE,
     )
 
+private fun failed(ordinal: Long): SteamContentSdkTaskStatus =
+    SteamContentSdkTaskStatus(
+        state = TaskState.FAILED,
+        committedBytes = 0L,
+        totalDecodedBytes = 0L,
+        errorOrdinal = ordinal,
+    )
+
 class SteamContentSdkWorkshopTransferTest {
     @Test
     fun aDownloadResolvesTheItemAndStartsTheSdkTaskAtTheAppLayoutDestination() =
@@ -113,6 +121,92 @@ class SteamContentSdkWorkshopTransferTest {
                 }
             assertTrue(failure.message.orEmpty().contains("network"))
             assertTrue(failure.message.orEmpty().contains("cdn connection reset"))
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun exhaustedCdnCandidatesRetryOnceAgainstTheSameDestination() =
+        runBlocking {
+            val fixture = Fixture()
+            try {
+                val retryTask = fixture.queueTask()
+                fixture.task.statuses += failed(TaskFailure.NETWORK)
+                fixture.task.diagnostic = "CDN candidate set exhausted"
+                retryTask.statuses += completed(committedBytes = 9L)
+
+                fixture.download()
+
+                assertEquals(2, fixture.session.resolveCalls)
+                assertEquals(2, fixture.session.starts.size)
+                assertEquals(1, fixture.task.closeCalls)
+                assertEquals(1, retryTask.closeCalls)
+                assertEquals(
+                    setOf("wallhub-workshop/task-1"),
+                    fixture.session.starts.map { it.destination }.toSet(),
+                )
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun exhaustedCdnCandidatesPropagateAfterTheSecondFailure() {
+        val fixture = Fixture()
+        try {
+            val retryTask = fixture.queueTask()
+            fixture.task.statuses += failed(TaskFailure.NETWORK)
+            fixture.task.diagnostic = "CDN candidate set exhausted"
+            retryTask.statuses += failed(TaskFailure.NETWORK)
+            retryTask.diagnostic = "CDN candidate set exhausted"
+
+            assertThrows(SteamContentSdkTaskFailureException::class.java) {
+                runBlocking { fixture.download() }
+            }
+
+            assertEquals(2, fixture.session.resolveCalls)
+            assertEquals(2, fixture.session.starts.size)
+            assertEquals(1, fixture.task.closeCalls)
+            assertEquals(1, retryTask.closeCalls)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun otherNetworkDiagnosticsDoNotRetry() {
+        val fixture = Fixture()
+        try {
+            fixture.task.statuses += failed(TaskFailure.NETWORK)
+            fixture.task.diagnostic = "cdn connection reset"
+
+            assertThrows(SteamContentSdkTaskFailureException::class.java) {
+                runBlocking { fixture.download() }
+            }
+
+            assertEquals(1, fixture.session.resolveCalls)
+            assertEquals(1, fixture.session.starts.size)
+            assertEquals(1, fixture.task.closeCalls)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun authorizationFailuresDoNotRetry() {
+        val fixture = Fixture()
+        try {
+            fixture.task.statuses += failed(TaskFailure.AUTHORIZATION)
+            fixture.task.diagnostic = "CDN candidate set exhausted"
+
+            assertThrows(SteamContentSdkTaskFailureException::class.java) {
+                runBlocking { fixture.download() }
+            }
+
+            assertEquals(1, fixture.session.resolveCalls)
+            assertEquals(1, fixture.session.starts.size)
+            assertEquals(1, fixture.task.closeCalls)
         } finally {
             fixture.close()
         }
@@ -470,6 +564,8 @@ class SteamContentSdkWorkshopTransferTest {
             )
         val task = FakeTask()
         val session = FakeSession(root, resolved, task)
+
+        fun queueTask(): FakeTask = FakeTask().also(session::queueTask)
         var openerCalls = 0
         private var opener: suspend (SteamContentCredential) -> SteamContentSdkSession = { session }
         private val transfer =
@@ -523,8 +619,13 @@ class SteamContentSdkWorkshopTransferTest {
         resolved: SteamContentSdkResolvedItem,
         private val task: FakeTask,
     ) : SteamContentSdkSession {
+        private val queuedTasks = ArrayDeque<SteamContentSdkTask>()
         var resolved: SteamContentSdkResolvedItem = resolved
         val starts = mutableListOf<StartCall>()
+
+        fun queueTask(task: SteamContentSdkTask) {
+            queuedTasks += task
+        }
         var resolveCalls = 0
         var closeCalls = 0
         var closed = false
@@ -546,7 +647,7 @@ class SteamContentSdkWorkshopTransferTest {
             chunkConcurrency: Int,
         ): SteamContentSdkTask {
             starts += StartCall(appId, depotId, manifestId, destination, chunkConcurrency)
-            return task
+            return if (starts.size == 1) task else queuedTasks.removeFirstOrNull() ?: task
         }
 
         override fun openRangeStream(

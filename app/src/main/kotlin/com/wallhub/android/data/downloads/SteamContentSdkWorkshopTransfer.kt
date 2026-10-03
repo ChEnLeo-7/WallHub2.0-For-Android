@@ -13,6 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
@@ -184,46 +185,58 @@ internal class SteamContentSdkWorkshopTransfer
                 val lease = sessionBroker.acquire(effectiveCredential)
                 try {
                     val session = lease.session
-                    onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
-                    val resolved = session.resolveWorkshop(target.publishedFileId)
-                    check(resolved.resolved) {
-                        "The Steam Content SDK did not resolve Workshop item ${target.publishedFileId} to an app, depot, and manifest"
-                    }
-                    check(resolved.appId > 0L && resolved.depotId > 0L) {
-                        "The Steam Content SDK resolved Workshop item ${target.publishedFileId} without a usable app or depot"
-                    }
-                    // One line per run so a parity reading can name the path that served it. The ids are
-                    // public catalog numbers; no title, path, key, or token is logged.
-                    Log.i(
-                        TAG,
-                        "download served by=steam-content-sdk app=${resolved.appId} depot=${resolved.depotId}",
-                    )
                     val destination = sdkRelativeDestination(destinationDirectory, session.storageRoot)
-                    onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.PREPARING_DOWNLOAD))
-                    val task =
-                        session.startDownload(
-                            appId = resolved.appId,
-                            depotId = resolved.depotId,
-                            manifestId = resolved.manifestId,
-                            destination = destination,
-                            // The product's own "chunks in parallel per item" setting is the SDK's
-                            // in-flight budget now; zero would leave the engine's own order in place.
-                            chunkConcurrency = options.chunkConcurrency,
-                        )
-                    try {
-                        runTask(task, destinationDirectory, control, onProgress)
-                    } catch (error: CancellationException) {
-                        // The worker was stopped mid-transfer rather than asked to cancel through the
-                        // control probe. Keep cleanup non-cancellable until the SDK confirms its own task
-                        // reached CANCELLED; closing a still-running handle can release the app wrapper while
-                        // the native transfer continues pulling bytes.
-                        withContext(NonCancellable) {
-                            cancelAndAwaitTerminal(task)
+                    var attempt = 0
+                    while (true) {
+                        attempt += 1
+                        try {
+                            onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
+                            val resolved = session.resolveWorkshop(target.publishedFileId)
+                            check(resolved.resolved) {
+                                "The Steam Content SDK did not resolve Workshop item ${target.publishedFileId} to an app, depot, and manifest"
+                            }
+                            check(resolved.appId > 0L && resolved.depotId > 0L) {
+                                "The Steam Content SDK resolved Workshop item ${target.publishedFileId} without a usable app or depot"
+                            }
+                            // One line per run so a parity reading can name the path that served it. The ids are
+                            // public catalog numbers; no title, path, key, or token is logged.
+                            Log.i(
+                                TAG,
+                                "download served by=steam-content-sdk app=${resolved.appId} depot=${resolved.depotId}",
+                            )
+                            onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.PREPARING_DOWNLOAD))
+                            val task =
+                                session.startDownload(
+                                    appId = resolved.appId,
+                                    depotId = resolved.depotId,
+                                    manifestId = resolved.manifestId,
+                                    destination = destination,
+                                    // The product's own "chunks in parallel per item" setting is the SDK's
+                                    // in-flight budget now; zero would leave the engine's own order in place.
+                                    chunkConcurrency = options.chunkConcurrency,
+                                )
+                            try {
+                                return@withContext runTask(task, destinationDirectory, control, onProgress)
+                            } catch (error: CancellationException) {
+                                // The worker was stopped mid-transfer rather than asked to cancel through the
+                                // control probe. Keep cleanup non-cancellable until the SDK confirms its own task
+                                // reached CANCELLED; closing a still-running handle can release the app wrapper while
+                                // the native transfer continues pulling bytes.
+                                withContext(NonCancellable) {
+                                    cancelAndAwaitTerminal(task)
+                                }
+                                throw error
+                            } finally {
+                                runCatching { task.close() }
+                            }
+                        } catch (error: SteamContentSdkTaskFailureException) {
+                            if (attempt >= MAX_DOWNLOAD_ATTEMPTS || !error.isCdnCandidateExhaustion()) throw error
+                            Log.w(TAG, "CDN candidate set exhausted; rebuilding the content target once")
+                            delay(RETRY_DELAY_MS)
                         }
-                        throw error
-                    } finally {
-                        runCatching { task.close() }
                     }
+                    @Suppress("UNREACHABLE_CODE")
+                    error("Download retry loop ended unexpectedly")
                 } finally {
                     // The lease, not this download, owns the session: closing it here would take it away from
                     // the downloads that are still running beside this one.
@@ -385,19 +398,38 @@ internal class SteamContentSdkWorkshopTransfer
             if (status.errorOrdinal == TaskFailure.CANCELLED) return SteamDownloadCancelledException()
             val diagnostic = runCatching { task.lastError() }.getOrNull()?.takeIf(String::isNotBlank)
             val reason = sdkFailureName(status.errorOrdinal)
-            return IllegalStateException(
-                buildString {
-                    append("Steam Content SDK download failed")
-                    if (reason != null) append(" (").append(reason).append(')')
-                    if (diagnostic != null) append(": ").append(diagnostic)
-                },
+            return SteamContentSdkTaskFailureException(
+                ordinal = status.errorOrdinal,
+                diagnostic = diagnostic,
+                message =
+                    buildString {
+                        append("Steam Content SDK download failed")
+                        if (reason != null) append(" (").append(reason).append(')')
+                        if (diagnostic != null) append(": ").append(diagnostic)
+                    },
             )
         }
 
         private companion object {
             const val SDK_EVENT_POLL_MS = 250
+            const val RETRY_DELAY_MS = 250L
+            const val MAX_DOWNLOAD_ATTEMPTS = 2
         }
     }
+
+/** A typed SDK task failure keeps retry policy on stable machine-readable fields. */
+internal class SteamContentSdkTaskFailureException(
+    val ordinal: Long,
+    val diagnostic: String?,
+    message: String,
+) : IllegalStateException(message) {
+    fun isCdnCandidateExhaustion(): Boolean =
+        ordinal == TaskFailure.NETWORK && diagnostic?.contains(CDN_CANDIDATE_EXHAUSTED_MARKER) == true
+
+    private companion object {
+        const val CDN_CANDIDATE_EXHAUSTED_MARKER = "CDN candidate set exhausted"
+    }
+}
 
 /** Maps an SDK task state onto the phase vocabulary the app's progress contract already publishes. */
 internal fun sdkProgressPhase(
