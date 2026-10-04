@@ -148,48 +148,19 @@ class SteamContentSdkWorkshopTransferTest {
     }
 
     @Test
-    fun exhaustedCdnCandidatesRetryOnceAgainstTheSameDestination() =
-        runBlocking {
-            val fixture = Fixture()
-            try {
-                val retryTask = fixture.queueTask()
-                fixture.task.statuses += failed(TaskFailure.NETWORK)
-                fixture.task.diagnostic = "CDN candidate set exhausted"
-                retryTask.statuses += completed(committedBytes = 9L)
-
-                fixture.download()
-
-                assertEquals(2, fixture.session.resolveCalls)
-                assertEquals(2, fixture.session.starts.size)
-                assertEquals(1, fixture.task.closeCalls)
-                assertEquals(1, retryTask.closeCalls)
-                assertEquals(
-                    setOf("wallhub-workshop/task-1"),
-                    fixture.session.starts.map { it.destination }.toSet(),
-                )
-            } finally {
-                fixture.close()
-            }
-        }
-
-    @Test
-    fun exhaustedCdnCandidatesPropagateAfterTheSecondFailure() {
+    fun exhaustedCdnCandidatesStayInsideOneSdkTaskBoundary() {
         val fixture = Fixture()
         try {
-            val retryTask = fixture.queueTask()
             fixture.task.statuses += failed(TaskFailure.NETWORK)
             fixture.task.diagnostic = "CDN candidate set exhausted"
-            retryTask.statuses += failed(TaskFailure.NETWORK)
-            retryTask.diagnostic = "CDN candidate set exhausted"
 
             assertThrows(SteamContentSdkTaskFailureException::class.java) {
                 runBlocking { fixture.download() }
             }
 
-            assertEquals(2, fixture.session.resolveCalls)
-            assertEquals(2, fixture.session.starts.size)
+            assertEquals(1, fixture.session.resolveCalls)
+            assertEquals(1, fixture.session.starts.size)
             assertEquals(1, fixture.task.closeCalls)
-            assertEquals(1, retryTask.closeCalls)
         } finally {
             fixture.close()
         }

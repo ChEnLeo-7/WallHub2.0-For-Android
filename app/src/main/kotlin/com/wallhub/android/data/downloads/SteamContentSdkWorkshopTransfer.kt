@@ -13,7 +13,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
@@ -192,11 +191,7 @@ internal class SteamContentSdkWorkshopTransfer
                 try {
                     val session = lease.session
                     val destination = sdkRelativeDestination(destinationDirectory, session.storageRoot)
-                    var attempt = 0
-                    while (true) {
-                        attempt += 1
-                        try {
-                            onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
+                    onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
                             options.timingContext?.let { context ->
                                 DownloadTimingTelemetry.log(DownloadTimingTelemetry.SDK_WORKSHOP_RESOLVE_STARTED, context)
                             }
@@ -244,14 +239,6 @@ internal class SteamContentSdkWorkshopTransfer
                             } finally {
                                 runCatching { task.close() }
                             }
-                        } catch (error: SteamContentSdkTaskFailureException) {
-                            if (attempt >= MAX_DOWNLOAD_ATTEMPTS || !error.isCdnCandidateExhaustion()) throw error
-                            Log.w(TAG, "CDN candidate set exhausted; rebuilding the content target once")
-                            delay(RETRY_DELAY_MS)
-                        }
-                    }
-                    @Suppress("UNREACHABLE_CODE")
-                    error("Download retry loop ended unexpectedly")
                 } finally {
                     // The lease, not this download, owns the session: closing it here would take it away from
                     // the downloads that are still running beside this one.
@@ -455,8 +442,6 @@ internal class SteamContentSdkWorkshopTransfer
 
         private companion object {
             const val SDK_EVENT_POLL_MS = 250
-            const val RETRY_DELAY_MS = 250L
-            const val MAX_DOWNLOAD_ATTEMPTS = 2
         }
     }
 
@@ -480,14 +465,7 @@ internal class SteamContentSdkTaskFailureException(
     val ordinal: Long,
     val diagnostic: String?,
     message: String,
-) : IllegalStateException(message) {
-    fun isCdnCandidateExhaustion(): Boolean =
-        ordinal == TaskFailure.NETWORK && diagnostic?.contains(CDN_CANDIDATE_EXHAUSTED_MARKER) == true
-
-    private companion object {
-        const val CDN_CANDIDATE_EXHAUSTED_MARKER = "CDN candidate set exhausted"
-    }
-}
+) : IllegalStateException(message)
 
 /** Maps an SDK task state onto the phase vocabulary the app's progress contract already publishes. */
 internal fun sdkProgressPhase(
