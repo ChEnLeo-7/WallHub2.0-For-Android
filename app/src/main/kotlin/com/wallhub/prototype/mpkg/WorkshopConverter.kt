@@ -588,7 +588,7 @@ object ShaderCompatibility {
         source.replace(packedAudioSpectrumIndex) { match ->
             val spectrum = match.groupValues[1]
             val index = match.groupValues[2]
-            "$spectrum[int($index) / 4][int($index) % 4]"
+            "$spectrum[int($index)]"
         }
 
     private fun matchingParenthesis(
