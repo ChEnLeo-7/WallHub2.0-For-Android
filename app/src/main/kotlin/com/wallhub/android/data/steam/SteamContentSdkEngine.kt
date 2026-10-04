@@ -238,7 +238,7 @@ class SteamContentSdkEngine
             contentManifestIdHint: Long = 0L,
         ): WorkshopResolveResponse {
             val open = engine ?: error("the Steam Content SDK engine is not open")
-            val hasIdentityHint = appIdHint > 0L && contentManifestIdHint > 0L
+            val hasIdentityHint = appIdHint > 0L && contentManifestIdHint != 0L
             val appId = if (hasIdentityHint) appIdHint else WALLPAPER_ENGINE_APP_ID.toLong()
             val manifestId = if (hasIdentityHint) contentManifestIdHint else 0L
             return open.resolveWorkshop(itemId, appId, manifestId)

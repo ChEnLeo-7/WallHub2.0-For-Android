@@ -203,7 +203,7 @@ internal class SteamContentSdkWorkshopTransfer
                                 session.resolveWorkshop(
                                     itemId = target.publishedFileId,
                                     appIdHint = target.appId.toLong().takeIf { it > 0L } ?: 0L,
-                                    contentManifestIdHint = target.contentManifestId.takeIf { it > 0L } ?: 0L,
+                                    contentManifestIdHint = target.contentManifestId.takeIf { it != 0L } ?: 0L,
                                 )
                             options.timingContext?.let { context ->
                                 DownloadTimingTelemetry.log(DownloadTimingTelemetry.SDK_WORKSHOP_RESOLVED, context)

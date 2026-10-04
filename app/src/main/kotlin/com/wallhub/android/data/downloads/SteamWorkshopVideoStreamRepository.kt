@@ -105,7 +105,7 @@ internal class SteamWorkshopVideoStreamRepository
                     session.resolveWorkshop(
                         itemId = target.publishedFileId,
                         appIdHint = target.appId.toLong().takeIf { it > 0L } ?: 0L,
-                        contentManifestIdHint = target.contentManifestId.takeIf { it > 0L } ?: 0L,
+                        contentManifestIdHint = target.contentManifestId.takeIf { it != 0L } ?: 0L,
                     )
                 check(resolved.resolved) {
                     "The Steam Content SDK did not resolve Workshop item ${target.publishedFileId} to an app, depot, and manifest"

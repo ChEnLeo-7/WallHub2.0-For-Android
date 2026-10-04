@@ -78,6 +78,20 @@ class SteamContentSdkWorkshopTransferTest {
         }
 
     @Test
+    fun anUnsignedManifestIdentityHintPreservesItsSignedLongBits() =
+        runBlocking {
+            val fixture = Fixture()
+            try {
+                fixture.task.statuses += completed(committedBytes = 9L)
+                fixture.download(target = fixture.target.copy(contentManifestId = Long.MIN_VALUE))
+
+                assertEquals(listOf(431960L to Long.MIN_VALUE), fixture.session.resolveHints)
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
     fun progressAndTerminalStatesMapOntoTheAppProgressContract() =
         runBlocking {
             val fixture = Fixture()
