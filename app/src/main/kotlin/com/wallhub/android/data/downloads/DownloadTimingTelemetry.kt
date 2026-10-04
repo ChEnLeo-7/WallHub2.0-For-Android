@@ -14,6 +14,14 @@ internal object DownloadTimingTelemetry {
     const val TASK_ENQUEUED = "task_enqueued"
     const val WORKER_STARTED = "worker_started"
     const val RESOLVING_STARTED = "resolving_started"
+    const val PUBLIC_TARGET_STARTED = "public_target_started"
+    const val PUBLIC_TARGET_COMPLETED = "public_target_completed"
+    const val CREDENTIAL_STARTED = "credential_started"
+    const val CREDENTIAL_COMPLETED = "credential_completed"
+    const val SDK_SESSION_ACQUIRE_STARTED = "sdk_session_acquire_started"
+    const val SDK_SESSION_ACQUIRED = "sdk_session_acquired"
+    const val SDK_WORKSHOP_RESOLVE_STARTED = "sdk_workshop_resolve_started"
+    const val SDK_WORKSHOP_RESOLVED = "sdk_workshop_resolved"
     const val MANIFEST_REQUEST_STARTED = "manifest_request_started"
     const val MANIFEST_COMPLETED = "manifest_completed"
     const val FIRST_CHUNK_COMMITTED = "first_chunk_committed"
@@ -63,6 +71,19 @@ internal object DownloadTimingTelemetry {
         context: DownloadTimingContext,
         elapsedRealtimeMs: Long = SystemClock.elapsedRealtime(),
     ) = log(event, context.taskId, context.workshopId, elapsedRealtimeMs)
+
+    fun logSdk(
+        event: String,
+        context: DownloadTimingContext,
+        sdkElapsedMicros: Long,
+        elapsedRealtimeMs: Long = SystemClock.elapsedRealtime(),
+    ) {
+        Log.i(
+            TIMING_LOG_TAG,
+            "timing event=$event taskId=${context.taskId} workshopId=${context.workshopId} " +
+                "sdkElapsedMicros=$sdkElapsedMicros elapsedRealtimeMs=$elapsedRealtimeMs",
+        )
+    }
 
     fun logOnce(
         event: String,

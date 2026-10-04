@@ -182,7 +182,13 @@ internal class SteamContentSdkWorkshopTransfer
                     "The Steam Content SDK download path needs the stored Steam refresh token; none was read"
                 }
                 onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.CONNECTING))
+                options.timingContext?.let { context ->
+                    DownloadTimingTelemetry.log(DownloadTimingTelemetry.SDK_SESSION_ACQUIRE_STARTED, context)
+                }
                 val lease = sessionBroker.acquire(effectiveCredential)
+                options.timingContext?.let { context ->
+                    DownloadTimingTelemetry.log(DownloadTimingTelemetry.SDK_SESSION_ACQUIRED, context)
+                }
                 try {
                     val session = lease.session
                     val destination = sdkRelativeDestination(destinationDirectory, session.storageRoot)
@@ -191,7 +197,13 @@ internal class SteamContentSdkWorkshopTransfer
                         attempt += 1
                         try {
                             onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RESOLVING))
+                            options.timingContext?.let { context ->
+                                DownloadTimingTelemetry.log(DownloadTimingTelemetry.SDK_WORKSHOP_RESOLVE_STARTED, context)
+                            }
                             val resolved = session.resolveWorkshop(target.publishedFileId)
+                            options.timingContext?.let { context ->
+                                DownloadTimingTelemetry.log(DownloadTimingTelemetry.SDK_WORKSHOP_RESOLVED, context)
+                            }
                             check(resolved.resolved) {
                                 "The Steam Content SDK did not resolve Workshop item ${target.publishedFileId} to an app, depot, and manifest"
                             }
@@ -205,6 +217,9 @@ internal class SteamContentSdkWorkshopTransfer
                                 "download served by=steam-content-sdk app=${resolved.appId} depot=${resolved.depotId}",
                             )
                             onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.PREPARING_DOWNLOAD))
+                            options.timingContext?.let { context ->
+                                DownloadTimingTelemetry.log(DownloadTimingTelemetry.MANIFEST_REQUEST_STARTED, context)
+                            }
                             val task =
                                 session.startDownload(
                                     appId = resolved.appId,
@@ -216,7 +231,7 @@ internal class SteamContentSdkWorkshopTransfer
                                     chunkConcurrency = options.chunkConcurrency,
                                 )
                             try {
-                                return@withContext runTask(task, destinationDirectory, control, onProgress)
+                                return@withContext runTask(task, destinationDirectory, options, control, onProgress)
                             } catch (error: CancellationException) {
                                 // The worker was stopped mid-transfer rather than asked to cancel through the
                                 // control probe. Keep cleanup non-cancellable until the SDK confirms its own task
@@ -247,28 +262,54 @@ internal class SteamContentSdkWorkshopTransfer
         private suspend fun runTask(
             task: SteamContentSdkTask,
             destinationDirectory: File,
+            options: SteamContentDownloadOptions,
             control: suspend () -> SteamDownloadControl,
             onProgress: suspend (SteamDownloadProgress) -> Unit,
         ): SteamContentDownloadResult {
             var committedBytes = 0L
             var totalBytes = 0L
             var manifestResolved = false
+            var firstChunkNotified = false
+            suspend fun acceptEvent(event: SteamContentSdkTaskEvent) {
+                if (event.kind == TaskEventKind.MANIFEST_RESOLVED) {
+                    manifestResolved = true
+                    options.timingContext?.let { context ->
+                        DownloadTimingTelemetry.logOnce(DownloadTimingTelemetry.MANIFEST_COMPLETED, context)
+                    }
+                }
+                if (event.kind == TaskEventKind.CHUNK_PROGRESS && event.value > 0L && !firstChunkNotified) {
+                    firstChunkNotified = true
+                    options.onFirstChunkCommitted?.invoke()
+                }
+                sdkPreparationTimingName(event.kind)?.let { name ->
+                    options.timingContext?.let { context -> DownloadTimingTelemetry.logSdk(name, context, event.value) }
+                }
+                Log.i(TAG, "task event kind=${sdkTaskEventName(event.kind)} value=${event.value}")
+            }
+            suspend fun drainEvents(waitMs: Int) {
+                var event = task.pollEvent(waitMs)
+                while (event != null) {
+                    acceptEvent(event)
+                    event = task.pollEvent(0)
+                }
+            }
             while (true) {
                 currentCoroutineContext().ensureActive()
                 when (control()) {
                     SteamDownloadControl.CANCEL -> {
-                        cancelAndAwaitTerminal(task)
+                        cancelAndAwaitTerminal(task, ::acceptEvent)
                         throw SteamDownloadCancelledException()
                     }
 
                     SteamDownloadControl.PAUSE -> {
-                        pauseAndAwaitTerminal(task)
+                        pauseAndAwaitTerminal(task, ::acceptEvent)
                         throw SteamDownloadPausedException()
                     }
 
                     SteamDownloadControl.CONTINUE -> Unit
                 }
                 val status = task.status()
+                drainEvents(0)
                 // Durable committed bytes are the one progress reading this contract publishes. The SDK's
                 // counters are per run: a resumed run starts them at zero again and only moves committed
                 // bytes when it reports a freshly fetched chunk, even though its journal already covers the
@@ -310,7 +351,7 @@ internal class SteamContentSdkWorkshopTransfer
                         // abandoning durable work, and let an explicit cancel still win.
                         when (control()) {
                             SteamDownloadControl.CANCEL -> {
-                                cancelAndAwaitTerminal(task)
+                                cancelAndAwaitTerminal(task, ::acceptEvent)
                                 throw SteamDownloadCancelledException()
                             }
 
@@ -339,20 +380,17 @@ internal class SteamContentSdkWorkshopTransfer
                         // per-chunk progress: a session-backed run now publishes CHUNK_PROGRESS per committed
                         // chunk, and CHECKPOINT_COMMITTED is the durable checkpoint it publishes when it stops.
                         // Ordinals and one byte count only, no host, token or URL.
-                        task.pollEvent(SDK_EVENT_POLL_MS)?.let { event ->
-                            if (event.kind == TaskEventKind.MANIFEST_RESOLVED) manifestResolved = true
-                            Log.i(
-                                TAG,
-                                "task event kind=${sdkTaskEventName(event.kind)} value=${event.value}",
-                            )
-                        }
+                        drainEvents(SDK_EVENT_POLL_MS)
                     }
                 }
             }
         }
 
         /** Requests a durable pause and does not let the task handle close before the SDK confirms it. */
-        private fun pauseAndAwaitTerminal(task: SteamContentSdkTask) {
+        private suspend fun pauseAndAwaitTerminal(
+            task: SteamContentSdkTask,
+            acceptEvent: suspend (SteamContentSdkTaskEvent) -> Unit = ::logSdkTaskEvent,
+        ) {
             try {
                 task.pause()
             } catch (error: CancellationException) {
@@ -364,21 +402,26 @@ internal class SteamContentSdkWorkshopTransfer
             }
             while (true) {
                 val status = task.status()
+                drainSdkTaskEvents(task, acceptEvent)
                 when (status.state) {
                     TaskState.PAUSED -> return
                     TaskState.CANCELLED -> throw SteamDownloadCancelledException()
                     TaskState.FAILED -> throw sdkFailure(task, status)
                     TaskState.COMPLETED -> error("The Steam Content SDK download completed before it paused")
                 }
-                task.pollEvent(SDK_EVENT_POLL_MS)
+                task.pollEvent(SDK_EVENT_POLL_MS)?.let { acceptEvent(it) }
             }
         }
 
         /** Requests cancellation and waits until the SDK reports its terminal CANCELLED state. */
-        private fun cancelAndAwaitTerminal(task: SteamContentSdkTask) {
+        private suspend fun cancelAndAwaitTerminal(
+            task: SteamContentSdkTask,
+            acceptEvent: suspend (SteamContentSdkTaskEvent) -> Unit = ::logSdkTaskEvent,
+        ) {
             runCatching { task.cancel() }
             while (true) {
                 val status = task.status()
+                drainSdkTaskEvents(task, acceptEvent)
                 when (status.state) {
                     TaskState.CANCELLED -> return
                     TaskState.FAILED -> {
@@ -387,7 +430,7 @@ internal class SteamContentSdkWorkshopTransfer
                     }
                     TaskState.COMPLETED -> return
                 }
-                task.pollEvent(SDK_EVENT_POLL_MS)
+                task.pollEvent(SDK_EVENT_POLL_MS)?.let { acceptEvent(it) }
             }
         }
 
@@ -416,6 +459,21 @@ internal class SteamContentSdkWorkshopTransfer
             const val MAX_DOWNLOAD_ATTEMPTS = 2
         }
     }
+
+private suspend fun drainSdkTaskEvents(
+    task: SteamContentSdkTask,
+    acceptEvent: suspend (SteamContentSdkTaskEvent) -> Unit,
+) {
+    var event = task.pollEvent(0)
+    while (event != null) {
+        acceptEvent(event)
+        event = task.pollEvent(0)
+    }
+}
+
+private suspend fun logSdkTaskEvent(event: SteamContentSdkTaskEvent) {
+    Log.i(TAG, "task event kind=${sdkTaskEventName(event.kind)} value=${event.value}")
+}
 
 /** A typed SDK task failure keeps retry policy on stable machine-readable fields. */
 internal class SteamContentSdkTaskFailureException(
@@ -488,7 +546,36 @@ internal fun sdkTaskEventName(kind: Int): String =
         TaskEventKind.CANCELLED -> "CANCELLED"
         TaskEventKind.PAUSED -> "PAUSED"
         TaskEventKind.RESUMED -> "RESUMED"
+        TaskEventKind.PREPARATION_RESOLUTION_STARTED -> "PREPARATION_RESOLUTION_STARTED"
+        TaskEventKind.PREPARATION_MANIFEST_REQUEST_CODE_READY -> "PREPARATION_MANIFEST_REQUEST_CODE_READY"
+        TaskEventKind.PREPARATION_CONTENT_SERVERS_READY -> "PREPARATION_CONTENT_SERVERS_READY"
+        TaskEventKind.PREPARATION_DEPOT_KEY_READY -> "PREPARATION_DEPOT_KEY_READY"
+        TaskEventKind.PREPARATION_CDN_TOKENS_READY -> "PREPARATION_CDN_TOKENS_READY"
+        TaskEventKind.PREPARATION_MANIFEST_FETCHED -> "PREPARATION_MANIFEST_FETCHED"
+        TaskEventKind.PREPARATION_MANIFEST_DECODED -> "PREPARATION_MANIFEST_DECODED"
+        TaskEventKind.PREPARATION_EXECUTION_ADMITTED -> "PREPARATION_EXECUTION_ADMITTED"
+        TaskEventKind.PREPARATION_RESUME_SCAN_COMPLETED -> "PREPARATION_RESUME_SCAN_COMPLETED"
+        TaskEventKind.PREPARATION_FIRST_NETWORK_RECEIVED -> "PREPARATION_FIRST_NETWORK_RECEIVED"
+        TaskEventKind.PREPARATION_FIRST_WRITE_COMPLETED -> "PREPARATION_FIRST_WRITE_COMPLETED"
+        TaskEventKind.PREPARATION_FIRST_CHECKPOINT_COMPLETED -> "PREPARATION_FIRST_CHECKPOINT_COMPLETED"
         else -> "kind $kind"
+    }
+
+internal fun sdkPreparationTimingName(kind: Int): String? =
+    when (kind) {
+        TaskEventKind.PREPARATION_RESOLUTION_STARTED -> "sdk_resolution_started"
+        TaskEventKind.PREPARATION_MANIFEST_REQUEST_CODE_READY -> "sdk_manifest_request_code_ready"
+        TaskEventKind.PREPARATION_CONTENT_SERVERS_READY -> "sdk_content_servers_ready"
+        TaskEventKind.PREPARATION_DEPOT_KEY_READY -> "sdk_depot_key_ready"
+        TaskEventKind.PREPARATION_CDN_TOKENS_READY -> "sdk_cdn_tokens_ready"
+        TaskEventKind.PREPARATION_MANIFEST_FETCHED -> "sdk_manifest_fetched"
+        TaskEventKind.PREPARATION_MANIFEST_DECODED -> "sdk_manifest_decoded"
+        TaskEventKind.PREPARATION_EXECUTION_ADMITTED -> "sdk_execution_admitted"
+        TaskEventKind.PREPARATION_RESUME_SCAN_COMPLETED -> "sdk_resume_scan_completed"
+        TaskEventKind.PREPARATION_FIRST_NETWORK_RECEIVED -> "sdk_first_network_received"
+        TaskEventKind.PREPARATION_FIRST_WRITE_COMPLETED -> "sdk_first_write_completed"
+        TaskEventKind.PREPARATION_FIRST_CHECKPOINT_COMPLETED -> "sdk_first_checkpoint_completed"
+        else -> null
     }
 
 /**

@@ -217,12 +217,32 @@ internal class FormalDownloadRunner
                         val (target, credential) =
                             resolveDownloadTargetAndCredential(
                                 fetchTarget = {
+                                    DownloadTimingTelemetry.log(
+                                        DownloadTimingTelemetry.PUBLIC_TARGET_STARTED,
+                                        timingContext,
+                                    )
                                     steamWorkshopContentClient.fetchContentTarget(
                                         publishedFileId = task.workshopId,
                                         proxyUrl = activeProxyUrl,
-                                    )
+                                    ).also {
+                                        DownloadTimingTelemetry.log(
+                                            DownloadTimingTelemetry.PUBLIC_TARGET_COMPLETED,
+                                            timingContext,
+                                        )
+                                    }
                                 },
-                                resolveCredential = credentialProvider::resolveContentCredential,
+                                resolveCredential = {
+                                    DownloadTimingTelemetry.log(
+                                        DownloadTimingTelemetry.CREDENTIAL_STARTED,
+                                        timingContext,
+                                    )
+                                    credentialProvider.resolveContentCredential().also {
+                                        DownloadTimingTelemetry.log(
+                                            DownloadTimingTelemetry.CREDENTIAL_COMPLETED,
+                                            timingContext,
+                                        )
+                                    }
+                                },
                             )
                         val directDownload = workshopDelivery(target) is WorkshopDelivery.DirectFile
                         if (!directDownload && task.credentialMode == DownloadCredentialMode.LEGACY_UNKNOWN.name) {

@@ -1,6 +1,7 @@
 package com.wallhub.android.data.downloads
 
 import com.wallhub.android.core.model.SteamContentCredential
+import io.steamcontent.sdk.TaskEventKind
 import io.steamcontent.sdk.TaskFailure
 import io.steamcontent.sdk.TaskState
 import java.io.File
@@ -97,6 +98,26 @@ class SteamContentSdkWorkshopTransferTest {
                 assertEquals(2L, progress[3].networkBytesPerSecond)
                 assertTrue(progress[3].firstContentReceived)
                 assertEquals(9L, progress[4].completedBytes)
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun terminalStatusStillDrainsTheFirstDurableChunkEventOnce() =
+        runBlocking {
+            val fixture = Fixture()
+            try {
+                fixture.task.events += SteamContentSdkTaskEvent(TaskEventKind.MANIFEST_RESOLVED, 0L)
+                fixture.task.events += SteamContentSdkTaskEvent(TaskEventKind.CHUNK_PROGRESS, 4L)
+                fixture.task.events += SteamContentSdkTaskEvent(TaskEventKind.CHUNK_PROGRESS, 9L)
+                fixture.task.statuses += completed(committedBytes = 9L)
+                var firstChunkCalls = 0
+
+                fixture.download(onFirstChunkCommitted = { firstChunkCalls += 1 })
+
+                assertEquals(1, firstChunkCalls)
+                assertTrue(fixture.task.events.isEmpty())
             } finally {
                 fixture.close()
             }
@@ -596,6 +617,7 @@ class SteamContentSdkWorkshopTransferTest {
             credential: SteamContentCredential? = SDK_CREDENTIAL,
             control: suspend () -> SteamDownloadControl = { SteamDownloadControl.CONTINUE },
             onProgress: suspend (SteamDownloadProgress) -> Unit = {},
+            onFirstChunkCommitted: (suspend () -> Unit)? = null,
             opener: (suspend (SteamContentCredential) -> SteamContentSdkSession)? = null,
         ): SteamContentDownloadResult {
             if (opener != null) this.opener = opener
@@ -603,7 +625,7 @@ class SteamContentSdkWorkshopTransferTest {
                 target = target,
                 destinationDirectory = destination,
                 credential = credential,
-                options = SteamContentDownloadOptions(),
+                options = SteamContentDownloadOptions(onFirstChunkCommitted = onFirstChunkCommitted),
                 control = control,
                 onProgress = onProgress,
             )
@@ -680,6 +702,7 @@ class SteamContentSdkWorkshopTransferTest {
 
     private class FakeTask : SteamContentSdkTask {
         val statuses = ArrayDeque<SteamContentSdkTaskStatus>()
+        val events = ArrayDeque<SteamContentSdkTaskEvent>()
         var diagnostic: String? = null
         var pauseCalls = 0
         var resumeCalls = 0
@@ -702,7 +725,7 @@ class SteamContentSdkWorkshopTransferTest {
             )
         }
 
-        override fun pollEvent(timeoutMs: Int): SteamContentSdkTaskEvent? = null
+        override fun pollEvent(timeoutMs: Int): SteamContentSdkTaskEvent? = synchronized(events) { events.removeFirstOrNull() }
 
         override fun lastError(): String? = diagnostic
 
