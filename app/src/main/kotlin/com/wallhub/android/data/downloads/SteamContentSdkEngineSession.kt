@@ -207,8 +207,12 @@ private class SteamContentSdkEngineSession private constructor(
     override val storageRoot: File
         get() = engine.storageRoot
 
-    override fun resolveWorkshop(itemId: Long): SteamContentSdkResolvedItem {
-        val response = engine.resolveWorkshop(itemId)
+    override fun resolveWorkshop(
+        itemId: Long,
+        appIdHint: Long,
+        contentManifestIdHint: Long,
+    ): SteamContentSdkResolvedItem {
+        val response = engine.resolveWorkshop(itemId, appIdHint, contentManifestIdHint)
         return SteamContentSdkResolvedItem(
             itemId = response.itemId,
             appId = response.appId,

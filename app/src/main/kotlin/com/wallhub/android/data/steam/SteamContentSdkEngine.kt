@@ -232,12 +232,16 @@ class SteamContentSdkEngine
          * complete throws the SDK's typed failure, which carries no material.
          */
         @Synchronized
-        fun resolveWorkshop(itemId: Long): WorkshopResolveResponse {
+        fun resolveWorkshop(
+            itemId: Long,
+            appIdHint: Long = 0L,
+            contentManifestIdHint: Long = 0L,
+        ): WorkshopResolveResponse {
             val open = engine ?: error("the Steam Content SDK engine is not open")
-            // The App is named because the resolution's own details read is answered within one: a read that
-            // names none can come back without the item, which stops the chain at its first stage
-            // (`workshop_details`) for an item that plainly exists.
-            return open.resolveWorkshop(itemId, WALLPAPER_ENGINE_APP_ID.toLong())
+            val hasIdentityHint = appIdHint > 0L && contentManifestIdHint > 0L
+            val appId = if (hasIdentityHint) appIdHint else WALLPAPER_ENGINE_APP_ID.toLong()
+            val manifestId = if (hasIdentityHint) contentManifestIdHint else 0L
+            return open.resolveWorkshop(itemId, appId, manifestId)
         }
 
         /**

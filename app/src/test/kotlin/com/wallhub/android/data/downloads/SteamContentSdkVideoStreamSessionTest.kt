@@ -38,8 +38,11 @@ private class FakeRangeSession : SteamContentSdkSession {
 
     override val storageRoot: File = File("unused")
 
-    override fun resolveWorkshop(itemId: Long): SteamContentSdkResolvedItem =
-        error("this fixture serves range streams, not resolution")
+    override fun resolveWorkshop(
+        itemId: Long,
+        appIdHint: Long,
+        contentManifestIdHint: Long,
+    ): SteamContentSdkResolvedItem = error("this fixture serves range streams, not resolution")
 
     override fun startDownload(
         appId: Long,

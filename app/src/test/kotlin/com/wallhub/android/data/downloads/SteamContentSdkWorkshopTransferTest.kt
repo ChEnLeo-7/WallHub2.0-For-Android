@@ -47,6 +47,7 @@ class SteamContentSdkWorkshopTransferTest {
                 val result = fixture.download()
 
                 assertEquals(1, fixture.session.resolveCalls)
+                assertEquals(listOf(431960L to 42L), fixture.session.resolveHints)
                 val started = fixture.session.starts.single()
                 assertEquals(fixture.resolved.appId, started.appId)
                 assertEquals(fixture.resolved.depotId, started.depotId)
@@ -57,6 +58,20 @@ class SteamContentSdkWorkshopTransferTest {
                 assertTrue(result.usedAuthenticatedSession)
                 assertTrue(fixture.session.closed)
                 assertEquals(1, fixture.task.closeCalls)
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun anIncompleteIdentityHintFallsBackToTheSdkDetailsPath() =
+        runBlocking {
+            val fixture = Fixture()
+            try {
+                fixture.task.statuses += completed(committedBytes = 9L)
+                fixture.download(target = fixture.target.copy(contentManifestId = 0L))
+
+                assertEquals(listOf(0L to 0L), fixture.session.resolveHints)
             } finally {
                 fixture.close()
             }
@@ -585,6 +600,7 @@ class SteamContentSdkWorkshopTransferTest {
 
         suspend fun download(
             destination: File = this.destination,
+            target: WorkshopContentTarget = this.target,
             credential: SteamContentCredential? = SDK_CREDENTIAL,
             control: suspend () -> SteamDownloadControl = { SteamDownloadControl.CONTINUE },
             onProgress: suspend (SteamDownloadProgress) -> Unit = {},
@@ -620,14 +636,20 @@ class SteamContentSdkWorkshopTransferTest {
             queuedTasks += task
         }
         var resolveCalls = 0
+        val resolveHints = mutableListOf<Pair<Long, Long>>()
         var closeCalls = 0
         var closed = false
 
         /** Runs inside a resolve, so a test can hold one download open while another starts. */
         var onResolve: (() -> Unit)? = null
 
-        override fun resolveWorkshop(itemId: Long): SteamContentSdkResolvedItem {
+        override fun resolveWorkshop(
+            itemId: Long,
+            appIdHint: Long,
+            contentManifestIdHint: Long,
+        ): SteamContentSdkResolvedItem {
             resolveCalls += 1
+            resolveHints += appIdHint to contentManifestIdHint
             onResolve?.invoke()
             return resolved
         }

@@ -93,7 +93,11 @@ internal data class SteamContentSdkManifestFile(
 internal interface SteamContentSdkSession : Closeable {
     val storageRoot: File
 
-    fun resolveWorkshop(itemId: Long): SteamContentSdkResolvedItem
+    fun resolveWorkshop(
+        itemId: Long,
+        appIdHint: Long = 0L,
+        contentManifestIdHint: Long = 0L,
+    ): SteamContentSdkResolvedItem
 
     fun startDownload(
         appId: Long,
@@ -195,7 +199,12 @@ internal class SteamContentSdkWorkshopTransfer
                             options.timingContext?.let { context ->
                                 DownloadTimingTelemetry.log(DownloadTimingTelemetry.SDK_WORKSHOP_RESOLVE_STARTED, context)
                             }
-                            val resolved = session.resolveWorkshop(target.publishedFileId)
+                            val resolved =
+                                session.resolveWorkshop(
+                                    itemId = target.publishedFileId,
+                                    appIdHint = target.appId.toLong().takeIf { it > 0L } ?: 0L,
+                                    contentManifestIdHint = target.contentManifestId.takeIf { it > 0L } ?: 0L,
+                                )
                             options.timingContext?.let { context ->
                                 DownloadTimingTelemetry.log(DownloadTimingTelemetry.SDK_WORKSHOP_RESOLVED, context)
                             }
