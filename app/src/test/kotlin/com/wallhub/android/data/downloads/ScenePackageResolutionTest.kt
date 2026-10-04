@@ -279,7 +279,7 @@ class ScenePackageResolutionTest {
             varying vec2 uv;
             varying vec2 texCoordMotion;
             varying vec2 sines;
-            void main() {
+            vec3 drawSence(vec2 inputUv) {
                 uv = uv - 0.5;
                 texCoordMotion = texCoordMotion - 0.5;
                 sines = sines * 0.498 + 0.5;
@@ -290,6 +290,9 @@ class ScenePackageResolutionTest {
                 uv = uv * 1e-3 + 2;
                 uv = uv * 2 + 1;
                 float spectrum = g_AudioSpectrum64Left[barID / 4][barID % 4];
+                vec4 col = vec4(0.,0.,0.,0.);
+                col = vec4(mix(u_userNewColor, col, step(0., sence)), 1.);
+                return col;
             }
             """.trimIndent()
         val expected =
@@ -297,7 +300,7 @@ class ScenePackageResolutionTest {
             varying vec2 uv;
             varying vec2 texCoordMotion;
             varying vec2 sines;
-            void main() {
+            vec3 drawSence(vec2 inputUv) {
                 uv = uv - 0.5;
                 texCoordMotion = texCoordMotion - 0.5;
                 sines = sines * 0.498 + 0.5;
@@ -308,6 +311,9 @@ class ScenePackageResolutionTest {
                 uv = uv * 1e-3 + 2.0;
                 uv = uv * 2.0 + 1.0;
                 float spectrum = g_AudioSpectrum64Left[int(barID)];
+                vec3 col = vec3(0.,0.,0.);
+                col = mix(u_userNewColor, col, step(0., sence));
+                return col;
             }
             """.trimIndent()
 

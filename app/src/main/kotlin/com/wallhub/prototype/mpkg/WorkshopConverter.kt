@@ -497,6 +497,8 @@ object ShaderCompatibility {
         checkCancellation()
         output = rewritePackedAudioSpectrumIndex(output)
         checkCancellation()
+        output = rewriteVec3ColorAccumulator(output)
+        checkCancellation()
         output =
             output
                 .replace(
@@ -590,6 +592,16 @@ object ShaderCompatibility {
             val index = match.groupValues[2]
             "$spectrum[int($index)]"
         }
+
+    private fun rewriteVec3ColorAccumulator(source: String): String {
+        if (!source.contains("vec3 drawSence(") || !source.contains("return col;")) return source
+        return source
+            .replace("vec4 col = vec4(0.,0.,0.,0.);", "vec3 col = vec3(0.,0.,0.);")
+            .replace(
+                "col = vec4(mix(u_userNewColor, col, step(0., sence)), 1.);",
+                "col = mix(u_userNewColor, col, step(0., sence));",
+            )
+    }
 
     private fun matchingParenthesis(
         source: String,
