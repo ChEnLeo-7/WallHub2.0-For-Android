@@ -556,6 +556,8 @@ class SteamContentSdkWorkshopTransferTest {
                     }
                 }
                 fixture.task.statuses += completed(committedBytes = 9L)
+                val secondTask = FakeTask().apply { statuses += completed(committedBytes = 9L) }
+                fixture.session.queueTask(secondTask)
                 val second = File(fixture.root, "wallhub-workshop/task-2").apply { mkdirs() }
 
                 val first = launch(Dispatchers.IO) { fixture.download() }
