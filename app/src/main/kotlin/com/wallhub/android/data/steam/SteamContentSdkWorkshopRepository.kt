@@ -143,8 +143,30 @@ internal class SteamContentSdkWorkshopRepository
     ) : SteamUnifiedWorkshopRepository,
         AccountWorkshopRepository,
         SteamPlaytimeRepository {
-        /** Serializes Workshop reads so the engine is never asked for two handles at once. */
+        /** Native handles remain single-lane, but foreground reads now jump queued background discovery work. */
         private val mutex = Mutex()
+        private val reads =
+            SteamWorkshopReadCoordinator(
+                maxConcurrent = 1,
+                onTiming = { timing ->
+                    Log.i(
+                        TAG,
+                        "read kind=${timing.kind} priority=${timing.priority} outcome=${timing.outcome} " +
+                            "queueMs=${timing.queueMillis} runMs=${timing.runMillis}",
+                    )
+                },
+            )
+        private val recovery =
+            SteamSessionRequestRecovery(
+                object : RecoverableSteamSession {
+                    override fun generation(): SteamSessionGeneration? =
+                        engine.currentSessionGeneration()?.let(::SteamSessionGeneration)
+
+                    override suspend fun reconnectIfCurrent(expected: SteamSessionGeneration): Boolean =
+                        engine.reconnectSessionIfCurrent(expected.value)
+                },
+            )
+        private val accountCollectionPager = AccountCollectionPager()
 
         // ------------------------------------------------------------------
         // SteamUnifiedWorkshopRepository
@@ -156,7 +178,11 @@ internal class SteamContentSdkWorkshopRepository
                     awaitSignedInSession()
                     val normalized = query.normalizedForSdk()
                     val creatorId = normalized.creatorId?.toLongOrNull()?.takeIf { it > 0L }
-                    mutex.withLock {
+                    sdkRead(
+                        key = "browse:${normalized.hashCode()}",
+                        kind = WorkshopReadKind.SEARCH,
+                        priority = WorkshopReadPriority.BACKGROUND,
+                    ) {
                         val page =
                             if (creatorId == null) {
                                 engine.workshopSearch(
@@ -232,7 +258,11 @@ internal class SteamContentSdkWorkshopRepository
             withContext(Dispatchers.IO) {
                 runCatchingUnavailable {
                     require(collectionId > 0L) { "Invalid Workshop collection ID" }
-                    mutex.withLock {
+                    sdkRead(
+                        key = "collection:$collectionId",
+                        kind = WorkshopReadKind.DETAILS,
+                        priority = WorkshopReadPriority.FOREGROUND,
+                    ) {
                         engine
                             .openWorkshopItem(collectionId, WALLPAPER_ENGINE_APP_ID.toLong())
                             .use { result ->
@@ -270,7 +300,11 @@ internal class SteamContentSdkWorkshopRepository
                 // own details before it reads the thread. kSteam had to be handed the same value by the
                 // caller; both end up sending the item's author as the thread key.
                 runCatchingUnavailable {
-                    mutex.withLock {
+                    sdkRead(
+                        key = "comments:$workshopId:$pageStart:$pageCount",
+                        kind = WorkshopReadKind.COMMENTS,
+                        priority = WorkshopReadPriority.FOREGROUND,
+                    ) {
                         val page =
                             engine.workshopComments(
                                 itemId = workshopId,
@@ -300,7 +334,13 @@ internal class SteamContentSdkWorkshopRepository
                 if (!normalized.hasInteractiveFilters()) {
                     loadPersonalCollectionPage(accountId, list, normalized, normalized.page, normalized.pageSize)
                 } else {
-                    browseFilteredAccountCollection(normalized) { sourcePage, sourcePageSize ->
+                    val generation =
+                        engine.currentSessionGeneration()
+                            ?: error("No signed-in Steam session generation is available")
+                    accountCollectionPager.page(
+                        scope = AccountCollectionScope(accountId, generation),
+                        query = normalized,
+                    ) { sourcePage, sourcePageSize ->
                         loadPersonalCollectionPage(accountId, list, normalized, sourcePage, sourcePageSize)
                     }
                 }
@@ -314,7 +354,11 @@ internal class SteamContentSdkWorkshopRepository
             sourcePage: Int,
             sourcePageSize: Int,
         ): WorkshopPage =
-            mutex.withLock {
+            sdkRead(
+                key = "account:${query.collection}:$sourcePage:$sourcePageSize",
+                kind = WorkshopReadKind.ACCOUNT_COLLECTION,
+                priority = WorkshopReadPriority.FOREGROUND,
+            ) {
                 val page =
                     engine.workshopPersonalItems(
                         accountId = accountId,
@@ -339,7 +383,11 @@ internal class SteamContentSdkWorkshopRepository
             withContext(Dispatchers.IO) {
                 require(workshopId > 0L) { "Invalid Workshop item ID" }
                 runCatchingUnavailable {
-                    mutex.withLock {
+                    sdkRead(
+                        key = "author:$workshopId",
+                        kind = WorkshopReadKind.PROFILE,
+                        priority = WorkshopReadPriority.BACKGROUND,
+                    ) {
                         engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result ->
                             val authorId = result.field(WorkshopItemField.AUTHOR).valueOrZero().takeIf { it > 0L }
                             if (authorId == null) {
@@ -478,7 +526,11 @@ internal class SteamContentSdkWorkshopRepository
                 runCatchingUnavailable {
                     awaitSignedInSession()
                     require(workshopId > 0L) { "Invalid Workshop item ID" }
-                    mutex.withLock {
+                    sdkRead(
+                        key = "detail:$workshopId",
+                        kind = WorkshopReadKind.DETAILS,
+                        priority = WorkshopReadPriority.FOREGROUND,
+                    ) {
                         engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result ->
                             readWorkshopDetail(result)
                         }
@@ -802,6 +854,16 @@ internal class SteamContentSdkWorkshopRepository
             }
             return resolved
         }
+
+        private suspend fun <T> sdkRead(
+            key: String,
+            kind: WorkshopReadKind,
+            priority: WorkshopReadPriority,
+            operation: suspend () -> T,
+        ): T =
+            reads.read(key, kind, priority) {
+                recovery.execute { mutex.withLock { operation() } }
+            }
 
         /**
          * The signed-in account id from the SDK session, or null when nobody is signed in.

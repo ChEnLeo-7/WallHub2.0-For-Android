@@ -1,0 +1,207 @@
+package com.wallhub.android.data.steam
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertSame
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.test.runTest
+
+class SteamSessionRequestRecoveryTest {
+    @Test
+    fun `a request refused before send reconnects and retries once`() =
+        runTest {
+            val session = FakeRecoverableSession()
+            val recovery = SteamSessionRequestRecovery(session)
+            var calls = 0
+
+            val result =
+                recovery.execute {
+                    calls += 1
+                    if (calls == 1) throw IllegalArgumentException("invalid_input: the request was refused before it was sent")
+                    "page"
+                }
+
+            assertEquals("page", result)
+            assertEquals(2, calls)
+            assertEquals(1, session.reconnectCalls)
+        }
+
+    @Test
+    fun `a session unavailable failure reconnects and retries once`() =
+        runTest {
+            val session = FakeRecoverableSession()
+            val recovery = SteamSessionRequestRecovery(session)
+            var calls = 0
+
+            val result =
+                recovery.execute {
+                    calls += 1
+                    if (calls == 1) error("content resolution failed at session_unavailable")
+                    42
+                }
+
+            assertEquals(42, result)
+            assertEquals(2, calls)
+            assertEquals(1, session.reconnectCalls)
+        }
+
+    @Test
+    fun `a second recoverable failure escapes without another reconnect`() =
+        runTest {
+            val session = FakeRecoverableSession()
+            val recovery = SteamSessionRequestRecovery(session)
+            var calls = 0
+
+            assertFailsWith<IllegalStateException> {
+                recovery.execute<Unit> {
+                    calls += 1
+                    error("invalid_input: the request was refused before it was sent")
+                }
+            }
+
+            assertEquals(2, calls)
+            assertEquals(1, session.reconnectCalls)
+        }
+
+    @Test
+    fun `a failed reconnect preserves the original failure without retrying`() =
+        runTest {
+            val session = FakeRecoverableSession().apply { reconnectSucceeds = false }
+            val recovery = SteamSessionRequestRecovery(session)
+            val refused = IllegalStateException("invalid_input: the request was refused before it was sent")
+            var calls = 0
+
+            val thrown =
+                assertFailsWith<IllegalStateException> {
+                    recovery.execute<Unit> {
+                        calls += 1
+                        throw refused
+                    }
+                }
+
+            assertSame(refused, thrown)
+            assertEquals(1, calls)
+            assertEquals(1, session.reconnectCalls)
+        }
+
+    @Test
+    fun `unrelated failures are not reconnected or retried`() =
+        runTest {
+            val session = FakeRecoverableSession()
+            val recovery = SteamSessionRequestRecovery(session)
+            val denied = IllegalStateException("access_denied: the service refused the request")
+            var calls = 0
+
+            val thrown =
+                assertFailsWith<IllegalStateException> {
+                    recovery.execute<Unit> {
+                        calls += 1
+                        throw denied
+                    }
+                }
+
+            assertSame(denied, thrown)
+            assertEquals(1, calls)
+            assertEquals(0, session.reconnectCalls)
+        }
+
+    @Test
+    fun `concurrent failures from one generation share one reconnect`() =
+        runTest {
+            val session = FakeRecoverableSession()
+            val reconnectEntered = CompletableDeferred<Unit>()
+            val permitReconnect = CompletableDeferred<Unit>()
+            session.beforeReconnect = {
+                reconnectEntered.complete(Unit)
+                permitReconnect.await()
+            }
+            val recovery = SteamSessionRequestRecovery(session)
+            val attempts = IntArray(2)
+
+            val reads =
+                List(2) { index ->
+                    async {
+                        recovery.execute {
+                            attempts[index] += 1
+                            if (attempts[index] == 1) {
+                                error("invalid_input: the request was refused before it was sent")
+                            }
+                            index
+                        }
+                    }
+                }
+            reconnectEntered.await()
+            permitReconnect.complete(Unit)
+
+            assertEquals(listOf(0, 1), reads.awaitAll())
+            assertEquals(listOf(2, 2), attempts.toList())
+            assertEquals(1, session.reconnectCalls)
+        }
+
+    @Test
+    fun `a generation replaced before recovery is not reconnected again`() =
+        runTest {
+            val session = FakeRecoverableSession()
+            val recovery = SteamSessionRequestRecovery(session)
+            var calls = 0
+
+            val result =
+                recovery.execute {
+                    calls += 1
+                    if (calls == 1) {
+                        session.replaceGeneration()
+                        error("content resolution failed at session unavailable")
+                    }
+                    "new generation"
+                }
+
+            assertEquals("new generation", result)
+            assertEquals(0, session.reconnectCalls)
+        }
+
+    @Test
+    fun `cancellation is propagated without reconnect or retry`() =
+        runTest {
+            val session = FakeRecoverableSession()
+            val recovery = SteamSessionRequestRecovery(session) { SteamRequestRecoveryCause.SESSION_UNAVAILABLE }
+            val cancelled = CancellationException("caller left")
+            var calls = 0
+
+            val thrown =
+                assertFailsWith<CancellationException> {
+                    recovery.execute<Unit> {
+                        calls += 1
+                        throw cancelled
+                    }
+                }
+
+            assertSame(cancelled, thrown)
+            assertEquals(1, calls)
+            assertEquals(0, session.reconnectCalls)
+        }
+
+    private class FakeRecoverableSession : RecoverableSteamSession {
+        private var current = SteamSessionGeneration(1L)
+        var reconnectCalls = 0
+        var reconnectSucceeds = true
+        var beforeReconnect: suspend () -> Unit = {}
+
+        override fun generation(): SteamSessionGeneration = current
+
+        override suspend fun reconnectIfCurrent(expected: SteamSessionGeneration): Boolean {
+            check(current == expected)
+            reconnectCalls += 1
+            beforeReconnect()
+            if (reconnectSucceeds) current = SteamSessionGeneration(current.value + 1L)
+            return reconnectSucceeds
+        }
+
+        fun replaceGeneration() {
+            current = SteamSessionGeneration(current.value + 1L)
+        }
+    }
+}

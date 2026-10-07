@@ -96,6 +96,7 @@ class SteamContentSdkEngine
 
         private var engine: SteamContentEngine? = null
         private val sessions = GenerationHandleOwner<SteamSession>()
+        private var publishedSessionGeneration = 0L
 
         /** The route the live engine was created for, so a reopen can tell a reconnect from a config change. */
         private var engineRoute: Route? = null
@@ -158,7 +159,9 @@ class SteamContentSdkEngine
                 close()
                 return null
             }
-            return sessions.replace(opened).value
+            val published = sessions.replace(opened).value
+            publishedSessionGeneration += 1L
+            return published
         }
 
         /** Opens a session and captures ownership of that exact generation before another opener can replace it. */
@@ -194,6 +197,21 @@ class SteamContentSdkEngine
         /** Returns the open session, or null when the engine is closed. */
         @Synchronized
         fun currentSession(): SteamSession? = sessions.currentValue()
+
+        /** Opaque generation used to fence account cursors and one-shot recovery. */
+        @Synchronized
+        internal fun currentSessionGeneration(): Long? =
+            sessions.currentHandle()?.let { publishedSessionGeneration }
+
+        /** Reconnects only the session generation that actually refused the foreground request. */
+        @Synchronized
+        internal fun reconnectSessionIfCurrent(expectedGeneration: Long): Boolean {
+            val handle = sessions.currentHandle() ?: return false
+            if (publishedSessionGeneration != expectedGeneration) return true
+            val reconnected = runCatching { handle.value.reconnect() }.isSuccess
+            if (reconnected) publishedSessionGeneration += 1L
+            return reconnected
+        }
 
         /** Reports what the SDK says it can do on this device, for diagnostics and negotiation. */
         @Synchronized
