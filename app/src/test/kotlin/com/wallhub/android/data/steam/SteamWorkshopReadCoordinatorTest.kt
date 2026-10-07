@@ -72,7 +72,7 @@ class SteamWorkshopReadCoordinatorTest {
         }
         entered.await()
         val second = async {
-            coordinator.read("detail-42", WorkshopReadKind.DETAILS, WorkshopReadPriority.BACKGROUND) {
+            coordinator.read<String>("detail-42", WorkshopReadKind.DETAILS, WorkshopReadPriority.BACKGROUND) {
                 error("single-flight joiner must not run")
             }
         }
