@@ -25,6 +25,9 @@ internal enum class WorkshopReadKind {
     PROFILE,
     PLAYTIME,
     INTERACTION,
+    SET_SUBSCRIBED,
+    SET_FAVORITED,
+    POST_COMMENT,
 }
 
 /** User-visible work is admitted before queued speculative or refresh work. */

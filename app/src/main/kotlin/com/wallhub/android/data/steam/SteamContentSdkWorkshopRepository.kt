@@ -115,6 +115,19 @@ private data class SdkCommentRow(
     val createdAt: Long?,
 )
 
+internal enum class WorkshopSessionAccess {
+    PUBLIC,
+    AUTHENTICATED_ACCOUNT,
+}
+
+/** Public CM reads proceed immediately; only account-scoped reads wait for authentication. */
+internal suspend fun awaitWorkshopSession(
+    access: WorkshopSessionAccess,
+    awaitAuthenticated: suspend () -> Unit,
+) {
+    if (access == WorkshopSessionAccess.AUTHENTICATED_ACCOUNT) awaitAuthenticated()
+}
+
 /**
  * The Steam Content SDK as this app's public and account Workshop reader.
  *
@@ -168,11 +181,17 @@ internal class SteamContentSdkWorkshopRepository
                     override fun generation(): SteamSessionGeneration? =
                         engine.currentSessionGeneration()?.let(::SteamSessionGeneration)
 
+                    override fun isUsable(generation: SteamSessionGeneration): Boolean =
+                        engine.currentSessionGeneration() == generation.value &&
+                            engine.state() == io.steamcontent.sdk.SessionState.AUTHENTICATED
+
                     override suspend fun reconnectIfCurrent(expected: SteamSessionGeneration): Boolean =
                         engine.reconnectSessionIfCurrent(expected.value)
                 },
             )
+        private val writes = SteamWorkshopWriteCoordinator(reads, recovery)
         private val accountCollectionPager = AccountCollectionPager()
+        private val detailInteractionCache = WorkshopDetailInteractionCache()
         private val publicPageCache =
             SteamReadCache<WorkshopBrowseQuery, WorkshopPage>(freshMillis = 120_000L, staleMillis = 600_000L)
         private val accountPageCache =
@@ -205,7 +224,7 @@ internal class SteamContentSdkWorkshopRepository
                         normalized.sort != WorkshopSort.FRIENDS_CREATED
                 if (cacheable) publicPageCache.getFresh(normalized)?.let { return@withContext it }
                 val loaded = runCatchingUnavailable {
-                    awaitSignedInSession()
+                    awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, ::awaitSignedInSession)
                     val creatorId = normalized.creatorId?.toLongOrNull()?.takeIf { it > 0L }
                     sdkRead(
                         key = "browse:$normalized",
@@ -374,7 +393,7 @@ internal class SteamContentSdkWorkshopRepository
                 val normalized = query.normalized()
                 var cacheKey: AccountPageCacheKey? = null
                 try {
-                    awaitSignedInSession()
+                    awaitWorkshopSession(WorkshopSessionAccess.AUTHENTICATED_ACCOUNT, ::awaitSignedInSession)
                     val accountId = signedInAccountId() ?: error("No signed-in Steam account is available")
                     val generation =
                         engine.currentSessionGeneration()
@@ -462,6 +481,10 @@ internal class SteamContentSdkWorkshopRepository
 
         override suspend fun getInteraction(workshopId: Long): WorkshopInteraction =
             withContext(Dispatchers.IO) {
+                val generation = engine.currentSessionGeneration()
+                if (generation != null) {
+                    detailInteractionCache.take(workshopId, generation)?.let { return@withContext it }
+                }
                 runCatchingUnavailable {
                     mutex.withLock { readInteraction(workshopId) }
                 } ?: WorkshopInteraction()
@@ -473,7 +496,7 @@ internal class SteamContentSdkWorkshopRepository
         ): WorkshopInteraction =
             withContext(Dispatchers.IO) {
                 val confirmed =
-                    runCatchingUnavailable {
+                    writes.write(WorkshopReadKind.SET_SUBSCRIBED) {
                         val accountId = signedInAccountId() ?: error("No signed-in Steam account is available")
                         mutex.withLock { engine.setSubscribed(workshopId, accountId, subscribed) }
                     }
@@ -481,21 +504,15 @@ internal class SteamContentSdkWorkshopRepository
                 // direction asked for, and what the service confirmed - a refused write must not read as one.
                 Log.i(
                     TAG,
-                    "workshop subscribe write id=$workshopId ask=$subscribed " +
-                        "confirmed=${confirmed?.enabled}",
+                    "workshop subscribe write id=$workshopId ask=$subscribed confirmed=${confirmed.enabled}",
                 )
-                if (confirmed == null) {
-                    WorkshopInteraction()
-                } else {
-                    accountPageCache.invalidateAll()
-                    accountCollectionPager.invalidateAll()
-                    // The confirmed half is the SDK's own answer; the favourite half is not part of it and
-                    // stays unknown rather than being guessed or re-read.
-                    WorkshopInteraction(
-                        subscriptionState =
-                            if (confirmed.enabled) SubscriptionState.SUBSCRIBED else SubscriptionState.NOT_SUBSCRIBED,
-                    )
-                }
+                invalidateMutationCaches()
+                // The confirmed half is the SDK's own answer; the favourite half is not part of it and stays
+                // unknown rather than being guessed or re-read.
+                WorkshopInteraction(
+                    subscriptionState =
+                        if (confirmed.enabled) SubscriptionState.SUBSCRIBED else SubscriptionState.NOT_SUBSCRIBED,
+                )
             }
 
         override suspend fun setFavorited(
@@ -504,27 +521,21 @@ internal class SteamContentSdkWorkshopRepository
         ): WorkshopInteraction =
             withContext(Dispatchers.IO) {
                 val confirmed =
-                    runCatchingUnavailable {
+                    writes.write(WorkshopReadKind.SET_FAVORITED) {
                         val accountId = signedInAccountId() ?: error("No signed-in Steam account is available")
                         mutex.withLock { engine.setFavorited(workshopId, accountId, favorited) }
                     }
                 Log.i(
                     TAG,
-                    "workshop favorite write id=$workshopId ask=$favorited " +
-                        "confirmed=${confirmed?.enabled}",
+                    "workshop favorite write id=$workshopId ask=$favorited confirmed=${confirmed.enabled}",
                 )
-                if (confirmed == null) {
-                    WorkshopInteraction()
-                } else {
-                    accountPageCache.invalidateAll()
-                    accountCollectionPager.invalidateAll()
-                    // Mirror of the subscription case: the confirmed favourite is reported, the subscription
-                    // half is not carried by this answer.
-                    WorkshopInteraction(
-                        favoriteState =
-                            if (confirmed.enabled) FavoriteState.FAVORITED else FavoriteState.NOT_FAVORITED,
-                    )
-                }
+                invalidateMutationCaches()
+                // Mirror of the subscription case: the confirmed favourite is reported, the subscription half
+                // is not carried by this answer.
+                WorkshopInteraction(
+                    favoriteState =
+                        if (confirmed.enabled) FavoriteState.FAVORITED else FavoriteState.NOT_FAVORITED,
+                )
             }
 
         /**
@@ -532,8 +543,8 @@ internal class SteamContentSdkWorkshopRepository
          *
          * The AAR's own second argument is the account that owns the thread - the contract's `ownerId`, which
          * the caller already holds - while the write itself is authorized as the session's signed-in account;
-         * no acting-account number is sent. The app's comment rules stay the caller error they are today, and
-         * only SDK unavailability is swallowed, because this signature cannot carry a null.
+         * no acting-account number is sent. The app's comment rules stay caller errors, while SDK failures are
+         * recovered once when possible and otherwise propagate to the caller.
          */
         override suspend fun postComment(
             workshopId: Long,
@@ -541,12 +552,19 @@ internal class SteamContentSdkWorkshopRepository
             text: String,
         ) = withContext(Dispatchers.IO) {
             val request = normalizeWorkshopCommentRequest(workshopId, ownerId, text)
-            runCatchingUnavailable {
+            writes.write(WorkshopReadKind.POST_COMMENT) {
                 mutex.withLock {
                     engine.postComment(request.workshopId, request.ownerId.toLong(), request.text)
                 }
             }
-            Unit
+            invalidateMutationCaches()
+        }
+
+        private suspend fun invalidateMutationCaches() {
+            detailInteractionCache.invalidateAll()
+            publicPageCache.invalidateAll()
+            accountPageCache.invalidateAll()
+            accountCollectionPager.invalidateAll()
         }
 
         // ------------------------------------------------------------------
@@ -595,7 +613,7 @@ internal class SteamContentSdkWorkshopRepository
         private suspend fun loadWorkshopDetail(workshopId: Long): WorkshopDetail? {
             val detail =
                 runCatchingUnavailable {
-                    awaitSignedInSession()
+                    awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, ::awaitSignedInSession)
                     require(workshopId > 0L) { "Invalid Workshop item ID" }
                     sdkRead(
                         key = "detail:$workshopId",
@@ -603,7 +621,15 @@ internal class SteamContentSdkWorkshopRepository
                         priority = WorkshopReadPriority.FOREGROUND,
                     ) {
                         engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result ->
-                            readWorkshopDetail(result)
+                            val detail = readWorkshopDetail(result)
+                            engine.currentSessionGeneration()?.let { generation ->
+                                detailInteractionCache.remember(
+                                    workshopId = workshopId,
+                                    sessionGeneration = generation,
+                                    interaction = interactionOf(result),
+                                )
+                            }
+                            detail
                         }
                     }
                 }
@@ -819,43 +845,64 @@ internal class SteamContentSdkWorkshopRepository
                         createdAt = page.field(index, WorkshopCommentField.CREATED_AT).epochSeconds(),
                     )
                 }
-            val profiles = readPlayerProfiles(rows.mapNotNull { it.authorId }.toSet())
-            val comments =
-                rows.map { row ->
-                    val profile = row.authorId?.let(profiles::get)
-                    WorkshopComment(
-                        // AUTHOR is an account id; the persona read is what names the comment (ADR 0032).
-                        author = profile?.personaName.orEmpty(),
-                        text = row.text,
-                        authorId = row.authorId?.toString(),
-                        avatarUrl = profile?.avatarUrl,
-                        // The one field this adapter can derive: the comment's author is the thread owner.
-                        isCreator = row.authorId != null && row.authorId == creatorId,
-                        timestamp = row.createdAt,
-                        dateLabel = null,
-                        // A resolved author with no persona behind it is exactly the placeholder reading.
-                        isAuthorPlaceholder = profile == null,
-                    )
-                }
             val nextStart = state.nextOffset
             val total = state.total.takeIf { it > 0 }
-            return WorkshopCommentPage(
-                comments = comments,
-                start = requestedStart,
-                count = requestedCount,
-                nextStart = nextStart,
-                total = total,
-                hasMore = nextStart > 0,
-                ownerId = ownerId.takeIf(String::isNotBlank),
-            )
+            val pageWithPlaceholders =
+                WorkshopCommentPage(
+                    comments =
+                        rows.map { row ->
+                            WorkshopComment(
+                                author = "",
+                                text = row.text,
+                                authorId = row.authorId?.toString(),
+                                avatarUrl = null,
+                                isCreator = row.authorId != null && row.authorId == creatorId,
+                                timestamp = row.createdAt,
+                                dateLabel = null,
+                                isAuthorPlaceholder = true,
+                            )
+                        },
+                    start = requestedStart,
+                    count = requestedCount,
+                    nextStart = nextStart,
+                    total = total,
+                    hasMore = nextStart > 0,
+                    ownerId = ownerId.takeIf(String::isNotBlank),
+                )
+            return pageWithPlaceholders.withOptionalPersonaEnrichment { page ->
+                val profiles = readPlayerProfiles(rows.mapNotNull { it.authorId }.toSet())
+                page.copy(
+                    comments =
+                        page.comments.map { comment ->
+                            val profile = comment.authorId?.toLongOrNull()?.let(profiles::get)
+                            if (profile == null) {
+                                comment
+                            } else {
+                                comment.copy(
+                                    author = profile.personaName,
+                                    avatarUrl = profile.avatarUrl,
+                                    isAuthorPlaceholder = false,
+                                )
+                            }
+                        },
+                )
+            }
         }
+
+        /** Maps interaction fields already present on a details result. */
+        private fun interactionOf(result: WorkshopResult): WorkshopInteraction =
+            WorkshopInteraction(
+                subscriptionState = subscriptionStateOf(result.field(WorkshopItemField.SUBSCRIBED)),
+                favoriteState = favoriteStateOf(result.field(WorkshopItemField.FAVOURITED)),
+            )
 
         /** Reads both interaction halves once, or reports both as unknown. */
         private fun readInteraction(workshopId: Long): WorkshopInteraction {
             require(workshopId > 0L) { "Invalid Workshop item ID" }
             return engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result ->
-                val subscribed = subscriptionStateOf(result.field(WorkshopItemField.SUBSCRIBED))
-                val favorited = favoriteStateOf(result.field(WorkshopItemField.FAVOURITED))
+                val interaction = interactionOf(result)
+                val subscribed = interaction.subscriptionState
+                val favorited = interaction.favoriteState
                 // The detail screen draws a hollow star for both "not favourited" and "the read did not
                 // answer", so a screen alone cannot say which. One line per read makes the two states - and
                 // the field states behind them - readable, and the ids are the public catalog numbers a
@@ -868,10 +915,7 @@ internal class SteamContentSdkWorkshopRepository
                         "favorited-field=${result.field(WorkshopItemField.FAVOURITED).state} " +
                         "favorited-value=${result.field(WorkshopItemField.FAVOURITED).value}",
                 )
-                WorkshopInteraction(
-                    subscriptionState = subscribed,
-                    favoriteState = favorited,
-                )
+                interaction
             }
         }
 

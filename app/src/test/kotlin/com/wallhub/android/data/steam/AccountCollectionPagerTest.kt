@@ -5,6 +5,10 @@ import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.WorkshopPage
 import com.wallhub.android.core.model.WorkshopSummary
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -68,6 +72,99 @@ class AccountCollectionPagerTest {
         pager.page(scope, query(collection = AccountWorkshopCollection.FAVORITES), loader)
 
         assertEquals(listOf(1, 2, 1, 2, 1, 2, 1, 2), calls)
+    }
+
+    @Test
+    fun `independent cursors load concurrently`() = runTest {
+        val pager = AccountCollectionPager()
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val secondEntered = CompletableDeferred<Unit>()
+
+        val first =
+            async(start = CoroutineStart.UNDISPATCHED) {
+                pager.page(scope, query(collection = AccountWorkshopCollection.FAVORITES)) { sourcePage, _ ->
+                    firstEntered.complete(Unit)
+                    releaseFirst.await()
+                    WorkshopPage(listOf(summary(1, "match")), sourcePage, hasNextPage = false)
+                }
+            }
+        firstEntered.await()
+        val second =
+            async(start = CoroutineStart.UNDISPATCHED) {
+                pager.page(scope, query(collection = AccountWorkshopCollection.SUBSCRIPTIONS)) { sourcePage, _ ->
+                    secondEntered.complete(Unit)
+                    WorkshopPage(listOf(summary(2, "match")), sourcePage, hasNextPage = false)
+                }
+            }
+
+        runCurrent()
+        assertTrue(secondEntered.isCompleted)
+        assertEquals(listOf(2L), second.await().items.map(WorkshopSummary::id))
+        releaseFirst.complete(Unit)
+        assertEquals(listOf(1L), first.await().items.map(WorkshopSummary::id))
+    }
+
+    @Test
+    fun `same cursor source loads are single flight`() = runTest {
+        val pager = AccountCollectionPager()
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        var activeLoads = 0
+        var peakActiveLoads = 0
+        val calls = mutableListOf<Int>()
+        val loader: suspend (Int, Int) -> WorkshopPage = { sourcePage, _ ->
+            calls += sourcePage
+            activeLoads += 1
+            peakActiveLoads = maxOf(peakActiveLoads, activeLoads)
+            if (calls.size == 1) {
+                firstEntered.complete(Unit)
+                releaseFirst.await()
+            }
+            activeLoads -= 1
+            WorkshopPage(listOf(summary(sourcePage.toLong(), "match")), sourcePage, hasNextPage = false)
+        }
+
+        val first = async(start = CoroutineStart.UNDISPATCHED) { pager.page(scope, query(), loader) }
+        firstEntered.await()
+        val second = async(start = CoroutineStart.UNDISPATCHED) { pager.page(scope, query(), loader) }
+        runCurrent()
+
+        assertEquals(listOf(1), calls)
+        releaseFirst.complete(Unit)
+        assertEquals(listOf(1L), first.await().items.map(WorkshopSummary::id))
+        assertEquals(listOf(1L), second.await().items.map(WorkshopSummary::id))
+        assertEquals(listOf(1), calls)
+        assertEquals(1, peakActiveLoads)
+    }
+
+    @Test
+    fun `invalidate all does not wait for source io and prevents stale cursor reuse`() = runTest {
+        val pager = AccountCollectionPager()
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val calls = mutableListOf<Int>()
+
+        val active =
+            async(start = CoroutineStart.UNDISPATCHED) {
+                pager.page(scope, query()) { sourcePage, _ ->
+                    calls += sourcePage
+                    firstEntered.complete(Unit)
+                    releaseFirst.await()
+                    WorkshopPage(listOf(summary(1, "match")), sourcePage, hasNextPage = false)
+                }
+            }
+        firstEntered.await()
+
+        pager.invalidateAll()
+        releaseFirst.complete(Unit)
+        active.await()
+        pager.page(scope, query()) { sourcePage, _ ->
+            calls += sourcePage
+            WorkshopPage(listOf(summary(2, "match")), sourcePage, hasNextPage = false)
+        }
+
+        assertEquals(listOf(1, 1), calls)
     }
 
     @Test

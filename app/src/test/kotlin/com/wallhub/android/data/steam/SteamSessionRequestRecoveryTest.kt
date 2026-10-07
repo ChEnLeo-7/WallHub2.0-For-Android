@@ -143,7 +143,7 @@ class SteamSessionRequestRecoveryTest {
         }
 
     @Test
-    fun `a generation replaced before recovery is not reconnected again`() =
+    fun `an authenticated generation replaced before recovery is not reconnected again`() =
         runTest {
             val session = FakeRecoverableSession()
             val recovery = SteamSessionRequestRecovery(session)
@@ -153,7 +153,7 @@ class SteamSessionRequestRecoveryTest {
                 recovery.execute {
                     calls += 1
                     if (calls == 1) {
-                        session.replaceGeneration()
+                        session.replaceGeneration(usable = true)
                         error("content resolution failed at session unavailable")
                     }
                     "new generation"
@@ -161,6 +161,49 @@ class SteamSessionRequestRecoveryTest {
 
             assertEquals("new generation", result)
             assertEquals(0, session.reconnectCalls)
+        }
+
+    @Test
+    fun `an unauthenticated replacement generation does not permit a retry`() =
+        runTest {
+            val session = FakeRecoverableSession()
+            val recovery = SteamSessionRequestRecovery(session)
+            val unavailable = IllegalStateException("content resolution failed at session unavailable")
+            var calls = 0
+
+            val thrown =
+                assertFailsWith<IllegalStateException> {
+                    recovery.execute<Unit> {
+                        calls += 1
+                        session.replaceGeneration(usable = false)
+                        throw unavailable
+                    }
+                }
+
+            assertSame(unavailable, thrown)
+            assertEquals(1, calls)
+            assertEquals(0, session.reconnectCalls)
+        }
+
+    @Test
+    fun `a reconnect that does not authenticate does not permit a retry`() =
+        runTest {
+            val session = FakeRecoverableSession().apply { reconnectIsUsable = false }
+            val recovery = SteamSessionRequestRecovery(session)
+            val unavailable = IllegalStateException("content resolution failed at session unavailable")
+            var calls = 0
+
+            val thrown =
+                assertFailsWith<IllegalStateException> {
+                    recovery.execute<Unit> {
+                        calls += 1
+                        throw unavailable
+                    }
+                }
+
+            assertSame(unavailable, thrown)
+            assertEquals(1, calls)
+            assertEquals(1, session.reconnectCalls)
         }
 
     @Test
@@ -188,20 +231,28 @@ class SteamSessionRequestRecoveryTest {
         private var current = SteamSessionGeneration(1L)
         var reconnectCalls = 0
         var reconnectSucceeds = true
+        var reconnectIsUsable = true
         var beforeReconnect: suspend () -> Unit = {}
+        private var usable = true
 
         override fun generation(): SteamSessionGeneration = current
+
+        override fun isUsable(generation: SteamSessionGeneration): Boolean = current == generation && usable
 
         override suspend fun reconnectIfCurrent(expected: SteamSessionGeneration): Boolean {
             check(current == expected)
             reconnectCalls += 1
             beforeReconnect()
-            if (reconnectSucceeds) current = SteamSessionGeneration(current.value + 1L)
-            return reconnectSucceeds
+            if (reconnectSucceeds) {
+                current = SteamSessionGeneration(current.value + 1L)
+                usable = reconnectIsUsable
+            }
+            return reconnectSucceeds && usable
         }
 
-        fun replaceGeneration() {
+        fun replaceGeneration(usable: Boolean = true) {
             current = SteamSessionGeneration(current.value + 1L)
+            this.usable = usable
         }
     }
 }

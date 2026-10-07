@@ -218,7 +218,16 @@ class CommunityWorkshopRepository internal constructor(
                 when (preferences.steamWorkshopDataSource) {
                     SteamWorkshopDataSource.COMMUNITY_HTML -> getPublishedFileDetails(ids)
                     SteamWorkshopDataSource.WEB_API -> getPublishedFileDetails(ids, steamApiKey).map { enrichDetailAuthor(it, steamApiKey) }
-                    SteamWorkshopDataSource.CM_WEBSOCKET -> unifiedWorkshopRepository.getPublicDetails(ids)
+                    SteamWorkshopDataSource.CM_WEBSOCKET -> {
+                        val cm = unifiedWorkshopRepository.getPublicDetails(ids)
+                        val resolvedIds = cm.mapTo(mutableSetOf()) { it.summary.id }
+                        val missing = ids.filterNot(resolvedIds::contains)
+                        if (missing.isEmpty()) {
+                            cm
+                        } else {
+                            cm + runCatching { getPublishedFileDetails(missing) }.getOrDefault(emptyList())
+                        }
+                    }
                 }
             }
 

@@ -19,6 +19,9 @@ internal data class SteamSessionGeneration(
 internal interface RecoverableSteamSession {
     fun generation(): SteamSessionGeneration?
 
+    /** True only when [generation] is still current and authenticated enough to serve the retry. */
+    fun isUsable(generation: SteamSessionGeneration): Boolean = generation() == generation
+
     suspend fun reconnectIfCurrent(expected: SteamSessionGeneration): Boolean
 }
 
@@ -73,8 +76,9 @@ internal class SteamSessionRequestRecovery(
                     val current = session.generation()
                     when {
                         current == null -> false
-                        current != attemptedGeneration -> true
-                        else -> session.reconnectIfCurrent(attemptedGeneration)
+                        current != attemptedGeneration -> session.isUsable(current)
+                        else -> session.reconnectIfCurrent(attemptedGeneration) &&
+                            session.generation()?.let(session::isUsable) == true
                     }
                 }
             if (!usable) throw failure

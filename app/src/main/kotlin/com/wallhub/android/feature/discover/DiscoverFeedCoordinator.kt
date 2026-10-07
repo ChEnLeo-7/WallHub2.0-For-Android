@@ -13,6 +13,7 @@ import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.feature.discover.model.OfficialDiscoverCategory
 import com.wallhub.android.feature.discover.model.OfficialDiscoverDescriptor
 import com.wallhub.android.feature.discover.model.OfficialDiscoverMetadataRepository
+import java.io.IOException
 import java.time.LocalDate
 import java.time.MonthDay
 import java.time.ZoneId
@@ -125,7 +126,10 @@ class DiscoverFeedCoordinator
                     throw error
                 } catch (error: Throwable) {
                     lastFailure = error
-                    if (attempt + 1 < MAX_RAIL_ATTEMPTS) delay(RETRY_BASE_DELAY_MILLIS shl attempt)
+                    if (!isTransientDiscoverFailure(error) || attempt + 1 >= MAX_RAIL_ATTEMPTS) {
+                        throw DiscoverRailLoadException(attempts, error)
+                    }
+                    delay(RETRY_BASE_DELAY_MILLIS shl attempt)
                 }
             }
             throw DiscoverRailLoadException(attempts, lastFailure)
@@ -165,13 +169,12 @@ class DiscoverFeedCoordinator
             val coverIds = children.mapNotNull(DiscoverRailSpec::coverSubmissionId)
             val collectionIds = children.mapNotNull { it.queryPlan.collectionId }
             val details =
-                runCatching {
+                (discoverOptional {
                     networkBudget.withPermit {
                         val ids = (coverIds + collectionIds).distinct()
                         unifiedWorkshopRepository.getPublicDetails(ids).ifEmpty { workshopRepository.getDetails(ids) }
                     }
-                }.getOrDefault(emptyList())
-                .associateBy { it.summary.id }
+                } ?: emptyList()).associateBy { it.summary.id }
             val fallbackCollectionCovers =
                 children
                     .filter { child ->
@@ -180,9 +183,9 @@ class DiscoverFeedCoordinator
                     }.map { child ->
                         async {
                             val fallback =
-                                runCatching {
+                                discoverOptional {
                                     collectionResolver.browse(child.queryPlan.collectionId!!, page = 1, pageSize = 1).items.firstOrNull()
-                                }.getOrNull()
+                                }
                             child.id to fallback
                         }
                     }.awaitAll()
@@ -249,9 +252,9 @@ class DiscoverFeedCoordinator
         ): List<com.wallhub.android.core.model.WorkshopSummary> {
             val coverId = spec.coverSubmissionId ?: return candidates
             if (candidates.any { it.id == coverId }) return candidates
-            val cover = runCatching {
+            val cover = discoverOptional {
                 networkBudget.withPermit { workshopRepository.getDetail(coverId).summary }
-            }.getOrNull() ?: return candidates
+            } ?: return candidates
             return listOf(cover) + candidates
         }
 
@@ -569,6 +572,26 @@ internal fun rankSpecs(
         next.diversityTags.forEach { tag -> tagCounts[tag] = tagCounts.getOrDefault(tag, 0) + 1 }
     }
     return selected
+}
+
+private suspend fun <T> discoverOptional(block: suspend () -> T): T? =
+    try {
+        block()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Throwable) {
+        null
+    }
+
+internal fun isTransientDiscoverFailure(error: Throwable): Boolean {
+    if (error is CancellationException) return false
+    val message = error.message?.lowercase(Locale.ROOT).orEmpty()
+    if (error is IllegalArgumentException || error is UnsupportedOperationException ||
+        "invalidparam" in message || "invalid param" in message || "unsupported" in message
+    ) return false
+    if (error is IOException) return true
+    return error is IllegalStateException &&
+        ("session unavailable" in message || "session_unavailable" in message || "refused before it was sent" in message)
 }
 
 class DiscoverRailLoadException(

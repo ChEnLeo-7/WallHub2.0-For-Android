@@ -26,6 +26,22 @@ import org.junit.Test
 
 class CommunityWorkshopRepositoryTest {
     @Test
+    fun `CM batch fills only missing details from public fallback`() =
+        runBlocking {
+            val cmDetail = CommunityWorkshopParser.parseDetails(PUBLIC_DETAIL_JSON).single()
+            val repository =
+                repositoryWithPublicResponse(
+                    200,
+                    PUBLIC_SECOND_DETAIL_JSON,
+                    unified = PartialCmRepository(cmDetail),
+                )
+
+            val details = repository.getDetails(listOf(WORKSHOP_ID, SECOND_WORKSHOP_ID))
+
+            assertEquals(listOf(WORKSHOP_ID, SECOND_WORKSHOP_ID), details.map { it.summary.id })
+        }
+
+    @Test
     fun `CM null loads public detail`() =
         runBlocking {
             val repository = repositoryWithPublicResponse(200, PUBLIC_DETAIL_JSON)
@@ -63,6 +79,7 @@ class CommunityWorkshopRepositoryTest {
     private fun repositoryWithPublicResponse(
         status: Int,
         body: String,
+        unified: SteamUnifiedWorkshopRepository = UnavailableCmRepository,
     ): CommunityWorkshopRepository {
         val client =
             OkHttpClient
@@ -79,7 +96,7 @@ class CommunityWorkshopRepositoryTest {
                 }.build()
         return CommunityWorkshopRepository(
             settingsRepository = CmSettingsRepository,
-            unifiedWorkshopRepository = UnavailableCmRepository,
+            unifiedWorkshopRepository = unified,
             client = client,
         )
     }
@@ -120,6 +137,25 @@ class CommunityWorkshopRepositoryTest {
         override suspend fun clearOutputDirectory() = Unit
     }
 
+    private class PartialCmRepository(
+        private val detail: WorkshopDetail,
+    ) : SteamUnifiedWorkshopRepository {
+        override suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage? = null
+
+        override suspend fun getPublicDetail(workshopId: Long): WorkshopDetail? =
+            detail.takeIf { it.summary.id == workshopId }
+
+        override suspend fun getPublicDetails(workshopIds: List<Long>): List<WorkshopDetail> =
+            listOfNotNull(detail.takeIf { it.summary.id in workshopIds })
+
+        override suspend fun getAuthenticatedComments(
+            workshopId: Long,
+            start: Int,
+            count: Int,
+            ownerId: String,
+        ): WorkshopCommentPage? = null
+    }
+
     private object UnavailableCmRepository : SteamUnifiedWorkshopRepository {
         override suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage? = null
 
@@ -135,11 +171,18 @@ class CommunityWorkshopRepositoryTest {
 
     private companion object {
         const val WORKSHOP_ID = 123456L
+        const val SECOND_WORKSHOP_ID = 654321L
         val PUBLIC_DETAIL_JSON =
             """
             {"response":{"publishedfiledetails":[{"result":1,"publishedfileid":"$WORKSHOP_ID",
             "title":"Fallback item","creator":"76561198000000000","creator_name":"Creator",
             "short_description":"Loaded from public details","tags":[]}]}}
+            """.trimIndent()
+        val PUBLIC_SECOND_DETAIL_JSON =
+            """
+            {"response":{"publishedfiledetails":[{"result":1,"publishedfileid":"$SECOND_WORKSHOP_ID",
+            "title":"Public missing item","creator":"76561198000000001","creator_name":"Creator",
+            "short_description":"Filled from public details","tags":[]}]}}
             """.trimIndent()
     }
 }

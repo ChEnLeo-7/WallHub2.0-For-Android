@@ -119,6 +119,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -153,6 +155,16 @@ data class DiscoverResultsState(
     val error: String? = null,
 )
 
+internal data class DiscoverResultsRequest(
+    val generation: Long,
+    val destination: DiscoverResultsDestination,
+) {
+    fun isCurrent(
+        currentGeneration: Long,
+        currentDestination: DiscoverResultsDestination,
+    ): Boolean = generation == currentGeneration && destination == currentDestination
+}
+
 sealed interface DiscoverResultsEffect {
     data class ShowMessage(
         val messageRes: Int,
@@ -176,6 +188,7 @@ class DiscoverResultsViewModel
         private val mutableState = MutableStateFlow(DiscoverResultsState())
         val state: StateFlow<DiscoverResultsState> = mutableState.asStateFlow()
         private var loadJob: Job? = null
+        private var requestGeneration = 0L
         private val effectChannel = Channel<DiscoverResultsEffect>(Channel.BUFFERED)
         val effects: Flow<DiscoverResultsEffect> = effectChannel.receiveAsFlow()
 
@@ -226,6 +239,7 @@ class DiscoverResultsViewModel
                     )
                 }
             if (current.filterSelection == effective && current.exactPhrase == exactPhrase) return
+            requestGeneration++
             loadJob?.cancel()
             mutableState.value =
                 current.copy(
@@ -251,8 +265,10 @@ class DiscoverResultsViewModel
             val current = mutableState.value
             if (!current.initialized || current.isLoading || !current.hasMore) return
             val nextPage = current.page + 1
+            val request = DiscoverResultsRequest(requestGeneration, destination)
             loadJob =
                 viewModelScope.launch {
+                    if (!request.isCurrent(requestGeneration, destination)) return@launch
                     mutableState.value = current.copy(isLoading = true, error = null)
                     try {
                         val browseQuery =
@@ -268,15 +284,20 @@ class DiscoverResultsViewModel
                             } ?: networkBudget.withPermit {
                                 workshopRepository.browse(browseQuery)
                             }
+                        currentCoroutineContext().ensureActive()
+                        if (!request.isCurrent(requestGeneration, destination)) return@launch
                         val filtered =
-                            destination
+                            request.destination
                                 .filterRequiredTagGroups(result.items)
                                 .let { items ->
-                                    if (destination.collectionId == null) items else items.filter(browseQuery::matchesSteamWallpaper)
+                                    if (request.destination.collectionId == null) items else items.filter(browseQuery::matchesSteamWallpaper)
                                 }
+                        currentCoroutineContext().ensureActive()
+                        if (!request.isCurrent(requestGeneration, destination)) return@launch
+                        val latest = mutableState.value
                         mutableState.value =
-                            mutableState.value.copy(
-                                items = (mutableState.value.items + filtered).distinctBy(WorkshopSummary::id),
+                            latest.copy(
+                                items = (latest.items + filtered).distinctBy(WorkshopSummary::id),
                                 isLoading = false,
                                 page = nextPage,
                                 hasMore = result.hasNextPage,
@@ -285,6 +306,8 @@ class DiscoverResultsViewModel
                     } catch (error: CancellationException) {
                         throw error
                     } catch (error: Throwable) {
+                        currentCoroutineContext().ensureActive()
+                        if (!request.isCurrent(requestGeneration, destination)) return@launch
                         mutableState.value =
                             mutableState.value.copy(
                                 isLoading = false,

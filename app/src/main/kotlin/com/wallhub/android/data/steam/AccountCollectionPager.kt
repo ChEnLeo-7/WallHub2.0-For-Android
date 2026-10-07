@@ -6,8 +6,11 @@ import com.wallhub.android.core.model.WorkshopPage
 import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /** Identifies the signed-in account session whose personal collection is being traversed. */
 internal data class AccountCollectionScope(
@@ -37,12 +40,9 @@ internal data class AccountCollectionPagerLimits(
 internal class AccountCollectionPager(
     private val limits: AccountCollectionPagerLimits = AccountCollectionPagerLimits(),
 ) {
-    private val mutex = Mutex()
-    private val cursors =
-        object : LinkedHashMap<CursorKey, Cursor>(limits.maxCursors + 1, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<CursorKey, Cursor>?): Boolean =
-                size > limits.maxCursors
-        }
+    private val cursorMapMutex = Mutex()
+    private val cursors = LinkedHashMap<CursorKey, Cursor>(limits.maxCursors + 1, 0.75f, true)
+    private var cursorReleased = CompletableDeferred<Unit>()
 
     suspend fun page(
         scope: AccountCollectionScope,
@@ -54,49 +54,86 @@ internal class AccountCollectionPager(
             "AccountCollectionPager is only for filtered queries; use direct source paging otherwise"
         }
         val key = CursorKey(scope, normalized.collection, normalized.filterFingerprint())
-        mutex.lock()
+        val cursor = acquireCursor(key)
         try {
-            val cursor = cursors.getOrPut(key, ::Cursor)
-            val requiredMatches =
-                (normalized.page.toLong() * normalized.pageSize.toLong())
-                    .coerceAtMost(Int.MAX_VALUE.toLong())
-            while (
-                cursor.matches.size.toLong() < requiredMatches &&
-                    !cursor.sourceExhausted &&
-                    cursor.loadedSourcePages < limits.maxSourcePagesPerCursor
-            ) {
-                val sourcePage = cursor.loadedSourcePages + 1
-                // Do not mutate the cursor until the suspending read succeeds. Cancellation therefore leaves
-                // the same source page ready for a retry.
-                val source = loadSourcePage(sourcePage, limits.sourcePageSize)
-                cursor.matches +=
-                    source.items
-                        .asSequence()
-                        .take(limits.sourcePageSize)
-                        .filter(normalized::matchesAccountCollectionItem)
-                        .toList()
-                cursor.loadedSourcePages = sourcePage
-                cursor.sourceExhausted = !source.hasNextPage
-            }
-            val capped = cursor.loadedSourcePages >= limits.maxSourcePagesPerCursor
-            val selection =
-                selectAccountCollectionPage(
-                    matches = cursor.matches,
+            return cursor.mutex.withLock {
+                val requiredMatches =
+                    (normalized.page.toLong() * normalized.pageSize.toLong())
+                        .coerceAtMost(Int.MAX_VALUE.toLong())
+                while (
+                    cursor.matches.size.toLong() < requiredMatches &&
+                        !cursor.sourceExhausted &&
+                        cursor.loadedSourcePages < limits.maxSourcePagesPerCursor
+                ) {
+                    val sourcePage = cursor.loadedSourcePages + 1
+                    // Do not mutate the cursor until the suspending read succeeds. Cancellation therefore leaves
+                    // the same source page ready for a retry.
+                    val source = loadSourcePage(sourcePage, limits.sourcePageSize)
+                    cursor.matches +=
+                        source.items
+                            .asSequence()
+                            .take(limits.sourcePageSize)
+                            .filter(normalized::matchesAccountCollectionItem)
+                            .toList()
+                    cursor.loadedSourcePages = sourcePage
+                    cursor.sourceExhausted = !source.hasNextPage
+                }
+                val capped = cursor.loadedSourcePages >= limits.maxSourcePagesPerCursor
+                val selection =
+                    selectAccountCollectionPage(
+                        matches = cursor.matches,
+                        page = normalized.page,
+                        pageSize = normalized.pageSize,
+                        sourceExhausted = cursor.sourceExhausted || capped,
+                    )
+                WorkshopPage(
+                    items = selection.items,
                     page = normalized.page,
-                    pageSize = normalized.pageSize,
-                    sourceExhausted = cursor.sourceExhausted || capped,
+                    hasNextPage = selection.hasNextPage,
                 )
-            return WorkshopPage(
-                items = selection.items,
-                page = normalized.page,
-                hasNextPage = selection.hasNextPage,
-            )
+            }
         } finally {
-            mutex.unlock()
+            withContext(NonCancellable) { releaseCursor(cursor) }
         }
     }
 
-    suspend fun invalidateAll() = mutex.withLock { cursors.clear() }
+    suspend fun invalidateAll() = cursorMapMutex.withLock { cursors.clear() }
+
+    private suspend fun acquireCursor(key: CursorKey): Cursor {
+        while (true) {
+            var acquired: Cursor? = null
+            val waiter =
+                cursorMapMutex.withLock {
+                    cursors[key]?.let { cursor ->
+                        cursor.leases += 1
+                        acquired = cursor
+                        return@withLock null
+                    }
+                    if (cursors.size >= limits.maxCursors) {
+                        val evictable = cursors.entries.firstOrNull { (_, cursor) -> cursor.leases == 0 }
+                        if (evictable == null) {
+                            return@withLock cursorReleased
+                        }
+                        cursors.remove(evictable.key)
+                    }
+                    acquired = Cursor(leases = 1).also { cursor -> cursors[key] = cursor }
+                    null
+                }
+            acquired?.let { return it }
+            checkNotNull(waiter).await()
+        }
+    }
+
+    private suspend fun releaseCursor(cursor: Cursor) {
+        cursorMapMutex.withLock {
+            cursor.leases -= 1
+            check(cursor.leases >= 0) { "Account collection cursor lease underflow" }
+            if (cursor.leases == 0) {
+                cursorReleased.complete(Unit)
+                cursorReleased = CompletableDeferred()
+            }
+        }
+    }
 
     private data class CursorKey(
         val scope: AccountCollectionScope,
@@ -105,9 +142,11 @@ internal class AccountCollectionPager(
     )
 
     private data class Cursor(
+        val mutex: Mutex = Mutex(),
         val matches: MutableList<WorkshopSummary> = mutableListOf(),
         var loadedSourcePages: Int = 0,
         var sourceExhausted: Boolean = false,
+        var leases: Int = 0,
     )
 }
 
