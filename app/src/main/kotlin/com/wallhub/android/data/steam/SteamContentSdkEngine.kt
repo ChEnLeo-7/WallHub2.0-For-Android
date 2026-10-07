@@ -57,6 +57,7 @@ class SteamContentSdkEngine
     internal constructor(
         @ApplicationContext private val context: Context,
         private val deviceSeed: SteamDeviceSeedStore,
+        private val engineLeases: SteamContentSdkEngineLeaseTracker,
     ) {
         /**
          * Route inputs the host may supply. Empty means "connect directly".
@@ -129,7 +130,7 @@ class SteamContentSdkEngine
                 publishedSessionGeneration += 1L
                 return published
             }
-            close()
+            retireCurrentEngine()
             val roots =
                 if (route.extraTrustRootPem.isNullOrEmpty()) {
                     trustBundle
@@ -211,7 +212,7 @@ class SteamContentSdkEngine
         internal fun reconnectSessionIfCurrent(expectedGeneration: Long): Boolean {
             val handle = sessions.currentHandle() ?: return false
             if (publishedSessionGeneration != expectedGeneration) return true
-            val reconnected = runCatching { handle.value.reconnect() }.isSuccess
+            val reconnected = runCatching { handle.value.reconnect() }.getOrNull()?.succeeded == true
             if (reconnected) publishedSessionGeneration += 1L
             return reconnected
         }
@@ -356,13 +357,32 @@ class SteamContentSdkEngine
             sessions.currentValue()?.logout()
         }
 
+        /** Retires exactly the engine/session that failed, never a replacement published concurrently. */
         @Synchronized
-        fun close() {
+        fun retireForReconnect(expected: SteamSession): Boolean {
+            if (sessions.currentValue() !== expected) return false
+            retireCurrentEngine()
+            return true
+        }
+
+        /** Keeps issued task/range handles alive, then closes the old engine when all content leases drain. */
+        private fun retireCurrentEngine() {
+            sessions.closeCurrent()
+            val retired = engine
+            engine = null
+            engineRoute = null
+            if (retired != null) engineLeases.whenIdle { retired.close() }
+        }
+
+        private fun closeCurrentEngine() {
             sessions.closeCurrent()
             runCatching { engine?.close() }
             engine = null
             engineRoute = null
         }
+
+        @Synchronized
+        fun close() = closeCurrentEngine()
 
         /**
          * Resolves one page of browse or search results, read through [WorkshopPage].

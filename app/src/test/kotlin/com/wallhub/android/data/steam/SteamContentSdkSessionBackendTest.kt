@@ -578,15 +578,39 @@ class SteamContentSdkSessionBackendTest {
             // over a dead socket. CLOSED is the state a re-opened session that cannot authenticate reports, so
             // the handed-off attempt ends by itself and this test does not need to cancel it.
             fixture.session.stateAfterEvents = SteamContentSdkSessionState.CLOSED
-            fixture.session.reconnectSucceeds = false
+            fixture.session.reconnectFailure = SteamContentSdkSessionFailure.PROTOCOL_ADAPTER
             advanceTimeBy(1_001L)
 
             assertEquals(1, fixture.session.reconnects)
+            assertEquals(1, fixture.session.retireEngineCalls)
             assertTrue(
                 fixture.platform.openCalls >= 2,
                 "a refused rebuild hands recovery to the attempt path, which re-opens the session",
             )
             assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
+        }
+
+    @Test
+    fun aTransportReconnectFailureStartsWithFreshLiveCandidates() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 17)),
+            )
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            fixture.session.stateAfterEvents = SteamContentSdkSessionState.AUTHENTICATED
+            val backend = fixture.backend(this, maintenanceIntervalMs = 1_000L)
+
+            backend.restorePersistedSession()
+            advanceTimeBy(1L)
+            fixture.session.stateAfterEvents = SteamContentSdkSessionState.CLOSED
+            fixture.session.reconnectFailure = SteamContentSdkSessionFailure.NETWORK
+            advanceTimeBy(1_001L)
+
+            assertEquals(1, fixture.session.reconnects)
+            assertEquals(0, fixture.session.retireEngineCalls)
+            assertTrue(fixture.platform.liveOpenCalls >= 1)
         }
 
     @Test
@@ -1092,9 +1116,11 @@ class SteamContentSdkSessionBackendTest {
         val pumps = mutableListOf<SteamContentSdkPumpOutcome>()
         var reconnects = 0
             private set
+        var retireEngineCalls = 0
+            private set
 
-        /** Whether a rebuild succeeds; false stands for a connection that cannot be re-established. */
-        var reconnectSucceeds = true
+        /** Typed failure returned by a rebuild; NONE stands for a usable replacement connection. */
+        var reconnectFailure = SteamContentSdkSessionFailure.NONE
 
         override fun maintain(autoReconnect: Boolean): SteamContentSdkMaintenance =
             SteamContentSdkMaintenance(SteamContentSdkMaintenanceStep.HEARTBEAT_SENT).also {
@@ -1106,9 +1132,15 @@ class SteamContentSdkSessionBackendTest {
 
         override fun reconnect(): SteamContentSdkReconnect {
             reconnects += 1
-            if (!reconnectSucceeds) error("the retained token was refused")
-            stateAfterEvents = SteamContentSdkSessionState.AUTHENTICATED
-            return SteamContentSdkReconnect()
+            if (reconnectFailure == SteamContentSdkSessionFailure.NONE) {
+                stateAfterEvents = SteamContentSdkSessionState.AUTHENTICATED
+            }
+            return SteamContentSdkReconnect(failure = reconnectFailure)
+        }
+
+        override fun retireEngine(): Boolean {
+            retireEngineCalls += 1
+            return true
         }
 
         /** The profile the engine reports for the signed-in account; null stands for one it cannot answer. */
