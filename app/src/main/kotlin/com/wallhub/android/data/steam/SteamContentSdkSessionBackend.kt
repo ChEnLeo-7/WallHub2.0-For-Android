@@ -124,16 +124,10 @@ internal class SteamContentSdkSessionBackend(
     // ------------------------------------------------------------------
 
     override fun restorePersistedSession() {
-        scheduleStoredSessionRestore(refreshLiveFirst = false)
-    }
-
-    private fun scheduleStoredSessionRestore(refreshLiveFirst: Boolean) {
         // The check is inside the block so it is re-read when the attempt actually runs: a queued restore
         // that was overtaken by a successful sign-in has nothing left to do.
         launchAttempt {
-            if (mutableSession.value.phase != SteamSessionPhase.SIGNED_IN) {
-                restoreStoredSession(refreshLiveFirst)
-            }
+            if (mutableSession.value.phase != SteamSessionPhase.SIGNED_IN) restoreStoredSession()
         }
     }
 
@@ -314,16 +308,13 @@ internal class SteamContentSdkSessionBackend(
                     // left while their credential sat in the store, and the sign-out also closed the engine
                     // every Workshop read in the app goes through. RESTORABLE is the phase the library's
                     // restore affordance and its automatic retry already key on.
-                    if (releaseSessionIfCurrent(session)) {
-                        publish(
-                            SteamSessionPhase.RESTORABLE,
-                            messages.restoreFailed,
-                            hasStoredSession = true,
-                        )
-                        restorePersistedSession()
-                    } else {
-                        record("foreground_session_stale")
-                    }
+                    releaseSession()
+                    publish(
+                        SteamSessionPhase.RESTORABLE,
+                        messages.restoreFailed,
+                        hasStoredSession = true,
+                    )
+                    restorePersistedSession()
                 }
 
                 else -> Unit
@@ -424,7 +415,7 @@ internal class SteamContentSdkSessionBackend(
         if (attemptInProgress.compareAndSet(false, true)) startAttempt(next) else pendingAttempt.set(next)
     }
 
-    private suspend fun restoreStoredSession(refreshLiveFirst: Boolean = false) {
+    private suspend fun restoreStoredSession() {
         // The read result is kept in one value so the one load-time diagnostic below and the branch both read
         // the same store result: the store is still read exactly once per attempt.
         attemptCredentialGeneration.set(credentialStore.generation())
@@ -445,20 +436,13 @@ internal class SteamContentSdkSessionBackend(
                 )
             }
 
-            is SteamCredentialReadResult.Value -> restore(credential.credential, refreshLiveFirst)
+            is SteamCredentialReadResult.Value -> restore(credential.credential)
         }
     }
 
-    private suspend fun restore(
-        stored: PersistedSteamCredential,
-        refreshLiveFirst: Boolean = false,
-    ) {
-        restoreOnce(stored, refreshLive = refreshLiveFirst)
+    private suspend fun restore(stored: PersistedSteamCredential) {
+        restoreOnce(stored, refreshLive = false)
         if (lastAttemptFailure.get() != SteamContentSdkSessionFailure.NETWORK) return
-        if (refreshLiveFirst) {
-            scheduleRecoveryRetry()
-            return
-        }
         // The transport class is the one attempt failure that can mean the CM endpoint set the platform
         // cached is the stale input: the SDK treats a host-supplied list as authoritative and never
         // questions it, so nothing else would ever refresh it. One retry asks for a list read from the
@@ -623,18 +607,6 @@ internal class SteamContentSdkSessionBackend(
         runCatching { session.close() }
     }
 
-    /** Retires only the session whose maintenance result is being handled, never a newer replacement. */
-    private fun releaseSessionIfCurrent(
-        expected: SteamContentSdkPlatformSession,
-        close: Boolean = true,
-    ): Boolean {
-        if (!activeSession.compareAndSet(expected, null)) return false
-        maintenanceJob.getAndSet(null)?.cancel()
-        pendingChallenge.set(null)
-        if (close) runCatching { expected.close() }
-        return true
-    }
-
     /**
      * One drain, one maintenance step, and the state they left behind.
      *
@@ -724,53 +696,39 @@ internal class SteamContentSdkSessionBackend(
     private suspend fun rebuildSession(session: SteamContentSdkPlatformSession): Boolean {
         val rebuilt = runCatching { session.reconnect() }
         val outcome = rebuilt.getOrNull()
-        if (outcome?.succeeded == true && session.state() == SteamContentSdkSessionState.AUTHENTICATED) {
+        if (rebuilt.isSuccess && session.state() == SteamContentSdkSessionState.AUTHENTICATED) {
             record(
                 "session_rebuilt",
-                detail = "replayable=${outcome.replayableRequests} abandoned=${outcome.abandonedRequests}",
+                detail = "replayable=${outcome?.replayableRequests ?: 0L} abandoned=${outcome?.abandonedRequests ?: 0L}",
             )
             return true
         }
-        val failure = outcome?.failure ?: SteamContentSdkSessionFailure.INTERNAL
-        val recovery = steamContentSdkReconnectRecovery(steamContentSdkReconnectFailureFamily(failure))
+        // The SDK's own words are the whole diagnostic here: the ABI bridge puts its bounded, redacted text in
+        // the exception, so a class name alone would throw away the reason a rebuild was refused.
         record(
             "session_rebuild_failed",
             error = rebuilt.exceptionOrNull(),
-            detail =
-                "failure=${failure.name.lowercase()} recovery=${recovery.name.lowercase()} " +
-                    "sdk=${rebuildFailureReason(session, rebuilt) ?: "none"}",
+            detail = rebuildFailureReason(rebuilt),
         )
-        // Reconnect can block long enough for a newer login/restore to replace this session. Never let the
-        // stale maintenance coroutine close that replacement or retire its engine.
-        val rebuildEngine = recovery == SteamContentSdkReconnectRecovery.REBUILD_ENGINE
-        if (!releaseSessionIfCurrent(session, close = !rebuildEngine)) {
-            record("session_rebuild_stale")
-            return false
-        }
-        if (rebuildEngine && !session.retireEngine()) {
-            // Another engine generation won the race after the app-owned session fence. Its recovery owns the
-            // current engine, so this stale result stops without touching the replacement.
-            record("session_engine_retire_stale")
-            runCatching { session.close() }
-            return false
-        }
+        // An in-place rebuild reuses the discovery the session was opened with. A full restore re-reads the
+        // candidate list from the directory, which is the retry that exists for the case this cannot cover -
+        // the cached endpoint set being the stale input - so the loss is handed to that path. If that restore
+        // fails too it publishes its own failure and starts no loop, so this cannot become a hot retry.
+        releaseSession()
         publish(
             SteamSessionPhase.SIGNING_IN,
             messages.restoringSession,
             hasStoredSession = true,
         )
-        scheduleStoredSessionRestore(
-            refreshLiveFirst = recovery == SteamContentSdkReconnectRecovery.REOPEN_WITH_LIVE_CANDIDATES,
-        )
+        restorePersistedSession()
         return false
     }
 
     /** The SDK's own explanation of a refused rebuild, bounded and without control characters. */
-    private fun rebuildFailureReason(
-        session: SteamContentSdkPlatformSession,
-        rebuilt: Result<SteamContentSdkReconnect>,
-    ): String? =
-        (runCatching { session.lastError() }.getOrNull() ?: rebuilt.exceptionOrNull()?.message)
+    private fun rebuildFailureReason(rebuilt: Result<SteamContentSdkReconnect>): String? =
+        rebuilt
+            .exceptionOrNull()
+            ?.message
             ?.filter { !it.isISOControl() }
             ?.take(REBUILD_REASON_LENGTH)
             ?.takeIf { it.isNotBlank() }

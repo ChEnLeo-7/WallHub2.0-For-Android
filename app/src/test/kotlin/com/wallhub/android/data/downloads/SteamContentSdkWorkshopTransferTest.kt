@@ -1,7 +1,6 @@
 package com.wallhub.android.data.downloads
 
 import com.wallhub.android.core.model.SteamContentCredential
-import com.wallhub.android.data.steam.SteamContentSdkEngineLeaseTracker
 import io.steamcontent.sdk.TaskEventKind
 import io.steamcontent.sdk.TaskFailure
 import io.steamcontent.sdk.TaskState
@@ -604,7 +603,6 @@ class SteamContentSdkWorkshopTransferTest {
                                     return opener(credential)
                                 }
                             },
-                        engineLeases = SteamContentSdkEngineLeaseTracker(),
                     ),
             )
         val target =

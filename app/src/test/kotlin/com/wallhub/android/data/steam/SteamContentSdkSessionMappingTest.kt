@@ -67,7 +67,6 @@ class SteamContentSdkSessionMappingTest {
                 SessionFailure.SESSION_EXPIRED to SteamContentSdkSessionFailure.SESSION_EXPIRED,
                 SessionFailure.CANCELLED to SteamContentSdkSessionFailure.CANCELLED,
                 SessionFailure.INTERNAL to SteamContentSdkSessionFailure.INTERNAL,
-                SessionFailure.PROTOCOL_ADAPTER to SteamContentSdkSessionFailure.PROTOCOL_ADAPTER,
             )
         expected.forEach { (ordinal, failure) ->
             assertEquals(failure, steamContentSdkSessionFailure(ordinal), "failure ordinal $ordinal")
@@ -163,7 +162,6 @@ class SteamContentSdkSessionMappingTest {
             SteamContentSdkSessionFailure.NETWORK,
             SteamContentSdkSessionFailure.UNSUPPORTED,
             SteamContentSdkSessionFailure.INTERNAL,
-            SteamContentSdkSessionFailure.PROTOCOL_ADAPTER,
             SteamContentSdkSessionFailure.UNKNOWN,
         ).forEach { failure ->
             assertEquals(SteamSessionPhase.FAILED, steamContentSdkFailurePhase(failure), "failure $failure")

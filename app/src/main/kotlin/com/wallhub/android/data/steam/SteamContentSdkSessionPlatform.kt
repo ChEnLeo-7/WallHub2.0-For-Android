@@ -50,7 +50,6 @@ internal enum class SteamContentSdkSessionFailure {
     SESSION_EXPIRED,
     CANCELLED,
     INTERNAL,
-    PROTOCOL_ADAPTER,
     UNKNOWN,
 }
 
@@ -84,72 +83,11 @@ internal data class SteamContentSdkPump(
     val messages: Int = 0,
 )
 
-/** What a rebuild abandoned, or why it failed. Rebuilding never re-sends an operation. */
+/** What a rebuild abandoned. Rebuilding never re-sends an operation. */
 internal data class SteamContentSdkReconnect(
     val replayableRequests: Long = 0L,
     val abandonedRequests: Long = 0L,
-    val failure: SteamContentSdkSessionFailure = SteamContentSdkSessionFailure.NONE,
-) {
-    val succeeded: Boolean get() = failure == SteamContentSdkSessionFailure.NONE
-}
-
-/**
- * The stable reconnect-failure families the host needs in order to choose the smallest safe recovery.
- *
- * This vocabulary deliberately stops at the existing platform seam. The current preview binding does not yet
- * expose a family when [SteamContentSdkPlatformSession.reconnect] throws, so the backend must not infer one
- * from exception text; the platform adapter can map the binding's typed value here once that value arrives.
- */
-internal enum class SteamContentSdkReconnectFailureFamily {
-    SESSION,
-    TRANSPORT,
-    PROTOCOL_ADAPTER,
-    INTERNAL,
-}
-
-/** The existing recovery operation appropriate to one reconnect-failure family. */
-internal enum class SteamContentSdkReconnectRecovery {
-    REAUTHENTICATE,
-    REOPEN_WITH_LIVE_CANDIDATES,
-    REBUILD_ENGINE,
-}
-
-/**
- * Selects the minimal safe recovery without introducing another manager or policy object.
- *
- * Session failures need authentication rather than a new engine. Transport failures keep the high-level engine
- * but require a fresh connection on live candidates. A broken adapter, or an internal failure whose component
- * cannot be trusted, requires retiring the engine. The backend remains the sole place that executes the choice.
- */
-internal fun steamContentSdkReconnectFailureFamily(
-    failure: SteamContentSdkSessionFailure,
-): SteamContentSdkReconnectFailureFamily =
-    when (failure) {
-        SteamContentSdkSessionFailure.AUTHENTICATION_FAILED,
-        SteamContentSdkSessionFailure.SESSION_EXPIRED,
-        -> SteamContentSdkReconnectFailureFamily.SESSION
-        SteamContentSdkSessionFailure.NETWORK -> SteamContentSdkReconnectFailureFamily.TRANSPORT
-        SteamContentSdkSessionFailure.PROTOCOL_ADAPTER -> SteamContentSdkReconnectFailureFamily.PROTOCOL_ADAPTER
-        SteamContentSdkSessionFailure.NONE,
-        SteamContentSdkSessionFailure.INVALID_INPUT,
-        SteamContentSdkSessionFailure.UNSUPPORTED,
-        SteamContentSdkSessionFailure.CANCELLED,
-        SteamContentSdkSessionFailure.INTERNAL,
-        SteamContentSdkSessionFailure.UNKNOWN,
-        -> SteamContentSdkReconnectFailureFamily.INTERNAL
-    }
-
-internal fun steamContentSdkReconnectRecovery(
-    family: SteamContentSdkReconnectFailureFamily,
-): SteamContentSdkReconnectRecovery =
-    when (family) {
-        SteamContentSdkReconnectFailureFamily.SESSION -> SteamContentSdkReconnectRecovery.REAUTHENTICATE
-        SteamContentSdkReconnectFailureFamily.TRANSPORT ->
-            SteamContentSdkReconnectRecovery.REOPEN_WITH_LIVE_CANDIDATES
-        SteamContentSdkReconnectFailureFamily.PROTOCOL_ADAPTER,
-        SteamContentSdkReconnectFailureFamily.INTERNAL,
-        -> SteamContentSdkReconnectRecovery.REBUILD_ENGINE
-    }
+)
 
 /**
  * How a pending logon challenge may be confirmed, mirroring the SDK's own ordinals and bits.
@@ -244,7 +182,6 @@ internal fun steamContentSdkSessionFailure(ordinal: Long): SteamContentSdkSessio
         SessionFailure.SESSION_EXPIRED -> SteamContentSdkSessionFailure.SESSION_EXPIRED
         SessionFailure.CANCELLED -> SteamContentSdkSessionFailure.CANCELLED
         SessionFailure.INTERNAL -> SteamContentSdkSessionFailure.INTERNAL
-        SessionFailure.PROTOCOL_ADAPTER -> SteamContentSdkSessionFailure.PROTOCOL_ADAPTER
         else -> SteamContentSdkSessionFailure.UNKNOWN
     }
 
@@ -361,7 +298,6 @@ internal fun steamContentSdkFailurePhase(failure: SteamContentSdkSessionFailure)
         SteamContentSdkSessionFailure.NETWORK,
         SteamContentSdkSessionFailure.UNSUPPORTED,
         SteamContentSdkSessionFailure.INTERNAL,
-        SteamContentSdkSessionFailure.PROTOCOL_ADAPTER,
         SteamContentSdkSessionFailure.UNKNOWN,
         -> SteamSessionPhase.FAILED
     }
@@ -395,9 +331,6 @@ internal interface SteamContentSdkPlatformSession : Closeable {
 
     /** Re-establishes the session from the retained token. Nothing is re-sent automatically. */
     fun reconnect(): SteamContentSdkReconnect
-
-    /** Retires this session's engine only if this exact generation is still current. */
-    fun retireEngine(): Boolean = false
 
     /**
      * The signed-in account's own profile, or null when no account is signed in or the engine cannot answer.
@@ -576,11 +509,8 @@ private class SteamContentSdkEnginePlatformSession(
         return SteamContentSdkReconnect(
             replayableRequests = outcome.replayableRequests,
             abandonedRequests = outcome.abandonedRequests,
-            failure = steamContentSdkSessionFailure(outcome.failureOrdinal),
         )
     }
-
-    override fun retireEngine(): Boolean = engine.retireForReconnect(sessionOwner.value)
 
     /**
      * Publishes this session as borrowable once it authenticates.

@@ -1,7 +1,6 @@
 package com.wallhub.android.data.downloads
 
 import com.wallhub.android.core.model.SteamContentCredential
-import com.wallhub.android.data.steam.SteamContentSdkEngineLeaseTracker
 import java.io.Closeable
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -25,7 +24,6 @@ internal class SteamContentSdkSessionBroker
     @Inject
     constructor(
         private val opener: SteamContentSdkSessionOpener,
-        private val engineLeases: SteamContentSdkEngineLeaseTracker,
     ) {
         private class Entry(
             val key: String,
@@ -124,16 +122,7 @@ internal class SteamContentSdkSessionBroker
             }
         }
 
-        private fun lease(entry: Entry): Lease {
-            val engineLease = engineLeases.acquire()
-            return Lease.create(entry.session) {
-                try {
-                    release(entry)
-                } finally {
-                    engineLease.close()
-                }
-            }
-        }
+        private fun lease(entry: Entry): Lease = Lease.create(entry.session) { release(entry) }
 
         private fun release(entry: Entry) {
             synchronized(lock) {
