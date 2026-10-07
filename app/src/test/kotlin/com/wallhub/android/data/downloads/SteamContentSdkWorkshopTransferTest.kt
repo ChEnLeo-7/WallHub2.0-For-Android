@@ -71,7 +71,7 @@ class SteamContentSdkWorkshopTransferTest {
                 fixture.task.statuses += completed(committedBytes = 9L)
                 fixture.download(target = fixture.target.copy(contentManifestId = 0L))
 
-                assertEquals(listOf(0L to 0L), fixture.session.resolveHints)
+                assertEquals(listOf(WALLPAPER_ENGINE_APP_ID.toLong() to 0L), fixture.session.resolveHints)
             } finally {
                 fixture.close()
             }
