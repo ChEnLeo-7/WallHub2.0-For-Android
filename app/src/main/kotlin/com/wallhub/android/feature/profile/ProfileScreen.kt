@@ -80,7 +80,6 @@ class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionReposi
             session.collectLatest { current ->
                 when {
                     current.phase == SteamSessionPhase.SIGNED_IN && current.accountName != loadedAccount -> {
-                        loadedAccount = current.accountName
                         coroutineScope {
                             val subscriptions = async {
                                 runCatching {
@@ -119,11 +118,12 @@ class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionReposi
                                     votedUnavailable = true,
                                 )
                             _runtimeHours.value = runtime.await()
+                            loadedAccount = current.accountName
                         }
                     }
-                    current.phase == SteamSessionPhase.SIGNING_IN &&
-                        current.hasStoredSession &&
-                        current.accountName == loadedAccount -> Unit
+                    current.phase == SteamSessionPhase.SIGNING_IN && current.hasStoredSession -> {
+                        loadedAccount = null
+                    }
                     current.phase != SteamSessionPhase.SIGNED_IN -> {
                         loadedAccount = null
                         _counts.value = ProfileCounts()

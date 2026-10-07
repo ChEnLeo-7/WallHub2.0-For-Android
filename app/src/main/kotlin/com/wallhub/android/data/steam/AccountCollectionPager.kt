@@ -95,6 +95,8 @@ internal class AccountCollectionPager(
         }
     }
 
+    suspend fun invalidateAll() = mutex.withLock { cursors.clear() }
+
     private data class CursorKey(
         val scope: AccountCollectionScope,
         val collection: AccountWorkshopCollection,
