@@ -44,6 +44,8 @@ import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -78,19 +80,45 @@ class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionReposi
                 when {
                     current.phase == SteamSessionPhase.SIGNED_IN && current.accountName != loadedAccount -> {
                         loadedAccount = current.accountName
-                        val subscriptions = runCatching { accountRepository.browseCollection(AccountWorkshopQuery(AccountWorkshopCollection.SUBSCRIPTIONS, pageSize = 1, resolveTotalCount = true)).totalCount ?: 0 }.getOrDefault(0)
-                        val favorites = runCatching { accountRepository.browseCollection(AccountWorkshopQuery(AccountWorkshopCollection.FAVORITES, pageSize = 1, resolveTotalCount = true)).totalCount ?: 0 }.getOrDefault(0)
-                        // The voted-items read is deliberately not made: Steam refuses every selector that
-                        // could ask for it with `EResult 8`, and the contract turns a refused read into an
-                        // empty page rather than a failure, so a count here could only ever be an invented 0.
-                        // The card says the list is unavailable instead.
-                        _counts.value =
-                            ProfileCounts(
-                                subscriptions = subscriptions,
-                                favorites = favorites,
-                                votedUnavailable = true,
-                            )
-                        _runtimeHours.value = runCatching { playtimeRepository.getAppPlaytime(WALLPAPER_ENGINE_APP_ID)?.totalMinutes?.div(60) }.getOrNull()
+                        coroutineScope {
+                            val subscriptions = async {
+                                runCatching {
+                                    accountRepository.browseCollection(
+                                        AccountWorkshopQuery(
+                                            AccountWorkshopCollection.SUBSCRIPTIONS,
+                                            pageSize = 1,
+                                            resolveTotalCount = true,
+                                        ),
+                                    ).totalCount ?: 0
+                                }.getOrDefault(0)
+                            }
+                            val favorites = async {
+                                runCatching {
+                                    accountRepository.browseCollection(
+                                        AccountWorkshopQuery(
+                                            AccountWorkshopCollection.FAVORITES,
+                                            pageSize = 1,
+                                            resolveTotalCount = true,
+                                        ),
+                                    ).totalCount ?: 0
+                                }.getOrDefault(0)
+                            }
+                            val runtime = async {
+                                runCatching {
+                                    playtimeRepository.getAppPlaytime(WALLPAPER_ENGINE_APP_ID)
+                                        ?.totalMinutes
+                                        ?.div(60)
+                                }.getOrNull()
+                            }
+                            // Steam refuses every selector that could list voted items with EResult 8.
+                            _counts.value =
+                                ProfileCounts(
+                                    subscriptions = subscriptions.await(),
+                                    favorites = favorites.await(),
+                                    votedUnavailable = true,
+                                )
+                            _runtimeHours.value = runtime.await()
+                        }
                     }
                     current.phase == SteamSessionPhase.SIGNING_IN &&
                         current.hasStoredSession &&

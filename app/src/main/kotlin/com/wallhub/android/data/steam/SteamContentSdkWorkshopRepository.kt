@@ -167,6 +167,21 @@ internal class SteamContentSdkWorkshopRepository
                 },
             )
         private val accountCollectionPager = AccountCollectionPager()
+        private val personaCache by lazy {
+            SteamPersonaCache(
+                loader = SteamPersonaLoader { accountIds ->
+                    sdkRead(
+                        key = "profiles:${accountIds.sorted().joinToString(",")}",
+                        kind = WorkshopReadKind.PROFILE,
+                        priority = WorkshopReadPriority.BACKGROUND,
+                    ) {
+                        readPlayerProfiles(accountIds).mapValues { (_, profile) ->
+                            SteamProfile(profile.personaName, profile.avatarUrl)
+                        }
+                    }
+                },
+            )
+        }
 
         // ------------------------------------------------------------------
         // SteamUnifiedWorkshopRepository
@@ -383,20 +398,17 @@ internal class SteamContentSdkWorkshopRepository
             withContext(Dispatchers.IO) {
                 require(workshopId > 0L) { "Invalid Workshop item ID" }
                 runCatchingUnavailable {
-                    sdkRead(
-                        key = "author:$workshopId",
-                        kind = WorkshopReadKind.PROFILE,
-                        priority = WorkshopReadPriority.BACKGROUND,
-                    ) {
-                        engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result ->
-                            val authorId = result.field(WorkshopItemField.AUTHOR).valueOrZero().takeIf { it > 0L }
-                            if (authorId == null) {
-                                null
-                            } else {
-                                readPlayerProfiles(setOf(authorId))[authorId]?.personaName
+                    val authorId =
+                        sdkRead(
+                            key = "author-id:$workshopId",
+                            kind = WorkshopReadKind.DETAILS,
+                            priority = WorkshopReadPriority.BACKGROUND,
+                        ) {
+                            engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result ->
+                                result.field(WorkshopItemField.AUTHOR).valueOrZero().takeIf { it > 0L }
                             }
                         }
-                    }
+                    authorId?.let { personaCache.get(it)?.displayName }
                 }
             }
 
@@ -498,7 +510,14 @@ internal class SteamContentSdkWorkshopRepository
          */
         override suspend fun getAppPlaytime(appId: Int): SteamAppPlaytime? =
             withContext(Dispatchers.IO) {
-                val playtime = runCatchingUnavailable { mutex.withLock { engine.playerPlaytime(appId.toLong()) } }
+                val playtime =
+                    runCatchingUnavailable {
+                        sdkRead(
+                            key = "playtime:$appId",
+                            kind = WorkshopReadKind.PLAYTIME,
+                            priority = WorkshopReadPriority.FOREGROUND,
+                        ) { engine.playerPlaytime(appId.toLong()) }
+                    }
                 playtime
                     ?.takeIf { it.present }
                     ?.let { row ->
@@ -612,7 +631,6 @@ internal class SteamContentSdkWorkshopRepository
             val size = page.size()
             val state = page.state()
             val rows = (0 until size).map { index -> summaryFieldsOf(page, index) }
-            val profiles = readPlayerProfiles(rows.mapNotNull { it.authorIdOrNull() }.toSet())
             val items =
                 rows.mapIndexed { index, fields ->
                     summaryOf(
@@ -620,7 +638,8 @@ internal class SteamContentSdkWorkshopRepository
                         title = page.text(index, WorkshopTextField.TITLE).orEmpty(),
                         previewUrl = page.text(index, WorkshopTextField.PREVIEW_URL),
                         tags = readPageTags(page, index, fields),
-                        profile = fields.authorIdOrNull()?.let(profiles::get),
+                        // Persona enrichment is intentionally deferred; page rows become visible immediately.
+                        profile = null,
                         // A page row has no resolved creator behind it, so the id-bearing placeholder stands
                         // in, exactly as the removed kSteam summary mapper left it.
                         unresolvedPlaceholder = WorkshopAuthorPlaceholder.USER_WITH_ID,

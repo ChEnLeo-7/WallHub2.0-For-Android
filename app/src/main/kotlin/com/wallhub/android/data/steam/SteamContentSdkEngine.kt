@@ -505,14 +505,9 @@ class SteamContentSdkEngine
          */
         @Synchronized
         fun openPlayerProfiles(accountIds: LongArray): PlayerProfiles {
-            // The SDK requires between one and its ceiling, and a caller that violates either aborts the read
-            // that asked for the profiles - which on the home screen is the whole page. The count and this
-            // call's own stack are what name the caller, because the guard it goes through is not this one.
-            Log.w(
-                "WallHubSdkPlayer",
-                "openPlayerProfiles count=${accountIds.size} ids=${accountIds.take(8).toList()}",
-                Throwable("openPlayerProfiles"),
-            )
+            // Release diagnostics record only bounded cardinality: account ids and synthetic stack traces add
+            // allocation/log I/O without helping latency attribution.
+            Log.d("WallHubSdkPlayer", "openPlayerProfiles count=${accountIds.size}")
             return openPlayerEngine().openPlayerProfiles(accountIds)
         }
 
