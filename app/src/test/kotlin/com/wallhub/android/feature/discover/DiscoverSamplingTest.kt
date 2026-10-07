@@ -1,6 +1,9 @@
 package com.wallhub.android.feature.discover
 
+import com.wallhub.android.DiscoverResultsDestination
 import com.wallhub.android.core.model.WorkshopBrowseQuery
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -77,6 +80,25 @@ class DiscoverSamplingTest {
     }
 
     @Test
+    fun `results request fence rejects old generation and destination`() {
+        val destination = destination("old")
+        val request = DiscoverResultsRequest(4L, destination)
+
+        assertTrue(request.isCurrent(4L, destination))
+        assertTrue(!request.isCurrent(3L, destination))
+        assertTrue(!request.isCurrent(4L, destination("new")))
+    }
+
+    @Test
+    fun `discover rail retries only transient failures`() {
+        assertTrue(isTransientDiscoverFailure(IOException("connection reset")))
+        assertTrue(isTransientDiscoverFailure(IllegalStateException("session unavailable")))
+        assertTrue(!isTransientDiscoverFailure(IllegalArgumentException("InvalidParam")))
+        assertTrue(!isTransientDiscoverFailure(UnsupportedOperationException("unsupported")))
+        assertTrue(!isTransientDiscoverFailure(CancellationException("cancelled")))
+    }
+
+    @Test
     fun `one rail failure leaves sibling rail untouched`() {
         val first = DiscoverRailState(spec(1), loadState = DiscoverRailLoadState.LOADING)
         val sibling = DiscoverRailState(spec(2), loadState = DiscoverRailLoadState.READY)
@@ -89,6 +111,13 @@ class DiscoverSamplingTest {
         assertEquals(DiscoverRailLoadState.FAILED_FINAL, updated.rails.first().loadState)
         assertEquals(sibling, updated.rails.last())
     }
+
+    private fun destination(railId: String) =
+        DiscoverResultsDestination(
+            railId = railId,
+            titleKind = DiscoverTitleKind.KEYWORD.name,
+            semantic = "top_rated",
+        )
 
     private fun spec(index: Int) =
         DiscoverRailSpec(
