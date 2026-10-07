@@ -8,6 +8,7 @@ import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
@@ -46,7 +47,7 @@ class SteamContentSdkWorkshopTransferTest {
                 fixture.task.statuses += completed(committedBytes = 9L)
                 val result = fixture.download()
 
-                assertEquals(1, fixture.session.resolveCalls)
+                assertEquals(1, fixture.session.resolveCalls.get())
                 assertEquals(listOf(431960L to 42L), fixture.session.resolveHints)
                 val started = fixture.session.starts.single()
                 assertEquals(fixture.resolved.appId, started.appId)
@@ -187,7 +188,7 @@ class SteamContentSdkWorkshopTransferTest {
                 runBlocking { fixture.download() }
             }
 
-            assertEquals(1, fixture.session.resolveCalls)
+            assertEquals(1, fixture.session.resolveCalls.get())
             assertEquals(1, fixture.session.starts.size)
             assertEquals(1, fixture.task.closeCalls)
         } finally {
@@ -206,7 +207,7 @@ class SteamContentSdkWorkshopTransferTest {
                 runBlocking { fixture.download() }
             }
 
-            assertEquals(1, fixture.session.resolveCalls)
+            assertEquals(1, fixture.session.resolveCalls.get())
             assertEquals(1, fixture.session.starts.size)
             assertEquals(1, fixture.task.closeCalls)
         } finally {
@@ -225,7 +226,7 @@ class SteamContentSdkWorkshopTransferTest {
                 runBlocking { fixture.download() }
             }
 
-            assertEquals(1, fixture.session.resolveCalls)
+            assertEquals(1, fixture.session.resolveCalls.get())
             assertEquals(1, fixture.session.starts.size)
             assertEquals(1, fixture.task.closeCalls)
         } finally {
@@ -568,7 +569,7 @@ class SteamContentSdkWorkshopTransferTest {
                 assertEquals(0L, bothInside.count)
                 assertEquals("both downloads must share one session", 1, fixture.openerCalls)
                 assertEquals("the shared session must be closed exactly once", 1, fixture.session.closeCalls)
-                assertEquals(2, fixture.session.resolveCalls)
+                assertEquals(2, fixture.session.resolveCalls.get())
             } finally {
                 fixture.close()
             }
@@ -651,7 +652,7 @@ class SteamContentSdkWorkshopTransferTest {
         fun queueTask(task: SteamContentSdkTask) {
             queuedTasks += task
         }
-        var resolveCalls = 0
+        val resolveCalls = AtomicInteger()
         val resolveHints = mutableListOf<Pair<Long, Long>>()
         var closeCalls = 0
         var closed = false
@@ -664,7 +665,7 @@ class SteamContentSdkWorkshopTransferTest {
             appIdHint: Long,
             contentManifestIdHint: Long,
         ): SteamContentSdkResolvedItem {
-            resolveCalls += 1
+            resolveCalls.incrementAndGet()
             resolveHints += appIdHint to contentManifestIdHint
             onResolve?.invoke()
             return resolved
