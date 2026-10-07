@@ -38,6 +38,31 @@ class DiscoverSamplingTest {
     }
 
     @Test
+    fun `expensive focus showcases are deferred beyond the first screen`() {
+        val ordinary = (1..7).map(::spec)
+        val creatorShowcase =
+            spec(8).copy(id = "focus-creators", category = DiscoverCategory.CREATOR_SHOWCASE)
+        val collectionShowcase =
+            spec(9).copy(id = "focus-collections", category = DiscoverCategory.COLLECTION_SHOWCASE)
+
+        val ordered = deferShowcasesBeyondInitialBatch(listOf(creatorShowcase) + ordinary + collectionShowcase)
+
+        assertTrue(ordered.take(DISCOVER_INITIAL_RAIL_COUNT).none { it.category.isFocusShowcase() })
+        assertEquals(9, ordered.size)
+    }
+
+    @Test
+    fun `focus showcase resolves a bounded stable first page`() {
+        val children = (1..20).map(::spec)
+
+        val first = sampleFeaturedChildren(children, generation = 42L, railId = "focus")
+        val second = sampleFeaturedChildren(children, generation = 42L, railId = "focus")
+
+        assertEquals(8, first.size)
+        assertEquals(first.map(DiscoverRailSpec::id), second.map(DiscoverRailSpec::id))
+    }
+
+    @Test
     fun `expired generation result is ignored`() {
         val state = DiscoverFeedState(generation = 8L, rails = listOf(DiscoverRailState(spec(1))))
 

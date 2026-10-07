@@ -103,4 +103,50 @@ internal fun AccountWorkshopQuery.matchesAccountCollectionItem(summary: Workshop
 internal const val MAX_ACCOUNT_WORKSHOP_PAGE_SIZE = 50
 internal const val MAX_ACCOUNT_WORKSHOP_TAGS = 6
 internal const val MAX_ACCOUNT_WORKSHOP_SEARCH_LENGTH = 120
-internal const val MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES = 400
+/** True when a personal-list request needs client-side matching rather than direct source paging. */
+internal fun AccountWorkshopQuery.hasInteractiveFilters(): Boolean =
+    searchText.isNotBlank() || exactPhrase || type != null || types.isNotEmpty() || tags.isNotEmpty() ||
+        ratings.isNotEmpty() || genres.isNotEmpty() || officialTags.isNotEmpty() ||
+        excludedOfficialTags.isNotEmpty() || resolutions.isNotEmpty()
+
+/**
+ * Collects one UI page from bounded personal-list source pages.
+ *
+ * The source page number is independent of the requested UI page because rejected rows do not consume UI
+ * positions. A capped scan deliberately reports another page while the source is not exhausted, allowing the
+ * UI to retry/continue rather than claiming that the filtered collection ended at an arbitrary scan boundary.
+ */
+internal suspend fun browseFilteredAccountCollection(
+    query: AccountWorkshopQuery,
+    loadSourcePage: suspend (page: Int, pageSize: Int) -> com.wallhub.android.core.model.WorkshopPage,
+): com.wallhub.android.core.model.WorkshopPage {
+    val normalized = query.normalized()
+    val requiredMatches = normalized.page.toLong() * normalized.pageSize.toLong()
+    val matches = mutableListOf<WorkshopSummary>()
+    var sourcePage = 1
+    var sourceExhausted = false
+    while (
+        sourcePage <= MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES &&
+            !sourceExhausted &&
+            matches.size.toLong() < requiredMatches
+    ) {
+        val source = loadSourcePage(sourcePage, MAX_ACCOUNT_WORKSHOP_PAGE_SIZE)
+        matches += source.items.filter(normalized::matchesAccountCollectionItem)
+        sourceExhausted = !source.hasNextPage
+        sourcePage++
+    }
+    val selection =
+        selectAccountCollectionPage(
+            matches = matches,
+            page = normalized.page,
+            pageSize = normalized.pageSize,
+            sourceExhausted = sourceExhausted,
+        )
+    return com.wallhub.android.core.model.WorkshopPage(
+        items = selection.items,
+        page = normalized.page,
+        hasNextPage = selection.hasNextPage,
+    )
+}
+
+internal const val MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES = 10

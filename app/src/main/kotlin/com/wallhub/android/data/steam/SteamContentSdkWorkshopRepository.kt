@@ -46,10 +46,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 /**
  * One Workshop summary row as the SDK reports it: a field number per ordinal, in a fixed slot order.
@@ -120,9 +122,9 @@ private data class SdkCommentRow(
  * milliseconds.
  *
  * The SDK reports "no Workshop provider", "no session", and "this operation is not implemented yet" as an
- * `IllegalStateException` rather than a nullable answer. Every read below translates that into the
- * contract's own unavailable answer: null for a method the contract already marks nullable, an empty page or
- * interaction for one it does not, and no throw ever crosses this class but the caller's own invalid input.
+ * `IllegalStateException` rather than a nullable answer. Nullable reads and interaction fallbacks retain their
+ * contract-specific unavailable answers; account collection browsing propagates the failure so Library retry
+ * and error state can distinguish it from an authoritative empty collection.
  *
  * The acting account comes from the SDK session (ADR 0034), so this class holds no credential store and
  * parses no token: it reads through the engine the session domain authenticated. That engine is the one
@@ -293,35 +295,41 @@ internal class SteamContentSdkWorkshopRepository
 
         override suspend fun browseCollection(query: AccountWorkshopQuery): WorkshopPage =
             withContext(Dispatchers.IO) {
-                // The contract has no null answer here, so an unavailable read is an empty page rather than a
-                // throw, which is the only "nothing to show" this signature can carry.
-                val loaded =
-                    runCatchingUnavailable {
-                        awaitSignedInSession()
-                        val accountId =
-                            signedInAccountId() ?: error("No signed-in Steam account is available")
-                        // Every app collection has an SDK list, so this mapping has no absent case: a
-                        // collection the product shows is never answered by producing another list's items.
-                        val list = query.collection.sdkPersonalList()
-                        val normalized = query.normalizedForSdk()
-                        mutex.withLock {
-                            val page =
-                                engine.workshopPersonalItems(
-                                    accountId = accountId,
-                                    list = list,
-                                    pageSize = normalized.pageSize,
-                                    pageOffset = normalized.pageOffset(),
-                                    // A personal read is answered within one App's Workshop: without the
-                                    // scope the service omits each row's own tags and file type, which is
-                                    // what the device run showed as an untyped row.
-                                    appId = WALLPAPER_ENGINE_APP_ID.toLong(),
-                                )
-                            // A personal row's own state is the list it came from, which is how the removed
-                            // kSteam mapper read it.
-                            page.use { readWorkshopPage(it, normalized.page, query.collection) }
-                        }
+                val normalized = query.normalized()
+                awaitSignedInSession()
+                val accountId = signedInAccountId() ?: error("No signed-in Steam account is available")
+                val list = normalized.collection.sdkPersonalList()
+                if (!normalized.hasInteractiveFilters()) {
+                    loadPersonalCollectionPage(accountId, list, normalized, normalized.page, normalized.pageSize)
+                } else {
+                    browseFilteredAccountCollection(normalized) { sourcePage, sourcePageSize ->
+                        loadPersonalCollectionPage(accountId, list, normalized, sourcePage, sourcePageSize)
                     }
-                loaded ?: emptyWorkshopPage(query)
+                }
+            }
+
+        /** One bounded adapter operation; SDK unavailability and timeout remain failures for Library retry/UI. */
+        private suspend fun loadPersonalCollectionPage(
+            accountId: Long,
+            list: Int,
+            query: AccountWorkshopQuery,
+            sourcePage: Int,
+            sourcePageSize: Int,
+        ): WorkshopPage =
+            withSdkOperationTimeout {
+                mutex.withLock {
+                    val page =
+                        engine.workshopPersonalItems(
+                            accountId = accountId,
+                            list = list,
+                            pageSize = sourcePageSize,
+                            pageOffset = pageOffsetOf(sourcePage, sourcePageSize),
+                            // A personal read is answered within one App's Workshop: without the scope the
+                            // service omits each row's own tags and file type.
+                            appId = WALLPAPER_ENGINE_APP_ID.toLong(),
+                        )
+                    page.use { readWorkshopPage(it, sourcePage, query.collection) }
+                }
             }
 
         /**
@@ -848,13 +856,13 @@ private inline fun <T> runCatchingUnavailable(block: () -> T): T? =
         null
     }
 
-/** The page an unavailable account read answers with, because the contract cannot express null there. */
-private fun emptyWorkshopPage(query: AccountWorkshopQuery): WorkshopPage =
-    WorkshopPage(
-        items = emptyList(),
-        page = query.page.coerceAtLeast(1),
-        hasNextPage = false,
-    )
+/** Applies the adapter's operation deadline without exposing a new exception in the repository ABI. */
+private suspend fun <T> withSdkOperationTimeout(block: suspend () -> T): T =
+    try {
+        withTimeout(SDK_OPERATION_TIMEOUT_MS) { block() }
+    } catch (error: TimeoutCancellationException) {
+        throw IllegalStateException("Steam Content SDK Workshop operation timed out", error)
+    }
 
 /**
  * The tag texts one page row states, in the response's own order.
@@ -907,17 +915,8 @@ private fun WorkshopBrowseQuery.normalizedForSdk(): WorkshopBrowseQuery {
     )
 }
 
-/** Normalises an account query to the bounds a personal-items request requires. */
-private fun AccountWorkshopQuery.normalizedForSdk(): AccountWorkshopQuery =
-    copy(
-        page = page.coerceAtLeast(1),
-        pageSize = pageSize.coerceIn(1, MAX_SDK_PAGE_SIZE),
-    )
-
 /** The absolute cursor the SDK request takes, which the app expresses as a one-based page. */
 private fun WorkshopBrowseQuery.pageOffset(): Int = pageOffsetOf(page, pageSize)
-
-private fun AccountWorkshopQuery.pageOffset(): Int = pageOffsetOf(page, pageSize)
 
 private fun pageOffsetOf(
     page: Int,
@@ -1060,6 +1059,9 @@ private const val MAX_SDK_PROFILE_ACCOUNTS = 16
 /** How long a workshop read waits for the engine's session to be signed in, and how often it looks. */
 private const val SESSION_READY_ATTEMPTS = 20
 private const val SESSION_READY_DELAY_MS = 250L
+
+/** Bounds one SDK adapter call while leaving multi-page filtering cancellable between operations. */
+private const val SDK_OPERATION_TIMEOUT_MS = 15_000L
 
 private const val MAX_SDK_COMMENT_PAGE_SIZE = 50
 private const val MAX_SDK_PAGE_SIZE = 50

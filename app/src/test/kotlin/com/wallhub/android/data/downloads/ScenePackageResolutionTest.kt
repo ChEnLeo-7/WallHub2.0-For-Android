@@ -8,6 +8,10 @@ import com.wallhub.prototype.mpkg.PresetDependencyResolver
 import com.wallhub.prototype.mpkg.SCENE_MPKG_MAGIC
 import com.wallhub.prototype.mpkg.ShaderCompatibility
 import com.wallhub.prototype.mpkg.WorkshopConverter
+import com.wallhub.prototype.mpkg.WorkshopKind
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -48,6 +52,47 @@ class ScenePackageResolutionTest {
             assertThrows(IllegalArgumentException::class.java) {
                 WorkshopConverter.resolveScenePackage(root, "../outside.json")
             }
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `scene converter accepts valid project JSON larger than 256 KiB`() {
+        val root = Files.createTempDirectory("wallhub-large-scene-project").toFile()
+        try {
+            val projectPrefix = "{\"type\":\"scene\",\"file\":\"scene.json\",\"padding\":\""
+            val projectSuffix = "\"}"
+            val projectJson = projectPrefix + "a".repeat(336_997 - projectPrefix.length - projectSuffix.length) + projectSuffix
+            assertEquals(336_997, projectJson.toByteArray(Charsets.UTF_8).size)
+            root.resolve("project.json").writeText(projectJson)
+            root.resolve("preview.jpg").writeBytes(byteArrayOf(1))
+            writeEmptyPkg(root.resolve("scene.pkg"))
+            val output = root.resolve("converted.mpkg")
+
+            val report = WorkshopConverter.convert(root, output)
+
+            assertEquals(WorkshopKind.SCENE, report.kind)
+            assertTrue(output.isFile)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `scene converter rejects project JSON larger than sane limit`() {
+        val root = Files.createTempDirectory("wallhub-oversized-scene-project").toFile()
+        try {
+            root.resolve("project.json").writeBytes(ByteArray(MAX_PROJECT_JSON_BYTES + 1) { 'a'.code.toByte() })
+            root.resolve("preview.jpg").writeBytes(byteArrayOf(1))
+            writeEmptyPkg(root.resolve("scene.pkg"))
+            val output = root.resolve("converted.mpkg")
+
+            val failure = runCatching { WorkshopConverter.convert(root, output) }.exceptionOrNull()
+
+            assertTrue(failure is IllegalArgumentException)
+            assertTrue(failure?.message.orEmpty().contains("read limit"))
+            assertFalse(output.exists())
         } finally {
             root.deleteRecursively()
         }
@@ -153,7 +198,7 @@ class ScenePackageResolutionTest {
             val dependency = root.resolve(".wallhub-dependencies/1").apply { mkdirs() }
             dependency.resolve("project.json").writeText("""{"dependency":"2","preset":{}}""")
             val loop = dependency.resolve(".wallhub-dependencies/2")
-            loop.parentFile.mkdirs()
+            requireNotNull(loop.parentFile).mkdirs()
             Files.createSymbolicLink(loop.toPath(), root.toPath())
 
             assertFalse(hasCompletePresetDependency(root))
@@ -197,6 +242,18 @@ class ScenePackageResolutionTest {
     }
 
     private data object RewriteCancelled : RuntimeException()
+
+    private fun writeEmptyPkg(file: java.io.File) {
+        val magic = "PKGV0001".toByteArray(Charsets.UTF_8)
+        val bytes =
+            ByteArrayOutputStream().use { output ->
+                output.write(ByteBuffer.allocate(Int.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN).putInt(magic.size).array())
+                output.write(magic)
+                output.write(ByteArray(Int.SIZE_BYTES))
+                output.toByteArray()
+            }
+        file.writeBytes(bytes)
+    }
 
     private fun createPresetChain(
         root: java.io.File,

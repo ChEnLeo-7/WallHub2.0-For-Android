@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
@@ -31,21 +32,29 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class CommunityWorkshopRepository
+class CommunityWorkshopRepository internal constructor(
+    private val settingsRepository: SettingsRepository,
+    private val unifiedWorkshopRepository: SteamUnifiedWorkshopRepository,
+    private val client: OkHttpClient,
+) : WorkshopRepository {
     @Inject
     constructor(
-        private val settingsRepository: SettingsRepository,
-        private val unifiedWorkshopRepository: SteamUnifiedWorkshopRepository,
+        settingsRepository: SettingsRepository,
+        unifiedWorkshopRepository: SteamUnifiedWorkshopRepository,
         clientFactory: SteamHttpClientFactory,
-    ) : WorkshopRepository {
-        private val steamProfiles = ConcurrentHashMap<String, SteamWebProfile>()
-        private val client =
+    ) : this(
+        settingsRepository = settingsRepository,
+        unifiedWorkshopRepository = unifiedWorkshopRepository,
+        client =
             clientFactory
                 .newBuilder()
                 .connectTimeout(20, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .callTimeout(45, TimeUnit.SECONDS)
-                .build()
+                .build(),
+    )
+
+        private val steamProfiles = ConcurrentHashMap<String, SteamWebProfile>()
 
         override suspend fun browse(query: WorkshopBrowseQuery): WorkshopPage =
             withContext(Dispatchers.IO) {
@@ -137,9 +146,17 @@ class CommunityWorkshopRepository
                     }
 
                     SteamWorkshopDataSource.CM_WEBSOCKET ->
-                        unifiedWorkshopRepository
-                            .getPublicDetail(workshopId)
-                            ?: error("Steam CM did not return this Workshop item")
+                        when (val outcome = getCmPublicDetail(workshopId)) {
+                            is CmPublicDetailOutcome.Available -> outcome.detail
+                            CmPublicDetailOutcome.NotFound ->
+                                error("Steam did not return this Workshop item; it may be deleted or not publicly accessible")
+                            CmPublicDetailOutcome.Unavailable ->
+                                // The current CM port is nullable and cannot distinguish a temporary/session
+                                // failure from authoritative not-found. Treat null as unavailable and verify
+                                // through Steam's public details endpoint rather than reporting a false miss.
+                                getPublishedFileDetails(listOf(workshopId)).firstOrNull()
+                                    ?: error("Steam did not return this Workshop item; it may be deleted or not publicly accessible")
+                        }
                 }
             }
 
@@ -203,6 +220,23 @@ class CommunityWorkshopRepository
                     SteamWorkshopDataSource.CM_WEBSOCKET -> unifiedWorkshopRepository.getPublicDetails(ids)
                 }
             }
+
+        private suspend fun getCmPublicDetail(workshopId: Long): CmPublicDetailOutcome =
+            unifiedWorkshopRepository
+                .getPublicDetail(workshopId)
+                ?.let(CmPublicDetailOutcome::Available)
+                ?: CmPublicDetailOutcome.Unavailable
+
+        private sealed interface CmPublicDetailOutcome {
+            data class Available(
+                val detail: WorkshopDetail,
+            ) : CmPublicDetailOutcome
+
+            /** Reserved for a future CM port that can report an authoritative missing item. */
+            data object NotFound : CmPublicDetailOutcome
+
+            data object Unavailable : CmPublicDetailOutcome
+        }
 
         private suspend fun resolveWorkshopOwnerId(
             workshopId: Long,

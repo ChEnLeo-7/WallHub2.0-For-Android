@@ -671,7 +671,7 @@ internal const val MAX_MAGIC_LENGTH = 64
 internal const val MAX_PACKAGE_PATH_LENGTH = 16 * 1024
 internal const val MAX_PACKAGE_ENTRY_COUNT = 200_000L
 internal const val MAX_ZIP_ENTRIES_TO_INSPECT = 4_096
-internal const val MAX_PROJECT_JSON_BYTES = 256 * 1024
+internal const val MAX_PROJECT_JSON_BYTES = 1024 * 1024
 internal val WORKSHOP_ID_PATTERN = Regex("(?:^|[-_ ])(\\d{5,})(?=$|[-_ ])")
 internal val VIDEO_EXTENSIONS = setOf("mp4", "webm", "mkv", "mov", "avi", "m4v")
 internal val HTML_EXTENSIONS = setOf("html", "htm")

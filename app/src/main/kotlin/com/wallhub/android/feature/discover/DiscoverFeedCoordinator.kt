@@ -72,8 +72,11 @@ class DiscoverFeedCoordinator
                 spec.feedbackKey to
                     (feedbackWeights.getValue(spec.feedbackKey).scoreAdjustment + categoryAffinity.getOrDefault(spec.category, 0f))
             }
-            val ranked = rankSpecs(candidates, feedbackAdjustments, generation)
-                .filterNot { feedbackWeights.getValue(it.feedbackKey).suppressCurrentGeneration }
+            val ranked =
+                deferShowcasesBeyondInitialBatch(
+                    rankSpecs(candidates, feedbackAdjustments, generation)
+                        .filterNot { feedbackWeights.getValue(it.feedbackKey).suppressCurrentGeneration },
+                )
             return DiscoverGeneration(
                 generation = generation,
                 metadataSource = snapshot.source,
@@ -158,10 +161,7 @@ class DiscoverFeedCoordinator
             excludedIds: Set<Long>,
             startedAt: Long,
         ): DiscoverRailLoadResult = coroutineScope {
-            val children =
-                spec.children
-                    .shuffled(Random(generation xor spec.id.hashCode().toLong()))
-                    .take(DISCOVER_FEATURED_ITEM_COUNT)
+            val children = sampleFeaturedChildren(spec.children, generation, spec.id)
             val coverIds = children.mapNotNull(DiscoverRailSpec::coverSubmissionId)
             val collectionIds = children.mapNotNull { it.queryPlan.collectionId }
             val details =
@@ -502,6 +502,27 @@ class DiscoverFeedCoordinator
         )
     }
 
+internal fun DiscoverCategory.isFocusShowcase(): Boolean =
+    this == DiscoverCategory.CREATOR_SHOWCASE || this == DiscoverCategory.COLLECTION_SHOWCASE
+
+/** Keeps N+1 focus-detail fan-out off the first-screen critical path while preserving ranked order. */
+internal fun deferShowcasesBeyondInitialBatch(specs: List<DiscoverRailSpec>): List<DiscoverRailSpec> {
+    if (specs.take(DISCOVER_INITIAL_RAIL_COUNT).none { it.category.isFocusShowcase() }) return specs
+    val ordinary = specs.filterNot { it.category.isFocusShowcase() }
+    val insertion = DISCOVER_INITIAL_RAIL_COUNT.coerceAtMost(ordinary.size)
+    return ordinary.take(insertion) + specs.filter { it.category.isFocusShowcase() } + ordinary.drop(insertion)
+}
+
+/** One focus rail resolves only the cards visible in its first horizontal page. */
+internal fun sampleFeaturedChildren(
+    children: List<DiscoverRailSpec>,
+    generation: Long,
+    railId: String,
+): List<DiscoverRailSpec> =
+    children
+        .shuffled(Random(generation xor railId.hashCode().toLong()))
+        .take(DISCOVER_FEATURED_ITEM_COUNT)
+
 internal fun rankSpecs(
     specs: List<DiscoverRailSpec>,
     feedbackAdjustments: Map<String, Float>,
@@ -562,7 +583,7 @@ private const val TAG_REPETITION_PENALTY = -0.15f
 private const val SUBJECT_REPETITION_PENALTY = -0.75f
 private const val RELATED_TOPIC_FEEDBACK_FACTOR = 0.15f
 private const val SHOWCASE_PRIORITY_BONUS = 1f
-private const val DISCOVER_FEATURED_ITEM_COUNT = 20
+private const val DISCOVER_FEATURED_ITEM_COUNT = 8
 private const val ACTIVE_SEASON_PRIORITY = 0.8f
 
 private data class SeasonalCollectionDefinition(

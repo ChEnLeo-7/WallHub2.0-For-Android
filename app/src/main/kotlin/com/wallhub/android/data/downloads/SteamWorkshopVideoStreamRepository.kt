@@ -18,30 +18,63 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-internal class SteamWorkshopVideoStreamRepository
+internal class SteamWorkshopVideoStreamRepository private constructor(
+    private val cacheRootDirectory: File,
+    private val credentialProvider: SteamContentCredentialProvider,
+    private val settingsRepository: SettingsRepository,
+    private val steamHttpClientFactory: SteamHttpClientFactory?,
+    private val contentTargetFetcher: suspend (Long) -> WorkshopContentTarget,
+    private val playbackCoordinator: PlaybackDownloadCoordinator,
+    private val sdkSessionBroker: SteamContentSdkSessionBroker,
+) : WorkshopVideoStreamRepository {
     @Inject
     constructor(
-        @ApplicationContext private val context: Context,
-        private val credentialProvider: SteamContentCredentialProvider,
-        private val settingsRepository: SettingsRepository,
-        private val steamHttpClientFactory: SteamHttpClientFactory,
-        private val playbackCoordinator: PlaybackDownloadCoordinator,
-        private val sdkSessionBroker: SteamContentSdkSessionBroker,
-    ) : WorkshopVideoStreamRepository {
-        private val cacheRootDirectory: File
-            get() = File(context.cacheDir, STREAM_CACHE_DIRECTORY)
+        @ApplicationContext context: Context,
+        credentialProvider: SteamContentCredentialProvider,
+        settingsRepository: SettingsRepository,
+        steamHttpClientFactory: SteamHttpClientFactory,
+        playbackCoordinator: PlaybackDownloadCoordinator,
+        sdkSessionBroker: SteamContentSdkSessionBroker,
+    ) : this(
+        cacheRootDirectory = File(context.cacheDir, STREAM_CACHE_DIRECTORY),
+        credentialProvider = credentialProvider,
+        settingsRepository = settingsRepository,
+        steamHttpClientFactory = steamHttpClientFactory,
+        contentTargetFetcher = { workshopId ->
+            val preferences = settingsRepository.preferences.first()
+            val proxyUrl = preferences.downloadProxyUrl.takeIf { preferences.downloadProxyEnabled }.orEmpty()
+            SteamWorkshopContentApi(steamHttpClientFactory.newBuilder().applyDownloadProxy(proxyUrl))
+                .fetchContentTarget(workshopId)
+        },
+        playbackCoordinator = playbackCoordinator,
+        sdkSessionBroker = sdkSessionBroker,
+    )
 
-        override suspend fun open(workshopId: Long): WorkshopVideoStreamSession {
-            var openedStream: WorkshopVideoStreamSession? = null
-            try {
-                return withContext(Dispatchers.IO) {
+    internal constructor(
+        cacheRootDirectory: File,
+        credentialProvider: SteamContentCredentialProvider,
+        settingsRepository: SettingsRepository,
+        contentTargetFetcher: suspend (Long) -> WorkshopContentTarget,
+        playbackCoordinator: PlaybackDownloadCoordinator,
+        sdkSessionBroker: SteamContentSdkSessionBroker,
+    ) : this(
+        cacheRootDirectory = cacheRootDirectory,
+        credentialProvider = credentialProvider,
+        settingsRepository = settingsRepository,
+        steamHttpClientFactory = null,
+        contentTargetFetcher = contentTargetFetcher,
+        playbackCoordinator = playbackCoordinator,
+        sdkSessionBroker = sdkSessionBroker,
+    )
+
+    override suspend fun open(workshopId: Long): WorkshopVideoStreamSession {
+        var openedStream: WorkshopVideoStreamSession? = null
+        try {
+            return withContext(Dispatchers.IO) {
                     require(workshopId > 0L) { "Invalid Workshop item ID" }
                     val preferences = settingsRepository.preferences.first()
                     val activeProxyUrl = preferences.downloadProxyUrl.takeIf { preferences.downloadProxyEnabled }.orEmpty()
-                    val target =
-                        SteamWorkshopContentApi(
-                            steamHttpClientFactory.newBuilder().applyDownloadProxy(activeProxyUrl),
-                        ).fetchContentTarget(workshopId)
+                    val target = contentTargetFetcher(workshopId)
                     check(target.contentTypeHint == "video") { "This item is not a streamable video wallpaper" }
                     // A direct-file item is a file Steam publishes at a URL: there is no depot to resolve,
                     // so the product's own HTTP range reader serves it, exactly as the direct-file download
@@ -59,7 +92,7 @@ internal class SteamWorkshopVideoStreamRepository
                                     remoteUrl = delivery.remoteUrl,
                                     expectedSize = target.expectedSize,
                                     clientBuilder =
-                                        steamHttpClientFactory.newBuilder().applyDownloadProxy(activeProxyUrl),
+                                        checkNotNull(steamHttpClientFactory).newBuilder().applyDownloadProxy(activeProxyUrl),
                                 )
                             is WorkshopDelivery.DepotContent -> openSdkVideoStream(target)
                         }
@@ -85,12 +118,6 @@ internal class SteamWorkshopVideoStreamRepository
          * playback and is released with the stream, so an SDK playback session never outlives the screen
          * that started it. Every failure is a failure - there is no fall-through to the old backend.
          */
-        /** The online-playback cache ceiling the product's settings name, in bytes. */
-        private suspend fun mediaCacheLimitBytes(): Long =
-            settingsRepository.preferences.first().mediaCacheLimitMb
-                .coerceAtLeast(MIN_MEDIA_CACHE_MB)
-                .toLong() * BYTES_PER_MB
-
         private suspend fun openSdkVideoStream(target: WorkshopContentTarget): WorkshopVideoStreamSession {
             val credential =
                 credentialProvider.loadContentCredential()
@@ -134,20 +161,17 @@ internal class SteamWorkshopVideoStreamRepository
                         depotId = resolved.depotId,
                         filePath = videoFile.path,
                         manifestId = resolved.manifestId,
-                        // The product's own online-playback cache setting is this stream's ceiling now: the
-                        // SDK builds one bounded cache per stream, so the size the user chose is the size it
-                        // holds. Zero would leave the SDK's own default in place.
-                        cacheCapacityBytes = mediaCacheLimitBytes(),
+                        // This is process memory owned by one live stream, not the user's media-cache budget.
+                        // Keep that setting intact for a future durable disk cache instead of translating it
+                        // into an SDK allocation whose per-stream ceiling is 64 MiB.
+                        cacheCapacityBytes = MOBILE_STREAM_MEMORY_CACHE_BYTES,
                     )
-                return CoordinatedVideoStreamSession(
-                    SteamContentSdkVideoStreamSession(
-                        sessionLease = sessionLease,
-                        stream = stream,
-                        title = target.title,
-                        fileName = videoFile.path,
-                        contentLength = videoFile.size,
-                    ),
-                    playbackCoordinator.registerPlayback(),
+                return SteamContentSdkVideoStreamSession(
+                    sessionLease = sessionLease,
+                    stream = stream,
+                    title = target.title,
+                    fileName = videoFile.path,
+                    contentLength = videoFile.size,
                 )
             } catch (error: Throwable) {
                 runCatching { sessionLease.close() }
@@ -174,7 +198,5 @@ private class CoordinatedVideoStreamSession(
 
 private const val STREAM_CACHE_DIRECTORY = "steam-video-stream"
 
-/** The settings screen's own floor for the online-playback cache, mirrored here so the stream never asks for
- * a cache smaller than the screen can express. */
-private const val MIN_MEDIA_CACHE_MB = 128
-private const val BYTES_PER_MB = 1024L * 1024L
+/** Fixed process-memory budget for one mobile SDK stream; deliberately independent of disk-cache settings. */
+private const val MOBILE_STREAM_MEMORY_CACHE_BYTES = 32L * 1024L * 1024L

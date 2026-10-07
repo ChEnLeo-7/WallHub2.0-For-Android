@@ -1,6 +1,16 @@
 package com.wallhub.android.data.downloads
 
+import com.wallhub.android.core.model.AccentPreference
+import com.wallhub.android.core.model.AppPreferences
+import com.wallhub.android.core.model.HomeCardAction
+import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.core.model.SteamContentCredential
+import com.wallhub.android.core.model.SteamContentCredentialProvider
+import com.wallhub.android.core.model.ThemePreference
 import java.io.File
+import java.nio.file.Files
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -76,6 +86,43 @@ private class FakeRangeSession : SteamContentSdkSession {
 }
 
 class SteamContentSdkVideoStreamSessionTest {
+    @Test
+    fun `repository open uses a mobile-safe per-stream memory cache when the media cache setting is 512 MB`() =
+        runBlocking {
+            val root = Files.createTempDirectory("video-stream-repository").toFile()
+            val sdkSession = RecordingRepositorySession(root)
+            val repository =
+                SteamWorkshopVideoStreamRepository(
+                    cacheRootDirectory = File(root, "cache"),
+                    credentialProvider =
+                        object : SteamContentCredentialProvider {
+                            override suspend fun loadContentCredential() =
+                                SteamContentCredential("account", "synthetic-test-token")
+                        },
+                    settingsRepository = RepositoryTestSettings(flowOf(AppPreferences(mediaCacheLimitMb = 512))),
+                    contentTargetFetcher = {
+                        WorkshopContentTarget(
+                            publishedFileId = it,
+                            title = "Video",
+                            appId = 431960,
+                            contentManifestId = 42L,
+                            expectedSize = 9L,
+                            contentTypeHint = "video",
+                        )
+                    },
+                    playbackCoordinator = PlaybackDownloadCoordinator(),
+                    sdkSessionBroker = SteamContentSdkSessionBroker { sdkSession },
+                )
+
+            val stream = repository.open(7L)
+            try {
+                assertEquals(32L * 1024L * 1024L, sdkSession.requestedCacheCapacityBytes)
+            } finally {
+                stream.close()
+                root.deleteRecursively()
+            }
+        }
+
     @Test
     fun aReadForwardsTheRangeToTheSdkStream() =
         runBlocking {
@@ -176,4 +223,62 @@ class SteamContentSdkVideoStreamSessionTest {
         val sdkSession: FakeRangeSession,
         val session: SteamContentSdkVideoStreamSession,
     )
+
+    private class RecordingRepositorySession(
+        override val storageRoot: File,
+    ) : SteamContentSdkSession {
+        var requestedCacheCapacityBytes = -1L
+
+        override fun resolveWorkshop(itemId: Long, appIdHint: Long, contentManifestIdHint: Long) =
+            SteamContentSdkResolvedItem(itemId, 431960L, 431961L, 42L, resolved = true)
+
+        override fun manifestFiles(appId: Long, depotId: Long, manifestId: Long) =
+            listOf(SteamContentSdkManifestFile("wallpaper.mp4", 9L, 0))
+
+        override fun openRangeStream(
+            appId: Long,
+            depotId: Long,
+            filePath: String,
+            manifestId: Long,
+            cacheCapacityBytes: Long,
+        ): SteamContentSdkRangeStream {
+            require(cacheCapacityBytes <= 64L * 1024L * 1024L) {
+                "stream cache capacity exceeds the per-stream ceiling"
+            }
+            requestedCacheCapacityBytes = cacheCapacityBytes
+            return FakeRangeStream()
+        }
+
+        override fun startDownload(
+            appId: Long,
+            depotId: Long,
+            manifestId: Long,
+            destination: String?,
+            chunkConcurrency: Int,
+        ): SteamContentSdkTask = error("not used")
+
+        override fun close() = Unit
+    }
+
+    private class RepositoryTestSettings(
+        override val preferences: Flow<AppPreferences>,
+    ) : SettingsRepository {
+        override suspend fun setTheme(theme: ThemePreference) = Unit
+        override suspend fun setAccent(accent: AccentPreference, customColor: String?) = Unit
+        override suspend fun setHomePreferences(
+            pageSize: Int,
+            columns: Int,
+            multiSelect: Boolean,
+            cardAction: HomeCardAction,
+            matureContentEnabled: Boolean,
+        ) = Unit
+        override suspend fun setDownloadPreferences(
+            maxConcurrentDownloads: Int,
+            chunkDownloadConcurrency: Int,
+            proxyUrl: String,
+            mediaCacheLimitMb: Int,
+        ) = Unit
+        override suspend fun setOutputDirectory(treeUri: String, label: String) = Unit
+        override suspend fun clearOutputDirectory() = Unit
+    }
 }
