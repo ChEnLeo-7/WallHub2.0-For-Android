@@ -47,6 +47,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -191,6 +192,7 @@ internal class SteamContentSdkWorkshopRepository
             )
         private val writes = SteamWorkshopWriteCoordinator(reads, recovery)
         private val accountCollectionPager = AccountCollectionPager()
+        private val mutationEpoch = AtomicLong()
         private val detailInteractionCache = WorkshopDetailInteractionCache()
         private val publicPageCache =
             SteamReadCache<WorkshopBrowseQuery, WorkshopPage>(freshMillis = 120_000L, staleMillis = 600_000L)
@@ -223,6 +225,7 @@ internal class SteamContentSdkWorkshopRepository
                     normalized.sort != WorkshopSort.FRIENDS_FAVORITES &&
                         normalized.sort != WorkshopSort.FRIENDS_CREATED
                 if (cacheable) publicPageCache.getFresh(normalized)?.let { return@withContext it }
+                val readEpoch = mutationEpoch.get()
                 val loaded = runCatchingUnavailable {
                     awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, ::awaitSignedInSession)
                     val creatorId = normalized.creatorId?.toLongOrNull()?.takeIf { it > 0L }
@@ -294,7 +297,7 @@ internal class SteamContentSdkWorkshopRepository
                 if (!cacheable) {
                     loaded
                 } else if (loaded != null) {
-                    publicPageCache.put(normalized, loaded)
+                    if (mutationEpoch.get() == readEpoch) publicPageCache.put(normalized, loaded)
                     loaded
                 } else {
                     publicPageCache.getStale(normalized)
@@ -400,6 +403,7 @@ internal class SteamContentSdkWorkshopRepository
                             ?: error("No signed-in Steam session generation is available")
                     cacheKey = AccountPageCacheKey(accountId, generation, normalized)
                     accountPageCache.getFresh(checkNotNull(cacheKey))?.let { return@withContext it }
+                val readEpoch = mutationEpoch.get()
                 val list = normalized.collection.sdkPersonalList()
                 val loaded = if (!normalized.hasInteractiveFilters()) {
                     val source =
@@ -413,7 +417,9 @@ internal class SteamContentSdkWorkshopRepository
                         loadPersonalCollectionPage(accountId, generation, list, normalized, sourcePage, sourcePageSize)
                     }
                 }
-                    accountPageCache.put(checkNotNull(cacheKey), loaded)
+                    if (mutationEpoch.get() == readEpoch) {
+                        accountPageCache.put(checkNotNull(cacheKey), loaded)
+                    }
                     loaded
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -561,6 +567,7 @@ internal class SteamContentSdkWorkshopRepository
         }
 
         private suspend fun invalidateMutationCaches() {
+            mutationEpoch.incrementAndGet()
             detailInteractionCache.invalidateAll()
             publicPageCache.invalidateAll()
             accountPageCache.invalidateAll()
