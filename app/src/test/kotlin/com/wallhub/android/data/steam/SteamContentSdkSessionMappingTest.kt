@@ -77,6 +77,19 @@ class SteamContentSdkSessionMappingTest {
     }
 
     @Test
+    fun reconnectSucceedsOnlyWhenTheTypedFailureIsNone() {
+        assertTrue(SteamContentSdkReconnect().succeeded)
+        SteamContentSdkSessionFailure.entries
+            .filterNot { it == SteamContentSdkSessionFailure.NONE }
+            .forEach { failure ->
+                assertFalse(
+                    SteamContentSdkReconnect(failure = failure).succeeded,
+                    "failure $failure",
+                )
+            }
+    }
+
+    @Test
     fun everyKnownEventKindResolvesToAnEventWithoutARawOrdinal() {
         assertEquals(
             SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED),

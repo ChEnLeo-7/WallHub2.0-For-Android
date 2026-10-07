@@ -148,12 +148,12 @@ INTERNAL
 
 1. SDK：让同步 `sc_session_reconnect` 写入现有per-session `failure_ordinal`，保留bounded detail仅用于诊断。
 2. Kotlin/JNI：`SteamContentSdkReconnect`携带一个failure family，或失败时提供可读取的现有SessionFailure。
-3. Backend在现有`rebuildSession()`内做唯一决策：
-   - `SESSION`：保持Engine，重新认证或要求用户登录；
-   - `TRANSPORT`：保持高层Engine，但必须创建全新底层Connection并换CM候选；
-   - `PROTOCOL_ADAPTER` / `INTERNAL`：废弃Engine并创建新Engine；
-   - 未知：一次完整Engine重建，不在已失败Engine上指数循环。
-4. 只有完整Engine重建失败后才进入5/15/30/60秒退避。
+3. Backend在现有`rebuildSession()`内消费typed结果并保持唯一恢复入口。
+4. SDK的显式Reconnect清理旧网络generation的CM候选健康状态，随后在同一Engine内重新建立Connection和认证；候选配置与顺序不变。
+5. Android只关闭失败的Session generation，不直接关闭可能承载Download、Range Stream或Workshop句柄的共享Engine。
+6. 恢复仍失败时进入既有5/15/30/60秒有界退避。
+
+实现复核表明，在Android层直接重建共享Engine需要追踪所有Native子句柄和Engine generation，会把Session修复扩散成新的资源生命周期框架。因此最终实现把Connection恢复和错误分类留在SDK深模块，Android不承担共享Engine重建。
 
 ### 与SteamKit的一致性
 
@@ -164,15 +164,16 @@ INTERNAL
 
 ## 建议测试
 
-1. `PROTOCOL_ADAPTER`失败后只执行一次Engine重建，不在旧Engine上再次openSession。
-2. `TRANSPORT`失败轮换CM候选，并创建新Connection。
-3. `SESSION_EXPIRED`保留Engine但进入认证流程。
-4. 新Engine认证成功后前台等待请求恢复一次。
-5. 完整重建失败后退避，Cancellation立即结束。
-6. 失败分类和日志不得包含Token、代理认证或签名URL。
+1. Reconnect失败返回typed family和完整的replayable/abandoned disposition。
+2. `TRANSPORT`失败清理旧候选健康状态，并在同一Engine中建立新Connection。
+3. `PROTOCOL_ADAPTER`不会由普通DNS、连接拒绝、超时或远端关闭误触发。
+4. `SESSION_EXPIRED`进入认证流程，不清除更新后的凭据。
+5. 失败后的Session cleanup不能取消后来建立的Session maintenance或Challenge。
+6. 恢复失败后执行有界退避，Cancellation立即结束。
+7. 失败分类和日志不得包含Token、代理认证或签名URL。
 
 ## 结论
 
 不建议盲目增加更多重连Coordinator或Recovery Policy类。SteamKit/DepotDownloader最值得借鉴的是**生命周期清晰**：长生命周期Client/Handlers之下，每次Connect都替换并释放底层Connection；宿主通过一个断开回调决定有限重试。
 
-WallHub当前最小且可靠的改进不是“所有协议失败都重建Engine”，而是先让已有reconnect接口保留失败来源，然后在已有Backend单点决定：重建Connection、重新认证，还是最后手段重建Engine。这样代码改动集中、易测、易定位，也避免架构臃肿。
+WallHub当前最小且可靠的改进不是“所有协议失败都重建Engine”，而是让已有Reconnect接口保留失败来源和请求Disposition，由SDK在原Engine内重建CM Connection并重置旧网络健康状态，Android Backend只处理Session generation和认证状态。这样不会引入跨Download、Range和Workshop句柄的第二套Engine生命周期框架。

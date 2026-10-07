@@ -590,6 +590,35 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
+    fun aFailedStateReadAfterReconnectCannotLeaveTheBackendSignedIn() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 13)),
+            )
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            fixture.session.stateAfterEvents = SteamContentSdkSessionState.AUTHENTICATED
+            val backend = fixture.backend(this, maintenanceIntervalMs = 1_000L)
+
+            backend.restorePersistedSession()
+            advanceTimeBy(1L)
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+
+            fixture.session.stateAfterEvents = SteamContentSdkSessionState.CLOSED
+            fixture.session.failStateAfterReconnect = true
+            advanceTimeBy(1_001L)
+
+            assertEquals(1, fixture.session.reconnects)
+            assertEquals(
+                2,
+                fixture.platform.openCalls,
+                "a state read failure must schedule exactly one restore handoff",
+            )
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+        }
+
+    @Test
     fun closingTheBackendStopsTheMaintenanceLoop() =
         runTest {
             val fixture = Fixture()
@@ -1078,12 +1107,20 @@ class SteamContentSdkSessionBackendTest {
         var logonSupported = true
         var restoreSupported = true
         var stateAfterEvents: SteamContentSdkSessionState = SteamContentSdkSessionState.CLOSED
+        var failStateAfterReconnect = false
+        private var stateFailurePending = false
 
         override fun supportsAccountLogon(): Boolean = logonSupported
 
         override fun supportsRestore(): Boolean = restoreSupported
 
-        override fun state(): SteamContentSdkSessionState = stateAfterEvents
+        override fun state(): SteamContentSdkSessionState {
+            if (stateFailurePending) {
+                stateFailurePending = false
+                error("the SDK could not report reconnect state")
+            }
+            return stateAfterEvents
+        }
 
         override fun pollEvent(timeoutMs: Int): SteamContentSdkSessionEvent? = events.removeFirstOrNull()
 
@@ -1108,6 +1145,8 @@ class SteamContentSdkSessionBackendTest {
             reconnects += 1
             if (reconnectFailure == SteamContentSdkSessionFailure.NONE) {
                 stateAfterEvents = SteamContentSdkSessionState.AUTHENTICATED
+                stateFailurePending = failStateAfterReconnect
+                failStateAfterReconnect = false
             }
             return SteamContentSdkReconnect(failure = reconnectFailure)
         }
