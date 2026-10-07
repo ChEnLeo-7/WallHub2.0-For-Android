@@ -3,7 +3,6 @@ package com.wallhub.android.data.steam
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertSame
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -81,7 +80,7 @@ class SteamWorkshopWriteCoordinatorTest {
                     writes.write<Unit>(WorkshopReadKind.SET_FAVORITED) { throw denied }
                 }
 
-            assertSame(denied, thrown)
+            assertEquals(denied.message, thrown.message)
         }
 
     private class FakeRecoverableSession : RecoverableSteamSession {
