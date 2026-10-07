@@ -167,6 +167,10 @@ internal class SteamContentSdkWorkshopRepository
                 },
             )
         private val accountCollectionPager = AccountCollectionPager()
+        private val publicPageCache =
+            SteamReadCache<WorkshopBrowseQuery, WorkshopPage>(freshMillis = 120_000L, staleMillis = 600_000L)
+        private val accountPageCache =
+            SteamReadCache<AccountWorkshopQuery, WorkshopPage>(freshMillis = 120_000L, staleMillis = 300_000L)
         private val personaCache by lazy {
             SteamPersonaCache(
                 loader = SteamPersonaLoader { accountIds ->
@@ -189,9 +193,10 @@ internal class SteamContentSdkWorkshopRepository
 
         override suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage? =
             withContext(Dispatchers.IO) {
-                runCatchingUnavailable {
+                val normalized = query.normalizedForSdk()
+                publicPageCache.getFresh(normalized)?.let { return@withContext it }
+                val loaded = runCatchingUnavailable {
                     awaitSignedInSession()
-                    val normalized = query.normalizedForSdk()
                     val creatorId = normalized.creatorId?.toLongOrNull()?.takeIf { it > 0L }
                     sdkRead(
                         key = "browse:${normalized.hashCode()}",
@@ -257,6 +262,12 @@ internal class SteamContentSdkWorkshopRepository
                             }
                         page.use { readWorkshopPage(it, normalized.page, filter = normalized) }
                     }
+                }
+                if (loaded != null) {
+                    publicPageCache.put(normalized, loaded)
+                    loaded
+                } else {
+                    publicPageCache.getStale(normalized)
                 }
             }
 
@@ -350,10 +361,12 @@ internal class SteamContentSdkWorkshopRepository
         override suspend fun browseCollection(query: AccountWorkshopQuery): WorkshopPage =
             withContext(Dispatchers.IO) {
                 val normalized = query.normalized()
-                awaitSignedInSession()
-                val accountId = signedInAccountId() ?: error("No signed-in Steam account is available")
+                accountPageCache.getFresh(normalized)?.let { return@withContext it }
+                try {
+                    awaitSignedInSession()
+                    val accountId = signedInAccountId() ?: error("No signed-in Steam account is available")
                 val list = normalized.collection.sdkPersonalList()
-                if (!normalized.hasInteractiveFilters()) {
+                val loaded = if (!normalized.hasInteractiveFilters()) {
                     val source =
                         loadPersonalCollectionPage(accountId, list, normalized, normalized.page, normalized.pageSize)
                     source.copy(items = source.items.filter(normalized::matchesAccountCollectionItem))
@@ -367,6 +380,13 @@ internal class SteamContentSdkWorkshopRepository
                     ) { sourcePage, sourcePageSize ->
                         loadPersonalCollectionPage(accountId, list, normalized, sourcePage, sourcePageSize)
                     }
+                }
+                    accountPageCache.put(normalized, loaded)
+                    loaded
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Throwable) {
+                    accountPageCache.getStale(normalized) ?: throw failure
                 }
             }
 
@@ -448,6 +468,7 @@ internal class SteamContentSdkWorkshopRepository
                 if (confirmed == null) {
                     WorkshopInteraction()
                 } else {
+                    accountPageCache.invalidateAll()
                     // The confirmed half is the SDK's own answer; the favourite half is not part of it and
                     // stays unknown rather than being guessed or re-read.
                     WorkshopInteraction(
@@ -475,6 +496,7 @@ internal class SteamContentSdkWorkshopRepository
                 if (confirmed == null) {
                     WorkshopInteraction()
                 } else {
+                    accountPageCache.invalidateAll()
                     // Mirror of the subscription case: the confirmed favourite is reported, the subscription
                     // half is not carried by this answer.
                     WorkshopInteraction(
