@@ -196,7 +196,14 @@ internal class SteamContentSdkWorkshopRepository
                     sdkRead(
                         key = "browse:${normalized.hashCode()}",
                         kind = WorkshopReadKind.SEARCH,
-                        priority = WorkshopReadPriority.BACKGROUND,
+                        priority =
+                            if (normalized.sort == WorkshopSort.FRIENDS_FAVORITES ||
+                                normalized.sort == WorkshopSort.FRIENDS_CREATED
+                            ) {
+                                WorkshopReadPriority.FOREGROUND
+                            } else {
+                                WorkshopReadPriority.BACKGROUND
+                            },
                     ) {
                         val page =
                             if (creatorId == null) {
