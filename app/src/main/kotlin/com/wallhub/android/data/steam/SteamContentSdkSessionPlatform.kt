@@ -50,6 +50,7 @@ internal enum class SteamContentSdkSessionFailure {
     SESSION_EXPIRED,
     CANCELLED,
     INTERNAL,
+    PROTOCOL_ADAPTER,
     UNKNOWN,
 }
 
@@ -83,11 +84,14 @@ internal data class SteamContentSdkPump(
     val messages: Int = 0,
 )
 
-/** What a rebuild abandoned. Rebuilding never re-sends an operation. */
+/** What a rebuild abandoned or why it failed. Rebuilding never re-sends an operation. */
 internal data class SteamContentSdkReconnect(
     val replayableRequests: Long = 0L,
     val abandonedRequests: Long = 0L,
-)
+    val failure: SteamContentSdkSessionFailure = SteamContentSdkSessionFailure.NONE,
+) {
+    val succeeded: Boolean get() = failure == SteamContentSdkSessionFailure.NONE
+}
 
 /**
  * How a pending logon challenge may be confirmed, mirroring the SDK's own ordinals and bits.
@@ -182,6 +186,7 @@ internal fun steamContentSdkSessionFailure(ordinal: Long): SteamContentSdkSessio
         SessionFailure.SESSION_EXPIRED -> SteamContentSdkSessionFailure.SESSION_EXPIRED
         SessionFailure.CANCELLED -> SteamContentSdkSessionFailure.CANCELLED
         SessionFailure.INTERNAL -> SteamContentSdkSessionFailure.INTERNAL
+        SessionFailure.PROTOCOL_ADAPTER -> SteamContentSdkSessionFailure.PROTOCOL_ADAPTER
         else -> SteamContentSdkSessionFailure.UNKNOWN
     }
 
@@ -298,6 +303,7 @@ internal fun steamContentSdkFailurePhase(failure: SteamContentSdkSessionFailure)
         SteamContentSdkSessionFailure.NETWORK,
         SteamContentSdkSessionFailure.UNSUPPORTED,
         SteamContentSdkSessionFailure.INTERNAL,
+        SteamContentSdkSessionFailure.PROTOCOL_ADAPTER,
         SteamContentSdkSessionFailure.UNKNOWN,
         -> SteamSessionPhase.FAILED
     }
@@ -509,6 +515,7 @@ private class SteamContentSdkEnginePlatformSession(
         return SteamContentSdkReconnect(
             replayableRequests = outcome.replayableRequests,
             abandonedRequests = outcome.abandonedRequests,
+            failure = steamContentSdkSessionFailure(outcome.failureOrdinal),
         )
     }
 

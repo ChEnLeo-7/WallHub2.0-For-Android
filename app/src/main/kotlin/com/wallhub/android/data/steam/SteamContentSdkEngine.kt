@@ -211,7 +211,7 @@ class SteamContentSdkEngine
         internal fun reconnectSessionIfCurrent(expectedGeneration: Long): Boolean {
             val handle = sessions.currentHandle() ?: return false
             if (publishedSessionGeneration != expectedGeneration) return true
-            val reconnected = runCatching { handle.value.reconnect() }.isSuccess
+            val reconnected = runCatching { handle.value.reconnect() }.getOrNull()?.succeeded == true
             if (reconnected) publishedSessionGeneration += 1L
             return reconnected
         }

@@ -105,8 +105,13 @@ internal class SteamContentSdkSessionBackend(
      */
     private val attemptCredentialGeneration = AtomicLong(NO_CREDENTIAL_GENERATION)
 
-    /** The one host-scheduled loop that keeps an established connection alive, or null while none is. */
-    private val maintenanceJob = AtomicReference<Job?>(null)
+    /** The one host-scheduled loop, bound to the exact session generation it maintains. */
+    private class MaintenanceLoop(
+        val session: SteamContentSdkPlatformSession,
+        val job: Job,
+    )
+
+    private val maintenanceJob = AtomicReference<MaintenanceLoop?>(null)
 
     /** The failure class of the attempt that just finished, so a transport failure earns one retry. */
     private val lastAttemptFailure = AtomicReference(SteamContentSdkSessionFailure.NONE)
@@ -257,7 +262,7 @@ internal class SteamContentSdkSessionBackend(
             try {
                 job?.cancelAndJoin()
                 // The maintenance loop must stop before the session it drives is torn down.
-                maintenanceJob.getAndSet(null)?.cancel()
+                maintenanceJob.getAndSet(null)?.job?.cancel()
                 // A pending recovery retry is a standing plan to sign this account back in, which is the
                 // opposite of what this call is doing. It matters most in the failing case below: when the
                 // store cannot be cleared the credential is still there, so a retry left running would read
@@ -308,13 +313,16 @@ internal class SteamContentSdkSessionBackend(
                     // left while their credential sat in the store, and the sign-out also closed the engine
                     // every Workshop read in the app goes through. RESTORABLE is the phase the library's
                     // restore affordance and its automatic retry already key on.
-                    releaseSession()
-                    publish(
-                        SteamSessionPhase.RESTORABLE,
-                        messages.restoreFailed,
-                        hasStoredSession = true,
-                    )
-                    restorePersistedSession()
+                    if (releaseSessionIfCurrent(session)) {
+                        publish(
+                            SteamSessionPhase.RESTORABLE,
+                            messages.restoreFailed,
+                            hasStoredSession = true,
+                        )
+                        restorePersistedSession()
+                    } else {
+                        record("foreground_session_stale")
+                    }
                 }
 
                 else -> Unit
@@ -339,7 +347,7 @@ internal class SteamContentSdkSessionBackend(
         // The maintenance loop drives the session this is about to close, so it stops first - the same order
         // releaseSession uses. Leaving it running leaves it ticking against a closed session for up to one
         // interval, which is the leak this path had.
-        maintenanceJob.getAndSet(null)?.cancel()
+        maintenanceJob.getAndSet(null)?.job?.cancel()
         // Nothing is left to hand the gate to on the shutdown path, so it is opened here rather than by the
         // cancelled attempt's completion handler (which no longer owns it).
         attemptInProgress.set(false)
@@ -601,10 +609,30 @@ internal class SteamContentSdkSessionBackend(
     }
 
     private fun releaseSession() {
-        maintenanceJob.getAndSet(null)?.cancel()
+        maintenanceJob.getAndSet(null)?.job?.cancel()
         pendingChallenge.set(null)
         val session = activeSession.getAndSet(null) ?: return
         runCatching { session.close() }
+    }
+
+    /** Retires only the session whose result is being handled, never a newer replacement. */
+    private fun releaseSessionIfCurrent(expected: SteamContentSdkPlatformSession): Boolean {
+        if (!activeSession.compareAndSet(expected, null)) return false
+        while (true) {
+            val loop = maintenanceJob.get() ?: break
+            if (loop.session !== expected) break
+            if (maintenanceJob.compareAndSet(loop, null)) {
+                loop.job.cancel()
+                break
+            }
+        }
+        while (true) {
+            val challenge = pendingChallenge.get() ?: break
+            if (challenge.session !== expected) break
+            if (pendingChallenge.compareAndSet(challenge, null)) break
+        }
+        runCatching { expected.close() }
+        return true
     }
 
     /**
@@ -689,32 +717,38 @@ internal class SteamContentSdkSessionBackend(
                     throw error
                 }
             }
-        maintenanceJob.getAndSet(job)?.cancel()
+        maintenanceJob.getAndSet(MaintenanceLoop(session, job))?.job?.cancel()
     }
 
     /** Rebuilds a connection a tick found gone. Returns whether the session is usable again. */
     private suspend fun rebuildSession(session: SteamContentSdkPlatformSession): Boolean {
         val rebuilt = runCatching { session.reconnect() }
         val outcome = rebuilt.getOrNull()
-        if (rebuilt.isSuccess && session.state() == SteamContentSdkSessionState.AUTHENTICATED) {
+        val state =
+            if (outcome?.succeeded == true) {
+                runCatching { session.state() }.getOrNull()
+            } else {
+                null
+            }
+        if (outcome?.succeeded == true && state == SteamContentSdkSessionState.AUTHENTICATED) {
             record(
                 "session_rebuilt",
-                detail = "replayable=${outcome?.replayableRequests ?: 0L} abandoned=${outcome?.abandonedRequests ?: 0L}",
+                detail = "replayable=${outcome.replayableRequests} abandoned=${outcome.abandonedRequests}",
             )
             return true
         }
-        // The SDK's own words are the whole diagnostic here: the ABI bridge puts its bounded, redacted text in
-        // the exception, so a class name alone would throw away the reason a rebuild was refused.
+        val failure = outcome?.failure ?: SteamContentSdkSessionFailure.INTERNAL
         record(
             "session_rebuild_failed",
             error = rebuilt.exceptionOrNull(),
-            detail = rebuildFailureReason(rebuilt),
+            detail =
+                "failure=${failure.name.lowercase()} " +
+                    "sdk=${rebuildFailureReason(session, rebuilt) ?: "none"}",
         )
-        // An in-place rebuild reuses the discovery the session was opened with. A full restore re-reads the
-        // candidate list from the directory, which is the retry that exists for the case this cannot cover -
-        // the cached endpoint set being the stale input - so the loss is handed to that path. If that restore
-        // fails too it publishes its own failure and starts no loop, so this cannot become a hot retry.
-        releaseSession()
+        if (!releaseSessionIfCurrent(session)) {
+            record("session_rebuild_stale")
+            return false
+        }
         publish(
             SteamSessionPhase.SIGNING_IN,
             messages.restoringSession,
@@ -725,10 +759,11 @@ internal class SteamContentSdkSessionBackend(
     }
 
     /** The SDK's own explanation of a refused rebuild, bounded and without control characters. */
-    private fun rebuildFailureReason(rebuilt: Result<SteamContentSdkReconnect>): String? =
-        rebuilt
-            .exceptionOrNull()
-            ?.message
+    private fun rebuildFailureReason(
+        session: SteamContentSdkPlatformSession,
+        rebuilt: Result<SteamContentSdkReconnect>,
+    ): String? =
+        (runCatching { session.lastError() }.getOrNull() ?: rebuilt.exceptionOrNull()?.message)
             ?.filter { !it.isISOControl() }
             ?.take(REBUILD_REASON_LENGTH)
             ?.takeIf { it.isNotBlank() }

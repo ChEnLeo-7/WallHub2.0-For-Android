@@ -578,7 +578,7 @@ class SteamContentSdkSessionBackendTest {
             // over a dead socket. CLOSED is the state a re-opened session that cannot authenticate reports, so
             // the handed-off attempt ends by itself and this test does not need to cancel it.
             fixture.session.stateAfterEvents = SteamContentSdkSessionState.CLOSED
-            fixture.session.reconnectSucceeds = false
+            fixture.session.reconnectFailure = SteamContentSdkSessionFailure.PROTOCOL_ADAPTER
             advanceTimeBy(1_001L)
 
             assertEquals(1, fixture.session.reconnects)
@@ -1093,8 +1093,8 @@ class SteamContentSdkSessionBackendTest {
         var reconnects = 0
             private set
 
-        /** Whether a rebuild succeeds; false stands for a connection that cannot be re-established. */
-        var reconnectSucceeds = true
+        /** Typed failure returned by reconnect; NONE stands for a usable replacement connection. */
+        var reconnectFailure = SteamContentSdkSessionFailure.NONE
 
         override fun maintain(autoReconnect: Boolean): SteamContentSdkMaintenance =
             SteamContentSdkMaintenance(SteamContentSdkMaintenanceStep.HEARTBEAT_SENT).also {
@@ -1106,9 +1106,10 @@ class SteamContentSdkSessionBackendTest {
 
         override fun reconnect(): SteamContentSdkReconnect {
             reconnects += 1
-            if (!reconnectSucceeds) error("the retained token was refused")
-            stateAfterEvents = SteamContentSdkSessionState.AUTHENTICATED
-            return SteamContentSdkReconnect()
+            if (reconnectFailure == SteamContentSdkSessionFailure.NONE) {
+                stateAfterEvents = SteamContentSdkSessionState.AUTHENTICATED
+            }
+            return SteamContentSdkReconnect(failure = reconnectFailure)
         }
 
         /** The profile the engine reports for the signed-in account; null stands for one it cannot answer. */
