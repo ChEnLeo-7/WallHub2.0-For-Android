@@ -347,7 +347,9 @@ internal class SteamContentSdkWorkshopRepository
                 val accountId = signedInAccountId() ?: error("No signed-in Steam account is available")
                 val list = normalized.collection.sdkPersonalList()
                 if (!normalized.hasInteractiveFilters()) {
-                    loadPersonalCollectionPage(accountId, list, normalized, normalized.page, normalized.pageSize)
+                    val source =
+                        loadPersonalCollectionPage(accountId, list, normalized, normalized.page, normalized.pageSize)
+                    source.copy(items = source.items.filter(normalized::matchesAccountCollectionItem))
                 } else {
                     val generation =
                         engine.currentSessionGeneration()
@@ -564,15 +566,14 @@ internal class SteamContentSdkWorkshopRepository
         /** Builds one detail from a resolved item, reading each field the app model needs once. */
         private fun readWorkshopDetail(result: WorkshopResult): WorkshopDetail {
             val fields = summaryFieldsOf(result)
-            val authorId = fields.authorIdOrNull()
-            val profile = authorId?.let { readPlayerProfiles(setOf(it))[it] }
             val summary =
                 summaryOf(
                     fields = fields,
                     title = result.text(WorkshopTextField.TITLE).orEmpty(),
                     previewUrl = result.text(WorkshopTextField.PREVIEW_URL),
                     tags = readResultTags(result, fields),
-                    profile = profile,
+                    // Persona enrichment is loaded independently after the detail body is visible.
+                    profile = null,
                     // kSteam's details path labels an unresolved creator, not an unresolved user.
                     unresolvedPlaceholder = WorkshopAuthorPlaceholder.CREATOR,
                 )

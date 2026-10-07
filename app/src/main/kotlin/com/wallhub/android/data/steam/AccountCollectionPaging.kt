@@ -106,8 +106,12 @@ internal const val MAX_ACCOUNT_WORKSHOP_SEARCH_LENGTH = 120
 /** True when a personal-list request needs client-side matching rather than direct source paging. */
 internal fun AccountWorkshopQuery.hasInteractiveFilters(): Boolean =
     searchText.isNotBlank() || exactPhrase || type != null || types.isNotEmpty() || tags.isNotEmpty() ||
-        ratings.isNotEmpty() || genres.isNotEmpty() || officialTags.isNotEmpty() ||
-        excludedOfficialTags.isNotEmpty() || resolutions.isNotEmpty()
+        ratings.isNotEmpty() && ratings != DEFAULT_ACCOUNT_RATINGS ||
+        genres.isNotEmpty() && genres != WorkshopFilterCatalog.genres.toSet() ||
+        officialTags.isNotEmpty() || excludedOfficialTags.isNotEmpty() ||
+        resolutions.isNotEmpty() && resolutions != WorkshopFilterCatalog.resolutions.toSet()
+
+private val DEFAULT_ACCOUNT_RATINGS = setOf(WorkshopRating.EVERYONE)
 
 /**
  * Collects one UI page from bounded personal-list source pages.

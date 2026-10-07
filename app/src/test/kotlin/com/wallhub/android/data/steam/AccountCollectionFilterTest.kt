@@ -82,6 +82,19 @@ class AccountCollectionFilterTest {
     }
 
     @Test
+    fun `library default selections retain direct Steam paging`() {
+        val query =
+            AccountWorkshopQuery(
+                collection = AccountWorkshopCollection.FAVORITES,
+                ratings = setOf(WorkshopRating.EVERYONE),
+                genres = com.wallhub.android.core.model.WorkshopFilterCatalog.genres.toSet(),
+                resolutions = com.wallhub.android.core.model.WorkshopFilterCatalog.resolutions.toSet(),
+            )
+
+        assertFalse(query.hasInteractiveFilters())
+    }
+
+    @Test
     fun `filtered collection scans source pages until requested page is full`() = runTest {
         val requested = AccountWorkshopQuery(
             collection = AccountWorkshopCollection.FAVORITES,

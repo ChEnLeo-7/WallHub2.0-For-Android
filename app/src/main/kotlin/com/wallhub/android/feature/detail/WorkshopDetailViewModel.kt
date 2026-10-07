@@ -16,6 +16,7 @@ import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
+import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.FavoriteState
@@ -208,6 +209,27 @@ class WorkshopDetailViewModel
                             )
                         refreshInteraction()
                         loadComments(refresh = true)
+                        viewModelScope.launch {
+                            val author =
+                                runCatching { accountWorkshopRepository.resolveAuthorDisplayName(workshopId) }
+                                    .getOrNull()
+                                    ?.takeIf(String::isNotBlank)
+                            if (author != null) {
+                                mutableState.value =
+                                    mutableState.value.let { state ->
+                                        val loaded = state.detail ?: return@let state
+                                        state.copy(
+                                            detail =
+                                                loaded.copy(
+                                                    summary = loaded.summary.copy(
+                                                        author = author,
+                                                        authorPlaceholder = WorkshopAuthorPlaceholder.NONE,
+                                                    ),
+                                                ),
+                                        )
+                                    }
+                            }
+                        }
                         viewModelScope.launch {
                             runCatching { workshopDownloads.prewarm(workshopId) }
                         }
