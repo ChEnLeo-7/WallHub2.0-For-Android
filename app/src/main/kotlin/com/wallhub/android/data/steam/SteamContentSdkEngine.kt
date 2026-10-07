@@ -124,7 +124,10 @@ class SteamContentSdkEngine
             val existing = engine
             if (existing != null && canReuseEngine(engineRoute, route)) {
                 sessions.closeCurrent()
-                return runCatching { existing.openSession() }.getOrNull()?.let(sessions::replace)?.value
+                val opened = runCatching { existing.openSession() }.getOrNull() ?: return null
+                val published = sessions.replace(opened).value
+                publishedSessionGeneration += 1L
+                return published
             }
             close()
             val roots =

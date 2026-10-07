@@ -99,6 +99,7 @@ private class SdkSummaryFields(
 /** One resolved Steam profile as the player family reports it, after the avatar URL is built app-side. */
 private data class AccountPageCacheKey(
     val accountId: Long,
+    val sessionGeneration: Long,
     val query: AccountWorkshopQuery,
 )
 
@@ -207,7 +208,7 @@ internal class SteamContentSdkWorkshopRepository
                     awaitSignedInSession()
                     val creatorId = normalized.creatorId?.toLongOrNull()?.takeIf { it > 0L }
                     sdkRead(
-                        key = "browse:${normalized.hashCode()}",
+                        key = "browse:$normalized",
                         kind = WorkshopReadKind.SEARCH,
                         priority =
                             if (normalized.sort == WorkshopSort.FRIENDS_FAVORITES ||
@@ -375,11 +376,11 @@ internal class SteamContentSdkWorkshopRepository
                 try {
                     awaitSignedInSession()
                     val accountId = signedInAccountId() ?: error("No signed-in Steam account is available")
-                    cacheKey = AccountPageCacheKey(accountId, normalized)
+                    val generation =
+                        engine.currentSessionGeneration()
+                            ?: error("No signed-in Steam session generation is available")
+                    cacheKey = AccountPageCacheKey(accountId, generation, normalized)
                     accountPageCache.getFresh(checkNotNull(cacheKey))?.let { return@withContext it }
-                val generation =
-                    engine.currentSessionGeneration()
-                        ?: error("No signed-in Steam session generation is available")
                 val list = normalized.collection.sdkPersonalList()
                 val loaded = if (!normalized.hasInteractiveFilters()) {
                     val source =
@@ -925,10 +926,12 @@ internal class SteamContentSdkWorkshopRepository
             kind: WorkshopReadKind,
             priority: WorkshopReadPriority,
             operation: suspend () -> T,
-        ): T =
-            reads.read(key, kind, priority) {
+        ): T {
+            val generation = engine.currentSessionGeneration()?.toString() ?: "none"
+            return reads.read("session:$generation:$key", kind, priority) {
                 recovery.execute { mutex.withLock { operation() } }
             }
+        }
 
         /**
          * The signed-in account id from the SDK session, or null when nobody is signed in.
