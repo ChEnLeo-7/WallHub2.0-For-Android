@@ -441,6 +441,11 @@ internal class SteamContentSdkWorkshopRepository
                 }
             }
 
+        override suspend fun resolveAuthorDisplayNameByAccountId(accountId: String): String? =
+            accountId.toLongOrNull()
+                ?.takeIf { it > 0L }
+                ?.let { personaCache.get(it)?.displayName }
+
         override suspend fun getInteraction(workshopId: Long): WorkshopInteraction =
             withContext(Dispatchers.IO) {
                 runCatchingUnavailable {
@@ -868,14 +873,10 @@ internal class SteamContentSdkWorkshopRepository
         private fun readPlayerProfiles(accountIds: Set<Long>): Map<Long, SdkPlayerProfile> {
             val ids = accountIds.filter { it > 0L }.distinct()
             if (ids.isEmpty()) return emptyMap()
-            // The SDK refuses a read of more than its own ceiling, and the refusal aborts whatever asked for the
-            // profiles - on a browse page that is the whole page. One page holds more authors than the ceiling,
-            // so the set is read in bounded slices and the answers are merged; a slice that fails contributes
-            // nothing, which is the same placeholder reading a failed single read leaves.
+            // Recoverable session failures must escape to sdkRead; only an authoritative empty profile page is
+            // a negative cache entry.
             return ids.chunked(MAX_SDK_PROFILE_ACCOUNTS).flatMap { slice ->
-                runCatchingUnavailable {
-                    engine.openPlayerProfiles(slice.toLongArray()).use { profiles -> readProfiles(profiles) }
-                }.orEmpty().entries
+                engine.openPlayerProfiles(slice.toLongArray()).use { profiles -> readProfiles(profiles) }.entries
             }.associate { entry -> entry.key to entry.value }
         }
 

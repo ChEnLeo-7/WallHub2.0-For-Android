@@ -211,7 +211,11 @@ class WorkshopDetailViewModel
                         loadComments(refresh = true)
                         viewModelScope.launch {
                             val author =
-                                runCatching { accountWorkshopRepository.resolveAuthorDisplayName(workshopId) }
+                                runCatching {
+                                    detail.summary.creatorId?.let {
+                                        accountWorkshopRepository.resolveAuthorDisplayNameByAccountId(it)
+                                    }
+                                }
                                     .getOrNull()
                                     ?.takeIf(String::isNotBlank)
                             if (author != null) {

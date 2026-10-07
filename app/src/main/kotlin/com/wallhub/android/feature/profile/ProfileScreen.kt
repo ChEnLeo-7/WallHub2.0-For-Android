@@ -48,6 +48,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -76,7 +77,7 @@ class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionReposi
     init {
         viewModelScope.launch {
             var loadedAccount: String? = null
-            session.collect { current ->
+            session.collectLatest { current ->
                 when {
                     current.phase == SteamSessionPhase.SIGNED_IN && current.accountName != loadedAccount -> {
                         loadedAccount = current.accountName

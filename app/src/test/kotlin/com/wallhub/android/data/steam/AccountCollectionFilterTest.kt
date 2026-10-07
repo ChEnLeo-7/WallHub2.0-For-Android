@@ -82,7 +82,7 @@ class AccountCollectionFilterTest {
     }
 
     @Test
-    fun `library default selections retain direct Steam paging`() {
+    fun `library default rating retains filtered cursor semantics`() {
         val query =
             AccountWorkshopQuery(
                 collection = AccountWorkshopCollection.FAVORITES,
@@ -91,7 +91,7 @@ class AccountCollectionFilterTest {
                 resolutions = com.wallhub.android.core.model.WorkshopFilterCatalog.resolutions.toSet(),
             )
 
-        assertFalse(query.hasInteractiveFilters())
+        assertTrue(query.hasInteractiveFilters())
     }
 
     @Test

@@ -588,7 +588,9 @@ class LibraryViewModel
             viewModelScope.launch {
                 val authorName =
                     runCatching {
-                        accountWorkshopRepository.resolveAuthorDisplayName(item.id)
+                        item.creatorId?.let {
+                            accountWorkshopRepository.resolveAuthorDisplayNameByAccountId(it)
+                        } ?: accountWorkshopRepository.resolveAuthorDisplayName(item.id)
                     }.getOrNull()
                 if (!authorName.isNullOrBlank()) {
                     mutableState.value =

@@ -297,6 +297,9 @@ interface AccountWorkshopRepository {
     /** Resolves the public Steam display name for a Workshop item's creator on demand. */
     suspend fun resolveAuthorDisplayName(workshopId: Long): String?
 
+    /** Resolves a known creator account without repeating the Workshop details request. */
+    suspend fun resolveAuthorDisplayNameByAccountId(accountId: String): String? = null
+
     suspend fun getInteraction(workshopId: Long): WorkshopInteraction
 
     suspend fun setSubscribed(
