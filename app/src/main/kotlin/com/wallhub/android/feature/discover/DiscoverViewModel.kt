@@ -88,7 +88,7 @@ class DiscoverViewModel
                                 hasMore = prepared.specs.isNotEmpty(),
                                 error = null,
                             )
-                        appendRails(DISCOVER_INITIAL_RAIL_COUNT)
+                        appendRails(initialDiscoverRailCount(generationSpecs))
                     } catch (error: CancellationException) {
                         throw error
                     } catch (error: Throwable) {

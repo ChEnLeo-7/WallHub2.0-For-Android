@@ -120,8 +120,28 @@ class AccountCollectionFilterTest {
             WorkshopPage(listOf(summary(sourcePage.toLong(), "miss")), sourcePage, hasNextPage = true)
         }
 
-        assertEquals(MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES, calls)
+        assertEquals(FILTER_SOURCE_PAGES_PER_UI_PAGE, calls)
         assertTrue(result.hasNextPage)
+    }
+
+    @Test
+    fun `filtered collection advances its bounded source prefix and terminates at the absolute cap`() = runTest {
+        var calls = 0
+        val result =
+            browseFilteredAccountCollection(
+                AccountWorkshopQuery(
+                    collection = AccountWorkshopCollection.FAVORITES,
+                    page = 4,
+                    pageSize = 2,
+                    searchText = "absent",
+                ),
+            ) { sourcePage, _ ->
+                calls++
+                WorkshopPage(listOf(summary(sourcePage.toLong(), "miss")), sourcePage, hasNextPage = true)
+            }
+
+        assertEquals(MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES, calls)
+        assertFalse(result.hasNextPage)
     }
 
     @Test

@@ -37,6 +37,18 @@ class CommunityWorkshopRepositoryTest {
         }
 
     @Test
+    fun `CM fallback rejects an oversized public details response`() {
+        val repository = repositoryWithPublicResponse(200, "x".repeat(1024 * 1024 + 1))
+
+        val failure =
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { repository.getDetail(WORKSHOP_ID) }
+            }
+
+        assertEquals("Steam manifest response exceeds 1048576 bytes", failure.message)
+    }
+
+    @Test
     fun `CM null keeps public detail failure as an error`() {
         val repository = repositoryWithPublicResponse(503, "temporarily unavailable")
 

@@ -38,27 +38,30 @@ class DiscoverSamplingTest {
     }
 
     @Test
-    fun `expensive focus showcases are deferred beyond the first screen`() {
-        val ordinary = (1..7).map(::spec)
+    fun `initial discovery batch stops before an expensive focus showcase`() {
+        val ordinary = (1..3).map(::spec)
         val creatorShowcase =
             spec(8).copy(id = "focus-creators", category = DiscoverCategory.CREATOR_SHOWCASE)
-        val collectionShowcase =
-            spec(9).copy(id = "focus-collections", category = DiscoverCategory.COLLECTION_SHOWCASE)
+        val later = (4..7).map(::spec)
+        val ranked = deferInitialShowcases(ordinary + creatorShowcase + later)
+        val count = initialDiscoverRailCount(ranked)
 
-        val ordered = deferShowcasesBeyondInitialBatch(listOf(creatorShowcase) + ordinary + collectionShowcase)
-
-        assertTrue(ordered.take(DISCOVER_INITIAL_RAIL_COUNT).none { it.category.isFocusShowcase() })
-        assertEquals(9, ordered.size)
+        assertEquals(5, count)
+        assertTrue(ranked.take(count).none { it.category.isFocusShowcase() })
+        assertEquals(
+            listOf("rail-1", "rail-2", "rail-3", "rail-4", "rail-5", "focus-creators", "rail-6", "rail-7"),
+            ranked.map(DiscoverRailSpec::id),
+        )
     }
 
     @Test
-    fun `focus showcase resolves a bounded stable first page`() {
+    fun `focus showcase resolves a bounded stable oversample`() {
         val children = (1..20).map(::spec)
 
         val first = sampleFeaturedChildren(children, generation = 42L, railId = "focus")
         val second = sampleFeaturedChildren(children, generation = 42L, railId = "focus")
 
-        assertEquals(8, first.size)
+        assertEquals(12, first.size)
         assertEquals(first.map(DiscoverRailSpec::id), second.map(DiscoverRailSpec::id))
     }
 

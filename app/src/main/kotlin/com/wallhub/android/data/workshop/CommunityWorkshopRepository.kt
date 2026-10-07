@@ -16,6 +16,7 @@ import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.matchesSteamWallpaper
 import com.wallhub.android.core.model.workshopSearchIdOrNull
 import com.wallhub.android.core.model.workshopAuthorSearchOrNull
+import com.wallhub.android.data.downloads.readBytesBounded
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -649,7 +650,9 @@ class CommunityWorkshopRepository internal constructor(
                     if (!response.isSuccessful) {
                         throw IOException("Steam public details request failed: HTTP ${response.code}")
                     }
-                    response.body.string()
+                    response.body.byteStream().use { input ->
+                        input.readBytesBounded(MAX_PUBLIC_DETAILS_BYTES).toString(Charsets.UTF_8)
+                    }
                 }
             return CommunityWorkshopParser.parseDetails(body)
         }
@@ -691,3 +694,5 @@ class CommunityWorkshopRepository internal constructor(
             }
         }
     }
+
+private const val MAX_PUBLIC_DETAILS_BYTES = 1024 * 1024

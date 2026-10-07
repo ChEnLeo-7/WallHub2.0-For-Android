@@ -125,8 +125,11 @@ internal suspend fun browseFilteredAccountCollection(
     val matches = mutableListOf<WorkshopSummary>()
     var sourcePage = 1
     var sourceExhausted = false
+    val sourcePageLimit =
+        (normalized.page * FILTER_SOURCE_PAGES_PER_UI_PAGE)
+            .coerceAtMost(MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES)
     while (
-        sourcePage <= MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES &&
+        sourcePage <= sourcePageLimit &&
             !sourceExhausted &&
             matches.size.toLong() < requiredMatches
     ) {
@@ -140,7 +143,8 @@ internal suspend fun browseFilteredAccountCollection(
             matches = matches,
             page = normalized.page,
             pageSize = normalized.pageSize,
-            sourceExhausted = sourceExhausted,
+            sourceExhausted =
+                sourceExhausted || sourcePageLimit == MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES,
         )
     return com.wallhub.android.core.model.WorkshopPage(
         items = selection.items,
@@ -149,4 +153,5 @@ internal suspend fun browseFilteredAccountCollection(
     )
 }
 
-internal const val MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES = 10
+internal const val FILTER_SOURCE_PAGES_PER_UI_PAGE = 10
+internal const val MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES = 40

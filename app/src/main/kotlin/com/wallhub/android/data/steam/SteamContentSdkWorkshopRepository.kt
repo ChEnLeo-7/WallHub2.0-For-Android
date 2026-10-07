@@ -46,12 +46,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 
 /**
  * One Workshop summary row as the SDK reports it: a field number per ordinal, in a fixed slot order.
@@ -308,7 +306,7 @@ internal class SteamContentSdkWorkshopRepository
                 }
             }
 
-        /** One bounded adapter operation; SDK unavailability and timeout remain failures for Library retry/UI. */
+        /** One personal-list operation; SDK unavailability remains a failure for Library retry/UI. */
         private suspend fun loadPersonalCollectionPage(
             accountId: Long,
             list: Int,
@@ -316,20 +314,18 @@ internal class SteamContentSdkWorkshopRepository
             sourcePage: Int,
             sourcePageSize: Int,
         ): WorkshopPage =
-            withSdkOperationTimeout {
-                mutex.withLock {
-                    val page =
-                        engine.workshopPersonalItems(
-                            accountId = accountId,
-                            list = list,
-                            pageSize = sourcePageSize,
-                            pageOffset = pageOffsetOf(sourcePage, sourcePageSize),
-                            // A personal read is answered within one App's Workshop: without the scope the
-                            // service omits each row's own tags and file type.
-                            appId = WALLPAPER_ENGINE_APP_ID.toLong(),
-                        )
-                    page.use { readWorkshopPage(it, sourcePage, query.collection) }
-                }
+            mutex.withLock {
+                val page =
+                    engine.workshopPersonalItems(
+                        accountId = accountId,
+                        list = list,
+                        pageSize = sourcePageSize,
+                        pageOffset = pageOffsetOf(sourcePage, sourcePageSize),
+                        // A personal read is answered within one App's Workshop: without the scope the
+                        // service omits each row's own tags and file type.
+                        appId = WALLPAPER_ENGINE_APP_ID.toLong(),
+                    )
+                page.use { readWorkshopPage(it, sourcePage, query.collection) }
             }
 
         /**
@@ -856,14 +852,6 @@ private inline fun <T> runCatchingUnavailable(block: () -> T): T? =
         null
     }
 
-/** Applies the adapter's operation deadline without exposing a new exception in the repository ABI. */
-private suspend fun <T> withSdkOperationTimeout(block: suspend () -> T): T =
-    try {
-        withTimeout(SDK_OPERATION_TIMEOUT_MS) { block() }
-    } catch (error: TimeoutCancellationException) {
-        throw IllegalStateException("Steam Content SDK Workshop operation timed out", error)
-    }
-
 /**
  * The tag texts one page row states, in the response's own order.
  *
@@ -1059,9 +1047,6 @@ private const val MAX_SDK_PROFILE_ACCOUNTS = 16
 /** How long a workshop read waits for the engine's session to be signed in, and how often it looks. */
 private const val SESSION_READY_ATTEMPTS = 20
 private const val SESSION_READY_DELAY_MS = 250L
-
-/** Bounds one SDK adapter call while leaving multi-page filtering cancellable between operations. */
-private const val SDK_OPERATION_TIMEOUT_MS = 15_000L
 
 private const val MAX_SDK_COMMENT_PAGE_SIZE = 50
 private const val MAX_SDK_PAGE_SIZE = 50
