@@ -7,6 +7,7 @@ import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** Identifies the signed-in account session whose personal collection is being traversed. */
 internal data class AccountCollectionScope(
