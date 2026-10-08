@@ -27,6 +27,7 @@ internal class SteamLoopbackTlsBridge
     ) {
         private val executor = Executors.newCachedThreadPool()
         private val authorization = createAuthorization()
+        private val cdnAuthorization = createAuthorization()
         private val serverSocket =
             ServerSocket().apply {
                 reuseAddress = false
@@ -41,6 +42,9 @@ internal class SteamLoopbackTlsBridge
 
         val proxyAuthorization: String
             get() = authorization
+
+        val cdnProxyAuthorization: String
+            get() = cdnAuthorization
 
         init {
             executor.execute(::acceptLoop)
@@ -62,7 +66,14 @@ internal class SteamLoopbackTlsBridge
                 clientSocket.soTimeout = HEADER_TIMEOUT_MS
                 clientSocket.tcpNoDelay = true
                 val request = readConnectRequest(clientSocket)
-                if (request.authorization != authorization) {
+                val authenticatedCdn = request.authorization == cdnAuthorization
+                val host =
+                    if (authenticatedCdn) {
+                        SteamDomainPolicy.requireAuthenticatedCdnEndpoint(request.host, request.port)
+                    } else {
+                        SteamDomainPolicy.requireSupportedEndpoint(request.host, request.port)
+                    }
+                if (!authenticatedCdn && request.authorization != authorization) {
                     writeResponse(
                         clientSocket,
                         "HTTP/1.1 407 Proxy Authentication Required\r\n" +
@@ -71,14 +82,19 @@ internal class SteamLoopbackTlsBridge
                     )
                     return
                 }
-                val host = SteamDomainPolicy.requireSupportedEndpoint(request.host, request.port)
-                val route = accessManager.acceleratedRoute(host, request.port)
+                val route =
+                    if (authenticatedCdn) {
+                        accessManager.awaitAuthenticatedCdnRoute(host, request.port)
+                    } else {
+                        accessManager.acceleratedRoute(host, request.port)
+                    }
                 selectedRoute = route
                 val upstream =
                     noSniTlsDialer.connect(
                         hostname = host,
                         candidates = route.addresses,
                         port = request.port,
+                        authenticatedCdn = authenticatedCdn,
                         onFailure = { address, error ->
                             accessManager.recordAcceleratedFailure(
                                 hostname = host,

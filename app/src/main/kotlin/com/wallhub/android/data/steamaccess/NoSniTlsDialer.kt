@@ -50,9 +50,15 @@ internal class NoSniTlsDialer internal constructor(
         hostname: String,
         candidates: List<InetAddress>,
         port: Int = HTTPS_PORT,
+        authenticatedCdn: Boolean = false,
         onFailure: (InetAddress, Throwable) -> Unit = { _, _ -> },
     ): AuthenticatedSteamSocket {
-        val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
+        val host =
+            if (authenticatedCdn) {
+                SteamDomainPolicy.requireAuthenticatedCdnEndpoint(hostname, port)
+            } else {
+                SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
+            }
         val addresses = candidates.distinctBy(InetAddress::getHostAddress).take(MAX_RACE_ADDRESSES)
         if (addresses.isEmpty()) throw IOException("No no-SNI candidates for $host")
 
@@ -69,7 +75,7 @@ internal class NoSniTlsDialer internal constructor(
                         if (index > 0) Thread.sleep(raceDelayMs)
                         DialAttempt(
                             address = address,
-                            result = runCatching { authenticate(host, address, port, openedSockets) },
+                            result = runCatching { authenticate(host, address, port, openedSockets, omitSni = !authenticatedCdn) },
                         )
                     },
                 )
@@ -113,8 +119,14 @@ internal class NoSniTlsDialer internal constructor(
         hostname: String,
         address: InetAddress,
         port: Int = HTTPS_PORT,
+        authenticatedCdn: Boolean = false,
     ): SteamProbeResult {
-        val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
+        val host =
+            if (authenticatedCdn) {
+                SteamDomainPolicy.requireAuthenticatedCdnEndpoint(hostname, port)
+            } else {
+                SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
+            }
         val startedAt = System.nanoTime()
         val successful =
             runCatching {
@@ -123,6 +135,7 @@ internal class NoSniTlsDialer internal constructor(
                     address = address,
                     port = port,
                     openedSockets = null,
+                    omitSni = !authenticatedCdn,
                 ).socket.close()
             }.isSuccess
         return SteamProbeResult(
@@ -137,6 +150,7 @@ internal class NoSniTlsDialer internal constructor(
         address: InetAddress,
         port: Int,
         openedSockets: ConcurrentLinkedQueue<Socket>?,
+        omitSni: Boolean,
     ): AuthenticatedSteamSocket {
         val startedAt = System.nanoTime()
         val rawSocket = Socket()
@@ -148,7 +162,7 @@ internal class NoSniTlsDialer internal constructor(
             val sslSocket =
                 socketFactory.createSocket(
                     rawSocket,
-                    address.hostAddress,
+                    if (omitSni) address.hostAddress else hostname,
                     port,
                     true,
                 ) as SSLSocket
@@ -161,7 +175,7 @@ internal class NoSniTlsDialer internal constructor(
             sslSocket.sslParameters =
                 sslSocket.sslParameters.apply {
                     endpointIdentificationAlgorithm = null
-                    serverNames = Collections.emptyList()
+                    if (omitSni) serverNames = Collections.emptyList()
                 }
             sslSocket.startHandshake()
             if (!hostnameVerifier.verify(hostname, sslSocket.session)) {
