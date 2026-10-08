@@ -1,11 +1,6 @@
 package com.wallhub.android.data.steam
 
 import com.wallhub.android.core.model.SettingsRepository
-import com.wallhub.android.data.steamaccess.SteamLoopbackTlsBridge
-import com.wallhub.android.data.steamaccess.WallHubPrivateCa
-import java.net.InetSocketAddress
-import java.security.cert.X509Certificate
-import java.util.Base64
 import io.steamcontent.sdk.SessionTransportKind
 import java.net.URI
 import javax.inject.Inject
@@ -32,8 +27,6 @@ internal class SteamContentSdkRouteFactory
     constructor(
         private val cmEndpoints: SteamCmEndpointSource,
         private val settingsRepository: SettingsRepository,
-        private val bridge: SteamLoopbackTlsBridge,
-        private val privateCa: WallHubPrivateCa,
     ) {
         /**
          * The route this platform actually has.
@@ -62,15 +55,9 @@ internal class SteamContentSdkRouteFactory
             refreshLive: Boolean = false,
         ): SteamContentSdkEngine.Route? {
             val candidates = cmEndpoints.candidates(refreshLive = refreshLive) ?: return null
-            val configuredProxy = cdnProxy ?: configuredProxyUri()
-            val bridgeAddress = bridge.proxy.address() as InetSocketAddress
-            val bridgeHost = bridgeAddress.address?.hostAddress ?: bridgeAddress.hostString
             return sdkPlatformRoute(
                 cmCandidates = candidates,
-                configuredProxyUri = configuredProxy,
-                acceleratedCdnProxy = configuredProxy?.let { null } ?: "$bridgeHost:${bridgeAddress.port}",
-                acceleratedCdnProxyAuthorization = configuredProxy?.let { null } ?: bridge.cdnProxyAuthorization,
-                acceleratedTrustRootPem = configuredProxy?.let { null } ?: privateCa.rootCertificate().toPemBundle(),
+                configuredProxyUri = cdnProxy ?: configuredProxyUri(),
             )
         }
 
@@ -95,19 +82,14 @@ internal class SteamContentSdkRouteFactory
 internal fun sdkPlatformRoute(
     cmCandidates: String,
     configuredProxyUri: String?,
-    acceleratedCdnProxy: String? = null,
-    acceleratedCdnProxyAuthorization: String? = null,
-    acceleratedTrustRootPem: String? = null,
 ): SteamContentSdkEngine.Route {
-    val configuredProxy = configuredProxyUri?.let(::sdkHttpProxyAuthority)
+    val proxy = configuredProxyUri?.let(::sdkHttpProxyAuthority)
     return SteamContentSdkEngine.Route(
         cmCandidates = cmCandidates,
         connectAttempts = cmCandidates.lineSequence().count { it.isNotBlank() }.coerceAtMost(MAX_CM_CANDIDATES),
         transport = SessionTransportKind.WEBSOCKET,
-        cdnProxy = configuredProxy ?: acceleratedCdnProxy,
-        cdnProxyAuthorization = acceleratedCdnProxyAuthorization.takeIf { configuredProxy == null && acceleratedCdnProxy != null },
-        cmProxy = configuredProxy,
-        extraTrustRootPem = acceleratedTrustRootPem.takeIf { configuredProxy == null && acceleratedCdnProxy != null },
+        cdnProxy = proxy,
+        cmProxy = proxy,
     )
 }
 
@@ -125,11 +107,6 @@ internal fun sdkHttpProxyAuthority(raw: String): String {
     val port = uri.port.takeIf { it != -1 } ?: DEFAULT_HTTP_PROXY_PORT
     val host = uri.host.let { if (':' in it) "[$it]" else it }
     return "$host:$port"
-}
-
-private fun X509Certificate.toPemBundle(): String {
-    val body = Base64.getMimeEncoder(64, byteArrayOf('\n'.code.toByte())).encodeToString(encoded)
-    return "-----BEGIN CERTIFICATE-----\n$body\n-----END CERTIFICATE-----\n"
 }
 
 private const val DEFAULT_HTTP_PROXY_PORT = 80

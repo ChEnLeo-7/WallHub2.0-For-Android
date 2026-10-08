@@ -71,7 +71,6 @@ class SteamContentSdkEngine
             val cmCandidates: String? = null,
             val connectAttempts: Int = 0,
             val cdnProxy: String? = null,
-            val cdnProxyAuthorization: String? = null,
             val cmProxy: String? = null,
             val cmProxyAuthorization: String? = null,
             val transport: Int = SessionTransportKind.STEAM3,
@@ -150,7 +149,6 @@ class SteamContentSdkEngine
                         cmCandidates = route.cmCandidates,
                         storageRoot = storageRootPath,
                         cdnProxy = route.cdnProxy,
-                        cdnProxyAuthorization = route.cdnProxyAuthorization,
                         cmProxy = route.cmProxy,
                         cmProxyAuthorization = route.cmProxyAuthorization,
                         // ADR 0010: the platform owns the device identity, and Steam's logons carry it.

@@ -29,6 +29,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.Call
 import okhttp3.Connection
 import okhttp3.ConnectionPool
@@ -65,7 +67,6 @@ class SteamAccessManager
             val generation: Long,
             val port: Int,
             val addresses: List<InetAddress>,
-            val authenticatedCdn: Boolean = false,
         )
 
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -87,6 +88,7 @@ class SteamAccessManager
         private val routeSnapshots = SteamRouteSnapshotCache()
         private val refreshInFlight = ConcurrentHashMap.newKeySet<String>()
         private val scheduledRefreshes = ConcurrentHashMap<String, Job>()
+        private val routeRefreshMutex = Mutex()
         private val routeGeneration = AtomicLong()
         private val routePrewarmTracker = SteamRoutePrewarmTracker()
         private val preferencesReady = CompletableDeferred<Unit>()
@@ -262,31 +264,6 @@ class SteamAccessManager
             return lookup.route?.accelerated == true
         }
 
-        /** Resolves one Steam-directory-selected CDN host after the bridge has authenticated its SDK caller. */
-        internal fun awaitAuthenticatedCdnRoute(
-            hostname: String,
-            port: Int,
-            timeoutMs: Long = COLD_ROUTE_WAIT_MS,
-        ): AcceleratedRoute {
-            val host = SteamDomainPolicy.requireAuthenticatedCdnEndpoint(hostname, port)
-            val selectedNetworkType = networkType
-            val selectedGeneration = routeGeneration.get()
-            val key = steamRouteCacheKey(selectedNetworkType, host, port)
-            requestRouteRefresh(host, port, authenticatedCdn = true)
-            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
-            while (System.nanoTime() < deadline) {
-                if (routeGeneration.get() != selectedGeneration || networkType != selectedNetworkType) {
-                    throw IOException("Steam route changed while resolving $host")
-                }
-                val route = routeSnapshots.lookup(key).route
-                if (route?.accelerated == true && route.addresses.isNotEmpty()) {
-                    return AcceleratedRoute(selectedNetworkType, selectedGeneration, port, route.addresses, authenticatedCdn = true)
-                }
-                Thread.sleep(COLD_ROUTE_POLL_MS)
-            }
-            throw IOException("No accelerated route for $host")
-        }
-
         internal fun acceleratedRoute(
             hostname: String,
             port: Int,
@@ -334,12 +311,7 @@ class SteamAccessManager
                 route.port != port
             ) return false
             commitTunnel()
-            val host =
-                if (route.authenticatedCdn) {
-                    SteamDomainPolicy.requireAuthenticatedCdnEndpoint(hostname, port)
-                } else {
-                    SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
-                }
+            val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
             routeStore.recordSuccess(route.networkType, host, port, address, elapsedMs)
             mutableState.value =
                 mutableState.value.copy(
@@ -362,17 +334,10 @@ class SteamAccessManager
             error: Throwable,
         ) {
             if (routeGeneration.get() != generation || networkType != selectedNetworkType) return
-            val host =
-                if (SteamDomainPolicy.supportsEndpoint(hostname, port)) {
-                    SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
-                } else {
-                    SteamDomainPolicy.requireAuthenticatedCdnEndpoint(hostname, port)
-                }
+            val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
             routeStore.recordFailure(selectedNetworkType, host, port, address)
             val key = steamRouteCacheKey(selectedNetworkType, host, port)
-            if (routeSnapshots.removeAddress(key, address)) {
-                requestRouteRefresh(host, port, authenticatedCdn = !SteamDomainPolicy.supportsEndpoint(host, port))
-            }
+            if (routeSnapshots.removeAddress(key, address)) requestRouteRefresh(host, port)
             recordDiagnostic(
                 level = DiagnosticLevel.WARNING,
                 message = "Steam no-SNI candidate failed",
@@ -436,17 +401,11 @@ class SteamAccessManager
         private fun requestRouteRefresh(
             hostname: String,
             port: Int,
-            authenticatedCdn: Boolean = false,
         ) {
-            val host =
-                if (authenticatedCdn) {
-                    SteamDomainPolicy.requireAuthenticatedCdnEndpoint(hostname, port)
-                } else {
-                    SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
-                }
-            if (!authenticatedCdn && !SteamDomainPolicy.accelerates(host)) return
+            val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
+            if (!SteamDomainPolicy.accelerates(host)) return
             val settings = preferences
-            if (!settings.steamAccessEnabled && !authenticatedCdn) return
+            if (!settings.steamAccessEnabled) return
             val selectedNetworkType = networkType
             val generation = routeGeneration.get()
             val cacheKey = steamRouteCacheKey(selectedNetworkType, host, port)
@@ -456,18 +415,21 @@ class SteamAccessManager
             val fallbackAvailable = routeSnapshots.lookup(cacheKey).route?.available == true
             scope.launch {
                 try {
-                    if (routeGeneration.get() != generation || networkType != selectedNetworkType) return@launch
                     val route =
-                        buildRoute(
-                            hostname = host,
-                            port = port,
-                            selectedNetworkType = selectedNetworkType,
-                            settings = settings,
-                            hostsSnapshot = hostsSnapshot,
-                            generation = generation,
-                            fallbackAvailable = fallbackAvailable,
-                            forceAccelerated = authenticatedCdn,
-                        )
+                        routeRefreshMutex.withLock {
+                            if (routeGeneration.get() != generation || networkType != selectedNetworkType) {
+                                return@withLock null
+                            }
+                            buildRoute(
+                                hostname = host,
+                                port = port,
+                                selectedNetworkType = selectedNetworkType,
+                                settings = settings,
+                                hostsSnapshot = hostsSnapshot,
+                                generation = generation,
+                                fallbackAvailable = fallbackAvailable,
+                            )
+                        } ?: return@launch
                     val selected =
                         commitRouteRefresh(
                             cacheKey = cacheKey,
@@ -489,7 +451,6 @@ class SteamAccessManager
                         selectedNetworkType = selectedNetworkType,
                         generation = generation,
                         freshUntil = nextRefreshAt,
-                        authenticatedCdn = authenticatedCdn,
                     )
                 } catch (error: Throwable) {
                     completeFailedRouteRefresh(
@@ -554,7 +515,6 @@ class SteamAccessManager
             selectedNetworkType: String,
             generation: Long,
             freshUntil: Long,
-            authenticatedCdn: Boolean = false,
         ) {
             val cacheKey = steamRouteCacheKey(selectedNetworkType, hostname, port)
             val job =
@@ -562,7 +522,7 @@ class SteamAccessManager
                     delay((freshUntil - System.currentTimeMillis()).coerceAtLeast(MIN_REFRESH_DELAY_MS))
                     if (routeGeneration.get() == generation && preferences.steamAccessEnabled) {
                         val lookup = routeSnapshots.lookup(cacheKey)
-                        if (lookup.shouldRefresh) requestRouteRefresh(hostname, port, authenticatedCdn)
+                        if (lookup.shouldRefresh) requestRouteRefresh(hostname, port)
                     }
                 }
             scheduledRefreshes.put(cacheKey, job)?.cancel()
@@ -583,7 +543,6 @@ class SteamAccessManager
             hostsSnapshot: Map<String, List<InetAddress>>,
             generation: Long,
             fallbackAvailable: Boolean,
-            forceAccelerated: Boolean = false,
         ): SteamCachedRoute {
             val startedAt = System.currentTimeMillis()
             mutableState.value =
@@ -594,10 +553,9 @@ class SteamAccessManager
                     message = context.getString(R.string.backend_steam_access_checking_host, hostname),
                     updatedAt = startedAt,
                 )
-            val systemAddresses =
-                systemEndpointLookup(hostname).filter { address -> !forceAccelerated || isAuthenticatedCdnRouteAddress(address) }
+            val systemAddresses = systemEndpointLookup(hostname)
             val directHealthy = directProbe.rank(hostname, systemAddresses, port).any(SteamProbeResult::successful)
-            if (directHealthy && !forceAccelerated && !SteamDomainPolicy.isCdnHost(hostname)) {
+            if (directHealthy) {
                 val now = System.currentTimeMillis()
                 val route =
                     SteamCachedRoute(
@@ -623,22 +581,14 @@ class SteamAccessManager
             }
 
             val resolvedAddresses =
-                if (forceAccelerated) {
-                    dohResolver.resolve(
-                        hostnames = listOf(hostname),
-                        endpoints = settings.enabledSteamAccessDohEndpoints(),
-                        includeIpv6 = currentNetworkSupportsIpv6(),
-                    )
-                } else {
-                    when (settings.steamAccessMode) {
-                        SteamAccessMode.HOSTS -> hostsSnapshot[hostname].orEmpty()
-                        SteamAccessMode.SMART_DOH ->
-                            dohResolver.resolve(
-                                hostnames = listOf(hostname) + SteamAccessRoutes.aliases(hostname),
-                                endpoints = settings.enabledSteamAccessDohEndpoints(),
-                                includeIpv6 = currentNetworkSupportsIpv6(),
-                            )
-                    }
+                when (settings.steamAccessMode) {
+                    SteamAccessMode.HOSTS -> hostsSnapshot[hostname].orEmpty()
+                    SteamAccessMode.SMART_DOH ->
+                        dohResolver.resolve(
+                            hostnames = listOf(hostname) + SteamAccessRoutes.aliases(hostname),
+                            endpoints = settings.enabledSteamAccessDohEndpoints(),
+                            includeIpv6 = currentNetworkSupportsIpv6(),
+                        )
                 }
             val coolingDown = routeStore.coolingDownAddresses(selectedNetworkType, hostname, port)
             val candidates =
@@ -648,10 +598,9 @@ class SteamAccessManager
                     addAll(systemAddresses)
                     addAll(SteamAccessRoutes.seeds(hostname))
                 }.distinctBy(InetAddress::getHostAddress)
-                    .filter { address -> !forceAccelerated || isAuthenticatedCdnRouteAddress(address) }
                     .filterNot { address -> address.hostAddress.orEmpty() in coolingDown }
                     .take(MAX_NO_SNI_PROBE_ADDRESSES)
-            val tasks = candidates.map { address -> Callable { noSniTlsDialer.probe(hostname, address, port, authenticatedCdn = forceAccelerated) } }
+            val tasks = candidates.map { address -> Callable { noSniTlsDialer.probe(hostname, address, port) } }
             val probeResults =
                 if (tasks.isEmpty()) {
                     emptyList()
@@ -858,45 +807,10 @@ class SteamAccessManager
             const val FAILED_REFRESH_RETRY_MS = 60_000L
             const val MAX_NO_SNI_PROBE_ADDRESSES = 4
             const val NO_SNI_PROBE_BUDGET_MS = 6_000L
-            const val COLD_ROUTE_WAIT_MS = 20_000L
-            const val COLD_ROUTE_POLL_MS = 25L
         }
     }
 
 internal fun preferIpv4Addresses(addresses: List<InetAddress>): List<InetAddress> {
     val ipv4 = addresses.filterIsInstance<Inet4Address>()
     return if (ipv4.isEmpty()) addresses else ipv4
-}
-
-internal fun isAuthenticatedCdnRouteAddress(address: InetAddress): Boolean {
-    val bytes = address.address.map(Byte::toInt).map { it and 0xff }
-    val vpnFakeAddress = bytes.size == 4 && bytes[0] == 198 && bytes[1] in 18..19
-    return vpnFakeAddress || isPublicInternetAddress(address)
-}
-
-internal fun isPublicInternetAddress(address: InetAddress): Boolean {
-    if (
-        address.isAnyLocalAddress ||
-        address.isLoopbackAddress ||
-        address.isLinkLocalAddress ||
-        address.isSiteLocalAddress ||
-        address.isMulticastAddress
-    ) return false
-    val bytes = address.address.map(Byte::toInt).map { it and 0xff }
-    return when (bytes.size) {
-        4 ->
-            when {
-                bytes[0] == 0 || bytes[0] >= 224 -> false
-                bytes[0] == 100 && bytes[1] in 64..127 -> false
-                bytes[0] == 192 && bytes[1] == 0 && bytes[2] in 0..2 -> false
-                bytes[0] == 198 && bytes[1] in 18..19 -> false
-                bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100 -> false
-                bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113 -> false
-                else -> true
-            }
-        16 ->
-            !(bytes[0] and 0xfe == 0xfc ||
-                (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8))
-        else -> false
-    }
 }

@@ -16,17 +16,14 @@ import kotlin.test.assertTrue
 
 class SteamAccessRoutesTest {
     @Test
-    fun `gateway supports exact Steam services plus constrained CM and CDN hosts`() {
+    fun `gateway supports exact core services and CM subdomains only`() {
         assertTrue(SteamAccessRoutes.supports("steamcommunity.com"))
         assertTrue(SteamAccessRoutes.supports("www.steamcommunity.com"))
         assertTrue(SteamAccessRoutes.supports("api.steampowered.com"))
         assertTrue(SteamAccessRoutes.supports("community.steam-api.com"))
         assertFalse(SteamAccessRoutes.supports("evil.steamcommunity.com"))
         assertFalse(SteamAccessRoutes.supports("steamuserimages-a.akamaihd.net"))
-        assertTrue(SteamAccessRoutes.supports("cache1.steamcontent.com"))
-        assertTrue(SteamAccessRoutes.supports("steamcdn-a.akamaihd.net"))
-        assertTrue(SteamAccessRoutes.supports("cdn.steamstatic.com"))
-        assertFalse(SteamAccessRoutes.supports("evilsteamcontent.com"))
+        assertFalse(SteamAccessRoutes.supports("cache1.steamcontent.com"))
         assertTrue(SteamAccessRoutes.supports("cmp1-sea1.steamserver.net"))
         assertFalse(SteamAccessRoutes.supports("steamserver.net"))
         assertFalse(SteamAccessRoutes.supports(".steamserver.net"))
@@ -76,26 +73,6 @@ class SteamAccessRoutesTest {
     }
 
     @Test
-    fun `authenticated CDN endpoints accept directory hostnames only on HTTPS`() {
-        assertEquals("st.dl.eccdnx.com", SteamDomainPolicy.requireAuthenticatedCdnEndpoint("ST.DL.ECCDNX.COM.", 443))
-        assertEquals("xz.pphimalayanrt.com", SteamDomainPolicy.requireAuthenticatedCdnEndpoint("xz.pphimalayanrt.com", 443))
-        assertFailsWith<IllegalArgumentException> { SteamDomainPolicy.requireAuthenticatedCdnEndpoint("127.0.0.1", 443) }
-        assertFailsWith<IllegalArgumentException> { SteamDomainPolicy.requireAuthenticatedCdnEndpoint("metadata", 443) }
-        assertFailsWith<IllegalArgumentException> { SteamDomainPolicy.requireAuthenticatedCdnEndpoint("evil.example", 80) }
-    }
-
-    @Test
-    fun `authenticated CDN routes retain public addresses only`() {
-        assertTrue(isPublicInternetAddress(InetAddress.getByName("8.8.8.8")))
-        assertTrue(isPublicInternetAddress(InetAddress.getByName("2606:4700:4700::1111")))
-        assertTrue(isAuthenticatedCdnRouteAddress(InetAddress.getByName("198.18.4.168")))
-        assertFalse(isPublicInternetAddress(InetAddress.getByName("198.18.4.168")))
-        listOf("127.0.0.1", "10.0.0.1", "169.254.1.1", "192.168.1.1", "100.64.0.1", "::1", "fc00::1", "fe80::1").forEach {
-            address -> assertFalse(isPublicInternetAddress(InetAddress.getByName(address)), address)
-        }
-    }
-
-    @Test
     fun `private route policy rejects lookalike hosts and normalizes exact hosts`() {
         assertEquals("steamcommunity.com", SteamDomainPolicy.requireSupported("STEAMCOMMUNITY.COM."))
         assertEquals(
@@ -111,10 +88,6 @@ class SteamAccessRoutesTest {
         assertFalse(SteamDomainPolicy.supportsEndpoint("cmp1-sgp1.steamserver.net", 27016))
         assertFalse(SteamDomainPolicy.supportsEndpoint("cmp1-sgp1.steamserver.net", 27051))
         assertFalse(SteamDomainPolicy.supportsEndpoint("steamcommunity.com", 27020))
-        assertTrue(SteamDomainPolicy.supportsEndpoint("cache1.steamcontent.com", 443))
-        assertTrue(SteamDomainPolicy.supportsEndpoint("steamcdn-a.akamaihd.net", 443))
-        assertFalse(SteamDomainPolicy.supportsEndpoint("cache1.steamcontent.com", 80))
-        assertFalse(SteamDomainPolicy.supportsEndpoint("evilsteamcontent.com", 443))
     }
 
     @Test
