@@ -11,12 +11,13 @@ internal object SteamDomainPolicy {
 
     fun supports(hostname: String): Boolean {
         val host = normalize(hostname)
-        return host in coreHosts || isCmHost(host) || isCdnHost(host)
+        return host in coreHosts ||
+            (host.length > STEAM_CM_HOST_SUFFIX.length && host.endsWith(STEAM_CM_HOST_SUFFIX))
     }
 
     fun accelerates(hostname: String): Boolean {
         val host = normalize(hostname)
-        return host in coreHosts || isCdnHost(host)
+        return host in coreHosts
     }
 
     fun requireSupported(hostname: String): String =
@@ -33,7 +34,6 @@ internal object SteamDomainPolicy {
         return when {
             host in coreHosts -> port == STEAM_HTTPS_PORT
             isCmHost(host) -> port == STEAM_HTTPS_PORT || port in STEAM_CM_MIN_PORT..STEAM_CM_MAX_PORT
-            isCdnHost(host) -> port == STEAM_HTTPS_PORT
             else -> false
         }
     }
@@ -69,17 +69,7 @@ internal object SteamDomainPolicy {
     internal fun isCmHost(hostname: String): Boolean =
         hostname.length > STEAM_CM_HOST_SUFFIX.length && hostname.endsWith(STEAM_CM_HOST_SUFFIX)
 
-    internal fun isCdnHost(hostname: String): Boolean {
-        val host = normalize(hostname)
-        return host == "steamcdn-a.akamaihd.net" ||
-            host == "cdn.steamstatic.com" ||
-            (host.length > STEAM_CONTENT_HOST_SUFFIX.length && host.endsWith(STEAM_CONTENT_HOST_SUFFIX)) ||
-            (host.length > STEAM_CS_HOST_SUFFIX.length && host.endsWith(STEAM_CS_HOST_SUFFIX))
-    }
-
     private const val STEAM_CM_HOST_SUFFIX = ".steamserver.net"
-    private const val STEAM_CONTENT_HOST_SUFFIX = ".steamcontent.com"
-    private const val STEAM_CS_HOST_SUFFIX = ".cs.steampowered.com"
 }
 
 internal const val STEAM_HTTPS_PORT = 443

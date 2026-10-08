@@ -264,31 +264,6 @@ class SteamAccessManager
             return lookup.route?.accelerated == true
         }
 
-        /** Resolves one cold dynamic CDN host through the existing single-flight route refresh. */
-        internal fun awaitAcceleratedRoute(
-            hostname: String,
-            port: Int,
-            timeoutMs: Long = COLD_ROUTE_WAIT_MS,
-        ): AcceleratedRoute {
-            val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
-            val selectedNetworkType = networkType
-            val selectedGeneration = routeGeneration.get()
-            val key = steamRouteCacheKey(selectedNetworkType, host, port)
-            requestRouteRefresh(host, port)
-            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
-            while (System.nanoTime() < deadline) {
-                if (routeGeneration.get() != selectedGeneration || networkType != selectedNetworkType) {
-                    throw IOException("Steam route changed while resolving $host")
-                }
-                val route = routeSnapshots.lookup(key).route
-                if (route?.accelerated == true && route.addresses.isNotEmpty()) {
-                    return AcceleratedRoute(selectedNetworkType, selectedGeneration, port, route.addresses)
-                }
-                Thread.sleep(COLD_ROUTE_POLL_MS)
-            }
-            throw IOException("No accelerated route for $host")
-        }
-
         internal fun acceleratedRoute(
             hostname: String,
             port: Int,
@@ -580,7 +555,7 @@ class SteamAccessManager
                 )
             val systemAddresses = systemEndpointLookup(hostname)
             val directHealthy = directProbe.rank(hostname, systemAddresses, port).any(SteamProbeResult::successful)
-            if (directHealthy && !SteamDomainPolicy.isCdnHost(hostname)) {
+            if (directHealthy) {
                 val now = System.currentTimeMillis()
                 val route =
                     SteamCachedRoute(
@@ -832,8 +807,6 @@ class SteamAccessManager
             const val FAILED_REFRESH_RETRY_MS = 60_000L
             const val MAX_NO_SNI_PROBE_ADDRESSES = 4
             const val NO_SNI_PROBE_BUDGET_MS = 6_000L
-            const val COLD_ROUTE_WAIT_MS = 8_000L
-            const val COLD_ROUTE_POLL_MS = 25L
         }
     }
 

@@ -16,17 +16,14 @@ import kotlin.test.assertTrue
 
 class SteamAccessRoutesTest {
     @Test
-    fun `gateway supports exact Steam services plus constrained CM and CDN hosts`() {
+    fun `gateway supports exact core services and CM subdomains only`() {
         assertTrue(SteamAccessRoutes.supports("steamcommunity.com"))
         assertTrue(SteamAccessRoutes.supports("www.steamcommunity.com"))
         assertTrue(SteamAccessRoutes.supports("api.steampowered.com"))
         assertTrue(SteamAccessRoutes.supports("community.steam-api.com"))
         assertFalse(SteamAccessRoutes.supports("evil.steamcommunity.com"))
         assertFalse(SteamAccessRoutes.supports("steamuserimages-a.akamaihd.net"))
-        assertTrue(SteamAccessRoutes.supports("cache1.steamcontent.com"))
-        assertTrue(SteamAccessRoutes.supports("steamcdn-a.akamaihd.net"))
-        assertTrue(SteamAccessRoutes.supports("cdn.steamstatic.com"))
-        assertFalse(SteamAccessRoutes.supports("evilsteamcontent.com"))
+        assertFalse(SteamAccessRoutes.supports("cache1.steamcontent.com"))
         assertTrue(SteamAccessRoutes.supports("cmp1-sea1.steamserver.net"))
         assertFalse(SteamAccessRoutes.supports("steamserver.net"))
         assertFalse(SteamAccessRoutes.supports(".steamserver.net"))
@@ -76,16 +73,6 @@ class SteamAccessRoutesTest {
     }
 
     @Test
-    fun `unauthenticated loopback tunnels are restricted to HTTPS CDN hosts`() {
-        assertTrue(acceptsSteamProxyAuthorization(ConnectRequest("cache1.steamcontent.com", 443, null), "Basic secret"))
-        assertTrue(acceptsSteamProxyAuthorization(ConnectRequest("steamcommunity.com", 443, "Basic secret"), "Basic secret"))
-        assertFalse(acceptsSteamProxyAuthorization(ConnectRequest("steamcommunity.com", 443, null), "Basic secret"))
-        assertFalse(acceptsSteamProxyAuthorization(ConnectRequest("cache1.steamcontent.com", 80, null), "Basic secret"))
-        assertFalse(acceptsSteamProxyAuthorization(ConnectRequest("evilsteamcontent.com", 443, null), "Basic secret"))
-        assertFalse(acceptsSteamProxyAuthorization(ConnectRequest("cache1.steamcontent.com", 443, "Basic wrong"), "Basic secret"))
-    }
-
-    @Test
     fun `private route policy rejects lookalike hosts and normalizes exact hosts`() {
         assertEquals("steamcommunity.com", SteamDomainPolicy.requireSupported("STEAMCOMMUNITY.COM."))
         assertEquals(
@@ -101,10 +88,6 @@ class SteamAccessRoutesTest {
         assertFalse(SteamDomainPolicy.supportsEndpoint("cmp1-sgp1.steamserver.net", 27016))
         assertFalse(SteamDomainPolicy.supportsEndpoint("cmp1-sgp1.steamserver.net", 27051))
         assertFalse(SteamDomainPolicy.supportsEndpoint("steamcommunity.com", 27020))
-        assertTrue(SteamDomainPolicy.supportsEndpoint("cache1.steamcontent.com", 443))
-        assertTrue(SteamDomainPolicy.supportsEndpoint("steamcdn-a.akamaihd.net", 443))
-        assertFalse(SteamDomainPolicy.supportsEndpoint("cache1.steamcontent.com", 80))
-        assertFalse(SteamDomainPolicy.supportsEndpoint("evilsteamcontent.com", 443))
     }
 
     @Test

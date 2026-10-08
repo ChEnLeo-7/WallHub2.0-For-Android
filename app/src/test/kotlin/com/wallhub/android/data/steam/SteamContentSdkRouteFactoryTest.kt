@@ -49,37 +49,6 @@ class SteamContentSdkRouteFactoryTest {
     }
 
     @Test
-    fun `the platform acceleration bridge applies only to CDN traffic`() {
-        val route =
-            sdkPlatformRoute(
-                cmCandidates = "cm1.steamserver.net:443",
-                configuredProxyUri = null,
-                acceleratedCdnProxy = "127.0.0.1:32123",
-                acceleratedTrustRootPem = "private-root",
-            )
-
-        assertEquals("127.0.0.1:32123", route.cdnProxy)
-        assertNull(route.cmProxy)
-        assertNull(route.cmProxyAuthorization)
-        assertEquals("private-root", route.extraTrustRootPem)
-    }
-
-    @Test
-    fun `a configured proxy takes precedence over the platform acceleration bridge`() {
-        val route =
-            sdkPlatformRoute(
-                cmCandidates = "cm1.steamserver.net:443",
-                configuredProxyUri = "http://proxy.example:3128",
-                acceleratedCdnProxy = "127.0.0.1:32123",
-                acceleratedTrustRootPem = "private-root",
-            )
-
-        assertEquals("proxy.example:3128", route.cdnProxy)
-        assertEquals("proxy.example:3128", route.cmProxy)
-        assertNull(route.extraTrustRootPem)
-    }
-
-    @Test
     fun `the supported HTTP proxy applies to both CDN and CM traffic without credentials`() {
         val route =
             sdkPlatformRoute(
