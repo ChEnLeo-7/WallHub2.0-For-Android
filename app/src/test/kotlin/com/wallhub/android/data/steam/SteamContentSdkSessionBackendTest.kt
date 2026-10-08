@@ -616,6 +616,9 @@ class SteamContentSdkSessionBackendTest {
                 "a state read failure must schedule exactly one restore handoff",
             )
             assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+            // The successful handoff starts a fresh periodic maintenance loop; stop it so runTest does not
+            // correctly keep advancing an intentionally infinite schedule during teardown.
+            backend.close()
         }
 
     @Test
