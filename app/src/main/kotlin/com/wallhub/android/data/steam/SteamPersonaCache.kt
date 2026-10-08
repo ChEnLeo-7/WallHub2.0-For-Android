@@ -40,8 +40,17 @@ internal class SteamPersonaCache(
     private val mutex = Mutex()
     private val entries = LinkedHashMap<Long, CacheEntry>(maxEntries, 0.75f, true)
     private val flights = mutableMapOf<Long, Flight>()
+    private var generation = 0L
 
     suspend fun get(accountId: Long): SteamProfile? = getAll(listOf(accountId))[accountId]
+
+    suspend fun invalidateAll() {
+        mutex.withLock {
+            generation += 1
+            entries.clear()
+            flights.clear()
+        }
+    }
 
     suspend fun getAll(accountIds: Collection<Long>): Map<Long, SteamProfile> {
         val requestedIds = accountIds.toSet()
@@ -71,7 +80,7 @@ internal class SteamPersonaCache(
                 }
 
                 if (missing.isNotEmpty()) {
-                    val flight = Flight(accountIds = missing, waiters = missing.size)
+                    val flight = Flight(accountIds = missing, generation = generation, waiters = missing.size)
                     missing.forEach { accountId ->
                         flights[accountId] = flight
                         awaited[accountId] = flight
@@ -106,17 +115,19 @@ internal class SteamPersonaCache(
             withContext(NonCancellable) {
                 mutex.withLock {
                     flight.accountIds.forEach { accountId ->
-                        val profile = loaded[accountId]
-                        putEntry(
-                            accountId,
-                            CacheEntry(
-                                profile = profile,
-                                expiresAtMillis =
-                                    loadedAt.saturatingAdd(
-                                        if (profile == null) negativeTtlMillis else positiveTtlMillis,
-                                    ),
-                            ),
-                        )
+                        if (flight.generation == generation) {
+                            val profile = loaded[accountId]
+                            putEntry(
+                                accountId,
+                                CacheEntry(
+                                    profile = profile,
+                                    expiresAtMillis =
+                                        loadedAt.saturatingAdd(
+                                            if (profile == null) negativeTtlMillis else positiveTtlMillis,
+                                        ),
+                                ),
+                            )
+                        }
                         flights.remove(accountId, flight)
                     }
                 }
@@ -173,6 +184,7 @@ internal class SteamPersonaCache(
 
     private class Flight(
         val accountIds: Set<Long>,
+        val generation: Long,
         var waiters: Int,
         val result: CompletableDeferred<Map<Long, SteamProfile>> = CompletableDeferred(),
         var job: Job? = null,

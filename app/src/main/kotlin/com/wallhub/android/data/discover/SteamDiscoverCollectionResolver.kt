@@ -20,6 +20,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -32,7 +33,8 @@ class SteamDiscoverCollectionResolver
         private val networkBudget: DiscoverNetworkBudget,
         clientFactory: SteamHttpClientFactory,
     ) : DiscoverCollectionResolver {
-        private val memberCache = ConcurrentHashMap<Long, CachedCollectionMembers>()
+        private val memberCache = ConcurrentHashMap<MemberCacheKey, CachedCollectionMembers>()
+        private val cacheGeneration = AtomicLong()
         private val client =
             clientFactory
                 .newBuilder()
@@ -40,6 +42,11 @@ class SteamDiscoverCollectionResolver
                 .readTimeout(30, TimeUnit.SECONDS)
                 .callTimeout(45, TimeUnit.SECONDS)
                 .build()
+
+        override suspend fun invalidateDiscoverCache() {
+            cacheGeneration.incrementAndGet()
+            memberCache.clear()
+        }
 
         override suspend fun browse(
             collectionId: Long,
@@ -71,7 +78,8 @@ class SteamDiscoverCollectionResolver
 
         private suspend fun loadMembers(collectionId: Long): List<Long> = withContext(Dispatchers.IO) {
             val now = System.currentTimeMillis()
-            memberCache[collectionId]?.takeIf { now - it.loadedAtMillis < COLLECTION_CACHE_TTL_MILLIS }?.let {
+            val key = MemberCacheKey(cacheGeneration.get(), collectionId)
+            memberCache[key]?.takeIf { now - it.loadedAtMillis < COLLECTION_CACHE_TTL_MILLIS }?.let {
                 return@withContext it.memberIds
             }
             val form =
@@ -95,8 +103,8 @@ class SteamDiscoverCollectionResolver
                     }
                     parseCollectionMemberIds(response.body.string(), collectionId)
                 }
-            if (memberIds.isNotEmpty()) {
-                memberCache[collectionId] = CachedCollectionMembers(memberIds, now)
+            if (memberIds.isNotEmpty() && key.generation == cacheGeneration.get()) {
+                memberCache[key] = CachedCollectionMembers(memberIds, now)
             }
             memberIds
         }
@@ -136,6 +144,11 @@ internal fun parseCollectionMemberIds(
     }
     return emptyList()
 }
+
+private data class MemberCacheKey(
+    val generation: Long,
+    val collectionId: Long,
+)
 
 private data class CachedCollectionMembers(
     val memberIds: List<Long>,

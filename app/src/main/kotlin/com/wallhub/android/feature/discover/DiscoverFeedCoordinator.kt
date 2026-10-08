@@ -47,6 +47,12 @@ class DiscoverFeedCoordinator
         private val requestBudget = Semaphore(DISCOVER_NETWORK_CONCURRENCY)
 
         suspend fun prepareGeneration(generation: Long): DiscoverGeneration {
+            invalidateDiscoverCaches(
+                metadataRepository,
+                unifiedWorkshopRepository,
+                workshopRepository,
+                collectionResolver,
+            )
             val preferences = settingsRepository.preferences.first()
             val snapshot = metadataRepository.loadMetadata()
             val rawCandidates =
@@ -504,6 +510,18 @@ class DiscoverFeedCoordinator
             drillDown = DiscoverDrillDown.FULL_QUERY_RESULTS,
         )
     }
+
+internal suspend fun invalidateDiscoverCaches(
+    metadataRepository: OfficialDiscoverMetadataRepository,
+    unifiedWorkshopRepository: SteamUnifiedWorkshopRepository,
+    workshopRepository: WorkshopRepository,
+    collectionResolver: DiscoverCollectionResolver,
+) {
+    metadataRepository.invalidateDiscoverCache()
+    unifiedWorkshopRepository.invalidateDiscoverCache()
+    workshopRepository.invalidateDiscoverCache()
+    collectionResolver.invalidateDiscoverCache()
+}
 
 internal fun DiscoverCategory.isFocusShowcase(): Boolean =
     this == DiscoverCategory.CREATOR_SHOWCASE || this == DiscoverCategory.COLLECTION_SHOWCASE

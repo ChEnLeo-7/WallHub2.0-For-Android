@@ -42,6 +42,12 @@ internal enum class WorkshopReadOutcome {
     CANCELLED,
 }
 
+/** Separates public reads started on opposite sides of a Discover cache invalidation. */
+internal fun publicWorkshopReadKey(
+    cacheEpoch: Long,
+    operation: String,
+): String = "public:$cacheEpoch:$operation"
+
 /**
  * Non-sensitive timing data. It deliberately contains no request key, account, query, item ID, or error text.
  */

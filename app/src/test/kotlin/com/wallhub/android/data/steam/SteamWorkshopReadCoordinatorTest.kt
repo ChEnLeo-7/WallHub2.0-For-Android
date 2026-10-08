@@ -85,6 +85,48 @@ class SteamWorkshopReadCoordinatorTest {
     }
 
     @Test
+    fun `Discover invalidation epoch prevents public read from joining an older flight`() = runTest {
+        val coordinator = SteamWorkshopReadCoordinator(maxConcurrent = 2, scope = backgroundScope)
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val secondEntered = CompletableDeferred<Unit>()
+        val calls = AtomicInteger()
+        val operation = "detail:42"
+
+        val beforeInvalidation = async {
+            coordinator.read(
+                publicWorkshopReadKey(cacheEpoch = 0L, operation = operation),
+                WorkshopReadKind.DETAILS,
+                WorkshopReadPriority.FOREGROUND,
+            ) {
+                calls.incrementAndGet()
+                firstEntered.complete(Unit)
+                releaseFirst.await()
+                "stale"
+            }
+        }
+        firstEntered.await()
+
+        val afterInvalidation = async {
+            coordinator.read(
+                publicWorkshopReadKey(cacheEpoch = 1L, operation = operation),
+                WorkshopReadKind.DETAILS,
+                WorkshopReadPriority.FOREGROUND,
+            ) {
+                calls.incrementAndGet()
+                secondEntered.complete(Unit)
+                "fresh"
+            }
+        }
+
+        secondEntered.await()
+        assertEquals("fresh", afterInvalidation.await())
+        assertEquals(2, calls.get())
+        releaseFirst.complete(Unit)
+        assertEquals("stale", beforeInvalidation.await())
+    }
+
+    @Test
     fun `cancelling one joiner preserves shared read for another caller`() = runTest {
         val coordinator = SteamWorkshopReadCoordinator(maxConcurrent = 1, scope = backgroundScope)
         val entered = CompletableDeferred<Unit>()

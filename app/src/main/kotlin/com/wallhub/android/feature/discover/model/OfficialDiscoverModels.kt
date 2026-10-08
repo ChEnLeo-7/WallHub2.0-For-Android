@@ -1,6 +1,9 @@
 package com.wallhub.android.feature.discover.model
 
 interface OfficialDiscoverMetadataRepository {
+    /** Drops process-local data before a user-requested realtime Discover generation. */
+    suspend fun invalidateDiscoverCache() = Unit
+
     suspend fun loadMetadata(): DiscoverMetadataSnapshot
 }
 

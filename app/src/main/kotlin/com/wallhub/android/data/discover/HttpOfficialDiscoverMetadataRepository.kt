@@ -35,6 +35,10 @@ class HttpOfficialDiscoverMetadataRepository
         @Volatile
         private var cachedSnapshot: DiscoverMetadataSnapshot? = null
 
+        override suspend fun invalidateDiscoverCache() {
+            refreshMutex.withLock { cachedSnapshot = null }
+        }
+
         override suspend fun loadMetadata(): DiscoverMetadataSnapshot = refreshMutex.withLock {
             val now = System.currentTimeMillis()
             cachedSnapshot?.takeUnless { it.isExpired(now) }?.let {

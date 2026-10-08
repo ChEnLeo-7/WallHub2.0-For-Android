@@ -98,12 +98,15 @@ fun FormalWallHubApp(
             }
         }
         val navigateTo: (TopLevelDestination) -> Unit = { destination ->
+            discoverRefreshRequest =
+                nextDiscoverRefreshRequest(
+                    currentRequest = discoverRefreshRequest,
+                    currentDestination = currentTopLevelDestination,
+                    selectedDestination = destination,
+                )
             when {
                 destination == TopLevelDestination.HOME &&
                     currentTopLevelDestination == TopLevelDestination.HOME -> homeScrollRequest += 1
-
-                destination == TopLevelDestination.DISCOVER &&
-                    currentTopLevelDestination == TopLevelDestination.DISCOVER -> discoverRefreshRequest += 1
 
                 currentTopLevelDestination == destination -> Unit
 
@@ -144,6 +147,20 @@ fun FormalWallHubApp(
         }
     }
 }
+
+internal fun nextDiscoverRefreshRequest(
+    currentRequest: Int,
+    currentDestination: TopLevelDestination?,
+    selectedDestination: TopLevelDestination?,
+): Int =
+    if (
+        selectedDestination == TopLevelDestination.DISCOVER &&
+        currentDestination != null
+    ) {
+        currentRequest + 1
+    } else {
+        currentRequest
+    }
 
 @Composable
 private fun SteamSessionRestoreBanner(

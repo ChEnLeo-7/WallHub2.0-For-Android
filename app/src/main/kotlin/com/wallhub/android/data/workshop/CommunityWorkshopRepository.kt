@@ -29,6 +29,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -55,7 +56,13 @@ class CommunityWorkshopRepository internal constructor(
                 .build(),
     )
 
-        private val steamProfiles = ConcurrentHashMap<String, SteamWebProfile>()
+        private val steamProfiles = ConcurrentHashMap<SteamProfileCacheKey, SteamWebProfile>()
+        private val steamProfileGeneration = AtomicLong()
+
+        override suspend fun invalidateDiscoverCache() {
+            steamProfileGeneration.incrementAndGet()
+            steamProfiles.clear()
+        }
 
         override suspend fun browse(query: WorkshopBrowseQuery): WorkshopPage =
             withContext(Dispatchers.IO) {
@@ -491,7 +498,9 @@ class CommunityWorkshopRepository internal constructor(
                         value.filter(Char::isDigit).takeIf(String::isNotBlank)
                     }.toSet()
             if (validIds.isEmpty() || steamApiKey.isBlank()) return emptyMap()
-            val missing = validIds.filterNot(steamProfiles::containsKey)
+            val generation = steamProfileGeneration.get()
+            val keys = validIds.associateWith { steamId -> SteamProfileCacheKey(generation, steamId) }
+            val missing = validIds.filter { steamId -> steamProfiles[keys.getValue(steamId)] == null }
             missing.chunked(MAX_STEAM_PROFILE_BATCH_SIZE).forEach { batch ->
                 val url =
                     Uri
@@ -525,16 +534,18 @@ class CommunityWorkshopRepository internal constructor(
                             val steamId = player.optString("steamid").takeIf(String::isNotBlank) ?: continue
                             val displayName = player.optString("personaname").trim()
                             if (displayName.isBlank()) continue
-                            steamProfiles[steamId] =
-                                SteamWebProfile(
-                                    displayName = displayName,
-                                    avatarUrl = player.optString("avatarfull").takeIf(String::isNotBlank),
-                                )
+                            if (generation == steamProfileGeneration.get()) {
+                                steamProfiles[SteamProfileCacheKey(generation, steamId)] =
+                                    SteamWebProfile(
+                                        displayName = displayName,
+                                        avatarUrl = player.optString("avatarfull").takeIf(String::isNotBlank),
+                                    )
+                            }
                         }
                     }
                 }
             }
-            return validIds.mapNotNull { steamId -> steamProfiles[steamId]?.let { steamId to it } }.toMap()
+            return validIds.mapNotNull { steamId -> steamProfiles[keys.getValue(steamId)]?.let { steamId to it } }.toMap()
         }
 
         private fun browseViaCommunity(normalizedQuery: WorkshopBrowseQuery): WorkshopPage {
@@ -703,5 +714,10 @@ class CommunityWorkshopRepository internal constructor(
             }
         }
     }
+
+private data class SteamProfileCacheKey(
+    val generation: Long,
+    val steamId: String,
+)
 
 private const val MAX_PUBLIC_DETAILS_BYTES = 1024 * 1024

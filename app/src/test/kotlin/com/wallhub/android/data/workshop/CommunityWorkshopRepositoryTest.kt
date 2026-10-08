@@ -101,6 +101,16 @@ class CommunityWorkshopRepositoryTest {
         )
     }
 
+    private object ApiSettingsRepository : SettingsRepository by CmSettingsRepository {
+        override val preferences: Flow<AppPreferences> =
+            MutableStateFlow(
+                AppPreferences(
+                    steamWorkshopDataSource = SteamWorkshopDataSource.WEB_API,
+                    steamApiKey = "test-key",
+                ),
+            )
+    }
+
     private object CmSettingsRepository : SettingsRepository {
         override val preferences: Flow<AppPreferences> =
             MutableStateFlow(

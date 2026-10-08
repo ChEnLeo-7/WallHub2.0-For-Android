@@ -8,6 +8,9 @@ import kotlinx.coroutines.sync.withPermit
 
 /** Resolves a public Workshop collection independently from ordinary browse queries. */
 interface DiscoverCollectionResolver {
+    /** Drops fallback collection membership before a realtime generation. */
+    suspend fun invalidateDiscoverCache() = Unit
+
     suspend fun browse(
         collectionId: Long,
         page: Int = 1,

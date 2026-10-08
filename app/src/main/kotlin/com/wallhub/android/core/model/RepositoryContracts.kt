@@ -247,6 +247,9 @@ interface WorkshopVideoStreamRepository {
 
 /** Public Workshop data over signed-in or anonymous Steam Connection Manager sessions. */
 interface SteamUnifiedWorkshopRepository {
+    /** Drops process-local list and persona data before a realtime Discover generation. */
+    suspend fun invalidateDiscoverCache() = Unit
+
     /** Returns null only when a CM session cannot be established or the RPC is unavailable. */
     suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage?
 
@@ -268,6 +271,9 @@ interface SteamUnifiedWorkshopRepository {
 }
 
 interface WorkshopRepository {
+    /** Drops process-local enrichment data before a realtime Discover generation. */
+    suspend fun invalidateDiscoverCache() = Unit
+
     /** Reads a public Wallpaper Engine Workshop page without requiring a Steam Web API key. */
     suspend fun browse(query: WorkshopBrowseQuery): WorkshopPage
 

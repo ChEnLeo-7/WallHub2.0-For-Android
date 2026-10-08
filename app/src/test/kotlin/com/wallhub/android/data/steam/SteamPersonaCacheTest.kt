@@ -198,6 +198,52 @@ class SteamPersonaCacheTest {
     }
 
     @Test
+    fun `Discover invalidation forces a fresh persona load`() = runTest {
+        var calls = 0
+        val cache =
+            SteamPersonaCache(
+                loader = SteamPersonaLoader {
+                    calls += 1
+                    mapOf(1L to SteamProfile("profile-$calls"))
+                },
+                scope = backgroundScope,
+            )
+
+        assertEquals(SteamProfile("profile-1"), cache.get(1L))
+        assertEquals(SteamProfile("profile-1"), cache.get(1L))
+        cache.invalidateAll()
+        assertEquals(SteamProfile("profile-2"), cache.get(1L))
+    }
+
+    @Test
+    fun `invalidation is a generation barrier for an in-flight persona load`() = runTest {
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        var calls = 0
+        val cache =
+            SteamPersonaCache(
+                loader = SteamPersonaLoader {
+                    val call = ++calls
+                    if (call == 1) {
+                        firstEntered.complete(Unit)
+                        releaseFirst.await()
+                    }
+                    mapOf(1L to SteamProfile("profile-$call"))
+                },
+                scope = backgroundScope,
+            )
+
+        val oldRequest = async { cache.get(1L) }
+        firstEntered.await()
+        cache.invalidateAll()
+        assertEquals(SteamProfile("profile-2"), cache.get(1L))
+        releaseFirst.complete(Unit)
+        assertEquals(SteamProfile("profile-1"), oldRequest.await())
+        assertEquals(SteamProfile("profile-2"), cache.get(1L))
+        assertEquals(2, calls)
+    }
+
+    @Test
     fun `empty lookup does not invoke the loader`() = runTest {
         var called = false
         val cache =
