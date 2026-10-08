@@ -317,8 +317,27 @@ internal class SteamContentSdkWorkshopRepository
 
         override suspend fun getPublicDetails(workshopIds: List<Long>): List<WorkshopDetail> =
             withContext(Dispatchers.IO) {
-                // The AAR has no batch details entry point, so one single-item read replaces kSteam's batch.
-                workshopIds.distinct().mapNotNull { id -> loadWorkshopDetail(id) }
+                val ids = workshopIds.filter { it > 0L }.distinct()
+                if (ids.isEmpty()) return@withContext emptyList()
+                runCatchingUnavailable {
+                    awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, ::awaitSignedInSession)
+                    val readEpoch = publicCacheEpoch.get()
+                    ids.chunked(MAX_SDK_DETAILS_ITEMS).flatMap { batch ->
+                        sdkRead(
+                            key = publicWorkshopReadKey(readEpoch, "details:${batch.joinToString(",")}"),
+                            kind = WorkshopReadKind.DETAILS,
+                            // Discover enrichment must not jump visible list searches in the single native lane.
+                            priority = WorkshopReadPriority.BACKGROUND,
+                        ) {
+                            val entries = engine.openWorkshopItems(batch.toLongArray(), WALLPAPER_ENGINE_APP_ID.toLong())
+                            try {
+                                entries.mapNotNull { entry -> entry.result?.let(::readWorkshopDetail) }
+                            } finally {
+                                entries.forEach { entry -> entry.result?.close() }
+                            }
+                        }
+                    }
+                }.orEmpty()
             }
 
         /**
@@ -1236,6 +1255,7 @@ private const val MAX_LOGGED_TAGS = 8
  * longer list before the call leaves the process, so this mirrors it rather than guessing.
  */
 private const val MAX_SDK_PROFILE_ACCOUNTS = 16
+private const val MAX_SDK_DETAILS_ITEMS = 16
 
 /** How long a workshop read waits for the engine's session to be signed in, and how often it looks. */
 private const val SESSION_READY_ATTEMPTS = 20

@@ -118,6 +118,7 @@ data class DiscoverFeedState(
     val rails: List<DiscoverRailState> = emptyList(),
     val feedback: Map<String, DiscoverRailFeedback> = emptyMap(),
     val isPreparing: Boolean = false,
+    val isRefreshing: Boolean = false,
     val generation: Long = 0L,
     val metadataSource: DiscoverMetadataSource? = null,
     val metadataVersion: String? = null,

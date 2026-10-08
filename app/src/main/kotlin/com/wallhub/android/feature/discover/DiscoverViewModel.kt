@@ -19,12 +19,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @HiltViewModel
 class DiscoverViewModel
     @Inject
     constructor(
-        private val coordinator: DiscoverFeedCoordinator,
+        private val coordinator: DiscoverFeedLoader,
         private val feedbackRepository: DiscoverFeedbackRepository,
         private val savedQueryRepository: DiscoverSavedQueryRepository,
         settingsRepository: SettingsRepository,
@@ -35,9 +37,13 @@ class DiscoverViewModel
         private var generationSpecs: List<DiscoverRailSpec> = emptyList()
         private var nextSpecIndex = 0
         private var generationJob: Job? = null
-        private val railJobs = mutableMapOf<String, Job>()
+        private var metadataJob: Job? = null
+        private var feedWorker: Job? = null
+        private val feedLoadMutex = Mutex()
+        private var visible = false
         private var generationStartedAtMillis = 0L
         private var firstReadyLogged = false
+        private val suppressedFeedbackKeys = mutableSetOf<String>()
         private val refreshRequests = DiscoverRefreshRequestTracker()
 
         init {
@@ -47,52 +53,47 @@ class DiscoverViewModel
                 }
             }
             viewModelScope.launch {
+                var previousMatureContentEnabled: Boolean? = null
                 settingsRepository.preferences
                     .map { it.steamWorkshopDataSource to it.matureContentEnabled }
                     .distinctUntilChanged()
-                    .collect { refresh() }
+                    .collect { policy ->
+                        val policyTightened = previousMatureContentEnabled == true && !policy.second
+                        previousMatureContentEnabled = policy.second
+                        refresh(preserveCommittedRows = !policyTightened)
+                    }
             }
         }
 
         /** Consumes a bottom-navigation request once for this restored Discover back-stack entry. */
         fun consumeRefreshRequest(request: Int): Boolean = refreshRequests.consume(request)
 
-        fun refresh() {
+        fun refresh(preserveCommittedRows: Boolean = true) {
             generationJob?.cancel()
-            railJobs.values.toList().forEach(Job::cancel)
-            railJobs.clear()
+            metadataJob?.cancel()
+            feedWorker?.cancel()
             generationSpecs = emptyList()
             nextSpecIndex = 0
-            val generation = mutableState.value.generation + 1L
+            val previous = mutableState.value
+            val generation = previous.generation + 1L
             generationStartedAtMillis = System.currentTimeMillis()
             firstReadyLogged = false
+            val retainedRows = if (preserveCommittedRows) previous.rails else emptyList()
             mutableState.value =
-                DiscoverFeedState(
-                    feedback = mutableState.value.feedback,
-                    isPreparing = true,
+                previous.copy(
+                    rails = retainedRows,
+                    isPreparing = retainedRows.isEmpty(),
+                    isRefreshing = retainedRows.isNotEmpty(),
                     generation = generation,
+                    hasMore = true,
+                    error = null,
                 )
-            generationJob =
+            val bootstrapJob =
                 viewModelScope.launch {
                     try {
-                        val prepared = coordinator.prepareGeneration(generation)
+                        val prepared = coordinator.prepareStaticGeneration(generation)
                         if (mutableState.value.generation != generation) return@launch
-                        generationSpecs = prepared.specs
-                        Log.i(
-                            TAG,
-                            "generation=$generation metadata=${prepared.metadataSource} version=${prepared.metadataVersion} specs=${prepared.specs.size} " +
-                                "focusCreators=${prepared.specs.firstOrNull { it.category == DiscoverCategory.CREATOR_SHOWCASE }?.children?.size ?: 0} " +
-                                "focusCollections=${prepared.specs.firstOrNull { it.category == DiscoverCategory.COLLECTION_SHOWCASE }?.children?.size ?: 0}",
-                        )
-                        mutableState.value =
-                            mutableState.value.copy(
-                                isPreparing = false,
-                                metadataSource = prepared.metadataSource,
-                                metadataVersion = prepared.metadataVersion,
-                                hasMore = prepared.specs.isNotEmpty(),
-                                error = null,
-                            )
-                        appendRails(initialDiscoverRailCount(generationSpecs))
+                        commitGeneration(prepared, preserveCommittedRows = retainedRows.isNotEmpty())
                     } catch (error: CancellationException) {
                         throw error
                     } catch (error: Throwable) {
@@ -100,10 +101,27 @@ class DiscoverViewModel
                             mutableState.value =
                                 mutableState.value.copy(
                                     isPreparing = false,
+                                    isRefreshing = false,
                                     hasMore = false,
                                     error = error.message ?: "discover_prepare_failed",
                                 )
                         }
+                    }
+                }
+            generationJob = bootstrapJob
+            metadataJob =
+                viewModelScope.launch {
+                    try {
+                        val prepared = coordinator.prepareMetadataGeneration(generation)
+                        // Metadata HTTP runs beside the static bootstrap, but the bootstrap owns the initial
+                        // spec list. Merge only after it has committed so a fast response cannot be discarded.
+                        bootstrapJob.join()
+                        if (mutableState.value.generation != generation) return@launch
+                        mergeMetadataGeneration(prepared)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        // Static rails are the usable fallback; metadata failure must not block them.
                     }
                 }
         }
@@ -114,29 +132,25 @@ class DiscoverViewModel
         }
 
         fun setVisible(visible: Boolean) {
+            this.visible = visible
             if (!visible) {
-                railJobs.values.toList().forEach(Job::cancel)
-                railJobs.clear()
+                feedWorker?.cancel()
+                feedWorker = null
                 mutableState.value =
                     mutableState.value.copy(
-                        rails =
-                            mutableState.value.rails.map { rail ->
-                                if (rail.loadState == DiscoverRailLoadState.LOADING) rail.copy(loadState = DiscoverRailLoadState.QUEUED) else rail
-                            },
+                        rails = mutableState.value.rails.map { rail ->
+                            if (rail.loadState == DiscoverRailLoadState.LOADING) rail.copy(loadState = DiscoverRailLoadState.QUEUED) else rail
+                        },
                     )
                 return
             }
-            val generation = mutableState.value.generation
-            mutableState.value.rails
-                .filter { it.loadState == DiscoverRailLoadState.QUEUED }
-                .forEach { launchRail(it.spec, generation) }
+            startFeedWorker()
         }
 
         fun retryRail(railId: String) {
-            val rail = mutableState.value.rails.firstOrNull { it.spec.id == railId } ?: return
-            if (railJobs[railId]?.isActive == true) return
+            if (mutableState.value.rails.none { it.spec.id == railId }) return
             updateRail(railId) { it.copy(loadState = DiscoverRailLoadState.QUEUED, error = null) }
-            launchRail(rail.spec, mutableState.value.generation)
+            startFeedWorker()
         }
 
         fun toggleLike(railId: String) {
@@ -148,11 +162,19 @@ class DiscoverViewModel
             val feedback = mutableState.value.feedback[railId]
             viewModelScope.launch {
                 val disliked = feedback?.disliked != true
+                if (disliked) suppressedFeedbackKeys += railId else suppressedFeedbackKeys -= railId
                 feedbackRepository.setDisliked(railId, disliked)
                 if (disliked) {
-                    railJobs.remove(railId)?.cancel()
+                    val wasLoading = mutableState.value.rails.any {
+                        it.spec.id == railId && it.loadState == DiscoverRailLoadState.LOADING
+                    }
+                    if (wasLoading) {
+                        feedWorker?.cancel()
+                        feedWorker = null
+                    }
                     mutableState.value = mutableState.value.copy(rails = mutableState.value.rails.filterNot { it.spec.id == railId })
                     loadMore()
+                    if (wasLoading) startFeedWorker()
                 }
             }
         }
@@ -179,78 +201,167 @@ class DiscoverViewModel
             nextSpecIndex += specs.size
             val appended = mutableState.value.rails + specs.map(::DiscoverRailState)
             val retained = retainBoundedRails(appended)
-            val retainedIds = retained.mapTo(hashSetOf()) { it.spec.id }
-            railJobs.keys.filterNot(retainedIds::contains).toList().forEach { evictedId ->
-                railJobs.remove(evictedId)?.cancel()
-            }
             mutableState.value =
                 mutableState.value.copy(
                     rails = retained,
                     hasMore = nextSpecIndex < generationSpecs.size,
                 )
-            specs.filter { it.id in retainedIds }.forEach { launchRail(it, generation) }
+            startFeedWorker()
         }
 
-        private fun launchRail(
+        private fun startFeedWorker() {
+            if (!visible || feedWorker?.isActive == true) return
+            feedWorker =
+                viewModelScope.launch {
+                    while (true) {
+                        val generation = mutableState.value.generation
+                        val rail = mutableState.value.rails.firstOrNull { it.loadState == DiscoverRailLoadState.QUEUED } ?: break
+                        loadRail(rail.spec, generation)
+                    }
+                    mutableState.value = mutableState.value.copy(isRefreshing = false)
+                }
+        }
+
+        private suspend fun loadRail(
             spec: DiscoverRailSpec,
             generation: Long,
         ) {
-            if (railJobs[spec.id]?.isActive == true) return
-            val job =
-                viewModelScope.launch {
-                    updateRail(spec.id, generation) {
-                        it.copy(
-                            loadState = DiscoverRailLoadState.LOADING,
-                            metrics = it.metrics.copy(startedAtMillis = System.currentTimeMillis()),
-                        )
-                    }
-                    try {
-                        val loaded = coordinator.loadRail(spec, generation, emptySet())
-                        if (mutableState.value.generation != generation) return@launch
-                        if (loaded.items.isNotEmpty() && !firstReadyLogged) {
-                            firstReadyLogged = true
-                            Log.i(TAG, "generation=$generation firstRailReadyMs=${System.currentTimeMillis() - generationStartedAtMillis}")
-                        }
-                        updateRail(spec.id, generation) { rail ->
-                            rail.copy(
-                                loadState = if (loaded.items.isEmpty()) DiscoverRailLoadState.EMPTY else DiscoverRailLoadState.READY,
-                                items = loaded.items,
-                                resolvedTitle = loaded.resolvedTitle,
-                                error = null,
-                                metrics = loaded.metrics,
-                                featuredItems = loaded.featuredItems,
-                            )
-                        }
-                        if (loaded.items.isEmpty() && nextSpecIndex < generationSpecs.size) {
-                            mutableState.value =
-                                mutableState.value.copy(
-                                    rails = mutableState.value.rails.filterNot { it.spec.id == spec.id },
-                                )
-                            appendRails(1)
-                        }
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Throwable) {
-                        if (mutableState.value.generation == generation) {
-                            val attempts = (error as? DiscoverRailLoadException)?.attempts ?: 1
-                            updateRail(spec.id, generation) { rail ->
-                                rail.copy(
-                                    loadState = DiscoverRailLoadState.FAILED_FINAL,
-                                    error = error.message ?: "discover_rail_failed",
-                                    metrics =
-                                        rail.metrics.copy(
-                                            durationMillis = rail.metrics.startedAtMillis?.let { System.currentTimeMillis() - it },
-                                            attempts = attempts,
-                                            degradationCount = spec.queryPlan.degradations.size,
-                                        ),
-                                )
-                            }
-                        }
-                    } finally {
-                        railJobs.remove(spec.id)
+            updateRail(spec.id, generation) {
+                it.copy(
+                    loadState = DiscoverRailLoadState.LOADING,
+                    metrics = it.metrics.copy(startedAtMillis = System.currentTimeMillis()),
+                )
+            }
+            try {
+                val loaded = feedLoadMutex.withLock { coordinator.loadRail(spec, generation, emptySet()) }
+                if (mutableState.value.generation != generation) return
+                val currentSpec = mutableState.value.rails.firstOrNull { it.spec.id == spec.id }?.spec
+                if (currentSpec != spec) return
+                if (loaded.items.isNotEmpty() && !firstReadyLogged) {
+                    firstReadyLogged = true
+                    Log.i(TAG, "generation=$generation firstRailReadyMs=${System.currentTimeMillis() - generationStartedAtMillis}")
+                }
+                updateRail(spec.id, generation) { rail ->
+                    rail.copy(
+                        loadState = if (loaded.items.isEmpty()) DiscoverRailLoadState.EMPTY else DiscoverRailLoadState.READY,
+                        items = loaded.items,
+                        resolvedTitle = loaded.resolvedTitle,
+                        error = null,
+                        metrics = loaded.metrics,
+                        featuredItems = loaded.featuredItems,
+                    )
+                }
+                if (loaded.items.isEmpty() && nextSpecIndex < generationSpecs.size) {
+                    mutableState.value = mutableState.value.copy(rails = mutableState.value.rails.filterNot { it.spec.id == spec.id })
+                    appendRails(1)
+                }
+            } catch (error: CancellationException) {
+                updateRail(spec.id, generation) { rail ->
+                    if (rail.loadState == DiscoverRailLoadState.LOADING) {
+                        rail.copy(loadState = DiscoverRailLoadState.QUEUED)
+                    } else {
+                        rail
                     }
                 }
-            railJobs[spec.id] = job
+                throw error
+            } catch (error: Throwable) {
+                if (mutableState.value.generation == generation) {
+                    val attempts = (error as? DiscoverRailLoadException)?.attempts ?: 1
+                    updateRail(spec.id, generation) { rail ->
+                        if (rail.spec != spec) return@updateRail rail
+                        rail.copy(
+                            loadState = DiscoverRailLoadState.FAILED_FINAL,
+                            error = error.message ?: "discover_rail_failed",
+                            metrics = rail.metrics.copy(
+                                durationMillis = rail.metrics.startedAtMillis?.let { System.currentTimeMillis() - it },
+                                attempts = attempts,
+                                degradationCount = spec.queryPlan.degradations.size,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+        private fun commitGeneration(
+            prepared: DiscoverGeneration,
+            preserveCommittedRows: Boolean,
+        ) {
+            val previousRows = mutableState.value.rails
+            val initialCount = initialDiscoverRailCount(prepared.specs)
+            val freshRows =
+                retainBoundedRails(
+                    if (preserveCommittedRows) {
+                        rowsForStaticRefresh(
+                            specs = prepared.specs,
+                            previousRows = previousRows,
+                            initialCount = initialCount,
+                        )
+                    } else {
+                        prepared.specs.take(initialCount).map(::DiscoverRailState)
+                    },
+                )
+            val materializedIds = freshRows.mapTo(hashSetOf()) { it.spec.id }
+            generationSpecs =
+                freshRows.map(DiscoverRailState::spec) +
+                    prepared.specs.filterNot { it.id in materializedIds }
+            nextSpecIndex = freshRows.size
+            mutableState.value =
+                mutableState.value.copy(
+                    rails = freshRows,
+                    isPreparing = false,
+                    isRefreshing = preserveCommittedRows,
+                    metadataSource = prepared.metadataSource,
+                    metadataVersion = prepared.metadataVersion,
+                    hasMore = nextSpecIndex < generationSpecs.size,
+                    error = null,
+                )
+            startFeedWorker()
+        }
+
+        private fun mergeMetadataGeneration(prepared: DiscoverGeneration) {
+            if (generationSpecs.isEmpty()) {
+                commitGeneration(
+                    prepared = prepared,
+                    preserveCommittedRows = mutableState.value.rails.isNotEmpty(),
+                )
+                return
+            }
+            val visibleRows = mutableState.value.rails
+            val feedback = mutableState.value.feedback
+            val metadataSpecs =
+                prepared.specs.filterNot { spec ->
+                    spec.feedbackKey in suppressedFeedbackKeys || feedback[spec.feedbackKey]?.disliked == true
+                }
+            val metadataById = metadataSpecs.associateBy(DiscoverRailSpec::id)
+            val mergedRows =
+                visibleRows.mapNotNull { row ->
+                    val fresh = metadataById[row.spec.id]
+                    if (row.spec.source == DiscoverSpecSource.OFFICIAL_METADATA && fresh == null) {
+                        null
+                    } else if (fresh != null) {
+                        row.copy(spec = fresh, loadState = DiscoverRailLoadState.QUEUED, error = null)
+                    } else {
+                        row
+                    }
+                }
+            val visibleIds = mergedRows.mapTo(hashSetOf()) { it.spec.id }
+            val unconsumedTail = generationSpecs.drop(nextSpecIndex)
+            generationSpecs =
+                mergedRows.map(DiscoverRailState::spec) +
+                    metadataSpecs.filterNot { it.id in visibleIds } +
+                    unconsumedTail.filterNot { tail ->
+                        tail.id in visibleIds || metadataSpecs.any { it.id == tail.id }
+                    }
+            nextSpecIndex = mergedRows.size
+            mutableState.value =
+                mutableState.value.copy(
+                    rails = mergedRows,
+                    metadataSource = prepared.metadataSource,
+                    metadataVersion = prepared.metadataVersion,
+                    hasMore = nextSpecIndex < generationSpecs.size,
+                )
+            startFeedWorker()
         }
 
         private fun updateRail(
@@ -308,6 +419,48 @@ internal class DiscoverRefreshRequestTracker {
         handledRequest = request
         return previous != null && previous != request
     }
+}
+
+internal fun rowsForStaticRefresh(
+    specs: List<DiscoverRailSpec>,
+    previousRows: List<DiscoverRailState>,
+    initialCount: Int,
+): List<DiscoverRailState> {
+    val staticById = specs.associateBy(DiscoverRailSpec::id)
+    val retained =
+        previousRows.map { row ->
+            val freshStatic = staticById[row.spec.id]
+            if (freshStatic != null) {
+                row.copy(spec = freshStatic, loadState = DiscoverRailLoadState.QUEUED, error = null)
+            } else {
+                row
+            }
+        }
+    val retainedIds = retained.mapTo(hashSetOf()) { it.spec.id }
+    return retained +
+        specs
+            .filterNot { it.id in retainedIds }
+            .take((initialCount - retained.count { it.spec.source != DiscoverSpecSource.OFFICIAL_METADATA }).coerceAtLeast(0))
+            .map(::DiscoverRailState)
+}
+
+internal fun rowsForDiscoverGeneration(
+    specs: List<DiscoverRailSpec>,
+    previousRows: List<DiscoverRailState>,
+    preserveCommittedRows: Boolean,
+): List<DiscoverRailState> {
+    if (!preserveCommittedRows) return specs.map(::DiscoverRailState)
+    val freshById = specs.associateBy(DiscoverRailSpec::id)
+    val retained =
+        previousRows.map { committed ->
+            committed.copy(
+                spec = freshById[committed.spec.id] ?: committed.spec,
+                loadState = DiscoverRailLoadState.QUEUED,
+                error = null,
+            )
+        }
+    val retainedIds = retained.mapTo(hashSetOf()) { it.spec.id }
+    return retained + specs.filterNot { it.id in retainedIds }.map(::DiscoverRailState)
 }
 
 internal fun retainBoundedRails(rails: List<DiscoverRailState>): List<DiscoverRailState> {

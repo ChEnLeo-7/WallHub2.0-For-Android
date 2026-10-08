@@ -498,6 +498,11 @@ class SteamContentSdkEngine
                 WorkshopDetailsRequest(itemId = itemId, appId = appId)
             )
 
+        /** Resolves a bounded set of Workshop identities through one native/provider request. */
+        @Synchronized
+        fun openWorkshopItems(itemIds: LongArray, appId: Long) =
+            openEngine(WorkshopOperation.DETAILS).openWorkshopItems(itemIds, appId)
+
         /**
          * Resolves a bounded set of account ids into a profile handle (ADR 0032).
          *

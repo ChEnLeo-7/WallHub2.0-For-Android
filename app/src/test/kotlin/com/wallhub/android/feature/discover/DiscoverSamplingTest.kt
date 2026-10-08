@@ -2,6 +2,7 @@ package com.wallhub.android.feature.discover
 
 import com.wallhub.android.DiscoverResultsDestination
 import com.wallhub.android.core.model.WorkshopBrowseQuery
+import com.wallhub.android.core.model.WorkshopSummary
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
@@ -64,7 +65,7 @@ class DiscoverSamplingTest {
         val first = sampleFeaturedChildren(children, generation = 42L, railId = "focus")
         val second = sampleFeaturedChildren(children, generation = 42L, railId = "focus")
 
-        assertEquals(12, first.size)
+        assertEquals(8, first.size)
         assertEquals(first.map(DiscoverRailSpec::id), second.map(DiscoverRailSpec::id))
     }
 
@@ -96,6 +97,55 @@ class DiscoverSamplingTest {
         assertTrue(!isTransientDiscoverFailure(IllegalArgumentException("InvalidParam")))
         assertTrue(!isTransientDiscoverFailure(UnsupportedOperationException("unsupported")))
         assertTrue(!isTransientDiscoverFailure(CancellationException("cancelled")))
+    }
+
+    @Test
+    fun `static refresh queues static matches but leaves metadata rows ready`() {
+        val static = DiscoverRailState(spec(1), loadState = DiscoverRailLoadState.READY)
+        val metadataSpec = spec(9).copy(source = DiscoverSpecSource.OFFICIAL_METADATA)
+        val metadata = DiscoverRailState(metadataSpec, loadState = DiscoverRailLoadState.READY)
+
+        val rows = rowsForStaticRefresh(listOf(spec(1), spec(2)), listOf(static, metadata), initialCount = 2)
+
+        assertEquals(DiscoverRailLoadState.QUEUED, rows.first().loadState)
+        assertEquals(metadata, rows[1])
+        assertEquals(listOf("rail-1", "rail-9", "rail-2"), rows.map { it.spec.id })
+    }
+
+    @Test
+    fun `live generation keeps committed cards visible while queuing their fresh replacement`() {
+        val oldSpec = spec(1)
+        val cards = listOf(WorkshopSummary(id = 42L, title = "old", author = "author"))
+        val previous =
+            DiscoverRailState(
+                spec = oldSpec,
+                loadState = DiscoverRailLoadState.READY,
+                items = cards,
+            )
+
+        val rows = rowsForDiscoverGeneration(listOf(oldSpec), listOf(previous), preserveCommittedRows = true)
+
+        assertEquals(cards, rows.single().items)
+        assertEquals(DiscoverRailLoadState.QUEUED, rows.single().loadState)
+    }
+
+    @Test
+    fun `live generation keeps previously loaded offscreen rows`() {
+        val first = DiscoverRailState(spec(1), loadState = DiscoverRailLoadState.READY)
+        val offscreen = DiscoverRailState(spec(9), loadState = DiscoverRailLoadState.READY)
+
+        val rows = rowsForDiscoverGeneration(listOf(spec(1), spec(2)), listOf(first, offscreen), preserveCommittedRows = true)
+
+        assertEquals(listOf("rail-1", "rail-9", "rail-2"), rows.map { it.spec.id })
+        assertTrue(rows.all { it.loadState == DiscoverRailLoadState.QUEUED })
+    }
+
+    @Test
+    fun `initial generation has no retained cards`() {
+        val rows = rowsForDiscoverGeneration(listOf(spec(1)), emptyList(), preserveCommittedRows = false)
+
+        assertTrue(rows.single().items.isEmpty())
+        assertEquals(DiscoverRailLoadState.QUEUED, rows.single().loadState)
     }
 
     @Test

@@ -124,7 +124,7 @@ fun DiscoverRoute(
                 Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-            state.rails.isEmpty() && state.error != null -> DiscoverFullPageError(padding, viewModel::refresh)
+            state.rails.isEmpty() && state.error != null -> DiscoverFullPageError(padding) { viewModel.refresh() }
             else ->
                 LazyColumn(
                     state = listState,
@@ -196,46 +196,55 @@ private fun DiscoverRail(
     onDislike: () -> Unit,
     onFavorite: (String) -> Unit,
 ) {
+    val hasContent = rail.items.isNotEmpty()
     Column(Modifier.fillMaxWidth()) {
         DiscoverRailHeader(rail)
-        when (rail.loadState) {
-            DiscoverRailLoadState.QUEUED,
-            DiscoverRailLoadState.LOADING,
-            -> Box(Modifier.fillMaxWidth().height(236.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+        if (hasContent) {
+            if (rail.featuredItems.isNotEmpty()) {
+                DiscoverFeaturedCarouselRail(rail, onOpenRail)
+            } else {
+                DiscoverCarouselRail(rail, onOpenDetail)
             }
-            DiscoverRailLoadState.READY ->
-                if (rail.featuredItems.isNotEmpty()) {
-                    DiscoverFeaturedCarouselRail(rail, onOpenRail)
-                } else {
-                    DiscoverCarouselRail(rail, onOpenDetail)
+            if (rail.loadState == DiscoverRailLoadState.FAILED_RETRYABLE || rail.loadState == DiscoverRailLoadState.FAILED_FINAL) {
+                IconButton(onClick = onRetry, modifier = Modifier.align(Alignment.End).padding(end = 16.dp)) {
+                    Icon(Icons.Outlined.Refresh, stringResource(R.string.discover_retry_rail))
                 }
-            DiscoverRailLoadState.EMPTY ->
-                Text(
+            }
+        } else {
+            when (rail.loadState) {
+                DiscoverRailLoadState.QUEUED,
+                DiscoverRailLoadState.LOADING,
+                -> Box(Modifier.fillMaxWidth().height(236.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+                DiscoverRailLoadState.READY,
+                DiscoverRailLoadState.EMPTY,
+                -> Text(
                     stringResource(R.string.discover_rail_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
                 )
-            DiscoverRailLoadState.FAILED_RETRYABLE,
-            DiscoverRailLoadState.FAILED_FINAL,
-            -> Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    stringResource(R.string.discover_rail_load_failed),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = onRetry) {
-                    Icon(Icons.Outlined.Refresh, stringResource(R.string.discover_retry_rail))
+                DiscoverRailLoadState.FAILED_RETRYABLE,
+                DiscoverRailLoadState.FAILED_FINAL,
+                -> Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.discover_rail_load_failed),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = onRetry) {
+                        Icon(Icons.Outlined.Refresh, stringResource(R.string.discover_retry_rail))
+                    }
                 }
+                DiscoverRailLoadState.EVICTED -> Unit
             }
-            DiscoverRailLoadState.EVICTED -> Unit
         }
-        if (rail.loadState == DiscoverRailLoadState.READY) {
+        if (rail.loadState == DiscoverRailLoadState.READY || hasContent) {
             DiscoverRailActions(
                 rail = rail,
                 feedback = feedback,

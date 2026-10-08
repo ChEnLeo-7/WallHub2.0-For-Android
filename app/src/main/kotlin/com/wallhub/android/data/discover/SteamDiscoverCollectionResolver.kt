@@ -112,10 +112,12 @@ class SteamDiscoverCollectionResolver
         private suspend fun resolveDetails(ids: List<Long>): List<WorkshopSummary> =
             runCatching {
                 networkBudget.withPermit {
-                    unifiedWorkshopRepository
-                        .getPublicDetails(ids)
-                        .ifEmpty { workshopRepository.getDetails(ids) }
-                        .map(WorkshopDetail::summary)
+                    val primary = unifiedWorkshopRepository.getPublicDetails(ids)
+                    val resolved = primary.associateBy { it.summary.id }
+                    val missing = ids.filterNot(resolved::containsKey)
+                    val fallback = if (missing.isEmpty()) emptyList() else workshopRepository.getDetails(missing)
+                    val combined = (primary + fallback).associateBy { it.summary.id }
+                    ids.mapNotNull(combined::get).map(WorkshopDetail::summary)
                 }
             }.getOrDefault(emptyList())
     }

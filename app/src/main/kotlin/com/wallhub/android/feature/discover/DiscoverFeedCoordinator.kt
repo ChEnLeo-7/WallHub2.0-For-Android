@@ -11,6 +11,7 @@ import com.wallhub.android.core.model.WorkshopRepository
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.feature.discover.model.OfficialDiscoverCategory
+import com.wallhub.android.feature.discover.model.DiscoverMetadataSource
 import com.wallhub.android.feature.discover.model.OfficialDiscoverDescriptor
 import com.wallhub.android.feature.discover.model.OfficialDiscoverMetadataRepository
 import java.io.IOException
@@ -28,8 +29,18 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
+
+interface DiscoverFeedLoader {
+    suspend fun prepareStaticGeneration(generation: Long): DiscoverGeneration
+
+    suspend fun prepareMetadataGeneration(generation: Long): DiscoverGeneration
+
+    suspend fun loadRail(
+        spec: DiscoverRailSpec,
+        generation: Long,
+        excludedIds: Set<Long>,
+    ): DiscoverRailLoadResult
+}
 
 @Singleton
 class DiscoverFeedCoordinator
@@ -38,32 +49,51 @@ class DiscoverFeedCoordinator
         private val metadataRepository: OfficialDiscoverMetadataRepository,
         private val queryAdapter: DiscoverQueryAdapter,
         private val collectionResolver: DiscoverCollectionResolver,
+        private val pageSource: DiscoverPageSource,
         private val networkBudget: DiscoverNetworkBudget,
         private val workshopRepository: WorkshopRepository,
         private val unifiedWorkshopRepository: SteamUnifiedWorkshopRepository,
         private val feedbackRepository: DiscoverFeedbackRepository,
         private val settingsRepository: SettingsRepository,
-    ) {
-        private val requestBudget = Semaphore(DISCOVER_NETWORK_CONCURRENCY)
-
-        suspend fun prepareGeneration(generation: Long): DiscoverGeneration {
-            invalidateDiscoverCaches(
-                metadataRepository,
-                unifiedWorkshopRepository,
-                workshopRepository,
-                collectionResolver,
-            )
+    ) : DiscoverFeedLoader {
+        override suspend fun prepareStaticGeneration(generation: Long): DiscoverGeneration {
+            unifiedWorkshopRepository.invalidateDiscoverCache()
+            workshopRepository.invalidateDiscoverCache()
+            collectionResolver.invalidateDiscoverCache()
             val preferences = settingsRepository.preferences.first()
-            val snapshot = metadataRepository.loadMetadata()
-            val rawCandidates =
+            val candidates =
                 buildList {
                     addAll(staticOfficialSpecs(preferences.steamWorkshopDataSource, preferences.matureContentEnabled))
                     addAll(seasonalCollectionSpecs())
                     addAll(bestOfYearSpecs(preferences.matureContentEnabled))
-                    snapshot.descriptors.forEach { descriptor ->
-                        addAll(descriptor.toRailSpecs(preferences.steamWorkshopDataSource, preferences.matureContentEnabled))
-                    }
                 }.distinctBy(DiscoverRailSpec::id)
+            return rankGeneration(
+                generation = generation,
+                candidates = candidates,
+                metadataSource = DiscoverMetadataSource.STATIC_FALLBACK,
+                metadataVersion = "static",
+            )
+        }
+
+        override suspend fun prepareMetadataGeneration(generation: Long): DiscoverGeneration {
+            metadataRepository.invalidateDiscoverCache()
+            val preferences = settingsRepository.preferences.first()
+            val snapshot = metadataRepository.loadMetadata()
+            val candidates =
+                snapshot.descriptors
+                    .flatMap { descriptor ->
+                        descriptor.toRailSpecs(preferences.steamWorkshopDataSource, preferences.matureContentEnabled)
+                    }.distinctBy(DiscoverRailSpec::id)
+            return rankGeneration(generation, candidates, snapshot.source, snapshot.version)
+        }
+
+        private suspend fun rankGeneration(
+            generation: Long,
+            candidates: List<DiscoverRailSpec>,
+            metadataSource: DiscoverMetadataSource,
+            metadataVersion: String,
+        ): DiscoverGeneration {
+            val rawCandidates = candidates
             val candidates = aggregateOfficialShowcases(rawCandidates)
             val feedbackSnapshot = feedbackRepository.feedback.first()
             val feedbackWeights = candidates.associate { spec ->
@@ -86,20 +116,20 @@ class DiscoverFeedCoordinator
                 )
             return DiscoverGeneration(
                 generation = generation,
-                metadataSource = snapshot.source,
-                metadataVersion = snapshot.version,
+                metadataSource = metadataSource,
+                metadataVersion = metadataVersion,
                 specs = ranked,
             )
         }
 
-        suspend fun loadRail(
+        override suspend fun loadRail(
             spec: DiscoverRailSpec,
             generation: Long,
             excludedIds: Set<Long>,
-        ): DiscoverRailLoadResult = requestBudget.withPermit {
+        ): DiscoverRailLoadResult {
             val startedAt = System.currentTimeMillis()
             if (spec.children.isNotEmpty()) {
-                return@withPermit loadFeaturedRail(spec, generation, excludedIds, startedAt)
+                return loadFeaturedRail(spec, generation, excludedIds, startedAt)
             }
             var attempts = 0
             var lastFailure: Throwable? = null
@@ -142,27 +172,21 @@ class DiscoverFeedCoordinator
         }
 
         private suspend fun loadCandidates(spec: DiscoverRailSpec): List<com.wallhub.android.core.model.WorkshopSummary> {
-            spec.queryPlan.query?.let { baseQuery ->
-                val candidates = mutableListOf<com.wallhub.android.core.model.WorkshopSummary>()
-                for (page in 1..spec.qualityRules.candidatePageCount) {
-                    val result = networkBudget.withPermit {
-                        workshopRepository.browse(baseQuery.copy(page = page, pageSize = DISCOVER_QUERY_PAGE_SIZE))
-                    }
-                    candidates += spec.queryPlan.filter(result.items)
-                    if (!result.hasNextPage || candidates.size >= spec.qualityRules.targetItemCount) break
-                }
-                return candidates.distinctBy { it.id }
+            val baseQuery = spec.queryPlan.query ?: WorkshopBrowseQuery()
+            if (spec.queryPlan.query == null && spec.queryPlan.collectionId == null) return emptyList()
+            val recipe =
+                DiscoverPageRecipe(
+                    query = baseQuery,
+                    collectionId = spec.queryPlan.collectionId,
+                    clientRequiredTagGroups = spec.queryPlan.clientRequiredTagGroups,
+                )
+            val candidates = mutableListOf<com.wallhub.android.core.model.WorkshopSummary>()
+            for (page in 1..spec.qualityRules.candidatePageCount) {
+                val result = pageSource.page(recipe, page, DISCOVER_QUERY_PAGE_SIZE)
+                candidates += spec.queryPlan.filter(result.items)
+                if (!result.hasNextPage || candidates.size >= spec.qualityRules.targetItemCount) break
             }
-            spec.queryPlan.collectionId?.let { collectionId ->
-                val candidates = mutableListOf<com.wallhub.android.core.model.WorkshopSummary>()
-                for (page in 1..spec.qualityRules.candidatePageCount) {
-                    val result = collectionResolver.browse(collectionId, page, DISCOVER_QUERY_PAGE_SIZE)
-                    candidates += spec.queryPlan.filter(result.items)
-                    if (!result.hasNextPage || candidates.size >= spec.qualityRules.targetItemCount) break
-                }
-                return candidates.distinctBy { it.id }
-            }
-            return emptyList()
+            return candidates.distinctBy { it.id }
         }
 
         private suspend fun loadFeaturedRail(
@@ -178,7 +202,12 @@ class DiscoverFeedCoordinator
                 (discoverOptional {
                     networkBudget.withPermit {
                         val ids = (coverIds + collectionIds).distinct()
-                        unifiedWorkshopRepository.getPublicDetails(ids).ifEmpty { workshopRepository.getDetails(ids) }
+                        val primary = unifiedWorkshopRepository.getPublicDetails(ids)
+                        val resolved = primary.associateBy { it.summary.id }
+                        val missing = ids.filterNot(resolved::containsKey)
+                        val fallback = if (missing.isEmpty()) emptyList() else workshopRepository.getDetails(missing)
+                        val combined = (primary + fallback).associateBy { it.summary.id }
+                        ids.mapNotNull(combined::get)
                     }
                 } ?: emptyList()).associateBy { it.summary.id }
             val fallbackCollectionCovers =
@@ -636,7 +665,7 @@ private const val SUBJECT_REPETITION_PENALTY = -0.75f
 private const val RELATED_TOPIC_FEEDBACK_FACTOR = 0.15f
 private const val SHOWCASE_PRIORITY_BONUS = 1f
 private const val DISCOVER_FEATURED_ITEM_COUNT = 8
-private const val DISCOVER_FEATURED_RESOLUTION_COUNT = 12
+private const val DISCOVER_FEATURED_RESOLUTION_COUNT = 8
 private const val ACTIVE_SEASON_PRIORITY = 0.8f
 
 private data class SeasonalCollectionDefinition(

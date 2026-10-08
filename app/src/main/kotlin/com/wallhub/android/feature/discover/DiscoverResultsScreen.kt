@@ -178,9 +178,7 @@ class DiscoverResultsViewModel
     constructor(
         savedStateHandle: SavedStateHandle,
         @ApplicationContext private val applicationContext: Context,
-        private val workshopRepository: WorkshopRepository,
-        private val collectionResolver: DiscoverCollectionResolver,
-        private val networkBudget: DiscoverNetworkBudget,
+        private val pageSource: DiscoverPageSource,
         private val downloadTaskRepository: WorkshopDownloads,
         private val settingsRepository: SettingsRepository,
     ) : ViewModel() {
@@ -279,11 +277,11 @@ class DiscoverResultsViewModel
                                 exactPhraseOverride = current.exactPhrase,
                             )
                         val result =
-                            destination.collectionId?.let { collectionId ->
-                                collectionResolver.browse(collectionId, nextPage, RESULTS_PAGE_SIZE)
-                            } ?: networkBudget.withPermit {
-                                workshopRepository.browse(browseQuery)
-                            }
+                            pageSource.page(
+                                recipe = DiscoverPageRecipe(browseQuery, destination.collectionId),
+                                page = nextPage,
+                                pageSize = RESULTS_PAGE_SIZE,
+                            )
                         currentCoroutineContext().ensureActive()
                         if (!request.isCurrent(requestGeneration, destination)) return@launch
                         val filtered =

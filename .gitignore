@@ -81,6 +81,7 @@ signing.properties
 /app/src/test/kotlin/com/wallhub/android/feature/discover/*
 !/app/src/test/kotlin/com/wallhub/android/feature/discover/DiscoverQueryAdapterTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/discover/DiscoverRefreshRequestTest.kt
+!/app/src/test/kotlin/com/wallhub/android/feature/discover/DiscoverFeedSliceOneTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/discover/DiscoverCacheInvalidationTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/downloads/
 !/app/src/test/kotlin/com/wallhub/android/feature/library/
