@@ -62,7 +62,11 @@ internal class SteamLoopbackTlsBridge
                 clientSocket.soTimeout = HEADER_TIMEOUT_MS
                 clientSocket.tcpNoDelay = true
                 val request = readConnectRequest(clientSocket)
-                if (request.authorization != authorization) {
+                val host = SteamDomainPolicy.requireSupportedEndpoint(request.host, request.port)
+                // The SDK CDN adapter cannot attach proxy credentials yet. Permit an unauthenticated tunnel
+                // only for the narrow Steam CDN allowlist on HTTPS; every broader platform/CM bridge request
+                // still needs the per-process random authorization value.
+                if (!acceptsSteamProxyAuthorization(request, authorization)) {
                     writeResponse(
                         clientSocket,
                         "HTTP/1.1 407 Proxy Authentication Required\r\n" +
@@ -71,8 +75,12 @@ internal class SteamLoopbackTlsBridge
                     )
                     return
                 }
-                val host = SteamDomainPolicy.requireSupportedEndpoint(request.host, request.port)
-                val route = accessManager.acceleratedRoute(host, request.port)
+                val route =
+                    if (SteamDomainPolicy.isCdnHost(host)) {
+                        accessManager.awaitAcceleratedRoute(host, request.port)
+                    } else {
+                        accessManager.acceleratedRoute(host, request.port)
+                    }
                 selectedRoute = route
                 val upstream =
                     noSniTlsDialer.connect(
@@ -219,6 +227,13 @@ internal data class ConnectRequest(
     val port: Int,
     val authorization: String?,
 )
+
+internal fun acceptsSteamProxyAuthorization(
+    request: ConnectRequest,
+    expectedAuthorization: String,
+): Boolean =
+    request.authorization == expectedAuthorization ||
+        (request.authorization == null && request.port == STEAM_HTTPS_PORT && SteamDomainPolicy.isCdnHost(request.host))
 
 internal fun parseSteamConnectRequest(headersText: String): ConnectRequest {
     val lines = headersText.split("\r\n")
