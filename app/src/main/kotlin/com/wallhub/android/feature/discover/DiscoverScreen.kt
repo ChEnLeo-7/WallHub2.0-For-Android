@@ -59,7 +59,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -86,19 +85,6 @@ import com.wallhub.android.feature.discover.model.DiscoverMetadataSource
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
-internal data class DiscoverRefreshAction(
-    val refresh: Boolean,
-    val resetScroll: Boolean,
-)
-
-internal fun discoverRefreshAction(
-    handledRequest: Int,
-    refreshRequest: Int,
-): DiscoverRefreshAction {
-    val changed = handledRequest != refreshRequest
-    return DiscoverRefreshAction(refresh = changed, resetScroll = changed)
-}
-
 @Composable
 fun DiscoverRoute(
     onOpenDetail: (Long) -> Unit,
@@ -115,13 +101,10 @@ fun DiscoverRoute(
         viewModel.setVisible(true)
         onDispose { viewModel.setVisible(false) }
     }
-    var handledRefreshRequest by rememberSaveable { mutableStateOf(refreshRequest) }
-    LaunchedEffect(refreshRequest) {
-        val action = discoverRefreshAction(handledRefreshRequest, refreshRequest)
-        if (action.refresh) {
-            handledRefreshRequest = refreshRequest
+    LaunchedEffect(refreshRequest, viewModel) {
+        if (viewModel.consumeRefreshRequest(refreshRequest)) {
             viewModel.refresh()
-            if (action.resetScroll) listState.scrollToItem(0)
+            listState.scrollToItem(0)
         }
     }
     LaunchedEffect(listState, state.rails.size, state.isLoading, state.hasMore) {

@@ -38,6 +38,7 @@ class DiscoverViewModel
         private val railJobs = mutableMapOf<String, Job>()
         private var generationStartedAtMillis = 0L
         private var firstReadyLogged = false
+        private val refreshRequests = DiscoverRefreshRequestTracker()
 
         init {
             viewModelScope.launch {
@@ -52,6 +53,9 @@ class DiscoverViewModel
                     .collect { refresh() }
             }
         }
+
+        /** Consumes a bottom-navigation request once for this restored Discover back-stack entry. */
+        fun consumeRefreshRequest(request: Int): Boolean = refreshRequests.consume(request)
 
         fun refresh() {
             generationJob?.cancel()
@@ -294,6 +298,17 @@ private fun DiscoverRailState.toSavedQuery(title: String): DiscoverSavedQuery {
 }
 
 private const val TAG = "DiscoverFeed"
+
+/** Tracks explicit bottom-navigation refresh requests for the lifetime of one Discover ViewModel. */
+internal class DiscoverRefreshRequestTracker {
+    private var handledRequest: Int? = null
+
+    fun consume(request: Int): Boolean {
+        val previous = handledRequest
+        handledRequest = request
+        return previous != null && previous != request
+    }
+}
 
 internal fun retainBoundedRails(rails: List<DiscoverRailState>): List<DiscoverRailState> {
     val nonStickyCount = rails.count { !it.spec.sticky }
