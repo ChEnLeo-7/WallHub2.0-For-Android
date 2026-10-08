@@ -49,6 +49,26 @@ internal object SteamDomainPolicy {
             }
         }
 
+    fun requireAuthenticatedCdnEndpoint(
+        hostname: String,
+        port: Int,
+    ): String {
+        val host = normalize(hostname)
+        require(port == STEAM_HTTPS_PORT) { "Invalid Steam CDN endpoint port: $port" }
+        require(
+            host.length in 1..253 &&
+                '.' in host &&
+                host.any(Char::isLetter) &&
+                host.split('.').all { label ->
+                    label.length in 1..63 &&
+                        label.first().isLetterOrDigit() &&
+                        label.last().isLetterOrDigit() &&
+                        label.all { character -> character.isLetterOrDigit() || character == '-' }
+                },
+        ) { "Invalid Steam CDN endpoint host" }
+        return host
+    }
+
     fun probePath(hostname: String): String {
         val host = requireSupported(hostname)
         return when (host) {

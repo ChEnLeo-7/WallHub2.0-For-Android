@@ -1,7 +1,9 @@
 package com.wallhub.android.data.steam
 
 import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.data.steamaccess.SteamLoopbackTlsBridge
 import io.steamcontent.sdk.SessionTransportKind
+import java.net.InetSocketAddress
 import java.net.URI
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,6 +29,7 @@ internal class SteamContentSdkRouteFactory
     constructor(
         private val cmEndpoints: SteamCmEndpointSource,
         private val settingsRepository: SettingsRepository,
+        private val bridge: SteamLoopbackTlsBridge,
     ) {
         /**
          * The route this platform actually has.
@@ -55,9 +58,14 @@ internal class SteamContentSdkRouteFactory
             refreshLive: Boolean = false,
         ): SteamContentSdkEngine.Route? {
             val candidates = cmEndpoints.candidates(refreshLive = refreshLive) ?: return null
+            val configuredProxy = cdnProxy ?: configuredProxyUri()
+            val bridgeAddress = bridge.proxy.address() as InetSocketAddress
+            val bridgeHost = bridgeAddress.address?.hostAddress ?: bridgeAddress.hostString
             return sdkPlatformRoute(
                 cmCandidates = candidates,
-                configuredProxyUri = cdnProxy ?: configuredProxyUri(),
+                configuredProxyUri = configuredProxy,
+                authenticatedCdnProxy = configuredProxy?.let { null } ?: "$bridgeHost:${bridgeAddress.port}",
+                authenticatedCdnProxyAuthorization = configuredProxy?.let { null } ?: bridge.cdnProxyAuthorization,
             )
         }
 
@@ -82,14 +90,17 @@ internal class SteamContentSdkRouteFactory
 internal fun sdkPlatformRoute(
     cmCandidates: String,
     configuredProxyUri: String?,
+    authenticatedCdnProxy: String? = null,
+    authenticatedCdnProxyAuthorization: String? = null,
 ): SteamContentSdkEngine.Route {
-    val proxy = configuredProxyUri?.let(::sdkHttpProxyAuthority)
+    val configuredProxy = configuredProxyUri?.let(::sdkHttpProxyAuthority)
     return SteamContentSdkEngine.Route(
         cmCandidates = cmCandidates,
         connectAttempts = cmCandidates.lineSequence().count { it.isNotBlank() }.coerceAtMost(MAX_CM_CANDIDATES),
         transport = SessionTransportKind.WEBSOCKET,
-        cdnProxy = proxy,
-        cmProxy = proxy,
+        cdnProxy = configuredProxy ?: authenticatedCdnProxy,
+        cdnProxyAuthorization = authenticatedCdnProxyAuthorization.takeIf { configuredProxy == null && authenticatedCdnProxy != null },
+        cmProxy = configuredProxy,
     )
 }
 

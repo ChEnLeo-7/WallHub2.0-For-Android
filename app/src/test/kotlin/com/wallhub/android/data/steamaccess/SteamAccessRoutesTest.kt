@@ -73,6 +73,26 @@ class SteamAccessRoutesTest {
     }
 
     @Test
+    fun `authenticated CDN tunnel accepts directory hostnames on HTTPS only`() {
+        assertEquals("st.dl.eccdnx.com", SteamDomainPolicy.requireAuthenticatedCdnEndpoint("ST.DL.ECCDNX.COM.", 443))
+        assertFailsWith<IllegalArgumentException> { SteamDomainPolicy.requireAuthenticatedCdnEndpoint("127.0.0.1", 443) }
+        assertFailsWith<IllegalArgumentException> { SteamDomainPolicy.requireAuthenticatedCdnEndpoint("metadata", 443) }
+        assertFailsWith<IllegalArgumentException> { SteamDomainPolicy.requireAuthenticatedCdnEndpoint("cdn.example", 80) }
+    }
+
+    @Test
+    fun `authenticated CDN tunnel rejects local addresses but accepts VPN fake IP`() {
+        assertTrue(isAuthenticatedCdnAddress(InetAddress.getByName("8.8.8.8")))
+        assertTrue(isAuthenticatedCdnAddress(InetAddress.getByName("198.18.4.168")))
+        listOf(
+            "127.0.0.1", "10.0.0.1", "169.254.1.1", "192.168.1.1", "100.64.0.1",
+            "::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1", "::ffff:169.254.1.1",
+        ).forEach { address ->
+            assertFalse(isAuthenticatedCdnAddress(InetAddress.getByName(address)), address)
+        }
+    }
+
+    @Test
     fun `private route policy rejects lookalike hosts and normalizes exact hosts`() {
         assertEquals("steamcommunity.com", SteamDomainPolicy.requireSupported("STEAMCOMMUNITY.COM."))
         assertEquals(

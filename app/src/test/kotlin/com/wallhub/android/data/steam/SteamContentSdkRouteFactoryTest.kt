@@ -49,6 +49,22 @@ class SteamContentSdkRouteFactoryTest {
     }
 
     @Test
+    fun `the authenticated platform bridge applies only to CDN traffic`() {
+        val route =
+            sdkPlatformRoute(
+                cmCandidates = "cm1.steamserver.net:443",
+                configuredProxyUri = null,
+                authenticatedCdnProxy = "127.0.0.1:32123",
+                authenticatedCdnProxyAuthorization = "Basic secret",
+            )
+
+        assertEquals("127.0.0.1:32123", route.cdnProxy)
+        assertEquals("Basic secret", route.cdnProxyAuthorization)
+        assertNull(route.cmProxy)
+        assertNull(route.cmProxyAuthorization)
+    }
+
+    @Test
     fun `the supported HTTP proxy applies to both CDN and CM traffic without credentials`() {
         val route =
             sdkPlatformRoute(

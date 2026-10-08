@@ -27,6 +27,7 @@ internal class SteamLoopbackTlsBridge
     ) {
         private val executor = Executors.newCachedThreadPool()
         private val authorization = createAuthorization()
+        private val cdnAuthorization = createAuthorization()
         private val serverSocket =
             ServerSocket().apply {
                 reuseAddress = false
@@ -41,6 +42,9 @@ internal class SteamLoopbackTlsBridge
 
         val proxyAuthorization: String
             get() = authorization
+
+        val cdnProxyAuthorization: String
+            get() = cdnAuthorization
 
         init {
             executor.execute(::acceptLoop)
@@ -62,6 +66,16 @@ internal class SteamLoopbackTlsBridge
                 clientSocket.soTimeout = HEADER_TIMEOUT_MS
                 clientSocket.tcpNoDelay = true
                 val request = readConnectRequest(clientSocket)
+                if (request.authorization == cdnAuthorization) {
+                    val host = SteamDomainPolicy.requireAuthenticatedCdnEndpoint(request.host, request.port)
+                    val upstream = connectAuthenticatedCdn(host, request.port)
+                    upstreamSocket = upstream
+                    writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
+                    clientSocket.soTimeout = 0
+                    tunnelEstablished = true
+                    relay(clientSocket, upstream)
+                    return
+                }
                 if (request.authorization != authorization) {
                     writeResponse(
                         clientSocket,
@@ -129,6 +143,31 @@ internal class SteamLoopbackTlsBridge
                 upstreamSocket.closeQuietly()
                 clientSocket.closeQuietly()
             }
+        }
+
+        private fun connectAuthenticatedCdn(
+            hostname: String,
+            port: Int,
+        ): Socket {
+            var lastError: IOException? = null
+            InetAddress
+                .getAllByName(hostname)
+                .asSequence()
+                .filter(::isAuthenticatedCdnAddress)
+                .distinctBy(InetAddress::getHostAddress)
+                .take(MAX_CDN_ADDRESSES)
+                .forEach { address ->
+                    val socket = Socket()
+                    try {
+                        socket.tcpNoDelay = true
+                        socket.connect(InetSocketAddress(address, port), CDN_CONNECT_TIMEOUT_MS)
+                        return socket
+                    } catch (error: IOException) {
+                        lastError = error
+                        socket.closeQuietly()
+                    }
+                }
+            throw IOException("No reachable CDN route for $hostname", lastError)
         }
 
         private fun relay(
@@ -208,10 +247,50 @@ internal class SteamLoopbackTlsBridge
             const val TOKEN_BYTES = 32
             const val MAX_HEADER_BYTES = 16 * 1024
             const val HEADER_TIMEOUT_MS = 5_000
+            const val CDN_CONNECT_TIMEOUT_MS = 8_000
+            const val MAX_CDN_ADDRESSES = 4
             const val RELAY_BUFFER_BYTES = 32 * 1024
             const val LOG_TAG = "WallHubSteamAccess"
             val HEADER_TERMINATOR = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte(), '\r'.code.toByte(), '\n'.code.toByte())
         }
+    }
+
+internal fun isAuthenticatedCdnAddress(address: InetAddress): Boolean {
+    if (
+        address.isAnyLocalAddress ||
+        address.isLoopbackAddress ||
+        address.isLinkLocalAddress ||
+        address.isSiteLocalAddress ||
+        address.isMulticastAddress
+    ) return false
+    val bytes = address.address.map { byte -> byte.toInt() and 0xff }
+    return when (bytes.size) {
+        4 -> isAuthenticatedCdnIpv4(bytes)
+        16 -> {
+            val mappedIpv4 = bytes.take(10).all { it == 0 } && bytes[10] == 0xff && bytes[11] == 0xff
+            when {
+                mappedIpv4 -> isAuthenticatedCdnIpv4(bytes.takeLast(4))
+                bytes[0] and 0xfe == 0xfc -> false
+                bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8 -> false
+                else -> true
+            }
+        }
+        else -> false
+    }
+}
+
+private fun isAuthenticatedCdnIpv4(bytes: List<Int>): Boolean =
+    when {
+        bytes.size != 4 -> false
+        bytes[0] == 0 || bytes[0] == 10 || bytes[0] == 127 || bytes[0] >= 224 -> false
+        bytes[0] == 100 && bytes[1] in 64..127 -> false
+        bytes[0] == 169 && bytes[1] == 254 -> false
+        bytes[0] == 172 && bytes[1] in 16..31 -> false
+        bytes[0] == 192 && bytes[1] == 168 -> false
+        bytes[0] == 192 && bytes[1] == 0 && bytes[2] in 0..2 -> false
+        bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100 -> false
+        bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113 -> false
+        else -> true // Includes Android VPN fake-IP 198.18/15 on this authenticated CDN-only route.
     }
 
 internal data class ConnectRequest(
