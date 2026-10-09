@@ -222,11 +222,13 @@ fun OnlineVideoPlayerScreen(
         }
     LaunchedEffect(state.stream, playback?.error) {
         val failedPlayback = playback?.takeIf { it.error != null } ?: return@LaunchedEffect
+        val playerError = failedPlayback.player.playerError ?: return@LaunchedEffect
+        if (!playerError.isRecoverableSessionReplacement()) return@LaunchedEffect
         if (automaticRecoveryAttempts >= STREAM_SESSION_RECOVERY_ATTEMPTS) return@LaunchedEffect
         automaticRecoveryAttempts += 1
         val resumePositionMs = failedPlayback.player.currentPosition.coerceAtLeast(0L)
-        // The account-session owner can replace its native generation after a CM heartbeat loss. Give that
-        // bounded rebuild time to settle, then reopen a range stream and continue from the last decoded frame.
+        // Only an invalidated native session/stream is reopened here. Transport, content and decoder failures
+        // keep their typed Media3 outcome instead of multiplying SDK retries with blind UI retries.
         delay(STREAM_SESSION_RECOVERY_DELAY_MS)
         onRetry(resumePositionMs)
     }
@@ -502,6 +504,20 @@ internal data class SteamChunkPlayback(
 /** Programmatic seek seam for tests and debug tooling; no gesture or ADB dependency. */
 internal fun interface WorkshopVideoDebugSeek {
     fun seekTo(positionMs: Long)
+}
+
+internal fun PlaybackException.isRecoverableSessionReplacement(): Boolean {
+    var current: Throwable? = this
+    repeat(MAX_CAUSE_DEPTH) {
+        val message = current?.message.orEmpty()
+        if (message.contains("invalid stream handle", ignoreCase = true) ||
+            message.contains("stream is closed", ignoreCase = true)
+        ) {
+            return true
+        }
+        current = current?.cause
+    }
+    return false
 }
 
 internal fun ExoPlayer.debugSeekSeam(stream: WorkshopVideoStreamSession): WorkshopVideoDebugSeek =
@@ -783,6 +799,7 @@ internal class SteamChunkDataSource(
             ),
         )
         StreamTelemetry.data(stream, "demand", mapOf("position" to readPosition, "bytes" to requestedLength))
+        val readStartedMs = android.os.SystemClock.elapsedRealtime()
         val read =
             try {
                 runBlocking {
@@ -799,7 +816,11 @@ internal class SteamChunkDataSource(
                 StreamTelemetry.data(
                     stream,
                     "read_failed",
-                    mapOf("position" to readPosition, "failure_type" to "io"),
+                    mapOf(
+                        "position" to readPosition,
+                        "failure_type" to "io",
+                        "elapsed_ms" to (android.os.SystemClock.elapsedRealtime() - readStartedMs),
+                    ),
                 )
                 // IOException is the only retry-compatible type exposed at this boundary. Do not label it network.
                 throw error
@@ -809,7 +830,11 @@ internal class SteamChunkDataSource(
                 StreamTelemetry.data(
                     stream,
                     "read_failed",
-                    mapOf("position" to readPosition, "failure_type" to "unexpected"),
+                    mapOf(
+                        "position" to readPosition,
+                        "failure_type" to "unexpected",
+                        "elapsed_ms" to (android.os.SystemClock.elapsedRealtime() - readStartedMs),
+                    ),
                 )
                 throw IOException("Steam video chunk read failed", error)
             }
@@ -818,7 +843,15 @@ internal class SteamChunkDataSource(
         bytesRemaining -= read
         cursor.advance(readPosition)
         bytesTransferred(read)
-        StreamTelemetry.data(stream, "read", mapOf("position" to readPosition, "bytes" to read))
+        StreamTelemetry.data(
+            stream,
+            "read",
+            mapOf(
+                "position" to readPosition,
+                "bytes" to read,
+                "elapsed_ms" to (android.os.SystemClock.elapsedRealtime() - readStartedMs),
+            ),
+        )
         return read
     }
 
@@ -875,9 +908,10 @@ internal object StreamTelemetry {
     private const val MAX_FIELD_CHARS = 48
 }
 
-private const val STREAM_LOAD_RETRY_COUNT = 5
+private const val STREAM_LOAD_RETRY_COUNT = 0
 private const val STREAM_SESSION_RECOVERY_ATTEMPTS = 2
-private const val STREAM_SESSION_RECOVERY_DELAY_MS = 5_000L
+private const val STREAM_SESSION_RECOVERY_DELAY_MS = 1_000L
+private const val MAX_CAUSE_DEPTH = 8
 private const val STREAM_PLAYER_LOG_TAG = "WallHubStreamPlayer"
 private const val STREAM_MIN_BUFFER_MS = 6_000
 private const val STREAM_MAX_BUFFER_MS = 15_000
