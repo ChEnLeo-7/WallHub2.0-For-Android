@@ -316,10 +316,38 @@ private class SteamContentSdkEngineRangeStream(
         length: Int,
     ): Int = stream.readAt(position, destination, offset, length)
 
+    override fun updatePlaybackDemand(demand: SteamContentSdkPlaybackDemand): SteamContentSdkBufferSnapshot {
+        stream.updatePlaybackDemand(
+            position = demand.position,
+            bufferedBytes = demand.bufferedBytes,
+            throughputBytesPerSecond = demand.throughputBytesPerSecond,
+            bitrateBitsPerSecond = demand.bitrateBitsPerSecond,
+            rebuffered = demand.rebuffered,
+        )
+        return stream.bufferSnapshot().toAppSnapshot()
+    }
+
+    override fun bufferSnapshot(): SteamContentSdkBufferSnapshot = stream.bufferSnapshot().toAppSnapshot()
+
+    override fun cancelPlaybackDemand() = stream.cancelPlaybackDemand()
+
+    override fun cancel() = stream.cancel()
+
     override fun close() {
         stream.close()
     }
 }
+
+private fun DepotRangeStream.BufferSnapshot.toAppSnapshot() =
+    SteamContentSdkBufferSnapshot(
+        position = position,
+        targetBytes = targetBytes,
+        prefetchOffset = prefetchOffset,
+        prefetchBytes = prefetchBytes,
+        generation = generation,
+        cachedBytes = cachedBytes,
+        cancelled = cancelled,
+    )
 
 /** The SDK task handle as [SteamContentSdkTask]. */
 private class SteamContentSdkEngineTask(

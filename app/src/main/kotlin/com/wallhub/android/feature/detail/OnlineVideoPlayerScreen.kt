@@ -193,10 +193,12 @@ fun OnlineVideoPlayerScreen(
     var fullscreen by rememberSaveable { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
     var playbackHapticDelivered by remember(state.stream) { mutableStateOf(false) }
+    var automaticRecoveryAttempts by rememberSaveable { mutableStateOf(0) }
     val context = LocalContext.current
     val streamingStartedMessage = stringResource(R.string.detail_streaming_started)
     val steamCdnMessageTemplate = stringResource(R.string.detail_steam_cdn, "%s")
     val onFirstFrameRendered = {
+        automaticRecoveryAttempts = 0
         if (!playbackHapticDelivered) {
             playbackHapticDelivered = true
             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -218,6 +220,16 @@ fun OnlineVideoPlayerScreen(
                 onFirstFrameRendered = onFirstFrameRendered,
             )
         }
+    LaunchedEffect(state.stream, playback?.error) {
+        val failedPlayback = playback?.takeIf { it.error != null } ?: return@LaunchedEffect
+        if (automaticRecoveryAttempts >= STREAM_SESSION_RECOVERY_ATTEMPTS) return@LaunchedEffect
+        automaticRecoveryAttempts += 1
+        val resumePositionMs = failedPlayback.player.currentPosition.coerceAtLeast(0L)
+        // The account-session owner can replace its native generation after a CM heartbeat loss. Give that
+        // bounded rebuild time to settle, then reopen a range stream and continue from the last decoded frame.
+        delay(STREAM_SESSION_RECOVERY_DELAY_MS)
+        onRetry(resumePositionMs)
+    }
     BackHandler(enabled = fullscreen) { fullscreen = false }
     FullscreenSystemBarsEffect(enabled = fullscreen)
     LaunchedEffect(state.stream) {
@@ -397,6 +409,7 @@ private fun rememberSteamChunkPlaybackState(
                         playbackState == Player.STATE_BUFFERING && playbackStarted && rebufferStartedAtMs == 0L -> {
                             rebufferStartedAtMs = nowMs
                             rebufferCount += 1
+                            stream.reportPlaybackRebuffer()
                             Log.i(
                                 STREAM_PLAYER_LOG_TAG,
                                 "rebufferStart count=$rebufferCount positionMs=${player.currentPosition} " +
@@ -781,9 +794,11 @@ private class SteamChunkDataSource(
 }
 
 private const val STREAM_LOAD_RETRY_COUNT = 5
+private const val STREAM_SESSION_RECOVERY_ATTEMPTS = 2
+private const val STREAM_SESSION_RECOVERY_DELAY_MS = 5_000L
 private const val STREAM_DEMAND_REPORT_INTERVAL_MS = 500L
 private const val STREAM_PLAYER_LOG_TAG = "WallHubStreamPlayer"
-private const val STREAM_MIN_BUFFER_MS = 12_000
-private const val STREAM_MAX_BUFFER_MS = 30_000
-private const val STREAM_BUFFER_FOR_PLAYBACK_MS = 1_000
-private const val STREAM_BUFFER_AFTER_REBUFFER_MS = 8_000
+private const val STREAM_MIN_BUFFER_MS = 6_000
+private const val STREAM_MAX_BUFFER_MS = 15_000
+private const val STREAM_BUFFER_FOR_PLAYBACK_MS = 3_000
+private const val STREAM_BUFFER_AFTER_REBUFFER_MS = 6_000

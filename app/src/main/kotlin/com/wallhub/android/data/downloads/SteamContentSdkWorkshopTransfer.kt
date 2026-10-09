@@ -67,6 +67,24 @@ internal interface SteamContentSdkTask : Closeable {
  * It mirrors [SteamContentSdkTask]: the app's playback contract reads from this interface, so the
  * mapping onto it is exercised by a JVM unit test without a device or the native library.
  */
+internal data class SteamContentSdkBufferSnapshot(
+    val position: Long,
+    val targetBytes: Long,
+    val prefetchOffset: Long,
+    val prefetchBytes: Long,
+    val generation: Long,
+    val cachedBytes: Long,
+    val cancelled: Boolean,
+)
+
+internal data class SteamContentSdkPlaybackDemand(
+    val position: Long,
+    val bufferedBytes: Long,
+    val throughputBytesPerSecond: Long,
+    val bitrateBitsPerSecond: Long,
+    val rebuffered: Boolean = false,
+)
+
 internal interface SteamContentSdkRangeStream : Closeable {
     /** Reads into [destination] and returns the bytes written; zero means the end of the file. */
     fun readAt(
@@ -75,6 +93,16 @@ internal interface SteamContentSdkRangeStream : Closeable {
         offset: Int,
         length: Int,
     ): Int
+
+    /** Performs the SDK's synchronous bounded rolling-prefetch update. */
+    fun updatePlaybackDemand(demand: SteamContentSdkPlaybackDemand): SteamContentSdkBufferSnapshot
+
+    fun bufferSnapshot(): SteamContentSdkBufferSnapshot
+
+    fun cancelPlaybackDemand()
+
+    /** Interrupts an in-flight native chunk transport before close waits for its synchronized handle. */
+    fun cancel()
 }
 
 /** One file of a manifest the SDK decoded, as the app reads it. */

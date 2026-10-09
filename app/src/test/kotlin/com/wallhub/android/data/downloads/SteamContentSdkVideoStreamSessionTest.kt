@@ -9,6 +9,8 @@ import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.ThemePreference
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -18,8 +20,22 @@ import org.junit.Test
 
 private class FakeRangeStream : SteamContentSdkRangeStream {
     val reads = mutableListOf<ReadCall>()
+    val demands = mutableListOf<SteamContentSdkPlaybackDemand>()
+    val order = mutableListOf<String>()
+    var snapshot =
+        SteamContentSdkBufferSnapshot(
+            position = 0L,
+            targetBytes = 0L,
+            prefetchOffset = 0L,
+            prefetchBytes = 0L,
+            generation = 0L,
+            cachedBytes = 0L,
+            cancelled = false,
+        )
     var bytesToReturn = 0
     var closed = false
+    var throwOnCleanup = false
+    var demandLatch = CountDownLatch(1)
 
     override fun readAt(
         position: Long,
@@ -31,8 +47,29 @@ private class FakeRangeStream : SteamContentSdkRangeStream {
         return bytesToReturn.coerceAtMost(length)
     }
 
+    override fun updatePlaybackDemand(demand: SteamContentSdkPlaybackDemand): SteamContentSdkBufferSnapshot {
+        demands += demand
+        order += "demand"
+        demandLatch.countDown()
+        return snapshot
+    }
+
+    override fun bufferSnapshot(): SteamContentSdkBufferSnapshot = snapshot
+
+    override fun cancelPlaybackDemand() {
+        order += "cancel-demand"
+        if (throwOnCleanup) error("invalid stream handle")
+    }
+
+    override fun cancel() {
+        order += "cancel"
+        if (throwOnCleanup) error("invalid stream handle")
+    }
+
     override fun close() {
+        order += "close"
         closed = true
+        if (throwOnCleanup) error("invalid stream handle")
     }
 }
 
@@ -181,6 +218,112 @@ class SteamContentSdkVideoStreamSessionTest {
             assertEquals(0, zeroLength)
             assertTrue(fixture.stream.reads.isEmpty())
         }
+
+    @Test
+    fun `timeline demand is mapped to bounded logical file bytes`() {
+        val fixture = fixture(contentLength = 1_000L)
+
+        fixture.session.updatePlaybackDemand(
+            playbackSpeed = 1.5f,
+            playbackPositionMs = 2_500L,
+            bufferedPositionMs = 6_000L,
+            durationMs = 10_000L,
+        )
+
+        assertTrue(fixture.stream.demandLatch.await(2, TimeUnit.SECONDS))
+        assertEquals(
+            SteamContentSdkPlaybackDemand(
+                position = 250L,
+                bufferedBytes = 350L,
+                throughputBytesPerSecond = 0L,
+                bitrateBitsPerSecond = 800L,
+                rebuffered = false,
+            ),
+            fixture.stream.demands.single(),
+        )
+    }
+
+    @Test
+    fun `native rolling snapshot is projected to bounded timeline state`() {
+        val fixture = fixture(contentLength = 1_000L)
+        fixture.stream.snapshot =
+            SteamContentSdkBufferSnapshot(
+                position = 250L,
+                targetBytes = 400L,
+                prefetchOffset = 600L,
+                prefetchBytes = 250L,
+                generation = 7L,
+                cachedBytes = 900L,
+                cancelled = false,
+            )
+
+        fixture.session.updatePlaybackDemand(1f, 2_500L, 6_000L, 10_000L)
+
+        assertTrue(fixture.stream.demandLatch.await(2, TimeUnit.SECONDS))
+        val state = fixture.session.playbackBufferState.value
+        assertEquals(6_000L, state.bufferedPositionMs)
+        assertEquals(3_500L, state.availableDurationMs)
+        assertEquals(4_000L, state.targetDurationMs)
+        assertEquals(false, state.targetReached)
+        assertEquals(false, state.bandwidthLimited)
+    }
+
+    @Test
+    fun `unknown duration does not issue native playback demand`() {
+        val fixture = fixture(contentLength = 1_000L)
+
+        fixture.session.updatePlaybackDemand(1f, 100L, 200L, -1L)
+
+        assertEquals(false, fixture.stream.demandLatch.await(150, TimeUnit.MILLISECONDS))
+        assertTrue(fixture.stream.demands.isEmpty())
+    }
+
+    @Test
+    fun `one actual rebuffer is forwarded on only the next demand`() {
+        val fixture = fixture(contentLength = 1_000L)
+
+        fixture.session.reportPlaybackRebuffer()
+        fixture.session.updatePlaybackDemand(1f, 1_000L, 2_000L, 10_000L)
+        assertTrue(fixture.stream.demandLatch.await(2, TimeUnit.SECONDS))
+        fixture.stream.demandLatch = CountDownLatch(1)
+        fixture.session.updatePlaybackDemand(1f, 2_000L, 3_000L, 10_000L)
+        assertTrue(fixture.stream.demandLatch.await(2, TimeUnit.SECONDS))
+
+        assertEquals(listOf(true, false), fixture.stream.demands.map { it.rebuffered })
+    }
+
+    @Test
+    fun `close cancels demand before closing stream and lease and remains idempotent`() {
+        val fixture = fixture(contentLength = 100L)
+
+        fixture.session.close()
+        fixture.session.close()
+
+        assertEquals(listOf("cancel", "cancel-demand", "close"), fixture.stream.order)
+        assertEquals(listOf("stream-opened", "session-closed"), fixture.sdkSession.order)
+    }
+
+    @Test
+    fun `stale native handle cleanup still releases the shared session lease`() {
+        val fixture = fixture(contentLength = 100L)
+        fixture.stream.throwOnCleanup = true
+
+        fixture.session.close()
+
+        assertEquals(listOf("cancel", "cancel-demand", "close"), fixture.stream.order)
+        assertEquals(listOf("stream-opened", "session-closed"), fixture.sdkSession.order)
+    }
+
+    @Test
+    fun `SDK rolling session never enters full-file cache mode`() {
+        val fixture = fixture(contentLength = 100L)
+
+        fixture.session.startFullCache()
+        fixture.session.cancelFullCache()
+
+        assertTrue(fixture.stream.order.isEmpty())
+        assertEquals(0L, fixture.session.fullCacheState.value.cachedBytes)
+    }
 
     @Test
     fun closingTheSessionReleasesTheStreamBeforeTheSdkSession() {

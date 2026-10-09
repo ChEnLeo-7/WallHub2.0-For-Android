@@ -226,6 +226,9 @@ interface WorkshopVideoStreamSession : Closeable {
         durationMs: Long,
     ) = Unit
 
+    /** Marks one transition into rebuffering for the next rolling-demand update. */
+    fun reportPlaybackRebuffer() = Unit
+
     suspend fun readAt(
         position: Long,
         destination: ByteArray,

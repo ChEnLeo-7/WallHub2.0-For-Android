@@ -129,6 +129,7 @@ fun WorkshopDetailScreen(
     val context = LocalContext.current
     val inlineVideoStream = state.inlineVideoStream
     val inlineFullscreen = state.isInlineVideoFullscreen
+    var inlineRecoveryAttempts by rememberSaveable(selectedSummary?.id) { mutableStateOf(0) }
     val inlinePlayback =
         inlineVideoStream?.let { stream ->
             state.inlineVideoPlayer?.let { player ->
@@ -136,6 +137,7 @@ fun WorkshopDetailScreen(
                     stream = stream,
                     player = player,
                     onFirstFrameRendered = {
+                        inlineRecoveryAttempts = 0
                         if (shouldShowInlinePlaybackStartNotice()) {
                             Toast.makeText(
                                 context.applicationContext,
@@ -147,6 +149,13 @@ fun WorkshopDetailScreen(
                 )
             }
         }
+    LaunchedEffect(inlineVideoStream, inlinePlayback?.error) {
+        val failedPlayback = inlinePlayback?.takeIf { it.error != null } ?: return@LaunchedEffect
+        if (inlineRecoveryAttempts >= INLINE_STREAM_RECOVERY_ATTEMPTS) return@LaunchedEffect
+        inlineRecoveryAttempts += 1
+        kotlinx.coroutines.delay(INLINE_STREAM_RECOVERY_DELAY_MS)
+        onRetryInlineVideo()
+    }
     BackHandler(enabled = inlineFullscreen) { onInlineFullscreenChange(false) }
     FullscreenSystemBarsEffect(enabled = inlineFullscreen)
     Box(modifier = Modifier.fillMaxSize()) {
@@ -959,3 +968,6 @@ internal fun DetailTab(
         )
     }
 }
+
+private const val INLINE_STREAM_RECOVERY_ATTEMPTS = 2
+private const val INLINE_STREAM_RECOVERY_DELAY_MS = 5_000L
