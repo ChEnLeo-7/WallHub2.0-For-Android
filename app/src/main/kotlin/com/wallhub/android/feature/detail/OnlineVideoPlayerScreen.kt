@@ -67,6 +67,7 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.wallhub.android.R
+import com.wallhub.android.app.DebugVideoCommandBus
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
@@ -220,6 +221,12 @@ fun OnlineVideoPlayerScreen(
                 onFirstFrameRendered = onFirstFrameRendered,
             )
         }
+    LaunchedEffect(playback) {
+        val activePlayback = playback ?: return@LaunchedEffect
+        DebugVideoCommandBus.seekPositionMs.collect { positionMs ->
+            activePlayback.debugSeek.seekTo(positionMs)
+        }
+    }
     LaunchedEffect(state.stream, playback?.error) {
         val failedPlayback = playback?.takeIf { it.error != null } ?: return@LaunchedEffect
         val playerError = failedPlayback.player.playerError ?: return@LaunchedEffect

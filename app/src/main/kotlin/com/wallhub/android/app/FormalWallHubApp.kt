@@ -42,6 +42,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -49,6 +50,7 @@ import com.wallhub.android.core.designsystem.WallHubTheme
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionState
+import com.wallhub.android.app.DebugVideoCommandBus
 import com.wallhub.android.feature.setup.WallHubSetupWizard
 import kotlinx.coroutines.flow.collect
 
@@ -70,6 +72,12 @@ fun FormalWallHubApp(
             return@WallHubTheme
         }
         val navController = rememberNavController()
+        val debugWorkshopId by DebugVideoCommandBus.openWorkshopId.collectAsStateWithLifecycle()
+        LaunchedEffect(debugWorkshopId) {
+            val workshopId = debugWorkshopId ?: return@LaunchedEffect
+            navController.navigate(OnlineVideoPlayerDestination(workshopId)) { launchSingleTop = true }
+            DebugVideoCommandBus.consumeOpen(workshopId)
+        }
         val context = LocalContext.current
         val windowWidthSizeClass = currentWindowAdaptiveInfo().windowSizeClass.windowWidthSizeClass
         val currentBackStackEntry by navController.currentBackStackEntryAsState()
