@@ -168,12 +168,24 @@ interface SteamContentCredentialProvider {
 }
 
 data class WorkshopVideoBufferState(
-    /** Absolute media timeline position covered by Media3 plus contiguous verified Depot chunks. */
-    val bufferedPositionMs: Long = 0L,
-    val availableDurationMs: Long = 0L,
-    val targetDurationMs: Long = 0L,
+    /** Absolute logical-file byte cursor covered by Media3 plus contiguous verified Depot chunks. */
+    val bufferedBytes: Long = 0L,
+    val availableBytes: Long = 0L,
+    val targetBytes: Long = 0L,
     val targetReached: Boolean = false,
     val bandwidthLimited: Boolean = false,
+)
+
+enum class WorkshopVideoReadKind {
+    SEQUENTIAL,
+    SEEK,
+}
+
+/** App-owned byte demand; deliberately contains no SDK/AAR types. */
+data class WorkshopVideoReadDemand(
+    val position: Long,
+    val bufferedBytes: Long,
+    val kind: WorkshopVideoReadKind,
 )
 
 enum class WorkshopVideoFullCacheStatus {
@@ -214,17 +226,8 @@ interface WorkshopVideoStreamSession : Closeable {
     val fullCacheState: StateFlow<WorkshopVideoFullCacheState>
         get() = EmptyWorkshopVideoFullCacheState
 
-    /**
-     * Reports Media3's live playback clock to the Depot prefetcher. The transport uses the
-     * media timeline as its source of truth and only converts time to byte ranges at the Steam
-     * chunk boundary.
-     */
-    fun updatePlaybackDemand(
-        playbackSpeed: Float,
-        playbackPositionMs: Long,
-        bufferedPositionMs: Long,
-        durationMs: Long,
-    ) = Unit
+    /** Reports Media3's actual logical-file cursor to the bounded Depot prefetcher. */
+    fun updateReadDemand(demand: WorkshopVideoReadDemand) = Unit
 
     /** Marks one transition into rebuffering for the next rolling-demand update. */
     fun reportPlaybackRebuffer() = Unit

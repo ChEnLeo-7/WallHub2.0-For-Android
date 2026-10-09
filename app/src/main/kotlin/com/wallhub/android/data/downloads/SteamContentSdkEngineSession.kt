@@ -329,6 +329,25 @@ private class SteamContentSdkEngineRangeStream(
 
     override fun bufferSnapshot(): SteamContentSdkBufferSnapshot = stream.bufferSnapshot().toAppSnapshot()
 
+    override fun telemetry(): SteamContentSdkStreamTelemetry =
+        stream.telemetry().let { value ->
+            SteamContentSdkStreamTelemetry(
+                fetchStarted = value.fetchStarted,
+                fetchCompleted = value.fetchCompleted,
+                fetchFailed = value.fetchFailed,
+                deduplicated = value.deduplicated,
+                foregroundWaits = value.foregroundWaits,
+                staleCompletions = value.staleCompletions,
+                fetchMicros = value.fetchMicros,
+                queueMicros = value.queueMicros,
+                lockMicros = value.lockMicros,
+                decodeMicros = value.decodeMicros,
+                cacheHits = value.cacheHits,
+                cacheMisses = value.cacheMisses,
+                cacheEvictions = value.cacheEvictions,
+            )
+        }
+
     override fun cancelPlaybackDemand() = stream.cancelPlaybackDemand()
 
     override fun cancel() = stream.cancel()

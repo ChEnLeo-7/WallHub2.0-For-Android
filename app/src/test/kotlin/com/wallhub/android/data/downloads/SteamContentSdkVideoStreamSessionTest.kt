@@ -7,6 +7,9 @@ import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.ThemePreference
+import com.wallhub.android.core.model.WorkshopVideoReadDemand
+import com.wallhub.android.core.model.WorkshopVideoReadKind
+import com.wallhub.android.feature.detail.StreamByteCursor
 import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
@@ -124,6 +127,16 @@ private class FakeRangeSession : SteamContentSdkSession {
 
 class SteamContentSdkVideoStreamSessionTest {
     @Test
+    fun `byte cursor distinguishes contiguous reopen from a real seek`() {
+        val cursor = StreamByteCursor()
+
+        assertEquals(WorkshopVideoReadKind.SEQUENTIAL, cursor.classifyOpen(0L))
+        cursor.advance(512L)
+        assertEquals(WorkshopVideoReadKind.SEQUENTIAL, cursor.classifyOpen(512L))
+        assertEquals(WorkshopVideoReadKind.SEEK, cursor.classifyOpen(4_096L))
+    }
+
+    @Test
     fun `repository open uses a mobile-safe per-stream memory cache when the media cache setting is 512 MB`() =
         runBlocking {
             val root = Files.createTempDirectory("video-stream-repository").toFile()
@@ -220,14 +233,15 @@ class SteamContentSdkVideoStreamSessionTest {
         }
 
     @Test
-    fun `timeline demand is mapped to bounded logical file bytes`() {
+    fun `byte demand is forwarded without estimating from the media timeline`() {
         val fixture = fixture(contentLength = 1_000L)
 
-        fixture.session.updatePlaybackDemand(
-            playbackSpeed = 1.5f,
-            playbackPositionMs = 2_500L,
-            bufferedPositionMs = 6_000L,
-            durationMs = 10_000L,
+        fixture.session.updateReadDemand(
+            WorkshopVideoReadDemand(
+                position = 250L,
+                bufferedBytes = 350L,
+                kind = WorkshopVideoReadKind.SEQUENTIAL,
+            ),
         )
 
         assertTrue(fixture.stream.demandLatch.await(2, TimeUnit.SECONDS))
@@ -236,7 +250,7 @@ class SteamContentSdkVideoStreamSessionTest {
                 position = 250L,
                 bufferedBytes = 350L,
                 throughputBytesPerSecond = 0L,
-                bitrateBitsPerSecond = 800L,
+                bitrateBitsPerSecond = 1L,
                 rebuffered = false,
             ),
             fixture.stream.demands.single(),
@@ -244,7 +258,7 @@ class SteamContentSdkVideoStreamSessionTest {
     }
 
     @Test
-    fun `native rolling snapshot is projected to bounded timeline state`() {
+    fun `native rolling snapshot is projected without pretending bytes are media time`() {
         val fixture = fixture(contentLength = 1_000L)
         fixture.stream.snapshot =
             SteamContentSdkBufferSnapshot(
@@ -257,36 +271,37 @@ class SteamContentSdkVideoStreamSessionTest {
                 cancelled = false,
             )
 
-        fixture.session.updatePlaybackDemand(1f, 2_500L, 6_000L, 10_000L)
+        fixture.session.updateReadDemand(WorkshopVideoReadDemand(250L, 350L, WorkshopVideoReadKind.SEQUENTIAL))
 
         assertTrue(fixture.stream.demandLatch.await(2, TimeUnit.SECONDS))
         val state = fixture.session.playbackBufferState.value
-        assertEquals(6_000L, state.bufferedPositionMs)
-        assertEquals(3_500L, state.availableDurationMs)
-        assertEquals(4_000L, state.targetDurationMs)
+        assertEquals(600L, state.bufferedBytes)
+        assertEquals(350L, state.availableBytes)
+        assertEquals(400L, state.targetBytes)
         assertEquals(false, state.targetReached)
         assertEquals(false, state.bandwidthLimited)
     }
 
     @Test
-    fun `unknown duration does not issue native playback demand`() {
+    fun `a real seek cancels stale native demand before issuing its byte demand`() {
         val fixture = fixture(contentLength = 1_000L)
 
-        fixture.session.updatePlaybackDemand(1f, 100L, 200L, -1L)
+        fixture.session.updateReadDemand(WorkshopVideoReadDemand(700L, 100L, WorkshopVideoReadKind.SEEK))
 
-        assertEquals(false, fixture.stream.demandLatch.await(150, TimeUnit.MILLISECONDS))
-        assertTrue(fixture.stream.demands.isEmpty())
+        assertTrue(fixture.stream.demandLatch.await(2, TimeUnit.SECONDS))
+        assertEquals(listOf("cancel-demand", "demand"), fixture.stream.order)
+        assertEquals(700L, fixture.stream.demands.single().position)
     }
 
     @Test
-    fun `one actual rebuffer is forwarded on only the next demand`() {
+    fun `one actual rebuffer is forwarded on only the next byte demand`() {
         val fixture = fixture(contentLength = 1_000L)
 
         fixture.session.reportPlaybackRebuffer()
-        fixture.session.updatePlaybackDemand(1f, 1_000L, 2_000L, 10_000L)
+        fixture.session.updateReadDemand(WorkshopVideoReadDemand(100L, 100L, WorkshopVideoReadKind.SEQUENTIAL))
         assertTrue(fixture.stream.demandLatch.await(2, TimeUnit.SECONDS))
         fixture.stream.demandLatch = CountDownLatch(1)
-        fixture.session.updatePlaybackDemand(1f, 2_000L, 3_000L, 10_000L)
+        fixture.session.updateReadDemand(WorkshopVideoReadDemand(200L, 100L, WorkshopVideoReadKind.SEQUENTIAL))
         assertTrue(fixture.stream.demandLatch.await(2, TimeUnit.SECONDS))
 
         assertEquals(listOf(true, false), fixture.stream.demands.map { it.rebuffered })

@@ -57,7 +57,6 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.common.Timeline
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
@@ -72,6 +71,8 @@ import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
+import com.wallhub.android.core.model.WorkshopVideoReadDemand
+import com.wallhub.android.core.model.WorkshopVideoReadKind
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamSession
 import com.wallhub.android.core.model.WorkshopVideoFullCacheState
@@ -84,7 +85,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.IOException
@@ -441,18 +441,11 @@ private fun rememberSteamChunkPlaybackState(
                     newPosition: Player.PositionInfo,
                     reason: Int,
                 ) {
-                    player.reportPlaybackDemand(stream)
-                }
-
-                override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) {
-                    player.reportPlaybackDemand(stream)
-                }
-
-                override fun onTimelineChanged(
-                    timeline: Timeline,
-                    reason: Int,
-                ) {
-                    player.reportPlaybackDemand(stream)
+                    StreamTelemetry.player(
+                        stream = stream,
+                        event = "position_discontinuity",
+                        fields = mapOf("reason" to reason, "position_ms" to newPosition.positionMs),
+                    )
                 }
             }
         val analyticsListener =
@@ -471,7 +464,7 @@ private fun rememberSteamChunkPlaybackState(
             }
         player.addListener(listener)
         player.addAnalyticsListener(analyticsListener)
-        player.reportPlaybackDemand(stream)
+        StreamTelemetry.lifecycle(stream, "player_attached")
         onDispose {
             player.removeListener(listener)
             player.removeAnalyticsListener(analyticsListener)
@@ -485,18 +478,13 @@ private fun rememberSteamChunkPlaybackState(
             if (releasePlayerWhenDisposed) player.release()
         }
     }
-    LaunchedEffect(player, stream) {
-        while (isActive) {
-            player.reportPlaybackDemand(stream)
-            delay(STREAM_DEMAND_REPORT_INTERVAL_MS)
-        }
-    }
     return SteamChunkPlayback(
         player = player,
         renderedFirstFrame = renderedFirstFrame,
         error = playbackError,
         bufferState = bufferState,
         fullCacheState = fullCacheState,
+        debugSeek = player.debugSeekSeam(stream),
         onCancelCompleteFileCache = stream::cancelFullCache,
     )
 }
@@ -507,17 +495,21 @@ internal data class SteamChunkPlayback(
     val error: DetailUiText?,
     val bufferState: com.wallhub.android.core.model.WorkshopVideoBufferState,
     val fullCacheState: WorkshopVideoFullCacheState,
+    val debugSeek: WorkshopVideoDebugSeek,
     val onCancelCompleteFileCache: () -> Unit,
 )
 
-private fun ExoPlayer.reportPlaybackDemand(stream: WorkshopVideoStreamSession) {
-    stream.updatePlaybackDemand(
-        playbackSpeed = playbackParameters.speed,
-        playbackPositionMs = currentPosition,
-        bufferedPositionMs = bufferedPosition,
-        durationMs = duration,
-    )
+/** Programmatic seek seam for tests and debug tooling; no gesture or ADB dependency. */
+internal fun interface WorkshopVideoDebugSeek {
+    fun seekTo(positionMs: Long)
 }
+
+internal fun ExoPlayer.debugSeekSeam(stream: WorkshopVideoStreamSession): WorkshopVideoDebugSeek =
+    WorkshopVideoDebugSeek { positionMs ->
+        val safePosition = positionMs.coerceAtLeast(0L)
+        StreamTelemetry.player(stream, "debug_seek", mapOf("position_ms" to safePosition))
+        seekTo(safePosition)
+    }
 
 @Composable
 internal fun SteamChunkVideoPlayer(
@@ -715,11 +707,36 @@ private tailrec fun Context.findActivity(): Activity? =
 internal class SteamChunkDataSourceFactory(
     private val stream: WorkshopVideoStreamSession,
 ) : DataSource.Factory {
-    override fun createDataSource(): DataSource = SteamChunkDataSource(stream)
+    private val cursor = StreamByteCursor()
+
+    override fun createDataSource(): DataSource = SteamChunkDataSource(stream, cursor)
 }
 
-private class SteamChunkDataSource(
+/** Shared across Media3 data-source instances so reopen-at-cursor is not mistaken for a seek. */
+internal class StreamByteCursor {
+    private var expectedPosition: Long? = null
+
+    @Synchronized
+    fun classifyOpen(position: Long): WorkshopVideoReadKind {
+        val kind =
+            if (expectedPosition == null || expectedPosition == position) {
+                WorkshopVideoReadKind.SEQUENTIAL
+            } else {
+                WorkshopVideoReadKind.SEEK
+            }
+        expectedPosition = position
+        return kind
+    }
+
+    @Synchronized
+    fun advance(position: Long) {
+        expectedPosition = position
+    }
+}
+
+internal class SteamChunkDataSource(
     private val stream: WorkshopVideoStreamSession,
+    private val cursor: StreamByteCursor = StreamByteCursor(),
 ) : BaseDataSource(false) {
     private var currentUri: Uri? = null
     private var readPosition = 0L
@@ -738,6 +755,13 @@ private class SteamChunkDataSource(
             } else {
                 min(available, dataSpec.length)
             }
+        val kind = cursor.classifyOpen(readPosition)
+        stream.updateReadDemand(WorkshopVideoReadDemand(readPosition, 0L, kind))
+        StreamTelemetry.data(
+            stream,
+            "open",
+            mapOf("position" to readPosition, "length" to bytesRemaining, "kind" to kind.name),
+        )
         opened = true
         transferStarted(dataSpec)
         return bytesRemaining
@@ -751,6 +775,14 @@ private class SteamChunkDataSource(
         if (length == 0) return 0
         if (bytesRemaining == 0L) return C.RESULT_END_OF_INPUT
         val requestedLength = min(length.toLong(), min(bytesRemaining, STREAM_READ_WINDOW_BYTES)).toInt()
+        stream.updateReadDemand(
+            WorkshopVideoReadDemand(
+                position = readPosition,
+                bufferedBytes = requestedLength.toLong(),
+                kind = WorkshopVideoReadKind.SEQUENTIAL,
+            ),
+        )
+        StreamTelemetry.data(stream, "demand", mapOf("position" to readPosition, "bytes" to requestedLength))
         val read =
             try {
                 runBlocking {
@@ -764,17 +796,29 @@ private class SteamChunkDataSource(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: IOException) {
+                StreamTelemetry.data(
+                    stream,
+                    "read_failed",
+                    mapOf("position" to readPosition, "failure_type" to "io"),
+                )
+                // IOException is the only retry-compatible type exposed at this boundary. Do not label it network.
                 throw error
             } catch (error: VirtualMachineError) {
                 throw error
             } catch (error: Throwable) {
-                // Media3 retries IO failures; preserve the underlying cause for diagnostics.
+                StreamTelemetry.data(
+                    stream,
+                    "read_failed",
+                    mapOf("position" to readPosition, "failure_type" to "unexpected"),
+                )
                 throw IOException("Steam video chunk read failed", error)
             }
         if (read == 0) return C.RESULT_END_OF_INPUT
         readPosition += read
         bytesRemaining -= read
+        cursor.advance(readPosition)
         bytesTransferred(read)
+        StreamTelemetry.data(stream, "read", mapOf("position" to readPosition, "bytes" to read))
         return read
     }
 
@@ -784,6 +828,7 @@ private class SteamChunkDataSource(
         currentUri = null
         if (opened) {
             opened = false
+            StreamTelemetry.lifecycle(stream, "data_source_closed")
             transferEnded()
         }
     }
@@ -793,10 +838,46 @@ private class SteamChunkDataSource(
     }
 }
 
+/** Bounded structured telemetry: correlation IDs and numeric/enumerated fields only. */
+internal object StreamTelemetry {
+    private val nextId = java.util.concurrent.atomic.AtomicLong(1L)
+    private val ids = java.util.WeakHashMap<WorkshopVideoStreamSession, Long>()
+
+    fun data(stream: WorkshopVideoStreamSession, event: String, fields: Map<String, Any> = emptyMap()) =
+        record(stream, "stream", event, fields)
+
+    fun player(stream: WorkshopVideoStreamSession, event: String, fields: Map<String, Any> = emptyMap()) =
+        record(stream, "player", event, fields)
+
+    fun lifecycle(stream: WorkshopVideoStreamSession, event: String) = record(stream, "lifecycle", event, emptyMap())
+
+    private fun record(
+        stream: WorkshopVideoStreamSession,
+        area: String,
+        event: String,
+        fields: Map<String, Any>,
+    ) {
+        val correlationId = synchronized(ids) { ids.getOrPut(stream) { nextId.getAndIncrement() } }
+        val safeFields =
+            fields.entries.take(MAX_FIELDS).joinToString(separator = " ") { (key, value) ->
+                val safeKey = key.filter { it.isLetterOrDigit() || it == '_' }.take(MAX_FIELD_CHARS)
+                val safeValue = value.toString().filter { it.isLetterOrDigit() || it in "_-" }.take(MAX_FIELD_CHARS)
+                "$safeKey=$safeValue"
+            }
+        Log.d(
+            STREAM_PLAYER_LOG_TAG,
+            "stream_id=$correlationId area=$area event=${event.take(MAX_FIELD_CHARS)}" +
+                if (safeFields.isEmpty()) "" else " $safeFields",
+        )
+    }
+
+    private const val MAX_FIELDS = 8
+    private const val MAX_FIELD_CHARS = 48
+}
+
 private const val STREAM_LOAD_RETRY_COUNT = 5
 private const val STREAM_SESSION_RECOVERY_ATTEMPTS = 2
 private const val STREAM_SESSION_RECOVERY_DELAY_MS = 5_000L
-private const val STREAM_DEMAND_REPORT_INTERVAL_MS = 500L
 private const val STREAM_PLAYER_LOG_TAG = "WallHubStreamPlayer"
 private const val STREAM_MIN_BUFFER_MS = 6_000
 private const val STREAM_MAX_BUFFER_MS = 15_000

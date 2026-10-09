@@ -1,8 +1,10 @@
 package com.wallhub.android.data.downloads
 
+import android.util.Log
 import com.wallhub.android.core.model.WorkshopVideoBufferState
+import com.wallhub.android.core.model.WorkshopVideoReadDemand
+import com.wallhub.android.core.model.WorkshopVideoReadKind
 import com.wallhub.android.core.model.WorkshopVideoStreamSession
-import java.math.BigInteger
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
@@ -25,7 +27,8 @@ internal class SteamContentSdkVideoStreamSession(
 ) : WorkshopVideoStreamSession {
     private val closed = AtomicBoolean(false)
     private val pendingRebuffer = AtomicBoolean(false)
-    private val latestDemand = AtomicReference<TimelineDemand?>(null)
+    private val pendingSeek = AtomicBoolean(false)
+    private val latestDemand = AtomicReference<WorkshopVideoReadDemand?>(null)
     private val demandSignal = Channel<Unit>(Channel.CONFLATED)
     private val demandScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutablePlaybackBufferState = MutableStateFlow(WorkshopVideoBufferState())
@@ -35,14 +38,41 @@ internal class SteamContentSdkVideoStreamSession(
     init {
         demandScope.launch {
             for (ignored in demandSignal) {
-                val timeline = latestDemand.getAndSet(null) ?: continue
+                val requested = latestDemand.getAndSet(null) ?: continue
                 if (closed.get()) continue
+                val seek = pendingSeek.get() || requested.kind == WorkshopVideoReadKind.SEEK
+                if (seek) {
+                    // A discontinuity invalidates the previous rolling window. Sequential opens/reads never do.
+                    runCatching { stream.cancelPlaybackDemand() }
+                }
                 val rebuffered = pendingRebuffer.get()
-                val demand = timeline.toSdkDemand(rebuffered)
+                val demand = requested.toSdkDemand(rebuffered)
                 runCatching { stream.updatePlaybackDemand(demand) }
                     .onSuccess { snapshot ->
                         if (rebuffered) pendingRebuffer.compareAndSet(true, false)
-                        if (!closed.get()) mutablePlaybackBufferState.value = timeline.project(snapshot, demand)
+                        if (seek) pendingSeek.compareAndSet(true, false)
+                        if (!closed.get()) mutablePlaybackBufferState.value = requested.project(snapshot)
+                        val telemetry = stream.telemetry()
+                        Log.d(
+                            TELEMETRY_TAG,
+                            "area=sdk_stream event=demand kind=${requested.kind.name.lowercase()} " +
+                                "generation=${snapshot.generation} position=${requested.position} " +
+                                "buffered=${requested.bufferedBytes} target=${snapshot.targetBytes} " +
+                                "cached=${snapshot.cachedBytes} fetch_started=${telemetry.fetchStarted} " +
+                                "fetch_completed=${telemetry.fetchCompleted} fetch_failed=${telemetry.fetchFailed} " +
+                                "deduplicated=${telemetry.deduplicated} foreground_waits=${telemetry.foregroundWaits} " +
+                                "stale=${telemetry.staleCompletions} fetch_us=${telemetry.fetchMicros} " +
+                                "queue_us=${telemetry.queueMicros} lock_us=${telemetry.lockMicros} " +
+                                "decode_us=${telemetry.decodeMicros} cache_hits=${telemetry.cacheHits} " +
+                                "cache_misses=${telemetry.cacheMisses} evictions=${telemetry.cacheEvictions}",
+                        )
+                    }
+                    .onFailure { error ->
+                        Log.w(
+                            TELEMETRY_TAG,
+                            "area=sdk_stream event=demand_failed kind=${requested.kind.name.lowercase()} " +
+                                "failure=${error.javaClass.simpleName.take(48)}",
+                        )
                     }
             }
         }
@@ -69,21 +99,16 @@ internal class SteamContentSdkVideoStreamSession(
             )
         }
 
-    override fun updatePlaybackDemand(
-        playbackSpeed: Float,
-        playbackPositionMs: Long,
-        bufferedPositionMs: Long,
-        durationMs: Long,
-    ) {
-        if (closed.get() || contentLength <= 0L || durationMs <= 0L || !playbackSpeed.isFinite()) return
-        val timeline =
-            TimelineDemand(
-                playbackSpeed = playbackSpeed.coerceAtLeast(0f),
-                playbackPositionMs = playbackPositionMs.coerceIn(0L, durationMs),
-                bufferedPositionMs = bufferedPositionMs.coerceIn(0L, durationMs),
-                durationMs = durationMs,
-            )
-        latestDemand.set(timeline)
+    override fun updateReadDemand(demand: WorkshopVideoReadDemand) {
+        if (closed.get() || contentLength <= 0L) return
+        val position = demand.position.coerceIn(0L, contentLength)
+        if (demand.kind == WorkshopVideoReadKind.SEEK) pendingSeek.set(true)
+        latestDemand.set(
+            demand.copy(
+                position = position,
+                bufferedBytes = demand.bufferedBytes.coerceIn(0L, contentLength - position),
+            ),
+        )
         demandSignal.trySend(Unit)
     }
 
@@ -104,68 +129,31 @@ internal class SteamContentSdkVideoStreamSession(
         runCatching { sessionLease.close() }
     }
 
-    private inner class TimelineDemand(
-        val playbackSpeed: Float,
-        val playbackPositionMs: Long,
-        val bufferedPositionMs: Long,
-        val durationMs: Long,
-    ) {
-        fun toSdkDemand(rebuffered: Boolean): SteamContentSdkPlaybackDemand {
-            val position = timelineToBytes(playbackPositionMs, durationMs, contentLength)
-            val bufferedEnd = timelineToBytes(maxOf(playbackPositionMs, bufferedPositionMs), durationMs, contentLength)
-            val bitrate = bytesToBitsPerSecond(contentLength, durationMs)
-            return SteamContentSdkPlaybackDemand(
-                position = position,
-                bufferedBytes = (bufferedEnd - position).coerceAtLeast(0L),
-                // Zero explicitly means unknown network throughput; media bitrate is consumption, not a
-                // transport measurement. Rebuffer feedback still grows the adaptive target conservatively.
-                throughputBytesPerSecond = 0L,
-                bitrateBitsPerSecond = bitrate,
-                rebuffered = rebuffered,
-            )
-        }
+    private fun WorkshopVideoReadDemand.toSdkDemand(rebuffered: Boolean) =
+        SteamContentSdkPlaybackDemand(
+            position = position,
+            bufferedBytes = bufferedBytes,
+            // The current AAR interface has no explicit unknown bitrate but requires a positive value.
+            // One is the conservative valid sentinel; deriving it from duration would be a lossy estimate.
+            throughputBytesPerSecond = 0L,
+            bitrateBitsPerSecond = UNKNOWN_VALID_BITRATE_BITS_PER_SECOND,
+            rebuffered = rebuffered,
+        )
 
-        fun project(
-            snapshot: SteamContentSdkBufferSnapshot,
-            demand: SteamContentSdkPlaybackDemand,
-        ): WorkshopVideoBufferState {
-            // Media3's contiguous buffered end is authoritative. The SDK snapshot describes its bounded target
-            // and cache occupancy, not a promise that every cached byte is contiguous from the playhead.
-            val availableBytes = demand.bufferedBytes.coerceAtMost(contentLength - demand.position)
-            val bufferedEnd = saturatingAdd(demand.position, availableBytes).coerceAtMost(contentLength)
-            val targetDuration = bytesToTimeline(snapshot.targetBytes.coerceAtMost(contentLength), contentLength, durationMs)
-            val availableDuration = bytesToTimeline(availableBytes, contentLength, durationMs)
-            return WorkshopVideoBufferState(
-                bufferedPositionMs = bytesToTimeline(bufferedEnd, contentLength, durationMs),
-                availableDurationMs = availableDuration,
-                targetDurationMs = targetDuration,
-                targetReached = !snapshot.cancelled && availableBytes >= snapshot.targetBytes,
-                bandwidthLimited = demand.throughputBytesPerSecond != 0L &&
-                    demand.throughputBytesPerSecond <= Long.MAX_VALUE / 8L &&
-                    demand.throughputBytesPerSecond * 8L < demand.bitrateBitsPerSecond,
-            )
-        }
+    private fun WorkshopVideoReadDemand.project(snapshot: SteamContentSdkBufferSnapshot): WorkshopVideoBufferState {
+        val available = bufferedBytes.coerceAtMost(contentLength - position)
+        return WorkshopVideoBufferState(
+            bufferedBytes = saturatingAdd(position, available).coerceAtMost(contentLength),
+            availableBytes = available,
+            targetBytes = snapshot.targetBytes.coerceAtMost(contentLength),
+            targetReached = !snapshot.cancelled && available >= snapshot.targetBytes,
+            bandwidthLimited = false,
+        )
     }
 }
 
-private fun timelineToBytes(valueMs: Long, durationMs: Long, contentLength: Long): Long =
-    scaleRatio(valueMs, contentLength, durationMs).coerceIn(0L, contentLength)
-
-private fun bytesToTimeline(bytes: Long, contentLength: Long, durationMs: Long): Long =
-    if (contentLength <= 0L) 0L else scaleRatio(bytes, durationMs, contentLength).coerceIn(0L, durationMs)
-
-private fun bytesToBitsPerSecond(contentLength: Long, durationMs: Long): Long =
-    scaleRatio(contentLength, 8_000L, durationMs).coerceAtLeast(1L)
-
-/** Exact integer scaling without overflowing intermediate products. */
-private fun scaleRatio(value: Long, multiplier: Long, divisor: Long): Long {
-    if (value <= 0L || multiplier <= 0L || divisor <= 0L) return 0L
-    return BigInteger.valueOf(value)
-        .multiply(BigInteger.valueOf(multiplier))
-        .divide(BigInteger.valueOf(divisor))
-        .min(BigInteger.valueOf(Long.MAX_VALUE))
-        .toLong()
-}
+private const val UNKNOWN_VALID_BITRATE_BITS_PER_SECOND = 1L
+private const val TELEMETRY_TAG = "WallHubStreamTelemetry"
 
 private fun saturatingAdd(left: Long, right: Long): Long =
     if (right > 0L && left > Long.MAX_VALUE - right) Long.MAX_VALUE else left + right

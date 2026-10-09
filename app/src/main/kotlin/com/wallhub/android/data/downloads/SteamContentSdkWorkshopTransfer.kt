@@ -85,6 +85,22 @@ internal data class SteamContentSdkPlaybackDemand(
     val rebuffered: Boolean = false,
 )
 
+internal data class SteamContentSdkStreamTelemetry(
+    val fetchStarted: Long = 0L,
+    val fetchCompleted: Long = 0L,
+    val fetchFailed: Long = 0L,
+    val deduplicated: Long = 0L,
+    val foregroundWaits: Long = 0L,
+    val staleCompletions: Long = 0L,
+    val fetchMicros: Long = 0L,
+    val queueMicros: Long = 0L,
+    val lockMicros: Long = 0L,
+    val decodeMicros: Long = 0L,
+    val cacheHits: Long = 0L,
+    val cacheMisses: Long = 0L,
+    val cacheEvictions: Long = 0L,
+)
+
 internal interface SteamContentSdkRangeStream : Closeable {
     /** Reads into [destination] and returns the bytes written; zero means the end of the file. */
     fun readAt(
@@ -98,6 +114,8 @@ internal interface SteamContentSdkRangeStream : Closeable {
     fun updatePlaybackDemand(demand: SteamContentSdkPlaybackDemand): SteamContentSdkBufferSnapshot
 
     fun bufferSnapshot(): SteamContentSdkBufferSnapshot
+
+    fun telemetry(): SteamContentSdkStreamTelemetry = SteamContentSdkStreamTelemetry()
 
     fun cancelPlaybackDemand()
 
