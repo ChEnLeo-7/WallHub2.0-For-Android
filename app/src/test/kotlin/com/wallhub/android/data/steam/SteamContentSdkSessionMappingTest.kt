@@ -68,6 +68,7 @@ class SteamContentSdkSessionMappingTest {
                 SessionFailure.CANCELLED to SteamContentSdkSessionFailure.CANCELLED,
                 SessionFailure.INTERNAL to SteamContentSdkSessionFailure.INTERNAL,
                 SessionFailure.PROTOCOL_ADAPTER to SteamContentSdkSessionFailure.PROTOCOL_ADAPTER,
+                SessionFailure.RATE_LIMITED to SteamContentSdkSessionFailure.RATE_LIMITED,
             )
         expected.forEach { (ordinal, failure) ->
             assertEquals(failure, steamContentSdkSessionFailure(ordinal), "failure ordinal $ordinal")
@@ -177,6 +178,7 @@ class SteamContentSdkSessionMappingTest {
             SteamContentSdkSessionFailure.UNSUPPORTED,
             SteamContentSdkSessionFailure.INTERNAL,
             SteamContentSdkSessionFailure.PROTOCOL_ADAPTER,
+            SteamContentSdkSessionFailure.RATE_LIMITED,
             SteamContentSdkSessionFailure.UNKNOWN,
         ).forEach { failure ->
             assertEquals(SteamSessionPhase.FAILED, steamContentSdkFailurePhase(failure), "failure $failure")
@@ -205,10 +207,10 @@ class SteamContentSdkSessionMappingTest {
     }
 
     @Test
-    fun `only a remote result authorises deleting the stored credential`() {
-        // The device reading: a CM route failure arrives with the same authentication class as a refusal, and
-        // clearing on that class deleted a working account.
+    fun `only a credential-invalidating remote result authorises deleting the stored credential`() {
+        // RateLimitExceeded (84) is a retry-later answer, not evidence that the token is dead.
         assertTrue(serviceRefusedCredential("authentication failed during AccessTokenLogon cause=RemoteResult (result=Some(15))"))
+        assertFalse(serviceRefusedCredential("authentication failed during AccessTokenLogon cause=RemoteResult (result=Some(84))"))
         assertFalse(serviceRefusedCredential("authentication failed during AccessTokenLogon cause=CmRoute (result=None)"))
         assertFalse(serviceRefusedCredential("authentication failed during AccessTokenLogon cause=RemoteClosed (result=None)"))
         assertFalse(serviceRefusedCredential(""))

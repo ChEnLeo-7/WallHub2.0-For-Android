@@ -51,6 +51,7 @@ internal enum class SteamContentSdkSessionFailure {
     CANCELLED,
     INTERNAL,
     PROTOCOL_ADAPTER,
+    RATE_LIMITED,
     UNKNOWN,
 }
 
@@ -187,6 +188,7 @@ internal fun steamContentSdkSessionFailure(ordinal: Long): SteamContentSdkSessio
         SessionFailure.CANCELLED -> SteamContentSdkSessionFailure.CANCELLED
         SessionFailure.INTERNAL -> SteamContentSdkSessionFailure.INTERNAL
         SessionFailure.PROTOCOL_ADAPTER -> SteamContentSdkSessionFailure.PROTOCOL_ADAPTER
+        SessionFailure.RATE_LIMITED -> SteamContentSdkSessionFailure.RATE_LIMITED
         else -> SteamContentSdkSessionFailure.UNKNOWN
     }
 
@@ -274,10 +276,15 @@ internal fun steamContentSdkChallengePhase(kind: SteamContentSdkChallengeKind): 
  * refusal - and anything unrecognised, including no detail at all, keeps the credential. Keeping a dead token
  * costs one refused restore; deleting a live one costs the user a full sign-in with a Guard code.
  */
-internal fun serviceRefusedCredential(detail: String?): Boolean =
-    detail != null && detail.contains(REMOTE_RESULT_CAUSE_MARKER)
+internal fun serviceRefusedCredential(detail: String?): Boolean {
+    if (detail == null || !detail.contains(REMOTE_RESULT_CAUSE_MARKER)) return false
+    val result = REMOTE_RESULT_PATTERN.find(detail)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: return false
+    return result in CREDENTIAL_REFUSAL_RESULTS
+}
 
-/** The cause marker the SDK prints when Steam itself answered about the credential. */
+/** Remote results that actually invalidate a stored credential, rather than asking the client to retry later. */
+private val CREDENTIAL_REFUSAL_RESULTS = setOf(5, 15, 26, 27)
+private val REMOTE_RESULT_PATTERN = Regex("result=Some\\((\\d+)\\)")
 private const val REMOTE_RESULT_CAUSE_MARKER = "cause=RemoteResult"
 
 /**
@@ -304,6 +311,7 @@ internal fun steamContentSdkFailurePhase(failure: SteamContentSdkSessionFailure)
         SteamContentSdkSessionFailure.UNSUPPORTED,
         SteamContentSdkSessionFailure.INTERNAL,
         SteamContentSdkSessionFailure.PROTOCOL_ADAPTER,
+        SteamContentSdkSessionFailure.RATE_LIMITED,
         SteamContentSdkSessionFailure.UNKNOWN,
         -> SteamSessionPhase.FAILED
     }
