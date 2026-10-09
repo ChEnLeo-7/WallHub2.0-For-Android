@@ -757,14 +757,35 @@ internal class StreamByteCursor {
     }
 }
 
+internal class StreamDemandThrottle(
+    private val byteInterval: Long = 256L * 1024L,
+    private val timeIntervalMs: Long = 250L,
+) {
+    private var lastPosition = Long.MIN_VALUE
+    private var lastAtMs = Long.MIN_VALUE
+
+    @Synchronized
+    fun shouldPublish(position: Long, nowMs: Long, force: Boolean = false): Boolean {
+        val byteAdvance = if (lastPosition == Long.MIN_VALUE) Long.MAX_VALUE else position - lastPosition
+        val elapsedMs = if (lastAtMs == Long.MIN_VALUE) Long.MAX_VALUE else nowMs - lastAtMs
+        if (!force && byteAdvance < byteInterval && elapsedMs < timeIntervalMs) return false
+        lastPosition = position
+        lastAtMs = nowMs
+        return true
+    }
+}
+
 internal class SteamChunkDataSource(
     private val stream: WorkshopVideoStreamSession,
     private val cursor: StreamByteCursor = StreamByteCursor(),
+    private val clockMs: () -> Long = android.os.SystemClock::elapsedRealtime,
+    private val demandThrottle: StreamDemandThrottle = StreamDemandThrottle(),
 ) : BaseDataSource(false) {
     private var currentUri: Uri? = null
     private var readPosition = 0L
     private var bytesRemaining = 0L
     private var opened = false
+    private var lastReadLogPosition = Long.MIN_VALUE
 
     override fun open(dataSpec: DataSpec): Long {
         transferInitializing(dataSpec)
@@ -779,7 +800,7 @@ internal class SteamChunkDataSource(
                 min(available, dataSpec.length)
             }
         val kind = cursor.classifyOpen(readPosition)
-        stream.updateReadDemand(WorkshopVideoReadDemand(readPosition, 0L, kind))
+        publishDemand(readPosition, 0L, kind, force = true)
         StreamTelemetry.data(
             stream,
             "open",
@@ -798,14 +819,11 @@ internal class SteamChunkDataSource(
         if (length == 0) return 0
         if (bytesRemaining == 0L) return C.RESULT_END_OF_INPUT
         val requestedLength = min(length.toLong(), min(bytesRemaining, STREAM_READ_WINDOW_BYTES)).toInt()
-        stream.updateReadDemand(
-            WorkshopVideoReadDemand(
-                position = readPosition,
-                bufferedBytes = requestedLength.toLong(),
-                kind = WorkshopVideoReadKind.SEQUENTIAL,
-            ),
+        publishDemand(
+            position = readPosition,
+            bufferedBytes = requestedLength.toLong(),
+            kind = WorkshopVideoReadKind.SEQUENTIAL,
         )
-        StreamTelemetry.data(stream, "demand", mapOf("position" to readPosition, "bytes" to requestedLength))
         val readStartedMs = android.os.SystemClock.elapsedRealtime()
         val read =
             try {
@@ -850,16 +868,34 @@ internal class SteamChunkDataSource(
         bytesRemaining -= read
         cursor.advance(readPosition)
         bytesTransferred(read)
+        if (lastReadLogPosition == Long.MIN_VALUE || readPosition - lastReadLogPosition >= STREAM_LOG_INTERVAL_BYTES) {
+            lastReadLogPosition = readPosition
+            StreamTelemetry.data(
+                stream,
+                "read",
+                mapOf(
+                    "position" to readPosition,
+                    "bytes" to read,
+                    "elapsed_ms" to (android.os.SystemClock.elapsedRealtime() - readStartedMs),
+                ),
+            )
+        }
+        return read
+    }
+
+    private fun publishDemand(
+        position: Long,
+        bufferedBytes: Long,
+        kind: WorkshopVideoReadKind,
+        force: Boolean = false,
+    ) {
+        if (!demandThrottle.shouldPublish(position, clockMs(), force)) return
+        stream.updateReadDemand(WorkshopVideoReadDemand(position, bufferedBytes, kind))
         StreamTelemetry.data(
             stream,
-            "read",
-            mapOf(
-                "position" to readPosition,
-                "bytes" to read,
-                "elapsed_ms" to (android.os.SystemClock.elapsedRealtime() - readStartedMs),
-            ),
+            "demand",
+            mapOf("position" to position, "bytes" to bufferedBytes, "kind" to kind.name),
         )
-        return read
     }
 
     override fun getUri(): Uri? = currentUri
@@ -875,6 +911,7 @@ internal class SteamChunkDataSource(
 
     private companion object {
         const val STREAM_READ_WINDOW_BYTES = 512L * 1024L
+        const val STREAM_LOG_INTERVAL_BYTES = 1024L * 1024L
     }
 }
 
