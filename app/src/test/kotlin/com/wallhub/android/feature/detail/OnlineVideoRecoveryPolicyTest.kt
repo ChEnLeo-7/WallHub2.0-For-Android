@@ -21,6 +21,15 @@ class OnlineVideoRecoveryPolicyTest {
                 IOException("stream is closed"),
                 PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
             )
+        val staleSessionGeneration =
+            PlaybackException(
+                "source",
+                IOException(
+                    "Steam video chunk read failed",
+                    IllegalStateException("content resolution failed at session_unavailable"),
+                ),
+                PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+            )
         val transportFailure =
             PlaybackException(
                 "source",
@@ -36,6 +45,7 @@ class OnlineVideoRecoveryPolicyTest {
 
         assertTrue(invalidHandle.isRecoverableSessionReplacement())
         assertTrue(closedStream.isRecoverableSessionReplacement())
+        assertTrue(staleSessionGeneration.isRecoverableSessionReplacement())
         assertFalse(transportFailure.isRecoverableSessionReplacement())
         assertFalse(corruptContent.isRecoverableSessionReplacement())
     }

@@ -518,7 +518,8 @@ internal fun PlaybackException.isRecoverableSessionReplacement(): Boolean {
     repeat(MAX_CAUSE_DEPTH) {
         val message = current?.message.orEmpty()
         if (message.contains("invalid stream handle", ignoreCase = true) ||
-            message.contains("stream is closed", ignoreCase = true)
+            message.contains("stream is closed", ignoreCase = true) ||
+            message.contains("session_unavailable", ignoreCase = true)
         ) {
             return true
         }
