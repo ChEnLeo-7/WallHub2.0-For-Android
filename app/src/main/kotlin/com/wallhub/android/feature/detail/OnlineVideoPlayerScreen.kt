@@ -517,9 +517,13 @@ internal fun PlaybackException.isRecoverableSessionReplacement(): Boolean {
     var current: Throwable? = this
     repeat(MAX_CAUSE_DEPTH) {
         val message = current?.message.orEmpty()
+        val exhaustedCdnRoute =
+            message.contains("CDN candidate set exhausted", ignoreCase = true) &&
+                message.contains("transport", ignoreCase = true)
         if (message.contains("invalid stream handle", ignoreCase = true) ||
             message.contains("stream is closed", ignoreCase = true) ||
-            message.contains("session_unavailable", ignoreCase = true)
+            message.contains("session_unavailable", ignoreCase = true) ||
+            exhaustedCdnRoute
         ) {
             return true
         }

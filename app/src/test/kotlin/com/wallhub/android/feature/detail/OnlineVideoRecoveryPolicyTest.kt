@@ -30,10 +30,16 @@ class OnlineVideoRecoveryPolicyTest {
                 ),
                 PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
             )
-        val transportFailure =
+        val exhaustedCdnRoute =
             PlaybackException(
                 "source",
-                IOException("CDN candidate set exhausted"),
+                IOException("CDN candidate set exhausted: transport failed at transport_tls"),
+                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+            )
+        val unclassifiedTransportFailure =
+            PlaybackException(
+                "source",
+                IOException("socket reset"),
                 PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
             )
         val corruptContent =
@@ -46,7 +52,8 @@ class OnlineVideoRecoveryPolicyTest {
         assertTrue(invalidHandle.isRecoverableSessionReplacement())
         assertTrue(closedStream.isRecoverableSessionReplacement())
         assertTrue(staleSessionGeneration.isRecoverableSessionReplacement())
-        assertFalse(transportFailure.isRecoverableSessionReplacement())
+        assertTrue(exhaustedCdnRoute.isRecoverableSessionReplacement())
+        assertFalse(unclassifiedTransportFailure.isRecoverableSessionReplacement())
         assertFalse(corruptContent.isRecoverableSessionReplacement())
     }
 }
