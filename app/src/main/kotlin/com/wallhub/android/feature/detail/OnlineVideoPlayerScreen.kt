@@ -227,9 +227,9 @@ fun OnlineVideoPlayerScreen(
             activePlayback.debugSeek.seekTo(positionMs)
         }
     }
-    LaunchedEffect(state.stream, playback?.error) {
-        val failedPlayback = playback?.takeIf { it.error != null } ?: return@LaunchedEffect
-        val playerError = failedPlayback.player.playerError ?: return@LaunchedEffect
+    LaunchedEffect(state.stream, playback?.rawError) {
+        val failedPlayback = playback ?: return@LaunchedEffect
+        val playerError = failedPlayback.rawError ?: return@LaunchedEffect
         if (!playerError.isRecoverableSessionReplacement()) return@LaunchedEffect
         if (automaticRecoveryAttempts >= STREAM_SESSION_RECOVERY_ATTEMPTS) return@LaunchedEffect
         automaticRecoveryAttempts += 1
@@ -378,10 +378,11 @@ private fun rememberSteamChunkPlaybackState(
     var renderedFirstFrame by remember(stream, player) {
         mutableStateOf(player.videoSize.width > 0 && player.videoSize.height > 0)
     }
+    var rawPlaybackError by remember(stream, player) {
+        mutableStateOf<PlaybackException?>(player.playerError)
+    }
     var playbackError by remember(stream, player) {
-        mutableStateOf(
-            player.playerError?.toDetailUiText(R.string.detail_online_playback_failed),
-        )
+        mutableStateOf(player.playerError?.toDetailUiText(R.string.detail_online_playback_failed))
     }
     var firstFrameCallbackDelivered by remember(stream, player) { mutableStateOf(false) }
     val onFirstFrameRenderedState by rememberUpdatedState(onFirstFrameRendered)
@@ -408,6 +409,7 @@ private fun rememberSteamChunkPlaybackState(
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
+                    rawPlaybackError = error
                     playbackError = error.toDetailUiText(R.string.detail_online_playback_failed)
                 }
 
@@ -491,6 +493,7 @@ private fun rememberSteamChunkPlaybackState(
         player = player,
         renderedFirstFrame = renderedFirstFrame,
         error = playbackError,
+        rawError = rawPlaybackError,
         bufferState = bufferState,
         fullCacheState = fullCacheState,
         debugSeek = player.debugSeekSeam(stream),
@@ -502,6 +505,7 @@ internal data class SteamChunkPlayback(
     val player: ExoPlayer,
     val renderedFirstFrame: Boolean,
     val error: DetailUiText?,
+    val rawError: PlaybackException?,
     val bufferState: com.wallhub.android.core.model.WorkshopVideoBufferState,
     val fullCacheState: WorkshopVideoFullCacheState,
     val debugSeek: WorkshopVideoDebugSeek,
