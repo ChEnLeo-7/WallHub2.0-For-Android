@@ -3,8 +3,8 @@ name: Android CI
 # What this workflow can and cannot verify.
 #
 # The app module compiles against the Steam Content SDK's Android preview AAR, which is a local, gitignored
-# artifact published from the sibling SDK repository (`sc-sdk-maven/`, see `settings.gradle.kts`). No package
-# is published anywhere, so a hosted runner cannot resolve it and cannot build or unit-test `:app`. The APK is
+# artifact staged from the sibling SDK repository (`sc-sdk-maven/`, see `settings.gradle.kts`). No package is
+# published anywhere, and mavenLocal() is deliberately not a fallback, so a hosted runner cannot resolve it or build/unit-test `:app`. The APK is
 # built on the LAN build worker instead (`/usr/local/bin/request-android-release-build`), which is also where
 # the device-verified artifacts come from.
 #
@@ -26,6 +26,9 @@ concurrency:
 
 jobs:
   native-and-boundaries:
+    # This job intentionally never resolves/builds :app; settings uses this explicit source-only opt-out.
+    env:
+      WALLHUB_SOURCE_ONLY_CI: "1"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +50,12 @@ jobs:
               | awk '$4 == "FUNC" && $7 != "UND" { n++ } END { print n + 0 }')"
             test "$count" -eq 1
           done
+      - name: Verify debug command and SDK artifact boundaries
+        run: |
+          python3 scripts/check-debug-command-boundary.py
+          python3 scripts/test-sdk-artifact-lock.py
+          python3 scripts/sdk-artifact-lock.py verify
+          ! grep -q 'mavenLocal()' settings.gradle.kts
       - name: The removed Steam backends stay removed
         run: |
           set -e

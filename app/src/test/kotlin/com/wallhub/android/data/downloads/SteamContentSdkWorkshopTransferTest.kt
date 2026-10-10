@@ -40,6 +40,66 @@ private fun failed(ordinal: Long): SteamContentSdkTaskStatus =
 
 class SteamContentSdkWorkshopTransferTest {
     @Test
+    fun `chunk and checkpoint info logs are aggregated without dropping events`() {
+        var nowMs = 1_000L
+        val logger = RecordingTaskEventInfoLog()
+        val eventLog = SdkTaskEventLog(logger = logger, clockMs = { nowMs })
+
+        eventLog.accept(SteamContentSdkTaskEvent(TaskEventKind.CHUNK_PROGRESS, 4L))
+        eventLog.accept(SteamContentSdkTaskEvent(TaskEventKind.CHUNK_PROGRESS, 9L))
+        eventLog.accept(SteamContentSdkTaskEvent(TaskEventKind.CHECKPOINT_COMMITTED, 9L))
+        assertEquals(1, logger.messages.size)
+        assertTrue(logger.messages.single().contains("CHUNK_PROGRESS"))
+
+        nowMs += 1_000L
+        eventLog.accept(SteamContentSdkTaskEvent(TaskEventKind.CHUNK_PROGRESS, 12L))
+
+        assertEquals(2, logger.messages.size)
+        assertTrue(logger.messages.last().contains("aggregated"))
+        assertTrue(logger.messages.last().contains("count=3"))
+        assertTrue(logger.messages.last().contains("value_delta=8"))
+    }
+
+    @Test
+    fun `phase and every terminal event flush aggregate before retaining their own info line`() {
+        listOf(
+            TaskEventKind.COMPLETED to "COMPLETED",
+            TaskEventKind.FAILED to "FAILED",
+            TaskEventKind.CANCELLED to "CANCELLED",
+        ).forEach { (terminal, terminalName) ->
+            val logger = RecordingTaskEventInfoLog()
+            val eventLog = SdkTaskEventLog(logger = logger, clockMs = { 1_000L })
+            eventLog.accept(SteamContentSdkTaskEvent(TaskEventKind.CHUNK_PROGRESS, 4L))
+            eventLog.accept(SteamContentSdkTaskEvent(TaskEventKind.CHUNK_PROGRESS, 9L))
+
+            eventLog.accept(SteamContentSdkTaskEvent(TaskEventKind.PHASE_CHANGED, 2L))
+            eventLog.accept(SteamContentSdkTaskEvent(TaskEventKind.CHUNK_PROGRESS, 12L))
+            eventLog.accept(SteamContentSdkTaskEvent(terminal, 12L))
+
+            assertEquals(5, logger.messages.size)
+            assertTrue(logger.messages[1].contains("aggregated"))
+            assertTrue(logger.messages[2].contains("PHASE_CHANGED"))
+            assertTrue(logger.messages[3].contains("aggregated"))
+            assertTrue(logger.messages[4].contains(terminalName))
+        }
+    }
+
+    @Test
+    fun `closing event log flushes pending aggregate for exceptional exit`() {
+        val logger = RecordingTaskEventInfoLog()
+        val eventLog = SdkTaskEventLog(logger = logger, clockMs = { 1_000L })
+        eventLog.accept(SteamContentSdkTaskEvent(TaskEventKind.CHUNK_PROGRESS, 4L))
+        eventLog.accept(SteamContentSdkTaskEvent(TaskEventKind.CHUNK_PROGRESS, 9L))
+
+        eventLog.close()
+        eventLog.close()
+
+        assertEquals(2, logger.messages.size)
+        assertTrue(logger.messages.last().contains("aggregated"))
+        assertTrue(logger.messages.last().contains("count=1"))
+    }
+
+    @Test
     fun aDownloadResolvesTheItemAndStartsTheSdkTaskAtTheAppLayoutDestination() =
         runBlocking {
             val fixture = Fixture()
@@ -128,6 +188,30 @@ class SteamContentSdkWorkshopTransferTest {
                 assertEquals(2L, progress[3].networkBytesPerSecond)
                 assertTrue(progress[3].firstContentReceived)
                 assertEquals(9L, progress[4].completedBytes)
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun completedResultUsesTheFullyPublishedTotalBytes() =
+        runBlocking {
+            val fixture = Fixture()
+            try {
+                fixture.task.statuses +=
+                    SteamContentSdkTaskStatus(
+                        state = TaskState.COMPLETED,
+                        // A resumed task may have last reported only the newly committed suffix while its
+                        // completed total names the fully published item.
+                        committedBytes = 4L,
+                        totalDecodedBytes = 9L,
+                        errorOrdinal = TaskFailure.NONE,
+                    )
+
+                val result = fixture.download()
+
+                assertEquals(9L, result.downloadedBytes)
+                assertEquals(9L, result.totalBytes)
             } finally {
                 fixture.close()
             }
@@ -574,6 +658,14 @@ class SteamContentSdkWorkshopTransferTest {
                 fixture.close()
             }
         }
+
+    private class RecordingTaskEventInfoLog : TaskEventInfoLog {
+        val messages = mutableListOf<String>()
+
+        override fun info(message: String) {
+            messages += message
+        }
+    }
 
     private class Fixture {
         val root: File = Files.createTempDirectory("sdk-transfer-root").toFile()

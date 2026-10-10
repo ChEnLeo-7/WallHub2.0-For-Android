@@ -123,13 +123,21 @@ fun WorkshopDetailScreen(
 ) {
     val selectedSummary = state.detail?.summary
     val unknown = stringResource(R.string.detail_unknown)
+    val streamingStartedMessage = stringResource(R.string.detail_streaming_started)
     val steamCdnMessageTemplate = stringResource(R.string.detail_steam_cdn, "%s")
     val projectIdCopiedMessage = stringResource(R.string.detail_project_id_copied, selectedSummary?.id ?: 0L)
     val titleCopiedMessage = stringResource(R.string.detail_wallpaper_title_copied)
     val context = LocalContext.current
     val inlineVideoStream = state.inlineVideoStream
     val inlineFullscreen = state.isInlineVideoFullscreen
-    var inlineRecoveryAttempts by rememberSaveable(selectedSummary?.id) { mutableStateOf(0) }
+    val inlineRecoveryBudget =
+        rememberSaveable(selectedSummary?.id, saver = StreamRecoveryBudgetSaver) {
+            StreamRecoveryBudget()
+        }
+    val manualRetryInlineVideo = {
+        inlineRecoveryBudget.resetForManualRetry()
+        onRetryInlineVideo()
+    }
     val inlinePlayback =
         inlineVideoStream?.let { stream ->
             state.inlineVideoPlayer?.let { player ->
@@ -137,11 +145,13 @@ fun WorkshopDetailScreen(
                     stream = stream,
                     player = player,
                     onFirstFrameRendered = {
-                        inlineRecoveryAttempts = 0
+                        inlineRecoveryBudget.onFirstFrameRendered()
                         if (shouldShowInlinePlaybackStartNotice()) {
                             Toast.makeText(
                                 context.applicationContext,
-                                steamCdnMessageTemplate.format(stream.currentCdnHost ?: unknown),
+                                stream.currentCdnProvider?.let { provider ->
+                                    steamCdnMessageTemplate.format(cdnProviderLabel(context, provider))
+                                } ?: streamingStartedMessage,
                                 Toast.LENGTH_SHORT,
                             ).show()
                         }
@@ -149,11 +159,9 @@ fun WorkshopDetailScreen(
                 )
             }
         }
-    LaunchedEffect(inlineVideoStream, inlinePlayback?.error) {
-        val failedPlayback = inlinePlayback?.takeIf { it.error != null } ?: return@LaunchedEffect
-        if (inlineRecoveryAttempts >= INLINE_STREAM_RECOVERY_ATTEMPTS) return@LaunchedEffect
-        inlineRecoveryAttempts += 1
-        kotlinx.coroutines.delay(INLINE_STREAM_RECOVERY_DELAY_MS)
+    LaunchedEffect(inlineVideoStream, inlinePlayback?.rawError) {
+        val playerError = inlinePlayback?.rawError ?: return@LaunchedEffect
+        if (!inlineRecoveryBudget.tryAcquire(StreamPlaybackPath.INLINE, playerError)) return@LaunchedEffect
         onRetryInlineVideo()
     }
     BackHandler(enabled = inlineFullscreen) { onInlineFullscreenChange(false) }
@@ -163,7 +171,7 @@ fun WorkshopDetailScreen(
             FullscreenWallpaperVideoPlayer(
                 playback = inlinePlayback,
                 onFullscreenChange = onInlineFullscreenChange,
-                onRetry = onRetryInlineVideo,
+                onRetry = manualRetryInlineVideo,
             )
         } else {
             val title = selectedSummary?.localizedTitle() ?: stringResource(R.string.detail_wallpaper_details)
@@ -238,7 +246,7 @@ fun WorkshopDetailScreen(
                             isLoadingInlineVideo = state.isLoadingInlineVideo,
                             inlineVideoError = state.inlineVideoError,
                             onStartInlineVideo = onStartInlineVideo,
-                            onRetryInlineVideo = onRetryInlineVideo,
+                            onRetryInlineVideo = manualRetryInlineVideo,
                             onInlineFullscreenChange = onInlineFullscreenChange,
                             onExportFormatSelected = onExportFormatSelected,
                             isEnqueuingDownload = state.isEnqueuingDownload,
@@ -968,6 +976,3 @@ internal fun DetailTab(
         )
     }
 }
-
-private const val INLINE_STREAM_RECOVERY_ATTEMPTS = 2
-private const val INLINE_STREAM_RECOVERY_DELAY_MS = 5_000L

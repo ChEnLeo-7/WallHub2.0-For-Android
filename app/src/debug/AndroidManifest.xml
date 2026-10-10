@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <receiver
+            android:name="com.wallhub.android.debug.DebugVideoCommandReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.wallhub.android.debug.OPEN_ONLINE_VIDEO" />
+                <action android:name="com.wallhub.android.debug.SEEK_ONLINE_VIDEO" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

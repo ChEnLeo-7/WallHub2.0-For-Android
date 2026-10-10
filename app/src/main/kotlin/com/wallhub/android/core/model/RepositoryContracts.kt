@@ -1,9 +1,10 @@
 package com.wallhub.android.core.model
 
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import java.io.Closeable
+import java.io.IOException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.runBlocking
 
 /**
  * Product-facing ports. Feature modules depend on these contracts, not on Room,
@@ -167,19 +168,41 @@ interface SteamContentCredentialProvider {
     suspend fun restoreContentCredential(): SteamContentCredential? = loadContentCredential()
 }
 
-data class WorkshopVideoBufferState(
-    /** Absolute logical-file byte cursor covered by Media3 plus contiguous verified Depot chunks. */
-    val bufferedBytes: Long = 0L,
-    val availableBytes: Long = 0L,
-    val targetBytes: Long = 0L,
-    val targetReached: Boolean = false,
-    val bandwidthLimited: Boolean = false,
-)
-
 enum class WorkshopVideoReadKind {
     SEQUENTIAL,
     SEEK,
 }
+
+/** Privacy-safe CDN provider family; no hostname, address, URL, path, or credential crosses this boundary. */
+enum class WorkshopVideoCdnProvider {
+    VALVE,
+    STEAM_CHINA,
+    HUAWEI_CLOUD,
+    BAISHAN_CLOUD,
+    TENCENT_CLOUD,
+    ALIBABA_CLOUD,
+    NETEASE_CLOUD,
+    CHINA_NET_CENTER,
+    FASTLY,
+    EDGECAST,
+    SINA_CLOUD,
+    OTHER,
+}
+
+/** Typed SDK range-stream outcomes that justify replacing the complete playback session. */
+enum class WorkshopVideoStreamFailure {
+    SESSION_INVALIDATED,
+    CDN_ROUTE_EXHAUSTED,
+}
+
+/**
+ * App-owned stream failure boundary. SDK adapters map their typed failure to [failure] and retain the original
+ * throwable as [cause], so playback policy never classifies diagnostic text and diagnostics lose nothing.
+ */
+class WorkshopVideoStreamFailureException(
+    val failure: WorkshopVideoStreamFailure,
+    cause: Throwable,
+) : IOException("Workshop video stream failed: ${failure.name}", cause)
 
 /** App-owned byte demand; deliberately contains no SDK/AAR types. */
 data class WorkshopVideoReadDemand(
@@ -187,26 +210,6 @@ data class WorkshopVideoReadDemand(
     val bufferedBytes: Long,
     val kind: WorkshopVideoReadKind,
 )
-
-enum class WorkshopVideoFullCacheStatus {
-    IDLE,
-    CACHING,
-    COMPLETE,
-    CANCELLED,
-    ERROR,
-}
-
-data class WorkshopVideoFullCacheState(
-    val status: WorkshopVideoFullCacheStatus = WorkshopVideoFullCacheStatus.IDLE,
-    val cachedBytes: Long = 0L,
-    val totalBytes: Long = 0L,
-    val errorCode: String? = null,
-)
-
-private val EmptyWorkshopVideoBufferState: StateFlow<WorkshopVideoBufferState> =
-    MutableStateFlow(WorkshopVideoBufferState())
-private val EmptyWorkshopVideoFullCacheState: StateFlow<WorkshopVideoFullCacheState> =
-    MutableStateFlow(WorkshopVideoFullCacheState())
 
 /** A seekable video stream backed by Steam Depot chunks instead of a completed download. */
 interface WorkshopVideoStreamSession : Closeable {
@@ -216,15 +219,8 @@ interface WorkshopVideoStreamSession : Closeable {
 
     val contentLength: Long
 
-    val currentCdnHost: String?
+    val currentCdnProvider: WorkshopVideoCdnProvider?
         get() = null
-
-    /** Live contiguous buffer state used for playback gating and secondary progress. */
-    val playbackBufferState: StateFlow<WorkshopVideoBufferState>
-        get() = EmptyWorkshopVideoBufferState
-
-    val fullCacheState: StateFlow<WorkshopVideoFullCacheState>
-        get() = EmptyWorkshopVideoFullCacheState
 
     /** Reports Media3's actual logical-file cursor to the bounded Depot prefetcher. */
     fun updateReadDemand(demand: WorkshopVideoReadDemand) = Unit
@@ -239,9 +235,20 @@ interface WorkshopVideoStreamSession : Closeable {
         length: Int,
     ): Int
 
-    fun startFullCache() = Unit
+    /**
+     * Blocking read seam for synchronous media data sources.
+     *
+     * Implementations backed by an already-synchronous transport should override this directly. The default
+     * preserves the suspend-only contract for other implementations without forcing every caller to know which
+     * transport it received.
+     */
+    fun readAtBlocking(
+        position: Long,
+        destination: ByteArray,
+        destinationOffset: Int,
+        length: Int,
+    ): Int = runBlocking { readAt(position, destination, destinationOffset, length) }
 
-    fun cancelFullCache() = Unit
 }
 
 interface WorkshopVideoStreamRepository {

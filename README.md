@@ -75,6 +75,29 @@ app/build/outputs/apk/debug/app-debug.apk
 
 依赖与插件版本集中维护在 `gradle/libs.versions.toml`。Release 签名材料、`local.properties`、APK/AAB、构建缓存和本地快照均不应提交到仓库。
 
+### Steam Content SDK 本地产物锁
+
+Steam Content SDK 预览 AAR 不发布到公共或私有 Maven 仓库。应用只从 gitignored 的 `sc-sdk-maven/repository` 读取它，且构建设置不使用 `mavenLocal()` 回退。`config/steam-content-sdk.lock.json` 将 Maven 坐标绑定到 SDK commit、整个 AAR 与 staged POM 的 SHA-256，以及 AAR 内每个 `jni/<abi>/*.so` 的 SHA-256。
+
+仓库中的显式占位符表示当前未随源码提交 AAR，不能当成完整供应链证明。LAN 联合构建流程在 SDK worker 生成 AAR 后、运行任何 Gradle 应用构建前，应执行：
+
+```bash
+python3 scripts/sdk-artifact-lock.py generate \
+  --sdk-repo "/path/to/Steam Content SDK" \
+  --aar "/path/to/sc-content-android-preview-<version>.aar" \
+  --pom "/path/to/sc-content-android-preview-<version>.pom"
+# Stage that same AAR/POM under sc-sdk-maven/repository, then Gradle invokes this automatically:
+python3 scripts/sdk-artifact-lock.py verify \
+  --require-complete \
+  --sdk-repo "/path/to/Steam Content SDK"
+```
+
+`generate` 只记录既有 LAN 产物，不构建、上传或发布包。把同一个已验证 AAR/POM staged 到 `sc-sdk-maven/repository` 后才能运行应用构建；`settings.gradle.kts` 会在任何权威 Gradle 配置前强制 `verify --require-complete`。SDK checkout 默认是同级 `../Steam Content SDK`，LAN worker 可用 `WALLHUB_STEAM_CONTENT_SDK_REPO` 覆盖。托管 CI 没有本地产物，也不解析或构建 `:app`，因此 workflow 显式设置 `WALLHUB_SOURCE_ONLY_CI=1`，仅检查占位锁格式、依赖坐标一致性、安全边界与 app-owned native 模块。
+
+### Debug ADB 视频命令
+
+视频打开/seek 的外部命令入口只存在于 `app/src/debug`。Debug manifest 中的导出 receiver 要求平台签名权限 `android.permission.DUMP`：`adb shell am broadcast` 可调用，而普通第三方应用无法获得该权限。Release source set 和主 manifest 均不包含 receiver、debug action 或解析外部 Intent 的代码。
+
 ## 参考与鸣谢
 
 本项目基于并感谢以下开源项目与平台：

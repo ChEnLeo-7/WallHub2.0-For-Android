@@ -21,11 +21,9 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -72,22 +70,19 @@ import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
+import com.wallhub.android.core.model.WorkshopVideoCdnProvider
 import com.wallhub.android.core.model.WorkshopVideoReadDemand
 import com.wallhub.android.core.model.WorkshopVideoReadKind
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamSession
-import com.wallhub.android.core.model.WorkshopVideoFullCacheState
-import com.wallhub.android.core.model.WorkshopVideoFullCacheStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.io.IOException
 import kotlin.coroutines.coroutineContext
 import javax.inject.Inject
@@ -194,12 +189,15 @@ fun OnlineVideoPlayerScreen(
     var fullscreen by rememberSaveable { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
     var playbackHapticDelivered by remember(state.stream) { mutableStateOf(false) }
-    var automaticRecoveryAttempts by rememberSaveable { mutableStateOf(0) }
+    val recoveryBudget =
+        rememberSaveable(saver = StreamRecoveryBudgetSaver) {
+            StreamRecoveryBudget()
+        }
     val context = LocalContext.current
     val streamingStartedMessage = stringResource(R.string.detail_streaming_started)
     val steamCdnMessageTemplate = stringResource(R.string.detail_steam_cdn, "%s")
     val onFirstFrameRendered = {
-        automaticRecoveryAttempts = 0
+        recoveryBudget.onFirstFrameRendered()
         if (!playbackHapticDelivered) {
             playbackHapticDelivered = true
             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -207,8 +205,9 @@ fun OnlineVideoPlayerScreen(
         if (shouldShowPlaybackStartNotice()) {
             Toast.makeText(
                 context.applicationContext,
-                state.stream?.currentCdnHost?.let { host -> steamCdnMessageTemplate.format(host) }
-                    ?: streamingStartedMessage,
+                state.stream?.currentCdnProvider?.let { provider ->
+                    steamCdnMessageTemplate.format(cdnProviderLabel(context, provider))
+                } ?: streamingStartedMessage,
                 Toast.LENGTH_SHORT,
             ).show()
         }
@@ -230,13 +229,10 @@ fun OnlineVideoPlayerScreen(
     LaunchedEffect(state.stream, playback?.rawError) {
         val failedPlayback = playback ?: return@LaunchedEffect
         val playerError = failedPlayback.rawError ?: return@LaunchedEffect
-        if (!playerError.isRecoverableSessionReplacement()) return@LaunchedEffect
-        if (automaticRecoveryAttempts >= STREAM_SESSION_RECOVERY_ATTEMPTS) return@LaunchedEffect
-        automaticRecoveryAttempts += 1
+        if (!recoveryBudget.tryAcquire(StreamPlaybackPath.FULL_SCREEN, playerError)) return@LaunchedEffect
         val resumePositionMs = failedPlayback.player.currentPosition.coerceAtLeast(0L)
-        // Only an invalidated native session/stream is reopened here. Transport, content and decoder failures
-        // keep their typed Media3 outcome instead of multiplying SDK retries with blind UI retries.
-        delay(STREAM_SESSION_RECOVERY_DELAY_MS)
+        // Typed SDK session/route failures replace the stream immediately. Content, decoder and untyped transport
+        // failures keep their raw Media3 outcome and never spend or trigger this app-owned retry budget.
         onRetry(resumePositionMs)
     }
     BackHandler(enabled = fullscreen) { fullscreen = false }
@@ -250,7 +246,10 @@ fun OnlineVideoPlayerScreen(
                 playback = playback,
                 fullscreen = true,
                 onFullscreenChange = { fullscreen = it },
-                onRetry = { onRetry(playback.player.currentPosition.coerceAtLeast(0L)) },
+                onRetry = {
+                    recoveryBudget.resetForManualRetry()
+                    onRetry(playback.player.currentPosition.coerceAtLeast(0L))
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -274,7 +273,10 @@ fun OnlineVideoPlayerScreen(
                             icon = Icons.Outlined.PlayArrow,
                             title = state.error.resolve(),
                             actionLabel = stringResource(R.string.detail_retry),
-                            onAction = { onRetry(state.resumePositionMs) },
+                            onAction = {
+                                recoveryBudget.resetForManualRetry()
+                                onRetry(state.resumePositionMs)
+                            },
                             modifier = Modifier.fillMaxSize().then(Modifier.padding(padding)),
                         )
                     }
@@ -284,7 +286,10 @@ fun OnlineVideoPlayerScreen(
                             playback = playback,
                             fullscreen = false,
                             onFullscreenChange = { fullscreen = it },
-                            onRetry = { onRetry(playback.player.currentPosition.coerceAtLeast(0L)) },
+                            onRetry = {
+                                recoveryBudget.resetForManualRetry()
+                                onRetry(playback.player.currentPosition.coerceAtLeast(0L))
+                            },
                             modifier = Modifier.fillMaxSize().then(Modifier.padding(padding)),
                         )
                 }
@@ -373,8 +378,6 @@ private fun rememberSteamChunkPlaybackState(
     onFirstFrameRendered: () -> Unit,
     releasePlayerWhenDisposed: Boolean,
 ): SteamChunkPlayback {
-    val bufferState by stream.playbackBufferState.collectAsStateWithLifecycle()
-    val fullCacheState by stream.fullCacheState.collectAsStateWithLifecycle()
     var renderedFirstFrame by remember(stream, player) {
         mutableStateOf(player.videoSize.width > 0 && player.videoSize.height > 0)
     }
@@ -494,10 +497,7 @@ private fun rememberSteamChunkPlaybackState(
         renderedFirstFrame = renderedFirstFrame,
         error = playbackError,
         rawError = rawPlaybackError,
-        bufferState = bufferState,
-        fullCacheState = fullCacheState,
         debugSeek = player.debugSeekSeam(stream),
-        onCancelCompleteFileCache = stream::cancelFullCache,
     )
 }
 
@@ -506,34 +506,12 @@ internal data class SteamChunkPlayback(
     val renderedFirstFrame: Boolean,
     val error: DetailUiText?,
     val rawError: PlaybackException?,
-    val bufferState: com.wallhub.android.core.model.WorkshopVideoBufferState,
-    val fullCacheState: WorkshopVideoFullCacheState,
     val debugSeek: WorkshopVideoDebugSeek,
-    val onCancelCompleteFileCache: () -> Unit,
 )
 
 /** Programmatic seek seam for tests and debug tooling; no gesture or ADB dependency. */
 internal fun interface WorkshopVideoDebugSeek {
     fun seekTo(positionMs: Long)
-}
-
-internal fun PlaybackException.isRecoverableSessionReplacement(): Boolean {
-    var current: Throwable? = this
-    repeat(MAX_CAUSE_DEPTH) {
-        val message = current?.message.orEmpty()
-        val exhaustedCdnRoute =
-            message.contains("CDN candidate set exhausted", ignoreCase = true) &&
-                message.contains("transport", ignoreCase = true)
-        if (message.contains("invalid stream handle", ignoreCase = true) ||
-            message.contains("stream is closed", ignoreCase = true) ||
-            message.contains("session_unavailable", ignoreCase = true) ||
-            exhaustedCdnRoute
-        ) {
-            return true
-        }
-        current = current?.cause
-    }
-    return false
 }
 
 internal fun ExoPlayer.debugSeekSeam(stream: WorkshopVideoStreamSession): WorkshopVideoDebugSeek =
@@ -578,11 +556,6 @@ internal fun SteamChunkVideoPlayer(
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        SteamFullCacheBanner(
-            playback = playback,
-            visible = playback.error == null,
-            modifier = Modifier.align(Alignment.TopCenter).padding(WallHubSpacing.md),
-        )
         playback.error?.let { error ->
             Surface(
                 modifier = Modifier.align(Alignment.Center),
@@ -603,65 +576,6 @@ internal fun SteamChunkVideoPlayer(
         }
     }
 }
-
-@Composable
-private fun SteamFullCacheBanner(
-    playback: SteamChunkPlayback,
-    visible: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val fullCache = playback.fullCacheState
-    val show =
-        fullCache.status in
-            setOf(
-                WorkshopVideoFullCacheStatus.CACHING,
-                WorkshopVideoFullCacheStatus.COMPLETE,
-                WorkshopVideoFullCacheStatus.ERROR,
-            )
-    if (!visible || !show) return
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-    ) {
-        Column(modifier = Modifier.padding(WallHubSpacing.md)) {
-            Text(text = fullCacheMessage(fullCache), style = MaterialTheme.typography.bodySmall)
-            when {
-                fullCache.status == WorkshopVideoFullCacheStatus.CACHING -> {
-                    val progress =
-                        if (fullCache.totalBytes > 0L) {
-                            (fullCache.cachedBytes.toFloat() / fullCache.totalBytes.toFloat()).coerceIn(0f, 1f)
-                        } else {
-                            0f
-                        }
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier.fillMaxWidth().padding(top = WallHubSpacing.sm),
-                    )
-                    TextButton(onClick = playback.onCancelCompleteFileCache) {
-                        Text(stringResource(R.string.settings_action_cancel))
-                    }
-                }
-
-            }
-        }
-    }
-}
-
-@Composable
-private fun fullCacheMessage(state: WorkshopVideoFullCacheState): String =
-    when (state.status) {
-        WorkshopVideoFullCacheStatus.CACHING -> stringResource(R.string.detail_caching_complete_video)
-        WorkshopVideoFullCacheStatus.COMPLETE -> stringResource(R.string.detail_complete_video_cached)
-        WorkshopVideoFullCacheStatus.ERROR ->
-            if (state.errorCode == "STREAM_FULL_CACHE_LIMIT") {
-                stringResource(R.string.detail_complete_video_cache_limit)
-            } else {
-                stringResource(R.string.detail_complete_video_cache_failed)
-            }
-        else -> ""
-    }
 
 @Composable
 private fun PlayerLoadingIndicator(
@@ -836,14 +750,12 @@ internal class SteamChunkDataSource(
         val readStartedMs = android.os.SystemClock.elapsedRealtime()
         val read =
             try {
-                runBlocking {
-                    stream.readAt(
-                        position = readPosition,
-                        destination = buffer,
-                        destinationOffset = offset,
-                        length = requestedLength,
-                    )
-                }
+                stream.readAtBlocking(
+                    position = readPosition,
+                    destination = buffer,
+                    destinationOffset = offset,
+                    length = requestedLength,
+                )
             } catch (error: CancellationException) {
                 throw error
             } catch (error: IOException) {
@@ -961,10 +873,25 @@ internal object StreamTelemetry {
     private const val MAX_FIELD_CHARS = 48
 }
 
+internal fun cdnProviderLabel(context: Context, provider: WorkshopVideoCdnProvider): String =
+    context.getString(
+        when (provider) {
+            WorkshopVideoCdnProvider.VALVE -> R.string.detail_cdn_provider_valve
+            WorkshopVideoCdnProvider.STEAM_CHINA -> R.string.detail_cdn_provider_steam_china
+            WorkshopVideoCdnProvider.HUAWEI_CLOUD -> R.string.detail_cdn_provider_huawei
+            WorkshopVideoCdnProvider.BAISHAN_CLOUD -> R.string.detail_cdn_provider_baishan
+            WorkshopVideoCdnProvider.TENCENT_CLOUD -> R.string.detail_cdn_provider_tencent
+            WorkshopVideoCdnProvider.ALIBABA_CLOUD -> R.string.detail_cdn_provider_alibaba
+            WorkshopVideoCdnProvider.NETEASE_CLOUD -> R.string.detail_cdn_provider_netease
+            WorkshopVideoCdnProvider.CHINA_NET_CENTER -> R.string.detail_cdn_provider_chinanetcenter
+            WorkshopVideoCdnProvider.FASTLY -> R.string.detail_cdn_provider_fastly
+            WorkshopVideoCdnProvider.EDGECAST -> R.string.detail_cdn_provider_edgecast
+            WorkshopVideoCdnProvider.SINA_CLOUD -> R.string.detail_cdn_provider_sina
+            WorkshopVideoCdnProvider.OTHER -> R.string.detail_cdn_provider_other
+        },
+    )
+
 private const val STREAM_LOAD_RETRY_COUNT = 0
-private const val STREAM_SESSION_RECOVERY_ATTEMPTS = 2
-private const val STREAM_SESSION_RECOVERY_DELAY_MS = 1_000L
-private const val MAX_CAUSE_DEPTH = 8
 private const val STREAM_PLAYER_LOG_TAG = "WallHubStreamPlayer"
 private const val STREAM_MIN_BUFFER_MS = 15_000
 private const val STREAM_MAX_BUFFER_MS = 30_000

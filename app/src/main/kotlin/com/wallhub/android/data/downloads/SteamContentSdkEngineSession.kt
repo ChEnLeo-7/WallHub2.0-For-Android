@@ -3,19 +3,26 @@ package com.wallhub.android.data.downloads
 import android.util.Log
 import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.core.model.SteamSessionRepository
+import com.wallhub.android.core.model.WorkshopVideoCdnProvider
+import com.wallhub.android.core.model.WorkshopVideoStreamFailure
+import com.wallhub.android.core.model.WorkshopVideoStreamFailureException
 import com.wallhub.android.data.steam.GenerationHandleOwner
 import com.wallhub.android.data.steam.SteamContentSdkEngine
 import com.wallhub.android.data.steam.SteamContentSdkAuthenticatedSessionRegistry
 import com.wallhub.android.data.steam.SteamContentSdkRouteFactory
 import com.wallhub.android.data.steam.isAttemptInFlight
+import io.steamcontent.sdk.CdnProvider
 import io.steamcontent.sdk.DepotRangeStream
 import io.steamcontent.sdk.SessionCapabilityBits
 import io.steamcontent.sdk.SessionEventKind
 import io.steamcontent.sdk.SessionFailure
 import io.steamcontent.sdk.SessionState
 import io.steamcontent.sdk.SteamDownloadTask
+import io.steamcontent.sdk.StreamReadFailure
 import io.steamcontent.sdk.SteamSession
 import java.io.File
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Provider
 import javax.inject.Singleton
@@ -142,7 +149,11 @@ internal class SteamContentSdkEngineSessionOpener
                 check(session.capabilities().supports(SessionCapabilityBits.RESTORE)) {
                     "The Steam Content SDK session cannot restore a stored account"
                 }
-                session.restore(accountName.toByteArray(Charsets.UTF_8), token.toByteArray(Charsets.UTF_8))
+                restoreWithClearedCredentials(
+                    accountName = accountName.toByteArray(Charsets.UTF_8),
+                    refreshToken = token.toByteArray(Charsets.UTF_8),
+                    restore = session::restore,
+                )
                 awaitAuthenticated(session)
                 return SteamContentSdkEngineSession.owned(engine, sessionOwner)
             } catch (error: Throwable) {
@@ -190,6 +201,19 @@ internal class SteamContentSdkEngineSessionOpener
  * account": only the former is worth one retry against a live endpoint list, and the latter must never be
  * retried or treated as a route problem.
  */
+internal inline fun restoreWithClearedCredentials(
+    accountName: ByteArray,
+    refreshToken: ByteArray,
+    restore: (ByteArray, ByteArray) -> Unit,
+) {
+    try {
+        restore(accountName, refreshToken)
+    } finally {
+        accountName.fill(0)
+        refreshToken.fill(0)
+    }
+}
+
 private class SteamContentSdkTransportFailure(
     message: String,
 ) : IllegalStateException(message)
@@ -309,12 +333,22 @@ private class SteamContentSdkEngineSession private constructor(
 private class SteamContentSdkEngineRangeStream(
     private val stream: DepotRangeStream,
 ) : SteamContentSdkRangeStream {
+    private val lastProvider = AtomicReference<WorkshopVideoCdnProvider?>(null)
+
     override fun readAt(
         position: Long,
         destination: ByteArray,
         offset: Int,
         length: Int,
-    ): Int = stream.readAt(position, destination, offset, length)
+    ): Int {
+        val result = stream.readAtEx(position, destination, offset, length)
+        result.cdnProvider.toAppProvider()?.let(lastProvider::set)
+        if (result.failure == StreamReadFailure.NONE) return result.written
+        throw result.failure.toAppStreamReadException(
+            generation = result.generation,
+            cdnProvider = result.cdnProvider,
+        )
+    }
 
     override fun updatePlaybackDemand(demand: SteamContentSdkPlaybackDemand): SteamContentSdkBufferSnapshot {
         stream.updatePlaybackDemand(
@@ -328,6 +362,8 @@ private class SteamContentSdkEngineRangeStream(
     }
 
     override fun bufferSnapshot(): SteamContentSdkBufferSnapshot = stream.bufferSnapshot().toAppSnapshot()
+
+    override fun cdnProvider(): WorkshopVideoCdnProvider? = lastProvider.get()
 
     override fun telemetry(): SteamContentSdkStreamTelemetry =
         stream.telemetry().let { value ->
@@ -345,6 +381,11 @@ private class SteamContentSdkEngineRangeStream(
                 cacheHits = value.cacheHits,
                 cacheMisses = value.cacheMisses,
                 cacheEvictions = value.cacheEvictions,
+                foregroundFetchStarted = value.foregroundFetchStarted,
+                foregroundFetchCompleted = value.foregroundFetchCompleted,
+                foregroundFetchFailed = value.foregroundFetchFailed,
+                foregroundFetchMicros = value.foregroundFetchMicros,
+                foregroundDecodeMicros = value.foregroundDecodeMicros,
             )
         }
 
@@ -357,6 +398,44 @@ private class SteamContentSdkEngineRangeStream(
     }
 }
 
+private fun CdnProvider.toAppProvider(): WorkshopVideoCdnProvider? =
+    when (this) {
+        CdnProvider.UNKNOWN -> null
+        CdnProvider.VALVE -> WorkshopVideoCdnProvider.VALVE
+        CdnProvider.STEAMCHINA -> WorkshopVideoCdnProvider.STEAM_CHINA
+        CdnProvider.HUAWEI_CLOUD -> WorkshopVideoCdnProvider.HUAWEI_CLOUD
+        CdnProvider.BAISHAN_CLOUD -> WorkshopVideoCdnProvider.BAISHAN_CLOUD
+        CdnProvider.TENCENT_CLOUD -> WorkshopVideoCdnProvider.TENCENT_CLOUD
+        CdnProvider.ALIBABA_CLOUD -> WorkshopVideoCdnProvider.ALIBABA_CLOUD
+        CdnProvider.NETEASE_CLOUD -> WorkshopVideoCdnProvider.NETEASE_CLOUD
+        CdnProvider.CHINANETCENTER -> WorkshopVideoCdnProvider.CHINA_NET_CENTER
+        CdnProvider.FASTLY -> WorkshopVideoCdnProvider.FASTLY
+        CdnProvider.EDGECAST -> WorkshopVideoCdnProvider.EDGECAST
+        CdnProvider.SINA_CLOUD -> WorkshopVideoCdnProvider.SINA_CLOUD
+        CdnProvider.OTHER -> WorkshopVideoCdnProvider.OTHER
+    }
+
+internal fun StreamReadFailure.toAppStreamReadException(
+    generation: Long,
+    cdnProvider: CdnProvider,
+): IOException {
+    val rawFailure =
+        IOException(
+            "Steam Content SDK range read failed " +
+                "(failure=$name, generation=$generation, provider=${cdnProvider.name})",
+        )
+    return when (this) {
+        StreamReadFailure.CLOSED,
+        StreamReadFailure.SESSION_GENERATION_LOST,
+        -> WorkshopVideoStreamFailureException(WorkshopVideoStreamFailure.SESSION_INVALIDATED, rawFailure)
+
+        StreamReadFailure.CDN_CANDIDATES_EXHAUSTED ->
+            WorkshopVideoStreamFailureException(WorkshopVideoStreamFailure.CDN_ROUTE_EXHAUSTED, rawFailure)
+
+        else -> rawFailure
+    }
+}
+
 private fun DepotRangeStream.BufferSnapshot.toAppSnapshot() =
     SteamContentSdkBufferSnapshot(
         position = position,
@@ -365,6 +444,7 @@ private fun DepotRangeStream.BufferSnapshot.toAppSnapshot() =
         prefetchBytes = prefetchBytes,
         generation = generation,
         cachedBytes = cachedBytes,
+        contiguousCachedBytes = contiguousCachedBytes,
         cancelled = cancelled,
     )
 

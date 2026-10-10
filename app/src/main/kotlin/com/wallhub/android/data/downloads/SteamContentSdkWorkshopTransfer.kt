@@ -74,7 +74,8 @@ internal data class SteamContentSdkBufferSnapshot(
     val prefetchBytes: Long,
     val generation: Long,
     val cachedBytes: Long,
-    val cancelled: Boolean,
+    val contiguousCachedBytes: Long = 0L,
+    val cancelled: Boolean = false,
 )
 
 internal data class SteamContentSdkPlaybackDemand(
@@ -99,6 +100,11 @@ internal data class SteamContentSdkStreamTelemetry(
     val cacheHits: Long = 0L,
     val cacheMisses: Long = 0L,
     val cacheEvictions: Long = 0L,
+    val foregroundFetchStarted: Long = 0L,
+    val foregroundFetchCompleted: Long = 0L,
+    val foregroundFetchFailed: Long = 0L,
+    val foregroundFetchMicros: Long = 0L,
+    val foregroundDecodeMicros: Long = 0L,
 )
 
 internal interface SteamContentSdkRangeStream : Closeable {
@@ -116,6 +122,8 @@ internal interface SteamContentSdkRangeStream : Closeable {
     fun bufferSnapshot(): SteamContentSdkBufferSnapshot
 
     fun telemetry(): SteamContentSdkStreamTelemetry = SteamContentSdkStreamTelemetry()
+
+    fun cdnProvider(): com.wallhub.android.core.model.WorkshopVideoCdnProvider? = null
 
     fun cancelPlaybackDemand()
 
@@ -312,6 +320,7 @@ internal class SteamContentSdkWorkshopTransfer
             var totalBytes = 0L
             var manifestResolved = false
             var firstChunkNotified = false
+            val eventLog = SdkTaskEventLog()
             suspend fun acceptEvent(event: SteamContentSdkTaskEvent) {
                 if (event.kind == TaskEventKind.MANIFEST_RESOLVED) {
                     manifestResolved = true
@@ -326,7 +335,7 @@ internal class SteamContentSdkWorkshopTransfer
                 sdkPreparationTimingName(event.kind)?.let { name ->
                     options.timingContext?.let { context -> DownloadTimingTelemetry.logSdk(name, context, event.value) }
                 }
-                Log.i(TAG, "task event kind=${sdkTaskEventName(event.kind)} value=${event.value}")
+                eventLog.accept(event)
             }
             suspend fun drainEvents(waitMs: Int) {
                 var event = task.pollEvent(waitMs)
@@ -335,8 +344,9 @@ internal class SteamContentSdkWorkshopTransfer
                     event = task.pollEvent(0)
                 }
             }
-            while (true) {
-                currentCoroutineContext().ensureActive()
+            try {
+                while (true) {
+                    currentCoroutineContext().ensureActive()
                 when (control()) {
                     SteamDownloadControl.CANCEL -> {
                         cancelAndAwaitTerminal(task, ::acceptEvent)
@@ -352,20 +362,22 @@ internal class SteamContentSdkWorkshopTransfer
                 }
                 val status = task.status()
                 drainEvents(0)
-                // Durable committed bytes are the one progress reading this contract publishes. The SDK's
-                // counters are per run: a resumed run starts them at zero again and only moves committed
-                // bytes when it reports a freshly fetched chunk, even though its journal already covers the
-                // paused run's chunks. The max keeps one run's reading monotonic; carrying the task's
-                // reading across runs is the worker's checkpoint floor, not this loop's.
+                // Durable committed bytes are the one progress reading this contract publishes. After its
+                // resume scan, the SDK includes every validated journal chunk in this status before it fetches
+                // the remaining suffix. The max still protects the app contract from a stale status read.
                 committedBytes = maxOf(committedBytes, status.committedBytes.coerceAtLeast(0L))
                 totalBytes = maxOf(totalBytes, status.totalDecodedBytes.coerceAtLeast(0L))
                 when (status.state) {
                     TaskState.COMPLETED -> {
+                        eventLog.flushPending()
+                        // COMPLETED means publication succeeded for the whole decoded manifest. In particular,
+                        // a resumed task can reach this state after fetching only the remaining suffix, so the
+                        // result must name the fully published total rather than that run's last suffix count.
                         val finalTotal = maxOf(totalBytes, committedBytes)
                         onProgress(
                             SteamDownloadProgress(
                                 phase = SteamDownloadPhase.VERIFYING,
-                                completedBytes = committedBytes,
+                                completedBytes = finalTotal,
                                 totalBytes = finalTotal,
                                 completedFiles = 0,
                                 totalFiles = 0,
@@ -376,7 +388,7 @@ internal class SteamContentSdkWorkshopTransfer
                         )
                         return SteamContentDownloadResult(
                             rootDirectory = destinationDirectory,
-                            downloadedBytes = committedBytes,
+                            downloadedBytes = finalTotal,
                             totalBytes = finalTotal,
                             fileCount = countPublishedFiles(destinationDirectory),
                             usedAuthenticatedSession = true,
@@ -425,6 +437,11 @@ internal class SteamContentSdkWorkshopTransfer
                         drainEvents(SDK_EVENT_POLL_MS)
                     }
                 }
+            }
+            } finally {
+                // Flush byte-event summaries before every exit: success, typed terminal states, control exits,
+                // coroutine cancellation, SDK exceptions, progress callback failures, and unexpected errors.
+                eventLog.close()
             }
         }
 
@@ -512,8 +529,84 @@ private suspend fun drainSdkTaskEvents(
 }
 
 private suspend fun logSdkTaskEvent(event: SteamContentSdkTaskEvent) {
-    Log.i(TAG, "task event kind=${sdkTaskEventName(event.kind)} value=${event.value}")
+    // Cleanup loops still drain byte events, but the owning runTask logger is the only place that aggregates them.
+    // Re-logging them here would restore the per-chunk INFO flood during cancellation.
+    if (event.kind != TaskEventKind.CHUNK_PROGRESS && event.kind != TaskEventKind.CHECKPOINT_COMMITTED) {
+        AndroidTaskEventInfoLog.info("task event kind=${sdkTaskEventName(event.kind)} value=${event.value}")
+    }
 }
+
+internal interface TaskEventInfoLog {
+    fun info(message: String)
+}
+
+internal object AndroidTaskEventInfoLog : TaskEventInfoLog {
+    override fun info(message: String) {
+        Log.i(TAG, message)
+    }
+}
+
+/**
+ * Keeps draining every SDK event while bounding the two high-volume byte-event INFO lines.
+ *
+ * The first chunk remains an immediate breadcrumb. Later chunk/checkpoint readings are summarized at most once
+ * per second, and any phase or terminal event flushes the pending summary before retaining its own line.
+ */
+internal class SdkTaskEventLog(
+    private val logger: TaskEventInfoLog = AndroidTaskEventInfoLog,
+    private val clockMs: () -> Long = android.os.SystemClock::elapsedRealtime,
+    private val intervalMs: Long = SDK_TASK_EVENT_LOG_INTERVAL_MS,
+) : Closeable {
+    private var firstChunkValue: Long? = null
+    private var lastLoggedValue = 0L
+    private var lastSummaryAtMs = Long.MIN_VALUE
+    private var pendingCount = 0
+    private var pendingChunkCount = 0
+    private var pendingCheckpointCount = 0
+    private var pendingLatestValue = 0L
+
+    @Synchronized
+    fun accept(event: SteamContentSdkTaskEvent) {
+        if (event.kind == TaskEventKind.CHUNK_PROGRESS || event.kind == TaskEventKind.CHECKPOINT_COMMITTED) {
+            val firstValue = firstChunkValue
+            if (event.kind == TaskEventKind.CHUNK_PROGRESS && firstValue == null) {
+                firstChunkValue = event.value
+                lastLoggedValue = event.value
+                lastSummaryAtMs = clockMs()
+                logger.info("task event kind=CHUNK_PROGRESS value=${event.value}")
+                return
+            }
+            pendingCount += 1
+            if (event.kind == TaskEventKind.CHUNK_PROGRESS) pendingChunkCount += 1 else pendingCheckpointCount += 1
+            pendingLatestValue = event.value
+            val elapsed = if (lastSummaryAtMs == Long.MIN_VALUE) Long.MAX_VALUE else clockMs() - lastSummaryAtMs
+            if (elapsed >= intervalMs) flushPending()
+            return
+        }
+
+        flushPending()
+        logger.info("task event kind=${sdkTaskEventName(event.kind)} value=${event.value}")
+    }
+
+    override fun close() = flushPending()
+
+    @Synchronized
+    fun flushPending() {
+        if (pendingCount == 0) return
+        logger.info(
+            "task event kind=CHUNK_PROGRESS_CHECKPOINT aggregated=true count=$pendingCount " +
+                "chunks=$pendingChunkCount checkpoints=$pendingCheckpointCount value=$pendingLatestValue " +
+                "value_delta=${(pendingLatestValue - lastLoggedValue).coerceAtLeast(0L)}",
+        )
+        lastLoggedValue = pendingLatestValue
+        pendingCount = 0
+        pendingChunkCount = 0
+        pendingCheckpointCount = 0
+        lastSummaryAtMs = clockMs()
+    }
+}
+
+private const val SDK_TASK_EVENT_LOG_INTERVAL_MS = 1_000L
 
 /** A typed SDK task failure keeps retry policy on stable machine-readable fields. */
 internal class SteamContentSdkTaskFailureException(

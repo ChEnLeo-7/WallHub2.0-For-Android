@@ -70,12 +70,16 @@ signing.properties
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamDownloadCheckpointTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamContentSdkWorkshopTransferTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamContentSdkVideoStreamSessionTest.kt
+!/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamContentSdkStreamFailureMappingTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/SteamContentSdkVideoFileSelectionTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/DownloadResumeCheckpointTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/DownloadLiveTelemetryTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/DownloadHostReconcilerTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/
 /app/src/test/kotlin/com/wallhub/android/feature/*
+!/app/src/test/kotlin/com/wallhub/android/feature/detail/
+/app/src/test/kotlin/com/wallhub/android/feature/detail/*
+!/app/src/test/kotlin/com/wallhub/android/feature/detail/StreamRecoveryBudgetTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/local/
 !/app/src/test/kotlin/com/wallhub/android/feature/discover/
 /app/src/test/kotlin/com/wallhub/android/feature/discover/*

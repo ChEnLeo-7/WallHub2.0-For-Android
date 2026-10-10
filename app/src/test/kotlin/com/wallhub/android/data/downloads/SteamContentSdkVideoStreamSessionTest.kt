@@ -17,7 +17,9 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -36,6 +38,9 @@ private class FakeRangeStream : SteamContentSdkRangeStream {
             cancelled = false,
         )
     var bytesToReturn = 0
+    var readThreadId: Long? = null
+    var telemetryCalls = 0
+    var telemetryValue = SteamContentSdkStreamTelemetry()
     var closed = false
     var throwOnCleanup = false
     var demandLatch = CountDownLatch(1)
@@ -46,8 +51,14 @@ private class FakeRangeStream : SteamContentSdkRangeStream {
         offset: Int,
         length: Int,
     ): Int {
+        readThreadId = Thread.currentThread().id
         reads += ReadCall(position, offset, length)
         return bytesToReturn.coerceAtMost(length)
+    }
+
+    override fun telemetry(): SteamContentSdkStreamTelemetry {
+        telemetryCalls += 1
+        return telemetryValue
     }
 
     override fun updatePlaybackDemand(demand: SteamContentSdkPlaybackDemand): SteamContentSdkBufferSnapshot {
@@ -127,6 +138,37 @@ private class FakeRangeSession : SteamContentSdkSession {
 
 class SteamContentSdkVideoStreamSessionTest {
     @Test
+    fun `synchronous restore clears account and token byte arrays after success`() {
+        val account = "account".toByteArray()
+        val token = "synthetic-token".toByteArray()
+        var passedAccount: ByteArray? = null
+        var passedToken: ByteArray? = null
+
+        restoreWithClearedCredentials(account, token) { accountBytes, tokenBytes ->
+            passedAccount = accountBytes
+            passedToken = tokenBytes
+        }
+
+        assertArrayEquals(ByteArray(account.size), account)
+        assertArrayEquals(ByteArray(token.size), token)
+        assertArrayEquals(ByteArray(account.size), passedAccount)
+        assertArrayEquals(ByteArray(token.size), passedToken)
+    }
+
+    @Test
+    fun `synchronous restore clears account and token byte arrays after failure`() {
+        val account = "account".toByteArray()
+        val token = "synthetic-token".toByteArray()
+
+        assertThrows(IllegalStateException::class.java) {
+            restoreWithClearedCredentials(account, token) { _, _ -> error("restore refused") }
+        }
+
+        assertArrayEquals(ByteArray(account.size), account)
+        assertArrayEquals(ByteArray(token.size), token)
+    }
+
+    @Test
     fun `byte cursor distinguishes contiguous reopen from a real seek`() {
         val cursor = StreamByteCursor()
 
@@ -192,6 +234,19 @@ class SteamContentSdkVideoStreamSessionTest {
         }
 
     @Test
+    fun `blocking read calls the synchronous SDK stream on the caller thread`() {
+        val fixture = fixture(contentLength = 100L)
+        fixture.stream.bytesToReturn = 8
+        val callerThread = Thread.currentThread().id
+
+        val read = fixture.session.readAtBlocking(40L, ByteArray(16), 4, 8)
+
+        assertEquals(8, read)
+        assertEquals(callerThread, fixture.stream.readThreadId)
+        assertEquals(listOf(ReadCall(position = 40L, offset = 4, length = 8)), fixture.stream.reads)
+    }
+
+    @Test
     fun aReadIsClampedToTheRemainingContentLength() =
         runBlocking {
             val fixture = fixture(contentLength = 100L)
@@ -233,6 +288,50 @@ class SteamContentSdkVideoStreamSessionTest {
         }
 
     @Test
+    fun `disabled detailed logging does no JNI telemetry work`() {
+        val logger = RecordingTelemetryLog(debugEnabled = false)
+        val fixture = fixture(contentLength = 1_000L, telemetryLog = logger)
+
+        fixture.session.updateReadDemand(WorkshopVideoReadDemand(250L, 350L, WorkshopVideoReadKind.SEQUENTIAL))
+
+        assertTrue(fixture.stream.demandLatch.await(2, TimeUnit.SECONDS))
+        assertEquals(0, fixture.stream.telemetryCalls)
+        assertTrue(logger.debugMessages.isEmpty())
+    }
+
+    @Test
+    fun `telemetry is sampled no faster than one second and reports deltas`() {
+        var nowMs = 10_000L
+        val sampler = StreamTelemetrySampler(clockMs = { nowMs })
+        var value = SteamContentSdkStreamTelemetry(fetchStarted = 10L, cacheHits = 20L)
+        var sourceCalls = 0
+
+        assertEquals(value, sampler.sample { sourceCalls += 1; value })
+        nowMs += 999L
+        value = SteamContentSdkStreamTelemetry(fetchStarted = 12L, cacheHits = 25L)
+        assertEquals(null, sampler.sample { sourceCalls += 1; value })
+        nowMs += 1L
+        assertEquals(
+            SteamContentSdkStreamTelemetry(fetchStarted = 2L, cacheHits = 5L),
+            sampler.sample { sourceCalls += 1; value },
+        )
+        assertEquals(2, sourceCalls)
+    }
+
+    @Test
+    fun `forced telemetry sample bypasses cadence for seek rebuffer failure or close`() {
+        var nowMs = 10_000L
+        val sampler = StreamTelemetrySampler(clockMs = { nowMs })
+        sampler.sample { SteamContentSdkStreamTelemetry(fetchStarted = 1L) }
+        nowMs += 10L
+
+        assertEquals(
+            SteamContentSdkStreamTelemetry(fetchStarted = 1L),
+            sampler.sample(force = true) { SteamContentSdkStreamTelemetry(fetchStarted = 2L) },
+        )
+    }
+
+    @Test
     fun `byte demand is forwarded without estimating from the media timeline`() {
         val fixture = fixture(contentLength = 1_000L)
 
@@ -255,31 +354,6 @@ class SteamContentSdkVideoStreamSessionTest {
             ),
             fixture.stream.demands.single(),
         )
-    }
-
-    @Test
-    fun `native rolling snapshot is projected without pretending bytes are media time`() {
-        val fixture = fixture(contentLength = 1_000L)
-        fixture.stream.snapshot =
-            SteamContentSdkBufferSnapshot(
-                position = 250L,
-                targetBytes = 400L,
-                prefetchOffset = 600L,
-                prefetchBytes = 250L,
-                generation = 7L,
-                cachedBytes = 900L,
-                cancelled = false,
-            )
-
-        fixture.session.updateReadDemand(WorkshopVideoReadDemand(250L, 350L, WorkshopVideoReadKind.SEQUENTIAL))
-
-        assertTrue(fixture.stream.demandLatch.await(2, TimeUnit.SECONDS))
-        val state = fixture.session.playbackBufferState.value
-        assertEquals(600L, state.bufferedBytes)
-        assertEquals(350L, state.availableBytes)
-        assertEquals(400L, state.targetBytes)
-        assertEquals(false, state.targetReached)
-        assertEquals(false, state.bandwidthLimited)
     }
 
     @Test
@@ -330,17 +404,6 @@ class SteamContentSdkVideoStreamSessionTest {
     }
 
     @Test
-    fun `SDK rolling session never enters full-file cache mode`() {
-        val fixture = fixture(contentLength = 100L)
-
-        fixture.session.startFullCache()
-        fixture.session.cancelFullCache()
-
-        assertTrue(fixture.stream.order.isEmpty())
-        assertEquals(0L, fixture.session.fullCacheState.value.cachedBytes)
-    }
-
-    @Test
     fun closingTheSessionReleasesTheStreamBeforeTheSdkSession() {
         val fixture = fixture(contentLength = 100L)
 
@@ -350,7 +413,11 @@ class SteamContentSdkVideoStreamSessionTest {
         assertEquals(listOf("stream-opened", "session-closed"), fixture.sdkSession.order)
     }
 
-    private fun fixture(contentLength: Long): Fixture {
+    private fun fixture(
+        contentLength: Long,
+        telemetryLog: StreamTelemetryLog = RecordingTelemetryLog(debugEnabled = false),
+        clockMs: () -> Long = { 0L },
+    ): Fixture {
         val sdkSession = FakeRangeSession()
         val stream: SteamContentSdkRangeStream =
             sdkSession.openRangeStream(
@@ -372,6 +439,8 @@ class SteamContentSdkVideoStreamSessionTest {
                     title = "Scene",
                     fileName = "scene.mp4",
                     contentLength = contentLength,
+                    telemetryLog = telemetryLog,
+                    clockMs = clockMs,
                 ),
         )
     }
@@ -381,6 +450,22 @@ class SteamContentSdkVideoStreamSessionTest {
         val sdkSession: FakeRangeSession,
         val session: SteamContentSdkVideoStreamSession,
     )
+
+    private class RecordingTelemetryLog(
+        private val debugEnabled: Boolean,
+    ) : StreamTelemetryLog {
+        val debugMessages = mutableListOf<String>()
+
+        override fun isDebugEnabled(): Boolean = debugEnabled
+
+        override fun isWarnEnabled(): Boolean = true
+
+        override fun debug(message: String) {
+            debugMessages += message
+        }
+
+        override fun warn(message: String) = Unit
+    }
 
     private class RecordingRepositorySession(
         override val storageRoot: File,
