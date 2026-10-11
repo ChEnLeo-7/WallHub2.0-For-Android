@@ -8,6 +8,7 @@ import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.ThemePreference
 import com.wallhub.android.core.model.WorkshopVideoReadDemand
+import com.wallhub.android.core.model.WorkshopVideoOpenRequest
 import com.wallhub.android.core.model.WorkshopVideoReadKind
 import com.wallhub.android.feature.detail.StreamByteCursor
 import java.io.File
@@ -176,6 +177,91 @@ class SteamContentSdkVideoStreamSessionTest {
         cursor.advance(512L)
         assertEquals(WorkshopVideoReadKind.SEQUENTIAL, cursor.classifyOpen(512L))
         assertEquals(WorkshopVideoReadKind.SEEK, cursor.classifyOpen(4_096L))
+    }
+
+    @Test
+    fun `constructing repository performs no target or SDK work before open`() {
+        val root = Files.createTempDirectory("video-stream-repository").toFile()
+        var targetFetches = 0
+        var sdkOpens = 0
+
+        SteamWorkshopVideoStreamRepository(
+            cacheRootDirectory = File(root, "cache"),
+            credentialProvider = testCredentialProvider,
+            settingsRepository = RepositoryTestSettings(flowOf(AppPreferences())),
+            contentTargetFetcher = {
+                targetFetches += 1
+                error("must not fetch before explicit open")
+            },
+            playbackCoordinator = PlaybackDownloadCoordinator(),
+            sdkSessionBroker = SteamContentSdkSessionBroker {
+                sdkOpens += 1
+                error("must not open SDK before explicit open")
+            },
+        )
+
+        assertEquals(0, targetFetches)
+        assertEquals(0, sdkOpens)
+        root.deleteRecursively()
+    }
+
+    @Test
+    fun `complete trusted detail identity skips public target and product info resolver`() = runBlocking {
+        val root = Files.createTempDirectory("video-stream-repository").toFile()
+        val sdkSession = RecordingRepositorySession(root)
+        var targetFetches = 0
+        val repository =
+            SteamWorkshopVideoStreamRepository(
+                cacheRootDirectory = File(root, "cache"),
+                credentialProvider = testCredentialProvider,
+                settingsRepository = RepositoryTestSettings(flowOf(AppPreferences())),
+                contentTargetFetcher = {
+                    targetFetches += 1
+                    error("complete detail identity must skip the public target fetch")
+                },
+                playbackCoordinator = PlaybackDownloadCoordinator(),
+                sdkSessionBroker = SteamContentSdkSessionBroker { sdkSession },
+            )
+
+        repository.open(
+            WorkshopVideoOpenRequest(
+                workshopId = 7L,
+                title = "Video",
+                expectedSizeBytes = 9L,
+                consumerAppId = 431960L,
+                depotId = 431961L,
+                manifestId = 42L,
+                fileName = "wallpaper.mp4",
+            ),
+        ).close()
+
+        assertEquals(0, targetFetches)
+        assertEquals(0, sdkSession.resolveCalls)
+        root.deleteRecursively()
+    }
+
+    @Test
+    fun `standalone open fetches public target at most once per click`() = runBlocking {
+        val root = Files.createTempDirectory("video-stream-repository").toFile()
+        val sdkSession = RecordingRepositorySession(root)
+        var targetFetches = 0
+        val repository =
+            SteamWorkshopVideoStreamRepository(
+                cacheRootDirectory = File(root, "cache"),
+                credentialProvider = testCredentialProvider,
+                settingsRepository = RepositoryTestSettings(flowOf(AppPreferences())),
+                contentTargetFetcher = {
+                    targetFetches += 1
+                    WorkshopContentTarget(it, "Video", 431960, 42L, 9L, "video")
+                },
+                playbackCoordinator = PlaybackDownloadCoordinator(),
+                sdkSessionBroker = SteamContentSdkSessionBroker { sdkSession },
+            )
+
+        repository.open(WorkshopVideoOpenRequest(workshopId = 7L)).close()
+
+        assertEquals(1, targetFetches)
+        root.deleteRecursively()
     }
 
     @Test
@@ -467,13 +553,32 @@ class SteamContentSdkVideoStreamSessionTest {
         override fun warn(message: String) = Unit
     }
 
+    private val testCredentialProvider =
+        object : SteamContentCredentialProvider {
+            override suspend fun loadContentCredential() =
+                SteamContentCredential("account", "synthetic-test-token")
+        }
+
     private class RecordingRepositorySession(
         override val storageRoot: File,
     ) : SteamContentSdkSession {
         var requestedCacheCapacityBytes = -1L
+        var resolveCalls = 0
 
-        override fun resolveWorkshop(itemId: Long, appIdHint: Long, contentManifestIdHint: Long) =
-            SteamContentSdkResolvedItem(itemId, 431960L, 431961L, 42L, resolved = true)
+        override fun resolveWorkshop(
+            itemId: Long,
+            appIdHint: Long,
+            contentManifestIdHint: Long,
+        ): SteamContentSdkResolvedItem {
+            resolveCalls += 1
+            return SteamContentSdkResolvedItem(
+                itemId,
+                appIdHint.takeIf { it > 0L } ?: 431960L,
+                431961L,
+                contentManifestIdHint.takeIf { it != 0L } ?: 42L,
+                resolved = true,
+            )
+        }
 
         override fun manifestFiles(appId: Long, depotId: Long, manifestId: Long) =
             listOf(SteamContentSdkManifestFile("wallpaper.mp4", 9L, 0))

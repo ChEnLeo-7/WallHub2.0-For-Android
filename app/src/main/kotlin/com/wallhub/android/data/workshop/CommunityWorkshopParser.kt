@@ -2,9 +2,11 @@ package com.wallhub.android.data.workshop
 
 import com.wallhub.android.core.model.FavoriteState
 import com.wallhub.android.core.model.SubscriptionState
+import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopComment
 import com.wallhub.android.core.model.WorkshopCommentPage
+import com.wallhub.android.core.model.WorkshopContentIdentity
 import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
@@ -221,7 +223,14 @@ internal object CommunityWorkshopParser {
     }
 
     fun parseDetails(json: String): List<WorkshopDetail> {
-        val response = JSONObject(json).optJSONObject("response") ?: return emptyList()
+        // Recent Steam manifest identities exceed Long.MAX_VALUE. Quote each value before JSONObject parses it
+        // so precision is retained inside its own detail row; never correlate a compact response-wide match list
+        // with array indexes because failed/legacy rows may omit the field.
+        val normalized =
+            HCONTENT_FILE_REGEX.replace(json) { match ->
+                "\"hcontent_file\":\"${match.groupValues[1]}\""
+            }
+        val response = JSONObject(normalized).optJSONObject("response") ?: return emptyList()
         val details = response.optJSONArray("publishedfiledetails") ?: JSONArray()
         return buildList {
             for (index in 0 until details.length()) {
@@ -229,7 +238,8 @@ internal object CommunityWorkshopParser {
                 if (detail.jsonLong("result") != RESULT_OK) continue
                 val id = detail.jsonLong("publishedfileid")
                 if (id <= 0L) continue
-                add(detail.toWorkshopDetail(id))
+                val manifestId = detail.jsonString("hcontent_file").toULongOrNull()?.takeIf { it != 0UL }?.toLong()
+                add(detail.toWorkshopDetail(id, manifestId))
             }
         }
     }
@@ -340,7 +350,10 @@ internal object CommunityWorkshopParser {
         return commenterAccountId == creatorAccountId
     }
 
-    private fun JSONObject.toWorkshopDetail(id: Long): WorkshopDetail {
+    private fun JSONObject.toWorkshopDetail(
+        id: Long,
+        rawManifestId: Long?,
+    ): WorkshopDetail {
         val tags = jsonTags("tags")
         val title = jsonString("title")
         val author = jsonString("creator_name")
@@ -383,6 +396,25 @@ internal object CommunityWorkshopParser {
             updatedAt = jsonLong("time_updated").takeIf { it > 0L },
             subscriptions = jsonLong("subscriptions").takeIf { it > 0L },
             creatorId = jsonString("creator").takeIf(String::isNotBlank),
+            contentIdentity = contentIdentity(rawManifestId),
+        )
+    }
+
+    private fun JSONObject.contentIdentity(rawManifestId: Long?): WorkshopContentIdentity {
+        val appId = jsonLong("consumer_app_id").takeIf { it > 0L }
+        val explicitDepot =
+            jsonLong("consumer_depot_id").takeIf { it > 0L }
+                ?: jsonLong("depot_id").takeIf { it > 0L }
+        // Wallpaper Engine's reviewed product-info record names its App depot itself as `workshopdepot=431960`.
+        // Reusing that product invariant removes a redundant cold Product Info RPC after an explicit Play click;
+        // it is not a prediction or prefetch, and non-Wallpaper apps never receive the fallback.
+        val depotId = explicitDepot ?: appId?.takeIf { it == WALLPAPER_ENGINE_APP_ID.toLong() }
+        return WorkshopContentIdentity(
+            consumerAppId = appId,
+            depotId = depotId,
+            manifestId = rawManifestId?.takeIf { it != 0L },
+            fileName = jsonString("filename").takeIf(String::isNotBlank),
+            directUrl = jsonString("file_url").takeIf(String::isNotBlank),
         )
     }
 
@@ -453,6 +485,7 @@ internal object CommunityWorkshopParser {
             ?.let { value -> String(Character.toChars(value)) }
             ?: fallback
 
+    private val HCONTENT_FILE_REGEX = Regex("\"hcontent_file\"\\s*:\\s*\"?(\\d+)\"?")
     private const val RESULT_OK = 1L
     private const val DEFAULT_COMMENT_AUTHOR = ""
     private const val MAX_COMMENT_PAGE_SIZE = 50

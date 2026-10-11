@@ -136,6 +136,14 @@ data class WorkshopSummary(
     val authorPlaceholder: WorkshopAuthorPlaceholder = WorkshopAuthorPlaceholder.NONE,
 )
 
+data class WorkshopContentIdentity(
+    val consumerAppId: Long? = null,
+    val depotId: Long? = null,
+    val manifestId: Long? = null,
+    val fileName: String? = null,
+    val directUrl: String? = null,
+)
+
 data class WorkshopDetail(
     val summary: WorkshopSummary,
     val description: String = "",
@@ -146,7 +154,33 @@ data class WorkshopDetail(
     val updatedAt: Long? = null,
     val subscriptions: Long? = null,
     val creatorId: String? = null,
+    val contentIdentity: WorkshopContentIdentity = WorkshopContentIdentity(),
 )
+
+data class WorkshopVideoOpenRequest(
+    val workshopId: Long,
+    val title: String = "",
+    val expectedSizeBytes: Long? = null,
+    val consumerAppId: Long? = null,
+    val depotId: Long? = null,
+    val manifestId: Long? = null,
+    val fileName: String? = null,
+    val directUrl: String? = null,
+) {
+    companion object {
+        fun from(detail: WorkshopDetail): WorkshopVideoOpenRequest =
+            WorkshopVideoOpenRequest(
+                workshopId = detail.summary.id,
+                title = detail.summary.title,
+                expectedSizeBytes = detail.fileSizeBytes,
+                consumerAppId = detail.contentIdentity.consumerAppId,
+                depotId = detail.contentIdentity.depotId,
+                manifestId = detail.contentIdentity.manifestId,
+                fileName = detail.contentIdentity.fileName,
+                directUrl = detail.contentIdentity.directUrl,
+            )
+    }
+}
 
 data class WorkshopComment(
     val author: String,

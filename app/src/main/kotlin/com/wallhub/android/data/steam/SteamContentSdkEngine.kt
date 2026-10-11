@@ -350,7 +350,11 @@ class SteamContentSdkEngine
             return true
         }
 
-        @Synchronized
+        /**
+         * Reads only the current generation and the native session's atomic state. Do not take the engine-wide
+         * monitor here: other facade calls can hold it across CM network I/O, and a playback lease must be able
+         * to decide whether the published session is borrowable without queuing behind that unrelated request.
+         */
         fun state(): Int = sessions.currentValue()?.state() ?: SessionState.DISCONNECTED
 
         @Synchronized

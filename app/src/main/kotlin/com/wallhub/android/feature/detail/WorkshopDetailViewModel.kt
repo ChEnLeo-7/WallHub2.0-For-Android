@@ -28,6 +28,7 @@ import com.wallhub.android.core.model.WORKSHOP_COMMENT_MAX_LENGTH
 import com.wallhub.android.core.model.WorkshopInteraction
 import com.wallhub.android.core.model.WorkshopRepository
 import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.android.core.model.WorkshopVideoOpenRequest
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamSession
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -234,9 +235,6 @@ class WorkshopDetailViewModel
                                     }
                             }
                         }
-                        viewModelScope.launch {
-                            runCatching { workshopDownloads.prewarm(workshopId) }
-                        }
                     }.onFailure { error ->
                         mutableState.value =
                             mutableState.value.copy(
@@ -283,7 +281,10 @@ class WorkshopDetailViewModel
                             inlineVideoError = null,
                         )
                     try {
-                        openedStream = videoStreamRepository.open(workshopId)
+                        openedStream =
+                            videoStreamRepository.open(
+                                WorkshopVideoOpenRequest.from(checkNotNull(mutableState.value.detail)),
+                            )
                         coroutineContext.ensureActive()
                         openedPlayer =
                             createSteamChunkPlayer(

@@ -252,7 +252,11 @@ interface WorkshopVideoStreamSession : Closeable {
 }
 
 interface WorkshopVideoStreamRepository {
-    suspend fun open(workshopId: Long): WorkshopVideoStreamSession
+    suspend fun open(request: WorkshopVideoOpenRequest): WorkshopVideoStreamSession
+
+    /** Standalone playback routes have only an item id and resolve public details once after the click. */
+    suspend fun open(workshopId: Long): WorkshopVideoStreamSession =
+        open(WorkshopVideoOpenRequest(workshopId = workshopId))
 
     /** Clears decrypted Depot chunks retained only for online playback. */
     suspend fun clearCache(): Long = 0L

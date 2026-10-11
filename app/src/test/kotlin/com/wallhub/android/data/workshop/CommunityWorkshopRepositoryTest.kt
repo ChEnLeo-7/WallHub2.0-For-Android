@@ -11,6 +11,7 @@ import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopCommentPage
 import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopPage
+import com.wallhub.android.core.model.WorkshopVideoOpenRequest
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +26,52 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class CommunityWorkshopRepositoryTest {
+    @Test
+    fun `public detail retains video content identity for the play request`() {
+        val detail =
+            CommunityWorkshopParser.parseDetails(
+                """
+                {"response":{"publishedfiledetails":[{"result":1,"publishedfileid":"42",
+                "consumer_app_id":431960,"consumer_depot_id":431961,"hcontent_file":"999",
+                "title":"Clip","file_size":"123","filename":"clip.mp4",
+                "file_url":"https://cdn.example/clip.mp4","tags":[{"tag":"video"}]}]}}
+                """.trimIndent(),
+            ).single()
+
+        assertEquals(
+            WorkshopVideoOpenRequest(
+                workshopId = 42L,
+                title = "Clip",
+                expectedSizeBytes = 123L,
+                consumerAppId = 431960L,
+                depotId = 431961L,
+                manifestId = 999L,
+                fileName = "clip.mp4",
+                directUrl = "https://cdn.example/clip.mp4",
+            ),
+            WorkshopVideoOpenRequest.from(detail),
+        )
+    }
+
+    @Test
+    fun `failed detail row cannot shift the following items unsigned manifest`() {
+        val details =
+            CommunityWorkshopParser.parseDetails(
+                """
+                {"response":{"publishedfiledetails":[
+                  {"result":9,"publishedfileid":"1"},
+                  {"result":1,"publishedfileid":"2","consumer_app_id":431960,
+                   "hcontent_file":"18000000000000000001","title":"Second","tags":[{"tag":"video"}]}
+                ]}}
+                """.trimIndent(),
+            )
+
+        assertEquals(1, details.size)
+        assertEquals(2L, details.single().summary.id)
+        assertEquals(18_000_000_000_000_000_001UL.toLong(), details.single().contentIdentity.manifestId)
+        assertEquals(431960L, details.single().contentIdentity.depotId)
+    }
+
     @Test
     fun `CM batch fills only missing details from public fallback`() =
         runBlocking {

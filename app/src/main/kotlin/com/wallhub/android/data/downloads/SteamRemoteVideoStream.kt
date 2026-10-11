@@ -17,6 +17,7 @@ import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -29,11 +30,15 @@ import kotlin.coroutines.resumeWithException
  * range probe.
  */
 internal fun remoteVideoUrlOrNull(target: WorkshopContentTarget): String? {
-    val url = target.fileUrl.trim()
-    if (url.isEmpty()) return null
-    val path = url.substringBefore('?').substringBefore('#')
-    if (path.videoFileExtension() !in VIDEO_FILE_EXTENSIONS) return null
-    return url
+    val parsed = target.fileUrl.trim().toHttpUrlOrNull() ?: return null
+    if (!parsed.isHttps || parsed.port != 443 || !isTrustedSteamFileHost(parsed.host)) return null
+    if (parsed.encodedPath.videoFileExtension() !in VIDEO_FILE_EXTENSIONS) return null
+    return parsed.toString()
+}
+
+private fun isTrustedSteamFileHost(hostname: String): Boolean {
+    val host = hostname.lowercase().trimEnd('.')
+    return TRUSTED_STEAM_FILE_SUFFIXES.any { suffix -> host == suffix || host.endsWith(".$suffix") }
 }
 
 internal fun parseContentRangeTotal(contentRange: String?): Long? {
@@ -41,6 +46,16 @@ internal fun parseContentRangeTotal(contentRange: String?): Long? {
     if (total.isEmpty() || total == "*") return null
     return total.toLongOrNull()?.takeIf { it > 0L }
 }
+
+private val TRUSTED_STEAM_FILE_SUFFIXES =
+    setOf(
+        "steamusercontent.com",
+        "steamcontent.com",
+        "steamstatic.com",
+        "steampowered.com",
+        "steamusercontent-a.akamaihd.net",
+        "steamcdn-a.akamaihd.net",
+    )
 
 private suspend fun Call.awaitCall(): Response =
     suspendCancellableCoroutine { continuation ->
@@ -228,6 +243,8 @@ internal class SteamRemoteVideoStream private constructor(
         ): SteamRemoteVideoStream {
             val client =
                 clientBuilder
+                    .followRedirects(false)
+                    .followSslRedirects(false)
                     .connectTimeout(15, TimeUnit.SECONDS)
                     .readTimeout(20, TimeUnit.SECONDS)
                     .callTimeout(30, TimeUnit.SECONDS)

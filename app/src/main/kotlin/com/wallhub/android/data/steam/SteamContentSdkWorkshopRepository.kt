@@ -18,6 +18,7 @@ import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopComment
 import com.wallhub.android.core.model.WorkshopCommentPage
+import com.wallhub.android.core.model.WorkshopContentIdentity
 import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopInteraction
 import com.wallhub.android.core.model.WorkshopPage
@@ -704,6 +705,15 @@ internal class SteamContentSdkWorkshopRepository
                 updatedAt = result.field(WorkshopItemField.UPDATED_AT).epochSeconds(),
                 subscriptions = summary.subscriptions,
                 creatorId = summary.creatorId,
+                contentIdentity =
+                    WorkshopContentIdentity(
+                        consumerAppId = result.field(WorkshopItemField.APP).value.takeIf { it > 0L },
+                        depotId =
+                            result.field(WorkshopItemField.APP).value
+                                .takeIf { it == WALLPAPER_ENGINE_APP_ID.toLong() },
+                        manifestId =
+                            result.field(WorkshopItemField.CONTENT_MANIFEST).value.takeIf { it != 0L },
+                    ),
             )
         }
 

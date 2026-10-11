@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamContentCredentialProvider
+import com.wallhub.android.core.model.WorkshopVideoOpenRequest
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamSession
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
@@ -14,6 +15,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -67,14 +69,19 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
         sdkSessionBroker = sdkSessionBroker,
     )
 
-    override suspend fun open(workshopId: Long): WorkshopVideoStreamSession {
+    override suspend fun open(request: WorkshopVideoOpenRequest): WorkshopVideoStreamSession {
         var openedStream: WorkshopVideoStreamSession? = null
+        val operationId = NEXT_OPERATION_ID.incrementAndGet()
+        val totalStarted = System.nanoTime()
         try {
             return withContext(Dispatchers.IO) {
-                    require(workshopId > 0L) { "Invalid Workshop item ID" }
+                    require(request.workshopId > 0L) { "Invalid Workshop item ID" }
                     val preferences = settingsRepository.preferences.first()
                     val activeProxyUrl = preferences.downloadProxyUrl.takeIf { preferences.downloadProxyEnabled }.orEmpty()
-                    val target = contentTargetFetcher(workshopId)
+                    val targetStarted = System.nanoTime()
+                    val suppliedTarget = request.toContentTargetOrNull()
+                    val target = suppliedTarget ?: contentTargetFetcher(request.workshopId)
+                    logPhase(operationId, "target", targetStarted, if (suppliedTarget == null) "fetched" else "supplied")
                     check(target.contentTypeHint == "video") { "This item is not a streamable video wallpaper" }
                     // A direct-file item is a file Steam publishes at a URL: there is no depot to resolve,
                     // so the product's own HTTP range reader serves it, exactly as the direct-file download
@@ -82,19 +89,23 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
                     // reads no Depot Key, CDN token, or URL of ours.
                     val stream =
                         when (val delivery = workshopDelivery(target)) {
-                            is WorkshopDelivery.DirectFile ->
+                            is WorkshopDelivery.DirectFile -> {
+                                val directOpenStarted = System.nanoTime()
+                                logSkippedPhase(operationId, "session")
+                                logSkippedPhase(operationId, "resolve")
+                                logSkippedPhase(operationId, "manifest")
                                 SteamRemoteVideoStream.open(
                                     title = target.title,
-                                    fileName =
-                                        target.rawFileName.ifBlank {
-                                            delivery.remoteUrl.substringAfterLast('/').substringBefore('?')
-                                        },
+                                    fileName = directVideoFileName(target, delivery.remoteUrl),
                                     remoteUrl = delivery.remoteUrl,
                                     expectedSize = target.expectedSize,
                                     clientBuilder =
                                         checkNotNull(steamHttpClientFactory).newBuilder().applyDownloadProxy(activeProxyUrl),
-                                )
-                            is WorkshopDelivery.DepotContent -> openSdkVideoStream(target)
+                                ).also {
+                                    logPhase(operationId, "open", directOpenStarted, "direct")
+                                }
+                            }
+                            is WorkshopDelivery.DepotContent -> openSdkVideoStream(target, request, operationId)
                         }
                     val coordinated = CoordinatedVideoStreamSession(stream, playbackCoordinator.registerPlayback())
                     openedStream = coordinated
@@ -102,6 +113,7 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
                 }.also { openedStream = null }
             } finally {
                 openedStream?.close()
+                Log.i(TAG, "video_prepare op=$operationId phase=total elapsed_ms=${elapsedMillis(totalStarted)}")
             }
         }
 
@@ -118,30 +130,61 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
          * playback and is released with the stream, so an SDK playback session never outlives the screen
          * that started it. Every failure is a failure - there is no fall-through to the old backend.
          */
-        private suspend fun openSdkVideoStream(target: WorkshopContentTarget): WorkshopVideoStreamSession {
+        private suspend fun openSdkVideoStream(
+            target: WorkshopContentTarget,
+            request: WorkshopVideoOpenRequest,
+            operationId: Long,
+        ): WorkshopVideoStreamSession {
+            val credentialStarted = System.nanoTime()
             val credential =
                 credentialProvider.loadContentCredential()
                     ?: credentialProvider.restoreContentCredential()
             check(credential != null && credential.refreshToken.isNotBlank()) {
                 "The Steam Content SDK range path needs the stored Steam refresh token; none was read"
             }
+            logPhase(operationId, "credential", credentialStarted, "stored")
+            val sessionStarted = System.nanoTime()
             val sessionLease = sdkSessionBroker.acquire(credential)
+            logPhase(operationId, "session_lease", sessionStarted, "complete")
             val session = sessionLease.session
             try {
+                val resolveStarted = System.nanoTime()
+                val suppliedIdentity =
+                    request.consumerAppId?.takeIf { it > 0L }?.let { appId ->
+                        request.depotId?.takeIf { it > 0L }?.let { depotId ->
+                            request.manifestId?.takeIf { it != 0L }?.let { manifestId ->
+                                SteamContentSdkResolvedItem(
+                                    itemId = request.workshopId,
+                                    appId = appId,
+                                    depotId = depotId,
+                                    manifestId = manifestId,
+                                    resolved = true,
+                                )
+                            }
+                        }
+                    }
                 val resolved =
-                    session.resolveWorkshop(
+                    suppliedIdentity ?: session.resolveWorkshop(
                         itemId = target.publishedFileId,
-                        appIdHint = target.appId.toLong().takeIf { it > 0L } ?: 0L,
-                        contentManifestIdHint = target.contentManifestId.takeIf { it != 0L } ?: 0L,
+                        appIdHint = request.consumerAppId ?: target.appId.toLong().takeIf { it > 0L } ?: 0L,
+                        contentManifestIdHint = request.manifestId ?: target.contentManifestId.takeIf { it != 0L } ?: 0L,
                     )
+                logPhase(
+                    operationId,
+                    "resolve",
+                    resolveStarted,
+                    if (suppliedIdentity == null) "sdk_lookup" else "trusted_detail_identity",
+                )
                 check(resolved.resolved) {
                     "The Steam Content SDK did not resolve Workshop item ${target.publishedFileId} to an app, depot, and manifest"
                 }
                 check(resolved.appId > 0L && resolved.depotId > 0L) {
                     "The Steam Content SDK resolved Workshop item ${target.publishedFileId} without a usable app or depot"
                 }
-                // The manifest names the file, because the item's public details need not: the product rule
-                // that picks the video lives here, not in the SDK, and the size it reports is the decoded one.
+                // Steam public `filename` names the published payload and is not proof of an internal Depot
+                // path. Always select the video from the authenticated decoded manifest; skipping this would
+                // trade startup latency for incorrect files. This starts only after an explicit Play click.
+                val manifestStarted = System.nanoTime()
                 val videoFile =
                     selectStreamableVideoFile(
                         session.manifestFiles(resolved.appId, resolved.depotId, resolved.manifestId),
@@ -149,12 +192,14 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
                         "The Steam Content SDK manifest for Workshop item ${target.publishedFileId} " +
                             "has no streamable video file",
                     )
+                logPhase(operationId, "manifest", manifestStarted, "listed")
                 // One line per open so a parity reading can name the path that served the ranges. The ids
                 // are public catalog numbers; no title, path, key, or token is logged.
                 Log.i(
                     "SteamVideoStream",
                     "playback served by=steam-content-sdk app=${resolved.appId} depot=${resolved.depotId}",
                 )
+                val rangeOpenStarted = System.nanoTime()
                 val stream =
                     session.openRangeStream(
                         appId = resolved.appId,
@@ -166,6 +211,7 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
                         // into an SDK allocation whose per-stream ceiling is 64 MiB.
                         cacheCapacityBytes = MOBILE_STREAM_MEMORY_CACHE_BYTES,
                     )
+                logPhase(operationId, "open", rangeOpenStarted, "sdk_range")
                 return SteamContentSdkVideoStreamSession(
                     sessionLease = sessionLease,
                     stream = stream,
@@ -196,6 +242,46 @@ private class CoordinatedVideoStreamSession(
     }
 }
 
+private fun WorkshopVideoOpenRequest.toContentTargetOrNull(): WorkshopContentTarget? {
+    val hasDirectIdentity = !directUrl.isNullOrBlank()
+    val hasDepotIdentity =
+        consumerAppId?.let { it > 0L } == true &&
+            manifestId?.let { it != 0L } == true
+    if (!hasDirectIdentity && !hasDepotIdentity) return null
+    val appId = consumerAppId?.takeIf { it in 1..Int.MAX_VALUE.toLong() }?.toInt() ?: 0
+    return WorkshopContentTarget(
+        publishedFileId = workshopId,
+        title = title.ifBlank { "Workshop $workshopId" },
+        appId = appId,
+        contentManifestId = manifestId ?: 0L,
+        expectedSize = expectedSizeBytes?.coerceAtLeast(0L) ?: 0L,
+        contentTypeHint = "video",
+        fileUrl = directUrl.orEmpty(),
+        rawFileName = fileName.orEmpty(),
+    )
+}
+
+private fun logPhase(
+    operationId: Long,
+    phase: String,
+    startedNanos: Long,
+    source: String,
+) {
+    Log.i(TAG, "video_prepare op=$operationId phase=$phase elapsed_ms=${elapsedMillis(startedNanos)} source=$source")
+}
+
+private fun logSkippedPhase(
+    operationId: Long,
+    phase: String,
+) {
+    Log.i(TAG, "video_prepare op=$operationId phase=$phase elapsed_ms=0 source=not_required")
+}
+
+private fun elapsedMillis(startedNanos: Long): Long =
+    (System.nanoTime() - startedNanos).coerceAtLeast(0L) / 1_000_000L
+
+private const val TAG = "SteamVideoStream"
+private val NEXT_OPERATION_ID = AtomicLong(0L)
 private const val STREAM_CACHE_DIRECTORY = "steam-video-stream"
 
 /** Fixed process-memory budget for one mobile SDK stream; deliberately independent of disk-cache settings. */
