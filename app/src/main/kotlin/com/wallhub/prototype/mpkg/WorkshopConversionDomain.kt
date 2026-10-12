@@ -48,6 +48,7 @@ enum class ResourceStrategy {
     COPY,
     RETAIN_VERIFIED_MOBILE,
     CONVERT_TO_ETC2_RGBA8_LZ4,
+    DOWNSAMPLE_TO_ETC2,
     CONVERT_TO_RGBA8888_LZ4,
     REWRITE_SHADER,
     REMOVE_AUDIO,
@@ -74,6 +75,7 @@ data class ConversionResourcePlan(
 ) {
     init {
         require(path.toByteArray(Charsets.UTF_8).size <= MAX_PLAN_PATH_BYTES) { "Conversion resource path is too long" }
+        require(!path.isAbsolutePlanPath()) { "Conversion resource path must be relative" }
         require(MpkgWriter.normalizePath(path) == path) { "Conversion resource path is not normalized" }
         require(sourceLength >= 0) { "Conversion resource length is negative" }
         require(reason.length <= MAX_REASON_CHARS) { "Conversion resource reason is too long" }
@@ -134,7 +136,7 @@ object ConversionReportJsonCodec {
 }
 
 object ConversionPlanJsonCodec {
-    const val MAX_JSON_BYTES = 128 * 1024
+    const val MAX_JSON_BYTES = 4 * 1024 * 1024
 
     fun encode(plan: ConversionPlan): String {
         val root = JSONObject()
@@ -289,15 +291,38 @@ internal object WorkshopConversionPlanner {
         policy: ConversionPolicy,
         device: DeviceCapabilityProfile,
     ): Pair<ResourceStrategy, String> {
-        if (entry.length > policy.maxTextureInputBytes) return ResourceStrategy.REJECT to "preset_texture_input_budget_exceeded"
+        if (entry.length > policy.maxTextureInputBytes && policy.presetId != MpkgConversionPreset.COMPATIBILITY.stableId) {
+            return ResourceStrategy.REJECT to "preset_texture_input_budget_exceeded"
+        }
+        if (entry.length > MAX_GLOBAL_IMAGE_TEX_INPUT_BYTES) {
+            return ResourceStrategy.REJECT to "global_texture_input_budget_exceeded"
+        }
         val decision = TexMobileConverter.inspectEntryDecision(scenePackage, entry.offset, entry.length, device.maxHeapBytes)
+        val exceedsCompatibilityBudget =
+            policy.presetId == MpkgConversionPreset.COMPATIBILITY.stableId &&
+                (entry.length > policy.maxTextureInputBytes ||
+                    (decision.imageWidth ?: 0) > COMPATIBILITY_MAX_TEXTURE_DIMENSION ||
+                    (decision.imageHeight ?: 0) > COMPATIBILITY_MAX_TEXTURE_DIMENSION)
+        if (exceedsCompatibilityBudget && decision.route != TexEntryRoute.CONVERT_IMAGE_TO_ETC2) {
+            return ResourceStrategy.REJECT to "preset_texture_input_budget_exceeded"
+        }
         return when (decision.route) {
             TexEntryRoute.RETAIN_VERIFIED_MOBILE,
             TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE,
             TexEntryRoute.RETAIN_VERIFIED_VIDEO,
             -> ResourceStrategy.RETAIN_VERIFIED_MOBILE to "verified_mobile_payload_retained"
             TexEntryRoute.CONVERT_IMAGE_TO_ETC2 ->
-                if (
+                if (exceedsCompatibilityBudget) {
+                    when {
+                        !device.supportsEtc2 -> ResourceStrategy.REJECT to "device_does_not_support_etc2"
+                        !decision.boundedStaticPngOrJpeg -> ResourceStrategy.REJECT to "unsafe_compatibility_downsample_source"
+                        !isConservativeColorTexturePath(entry.path) -> ResourceStrategy.REJECT to "unknown_texture_semantics"
+                        (decision.imageWidth ?: 0) > COMPATIBILITY_MAX_TEXTURE_DIMENSION ||
+                            (decision.imageHeight ?: 0) > COMPATIBILITY_MAX_TEXTURE_DIMENSION ->
+                            ResourceStrategy.DOWNSAMPLE_TO_ETC2 to "compatibility_static_color_downsample"
+                        else -> ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4 to "compatibility_large_static_color_etc2"
+                    }
+                } else if (
                     !decision.animated &&
                     policy.maxStaticImageRgbaBytes > 0L &&
                     decision.decodedRgbaBytes!! <= policy.maxStaticImageRgbaBytes &&
@@ -318,6 +343,13 @@ internal object WorkshopConversionPlanner {
         }
     }
 
+    private fun isConservativeColorTexturePath(path: String): Boolean {
+        val stem = path.substringAfterLast('/').substringBeforeLast('.').lowercase()
+        val semanticTokens = stem.split(Regex("[^a-z0-9]+"))
+        if (semanticTokens.any { it in UNSAFE_TEXTURE_SEMANTIC_TOKENS }) return false
+        return semanticTokens.any { it in SAFE_COLOR_TEXTURE_TOKENS }
+    }
+
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it.toInt() and 0xff) }
 }
 
@@ -333,12 +365,22 @@ private fun persistedResourceBudget(resource: ConversionResourcePlan): Long =
         resource.reason.toByteArray(Charsets.UTF_8).size.toLong() +
         MAX_RESOURCE_JSON_OVERHEAD_BYTES
 
+private fun String.isAbsolutePlanPath(): Boolean =
+    startsWith('/') || startsWith('\\') || Regex("^[A-Za-z]:[/\\\\]").containsMatchIn(this)
+
 private const val IDENTITY_BUFFER_BYTES = 64 * 1024
+private const val COMPATIBILITY_MAX_TEXTURE_DIMENSION = 2048
+// File-backed compatibility downsampling never materializes the encoded payload in heap. Keep a
+// separate hard file-size ceiling so large PNG/JPEG sources can reach metadata inspection while
+// decoded pixels remain bounded by TexMobileConverter's global pixel and heap checks.
+private const val MAX_GLOBAL_IMAGE_TEX_INPUT_BYTES = 256L * 1024L * 1024L
+private val SAFE_COLOR_TEXTURE_TOKENS = setOf("background", "wallpaper", "backdrop", "scene", "color", "albedo", "diffuse")
+private val UNSAFE_TEXTURE_SEMANTIC_TOKENS = setOf("normal", "norm", "nrm", "mask", "roughness", "metallic", "height", "depth", "specular", "ao", "alpha")
 private const val MIB = 1024L * 1024L
 private const val GIB = 1024L * MIB
 private const val MAX_PERSISTED_CONVERSION_JSON_BYTES = 128 * 1024
-private const val MAX_PLAN_RESOURCES = 1024
+private const val MAX_PLAN_RESOURCES = 32 * 1024
 private const val MAX_PLAN_PATH_BYTES = 4 * 1024
 private const val MAX_REASON_CHARS = 256
 private const val MAX_RESOURCE_JSON_OVERHEAD_BYTES = 160L
-private const val MAX_PLAN_RESOURCE_BUDGET_BYTES = MAX_PERSISTED_CONVERSION_JSON_BYTES - 1024L
+private const val MAX_PLAN_RESOURCE_BUDGET_BYTES = ConversionPlanJsonCodec.MAX_JSON_BYTES.toLong() - 1024L

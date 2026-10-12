@@ -484,6 +484,27 @@ class ScenePackageResolutionTest {
     }
 
     @Test
+    fun strategyChangedPlanIsTypedAsStaleForOneTimeRegeneration() {
+        val root = Files.createTempDirectory("wallhub-plan-strategy-stale").toFile()
+        try {
+            createPlannedScene(root)
+            val current = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DeviceCapabilityProfile(256L * 1024L * 1024L))
+            val obsolete = current.copy(
+                resources = current.resources.map { it.copy(reason = "obsolete_policy_reason") },
+            )
+
+            val failure = assertThrows(StaleConversionSourceException::class.java) {
+                WorkshopConverter.execute(obsolete, root, root.resolve("obsolete.mpkg"))
+            }
+
+            assertEquals("resource_strategy_changed", failure.reason)
+            assertFalse(root.resolve("obsolete.mpkg").exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun stalePersistedPlanIsRegeneratedOnceAndReplacementExecutes() {
         val persisted = conversionPlan("0".repeat(64))
         val replacement = conversionPlan("1".repeat(64))
@@ -508,6 +529,112 @@ class ScenePackageResolutionTest {
         assertEquals(1, generated)
         assertEquals(2, executions)
     }
+
+    @Test
+    fun conversionPlanStoreRoundTripsMoreThan1024ResourcesThroughAppPrivateFile() {
+        withConversionPlanStore { store, root ->
+            val plan = storedConversionPlan(resourceCount = 1_025)
+
+            val reference = store.write("task-1025", plan)
+
+            assertEquals(plan, store.read("task-1025", reference))
+            assertTrue(root.resolve("conversion-plans/task-1025.json").isFile)
+            assertFalse(reference.toJson().contains(root.absolutePath))
+        }
+    }
+
+    @Test
+    fun conversionPlanStoreAtomicFailurePreservesCommittedPlan() {
+        val root = Files.createTempDirectory("wallhub-plan-store").toFile()
+        try {
+            val initialStore = ConversionPlanStore(root)
+            val initial = storedConversionPlan(resourceCount = 1)
+            val reference = initialStore.write("atomic-task", initial)
+            val failingStore = ConversionPlanStore(root) { _, _ -> error("move failed") }
+
+            assertThrows(IllegalStateException::class.java) {
+                failingStore.write("atomic-task", storedConversionPlan(resourceCount = 2))
+            }
+
+            assertEquals(initial, initialStore.read("atomic-task", reference))
+            assertEquals(listOf("atomic-task.json"), root.resolve("conversion-plans").list()!!.toList())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun conversionPlanStoreRejectsTamperedDigest() {
+        withConversionPlanStore { store, root ->
+            val reference = store.write("tamper-task", storedConversionPlan(resourceCount = 2))
+            root.resolve("conversion-plans/tamper-task.json").appendText(" ")
+
+            assertThrows(IllegalArgumentException::class.java) {
+                store.read("tamper-task", reference)
+            }
+        }
+    }
+
+    @Test
+    fun conversionPlanStoreDeletesPlanAndRejectsUnsafeTaskId() {
+        withConversionPlanStore { store, root ->
+            store.write("deleted-task", storedConversionPlan(resourceCount = 2))
+
+            assertTrue(store.delete("deleted-task"))
+            assertFalse(root.resolve("conversion-plans/deleted-task.json").exists())
+            assertThrows(IllegalArgumentException::class.java) {
+                store.write("../escaped", storedConversionPlan(resourceCount = 1))
+            }
+        }
+    }
+
+    @Test
+    fun invalidStoredPlanIsRegeneratedForRetry() {
+        withConversionPlanStore { store, root ->
+            val originalReference = store.write("retry-task", storedConversionPlan(resourceCount = 1))
+            root.resolve("conversion-plans/retry-task.json").writeText("tampered")
+            var generated = 0
+
+            val result =
+                executeRegeneratingStalePlan(
+                    initialPlan = runCatching { store.read("retry-task", originalReference) }.getOrNull(),
+                    generate = {
+                        generated += 1
+                        storedConversionPlan(resourceCount = 2).also { store.write("retry-task", it) }
+                    },
+                    execute = { it },
+                )
+
+            assertEquals(1, generated)
+            assertEquals(2, result.resources.size)
+        }
+    }
+
+    private fun withConversionPlanStore(block: (ConversionPlanStore, java.io.File) -> Unit) {
+        val root = Files.createTempDirectory("wallhub-plan-store").toFile()
+        try {
+            block(ConversionPlanStore(root), root)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    private fun storedConversionPlan(resourceCount: Int) =
+        com.wallhub.prototype.mpkg.ConversionPlan(
+            presetId = MpkgConversionPreset.BALANCED.stableId,
+            policyVersion = 1,
+            device = DeviceCapabilityProfile(256L * 1024L * 1024L),
+            sourceIdentity = com.wallhub.prototype.mpkg.ScenePackageIdentity(packageLength = 123L, indexDigest = "a".repeat(64)),
+            resources =
+                List(resourceCount) { index ->
+                    com.wallhub.prototype.mpkg.ConversionResourcePlan(
+                        path = "resources/$index.bin",
+                        sourceLength = index.toLong(),
+                        strategy = ResourceStrategy.COPY,
+                        reason = "copy_non_texture",
+                    )
+                },
+        )
 
     private fun conversionPlan(digest: String) =
         com.wallhub.prototype.mpkg.ConversionPlan(

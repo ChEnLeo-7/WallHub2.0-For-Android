@@ -371,10 +371,8 @@ internal class FormalWorkshopConversionWorker(
         val report =
             if (kind == WorkshopKind.SCENE) {
                 val preset = MpkgConversionPreset.fromStableId(task.conversionPreset)
-                val plan =
-                    task.conversionPlanJson
-                        ?.let { stored -> runCatching { ConversionPlanJsonCodec.decode(stored) }.getOrNull() }
-                        ?.takeIf { stored -> stored.presetId == preset.stableId }
+                val planStore = ConversionPlanStore(applicationContext.filesDir)
+                val plan = loadStoredPlan(task, preset, planStore)
                 executeRegeneratingStalePlan(
                     initialPlan = plan,
                     generate = {
@@ -383,9 +381,7 @@ internal class FormalWorkshopConversionWorker(
                             preset = preset,
                             device = DeviceCapabilityProfile(Runtime.getRuntime().maxMemory()),
                         ).also { generated ->
-                            check(taskDao.persistConversionPlan(task.taskId, ConversionPlanJsonCodec.encode(generated), generated.version) == 1) {
-                                "Download task disappeared before its conversion plan was persisted"
-                            }
+                            persistPlanReference(task.taskId, generated, planStore)
                             check(taskDao.persistConversionReport(task.taskId, null) == 1) {
                                 "Download task disappeared before its conversion report was cleared"
                             }
@@ -421,6 +417,35 @@ internal class FormalWorkshopConversionWorker(
             copiedTextures = report.copiedTextures,
             warnings = report.warnings,
         )
+    }
+
+    private suspend fun loadStoredPlan(
+        task: FormalTaskRecordEntity,
+        preset: MpkgConversionPreset,
+        store: ConversionPlanStore,
+    ): ConversionPlan? {
+        val stored = task.conversionPlanJson ?: return null
+        val referenced =
+            runCatching { ConversionPlanReference.fromJson(stored) }
+                .mapCatching { reference -> store.read(task.taskId, reference) }
+                .getOrNull()
+        if (referenced != null) return referenced.takeIf { it.presetId == preset.stableId }
+        if (stored.toByteArray(Charsets.UTF_8).size > MAX_LEGACY_INLINE_PLAN_BYTES) return null
+        val legacy = runCatching { ConversionPlanJsonCodec.decode(stored) }.getOrNull() ?: return null
+        if (legacy.presetId != preset.stableId) return null
+        persistPlanReference(task.taskId, legacy, store)
+        return legacy
+    }
+
+    private suspend fun persistPlanReference(
+        taskId: String,
+        plan: ConversionPlan,
+        store: ConversionPlanStore,
+    ) {
+        val reference = store.write(taskId, plan)
+        check(taskDao.persistConversionPlan(taskId, reference.toJson(), plan.version) == 1) {
+            "Download task disappeared before its conversion plan was persisted"
+        }
     }
 
     private fun writeZip(
@@ -1054,4 +1079,5 @@ private fun FormalTaskRecordEntity.exportTransaction(): ExportTransaction =
     )
 
 private const val MAX_CONVERSION_OUTPUT_BYTES = 4L * 1024L * 1024L * 1024L
+private const val MAX_LEGACY_INLINE_PLAN_BYTES = 128 * 1024
 private const val CONVERSION_DISK_MULTIPLIER = 2L

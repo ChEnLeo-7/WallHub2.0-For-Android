@@ -16,6 +16,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -123,6 +124,40 @@ class SteamContentSdkWorkshopTransferTest {
                 fixture.close()
             }
         }
+
+    @Test
+    fun sessionUnavailableAuthorizationFailureReopensAndRetriesExactlyOnce() =
+        runBlocking {
+            val fixture = Fixture()
+            try {
+                fixture.task.statuses += failed(TaskFailure.AUTHORIZATION)
+                fixture.task.diagnostic = "content resolution failed at session_unavailable"
+                val recovered = FakeTask().apply { statuses += completed(committedBytes = 9L) }
+                fixture.session.queueTask(recovered)
+
+                val result = fixture.download()
+
+                assertEquals(9L, result.downloadedBytes)
+                assertEquals(2, fixture.session.starts.size)
+                assertEquals(2, fixture.openerCalls)
+                assertEquals(1, fixture.task.closeCalls)
+                assertEquals(1, recovered.closeCalls)
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun nonSessionAuthorizationFailureDoesNotRetry() {
+        val failure =
+            SteamContentSdkTaskFailureException(
+                ordinal = TaskFailure.AUTHORIZATION,
+                diagnostic = "content resolution failed at depot_key",
+                message = "authorization",
+            )
+
+        assertFalse(isRecoverableSessionUnavailable(failure))
+    }
 
     @Test
     fun anIncompleteIdentityHintFallsBackToTheSdkDetailsPath() =

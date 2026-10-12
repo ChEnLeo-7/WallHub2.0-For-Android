@@ -428,6 +428,7 @@ internal class RoomDownloadTaskRepository private constructor(
             require(
                 task.status in setOf(DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELLED),
             ) { "An active download cannot be deleted; cancel the task first" }
+            check(ConversionPlanStore(context.filesDir).delete(task.id)) { "Unable to delete conversion plan" }
             deleteManagedDownloadDirectories(context, task.id, task.stagingDirectory)
             check(taskDao.deleteTerminalWithCommands(task.id) == 1) {
                 "Download task changed before it could be deleted"
@@ -492,6 +493,7 @@ internal class RoomDownloadTaskRepository private constructor(
 
         private suspend fun deleteHistoryTasks(tasks: List<FormalTaskRecordEntity>): Int =
             tasks.sumOf { task ->
+                check(ConversionPlanStore(context.filesDir).delete(task.taskId)) { "Unable to delete conversion plan" }
                 val deleted = taskDao.deleteTerminalWithCommands(task.taskId)
                 if (deleted > 0) {
                     deleteManagedDownloadDirectories(context, task.taskId, task.stagingDirectory)

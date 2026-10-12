@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /** One Workshop item the SDK resolved to the content identity a download accepts. */
@@ -223,6 +224,25 @@ internal class SteamContentSdkWorkshopTransfer
     ) {
 
         suspend fun download(
+            target: WorkshopContentTarget,
+            destinationDirectory: File,
+            credential: SteamContentCredential?,
+            options: SteamContentDownloadOptions,
+            control: suspend () -> SteamDownloadControl,
+            onProgress: suspend (SteamDownloadProgress) -> Unit,
+        ): SteamContentDownloadResult {
+            return try {
+                downloadOnce(target, destinationDirectory, credential, options, control, onProgress)
+            } catch (failure: SteamContentSdkTaskFailureException) {
+                if (!isRecoverableSessionUnavailable(failure)) throw failure
+                // The failed attempt has released its task and shared-session lease before this catch.
+                // Give the broker's final close a bounded turn, then open/borrow exactly once more.
+                delay(SESSION_RECOVERY_DELAY_MS)
+                downloadOnce(target, destinationDirectory, credential, options, control, onProgress)
+            }
+        }
+
+        private suspend fun downloadOnce(
             target: WorkshopContentTarget,
             destinationDirectory: File,
             credential: SteamContentCredential?,
@@ -625,6 +645,11 @@ internal class SdkTaskEventLog(
 }
 
 private const val SDK_TASK_EVENT_LOG_INTERVAL_MS = 1_000L
+private const val SESSION_RECOVERY_DELAY_MS = 250L
+private const val SESSION_UNAVAILABLE_DIAGNOSTIC = "content resolution failed at session_unavailable"
+
+internal fun isRecoverableSessionUnavailable(failure: SteamContentSdkTaskFailureException): Boolean =
+    failure.ordinal == TaskFailure.AUTHORIZATION && failure.diagnostic == SESSION_UNAVAILABLE_DIAGNOSTIC
 
 /** A typed SDK task failure keeps retry policy on stable machine-readable fields. */
 internal class SteamContentSdkTaskFailureException(

@@ -59,7 +59,9 @@ object WorkshopConverter {
         if (current.sourceIdentity != plan.sourceIdentity) {
             throw StaleConversionSourceException("scene_package_identity_changed")
         }
-        require(current == plan) { "Conversion plan no longer matches the source resource strategy" }
+        if (current != plan) {
+            throw StaleConversionSourceException("resource_strategy_changed")
+        }
         val rejected = plan.resources.firstOrNull { it.strategy == ResourceStrategy.REJECT }
         require(rejected == null) { "Conversion plan rejected ${rejected?.path}: ${rejected?.reason}" }
         val report = convertScene(inputDir, outputFile, checkCancellation, animatedImageDecoder, staticImageDecoder, plan)
@@ -70,6 +72,7 @@ object WorkshopConverter {
                         ResourceStrategy.COPY -> "copied"
                         ResourceStrategy.RETAIN_VERIFIED_MOBILE -> "retained_verified_mobile_payload"
                         ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4 -> "converted_to_etc2_rgba8_lz4"
+                        ResourceStrategy.DOWNSAMPLE_TO_ETC2 -> "downsampled_to_etc2_rgba8_lz4"
                         ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 -> "converted_to_rgba8888_lz4"
                         ResourceStrategy.REWRITE_SHADER -> "rewritten_for_mobile_glsl"
                         ResourceStrategy.REMOVE_AUDIO -> "removed"
@@ -225,6 +228,23 @@ object WorkshopConverter {
                                 convertedTextures += 1
                                 warnings += "Re-encoded texture as ETC2 RGBA8 + LZ4: ${entry.path}"
                                 Log.i("WallhubMpkg", "ETC2 re-encode succeeded for ${entry.path}")
+                                putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
+                            }
+                            ResourceStrategy.DOWNSAMPLE_TO_ETC2 -> {
+                                require(route == TexEntryRoute.CONVERT_IMAGE_TO_ETC2) { "Planned downsample strategy is incompatible with ${entry.path}" }
+                                val transformed = File(transformedDirectory, "$index-downsampled-etc2.tex")
+                                val result =
+                                    TexMobileConverter.downsampleToEtc2File(
+                                        scenePackage,
+                                        entry.offset,
+                                        entry.length,
+                                        entry.path,
+                                        transformed,
+                                        checkCancellation,
+                                    )
+                                check(result.converted) { "Failed to downsample image-backed texture ${entry.path}: ${result.reason}" }
+                                convertedTextures += 1
+                                warnings += "Downsampled texture for compatibility as ETC2 RGBA8 + LZ4: ${entry.path}"
                                 putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
                             }
                             ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 -> {

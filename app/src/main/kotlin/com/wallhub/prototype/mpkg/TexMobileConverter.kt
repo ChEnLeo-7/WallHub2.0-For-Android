@@ -110,6 +110,9 @@ internal data class TexEntryDecision(
     val decodedRgbaBytes: Long? = null,
     val rgbaConversionFitsMemoryBudget: Boolean = false,
     val animated: Boolean = false,
+    val imageWidth: Int? = null,
+    val imageHeight: Int? = null,
+    val boundedStaticPngOrJpeg: Boolean = false,
 )
 
 /**
@@ -342,6 +345,85 @@ object TexMobileConverter {
             TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
         }
 
+    internal fun downsampleToEtc2File(
+        sourceFile: File,
+        offset: Long,
+        length: Long,
+        resourcePath: String,
+        outputFile: File,
+        checkCancellation: () -> Unit = {},
+        encodeDownsampledEtc2: (File, Int, Int, Int, Int, () -> Unit) -> ByteArray = ::encodeDownsampledEtc2,
+    ): TexFileConversionResult =
+        runCatching {
+            checkCancellation()
+            val metadata = readTexEntryMetadata(sourceFile, offset, length)
+            require(metadata.flags == 0 && !metadata.isMp4) { "Compatibility downsampling requires a static color TEX" }
+            require(metadata.container == "TEXB0004" && metadata.mipmapCount == 1) { "TEX metadata is unsafe for downsampling" }
+            require(metadata.imageFormat in STATIC_PNG_JPEG_FORMATS && !metadata.baseCompressed) {
+                "Compatibility downsampling requires an uncompressed PNG or JPEG payload"
+            }
+            require(metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight) {
+                "TEX base mipmap does not match image dimensions"
+            }
+            require(metadata.animationTailLength == 0L) { "Static image-backed TEX has trailing data" }
+            require(metadata.payloadLength in 1..MAX_EMBEDDED_IMAGE_BYTES) { "TEX image payload exceeds the bounded size" }
+            require(metadata.imageWidth.toLong() * metadata.imageHeight <= MAX_IMAGE_DECODE_PIXELS) {
+                "TEX image dimensions exceed global decode safety"
+            }
+            require(isSafeColorTexturePath(resourcePath)) { "Texture path does not identify conservative color semantics" }
+            val (targetWidth, targetHeight) = compatibilityTargetSize(metadata.imageWidth, metadata.imageHeight)
+            require(targetWidth < metadata.imageWidth || targetHeight < metadata.imageHeight) {
+                "TEX does not exceed compatibility dimensions"
+            }
+            val tempImage = File(outputFile.parentFile, "${outputFile.name}.image")
+            try {
+                val imageStart = locateEmbeddedImage(sourceFile, metadata.payloadStart, metadata.payloadLength)
+                val imageLength = Math.subtractExact(Math.addExact(metadata.payloadStart, metadata.payloadLength), imageStart)
+                copyImagePayload(sourceFile, imageStart, imageLength, tempImage, checkCancellation)
+                checkCancellation()
+                val etc2 = encodeDownsampledEtc2(
+                    tempImage,
+                    metadata.imageWidth,
+                    metadata.imageHeight,
+                    targetWidth,
+                    targetHeight,
+                    checkCancellation,
+                )
+                val physicalWidth = etc2BlockAligned(targetWidth)
+                val physicalHeight = etc2BlockAligned(targetHeight)
+                require(etc2.size == checkedPayloadSize(physicalWidth, physicalHeight, 1)) { "Unexpected ETC2 payload size" }
+                writeEtc2Payload(outputFile, metadata.unknown, targetWidth, targetHeight, etc2)
+                checkCancellation()
+                require(inspectEntryRoute(outputFile, 0L, outputFile.length()) == TexEntryRoute.RETAIN_VERIFIED_MOBILE) {
+                    "Downsampled TEX failed mobile verification"
+                }
+                TexFileConversionResult(true, "Compatibility downsample to ETC2 RGBA8 + LZ4 HC3")
+            } finally {
+                tempImage.delete()
+            }
+        }.getOrElse { error ->
+            outputFile.delete()
+            if (error is CancellationException) throw error
+            TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
+        }
+
+    internal fun compatibilityTargetSize(width: Int, height: Int): Pair<Int, Int> {
+        require(width > 0 && height > 0) { "Invalid TEX dimensions" }
+        if (width <= COMPATIBILITY_MAX_DIMENSION && height <= COMPATIBILITY_MAX_DIMENSION) return width to height
+        return if (width >= height) {
+            COMPATIBILITY_MAX_DIMENSION to
+                ((height.toLong() * COMPATIBILITY_MAX_DIMENSION + width / 2L) / width).coerceAtLeast(1L).toInt()
+        } else {
+            ((width.toLong() * COMPATIBILITY_MAX_DIMENSION + height / 2L) / height).coerceAtLeast(1L).toInt() to
+                COMPATIBILITY_MAX_DIMENSION
+        }
+    }
+
+    private fun isSafeColorTexturePath(path: String): Boolean {
+        val tokens = path.substringAfterLast('/').substringBeforeLast('.').lowercase().split(Regex("[^a-z0-9]+"))
+        return tokens.none { it in UNSAFE_TEXTURE_SEMANTIC_TOKENS } && tokens.any { it in SAFE_COLOR_TEXTURE_TOKENS }
+    }
+
     internal fun inspectEntryRoute(
         sourceFile: File,
         offset: Long,
@@ -403,6 +485,21 @@ object TexMobileConverter {
                     route == TexEntryRoute.CONVERT_IMAGE_TO_ETC2 &&
                         animatedImageConversionFitsBudget(metadata, length, maxHeapBytes),
                 animated = animated,
+                imageWidth = metadata.imageWidth,
+                imageHeight = metadata.imageHeight,
+                boundedStaticPngOrJpeg =
+                    route == TexEntryRoute.CONVERT_IMAGE_TO_ETC2 &&
+                        !animated &&
+                        !video &&
+                        metadata.flags == 0 &&
+                        metadata.container == "TEXB0004" &&
+                        metadata.mipmapCount == 1 &&
+                        metadata.imageFormat in STATIC_PNG_JPEG_FORMATS &&
+                        !metadata.baseCompressed &&
+                        metadata.animationTailLength == 0L &&
+                        metadata.payloadLength in 1..MAX_EMBEDDED_IMAGE_BYTES &&
+                        metadata.imageWidth.toLong() * metadata.imageHeight <= MAX_IMAGE_DECODE_PIXELS &&
+                        hasPngOrJpegPayload(sourceFile, metadata),
             )
         }.getOrDefault(TexEntryDecision(TexEntryRoute.UNSUPPORTED))
 
@@ -427,13 +524,22 @@ object TexMobileConverter {
         ) {
             return false
         }
-        if (!metadata.baseCompressed || metadata.baseWidth != metadata.imageWidth || metadata.baseHeight != metadata.imageHeight) {
+        if (!metadata.baseCompressed || metadata.baseWidth != metadata.textureWidth || metadata.baseHeight != metadata.textureHeight) {
             return false
         }
         val expected =
             when (metadata.format) {
-                TEX_FORMAT_RGBA8888 -> checkedPayloadSize(metadata.baseWidth, metadata.baseHeight, 4)
-                TEX_FORMAT_ETC2_RGBA8_LZ4 -> checkedPayloadSize(metadata.baseWidth, metadata.baseHeight, 1)
+                TEX_FORMAT_RGBA8888 -> {
+                    if (metadata.baseWidth != metadata.imageWidth || metadata.baseHeight != metadata.imageHeight) return false
+                    checkedPayloadSize(metadata.baseWidth, metadata.baseHeight, 4)
+                }
+                TEX_FORMAT_ETC2_RGBA8_LZ4 -> {
+                    if (
+                        metadata.baseWidth != etc2BlockAligned(metadata.imageWidth) ||
+                        metadata.baseHeight != etc2BlockAligned(metadata.imageHeight)
+                    ) return false
+                    checkedPayloadSize(metadata.baseWidth, metadata.baseHeight, 1)
+                }
                 else -> return false
             }
         return metadata.baseDecompressedSize == expected && metadata.baseStoredSize > 0
@@ -1042,6 +1148,54 @@ object TexMobileConverter {
             )
         }
 
+    private fun hasPngOrJpegPayload(sourceFile: File, metadata: TexEntryMetadata): Boolean =
+        runCatching {
+            val imageStart = locateEmbeddedImage(sourceFile, metadata.payloadStart, metadata.payloadLength)
+            val headerLength = min(MAX_IMAGE_HEADER_BYTES.toLong(), metadata.payloadStart + metadata.payloadLength - imageStart).toInt()
+            require(headerLength >= PNG_IHDR_BYTES)
+            val header = RandomAccessFile(sourceFile, "r").use { input ->
+                input.seek(imageStart)
+                ByteArray(headerLength).also(input::readFully)
+            }
+            embeddedImageDimensions(header) == (metadata.imageWidth to metadata.imageHeight)
+        }.getOrDefault(false)
+
+    private fun embeddedImageDimensions(header: ByteArray): Pair<Int, Int>? {
+        if (header.size >= PNG_IHDR_BYTES && header.copyOfRange(0, PNG_SIGNATURE.size).contentEquals(PNG_SIGNATURE)) {
+            if (!header.copyOfRange(12, 16).contentEquals("IHDR".toByteArray(Charsets.US_ASCII))) return null
+            return readPositiveIntBe(header, 16) to readPositiveIntBe(header, 20)
+        }
+        if (header.size >= JPEG_SIGNATURE.size && header.copyOfRange(0, JPEG_SIGNATURE.size).contentEquals(JPEG_SIGNATURE)) {
+            var position = 2
+            while (position + 8 < header.size) {
+                if (header[position].toInt() and 0xff != 0xff) return null
+                val marker = header[position + 1].toInt() and 0xff
+                position += 2
+                if (marker == 0xd8 || marker == 0xd9) continue
+                if (position + 2 > header.size) return null
+                val segmentLength = ((header[position].toInt() and 0xff) shl 8) or (header[position + 1].toInt() and 0xff)
+                if (segmentLength < 2 || position + segmentLength > header.size) return null
+                if (marker in JPEG_START_OF_FRAME_MARKERS && segmentLength >= 7) {
+                    val height = ((header[position + 3].toInt() and 0xff) shl 8) or (header[position + 4].toInt() and 0xff)
+                    val width = ((header[position + 5].toInt() and 0xff) shl 8) or (header[position + 6].toInt() and 0xff)
+                    return if (width > 0 && height > 0) width to height else null
+                }
+                position += segmentLength
+            }
+        }
+        return null
+    }
+
+    private fun readPositiveIntBe(bytes: ByteArray, offset: Int): Int {
+        val value =
+            ((bytes[offset].toInt() and 0xff) shl 24) or
+                ((bytes[offset + 1].toInt() and 0xff) shl 16) or
+                ((bytes[offset + 2].toInt() and 0xff) shl 8) or
+                (bytes[offset + 3].toInt() and 0xff)
+        require(value > 0) { "Invalid embedded image dimensions" }
+        return value
+    }
+
     private fun locateEmbeddedImage(
         sourceFile: File,
         payloadStart: Long,
@@ -1149,6 +1303,92 @@ object TexMobileConverter {
         }
     }
 
+    private fun encodeDownsampledEtc2(
+        imageFile: File,
+        sourceWidth: Int,
+        sourceHeight: Int,
+        targetWidth: Int,
+        targetHeight: Int,
+        checkCancellation: () -> Unit,
+    ): ByteArray {
+        val physicalWidth = etc2BlockAligned(targetWidth)
+        val physicalHeight = etc2BlockAligned(targetHeight)
+        val output = ByteArray(checkedPayloadSize(physicalWidth, physicalHeight, 1))
+        FileInputStream(imageFile).use { stream ->
+            val decoder = BitmapRegionDecoder.newInstance(stream.fd, false)
+                ?: error("Unsupported embedded image in TEX entry")
+            try {
+                require(decoder.width == sourceWidth && decoder.height == sourceHeight) {
+                    "Embedded image dimensions do not match TEX metadata"
+                }
+                var targetTop = 0
+                var outputOffset = 0
+                while (targetTop < physicalHeight) {
+                    checkCancellation()
+                    val rows = min(ETC2_STRIP_HEIGHT, physicalHeight - targetTop)
+                    val logicalRows = min(rows, targetHeight - min(targetTop, targetHeight - 1)).coerceAtLeast(1)
+                    val sourceTop = (targetTop.toLong() * sourceHeight / targetHeight).toInt().coerceAtMost(sourceHeight - 1)
+                    val sourceBottom =
+                        (((targetTop + logicalRows).toLong() * sourceHeight + targetHeight - 1L) / targetHeight)
+                            .toInt()
+                            .coerceIn(sourceTop + 1, sourceHeight)
+                    var sample = 1
+                    while (sourceWidth / (sample * 2) >= targetWidth) sample *= 2
+                    val options = BitmapFactory.Options().apply {
+                        inPreferredConfig = Bitmap.Config.ARGB_8888
+                        inSampleSize = sample
+                    }
+                    val decoded = decoder.decodeRegion(Rect(0, sourceTop, sourceWidth, sourceBottom), options)
+                        ?: error("Failed to decode the embedded TEX image")
+                    try {
+                        checkCancellation()
+                        val scaled = Bitmap.createScaledBitmap(decoded, targetWidth, logicalRows, true)
+                        try {
+                            val pixels = IntArray(checkedPayloadSize(targetWidth, logicalRows, 1))
+                            scaled.getPixels(pixels, 0, targetWidth, 0, 0, targetWidth, logicalRows)
+                            val padded = IntArray(checkedPayloadSize(physicalWidth, rows, 1))
+                            repeat(rows) { row ->
+                                val sourceRow = min(row, logicalRows - 1) * targetWidth
+                                val destinationRow = row * physicalWidth
+                                pixels.copyInto(padded, destinationRow, sourceRow, sourceRow + targetWidth)
+                                val edge = pixels[sourceRow + targetWidth - 1]
+                                for (column in targetWidth until physicalWidth) padded[destinationRow + column] = edge
+                            }
+                            encodeEtc2Strip(padded, physicalWidth, rows, output, outputOffset)
+                        } finally {
+                            if (scaled !== decoded) scaled.recycle()
+                        }
+                    } finally {
+                        decoded.recycle()
+                    }
+                    targetTop += rows
+                    outputOffset += physicalWidth * rows
+                }
+            } finally {
+                decoder.recycle()
+            }
+        }
+        return output
+    }
+
+    private fun writeEtc2Payload(
+        outputFile: File,
+        unknown: Int,
+        logicalWidth: Int,
+        logicalHeight: Int,
+        etc2: ByteArray,
+    ) {
+        val physicalWidth = etc2BlockAligned(logicalWidth)
+        val physicalHeight = etc2BlockAligned(logicalHeight)
+        require(etc2.size == checkedPayloadSize(physicalWidth, physicalHeight, 1)) { "Unexpected ETC2 payload size" }
+        val (compressed, compressedLength) = compress(etc2)
+        outputFile.parentFile?.let { check(it.exists() || it.mkdirs()) { "Unable to create TEX output directory" } }
+        BufferedOutputStream(FileOutputStream(outputFile)).use { output ->
+            output.write(etc2Header(0, physicalWidth, physicalHeight, logicalWidth, logicalHeight, unknown, etc2.size, compressedLength))
+            output.write(compressed, 0, compressedLength)
+        }
+    }
+
     private fun writeEtc2(
         imageFile: File,
         flags: Int,
@@ -1172,6 +1412,8 @@ object TexMobileConverter {
                     flags = flags,
                     width = etc2BlockAligned(width),
                     height = etc2BlockAligned(height),
+                    logicalWidth = width,
+                    logicalHeight = height,
                     unknown = unknown,
                     decompressedLength = etc2.size,
                     compressedLength = compressedLength,
@@ -1285,6 +1527,8 @@ object TexMobileConverter {
         flags: Int,
         width: Int,
         height: Int,
+        logicalWidth: Int,
+        logicalHeight: Int,
         unknown: Int,
         decompressedLength: Int,
         compressedLength: Int,
@@ -1293,7 +1537,7 @@ object TexMobileConverter {
         var offset = 0
         offset = output.writeCString(offset, "TEXV0005")
         offset = output.writeCString(offset, "TEXI0001")
-        listOf(TEX_FORMAT_ETC2_RGBA8_LZ4, flags, width, height, width, height, unknown).forEach { value ->
+        listOf(TEX_FORMAT_ETC2_RGBA8_LZ4, flags, width, height, logicalWidth, logicalHeight, unknown).forEach { value ->
             offset = output.writeIntLe(offset, value)
         }
         offset = output.writeCString(offset, "TEXB0004")
@@ -1775,16 +2019,26 @@ private const val LZ4_COMPRESSION_LEVEL = 3
 private val PNG_SIGNATURE = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
 private val JPEG_SIGNATURE = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())
 private const val IMAGE_SIGNATURE_SCAN_BYTES = 1024
+private const val MAX_IMAGE_HEADER_BYTES = 64 * 1024
+private const val PNG_IHDR_BYTES = 24
+private val JPEG_START_OF_FRAME_MARKERS = setOf(0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf)
 private const val MIN_IMAGE_SIGNATURE_BYTES = 3
 private const val IMAGE_COPY_BUFFER_BYTES = 128 * 1024
 private const val ETC2_STRIP_HEIGHT = 256
 private const val ETC2_BLOCK_EDGE = 4
+private const val COMPATIBILITY_MAX_DIMENSION = 2048
+private const val MAX_IMAGE_DECODE_PIXELS = 48L * 1024 * 1024
+private val STATIC_PNG_JPEG_FORMATS = setOf(2, 13)
+private val SAFE_COLOR_TEXTURE_TOKENS = setOf("background", "wallpaper", "backdrop", "scene", "color", "albedo", "diffuse")
+private val UNSAFE_TEXTURE_SEMANTIC_TOKENS = setOf("normal", "norm", "nrm", "mask", "roughness", "metallic", "height", "depth", "specular", "ao", "alpha")
 private const val MAX_ETC2_PIXELS = 48L * 1024 * 1024
 private const val MAX_ETC2_TILE_WORKING_BYTES = 64L * 1024 * 1024
 private val CONVERTIBLE_STATIC_FORMATS = setOf(TEX_FORMAT_RGBA8888, TEX_FORMAT_DXT1, TEX_FORMAT_DXT3, TEX_FORMAT_DXT5, TEX_FORMAT_RG88, TEX_FORMAT_R8)
 private const val MAX_STATIC_RGBA_BYTES = 64L * 1024 * 1024
 private const val MAX_STATIC_DECOMPRESSED_BYTES = 64L * 1024 * 1024
-private const val MAX_EMBEDDED_IMAGE_BYTES = 64L * 1024 * 1024
+// Encoded image bytes are copied between files in bounded buffers. Decoded memory is constrained
+// independently by MAX_IMAGE_DECODE_PIXELS and the heap admission checks above.
+private const val MAX_EMBEDDED_IMAGE_BYTES = 256L * 1024 * 1024
 private const val LZ4_HC_WORKSPACE_ALLOWANCE_BYTES = 8L * 1024 * 1024
 private const val STATIC_CONVERSION_HEAP_NUMERATOR = 5L
 private const val STATIC_CONVERSION_HEAP_DENOMINATOR = 8L
