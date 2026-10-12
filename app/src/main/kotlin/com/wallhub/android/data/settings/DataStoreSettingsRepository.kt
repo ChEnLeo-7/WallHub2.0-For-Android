@@ -6,6 +6,7 @@ import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.LocalWallpaperViewMode
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamAccessMode
 import com.wallhub.android.core.model.SteamWorkshopDataSource
@@ -77,6 +78,10 @@ class DataStoreSettingsRepository
             mediaCacheLimitMb: Int,
         ) {
             store.setDownloadPreferences(maxConcurrentDownloads, chunkDownloadConcurrency, proxyUrl, mediaCacheLimitMb)
+        }
+
+        override suspend fun setMpkgConversionPreset(preset: MpkgConversionPreset) {
+            store.setMpkgConversionPreset(preset)
         }
 
         override suspend fun setOnlineStreamCacheLimitMb(limitMb: Int) {

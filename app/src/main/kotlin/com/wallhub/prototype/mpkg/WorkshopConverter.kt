@@ -1,6 +1,7 @@
 package com.wallhub.prototype.mpkg
 
 import android.util.Log
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.data.downloads.readProjectJson
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -29,11 +30,60 @@ data class WorkshopConversionReport(
     val removedAudio: Int = 0,
     val rewrittenShaders: Int = 0,
     val warnings: List<String> = emptyList(),
+    val planVersion: Int? = null,
+    val presetId: String? = null,
+    val sourceIdentity: ScenePackageIdentity? = null,
+    val outcomes: List<ConversionResourceOutcome> = emptyList(),
 )
 
 object WorkshopConverter {
     private val previewExtensions = listOf("gif", "jpg", "jpeg", "png", "webp")
     private val audioExtensions = setOf("mp3", "wav", "ogg", "flac", "aac", "m4a")
+
+    fun plan(
+        inputDir: File,
+        preset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
+        device: DeviceCapabilityProfile = DeviceCapabilityProfile(Runtime.getRuntime().maxMemory()),
+    ): ConversionPlan = WorkshopConversionPlanner.plan(inputDir, preset, device)
+
+    fun execute(
+        plan: ConversionPlan,
+        inputDir: File,
+        outputFile: File,
+        contentTypeHint: String? = null,
+        checkCancellation: () -> Unit = {},
+        animatedImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)? = null,
+        staticImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)? = null,
+    ): WorkshopConversionReport {
+        val current = WorkshopConversionPlanner.plan(inputDir, MpkgConversionPreset.fromStableId(plan.presetId), plan.device)
+        if (current.sourceIdentity != plan.sourceIdentity) {
+            throw StaleConversionSourceException("scene_package_identity_changed")
+        }
+        require(current == plan) { "Conversion plan no longer matches the source resource strategy" }
+        val rejected = plan.resources.firstOrNull { it.strategy == ResourceStrategy.REJECT }
+        require(rejected == null) { "Conversion plan rejected ${rejected?.path}: ${rejected?.reason}" }
+        val report = convertScene(inputDir, outputFile, checkCancellation, animatedImageDecoder, staticImageDecoder, plan)
+        val outcomes =
+            plan.resources.map { resource ->
+                val reason =
+                    when (resource.strategy) {
+                        ResourceStrategy.COPY -> "copied"
+                        ResourceStrategy.RETAIN_VERIFIED_MOBILE -> "retained_verified_mobile_payload"
+                        ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4 -> "converted_to_etc2_rgba8_lz4"
+                        ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 -> "converted_to_rgba8888_lz4"
+                        ResourceStrategy.REWRITE_SHADER -> "rewritten_for_mobile_glsl"
+                        ResourceStrategy.REMOVE_AUDIO -> "removed"
+                        ResourceStrategy.REJECT -> error("Rejected resources cannot execute")
+                    }
+                ConversionResourceOutcome(resource.path, resource.strategy, reason)
+            }
+        return report.copy(
+            planVersion = plan.version,
+            presetId = plan.presetId,
+            sourceIdentity = plan.sourceIdentity,
+            outcomes = outcomes,
+        )
+    }
 
     fun detect(
         inputDir: File,
@@ -60,12 +110,13 @@ object WorkshopConverter {
         contentTypeHint: String? = null,
         checkCancellation: () -> Unit = {},
         animatedImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)? = null,
+        staticImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)? = null,
     ): WorkshopConversionReport {
         require(inputDir.isDirectory) { "Workshop input directory is missing" }
         checkCancellation()
         return when (detect(inputDir, contentTypeHint)) {
             WorkshopKind.VIDEO -> convertVideo(inputDir, outputFile, checkCancellation)
-            WorkshopKind.SCENE -> convertScene(inputDir, outputFile, checkCancellation, animatedImageDecoder)
+            WorkshopKind.SCENE -> convertScene(inputDir, outputFile, checkCancellation, animatedImageDecoder, staticImageDecoder)
             WorkshopKind.WEB -> convertWeb(inputDir, outputFile, checkCancellation)
         }
     }
@@ -101,6 +152,8 @@ object WorkshopConverter {
         outputFile: File,
         checkCancellation: () -> Unit,
         animatedImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)?,
+        staticImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)?,
+        plan: ConversionPlan? = null,
     ): WorkshopConversionReport {
         val projectFile = File(inputDir, "project.json")
         require(projectFile.isFile) { "Scene workshop is missing project.json" }
@@ -133,91 +186,78 @@ object WorkshopConverter {
                 }
                 when (extension) {
                     "tex" -> {
-                        when (TexMobileConverter.inspectEntryRoute(scenePackage, entry.offset, entry.length)) {
-                            TexEntryRoute.RETAIN_VERIFIED_MOBILE,
-                            TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE,
-                            -> {
-                                copiedTextures += 1
-                                putEntry(MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length)))
-                            }
-                            TexEntryRoute.RETAIN_VERIFIED_VIDEO -> {
-                                copiedTextures += 1
-                                warnings += "Preserved validated MP4-backed video texture: ${entry.path}"
-                                putEntry(MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length)))
-                            }
-                            TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA -> {
-                                val transformed = File(transformedDirectory, "$index-animated-rgba.tex")
-                                val result =
-                                    if (animatedImageDecoder == null) {
-                                        TexMobileConverter.convertAnimatedImageToRgbaFile(
-                                            scenePackage,
-                                            entry.offset,
-                                            entry.length,
-                                            transformed,
-                                            checkCancellation,
-                                        )
-                                    } else {
-                                        TexMobileConverter.convertAnimatedImageToRgbaFile(
-                                            scenePackage,
-                                            entry.offset,
-                                            entry.length,
-                                            transformed,
-                                            checkCancellation,
-                                            animatedImageDecoder,
-                                        )
-                                    }
-                                check(result.converted) {
-                                    "Failed to convert animated image-backed texture ${entry.path}: ${result.reason}"
+                        val route =
+                            TexMobileConverter.inspectEntryRoute(
+                                scenePackage,
+                                entry.offset,
+                                entry.length,
+                                plan?.device?.maxHeapBytes ?: Runtime.getRuntime().maxMemory(),
+                            )
+                        val strategy =
+                            plan?.resources?.get(index)?.also { planned ->
+                                require(planned.path == entry.path && planned.sourceLength == entry.length) {
+                                    "Conversion plan resource order does not match scene package"
                                 }
-                                check(
-                                    TexMobileConverter.inspectEntryRoute(transformed, 0L, transformed.length()) ==
-                                        TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE,
-                                ) { "Converted animated texture ${entry.path} failed retained-output verification" }
-                                convertedTextures += 1
-                                warnings += "Re-encoded animated texture as RGBA8888 + LZ4: ${entry.path}"
-                                putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
+                            }?.strategy ?: when (route) {
+                                TexEntryRoute.RETAIN_VERIFIED_MOBILE,
+                                TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE,
+                                TexEntryRoute.RETAIN_VERIFIED_VIDEO,
+                                -> ResourceStrategy.RETAIN_VERIFIED_MOBILE
+                                TexEntryRoute.CONVERT_IMAGE_TO_ETC2 -> ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4
+                                TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA,
+                                TexEntryRoute.CONVERT_IN_MEMORY,
+                                -> ResourceStrategy.CONVERT_TO_RGBA8888_LZ4
+                                else -> ResourceStrategy.REJECT
                             }
-                            TexEntryRoute.CONVERT_IMAGE_TO_ETC2 -> {
+                        when (strategy) {
+                            ResourceStrategy.RETAIN_VERIFIED_MOBILE -> {
+                                copiedTextures += 1
+                                if (route == TexEntryRoute.RETAIN_VERIFIED_VIDEO) {
+                                    warnings += "Preserved validated MP4-backed video texture: ${entry.path}"
+                                }
+                                putEntry(MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length)))
+                            }
+                            ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4 -> {
+                                require(route == TexEntryRoute.CONVERT_IMAGE_TO_ETC2) { "Planned ETC2 strategy is incompatible with ${entry.path}" }
                                 val transformed = File(transformedDirectory, "$index-etc2.tex")
-                                val result =
-                                    TexMobileConverter.convertToEtc2File(
-                                        scenePackage,
-                                        entry.offset,
-                                        entry.length,
-                                        transformed,
-                                        checkCancellation,
-                                    )
-                                check(result.converted) {
-                                    "Failed to convert image-backed texture ${entry.path}: ${result.reason}"
-                                }
+                                val result = TexMobileConverter.convertToEtc2File(scenePackage, entry.offset, entry.length, transformed, checkCancellation)
+                                check(result.converted) { "Failed to convert image-backed texture ${entry.path}: ${result.reason}" }
                                 convertedTextures += 1
                                 warnings += "Re-encoded texture as ETC2 RGBA8 + LZ4: ${entry.path}"
                                 Log.i("WallhubMpkg", "ETC2 re-encode succeeded for ${entry.path}")
                                 putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
                             }
-                            TexEntryRoute.CONVERT_IN_MEMORY -> {
-                                require(entry.length <= texConversionInputLimit()) {
-                                    "Static texture ${entry.path} exceeds the bounded in-memory conversion limit"
-                                }
-                                val transformed = File(transformedDirectory, "$index.tex")
+                            ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 -> {
+                                val transformed = File(transformedDirectory, "$index-rgba.tex")
                                 val result =
-                                    TexMobileConverter.convertToFile(
-                                        archive.readBytes(entry, texConversionInputLimit()),
-                                        transformed,
-                                        checkCancellation,
-                                    )
-                                check(result.converted) {
-                                    "Failed to convert texture ${entry.path}: ${result.reason}"
-                                }
+                                    when (route) {
+                                        TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA ->
+                                            if (animatedImageDecoder == null) {
+                                                TexMobileConverter.convertAnimatedImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, checkCancellation)
+                                            } else {
+                                                TexMobileConverter.convertAnimatedImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, checkCancellation, animatedImageDecoder)
+                                            }
+                                        TexEntryRoute.CONVERT_IMAGE_TO_ETC2 -> {
+                                            val limit = MpkgConversionPreset.fromStableId(plan?.presetId ?: MpkgConversionPreset.SOURCE_FIDELITY.stableId).policy().maxStaticImageRgbaBytes
+                                            if (staticImageDecoder == null) {
+                                                TexMobileConverter.convertImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, limit, checkCancellation)
+                                            } else {
+                                                TexMobileConverter.convertImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, limit, checkCancellation, staticImageDecoder)
+                                            }
+                                        }
+                                        TexEntryRoute.CONVERT_IN_MEMORY -> {
+                                            require(entry.length <= texConversionInputLimit()) { "Static texture ${entry.path} exceeds the bounded in-memory conversion limit" }
+                                            TexMobileConverter.convertToFile(archive.readBytes(entry, texConversionInputLimit()), transformed, checkCancellation)
+                                        }
+                                        else -> error("Planned RGBA strategy is incompatible with ${entry.path}")
+                                    }
+                                check(result.converted) { "Failed to convert texture ${entry.path}: ${result.reason}" }
                                 convertedTextures += 1
+                                warnings += "Re-encoded texture as RGBA8888 + LZ4: ${entry.path}"
                                 putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
                             }
-                            TexEntryRoute.UNSUPPORTED_RESOURCE_BUDGET ->
-                                error("Texture ${entry.path} exceeds the format-aware mobile conversion budget")
-                            TexEntryRoute.UNSUPPORTED_VIDEO ->
-                                error("MP4-backed video texture ${entry.path} is not a validated mobile TEX profile")
-                            TexEntryRoute.UNSUPPORTED ->
-                                error("Texture ${entry.path} is not verified as mobile-compatible and cannot be converted safely")
+                            ResourceStrategy.REJECT -> error("Texture ${entry.path} is rejected by the conversion plan")
+                            else -> error("Planned strategy $strategy is invalid for texture ${entry.path}")
                         }
                     }
                     "frag", "vert" -> {

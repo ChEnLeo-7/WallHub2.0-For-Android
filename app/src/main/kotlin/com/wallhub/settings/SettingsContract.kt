@@ -10,6 +10,7 @@ import com.wallhub.android.core.model.AppReleaseInfo
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.InstalledAppInfo
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
 import androidx.compose.material.icons.Icons
@@ -97,6 +98,10 @@ sealed interface SettingsAction {
         val chunkDownloadConcurrency: Int,
         val proxyUrl: String,
         val mediaCacheLimitMb: Int,
+    ) : SettingsAction
+
+    data class MpkgConversionPresetChanged(
+        val preset: MpkgConversionPreset,
     ) : SettingsAction
 
     data class DownloadProxyEnabledChanged(

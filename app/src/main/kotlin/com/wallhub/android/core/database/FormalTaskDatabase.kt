@@ -46,6 +46,10 @@ data class FormalTaskRecordEntity(
     val outputTreeUri: String? = null,
     val outputUri: String? = null,
     val exportFormat: String = "AUTO",
+    @ColumnInfo(defaultValue = "'balanced'") val conversionPreset: String = "balanced",
+    val conversionPlanJson: String? = null,
+    val conversionReportJson: String? = null,
+    @ColumnInfo(defaultValue = "1") val conversionPlanVersion: Int = 1,
     @ColumnInfo(defaultValue = "'NONE'") val exportTransactionState: String = "NONE",
     val exportTargetUri: String? = null,
     val exportBackupUri: String? = null,
@@ -175,6 +179,10 @@ interface FormalTaskRecordDao {
                 quiescedIntentRevision = current.quiescedIntentRevision,
                 lastReceiptSequence = current.lastReceiptSequence,
                 engineEpoch = current.engineEpoch,
+                conversionPreset = current.conversionPreset,
+                conversionPlanJson = current.conversionPlanJson,
+                conversionReportJson = current.conversionReportJson,
+                conversionPlanVersion = current.conversionPlanVersion,
                 exportTransactionState = if (preserveExportTransaction) current.exportTransactionState else task.exportTransactionState,
                 exportTargetUri = if (preserveExportTransaction) current.exportTargetUri else task.exportTargetUri,
                 exportBackupUri = if (preserveExportTransaction) current.exportBackupUri else task.exportBackupUri,
@@ -285,6 +293,22 @@ interface FormalTaskRecordDao {
 
     @Query("UPDATE formal_task_records SET stagingDirectory = NULL WHERE taskId = :taskId")
     suspend fun clearStagingDirectory(taskId: String)
+
+    @Query(
+        "UPDATE formal_task_records SET conversionPlanJson = :planJson, " +
+            "conversionPlanVersion = :planVersion WHERE taskId = :taskId",
+    )
+    suspend fun persistConversionPlan(
+        taskId: String,
+        planJson: String?,
+        planVersion: Int,
+    ): Int
+
+    @Query("UPDATE formal_task_records SET conversionReportJson = :reportJson WHERE taskId = :taskId")
+    suspend fun persistConversionReport(
+        taskId: String,
+        reportJson: String?,
+    ): Int
 
     @Transaction
     suspend fun updateQueueOrder(taskIds: List<String>) {
@@ -516,7 +540,7 @@ interface LocalWallpaperMetadataDao {
         LocalWallpaperStateEntity::class,
         LocalWallpaperTagEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = true,
 )
 abstract class FormalTaskDatabase : RoomDatabase() {
@@ -761,6 +785,22 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 }
             }
 
+        internal val MIGRATION_10_11 =
+            object : Migration(10, 11) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records " +
+                            "ADD COLUMN conversionPreset TEXT NOT NULL DEFAULT 'balanced'",
+                    )
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN conversionPlanJson TEXT")
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN conversionReportJson TEXT")
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records " +
+                            "ADD COLUMN conversionPlanVersion INTEGER NOT NULL DEFAULT 1",
+                    )
+                }
+            }
+
         internal val migrations: Array<Migration> =
             arrayOf(
                 MIGRATION_1_2,
@@ -772,6 +812,7 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 MIGRATION_7_8,
                 MIGRATION_8_9,
                 MIGRATION_9_10,
+                MIGRATION_10_11,
             )
 
         @Volatile

@@ -19,6 +19,7 @@ import com.wallhub.android.core.model.DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.LocalWallpaperViewMode
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.SteamAccessMode
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
@@ -137,6 +138,12 @@ class AppPreferencesStore(
             preferences[Keys.downloadProxyUrl] = proxyUrl.trim()
             if (!isSupportedDownloadProxyUrl(proxyUrl)) preferences[Keys.downloadProxyEnabled] = false
             preferences[Keys.mediaCacheLimitMb] = mediaCacheLimitMb.coerceAtLeast(128)
+        }
+    }
+
+    suspend fun setMpkgConversionPreset(preset: MpkgConversionPreset) {
+        applicationContext.dataStore.edit { preferences ->
+            preferences[Keys.mpkgConversionPreset] = preset.stableId
         }
     }
 
@@ -322,6 +329,10 @@ class AppPreferencesStore(
                 safeChunkDownloadConcurrency(
                     preferences[Keys.chunkDownloadConcurrency] ?: DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY,
                 ),
+            mpkgConversionPreset =
+                preferences[Keys.mpkgConversionPreset]
+                    ?.let(MpkgConversionPreset::fromStableId)
+                    ?: MpkgConversionPreset.BALANCED,
             downloadProxyUrl = preferences[Keys.downloadProxyUrl].orEmpty(),
             downloadProxyEnabled = preferences[Keys.downloadProxyEnabled] ?: false,
             downloadProxyRequiresConfirmation =
@@ -372,6 +383,7 @@ class AppPreferencesStore(
         val matureContentEnabled = booleanPreferencesKey("mature_content_enabled")
         val maxConcurrentDownloads = intPreferencesKey("max_concurrent_downloads")
         val chunkDownloadConcurrency = intPreferencesKey("chunk_download_concurrency")
+        val mpkgConversionPreset = stringPreferencesKey("mpkg_conversion_preset")
         val downloadProxyUrl = stringPreferencesKey("download_proxy_url")
         val downloadProxyEnabled = booleanPreferencesKey("download_proxy_enabled")
         val steamAccessEnabled = booleanPreferencesKey("steam_access_enabled")

@@ -25,6 +25,12 @@ import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.android.core.model.MpkgConversionPreset
+import com.wallhub.prototype.mpkg.ConversionPlan
+import com.wallhub.prototype.mpkg.ConversionPlanJsonCodec
+import com.wallhub.prototype.mpkg.ConversionReportJsonCodec
+import com.wallhub.prototype.mpkg.DeviceCapabilityProfile
+import com.wallhub.prototype.mpkg.StaleConversionSourceException
 import com.wallhub.prototype.mpkg.WorkshopConverter
 import com.wallhub.prototype.mpkg.WorkshopKind
 import com.wallhub.prototype.mpkg.writeAtomically
@@ -299,7 +305,7 @@ internal class FormalWorkshopConversionWorker(
         }
     }
 
-    private fun convert(
+    private suspend fun convert(
         task: FormalTaskRecordEntity,
         sourceDirectory: File,
         temporaryDirectory: File,
@@ -311,6 +317,7 @@ internal class FormalWorkshopConversionWorker(
         return when (targetFormat) {
             ExportFormat.AUTO ->
                 convertWithEngine(
+                    task = task,
                     sourceDirectory = sourceDirectory,
                     outputFile = File(temporaryDirectory, outputName(task, detected.outputExtension)),
                     contentHint = contentHint,
@@ -320,6 +327,7 @@ internal class FormalWorkshopConversionWorker(
             ExportFormat.MPKG -> {
                 require(detected != WorkshopKind.WEB) { "Web wallpapers can only be exported as ZIP archives" }
                 convertWithEngine(
+                    task = task,
                     sourceDirectory = sourceDirectory,
                     outputFile = File(temporaryDirectory, outputName(task, "mpkg")),
                     contentHint = contentHint,
@@ -352,19 +360,59 @@ internal class FormalWorkshopConversionWorker(
         return total * CONVERSION_DISK_MULTIPLIER
     }
 
-    private fun convertWithEngine(
+    private suspend fun convertWithEngine(
+        task: FormalTaskRecordEntity,
         sourceDirectory: File,
         outputFile: File,
         contentHint: String,
         checkCancellation: () -> Unit,
     ): ConversionResult {
+        val kind = WorkshopConverter.detect(sourceDirectory, contentHint)
         val report =
-            WorkshopConverter.convert(
-                inputDir = sourceDirectory,
-                outputFile = outputFile,
-                contentTypeHint = contentHint,
-                checkCancellation = checkCancellation,
-            )
+            if (kind == WorkshopKind.SCENE) {
+                val preset = MpkgConversionPreset.fromStableId(task.conversionPreset)
+                val plan =
+                    task.conversionPlanJson
+                        ?.let { stored -> runCatching { ConversionPlanJsonCodec.decode(stored) }.getOrNull() }
+                        ?.takeIf { stored -> stored.presetId == preset.stableId }
+                executeRegeneratingStalePlan(
+                    initialPlan = plan,
+                    generate = {
+                        WorkshopConverter.plan(
+                            inputDir = sourceDirectory,
+                            preset = preset,
+                            device = DeviceCapabilityProfile(Runtime.getRuntime().maxMemory()),
+                        ).also { generated ->
+                            check(taskDao.persistConversionPlan(task.taskId, ConversionPlanJsonCodec.encode(generated), generated.version) == 1) {
+                                "Download task disappeared before its conversion plan was persisted"
+                            }
+                            check(taskDao.persistConversionReport(task.taskId, null) == 1) {
+                                "Download task disappeared before its conversion report was cleared"
+                            }
+                        }
+                    },
+                    execute = { currentPlan ->
+                        WorkshopConverter.execute(
+                            plan = currentPlan,
+                            inputDir = sourceDirectory,
+                            outputFile = outputFile,
+                            contentTypeHint = contentHint,
+                            checkCancellation = checkCancellation,
+                        )
+                    },
+                ).also { completed ->
+                    check(taskDao.persistConversionReport(task.taskId, ConversionReportJsonCodec.encode(completed)) == 1) {
+                        "Download task disappeared before its conversion report was persisted"
+                    }
+                }
+            } else {
+                WorkshopConverter.convert(
+                    inputDir = sourceDirectory,
+                    outputFile = outputFile,
+                    contentTypeHint = contentHint,
+                    checkCancellation = checkCancellation,
+                )
+            }
         return ConversionResult(
             outputFile = report.outputFile,
             mimeType = if (report.kind == WorkshopKind.WEB) WorkshopExportMimeTypes.ZIP else WorkshopExportMimeTypes.MPKG,
@@ -975,6 +1023,25 @@ internal fun decideExportRecovery(
         return ExportRecoveryDecision.CLEAN_AND_RESTART
     }
     return ExportRecoveryDecision.FAIL_RECOVERABLY
+}
+
+internal inline fun <T> executeRegeneratingStalePlan(
+    initialPlan: ConversionPlan?,
+    generate: () -> ConversionPlan,
+    execute: (ConversionPlan) -> T,
+): T {
+    var plan = initialPlan
+    var regenerated = false
+    while (true) {
+        val currentPlan = plan ?: generate()
+        try {
+            return execute(currentPlan)
+        } catch (stale: StaleConversionSourceException) {
+            if (regenerated) throw stale
+            regenerated = true
+            plan = null
+        }
+    }
 }
 
 private fun FormalTaskRecordEntity.exportTransaction(): ExportTransaction =

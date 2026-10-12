@@ -141,6 +141,7 @@ data class AppPreferences(
     val matureContentEnabled: Boolean = false,
     val maxConcurrentDownloads: Int = DEFAULT_MAX_CONCURRENT_DOWNLOADS,
     val chunkDownloadConcurrency: Int = DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY,
+    val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
     val downloadProxyUrl: String = "",
     val downloadProxyEnabled: Boolean = false,
     val downloadProxyRequiresConfirmation: Boolean = false,
@@ -171,7 +172,8 @@ data class AppPreferences(
             "discoverResultsColumns=$discoverResultsColumns, " +
             "homeCardAction=$homeCardAction, homePaginationMode=$homePaginationMode, " +
             "matureContentEnabled=$matureContentEnabled, maxConcurrentDownloads=$maxConcurrentDownloads, " +
-            "chunkDownloadConcurrency=$chunkDownloadConcurrency, downloadProxyUrl=$downloadProxyUrl, " +
+            "chunkDownloadConcurrency=$chunkDownloadConcurrency, mpkgConversionPreset=$mpkgConversionPreset, " +
+            "downloadProxyUrl=$downloadProxyUrl, " +
             "downloadProxyEnabled=$downloadProxyEnabled, " +
             "downloadProxyRequiresConfirmation=$downloadProxyRequiresConfirmation, " +
             "steamAccessEnabled=$steamAccessEnabled, steamAccessMode=$steamAccessMode, " +

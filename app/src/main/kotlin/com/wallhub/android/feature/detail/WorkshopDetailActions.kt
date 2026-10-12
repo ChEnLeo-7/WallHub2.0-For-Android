@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -38,6 +39,7 @@ import com.wallhub.android.core.designsystem.WallHubSecondaryButton
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.FavoriteState
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.WorkshopComment
 import com.wallhub.android.core.model.WorkshopInteraction
@@ -233,6 +235,8 @@ internal const val COMMENT_DAY_MS = 24L * COMMENT_HOUR_MS
 internal fun DownloadChoiceSheet(
     type: WorkshopType,
     exportFormats: List<ExportFormat>,
+    mpkgConversionPreset: MpkgConversionPreset,
+    onMpkgConversionPresetSelected: (MpkgConversionPreset) -> Unit,
     onDismiss: () -> Unit,
     onDownload: (ExportFormat) -> Unit,
 ) {
@@ -250,6 +254,27 @@ internal fun DownloadChoiceSheet(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (shouldShowMpkgPreset(type, exportFormats)) {
+                Text(
+                    stringResource(R.string.detail_mpkg_conversion_quality),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs)) {
+                    MpkgConversionPreset.entries.forEach { preset ->
+                        FilterChip(
+                            selected = preset == mpkgConversionPreset,
+                            onClick = { onMpkgConversionPresetSelected(preset) },
+                            label = { Text(preset.label()) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                Text(
+                    text = mpkgConversionPreset.estimatedPolicyPreview(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             exportFormats.forEach { format ->
                 Button(
                     onClick = { onDownload(format) },
@@ -281,6 +306,11 @@ internal fun WorkshopType.label(): String =
         WorkshopType.UNKNOWN -> stringResource(R.string.detail_unknown)
     }
 
+internal fun shouldShowMpkgPreset(
+    type: WorkshopType,
+    exportFormats: List<ExportFormat>,
+): Boolean = type == WorkshopType.SCENE && ExportFormat.MPKG in exportFormats
+
 internal fun WorkshopType.defaultExportFormat(): ExportFormat =
     when (this) {
         WorkshopType.WEB -> ExportFormat.ZIP
@@ -305,4 +335,22 @@ internal fun ExportFormat.label(): String =
         ExportFormat.AUTO -> stringResource(R.string.detail_export_format_automatic)
         ExportFormat.MPKG -> stringResource(R.string.detail_export_format_mpkg)
         ExportFormat.ZIP -> stringResource(R.string.detail_export_format_zip)
+    }
+
+@Composable
+internal fun MpkgConversionPreset.label(): String =
+    when (this) {
+        MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard)
+        MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility)
+        MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality)
+        MpkgConversionPreset.SOURCE_FIDELITY -> stringResource(R.string.mpkg_preset_source_fidelity)
+    }
+
+@Composable
+private fun MpkgConversionPreset.estimatedPolicyPreview(): String =
+    when (this) {
+        MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard_preview)
+        MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility_preview)
+        MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality_preview)
+        MpkgConversionPreset.SOURCE_FIDELITY -> stringResource(R.string.mpkg_preset_source_fidelity_preview)
     }

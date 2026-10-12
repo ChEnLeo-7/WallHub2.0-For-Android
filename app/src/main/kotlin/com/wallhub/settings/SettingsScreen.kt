@@ -37,6 +37,7 @@ import com.wallhub.android.core.model.AccentPreference
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.SteamAccessState
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SteamWorkshopDataSource
@@ -96,6 +97,9 @@ fun SettingsScreen(
                 ),
             )
         }
+    val onMpkgConversionPresetChange: (MpkgConversionPreset) -> Unit = {
+        onAction(SettingsAction.MpkgConversionPresetChanged(it))
+    }
     val onDownloadProxyEnabledChange: (Boolean) -> Unit = {
         onAction(SettingsAction.DownloadProxyEnabledChanged(it))
     }
@@ -305,6 +309,7 @@ fun SettingsScreen(
                                     saveHomePreferences(matureContentEnabled = enabled)
                                 },
                                 onDownloadPreferencesChange = onDownloadPreferencesChange,
+                                onMpkgConversionPresetChange = onMpkgConversionPresetChange,
                                 onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
                                 onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
                                 onClearOnlineStreamCache = onClearOnlineStreamCache,
@@ -347,6 +352,7 @@ internal fun SettingsCategoryContent(
     onSteamApiKeyChanged: (String) -> Unit,
     onMatureContentEnabledChange: (Boolean) -> Unit,
     onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit,
+    onMpkgConversionPresetChange: (MpkgConversionPreset) -> Unit,
     onDownloadProxyEnabledChange: (Boolean) -> Unit,
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
     onClearOnlineStreamCache: () -> Unit,
@@ -387,6 +393,7 @@ internal fun SettingsCategoryContent(
                 onSelectOutputDirectory = onSelectOutputDirectory,
                 onClearOutputDirectory = onClearOutputDirectory,
                 onDownloadPreferencesChange = onDownloadPreferencesChange,
+                onMpkgConversionPresetChange = onMpkgConversionPresetChange,
                 onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
                 onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
                 onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,

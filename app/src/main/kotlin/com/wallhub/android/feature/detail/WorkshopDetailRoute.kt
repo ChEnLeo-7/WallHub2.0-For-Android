@@ -81,6 +81,7 @@ fun WorkshopDetailRoute(
         onStartInlineVideo = viewModel::startPreferredVideoPlayback,
         onRetryInlineVideo = viewModel::retryInlineVideoPlayback,
         onExportFormatSelected = viewModel::selectExportFormat,
+        onMpkgConversionPresetSelected = viewModel::selectMpkgConversionPreset,
         onDownload = {
             viewModel.onAction(
                 WorkshopDetailAction.RequestOperation(WorkshopDetailPendingOperation.Download),

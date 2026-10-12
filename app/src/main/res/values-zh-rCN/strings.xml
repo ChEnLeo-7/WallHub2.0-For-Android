@@ -53,6 +53,8 @@
     <string name='settings_action_choose_custom_directory'>选择自定义目录</string>
     <string name='settings_action_change_custom_directory'>更改自定义目录</string>
     <string name='settings_action_restore_default_directory'>恢复默认目录</string>
+    <string name='settings_mpkg_conversion_title'>MPKG 转换</string>
+    <string name='settings_mpkg_conversion_quality'>默认转换质量</string>
     <string name='settings_download_performance_title'>下载性能</string>
     <string name='settings_download_performance_description'>调整任务数量与单任务分块并发</string>
     <string name='settings_concurrent_downloads'>同时下载项目数</string>
@@ -559,6 +561,16 @@
     <string name='detail_download_enqueue_failed'>无法加入下载队列</string>
     <string name='detail_download_mpkg'>下载 MPKG 文件（手机）</string>
     <string name='detail_download_options'>下载选项</string>
+    <string name='detail_mpkg_conversion_quality'>MPKG 转换质量</string>
+    <string name='mpkg_preset_standard'>标准质量（推荐）</string>
+    <string name='mpkg_preset_compatibility'>兼容优先</string>
+    <string name='mpkg_preset_high_quality'>高质量</string>
+    <string name='mpkg_preset_source_fidelity'>原始保真（实验性）</string>
+    <string name='mpkg_preset_standard_preview'>预计策略：平衡移动端转换效果与包体大小。</string>
+    <string name='mpkg_preset_compatibility_preview'>预计策略：采用更严格限制，以兼容更多设备。</string>
+    <string name='mpkg_preset_high_quality_preview'>预计策略：保留更多源细节，但会增加内存和存储占用。</string>
+    <string name='mpkg_preset_source_fidelity_preview'>预计策略：尽可能保留已验证的源资源；此选项仍属实验性。</string>
+    <string name='downloads_conversion_report_summary'>纹理转换 %1$d · 保留 %2$d · Shader %3$d · 移除音频 %4$d</string>
     <string name='detail_download_queue_explanation'>%1$s 项目会加入下载队列，可在下载页面查看进度。</string>
     <string name='detail_download_staging_missing'>下载暂存文件不存在</string>
     <string name='detail_download_task_missing'>下载任务不存在</string>

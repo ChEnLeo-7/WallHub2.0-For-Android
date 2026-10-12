@@ -19,6 +19,7 @@ import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.MAX_CONCURRENT_DOWNLOAD_OPTIONS
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
 import org.uwuaosp.compose.settingslib.PreferencePosition
 import org.uwuaosp.compose.settingslib.PreferenceRow
@@ -39,6 +40,7 @@ internal fun DownloadSettingsContent(
     onSelectOutputDirectory: () -> Unit,
     onClearOutputDirectory: () -> Unit,
     onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit,
+    onMpkgConversionPresetChange: (MpkgConversionPreset) -> Unit,
     onDownloadProxyEnabledChange: (Boolean) -> Unit,
     onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
@@ -93,6 +95,17 @@ internal fun DownloadSettingsContent(
                 }
             }
     }
+
+    UwuSettingsCategory(title = stringResource(R.string.settings_mpkg_conversion_title))
+    SettingChoiceRow(
+        title = stringResource(R.string.settings_mpkg_conversion_quality),
+        selectedValue = preferences.mpkgConversionPreset,
+        values = MpkgConversionPreset.entries,
+        label = { preset -> preset.label() },
+        onSelected = onMpkgConversionPresetChange,
+        position = PreferencePosition.Single,
+        icon = Icons.Outlined.Tune,
+    )
 
     UwuSettingsCategory(title = stringResource(R.string.settings_download_performance_title))
     SettingChoiceRow(
@@ -189,3 +202,12 @@ internal fun DownloadSettingsContent(
             }
         }
 }
+
+@Composable
+private fun MpkgConversionPreset.label(): String =
+    when (this) {
+        MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard)
+        MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility)
+        MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality)
+        MpkgConversionPreset.SOURCE_FIDELITY -> stringResource(R.string.mpkg_preset_source_fidelity)
+    }

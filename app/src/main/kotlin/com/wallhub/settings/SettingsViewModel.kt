@@ -14,6 +14,7 @@ import com.wallhub.android.core.model.DiagnosticExportRepository
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.LauncherIconController
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamAccessState
@@ -121,6 +122,7 @@ class SettingsViewModel
                         proxyUrl = action.proxyUrl,
                         mediaCacheLimitMb = action.mediaCacheLimitMb,
                     )
+                is SettingsAction.MpkgConversionPresetChanged -> setMpkgConversionPreset(action.preset)
                 is SettingsAction.DownloadProxyEnabledChanged -> setDownloadProxyEnabled(action.enabled)
                 is SettingsAction.OnlineStreamCacheLimitChanged -> setOnlineStreamCacheLimitMb(action.limitMb)
                 SettingsAction.ClearOnlineStreamCache -> clearOnlineStreamCache()
@@ -237,6 +239,10 @@ class SettingsViewModel
                     mediaCacheLimitMb = mediaCacheLimitMb,
                 )
             }
+        }
+
+        private fun setMpkgConversionPreset(preset: MpkgConversionPreset) {
+            viewModelScope.launch { settingsRepository.setMpkgConversionPreset(preset) }
         }
 
         private fun setOnlineStreamCacheLimitMb(limitMb: Int) {

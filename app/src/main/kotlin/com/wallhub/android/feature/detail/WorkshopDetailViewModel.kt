@@ -20,6 +20,7 @@ import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.FavoriteState
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
@@ -121,6 +122,7 @@ class WorkshopDetailViewModel
                         mutableState.value.copy(
                             outputTreeUri = preferences.outputTreeUri,
                             outputDirectoryLabel = preferences.outputDirectoryLabel,
+                            mpkgConversionPreset = preferences.mpkgConversionPreset,
                             onlineChunkPlaybackEnabled = preferences.onlineChunkPlaybackEnabled,
                         )
                     if (!preferences.onlineChunkPlaybackEnabled) stopInlineVideoPlayback()
@@ -513,6 +515,7 @@ class WorkshopDetailViewModel
                             expectedTotalBytes = detail.summary.fileSizeBytes ?: 0L,
                             outputTreeUri = mutableState.value.outputTreeUri,
                             exportFormat = mutableState.value.exportFormat,
+                            mpkgConversionPreset = mutableState.value.mpkgConversionPreset,
                         ),
                     )
                 }.onSuccess { result ->
@@ -572,6 +575,10 @@ class WorkshopDetailViewModel
             val detail = mutableState.value.detail ?: return
             if (format !in detail.summary.type.availableExportFormats()) return
             mutableState.value = mutableState.value.copy(exportFormat = format)
+        }
+
+        fun selectMpkgConversionPreset(preset: MpkgConversionPreset) {
+            mutableState.value = mutableState.value.copy(mpkgConversionPreset = preset)
         }
 
         fun convertExistingDownload(format: ExportFormat) {

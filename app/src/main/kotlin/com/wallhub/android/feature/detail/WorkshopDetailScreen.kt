@@ -80,6 +80,7 @@ import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.ExportFormat
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.WorkshopComment
@@ -108,6 +109,7 @@ fun WorkshopDetailScreen(
     onStartInlineVideo: () -> Unit,
     onRetryInlineVideo: () -> Unit,
     onExportFormatSelected: (ExportFormat) -> Unit,
+    onMpkgConversionPresetSelected: (MpkgConversionPreset) -> Unit,
     onDownload: () -> Unit,
     onRetryComments: () -> Unit,
     onLoadMoreComments: () -> Unit,
@@ -249,6 +251,8 @@ fun WorkshopDetailScreen(
                             onRetryInlineVideo = manualRetryInlineVideo,
                             onInlineFullscreenChange = onInlineFullscreenChange,
                             onExportFormatSelected = onExportFormatSelected,
+                            mpkgConversionPreset = state.mpkgConversionPreset,
+                            onMpkgConversionPresetSelected = onMpkgConversionPresetSelected,
                             isEnqueuingDownload = state.isEnqueuingDownload,
                             downloadMessage = state.downloadMessage,
                             onDownload = onDownload,
@@ -333,6 +337,8 @@ internal fun WorkshopDetailPagerContent(
     onRetryInlineVideo: () -> Unit,
     onInlineFullscreenChange: (Boolean) -> Unit,
     onExportFormatSelected: (ExportFormat) -> Unit,
+    mpkgConversionPreset: MpkgConversionPreset,
+    onMpkgConversionPresetSelected: (MpkgConversionPreset) -> Unit,
     isEnqueuingDownload: Boolean,
     downloadMessage: DetailUiText?,
     onDownload: () -> Unit,
@@ -457,6 +463,8 @@ internal fun WorkshopDetailPagerContent(
         DownloadChoiceSheet(
             type = summary.type,
             exportFormats = exportFormats,
+            mpkgConversionPreset = mpkgConversionPreset,
+            onMpkgConversionPresetSelected = onMpkgConversionPresetSelected,
             onDismiss = { showDownloadChoices = false },
             onDownload = { format ->
                 onExportFormatSelected(format)

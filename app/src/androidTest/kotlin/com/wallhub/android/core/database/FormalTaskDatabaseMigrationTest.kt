@@ -119,6 +119,59 @@ class FormalTaskDatabaseMigrationTest {
     }
 
     @Test
+    fun migration10To11AddsConversionSnapshotColumnsWithStableDefaults() {
+        helper.createDatabase(TEST_DATABASE, 10).use { database ->
+            database.execSQL(
+                "INSERT INTO formal_task_records (" +
+                    "taskId, workshopId, title, type, status, downloadedBytes, totalBytes, bytesPerSecond, " +
+                    "credentialMode, isResumable, contentManifestId, appId, exportFormat, exportTransactionState, " +
+                    "queuePosition, createdAt, updatedAt, attempt, desiredIntent, desiredIntentRevision, " +
+                    "appliedIntentRevision, quiescedIntentRevision, lastReceiptSequence) " +
+                    "VALUES ('legacy', 1, 'Legacy', 'SCENE', 'FAILED', 0, 0, 0, 'ANONYMOUS', 1, 0, 0, " +
+                    "'AUTO', 'NONE', 0, 1, 1, 0, 'RUN', 0, 0, 0, 0)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            11,
+            true,
+            FormalTaskDatabase.MIGRATION_10_11,
+        ).use { database ->
+            database.query(
+                "SELECT conversionPreset, conversionPlanJson, conversionReportJson, conversionPlanVersion " +
+                    "FROM formal_task_records WHERE taskId = 'legacy'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("balanced", cursor.getString(0))
+                assertTrue(cursor.isNull(1))
+                assertTrue(cursor.isNull(2))
+                assertEquals(1, cursor.getInt(3))
+            }
+        }
+    }
+
+    @Test
+    fun conversionArtifactUpdatesDoNotReplaceTheOtherSnapshot() {
+        val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
+        try {
+            val dao = database.taskRecordDao()
+            kotlinx.coroutines.runBlocking {
+                dao.upsert(task("conversion-snapshot", "CONVERTING"))
+                assertEquals(1, dao.persistConversionPlan("conversion-snapshot", "{\"plan\":1}", 2))
+                assertEquals(1, dao.persistConversionReport("conversion-snapshot", "{\"report\":1}"))
+
+                val persisted = requireNotNull(dao.find("conversion-snapshot"))
+                assertEquals("{\"plan\":1}", persisted.conversionPlanJson)
+                assertEquals(2, persisted.conversionPlanVersion)
+                assertEquals("{\"report\":1}", persisted.conversionReportJson)
+            }
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun deletingATerminalTaskAlsoDeletesItsPendingCommands() {
         val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
         try {

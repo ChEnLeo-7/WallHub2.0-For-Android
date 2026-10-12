@@ -1,13 +1,20 @@
 package com.wallhub.android.data.downloads
 
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.prototype.mpkg.ByteArrayPayload
+import com.wallhub.prototype.mpkg.ConversionPlanJsonCodec
+import com.wallhub.prototype.mpkg.ConversionResourceOutcome
+import com.wallhub.prototype.mpkg.DeviceCapabilityProfile
 import com.wallhub.prototype.mpkg.MAX_PRESET_DEPENDENCY_DEPTH
 import com.wallhub.prototype.mpkg.MpkgInputEntry
 import com.wallhub.prototype.mpkg.MpkgWriter
 import com.wallhub.prototype.mpkg.PresetDependencyResolver
+import com.wallhub.prototype.mpkg.ResourceStrategy
 import com.wallhub.prototype.mpkg.SCENE_MPKG_MAGIC
 import com.wallhub.prototype.mpkg.ShaderCompatibility
+import com.wallhub.prototype.mpkg.StaleConversionSourceException
 import com.wallhub.prototype.mpkg.WorkshopConverter
+import com.wallhub.prototype.mpkg.policy
 import com.wallhub.prototype.mpkg.WorkshopKind
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
@@ -15,6 +22,7 @@ import java.nio.ByteOrder
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -405,6 +413,126 @@ class ScenePackageResolutionTest {
             assertEquals("preview.jpg", merged.getString("preview"))
         } finally {
             root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun conversionPresetPoliciesMatchTruthfulV1Golden() {
+        assertEquals(
+            listOf(
+                "balanced|v1|static=etc2_rgba8_lz4|animated=rgba8888_lz4|verified=retain|input=33554432|package=1073741824|notice=standard",
+                "compatibility|v1|static=etc2_rgba8_lz4|animated=rgba8888_lz4|verified=retain|input=16777216|package=536870912|notice=compatibility_guardrails",
+                "high_quality|v1|static=rgba8888_lz4_up_to_16777216|animated=rgba8888_lz4|verified=retain|input=67108864|package=2147483648|notice=source_dimensions_retained",
+                "source_fidelity|v1|static=rgba8888_lz4_up_to_67108864|animated=rgba8888_lz4|verified=retain|input=67108864|package=4294967296|notice=verified_mobile_payloads_retained",
+            ),
+            MpkgConversionPreset.entries.map { it.policy().stableDescription() },
+        )
+    }
+
+    @Test
+    fun conversionPlanIsDeterministicAndContainsNoAbsolutePath() {
+        val first = Files.createTempDirectory("wallhub-plan-first").toFile()
+        val second = Files.createTempDirectory("wallhub-plan-second").toFile()
+        try {
+            createPlannedScene(first)
+            createPlannedScene(second)
+            val device = DeviceCapabilityProfile(256L * 1024L * 1024L)
+
+            val firstPlan = WorkshopConverter.plan(first, MpkgConversionPreset.BALANCED, device)
+            val secondPlan = WorkshopConverter.plan(second, MpkgConversionPreset.BALANCED, device)
+            val encoded = ConversionPlanJsonCodec.encode(firstPlan)
+
+            assertEquals(firstPlan, secondPlan)
+            assertEquals(ResourceStrategy.COPY, firstPlan.resources.single().strategy)
+            assertEquals("copy_non_texture", firstPlan.resources.single().reason)
+            assertFalse(encoded.contains(first.absolutePath))
+            assertEquals(firstPlan, ConversionPlanJsonCodec.decode(encoded))
+        } finally {
+            first.deleteRecursively()
+            second.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun executingPlanReportsOutcomesAndRejectsStaleSourceIdentity() {
+        val root = Files.createTempDirectory("wallhub-plan-execute").toFile()
+        try {
+            createPlannedScene(root)
+            val plan = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DeviceCapabilityProfile(256L * 1024L * 1024L))
+            val output = root.resolve("converted.mpkg")
+
+            val report = WorkshopConverter.execute(plan, root, output)
+
+            assertEquals(plan.sourceIdentity, report.sourceIdentity)
+            assertEquals(
+                listOf(ConversionResourceOutcome("scripts/demo.txt", ResourceStrategy.COPY, "copied")),
+                report.outcomes,
+            )
+            val packageFile = root.resolve("scene.pkg")
+            val mutated = packageFile.readBytes()
+            mutated[mutated.lastIndex] = (mutated.last().toInt() xor 1).toByte()
+            packageFile.writeBytes(mutated)
+            val staleOutput = root.resolve("stale.mpkg")
+            val failure = assertThrows(StaleConversionSourceException::class.java) {
+                WorkshopConverter.execute(plan, root, staleOutput)
+            }
+            assertEquals("scene_package_identity_changed", failure.reason)
+            assertFalse(staleOutput.exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun stalePersistedPlanIsRegeneratedOnceAndReplacementExecutes() {
+        val persisted = conversionPlan("0".repeat(64))
+        val replacement = conversionPlan("1".repeat(64))
+        var generated = 0
+        var executions = 0
+
+        val result =
+            executeRegeneratingStalePlan(
+                initialPlan = persisted,
+                generate = {
+                    generated += 1
+                    replacement
+                },
+                execute = { current ->
+                    executions += 1
+                    if (current === persisted) throw StaleConversionSourceException("changed")
+                    current
+                },
+            )
+
+        assertSame(replacement, result)
+        assertEquals(1, generated)
+        assertEquals(2, executions)
+    }
+
+    private fun conversionPlan(digest: String) =
+        com.wallhub.prototype.mpkg.ConversionPlan(
+            presetId = MpkgConversionPreset.BALANCED.stableId,
+            policyVersion = 1,
+            device = DeviceCapabilityProfile(256L * 1024L * 1024L),
+            sourceIdentity = com.wallhub.prototype.mpkg.ScenePackageIdentity(packageLength = 1L, indexDigest = digest),
+            resources = emptyList(),
+        )
+
+    private fun createPlannedScene(root: java.io.File) {
+        root.resolve("project.json").writeText("""{"type":"scene","file":"scene.json"}""")
+        root.resolve("preview.png").writeBytes(byteArrayOf(1, 2, 3))
+        val payload = "hello".toByteArray()
+        val magic = "PKGV0001".toByteArray(Charsets.US_ASCII)
+        val path = "scripts/demo.txt".toByteArray(Charsets.UTF_8)
+        root.resolve("scene.pkg").outputStream().use { output ->
+            output.write(ByteBuffer.allocate(Int.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN).putInt(magic.size).array())
+            output.write(magic)
+            output.write(ByteBuffer.allocate(Int.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN).putInt(1).array())
+            output.write(ByteBuffer.allocate(Int.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN).putInt(path.size).array())
+            output.write(path)
+            output.write(ByteArray(Int.SIZE_BYTES))
+            output.write(ByteBuffer.allocate(Int.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN).putInt(payload.size).array())
+            output.write(payload)
         }
     }
 }

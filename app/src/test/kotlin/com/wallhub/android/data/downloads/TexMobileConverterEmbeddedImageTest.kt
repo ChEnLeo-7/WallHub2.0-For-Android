@@ -1,6 +1,9 @@
 package com.wallhub.android.data.downloads
 
+import com.wallhub.android.core.model.MpkgConversionPreset
+import com.wallhub.prototype.mpkg.DeviceCapabilityProfile
 import com.wallhub.prototype.mpkg.PkgReader
+import com.wallhub.prototype.mpkg.ResourceStrategy
 import com.wallhub.prototype.mpkg.TexEntryRoute
 import com.wallhub.prototype.mpkg.TexMobileConverter
 import com.wallhub.prototype.mpkg.WorkshopConverter
@@ -177,6 +180,64 @@ class TexMobileConverterEmbeddedImageTest {
     }
 
     @Test
+    fun `preset golden routes same static image TEX to ETC2 or RGBA and high executes RGBA`() {
+        val root = Files.createTempDirectory("wallhub-preset-static-image").toFile()
+        try {
+            root.resolve("project.json").writeText("""{"type":"scene","file":"scene.json","title":"Synthetic"}""")
+            root.resolve("preview.png").writeBytes(PNG_SIGNATURE)
+            writeDesktopPkg(root.resolve("scene.pkg"), "materials/static.tex", staticImageTex(2, 2))
+            val device = DeviceCapabilityProfile(256L * 1024 * 1024)
+
+            val balanced = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, device)
+            val high = WorkshopConverter.plan(root, MpkgConversionPreset.HIGH_QUALITY, device)
+            val source = WorkshopConverter.plan(root, MpkgConversionPreset.SOURCE_FIDELITY, device)
+
+            assertEquals(ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4, balanced.resources.single().strategy)
+            assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, high.resources.single().strategy)
+            assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, source.resources.single().strategy)
+
+            val output = root.resolve("high.mpkg")
+            WorkshopConverter.execute(
+                high,
+                root,
+                output,
+                staticImageDecoder = { _, width, height, checkCancellation ->
+                    checkCancellation()
+                    ByteArray(width * height * 4) { it.toByte() }
+                },
+            )
+            val archive = PkgReader.readIndex(output)
+            val texture = archive.entries.single { it.path == "materials/static.tex" }
+            assertEquals(TexEntryRoute.RETAIN_VERIFIED_MOBILE, TexMobileConverter.inspectEntryRoute(output, texture.offset, texture.length))
+            assertEquals(TEX_FORMAT_RGBA8888, readIntLe(output, texture.offset + 18L))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `source fidelity keeps RGBA above high quality conservative decoded cap`() {
+        val root = Files.createTempDirectory("wallhub-preset-rgba-cap").toFile()
+        try {
+            root.resolve("project.json").writeText("""{"type":"scene","file":"scene.json"}""")
+            root.resolve("preview.png").writeBytes(PNG_SIGNATURE)
+            writeDesktopPkg(root.resolve("scene.pkg"), "materials/large.tex", staticImageTex(3000, 2000))
+            val device = DeviceCapabilityProfile(512L * 1024 * 1024)
+
+            assertEquals(
+                ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4,
+                WorkshopConverter.plan(root, MpkgConversionPreset.HIGH_QUALITY, device).resources.single().strategy,
+            )
+            assertEquals(
+                ResourceStrategy.CONVERT_TO_RGBA8888_LZ4,
+                WorkshopConverter.plan(root, MpkgConversionPreset.SOURCE_FIDELITY, device).resources.single().strategy,
+            )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `WorkshopConverter converts complete synthetic package and reinspects animated output`() {
         val root = Files.createTempDirectory("wallhub-animated-workshop").toFile()
         try {
@@ -267,6 +328,17 @@ class TexMobileConverterEmbeddedImageTest {
             output.writeCString(tailMagic)
             listOf(25, 240, 240).forEach { output.writeIntLe(it) }
             output.write(ByteArray(25 * 32))
+            output.toByteArray()
+        }
+
+    private fun staticImageTex(width: Int, height: Int): ByteArray =
+        ByteArrayOutputStream().use { output ->
+            output.writeCString("TEXV0005")
+            output.writeCString("TEXI0001")
+            listOf(TEX_FORMAT_RGBA8888, 0, width, height, width, height, 0).forEach { output.writeIntLe(it) }
+            output.writeCString("TEXB0004")
+            listOf(1, FREE_IMAGE_PNG, 0, 1, width, height, 0, 0, PNG_SIGNATURE.size).forEach { output.writeIntLe(it) }
+            output.write(PNG_SIGNATURE)
             output.toByteArray()
         }
 

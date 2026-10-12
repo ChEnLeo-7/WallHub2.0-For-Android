@@ -4,6 +4,7 @@ import com.wallhub.android.core.model.DownloadCredentialMode
 import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
+import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.WorkshopType
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -75,6 +76,18 @@ class DownloadsFilterTest {
             emptyList<String>(),
             filterTasks(allTasks, DownloadFilter.DOWNLOADING, setOf(WorkshopType.VIDEO)).map { it.id },
         )
+    }
+
+    @Test
+    fun conversionPresetLabelIsSceneOnly() {
+        val scene = task("scene", DownloadStatus.COMPLETED)
+        val video = scene.copy(type = WorkshopType.VIDEO)
+        val web = scene.copy(type = WorkshopType.WEB)
+
+        assertEquals(true, scene.shouldShowConversionPresetLabel())
+        assertEquals(false, video.shouldShowConversionPresetLabel())
+        assertEquals(false, web.shouldShowConversionPresetLabel())
+        assertEquals(false, scene.copy(exportFormat = ExportFormat.ZIP).shouldShowConversionPresetLabel())
     }
 
     @Test

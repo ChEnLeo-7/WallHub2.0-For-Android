@@ -2,6 +2,7 @@ package com.wallhub.android.data.downloads
 
 import android.util.Log
 import com.wallhub.android.core.model.SteamContentCredential
+import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
 import io.steamcontent.sdk.TaskEventKind
 import io.steamcontent.sdk.TaskFailure
 import io.steamcontent.sdk.TaskState
@@ -253,8 +254,25 @@ internal class SteamContentSdkWorkshopTransfer
                             options.timingContext?.let { context ->
                                 DownloadTimingTelemetry.log(DownloadTimingTelemetry.SDK_WORKSHOP_RESOLVE_STARTED, context)
                             }
+                            // Public Workshop details bind this manifest to the item. Wallpaper Engine's
+                            // published Workshop contract fixes its Workshop depot to app 431960, so a complete
+                            // identity can enter the authenticated manifest/download data plane directly instead
+                            // of repeating Product Info. Other products and incomplete identities keep the SDK
+                            // Workshop resolver and its validation.
+                            val suppliedIdentity =
+                                target.contentManifestId.takeIf { manifest ->
+                                    manifest != 0L && target.appId == WALLPAPER_ENGINE_APP_ID
+                                }?.let { manifest ->
+                                    SteamContentSdkResolvedItem(
+                                        itemId = target.publishedFileId,
+                                        appId = WALLPAPER_ENGINE_APP_ID.toLong(),
+                                        depotId = WALLPAPER_ENGINE_APP_ID.toLong(),
+                                        manifestId = manifest,
+                                        resolved = true,
+                                    )
+                                }
                             val resolved =
-                                session.resolveWorkshop(
+                                suppliedIdentity ?: session.resolveWorkshop(
                                     itemId = target.publishedFileId,
                                     appIdHint = target.appId.toLong().takeIf { it > 0L } ?: 0L,
                                     contentManifestIdHint = target.contentManifestId.takeIf { it != 0L } ?: 0L,

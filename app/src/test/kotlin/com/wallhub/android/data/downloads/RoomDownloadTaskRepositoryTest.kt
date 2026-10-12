@@ -8,6 +8,7 @@ import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamContentCredential
@@ -48,6 +49,86 @@ class RoomDownloadTaskRepositoryTest {
         assertEquals("created-task", result.task.id)
         assertEquals(1, scheduler.wakeCount)
         assertEquals(DownloadStatus.QUEUED.name, dao.records.single().status)
+    }
+
+    @Test
+    fun `conversion preset stable IDs are explicit and unknown IDs fall back to balanced`() {
+        assertEquals("balanced", MpkgConversionPreset.BALANCED.stableId)
+        assertEquals("compatibility", MpkgConversionPreset.COMPATIBILITY.stableId)
+        assertEquals("high_quality", MpkgConversionPreset.HIGH_QUALITY.stableId)
+        assertEquals("source_fidelity", MpkgConversionPreset.SOURCE_FIDELITY.stableId)
+        assertEquals(MpkgConversionPreset.BALANCED, MpkgConversionPreset.fromStableId("future-mode"))
+    }
+
+    @Test
+    fun `enqueue snapshots conversion preset and starts without a plan or report`() = runTest {
+        val dao = FakeTaskDao()
+        val repository = repository(dao, RecordingScheduler())
+
+        val result = repository.enqueue(request(taskId = "preset-task", preset = MpkgConversionPreset.BALANCED))
+
+        assertEquals(MpkgConversionPreset.BALANCED, result.task.mpkgConversionPreset)
+        assertEquals("balanced", dao.records.single().conversionPreset)
+        assertEquals(null, dao.records.single().conversionPlanJson)
+        assertEquals(null, dao.records.single().conversionReportJson)
+        assertEquals(1, dao.records.single().conversionPlanVersion)
+    }
+
+    @Test
+    fun `retry preserves conversion snapshot and planning artifacts`() = runTest {
+        val original =
+            queuedRecord(taskId = "retry-preset").copy(
+                status = DownloadStatus.FAILED.name,
+                conversionPreset = "balanced",
+                conversionPlanJson = "{\"plan\":true}",
+                conversionReportJson = "{\"report\":true}",
+                conversionPlanVersion = 7,
+            )
+        val dao = FakeTaskDao(original)
+        val repository = repository(dao, RecordingScheduler())
+
+        repository.requestAction(original.taskId, DownloadAction.RETRY)
+
+        val retried = dao.records.single()
+        assertEquals("balanced", retried.conversionPreset)
+        assertEquals("{\"plan\":true}", retried.conversionPlanJson)
+        assertEquals("{\"report\":true}", retried.conversionReportJson)
+        assertEquals(7, retried.conversionPlanVersion)
+    }
+
+    @Test
+    fun `repository persists conversion plan and report without replacing either snapshot`() = runTest {
+        val original = queuedRecord(taskId = "planning-task")
+        val dao = FakeTaskDao(original)
+        val repository = repository(dao, RecordingScheduler())
+
+        repository.persistConversionPlan(original.taskId, "{\"plan\":1}", 3)
+        repository.persistConversionReport(original.taskId, "{\"report\":1}")
+
+        val persisted = dao.records.single()
+        assertEquals("balanced", persisted.conversionPreset)
+        assertEquals("{\"plan\":1}", persisted.conversionPlanJson)
+        assertEquals(3, persisted.conversionPlanVersion)
+        assertEquals("{\"report\":1}", persisted.conversionReportJson)
+    }
+
+    @Test
+    fun `repository rejects oversized conversion JSON before DAO write`() = runTest {
+        val original = queuedRecord(taskId = "oversized-planning-task")
+        val dao = FakeTaskDao(original)
+        val repository = repository(dao, RecordingScheduler())
+        val oversized = "x".repeat(128 * 1024 + 1)
+
+        val failure = runCatching { repository.persistConversionPlan(original.taskId, oversized, 1) }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+        assertEquals(null, dao.records.single().conversionPlanJson)
+    }
+
+    @Test
+    fun `unknown persisted conversion preset falls back to balanced`() {
+        val task = queuedRecord(taskId = "unknown-preset").copy(conversionPreset = "future-mode").toModel()
+
+        assertEquals(MpkgConversionPreset.BALANCED, task.mpkgConversionPreset)
     }
 
     @Test
@@ -128,12 +209,16 @@ class RoomDownloadTaskRepositoryTest {
             enqueueFailedMessage = { type -> "enqueue failed: $type" },
         )
 
-    private fun request(taskId: String? = null) =
+    private fun request(
+        taskId: String? = null,
+        preset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
+    ) =
         DownloadRequest(
             workshopId = WORKSHOP_ID,
             title = "Test wallpaper",
             type = WorkshopType.SCENE,
             taskId = taskId,
+            mpkgConversionPreset = preset,
         )
 
     private fun queuedRecord(taskId: String) =
@@ -190,6 +275,32 @@ class RoomDownloadTaskRepositoryTest {
                     "insertCommand" -> {
                         commands += args!![0] as com.wallhub.android.core.database.DownloadCommandEntity
                         Unit
+                    }
+                    "persistConversionPlan" -> {
+                        val taskId = args!![0] as String
+                        val index = records.indexOfFirst { it.taskId == taskId }
+                        if (index < 0) {
+                            0
+                        } else {
+                            records[index] =
+                                records[index].copy(
+                                    conversionPlanJson = args[1] as String?,
+                                    conversionPlanVersion = args[2] as Int,
+                                )
+                            observed.value = records.toList()
+                            1
+                        }
+                    }
+                    "persistConversionReport" -> {
+                        val taskId = args!![0] as String
+                        val index = records.indexOfFirst { it.taskId == taskId }
+                        if (index < 0) {
+                            0
+                        } else {
+                            records[index] = records[index].copy(conversionReportJson = args[1] as String?)
+                            observed.value = records.toList()
+                            1
+                        }
                     }
                     "nextQueuePosition" -> (records.maxOfOrNull { it.queuePosition } ?: 0L) + 1L
                     else -> error("Unexpected DAO call: ${method.name}")

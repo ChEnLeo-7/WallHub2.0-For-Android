@@ -100,19 +100,19 @@ class SteamContentSdkWorkshopTransferTest {
     }
 
     @Test
-    fun aDownloadResolvesTheItemAndStartsTheSdkTaskAtTheAppLayoutDestination() =
+    fun aCompleteWallpaperEngineIdentitySkipsProductInfoAndStartsTheSdkTaskAtTheAppLayoutDestination() =
         runBlocking {
             val fixture = Fixture()
             try {
                 fixture.task.statuses += completed(committedBytes = 9L)
                 val result = fixture.download()
 
-                assertEquals(1, fixture.session.resolveCalls.get())
-                assertEquals(listOf(431960L to 42L), fixture.session.resolveHints)
+                assertEquals(0, fixture.session.resolveCalls.get())
+                assertTrue(fixture.session.resolveHints.isEmpty())
                 val started = fixture.session.starts.single()
-                assertEquals(fixture.resolved.appId, started.appId)
-                assertEquals(fixture.resolved.depotId, started.depotId)
-                assertEquals(fixture.resolved.manifestId, started.manifestId)
+                assertEquals(431960L, started.appId)
+                assertEquals(431960L, started.depotId)
+                assertEquals(42L, started.manifestId)
                 assertEquals("wallhub-workshop/task-1", started.destination)
                 assertEquals(9L, result.downloadedBytes)
                 assertEquals(9L, result.totalBytes)
@@ -146,7 +146,8 @@ class SteamContentSdkWorkshopTransferTest {
                 fixture.task.statuses += completed(committedBytes = 9L)
                 fixture.download(target = fixture.target.copy(contentManifestId = Long.MIN_VALUE))
 
-                assertEquals(listOf(431960L to Long.MIN_VALUE), fixture.session.resolveHints)
+                assertTrue(fixture.session.resolveHints.isEmpty())
+                assertEquals(Long.MIN_VALUE, fixture.session.starts.single().manifestId)
             } finally {
                 fixture.close()
             }
@@ -272,7 +273,7 @@ class SteamContentSdkWorkshopTransferTest {
                 runBlocking { fixture.download() }
             }
 
-            assertEquals(1, fixture.session.resolveCalls.get())
+            assertEquals(0, fixture.session.resolveCalls.get())
             assertEquals(1, fixture.session.starts.size)
             assertEquals(1, fixture.task.closeCalls)
         } finally {
@@ -291,7 +292,7 @@ class SteamContentSdkWorkshopTransferTest {
                 runBlocking { fixture.download() }
             }
 
-            assertEquals(1, fixture.session.resolveCalls.get())
+            assertEquals(0, fixture.session.resolveCalls.get())
             assertEquals(1, fixture.session.starts.size)
             assertEquals(1, fixture.task.closeCalls)
         } finally {
@@ -310,7 +311,7 @@ class SteamContentSdkWorkshopTransferTest {
                 runBlocking { fixture.download() }
             }
 
-            assertEquals(1, fixture.session.resolveCalls.get())
+            assertEquals(0, fixture.session.resolveCalls.get())
             assertEquals(1, fixture.session.starts.size)
             assertEquals(1, fixture.task.closeCalls)
         } finally {
@@ -609,7 +610,7 @@ class SteamContentSdkWorkshopTransferTest {
             fixture.session.resolved = fixture.resolved.copy(resolved = false, appId = 0L, depotId = 0L, manifestId = 0L)
             val failure =
                 assertThrows(IllegalStateException::class.java) {
-                    runBlocking { fixture.download() }
+                    runBlocking { fixture.download(target = fixture.target.copy(contentManifestId = 0L)) }
                 }
             assertTrue(failure.message.orEmpty().contains("did not resolve"))
             assertTrue(fixture.session.starts.isEmpty())
@@ -645,8 +646,9 @@ class SteamContentSdkWorkshopTransferTest {
                 fixture.session.queueTask(secondTask)
                 val second = File(fixture.root, "wallhub-workshop/task-2").apply { mkdirs() }
 
-                val first = launch(Dispatchers.IO) { fixture.download() }
-                val secondRun = launch(Dispatchers.IO) { fixture.download(destination = second) }
+                val incompleteTarget = fixture.target.copy(contentManifestId = 0L)
+                val first = launch(Dispatchers.IO) { fixture.download(target = incompleteTarget) }
+                val secondRun = launch(Dispatchers.IO) { fixture.download(target = incompleteTarget, destination = second) }
                 first.join()
                 secondRun.join()
 

@@ -53,6 +53,8 @@
     <string name='settings_action_choose_custom_directory'>Choose custom directory</string>
     <string name='settings_action_change_custom_directory'>Change custom directory</string>
     <string name='settings_action_restore_default_directory'>Restore default directory</string>
+    <string name='settings_mpkg_conversion_title'>MPKG conversion</string>
+    <string name='settings_mpkg_conversion_quality'>Default conversion quality</string>
     <string name='settings_download_performance_title'>Download performance</string>
     <string name='settings_download_performance_description'>Adjust task count and per-download chunk concurrency</string>
     <string name='settings_concurrent_downloads'>Concurrent downloads</string>
@@ -584,6 +586,16 @@
     <string name='detail_download_enqueue_failed'>Could not add to the download queue</string>
     <string name='detail_download_mpkg'>Download MPKG (mobile)</string>
     <string name='detail_download_options'>Download options</string>
+    <string name='detail_mpkg_conversion_quality'>MPKG conversion quality</string>
+    <string name='mpkg_preset_standard'>Standard quality (recommended)</string>
+    <string name='mpkg_preset_compatibility'>Compatibility first</string>
+    <string name='mpkg_preset_high_quality'>High quality</string>
+    <string name='mpkg_preset_source_fidelity'>Original fidelity (experimental)</string>
+    <string name='mpkg_preset_standard_preview'>Estimated policy: balanced mobile conversion and package size.</string>
+    <string name='mpkg_preset_compatibility_preview'>Estimated policy: stricter limits for broader device compatibility.</string>
+    <string name='mpkg_preset_high_quality_preview'>Estimated policy: retains more source detail with higher memory and storage use.</string>
+    <string name='mpkg_preset_source_fidelity_preview'>Estimated policy: preserves verified source payloads where possible; experimental.</string>
+    <string name='downloads_conversion_report_summary'>Textures converted %1$d · retained %2$d · shaders %3$d · audio removed %4$d</string>
     <string name='detail_download_queue_explanation'>%1$s tasks are added to the download queue. Track their progress on Downloads.</string>
     <string name='detail_download_staging_missing'>Download staging files do not exist</string>
     <string name='detail_download_task_missing'>Download task does not exist</string>

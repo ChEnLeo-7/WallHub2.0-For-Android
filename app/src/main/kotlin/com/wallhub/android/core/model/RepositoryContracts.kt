@@ -47,6 +47,8 @@ interface SettingsRepository {
         mediaCacheLimitMb: Int,
     )
 
+    suspend fun setMpkgConversionPreset(preset: MpkgConversionPreset) = Unit
+
     suspend fun setOnlineStreamCacheLimitMb(limitMb: Int) = Unit
 
     suspend fun setDownloadProxyEnabled(enabled: Boolean) = Unit
@@ -349,6 +351,19 @@ interface WorkshopDownloads {
     suspend fun find(taskId: String): DownloadTask?
 
     suspend fun enqueue(request: DownloadRequest): DownloadEnqueueResult
+
+    /** Persists the exact conversion plan selected for this task before converter execution. */
+    suspend fun persistConversionPlan(
+        taskId: String,
+        planJson: String?,
+        planVersion: Int = 1,
+    )
+
+    /** Persists the converter report without replacing the task's preset or plan snapshot. */
+    suspend fun persistConversionReport(
+        taskId: String,
+        reportJson: String?,
+    )
 
     suspend fun prewarm(workshopId: Long)
 

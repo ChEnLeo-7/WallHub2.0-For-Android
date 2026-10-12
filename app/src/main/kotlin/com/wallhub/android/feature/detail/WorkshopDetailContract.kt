@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.media3.exoplayer.ExoPlayer
 import com.wallhub.android.core.model.ExportFormat
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.WorkshopComment
 import com.wallhub.android.core.model.WorkshopDetail
@@ -26,6 +27,7 @@ data class WorkshopDetailUiState(
     val outputTreeUri: String? = null,
     val outputDirectoryLabel: String? = null,
     val exportFormat: ExportFormat = ExportFormat.AUTO,
+    val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
     val onlineChunkPlaybackEnabled: Boolean = false,
     val isEnqueuingDownload: Boolean = false,
     val downloadMessage: DetailUiText? = null,

@@ -12,12 +12,14 @@ import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.prototype.mpkg.PresetDependencyResolver
+import com.wallhub.prototype.mpkg.requireBoundedPersistedConversionJson
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
@@ -149,6 +151,7 @@ internal class RoomDownloadTaskRepository private constructor(
                         },
                     outputTreeUri = request.outputTreeUri,
                     exportFormat = request.exportFormat,
+                    mpkgConversionPreset = request.mpkgConversionPreset,
                     message = queuedMessage(),
                     queuePosition = taskDao.nextQueuePosition(),
                     createdAt = now,
@@ -185,6 +188,28 @@ internal class RoomDownloadTaskRepository private constructor(
                 // process start, connectivity change, or another command can deliver it later.
                 Log.e(LOG_TAG, "Unable to wake download host for durable taskId=${task.id}", error)
                 DownloadEnqueueResult.Created(task)
+            }
+        }
+
+        override suspend fun persistConversionPlan(
+            taskId: String,
+            planJson: String?,
+            planVersion: Int,
+        ) = taskMutationMutex.withLock {
+            require(planVersion > 0) { "Conversion plan version must be positive" }
+            requireBoundedPersistedConversionJson(planJson)
+            check(taskDao.persistConversionPlan(taskId, planJson, planVersion) == 1) {
+                "Download task no longer exists"
+            }
+        }
+
+        override suspend fun persistConversionReport(
+            taskId: String,
+            reportJson: String?,
+        ) = taskMutationMutex.withLock {
+            requireBoundedPersistedConversionJson(reportJson)
+            check(taskDao.persistConversionReport(taskId, reportJson) == 1) {
+                "Download task no longer exists"
             }
         }
 
@@ -521,6 +546,10 @@ internal fun FormalTaskRecordEntity.toModel(): DownloadTask =
         outputTreeUri = outputTreeUri,
         outputUri = outputUri,
         exportFormat = exportFormat.toExportFormat(),
+        mpkgConversionPreset = MpkgConversionPreset.fromStableId(conversionPreset),
+        conversionPlanJson = conversionPlanJson,
+        conversionReportJson = conversionReportJson,
+        conversionPlanVersion = conversionPlanVersion,
         pendingControl =
             desiredIntent.toPendingControl().takeIf {
                 desiredIntentRevision > appliedIntentRevision
@@ -531,8 +560,10 @@ internal fun FormalTaskRecordEntity.toModel(): DownloadTask =
         updatedAt = updatedAt,
     )
 
-internal fun DownloadTask.toEntity(): FormalTaskRecordEntity =
-    FormalTaskRecordEntity(
+internal fun DownloadTask.toEntity(): FormalTaskRecordEntity {
+    requireBoundedPersistedConversionJson(conversionPlanJson)
+    requireBoundedPersistedConversionJson(conversionReportJson)
+    return FormalTaskRecordEntity(
         taskId = id,
         workshopId = workshopId,
         title = title,
@@ -552,12 +583,17 @@ internal fun DownloadTask.toEntity(): FormalTaskRecordEntity =
         outputTreeUri = outputTreeUri,
         outputUri = outputUri,
         exportFormat = exportFormat.name,
+        conversionPreset = mpkgConversionPreset.stableId,
+        conversionPlanJson = conversionPlanJson,
+        conversionReportJson = conversionReportJson,
+        conversionPlanVersion = conversionPlanVersion,
         message = message,
         isResumable = isResumable,
         queuePosition = queuePosition,
         createdAt = createdAt,
         updatedAt = updatedAt,
     )
+}
 
 private fun String.toWorkshopType(): WorkshopType =
     enumValues<WorkshopType>()

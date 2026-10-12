@@ -5,6 +5,8 @@ package com.wallhub.android.feature.downloads
 import android.Manifest
 import android.content.Context
 import android.widget.Toast
+import com.wallhub.android.core.model.MpkgConversionPreset
+import org.json.JSONObject
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
@@ -864,6 +866,31 @@ private fun DownloadTaskCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                if (task.shouldShowConversionPresetLabel()) {
+                    Text(
+                        text = task.mpkgConversionPreset.downloadQualityLabel(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                val conversionSummary = remember(task.conversionReportJson) {
+                    task.conversionReportJson?.conversionReportCounts()
+                }
+                conversionSummary?.let { counts ->
+                    Text(
+                        text = stringResource(
+                            R.string.downloads_conversion_report_summary,
+                            counts.convertedTextures,
+                            counts.copiedTextures,
+                            counts.rewrittenShaders,
+                            counts.removedAudio,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 if (showProgress) {
                     val progressBarModifier =
                         Modifier
@@ -1082,6 +1109,36 @@ private fun DownloadTask.statusDescription(): String {
         ?.let { "$phaseLabel · ${formatByteSize(it)}/s" }
         ?: phaseLabel
 }
+
+@Composable
+private fun MpkgConversionPreset.downloadQualityLabel(): String =
+    when (this) {
+        MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard)
+        MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility)
+        MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality)
+        MpkgConversionPreset.SOURCE_FIDELITY -> stringResource(R.string.mpkg_preset_source_fidelity)
+    }
+
+internal fun DownloadTask.shouldShowConversionPresetLabel(): Boolean =
+    type == WorkshopType.SCENE && exportFormat != ExportFormat.ZIP
+
+internal data class ConversionReportCounts(
+    val convertedTextures: Int,
+    val copiedTextures: Int,
+    val rewrittenShaders: Int,
+    val removedAudio: Int,
+)
+
+internal fun String.conversionReportCounts(): ConversionReportCounts? =
+    runCatching {
+        val report = JSONObject(this)
+        ConversionReportCounts(
+            convertedTextures = report.getInt("convertedTextures"),
+            copiedTextures = report.getInt("copiedTextures"),
+            rewrittenShaders = report.getInt("rewrittenShaders"),
+            removedAudio = report.getInt("removedAudio"),
+        )
+    }.getOrNull()
 
 private val REORDERABLE_DOWNLOAD_STATUSES =
     setOf(

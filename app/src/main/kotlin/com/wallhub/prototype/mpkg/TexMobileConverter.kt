@@ -105,6 +105,13 @@ internal enum class TexEntryRoute {
     UNSUPPORTED,
 }
 
+internal data class TexEntryDecision(
+    val route: TexEntryRoute,
+    val decodedRgbaBytes: Long? = null,
+    val rgbaConversionFitsMemoryBudget: Boolean = false,
+    val animated: Boolean = false,
+)
+
 /**
  * A compatibility path for WallHub's mobile MPKG texture profile.
  * It converts common scene TEX formats to RGBA8888 + LZ4 and oversized image-backed
@@ -233,6 +240,54 @@ object TexMobileConverter {
             TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
         }
 
+    internal fun convertImageToRgbaFile(
+        sourceFile: File,
+        offset: Long,
+        length: Long,
+        outputFile: File,
+        maxDecodedRgbaBytes: Long,
+        checkCancellation: () -> Unit = {},
+        decodeImage: (File, Int, Int, () -> Unit) -> ByteArray = ::decodeImageFileToRgba,
+    ): TexFileConversionResult =
+        runCatching {
+            require(maxDecodedRgbaBytes in 1..MAX_STATIC_RGBA_BYTES) { "Invalid static image RGBA limit" }
+            checkCancellation()
+            val metadata = readTexEntryMetadata(sourceFile, offset, length)
+            require(metadata.flags and (TEX_FLAG_GIF or TEX_FLAG_VIDEO) == 0 && !metadata.isMp4) {
+                "TEX is not a static image-backed texture"
+            }
+            require(metadata.imageFormat >= 0 && !metadata.baseCompressed) { "TEX payload is not an uncompressed image" }
+            require(metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight) {
+                "TEX base mipmap does not match image dimensions"
+            }
+            require(metadata.animationTailLength == 0L) { "Static image-backed TEX has trailing data" }
+            val rgbaBytes = checkedPayloadSizeLong(metadata.imageWidth, metadata.imageHeight, 4)
+            require(rgbaBytes <= maxDecodedRgbaBytes) { "TEX exceeds preset decoded RGBA limit" }
+            require(metadata.payloadLength in 1..MAX_EMBEDDED_IMAGE_BYTES) { "TEX image payload exceeds the bounded size" }
+            val tempImage = File(outputFile.parentFile, "${outputFile.name}.image")
+            try {
+                val imageStart = locateEmbeddedImage(sourceFile, metadata.payloadStart, metadata.payloadLength)
+                val imageLength = Math.subtractExact(Math.addExact(metadata.payloadStart, metadata.payloadLength), imageStart)
+                require(imageLength in 1..MAX_EMBEDDED_IMAGE_BYTES) { "TEX image payload exceeds the bounded size" }
+                copyImagePayload(sourceFile, imageStart, imageLength, tempImage, checkCancellation)
+                val rgba = decodeImage(tempImage, metadata.imageWidth, metadata.imageHeight, checkCancellation)
+                checkCancellation()
+                require(rgba.size.toLong() == rgbaBytes) { "Decoded TEX payload size does not match metadata" }
+                writeMobileRgba(outputFile, metadata.flags, metadata.imageWidth, metadata.imageHeight, metadata.unknown, rgba)
+                checkCancellation()
+                require(inspectEntryRoute(outputFile, 0L, outputFile.length()) == TexEntryRoute.RETAIN_VERIFIED_MOBILE) {
+                    "Converted static TEX failed mobile verification"
+                }
+                TexFileConversionResult(true, "RGBA8888 + LZ4 HC3 static image")
+            } finally {
+                tempImage.delete()
+            }
+        }.getOrElse { error ->
+            outputFile.delete()
+            if (error is CancellationException) throw error
+            TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
+        }
+
     fun convertToEtc2File(
         sourceFile: File,
         offset: Long,
@@ -292,39 +347,64 @@ object TexMobileConverter {
         offset: Long,
         length: Long,
         maxHeapBytes: Long = Runtime.getRuntime().maxMemory(),
-    ): TexEntryRoute =
+    ): TexEntryRoute = inspectEntryDecision(sourceFile, offset, length, maxHeapBytes).route
+
+    internal fun inspectEntryDecision(
+        sourceFile: File,
+        offset: Long,
+        length: Long,
+        maxHeapBytes: Long = Runtime.getRuntime().maxMemory(),
+    ): TexEntryDecision =
         runCatching {
             val metadata = readTexEntryMetadata(sourceFile, offset, length)
             val animated = metadata.flags and TEX_FLAG_GIF != 0
             val video = metadata.isMp4 || metadata.flags and TEX_FLAG_VIDEO != 0
-            when {
-                video ->
-                    if (isVerifiedVideoTex(sourceFile, metadata)) {
-                        TexEntryRoute.RETAIN_VERIFIED_VIDEO
-                    } else {
-                        TexEntryRoute.UNSUPPORTED_VIDEO
-                    }
-                isVerifiedAnimatedMobileCompatible(metadata) -> TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE
-                isVerifiedMobileCompatible(metadata) -> TexEntryRoute.RETAIN_VERIFIED_MOBILE
-                animated && isVerifiedAnimatedImageConversionSource(metadata) ->
-                    if (animatedImageConversionFitsBudget(metadata, length, maxHeapBytes)) {
-                        TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA
-                    } else {
-                        TexEntryRoute.UNSUPPORTED_RESOURCE_BUDGET
-                    }
-                metadata.imageFormat >= 0 && !metadata.baseCompressed &&
-                    metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight ->
-                    TexEntryRoute.CONVERT_IMAGE_TO_ETC2
-                animated -> TexEntryRoute.UNSUPPORTED
-                metadata.format in CONVERTIBLE_STATIC_FORMATS ->
-                    if (fitsStaticConversionBudget(metadata, length, maxHeapBytes)) {
-                        TexEntryRoute.CONVERT_IN_MEMORY
-                    } else {
-                        TexEntryRoute.UNSUPPORTED_RESOURCE_BUDGET
-                    }
-                else -> TexEntryRoute.UNSUPPORTED
-            }
-        }.getOrDefault(TexEntryRoute.UNSUPPORTED)
+            val route =
+                when {
+                    video ->
+                        if (isVerifiedVideoTex(sourceFile, metadata)) {
+                            TexEntryRoute.RETAIN_VERIFIED_VIDEO
+                        } else {
+                            TexEntryRoute.UNSUPPORTED_VIDEO
+                        }
+                    isVerifiedAnimatedMobileCompatible(metadata) -> TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE
+                    isVerifiedMobileCompatible(metadata) -> TexEntryRoute.RETAIN_VERIFIED_MOBILE
+                    animated && isVerifiedAnimatedImageConversionSource(metadata) ->
+                        if (animatedImageConversionFitsBudget(metadata, length, maxHeapBytes)) {
+                            TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA
+                        } else {
+                            TexEntryRoute.UNSUPPORTED_RESOURCE_BUDGET
+                        }
+                    animated && metadata.hasVerifiedAnimationTail && metadata.imageFormat >= 0 && !metadata.baseCompressed &&
+                        metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight ->
+                        TexEntryRoute.CONVERT_IMAGE_TO_ETC2
+                    metadata.imageFormat >= 0 && !metadata.baseCompressed &&
+                        metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight &&
+                        metadata.animationTailLength == 0L -> TexEntryRoute.CONVERT_IMAGE_TO_ETC2
+                    animated -> TexEntryRoute.UNSUPPORTED
+                    metadata.format in CONVERTIBLE_STATIC_FORMATS ->
+                        if (fitsStaticConversionBudget(metadata, length, maxHeapBytes)) {
+                            TexEntryRoute.CONVERT_IN_MEMORY
+                        } else {
+                            TexEntryRoute.UNSUPPORTED_RESOURCE_BUDGET
+                        }
+                    else -> TexEntryRoute.UNSUPPORTED
+                }
+            val decodedRgbaBytes =
+                if (route == TexEntryRoute.CONVERT_IMAGE_TO_ETC2) {
+                    checkedPayloadSizeLong(metadata.imageWidth, metadata.imageHeight, 4)
+                } else {
+                    null
+                }
+            TexEntryDecision(
+                route = route,
+                decodedRgbaBytes = decodedRgbaBytes,
+                rgbaConversionFitsMemoryBudget =
+                    route == TexEntryRoute.CONVERT_IMAGE_TO_ETC2 &&
+                        animatedImageConversionFitsBudget(metadata, length, maxHeapBytes),
+                animated = animated,
+            )
+        }.getOrDefault(TexEntryDecision(TexEntryRoute.UNSUPPORTED))
 
     private fun isVerifiedMobileCompatible(source: ByteArray): Boolean =
         runCatching {

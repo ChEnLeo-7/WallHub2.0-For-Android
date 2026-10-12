@@ -34,6 +34,22 @@ enum class DownloadCredentialMode {
     LEGACY_UNKNOWN,
 }
 
+/** User-selected MPKG conversion policy persisted by [stableId], never by enum name. */
+enum class MpkgConversionPreset(
+    val stableId: String,
+) {
+    BALANCED("balanced"),
+    COMPATIBILITY("compatibility"),
+    HIGH_QUALITY("high_quality"),
+    SOURCE_FIDELITY("source_fidelity"),
+    ;
+
+    companion object {
+        fun fromStableId(stableId: String): MpkgConversionPreset =
+            entries.firstOrNull { preset -> preset.stableId == stableId } ?: BALANCED
+    }
+}
+
 data class DownloadRequest(
     val workshopId: Long,
     val title: String,
@@ -43,6 +59,7 @@ data class DownloadRequest(
     val expectedTotalBytes: Long = 0L,
     val outputTreeUri: String? = null,
     val exportFormat: ExportFormat = ExportFormat.AUTO,
+    val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
 )
 
 sealed interface DownloadEnqueueResult {
@@ -89,6 +106,10 @@ data class DownloadTask(
     val outputTreeUri: String? = null,
     val outputUri: String? = null,
     val exportFormat: ExportFormat = ExportFormat.AUTO,
+    val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
+    val conversionPlanJson: String? = null,
+    val conversionReportJson: String? = null,
+    val conversionPlanVersion: Int = 1,
     val pendingControl: DownloadAction? = null,
     val isResumable: Boolean = true,
     val queuePosition: Long = 0L,
