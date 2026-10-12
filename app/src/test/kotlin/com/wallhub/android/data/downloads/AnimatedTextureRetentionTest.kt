@@ -9,14 +9,14 @@ import org.junit.Test
 
 class AnimatedTextureRetentionTest {
     @Test
-    fun verifiedMobileAnimatedTextureCanBeRetainedWithoutFlatteningItsFrames() {
+    fun animatedMobilePayloadWithoutVerifiedDescriptorCannotUseStaticRetention() {
         val output = Files.createTempFile("wallhub-animated", ".tex").toFile()
         try {
             val tex = TexMobileConverter.writeMobileRgba(flags = 4, width = 1, height = 1, rgba = byteArrayOf(1, 2, 3, -1))
             val result = TexMobileConverter.convertToFile(tex, output)
 
             assertFalse(result.converted)
-            assertTrue(result.canRetainOriginal)
+            assertFalse(result.canRetainOriginal)
             assertFalse(output.exists())
         } finally {
             output.delete()

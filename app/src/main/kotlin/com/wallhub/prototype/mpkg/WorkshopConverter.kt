@@ -59,12 +59,13 @@ object WorkshopConverter {
         outputFile: File,
         contentTypeHint: String? = null,
         checkCancellation: () -> Unit = {},
+        animatedImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)? = null,
     ): WorkshopConversionReport {
         require(inputDir.isDirectory) { "Workshop input directory is missing" }
         checkCancellation()
         return when (detect(inputDir, contentTypeHint)) {
             WorkshopKind.VIDEO -> convertVideo(inputDir, outputFile, checkCancellation)
-            WorkshopKind.SCENE -> convertScene(inputDir, outputFile, checkCancellation)
+            WorkshopKind.SCENE -> convertScene(inputDir, outputFile, checkCancellation, animatedImageDecoder)
             WorkshopKind.WEB -> convertWeb(inputDir, outputFile, checkCancellation)
         }
     }
@@ -99,6 +100,7 @@ object WorkshopConverter {
         inputDir: File,
         outputFile: File,
         checkCancellation: () -> Unit,
+        animatedImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)?,
     ): WorkshopConversionReport {
         val projectFile = File(inputDir, "project.json")
         require(projectFile.isFile) { "Scene workshop is missing project.json" }
@@ -132,7 +134,9 @@ object WorkshopConverter {
                 when (extension) {
                     "tex" -> {
                         when (TexMobileConverter.inspectEntryRoute(scenePackage, entry.offset, entry.length)) {
-                            TexEntryRoute.RETAIN_VERIFIED_MOBILE -> {
+                            TexEntryRoute.RETAIN_VERIFIED_MOBILE,
+                            TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE,
+                            -> {
                                 copiedTextures += 1
                                 putEntry(MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length)))
                             }
@@ -140,6 +144,38 @@ object WorkshopConverter {
                                 copiedTextures += 1
                                 warnings += "Preserved validated MP4-backed video texture: ${entry.path}"
                                 putEntry(MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length)))
+                            }
+                            TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA -> {
+                                val transformed = File(transformedDirectory, "$index-animated-rgba.tex")
+                                val result =
+                                    if (animatedImageDecoder == null) {
+                                        TexMobileConverter.convertAnimatedImageToRgbaFile(
+                                            scenePackage,
+                                            entry.offset,
+                                            entry.length,
+                                            transformed,
+                                            checkCancellation,
+                                        )
+                                    } else {
+                                        TexMobileConverter.convertAnimatedImageToRgbaFile(
+                                            scenePackage,
+                                            entry.offset,
+                                            entry.length,
+                                            transformed,
+                                            checkCancellation,
+                                            animatedImageDecoder,
+                                        )
+                                    }
+                                check(result.converted) {
+                                    "Failed to convert animated image-backed texture ${entry.path}: ${result.reason}"
+                                }
+                                check(
+                                    TexMobileConverter.inspectEntryRoute(transformed, 0L, transformed.length()) ==
+                                        TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE,
+                                ) { "Converted animated texture ${entry.path} failed retained-output verification" }
+                                convertedTextures += 1
+                                warnings += "Re-encoded animated texture as RGBA8888 + LZ4: ${entry.path}"
+                                putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
                             }
                             TexEntryRoute.CONVERT_IMAGE_TO_ETC2 -> {
                                 val transformed = File(transformedDirectory, "$index-etc2.tex")
@@ -227,7 +263,24 @@ object WorkshopConverter {
                 }
             putEntry(MpkgInputEntry("project.json", outputProject))
             putEntry(MpkgInputEntry(preview.name, FilePayload(preview)))
-            MpkgWriter.write(entriesByPath.values.toList(), outputFile, SCENE_MPKG_MAGIC, checkCancellation)
+            // Verification is part of the commit boundary: a malformed candidate must never replace an
+            // existing good package or remain visible as the requested output.
+            writeAtomically(outputFile) { candidate ->
+                MpkgWriter.write(entriesByPath.values.toList(), candidate, SCENE_MPKG_MAGIC, checkCancellation)
+                checkCancellation()
+                val verifiedOutput = PkgReader.readIndex(candidate)
+                verifiedOutput.entries.filter { it.path.substringAfterLast('.', "").equals("tex", ignoreCase = true) }.forEach { entry ->
+                    checkCancellation()
+                    require(
+                        TexMobileConverter.inspectEntryRoute(candidate, entry.offset, entry.length) in
+                            setOf(
+                                TexEntryRoute.RETAIN_VERIFIED_MOBILE,
+                                TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE,
+                                TexEntryRoute.RETAIN_VERIFIED_VIDEO,
+                            ),
+                    ) { "Output texture ${entry.path} failed mobile reinspection" }
+                }
+            }
         } finally {
             transformedDirectory.deleteRecursively()
         }

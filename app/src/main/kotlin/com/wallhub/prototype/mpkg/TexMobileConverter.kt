@@ -73,6 +73,8 @@ private data class TexEntryMetadata(
     val format: Int,
     val flags: Int,
     val unknown: Int,
+    val textureWidth: Int,
+    val textureHeight: Int,
     val imageWidth: Int,
     val imageHeight: Int,
     val imageFormat: Int,
@@ -94,7 +96,9 @@ private data class TexEntryMetadata(
 internal enum class TexEntryRoute {
     CONVERT_IN_MEMORY,
     CONVERT_IMAGE_TO_ETC2,
+    CONVERT_ANIMATED_IMAGE_TO_RGBA,
     RETAIN_VERIFIED_MOBILE,
+    RETAIN_VERIFIED_ANIMATED_MOBILE,
     RETAIN_VERIFIED_VIDEO,
     UNSUPPORTED_RESOURCE_BUDGET,
     UNSUPPORTED_VIDEO,
@@ -165,6 +169,69 @@ object TexMobileConverter {
             )
         }
     }
+
+    internal fun convertAnimatedImageToRgbaFile(
+        sourceFile: File,
+        offset: Long,
+        length: Long,
+        outputFile: File,
+        checkCancellation: () -> Unit = {},
+        decodeImage: (File, Int, Int, () -> Unit) -> ByteArray = ::decodeImageFileToRgba,
+    ): TexFileConversionResult =
+        runCatching {
+            checkCancellation()
+            val metadata = readTexEntryMetadata(sourceFile, offset, length)
+            require(metadata.flags and TEX_FLAG_GIF != 0 && !metadata.isMp4 && metadata.flags and TEX_FLAG_VIDEO == 0) {
+                "TEX is not an image-backed animation"
+            }
+            require(metadata.hasVerifiedAnimationTail) { "Animated TEX does not carry a verified TEXS0003 descriptor" }
+            require(metadata.imageFormat >= 0 && !metadata.baseCompressed) { "Animated TEX payload is not an uncompressed image" }
+            require(metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight) {
+                "TEX base mipmap does not match logical image dimensions"
+            }
+            val rgbaBytes = checkedPayloadSizeLong(metadata.imageWidth, metadata.imageHeight, 4)
+            require(rgbaBytes <= MAX_STATIC_RGBA_BYTES) { "Animated TEX exceeds the 64 MiB RGBA conversion limit" }
+            require(metadata.payloadLength in 1..MAX_EMBEDDED_IMAGE_BYTES) { "Animated TEX image payload exceeds the bounded size" }
+            val descriptor = readFileRange(sourceFile, metadata.animationTailStart, metadata.animationTailLength, checkCancellation)
+            val tempImage = File(outputFile.parentFile, "${outputFile.name}.image")
+            try {
+                val imageStart = locateEmbeddedImage(sourceFile, metadata.payloadStart, metadata.payloadLength)
+                val imageLength = Math.subtractExact(Math.addExact(metadata.payloadStart, metadata.payloadLength), imageStart)
+                require(imageLength in 1..MAX_EMBEDDED_IMAGE_BYTES) { "Animated TEX image payload exceeds the bounded size" }
+                copyImagePayload(sourceFile, imageStart, imageLength, tempImage, checkCancellation)
+                val rgba = decodeImage(tempImage, metadata.imageWidth, metadata.imageHeight, checkCancellation)
+                checkCancellation()
+                require(rgba.size.toLong() == rgbaBytes) { "Decoded animated TEX payload size does not match metadata" }
+                writeMobileRgbaWithAnimation(
+                    outputFile = outputFile,
+                    flags = metadata.flags,
+                    width = metadata.imageWidth,
+                    height = metadata.imageHeight,
+                    unknown = metadata.unknown,
+                    rgba = rgba,
+                    descriptor = descriptor,
+                    checkCancellation = checkCancellation,
+                )
+                checkCancellation()
+                val outputMetadata = readTexEntryMetadata(outputFile, 0L, outputFile.length())
+                require(isVerifiedAnimatedMobileCompatible(outputMetadata)) { "Converted animated TEX failed mobile verification" }
+                val outputDescriptor =
+                    readFileRange(
+                        outputFile,
+                        outputMetadata.animationTailStart,
+                        outputMetadata.animationTailLength,
+                        checkCancellation,
+                    )
+                require(outputDescriptor.contentEquals(descriptor)) { "Converted animated TEX descriptor changed" }
+                TexFileConversionResult(true, "RGBA8888 + LZ4 HC3 animated")
+            } finally {
+                tempImage.delete()
+            }
+        }.getOrElse { error ->
+            outputFile.delete()
+            if (error is CancellationException) throw error
+            TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
+        }
 
     fun convertToEtc2File(
         sourceFile: File,
@@ -237,11 +304,14 @@ object TexMobileConverter {
                     } else {
                         TexEntryRoute.UNSUPPORTED_VIDEO
                     }
+                isVerifiedAnimatedMobileCompatible(metadata) -> TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE
                 isVerifiedMobileCompatible(metadata) -> TexEntryRoute.RETAIN_VERIFIED_MOBILE
-                animated &&
-                    (!metadata.hasVerifiedAnimationTail ||
-                        metadata.imageWidth != etc2BlockAligned(metadata.imageWidth) ||
-                        metadata.imageHeight != etc2BlockAligned(metadata.imageHeight)) -> TexEntryRoute.UNSUPPORTED
+                animated && isVerifiedAnimatedImageConversionSource(metadata) ->
+                    if (animatedImageConversionFitsBudget(metadata, length, maxHeapBytes)) {
+                        TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA
+                    } else {
+                        TexEntryRoute.UNSUPPORTED_RESOURCE_BUDGET
+                    }
                 metadata.imageFormat >= 0 && !metadata.baseCompressed &&
                     metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight ->
                     TexEntryRoute.CONVERT_IMAGE_TO_ETC2
@@ -259,7 +329,7 @@ object TexMobileConverter {
     private fun isVerifiedMobileCompatible(source: ByteArray): Boolean =
         runCatching {
             val tex = parse(source)
-            require(tex.tailData.isEmpty() && tex.mipmaps.size == 1)
+            require(tex.flags and TEX_FLAG_GIF == 0 && tex.tailData.isEmpty() && tex.mipmaps.size == 1)
             val base = tex.mipmaps.single()
             require(base.width == tex.textureWidth && base.height == tex.textureHeight)
             require(tex.imageFormat == -1 && !tex.isMp4)
@@ -271,7 +341,10 @@ object TexMobileConverter {
         }.getOrDefault(false)
 
     private fun isVerifiedMobileCompatible(metadata: TexEntryMetadata): Boolean {
-        if (metadata.container != "TEXB0004" || metadata.mipmapCount != 1 || metadata.imageFormat != -1 || metadata.isMp4) {
+        if (
+            metadata.flags and TEX_FLAG_GIF != 0 || metadata.animationTailLength != 0L ||
+            metadata.container != "TEXB0004" || metadata.mipmapCount != 1 || metadata.imageFormat != -1 || metadata.isMp4
+        ) {
             return false
         }
         if (!metadata.baseCompressed || metadata.baseWidth != metadata.imageWidth || metadata.baseHeight != metadata.imageHeight) {
@@ -285,6 +358,44 @@ object TexMobileConverter {
             }
         return metadata.baseDecompressedSize == expected && metadata.baseStoredSize > 0
     }
+
+    private fun isVerifiedAnimatedMobileCompatible(metadata: TexEntryMetadata): Boolean {
+        if (
+            metadata.flags and TEX_FLAG_GIF == 0 || metadata.flags and TEX_FLAG_VIDEO != 0 ||
+            !metadata.hasVerifiedAnimationTail || metadata.container != "TEXB0004" || metadata.mipmapCount != 1 ||
+            metadata.imageFormat != -1 || metadata.isMp4 ||
+            metadata.format !in setOf(TEX_FORMAT_RGBA8888, TEX_FORMAT_ETC2_RGBA8_LZ4)
+        ) {
+            return false
+        }
+        if (
+            !metadata.baseCompressed || metadata.baseWidth != metadata.imageWidth || metadata.baseHeight != metadata.imageHeight ||
+            metadata.textureWidth != metadata.imageWidth || metadata.textureHeight != metadata.imageHeight
+        ) {
+            return false
+        }
+        val expected =
+            when (metadata.format) {
+                TEX_FORMAT_RGBA8888 -> checkedPayloadSize(metadata.imageWidth, metadata.imageHeight, 4)
+                TEX_FORMAT_ETC2_RGBA8_LZ4 -> checkedPayloadSize(metadata.imageWidth, metadata.imageHeight, 1)
+                else -> return false
+            }
+        return metadata.baseDecompressedSize == expected && metadata.baseStoredSize > 0
+    }
+
+    private fun isVerifiedAnimatedImageConversionSource(metadata: TexEntryMetadata): Boolean =
+        runCatching {
+            require(metadata.flags and TEX_FLAG_GIF != 0 && metadata.flags and TEX_FLAG_VIDEO == 0 && !metadata.isMp4)
+            require(metadata.hasVerifiedAnimationTail && metadata.imageFormat >= 0 && !metadata.baseCompressed)
+            require(metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight)
+            require(
+                metadata.imageWidth != etc2BlockAligned(metadata.imageWidth) ||
+                    metadata.imageHeight != etc2BlockAligned(metadata.imageHeight),
+            )
+            require(metadata.payloadLength in 1..MAX_EMBEDDED_IMAGE_BYTES)
+            require(checkedPayloadSizeLong(metadata.imageWidth, metadata.imageHeight, 4) <= MAX_STATIC_RGBA_BYTES)
+            true
+        }.getOrDefault(false)
 
     private fun isVerifiedVideoTex(
         sourceFile: File,
@@ -359,6 +470,30 @@ object TexMobileConverter {
             position == end && recognizedBrand && hasMovie && hasMediaData
         }
     }
+
+    private fun animatedImageConversionFitsBudget(
+        metadata: TexEntryMetadata,
+        entryLength: Long,
+        maxHeapBytes: Long,
+    ): Boolean =
+        runCatching {
+            require(entryLength > 0L && maxHeapBytes > 0L)
+            val rgbaBytes = checkedPayloadSizeLong(metadata.imageWidth, metadata.imageHeight, 4)
+            require(rgbaBytes <= MAX_STATIC_RGBA_BYTES)
+            // Bitmap pixels, getPixels IntArray, RGBA ByteArray, LZ4 destination and compressor workspace
+            // can coexist until the output write completes. Include the source entry because the converter's
+            // caller may still own its package/index buffers while this operation runs.
+            val estimatedPeak =
+                checkedSum(
+                    entryLength,
+                    rgbaBytes,
+                    rgbaBytes,
+                    rgbaBytes,
+                    lz4MaximumOutputBytes(rgbaBytes),
+                    LZ4_HC_WORKSPACE_ALLOWANCE_BYTES,
+                )
+            estimatedPeak <= Math.multiplyExact(maxHeapBytes, STATIC_CONVERSION_HEAP_NUMERATOR) / STATIC_CONVERSION_HEAP_DENOMINATOR
+        }.getOrDefault(false)
 
     private fun fitsStaticConversionBudget(
         metadata: TexEntryMetadata,
@@ -542,6 +677,74 @@ object TexMobileConverter {
         BufferedOutputStream(FileOutputStream(outputFile)).use { output ->
             output.write(mobileRgbaHeader(flags, width, height, unknown, rgba.size, compressedLength))
             output.write(compressed, 0, compressedLength)
+        }
+    }
+
+    private fun writeMobileRgbaWithAnimation(
+        outputFile: File,
+        flags: Int,
+        width: Int,
+        height: Int,
+        unknown: Int,
+        rgba: ByteArray,
+        descriptor: ByteArray,
+        checkCancellation: () -> Unit,
+    ) {
+        require(descriptor.size.toLong() in 1..MAX_ANIMATION_DESCRIPTOR_BYTES) { "Invalid TEX animation descriptor size" }
+        val expectedSize = checkedPayloadSize(width, height, 4)
+        require(rgba.size == expectedSize) { "RGBA payload size does not match TEX dimensions" }
+        checkCancellation()
+        val (compressed, compressedLength) = compress(rgba)
+        outputFile.parentFile?.let { parent ->
+            check(parent.exists() || parent.mkdirs()) { "Unable to create TEX output directory" }
+        }
+        BufferedOutputStream(FileOutputStream(outputFile)).use { output ->
+            output.write(mobileRgbaHeader(flags, width, height, unknown, rgba.size, compressedLength))
+            output.write(compressed, 0, compressedLength)
+            checkCancellation()
+            output.write(descriptor)
+        }
+    }
+
+    private fun decodeImageFileToRgba(
+        imageFile: File,
+        width: Int,
+        height: Int,
+        checkCancellation: () -> Unit,
+    ): ByteArray {
+        require(imageFile.length() in 1..MAX_EMBEDDED_IMAGE_BYTES) { "Animated TEX image payload exceeds the bounded size" }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(imageFile.absolutePath, bounds)
+        require(bounds.outWidth == width && bounds.outHeight == height) {
+            "Embedded image dimensions do not match TEX metadata"
+        }
+        require(checkedPayloadSizeLong(width, height, 4) <= MAX_STATIC_RGBA_BYTES) {
+            "Animated TEX exceeds the 64 MiB RGBA conversion limit"
+        }
+        checkCancellation()
+        val bitmap =
+            BitmapFactory.decodeFile(
+                imageFile.absolutePath,
+                BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 },
+            ) ?: error("Unsupported embedded image in TEX entry")
+        try {
+            require(bitmap.width == width && bitmap.height == height) {
+                "Embedded image dimensions do not match TEX metadata"
+            }
+            val pixels = IntArray(checkedPayloadSize(width, height, 1))
+            bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+            val rgba = ByteArray(checkedPayloadSize(width, height, 4))
+            pixels.forEachIndexed { index, color ->
+                if (index % width == 0) checkCancellation()
+                val position = Math.multiplyExact(index, 4)
+                rgba[position] = ((color ushr 16) and 0xff).toByte()
+                rgba[position + 1] = ((color ushr 8) and 0xff).toByte()
+                rgba[position + 2] = (color and 0xff).toByte()
+                rgba[position + 3] = ((color ushr 24) and 0xff).toByte()
+            }
+            return rgba
+        } finally {
+            bitmap.recycle()
         }
     }
 
@@ -738,6 +941,8 @@ object TexMobileConverter {
                 format = format,
                 flags = flags,
                 unknown = unknown,
+                textureWidth = textureWidth,
+                textureHeight = textureHeight,
                 imageWidth = imageWidth,
                 imageHeight = imageHeight,
                 imageFormat = imageFormat,
@@ -820,6 +1025,23 @@ object TexMobileConverter {
                     remaining -= chunk
                 }
             }
+        }
+    }
+
+    private fun readFileRange(
+        sourceFile: File,
+        offset: Long,
+        length: Long,
+        checkCancellation: () -> Unit,
+    ): ByteArray {
+        require(length in 0..MAX_ANIMATION_DESCRIPTOR_BYTES && length <= Int.MAX_VALUE.toLong()) {
+            "Invalid TEX animation descriptor range"
+        }
+        require(offset >= 0L && offset <= sourceFile.length() - length) { "Invalid TEX animation descriptor range" }
+        checkCancellation()
+        return RandomAccessFile(sourceFile, "r").use { input ->
+            input.seek(offset)
+            ByteArray(length.toInt()).also(input::readFully)
         }
     }
 
@@ -1482,6 +1704,7 @@ private const val MAX_ETC2_TILE_WORKING_BYTES = 64L * 1024 * 1024
 private val CONVERTIBLE_STATIC_FORMATS = setOf(TEX_FORMAT_RGBA8888, TEX_FORMAT_DXT1, TEX_FORMAT_DXT3, TEX_FORMAT_DXT5, TEX_FORMAT_RG88, TEX_FORMAT_R8)
 private const val MAX_STATIC_RGBA_BYTES = 64L * 1024 * 1024
 private const val MAX_STATIC_DECOMPRESSED_BYTES = 64L * 1024 * 1024
+private const val MAX_EMBEDDED_IMAGE_BYTES = 64L * 1024 * 1024
 private const val LZ4_HC_WORKSPACE_ALLOWANCE_BYTES = 8L * 1024 * 1024
 private const val STATIC_CONVERSION_HEAP_NUMERATOR = 5L
 private const val STATIC_CONVERSION_HEAP_DENOMINATOR = 8L

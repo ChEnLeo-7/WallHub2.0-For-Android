@@ -1,9 +1,15 @@
 package com.wallhub.android.data.downloads
 
+import com.wallhub.prototype.mpkg.PkgReader
 import com.wallhub.prototype.mpkg.TexEntryRoute
 import com.wallhub.prototype.mpkg.TexMobileConverter
+import com.wallhub.prototype.mpkg.WorkshopConverter
+import com.wallhub.prototype.mpkg.WorkshopKind
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.RandomAccessFile
 import java.nio.file.Files
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -128,6 +134,119 @@ class TexMobileConverterEmbeddedImageTest {
         }
     }
 
+    @Test
+    fun `actual-shape unaligned animated TEX converts to verified RGBA and preserves descriptor exactly`() {
+        val root = Files.createTempDirectory("wallhub-animated-rgba").toFile()
+        try {
+            val source = root.resolve("source.tex").apply { writeBytes(actualShapeAnimatedTex()) }
+            val output = root.resolve("output.tex")
+            assertEquals(TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA, TexMobileConverter.inspectEntryRoute(source, 0L, source.length()))
+
+            val result =
+                TexMobileConverter.convertAnimatedImageToRgbaFile(
+                    source,
+                    0L,
+                    source.length(),
+                    output,
+                    decodeImage = ::syntheticRgba,
+                )
+
+            assertTrue(result.reason, result.converted)
+            assertEquals(TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE, TexMobileConverter.inspectEntryRoute(output, 0L, output.length()))
+            assertEquals(LOGICAL_WIDTH, readIntLe(output, 26L))
+            assertEquals(LOGICAL_HEIGHT, readIntLe(output, 30L))
+            assertArrayEquals(ANIMATION_DESCRIPTOR, output.readBytes().takeLast(ANIMATION_DESCRIPTOR.size).toByteArray())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `actual-shape animated TEX is rejected when the heap cannot hold decode and compression peaks`() {
+        val source = Files.createTempFile("wallhub-animated-budget", ".tex").toFile()
+        try {
+            source.writeBytes(actualShapeAnimatedTex())
+
+            assertEquals(
+                TexEntryRoute.UNSUPPORTED_RESOURCE_BUDGET,
+                TexMobileConverter.inspectEntryRoute(source, 0L, source.length(), maxHeapBytes = 16L * 1024 * 1024),
+            )
+        } finally {
+            source.delete()
+        }
+    }
+
+    @Test
+    fun `WorkshopConverter converts complete synthetic package and reinspects animated output`() {
+        val root = Files.createTempDirectory("wallhub-animated-workshop").toFile()
+        try {
+            root.resolve("project.json").writeText("""{"type":"scene","file":"scene.json","title":"Synthetic"}""")
+            root.resolve("preview.png").writeBytes(PNG_SIGNATURE)
+            writeDesktopPkg(root.resolve("scene.pkg"), "materials/animated.tex", actualShapeAnimatedTex())
+            val output = root.resolve("converted.mpkg")
+
+            val report = WorkshopConverter.convert(root, output, animatedImageDecoder = ::syntheticRgba)
+
+            assertEquals(WorkshopKind.SCENE, report.kind)
+            assertEquals(1, report.convertedTextures)
+            val archive = PkgReader.readIndex(output)
+            val texture = archive.entries.single { it.path == "materials/animated.tex" }
+            assertEquals(
+                TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE,
+                TexMobileConverter.inspectEntryRoute(output, texture.offset, texture.length),
+            )
+            assertArrayEquals(ANIMATION_DESCRIPTOR, archive.readBytes(texture).takeLast(ANIMATION_DESCRIPTOR.size).toByteArray())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    private fun syntheticRgba(image: File, width: Int, height: Int, checkCancellation: () -> Unit): ByteArray {
+        checkCancellation()
+        assertTrue(image.readBytes().copyOf(PNG_SIGNATURE.size).contentEquals(PNG_SIGNATURE))
+        assertEquals(LOGICAL_WIDTH, width)
+        assertEquals(LOGICAL_HEIGHT, height)
+        return ByteArray(Math.multiplyExact(Math.multiplyExact(width, height), 4)) { index -> index.toByte() }
+    }
+
+    private fun actualShapeAnimatedTex(): ByteArray =
+        ByteArrayOutputStream().use { output ->
+            output.writeCString("TEXV0005")
+            output.writeCString("TEXI0001")
+            listOf(0, 6, 2048, 1024, LOGICAL_WIDTH, LOGICAL_HEIGHT, 0).forEach { value -> output.writeIntLe(value) }
+            output.writeCString("TEXB0003")
+            output.writeIntLe(1)
+            output.writeIntLe(FREE_IMAGE_PNG)
+            output.writeIntLe(ACTUAL_MIPMAPS.size)
+            ACTUAL_MIPMAPS.forEach { (width, height) ->
+                listOf(width, height, 0, 0, PNG_SIGNATURE.size).forEach { value -> output.writeIntLe(value) }
+                output.write(PNG_SIGNATURE)
+            }
+            output.write(ANIMATION_DESCRIPTOR)
+            output.toByteArray()
+        }
+
+    private fun writeDesktopPkg(file: File, path: String, payload: ByteArray) {
+        val magic = "PKGV0001".toByteArray(Charsets.US_ASCII)
+        val encodedPath = path.toByteArray(Charsets.UTF_8)
+        file.outputStream().use { output ->
+            output.writeIntLe(magic.size)
+            output.write(magic)
+            output.writeIntLe(1)
+            output.writeIntLe(encodedPath.size)
+            output.write(encodedPath)
+            output.writeIntLe(0)
+            output.writeIntLe(payload.size)
+            output.write(payload)
+        }
+    }
+
+    private fun readIntLe(file: File, offset: Long): Int =
+        RandomAccessFile(file, "r").use { input ->
+            input.seek(offset)
+            Integer.reverseBytes(input.readInt())
+        }
+
     private fun animatedImageTex(tailMagic: String): ByteArray =
         ByteArrayOutputStream().use { output ->
             output.writeCString("TEXV0005")
@@ -181,7 +300,7 @@ class TexMobileConverterEmbeddedImageTest {
         write(0)
     }
 
-    private fun ByteArrayOutputStream.writeIntLe(value: Int) {
+    private fun java.io.OutputStream.writeIntLe(value: Int) {
         write(value and 0xff)
         write(value ushr 8 and 0xff)
         write(value ushr 16 and 0xff)
@@ -193,8 +312,25 @@ class TexMobileConverterEmbeddedImageTest {
         const val TEX_FLAG_GIF = 4
         const val FREE_IMAGE_PNG = 13
         const val FREE_IMAGE_JPEG = 2
+        const val LOGICAL_WIDTH = 1603
+        const val LOGICAL_HEIGHT = 616
         const val UNALIGNED_WIDTH = 3862
         const val ALIGNED_HEIGHT = 2160
+        val ACTUAL_MIPMAPS =
+            listOf(1603 to 616, 801 to 308, 400 to 154, 200 to 77, 100 to 38, 50 to 19, 25 to 9)
+        val ANIMATION_DESCRIPTOR =
+            ByteArrayOutputStream().use { output ->
+                output.write("TEXS0003".toByteArray(Charsets.US_ASCII))
+                output.write(0)
+                listOf(2, LOGICAL_WIDTH, LOGICAL_HEIGHT).forEach { value ->
+                    output.write(value and 0xff)
+                    output.write(value ushr 8 and 0xff)
+                    output.write(value ushr 16 and 0xff)
+                    output.write(value ushr 24 and 0xff)
+                }
+                output.write(ByteArray(64) { index -> (index * 3 + 1).toByte() })
+                output.toByteArray()
+            }
         val JPEG_FIXTURE =
             byteArrayOf(
                 0xFF.toByte(),

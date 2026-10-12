@@ -36,7 +36,7 @@ object PkgReader {
     fun readIndex(file: File): PkgArchive {
         RandomAccessFile(file, "r").use { input ->
             val magic = input.readLengthString(256)
-            require(magic.startsWith("PKGV")) { "Unsupported PKG magic: $magic" }
+            require(magic.startsWith("PKGV") || magic.startsWith("PKGM")) { "Unsupported PKG/MPKG magic: $magic" }
             val count = input.readIntLe()
             require(count in 0..MAX_ENTRY_COUNT) { "Invalid PKG entry count: $count" }
             val minimumIndexBytes = count.toLong() * MIN_ENTRY_INDEX_BYTES
