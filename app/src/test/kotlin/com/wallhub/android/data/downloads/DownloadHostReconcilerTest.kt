@@ -70,6 +70,93 @@ class DownloadHostReconcilerTest {
     }
 
     @Test
+    fun `one retrying task does not stop admission for a later durable command`() = runTest {
+        val signal = ProcessDownloadHostWakeSignal()
+        val pending = mutableListOf("task-a", "task-b")
+        val aRetried = CompletableDeferred<Unit>()
+        val bStarted = CompletableDeferred<Unit>()
+        val releaseB = CompletableDeferred<Unit>()
+        val cStarted = CompletableDeferred<Unit>()
+        val reconciler = reconciler(signal, pending) { taskId ->
+            when (taskId) {
+                "task-a" -> {
+                    aRetried.complete(Unit)
+                    DownloadHostRunResult.RETRY
+                }
+                "task-b" -> {
+                    bStarted.complete(Unit)
+                    releaseB.await()
+                    pending.remove(taskId)
+                    DownloadHostRunResult.SUCCESS
+                }
+                "task-c" -> {
+                    cStarted.complete(Unit)
+                    pending.remove(taskId)
+                    DownloadHostRunResult.SUCCESS
+                }
+                else -> error("Unexpected task $taskId")
+            }
+        }
+
+        val run = backgroundScope.async { reconciler.reconcile() }
+        aRetried.await()
+        bStarted.await()
+        pending += "task-c"
+        signal.signal()
+
+        cStarted.await()
+        assertFalse(releaseB.isCompleted)
+        releaseB.complete(Unit)
+        assertEquals(DownloadHostRunResult.RETRY, run.await())
+        assertEquals(listOf("task-a"), pending)
+    }
+
+    @Test
+    fun `retry exclusion is applied before a capped pending page is selected`() = runTest {
+        val signal = ProcessDownloadHostWakeSignal()
+        val durableRows = MutableList(128) { "task-a" }.apply { add("task-c") }
+        val aRetried = CompletableDeferred<Unit>()
+        val cStarted = CompletableDeferred<Unit>()
+        val reconciler = DownloadHostReconciler(
+            pendingTaskIds = { excluded ->
+                durableRows.asSequence()
+                    .filterNot(excluded::contains)
+                    .distinct()
+                    .take(128)
+                    .toList()
+            },
+            host = object : DownloadHostCoordinator {
+                override suspend fun reconcile(
+                    taskId: String,
+                    launchOwned: suspend () -> DownloadHostRunResult,
+                ): DownloadHostRunResult = launchOwned()
+            },
+            signal = signal,
+            launchTask = { taskId ->
+                when (taskId) {
+                    "task-a" -> {
+                        aRetried.complete(Unit)
+                        signal.signal()
+                        DownloadHostRunResult.RETRY
+                    }
+                    "task-c" -> {
+                        cStarted.complete(Unit)
+                        durableRows.removeAll { it == taskId }
+                        DownloadHostRunResult.SUCCESS
+                    }
+                    else -> error("Unexpected task $taskId")
+                }
+            },
+        )
+
+        val run = backgroundScope.async { reconciler.reconcile() }
+        aRetried.await()
+        cStarted.await()
+
+        assertEquals(DownloadHostRunResult.RETRY, run.await())
+    }
+
+    @Test
     fun `retry from any owned task retains WorkManager retry semantics`() = runTest {
         val signal = ProcessDownloadHostWakeSignal()
         val pending = mutableListOf("task-a")
@@ -84,7 +171,7 @@ class DownloadHostReconcilerTest {
         pending: MutableList<String>,
         launch: suspend (String) -> DownloadHostRunResult,
     ) = DownloadHostReconciler(
-        pendingTaskIds = { pending.toList() },
+        pendingTaskIds = { excluded -> pending.filterNot(excluded::contains) },
         host = object : DownloadHostCoordinator {
             override suspend fun reconcile(
                 taskId: String,

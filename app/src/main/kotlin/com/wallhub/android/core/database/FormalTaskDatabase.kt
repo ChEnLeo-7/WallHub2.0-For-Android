@@ -351,10 +351,19 @@ interface FormalTaskRecordDao {
 @Dao
 interface DownloadCommandDao {
     @Query(
-        "SELECT * FROM download_commands WHERE acknowledgedAt IS NULL " +
-            "ORDER BY createdAt ASC, revision ASC LIMIT :limit",
+        "SELECT taskId FROM download_commands WHERE acknowledgedAt IS NULL " +
+            "GROUP BY taskId ORDER BY MIN(createdAt) ASC, MIN(revision) ASC LIMIT :limit",
     )
-    suspend fun pending(limit: Int): List<DownloadCommandEntity>
+    suspend fun pendingTaskIds(limit: Int): List<String>
+
+    @Query(
+        "SELECT taskId FROM download_commands WHERE acknowledgedAt IS NULL AND taskId NOT IN (:excludedTaskIds) " +
+            "GROUP BY taskId ORDER BY MIN(createdAt) ASC, MIN(revision) ASC LIMIT :limit",
+    )
+    suspend fun pendingTaskIdsExcluding(
+        excludedTaskIds: Set<String>,
+        limit: Int,
+    ): List<String>
 
     @Query(
         "SELECT * FROM download_commands WHERE taskId = :taskId AND acknowledgedAt IS NULL " +

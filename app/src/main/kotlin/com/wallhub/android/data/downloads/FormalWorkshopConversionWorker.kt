@@ -40,7 +40,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.yield
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
@@ -48,7 +47,6 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.Locale
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -127,20 +125,30 @@ internal class FormalWorkshopConversionWorker(
                     workContext.ensureActive()
                     FormalWorkshopConversionCancellation.check(taskId)
                 }
-                val conversion =
-                    DownloadDiskReservations.withReservation(
-                        destinationDirectory = temporaryDirectory,
-                        pendingBytes = estimateConversionDiskBytes(sourceDirectory),
-                    ) {
-                        playbackCoordinator.awaitBackgroundWorkAllowed()
-                        downloadConcurrencyGovernor.withConversionSlot {
-                            convert(
-                                task = task,
-                                sourceDirectory = sourceDirectory,
-                                temporaryDirectory = temporaryDirectory,
-                                checkCancellation = checkCancellation,
-                            )
+                val admission =
+                    ConversionAdmission.await(taskId) {
+                        DownloadDiskReservations.withReservation(
+                            destinationDirectory = temporaryDirectory,
+                            pendingBytes = estimateConversionDiskBytes(sourceDirectory),
+                        ) {
+                            playbackCoordinator.awaitBackgroundWorkAllowed()
+                            downloadConcurrencyGovernor.withConversionSlot {
+                                convert(
+                                    task = task,
+                                    sourceDirectory = sourceDirectory,
+                                    temporaryDirectory = temporaryDirectory,
+                                    checkCancellation = checkCancellation,
+                                )
+                            }
                         }
+                    }
+                val conversion =
+                    when (admission) {
+                        is ConversionAdmission.Admitted -> admission.value
+                        ConversionAdmission.Cancelled ->
+                            return@withContext withContext(NonCancellable) {
+                                cancelTask(taskDao.find(taskId) ?: task, sourceDirectory)
+                            }
                     }
                 FormalWorkshopConversionCancellation.beginFinalization(taskId)
                 withContext(NonCancellable) {
@@ -655,78 +663,6 @@ internal class FormalWorkshopConversionWorker(
         private const val NOTIFICATION_ID = 4203
         private const val COPY_BUFFER_SIZE = 1024 * 1024
         private const val MAX_OUTPUT_TITLE_LENGTH = 72
-    }
-}
-
-internal object FormalWorkshopConversionCancellation {
-    private enum class State {
-        ACTIVE,
-        REQUEST_PERSISTING,
-        CANCEL_REQUESTED,
-        FINALIZING,
-    }
-
-    private val states = ConcurrentHashMap<String, State>()
-
-    fun start(taskId: String) {
-        states.putIfAbsent(taskId, State.ACTIVE)
-    }
-
-    suspend fun beginRequest(taskId: String): Boolean {
-        while (true) {
-            when (val current = states[taskId]) {
-                State.REQUEST_PERSISTING -> yield()
-                State.CANCEL_REQUESTED -> return false
-                State.FINALIZING -> return false
-                State.ACTIVE -> if (states.replace(taskId, current, State.REQUEST_PERSISTING)) return true
-                null -> if (states.putIfAbsent(taskId, State.REQUEST_PERSISTING) == null) return true
-            }
-        }
-    }
-
-    fun completeRequest(taskId: String) {
-        states.replace(taskId, State.REQUEST_PERSISTING, State.CANCEL_REQUESTED)
-    }
-
-    fun abortRequest(taskId: String) {
-        states.replace(taskId, State.REQUEST_PERSISTING, State.ACTIVE)
-    }
-
-    fun check(taskId: String) {
-        if (states[taskId] == State.CANCEL_REQUESTED) {
-            throw CancellationException("Workshop conversion was cancelled")
-        }
-    }
-
-    suspend fun beginFinalization(taskId: String) {
-        currentCoroutineContext().ensureActive()
-        while (true) {
-            when (val current = states[taskId]) {
-                State.CANCEL_REQUESTED -> throw CancellationException("Workshop conversion was cancelled")
-                State.REQUEST_PERSISTING -> yield()
-                State.FINALIZING -> return
-                State.ACTIVE -> if (states.replace(taskId, current, State.FINALIZING)) return
-                null -> if (states.putIfAbsent(taskId, State.FINALIZING) == null) return
-            }
-        }
-    }
-
-    suspend fun claimCancellation(taskId: String): Boolean {
-        while (true) {
-            when (val current = states[taskId]) {
-                State.CANCEL_REQUESTED -> return true
-                State.REQUEST_PERSISTING -> yield()
-                State.FINALIZING -> return false
-                State.ACTIVE -> if (states.replace(taskId, current, State.FINALIZING)) return false
-                null -> if (states.putIfAbsent(taskId, State.FINALIZING) == null) return false
-            }
-        }
-    }
-
-    fun isRequested(taskId: String): Boolean = states[taskId] == State.CANCEL_REQUESTED
-
-    fun clear(taskId: String) {
-        states.remove(taskId)
     }
 }
 

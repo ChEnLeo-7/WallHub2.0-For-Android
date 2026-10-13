@@ -43,11 +43,11 @@ internal class ProcessDownloadHostWakeSignal @Inject constructor() : DownloadHos
 
 /**
  * Keeps one OS-granted execution window responsive to durable commands accepted while another task is running.
- * It deduplicates active task IDs, sleeps on either task completion or an explicit wake edge, and returns only when
- * the durable queue is observed idle. WorkManager remains responsible for starting and recovering that window.
+ * It deduplicates active task IDs, keeps a retry result local to that task while admitting other pending tasks, and
+ * sleeps on either task completion or an explicit wake edge. WorkManager remains responsible for retrying the window.
  */
 internal class DownloadHostReconciler(
-    private val pendingTaskIds: suspend () -> List<String>,
+    private val pendingTaskIds: suspend (excludedTaskIds: Set<String>) -> List<String>,
     private val host: DownloadHostCoordinator,
     private val signal: DownloadHostWakeSignal,
     private val launchTask: suspend (String) -> DownloadHostRunResult,
@@ -55,31 +55,27 @@ internal class DownloadHostReconciler(
     suspend fun reconcile(): DownloadHostRunResult = coroutineScope {
         val completions = Channel<Pair<String, DownloadHostRunResult>>(Channel.UNLIMITED)
         val active = mutableSetOf<String>()
+        val retryable = mutableSetOf<String>()
         var observedGeneration = signal.generation
-        var retryRequested = false
 
         while (true) {
-            if (!retryRequested) {
-                pendingTaskIds().distinct().filterNot(active::contains).forEach { taskId ->
+            pendingTaskIds(retryable)
+                .distinct()
+                .filterNot(active::contains)
+                .filterNot(retryable::contains)
+                .forEach { taskId ->
                     active += taskId
                     launch {
                         val result = host.reconcile(taskId) { launchTask(taskId) }
                         completions.send(taskId to result)
                     }
                 }
-            }
 
             if (active.isEmpty()) {
-                if (retryRequested) return@coroutineScope DownloadHostRunResult.RETRY
+                if (retryable.isNotEmpty()) return@coroutineScope DownloadHostRunResult.RETRY
                 val afterQuery = signal.generation
                 if (afterQuery == observedGeneration) return@coroutineScope DownloadHostRunResult.SUCCESS
                 observedGeneration = afterQuery
-                continue
-            }
-
-            if (retryRequested) {
-                val (taskId, _) = completions.receive()
-                active -= taskId
                 continue
             }
 
@@ -87,7 +83,7 @@ internal class DownloadHostReconciler(
             select<Unit> {
                 completions.onReceive { (taskId, result) ->
                     active -= taskId
-                    retryRequested = result == DownloadHostRunResult.RETRY
+                    if (result == DownloadHostRunResult.RETRY) retryable += taskId
                 }
                 wake.onAwait { generation -> observedGeneration = generation }
             }

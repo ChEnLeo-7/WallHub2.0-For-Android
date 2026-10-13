@@ -22,7 +22,13 @@ internal class DownloadHostWakeWorker(
     override suspend fun doWork(): Result {
         val result =
             DownloadHostReconciler(
-                pendingTaskIds = { commandDao.pending(MAX_COMMANDS_PER_WAKE).map { it.taskId } },
+                pendingTaskIds = { excludedTaskIds ->
+                    if (excludedTaskIds.isEmpty()) {
+                        commandDao.pendingTaskIds(MAX_TASKS_PER_WAKE)
+                    } else {
+                        commandDao.pendingTaskIdsExcluding(excludedTaskIds, MAX_TASKS_PER_WAKE)
+                    }
+                },
                 host = host,
                 signal = wakeSignal,
                 launchTask = runner::run,
@@ -31,6 +37,6 @@ internal class DownloadHostWakeWorker(
     }
 
     private companion object {
-        const val MAX_COMMANDS_PER_WAKE = 128
+        const val MAX_TASKS_PER_WAKE = 128
     }
 }
