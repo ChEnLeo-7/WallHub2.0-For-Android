@@ -184,7 +184,7 @@ class SteamContentSdkWorkshopTransferTest {
                 message = "authorization",
             )
 
-        assertFalse(isRecoverableSessionUnavailable(failure))
+        assertFalse(isRecoverableDownloadAttempt(failure))
     }
 
     @Test
