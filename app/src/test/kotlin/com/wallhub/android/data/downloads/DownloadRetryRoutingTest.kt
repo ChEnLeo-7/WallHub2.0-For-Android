@@ -25,7 +25,7 @@ class DownloadRetryRoutingTest {
                 contentManifestId = 0L,
                 expectedSize = 10L,
                 contentTypeHint = "video",
-                fileUrl = "https://cdn.example/clip.mp4",
+                fileUrl = "https://cdn.steamusercontent.com/clip.mp4",
             )
 
         val result =
@@ -55,7 +55,7 @@ class DownloadRetryRoutingTest {
                 contentManifestId = 0L,
                 expectedSize = 10L,
                 contentTypeHint = "video",
-                fileUrl = "https://cdn.example/clip.mp4",
+                fileUrl = "https://cdn.steamusercontent.com/clip.mp4",
             )
 
         val result =
