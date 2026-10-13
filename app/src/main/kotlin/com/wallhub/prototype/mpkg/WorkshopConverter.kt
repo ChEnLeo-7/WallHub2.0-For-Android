@@ -65,12 +65,20 @@ object WorkshopConverter {
         val rejected = plan.resources.firstOrNull { it.strategy == ResourceStrategy.REJECT }
         require(rejected == null) { "Conversion plan rejected ${rejected?.path}: ${rejected?.reason}" }
         val report = convertScene(inputDir, outputFile, checkCancellation, animatedImageDecoder, staticImageDecoder, plan)
+        val sourceAfterConversion = resolveScenePackage(inputDir, inputDir.resolve("project.json").let { file ->
+            JSONObject(file.readText()).optString("file").takeIf(String::isNotBlank)
+        })
+        if (WorkshopConversionPlanner.identity(sourceAfterConversion) != plan.sourceIdentity) {
+            outputFile.delete()
+            throw StaleConversionSourceException("scene_package_changed_during_execution")
+        }
         val outcomes =
             plan.resources.map { resource ->
                 val reason =
                     when (resource.strategy) {
                         ResourceStrategy.COPY -> "copied"
                         ResourceStrategy.RETAIN_VERIFIED_MOBILE -> "retained_verified_mobile_payload"
+                        ResourceStrategy.RETAIN_VERIFIED_RUNTIME_DESKTOP -> "retained_verified_runtime_desktop_payload"
                         ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4 -> "converted_to_etc2_rgba8_lz4"
                         ResourceStrategy.DOWNSAMPLE_TO_ETC2 -> "downsampled_to_etc2_rgba8_lz4"
                         ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 -> "converted_to_rgba8888_lz4"
@@ -206,6 +214,7 @@ object WorkshopConverter {
                                 TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE,
                                 TexEntryRoute.RETAIN_VERIFIED_VIDEO,
                                 -> ResourceStrategy.RETAIN_VERIFIED_MOBILE
+                                TexEntryRoute.RETAIN_VERIFIED_RUNTIME_DESKTOP -> ResourceStrategy.RETAIN_VERIFIED_RUNTIME_DESKTOP
                                 TexEntryRoute.CONVERT_IMAGE_TO_ETC2 -> ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4
                                 TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA,
                                 TexEntryRoute.CONVERT_IN_MEMORY,
@@ -218,6 +227,14 @@ object WorkshopConverter {
                                 if (route == TexEntryRoute.RETAIN_VERIFIED_VIDEO) {
                                     warnings += "Preserved validated MP4-backed video texture: ${entry.path}"
                                 }
+                                putEntry(MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length)))
+                            }
+                            ResourceStrategy.RETAIN_VERIFIED_RUNTIME_DESKTOP -> {
+                                require(route == TexEntryRoute.RETAIN_VERIFIED_RUNTIME_DESKTOP) {
+                                    "Planned runtime desktop retention is incompatible with ${entry.path}"
+                                }
+                                copiedTextures += 1
+                                warnings += "Preserved structurally verified runtime desktop texture: ${entry.path}"
                                 putEntry(MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length)))
                             }
                             ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4 -> {
@@ -337,6 +354,7 @@ object WorkshopConverter {
                                 TexEntryRoute.RETAIN_VERIFIED_MOBILE,
                                 TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE,
                                 TexEntryRoute.RETAIN_VERIFIED_VIDEO,
+                                TexEntryRoute.RETAIN_VERIFIED_RUNTIME_DESKTOP,
                             ),
                     ) { "Output texture ${entry.path} failed mobile reinspection" }
                 }

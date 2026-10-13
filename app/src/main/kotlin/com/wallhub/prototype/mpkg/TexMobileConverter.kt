@@ -13,6 +13,7 @@ import java.io.OutputStream
 import java.io.RandomAccessFile
 import java.util.concurrent.CancellationException
 import kotlin.math.min
+import org.json.JSONObject
 
 private const val TEX_FORMAT_RGBA8888 = 0
 private const val TEX_FORMAT_ETC2_RGBA8_LZ4 = 5
@@ -69,6 +70,11 @@ private data class TexMipmap(
     val data: ByteArray,
 )
 
+internal enum class TexRuntimeDesktopFamily {
+    STANDARD_BLOCK_COMPRESSED_ANIMATED,
+    CONDITIONAL_VARIANT_EXTENDED,
+}
+
 private data class TexEntryMetadata(
     val format: Int,
     val flags: Int,
@@ -100,6 +106,7 @@ internal enum class TexEntryRoute {
     RETAIN_VERIFIED_MOBILE,
     RETAIN_VERIFIED_ANIMATED_MOBILE,
     RETAIN_VERIFIED_VIDEO,
+    RETAIN_VERIFIED_RUNTIME_DESKTOP,
     UNSUPPORTED_RESOURCE_BUDGET,
     UNSUPPORTED_VIDEO,
     UNSUPPORTED,
@@ -113,6 +120,7 @@ internal data class TexEntryDecision(
     val imageWidth: Int? = null,
     val imageHeight: Int? = null,
     val boundedStaticPngOrJpeg: Boolean = false,
+    val runtimeDesktopFamily: TexRuntimeDesktopFamily? = null,
 )
 
 /**
@@ -424,6 +432,162 @@ object TexMobileConverter {
         return tokens.none { it in UNSAFE_TEXTURE_SEMANTIC_TOKENS } && tokens.any { it in SAFE_COLOR_TEXTURE_TOKENS }
     }
 
+    internal fun classifyRuntimeDesktopFamily(source: ByteArray): TexRuntimeDesktopFamily? =
+        runCatching { classifyRuntimeDesktopFamily(ByteCursor(source)) }.getOrNull()
+
+    private fun classifyRuntimeDesktopFamily(
+        sourceFile: File,
+        offset: Long,
+        length: Long,
+    ): TexRuntimeDesktopFamily? {
+        if (length !in 1..MAX_RUNTIME_DESKTOP_TEX_BYTES) return null
+        return runCatching {
+            require(offset >= 0L && offset <= sourceFile.length() - length)
+            val bytes = RandomAccessFile(sourceFile, "r").use { input ->
+                input.seek(offset)
+                ByteArray(length.toInt()).also(input::readFully)
+            }
+            classifyRuntimeDesktopFamily(ByteCursor(bytes))
+        }.getOrNull()
+    }
+
+    private fun classifyRuntimeDesktopFamily(reader: ByteCursor): TexRuntimeDesktopFamily {
+        require(reader.readCString() == "TEXV0005")
+        require(reader.readCString() == "TEXI0001")
+        val format = reader.readIntLe()
+        val flags = reader.readIntLe()
+        val textureWidth = reader.readIntLe()
+        val textureHeight = reader.readIntLe()
+        val imageWidth = reader.readIntLe()
+        val imageHeight = reader.readIntLe()
+        reader.readIntLe()
+        require(format in RUNTIME_DESKTOP_DXT_FORMATS)
+        require(textureWidth > 0 && textureHeight > 0 && imageWidth > 0 && imageHeight > 0)
+        val container = reader.readCString()
+        require(container in RUNTIME_DESKTOP_CONTAINERS)
+        require(reader.readIntLe() == 1)
+        var hasCondition = false
+        var declaredVariantCount = 0
+        when (container) {
+            "TEXB0003" -> require(reader.readIntLe() == -1)
+            "TEXB0004" -> {
+                require(reader.readIntLe() == -1)
+                val extensionMarker = reader.readIntLe()
+                require(extensionMarker in 0..1)
+                hasCondition = extensionMarker == 1
+                if (hasCondition) {
+                    val conditionCount = reader.readIntLe()
+                    declaredVariantCount = reader.readIntLe()
+                    val selectedCondition = reader.readIntLe()
+                    require(conditionCount in 1..MAX_RUNTIME_VARIANTS)
+                    require(declaredVariantCount in 1..MAX_RUNTIME_VARIANTS)
+                    require(selectedCondition in 0 until conditionCount)
+                }
+            }
+        }
+        if (hasCondition) {
+            val metadata = reader.readCString(MAX_RUNTIME_CONDITION_JSON_BYTES)
+            requireValidRuntimeCondition(metadata)
+        }
+        val mipCount = reader.readIntLe()
+        require(mipCount in 1..MAX_RUNTIME_DESKTOP_MIPS)
+        var expectedWidth = textureWidth
+        var expectedHeight = textureHeight
+        repeat(mipCount) {
+            val width = reader.readIntLe()
+            val height = reader.readIntLe()
+            require(width == expectedWidth && height == expectedHeight)
+            val storedSize =
+                if (container == "TEXB0001") {
+                    reader.readIntLe()
+                } else {
+                    val compressed = reader.readIntLe()
+                    val decompressedSize = reader.readIntLe()
+                    val size = reader.readIntLe()
+                    require(compressed in 0..1)
+                    val expected = dxtPayloadSize(format, width, height)
+                    require(expected <= MAX_RUNTIME_DECODED_MIP_BYTES)
+                    require(decompressedSize == expected)
+                    if (compressed == 0) {
+                        require(size == expected)
+                        reader.skip(size)
+                    } else {
+                        require(size in 1..expected)
+                        val stored = reader.readBytes(size)
+                        val decoded = ByteArray(expected)
+                        val decodedBytes =
+                            LZ4Factory.fastestJavaInstance().safeDecompressor()
+                                .decompress(stored, 0, stored.size, decoded, 0, decoded.size)
+                        require(decodedBytes == expected)
+                    }
+                    0
+                }
+            if (container == "TEXB0001") {
+                val expected = dxtPayloadSize(format, width, height)
+                require(expected <= MAX_RUNTIME_DECODED_MIP_BYTES && storedSize == expected)
+                reader.skip(storedSize)
+            }
+            expectedWidth = maxOf(1, expectedWidth / 2)
+            expectedHeight = maxOf(1, expectedHeight / 2)
+        }
+        return if (hasCondition) {
+            require(flags and TEX_FLAG_VIDEO == 0)
+            requireValidRuntimeVariantTable(reader, imageWidth, imageHeight, declaredVariantCount)
+            TexRuntimeDesktopFamily.CONDITIONAL_VARIANT_EXTENDED
+        } else {
+            require(flags and TEX_FLAG_GIF != 0 && flags and TEX_FLAG_VIDEO == 0)
+            require(reader.readCString() == ANIMATION_DESCRIPTOR_MAGIC)
+            val frameCount = reader.readIntLe()
+            val frameWidth = reader.readIntLe()
+            val frameHeight = reader.readIntLe()
+            require(frameCount in 1..MAX_ANIMATION_FRAMES && frameWidth > 0 && frameHeight > 0)
+            require(imageWidth % frameWidth == 0 && imageHeight % frameHeight == 0)
+            require(Math.multiplyExact(imageWidth / frameWidth, imageHeight / frameHeight) == frameCount)
+            reader.skip(Math.multiplyExact(frameCount, ANIMATION_FRAME_DESCRIPTOR_BYTES.toInt()))
+            require(reader.remainingBytes().isEmpty())
+            TexRuntimeDesktopFamily.STANDARD_BLOCK_COMPRESSED_ANIMATED
+        }
+    }
+
+    private fun requireValidRuntimeCondition(json: String) {
+        require(json.toByteArray(Charsets.UTF_8).size <= MAX_RUNTIME_CONDITION_JSON_BYTES)
+        val root = JSONObject(json)
+        require(root.keys().asSequence().toSet() == setOf("condition"))
+        val condition = root.getJSONObject("condition")
+        require(condition.keys().asSequence().toSet() == setOf("condition", "name"))
+        require(condition.getString("condition").length in 1..MAX_RUNTIME_CONDITION_VALUE_CHARS)
+        require(condition.getString("name").length in 1..MAX_RUNTIME_CONDITION_VALUE_CHARS)
+    }
+
+    private fun requireValidRuntimeVariantTable(
+        reader: ByteCursor,
+        imageWidth: Int,
+        imageHeight: Int,
+        declaredVariantCount: Int,
+    ) {
+        val count = reader.readIntLe()
+        require(count == declaredVariantCount)
+        repeat(count) {
+            repeat(3) { require(reader.readIntLe() >= 0) }
+            val x = reader.readIntLe()
+            val y = reader.readIntLe()
+            val width = reader.readIntLe()
+            val height = reader.readIntLe()
+            require(x >= 0 && y >= 0 && width > 0 && height > 0)
+            require(x.toLong() + width <= imageWidth && y.toLong() + height <= imageHeight)
+            reader.readIntLe()
+            val payloadLength = reader.readIntLe()
+            require(payloadLength in 1..MAX_RUNTIME_VARIANT_PAYLOAD_BYTES)
+            reader.skip(payloadLength)
+        }
+        require(reader.remainingBytes().isEmpty())
+    }
+
+    private fun dxtPayloadSize(format: Int, width: Int, height: Int): Int {
+        val bytesPerBlock = if (format == TEX_FORMAT_DXT1) 8 else 16
+        return Math.toIntExact(Math.multiplyExact(((width + 3L) / 4L) * ((height + 3L) / 4L), bytesPerBlock.toLong()))
+    }
+
     internal fun inspectEntryRoute(
         sourceFile: File,
         offset: Long,
@@ -438,6 +602,14 @@ object TexMobileConverter {
         maxHeapBytes: Long = Runtime.getRuntime().maxMemory(),
     ): TexEntryDecision =
         runCatching {
+            val runtimeDesktopFamily = classifyRuntimeDesktopFamily(sourceFile, offset, length)
+            if (runtimeDesktopFamily != null) {
+                return@runCatching TexEntryDecision(
+                    route = TexEntryRoute.RETAIN_VERIFIED_RUNTIME_DESKTOP,
+                    animated = runtimeDesktopFamily == TexRuntimeDesktopFamily.STANDARD_BLOCK_COMPRESSED_ANIMATED,
+                    runtimeDesktopFamily = runtimeDesktopFamily,
+                )
+            }
             val metadata = readTexEntryMetadata(sourceFile, offset, length)
             val animated = metadata.flags and TEX_FLAG_GIF != 0
             val video = metadata.isMp4 || metadata.flags and TEX_FLAG_VIDEO != 0
@@ -2015,6 +2187,17 @@ private const val ANIMATION_DESCRIPTOR_MAGIC = "TEXS0003"
 private const val ANIMATION_FRAME_DESCRIPTOR_BYTES = 32L
 private const val MAX_ANIMATION_FRAMES = 16_384
 private const val MAX_ANIMATION_DESCRIPTOR_BYTES = 1024L * 1024L
+// Runtime-retained candidates are structurally inspected in memory. Keep this well below a typical
+// Android heap; larger desktop TEX files must use a future streaming validator rather than risking OOM.
+private const val MAX_RUNTIME_DESKTOP_TEX_BYTES = 32L * 1024L * 1024L
+private const val MAX_RUNTIME_DECODED_MIP_BYTES = 16 * 1024 * 1024
+private const val MAX_RUNTIME_DESKTOP_MIPS = 32
+private const val MAX_RUNTIME_CONDITION_JSON_BYTES = 16 * 1024
+private const val MAX_RUNTIME_CONDITION_VALUE_CHARS = 256
+private const val MAX_RUNTIME_VARIANTS = 1024
+private const val MAX_RUNTIME_VARIANT_PAYLOAD_BYTES = 64 * 1024 * 1024
+private val RUNTIME_DESKTOP_DXT_FORMATS = setOf(TEX_FORMAT_DXT1, TEX_FORMAT_DXT3, TEX_FORMAT_DXT5)
+private val RUNTIME_DESKTOP_CONTAINERS = setOf("TEXB0001", "TEXB0002", "TEXB0003", "TEXB0004")
 private const val LZ4_COMPRESSION_LEVEL = 3
 private val PNG_SIGNATURE = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
 private val JPEG_SIGNATURE = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())

@@ -47,6 +47,7 @@ data class DeviceCapabilityProfile(
 enum class ResourceStrategy {
     COPY,
     RETAIN_VERIFIED_MOBILE,
+    RETAIN_VERIFIED_RUNTIME_DESKTOP,
     CONVERT_TO_ETC2_RGBA8_LZ4,
     DOWNSAMPLE_TO_ETC2,
     CONVERT_TO_RGBA8888_LZ4,
@@ -291,19 +292,27 @@ internal object WorkshopConversionPlanner {
         policy: ConversionPolicy,
         device: DeviceCapabilityProfile,
     ): Pair<ResourceStrategy, String> {
-        if (entry.length > policy.maxTextureInputBytes && policy.presetId != MpkgConversionPreset.COMPATIBILITY.stableId) {
-            return ResourceStrategy.REJECT to "preset_texture_input_budget_exceeded"
-        }
         if (entry.length > MAX_GLOBAL_IMAGE_TEX_INPUT_BYTES) {
             return ResourceStrategy.REJECT to "global_texture_input_budget_exceeded"
         }
         val decision = TexMobileConverter.inspectEntryDecision(scenePackage, entry.offset, entry.length, device.maxHeapBytes)
+        if (
+            entry.length > policy.maxTextureInputBytes &&
+            policy.presetId != MpkgConversionPreset.COMPATIBILITY.stableId &&
+            decision.route != TexEntryRoute.RETAIN_VERIFIED_RUNTIME_DESKTOP
+        ) {
+            return ResourceStrategy.REJECT to "preset_texture_input_budget_exceeded"
+        }
         val exceedsCompatibilityBudget =
             policy.presetId == MpkgConversionPreset.COMPATIBILITY.stableId &&
                 (entry.length > policy.maxTextureInputBytes ||
                     (decision.imageWidth ?: 0) > COMPATIBILITY_MAX_TEXTURE_DIMENSION ||
                     (decision.imageHeight ?: 0) > COMPATIBILITY_MAX_TEXTURE_DIMENSION)
-        if (exceedsCompatibilityBudget && decision.route != TexEntryRoute.CONVERT_IMAGE_TO_ETC2) {
+        if (
+            exceedsCompatibilityBudget &&
+            decision.route != TexEntryRoute.CONVERT_IMAGE_TO_ETC2 &&
+            decision.route != TexEntryRoute.RETAIN_VERIFIED_RUNTIME_DESKTOP
+        ) {
             return ResourceStrategy.REJECT to "preset_texture_input_budget_exceeded"
         }
         return when (decision.route) {
@@ -311,6 +320,18 @@ internal object WorkshopConversionPlanner {
             TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE,
             TexEntryRoute.RETAIN_VERIFIED_VIDEO,
             -> ResourceStrategy.RETAIN_VERIFIED_MOBILE to "verified_mobile_payload_retained"
+            TexEntryRoute.RETAIN_VERIFIED_RUNTIME_DESKTOP -> {
+                val family = decision.runtimeDesktopFamily
+                    ?: return ResourceStrategy.REJECT to "unsupported_texture_profile"
+                val reason =
+                    when (family) {
+                        TexRuntimeDesktopFamily.STANDARD_BLOCK_COMPRESSED_ANIMATED ->
+                            "verified_runtime_desktop_standard_block_compressed_animated"
+                        TexRuntimeDesktopFamily.CONDITIONAL_VARIANT_EXTENDED ->
+                            "verified_runtime_desktop_conditional_variant_extended"
+                    }
+                ResourceStrategy.RETAIN_VERIFIED_RUNTIME_DESKTOP to reason
+            }
             TexEntryRoute.CONVERT_IMAGE_TO_ETC2 ->
                 if (exceedsCompatibilityBudget) {
                     when {
