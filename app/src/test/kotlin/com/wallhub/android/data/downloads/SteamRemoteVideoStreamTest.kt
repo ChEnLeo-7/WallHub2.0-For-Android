@@ -31,13 +31,13 @@ class SteamRemoteVideoStreamTest {
     @Test
     fun remoteVideoUrlRequiresStreamableVideoExtension() {
         assertEquals(
-            "https://cdn.example/clip.mp4?orig=1",
-            remoteVideoUrlOrNull(target("https://cdn.example/clip.mp4?orig=1")),
+            "https://cdn.steamusercontent.com/clip.mp4?orig=1",
+            remoteVideoUrlOrNull(target("https://cdn.steamusercontent.com/clip.mp4?orig=1")),
         )
-        assertEquals("https://cdn.example/clip.webm", remoteVideoUrlOrNull(target("https://cdn.example/clip.webm")))
+        assertEquals("https://cdn.steamusercontent.com/clip.webm", remoteVideoUrlOrNull(target("https://cdn.steamusercontent.com/clip.webm")))
         assertEquals(null, remoteVideoUrlOrNull(target("https://cdn.example/preview.png")))
-        assertEquals(null, remoteVideoUrlOrNull(target("https://cdn.example/clip.EXE")))
-        assertEquals(null, remoteVideoUrlOrNull(target("https://cdn.example/clip")))
+        assertEquals(null, remoteVideoUrlOrNull(target("https://cdn.steamusercontent.com/clip.EXE")))
+        assertEquals(null, remoteVideoUrlOrNull(target("https://cdn.steamusercontent.com/clip")))
         assertEquals(null, remoteVideoUrlOrNull(target("")))
     }
 
@@ -55,12 +55,12 @@ class SteamRemoteVideoStreamTest {
         val body =
             """
             {"response":{"publishedfiledetails":[{"result":1,"consumer_app_id":431960,
-             "title":"Clip","file_size":123,"file_url":"https://cdn.example/clip.mp4",
+             "title":"Clip","file_size":123,"file_url":"https://cdn.steamusercontent.com/clip.mp4",
             "filename":"clip.mp4","preview_url":"https://cdn.example/preview.jpg",
             "hcontent_file":"999","tags":[{"tag":"video"}]}]}}
             """.trimIndent()
         val target = SteamWorkshopContentApi(OkHttpClient.Builder()).parseTarget(body, 42L)
-        assertEquals("https://cdn.example/clip.mp4", target.fileUrl)
+        assertEquals("https://cdn.steamusercontent.com/clip.mp4", target.fileUrl)
         assertEquals("clip.mp4", target.rawFileName)
         assertEquals("https://cdn.example/preview.jpg", target.previewUrl)
         assertEquals(999L, target.contentManifestId)

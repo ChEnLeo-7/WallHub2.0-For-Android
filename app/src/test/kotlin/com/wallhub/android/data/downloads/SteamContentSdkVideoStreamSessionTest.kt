@@ -238,6 +238,7 @@ class SteamContentSdkVideoStreamSessionTest {
         assertEquals(0, targetFetches)
         assertEquals(0, sdkSession.resolveCalls)
         root.deleteRecursively()
+        Unit
     }
 
     @Test
@@ -262,6 +263,7 @@ class SteamContentSdkVideoStreamSessionTest {
 
         assertEquals(1, targetFetches)
         root.deleteRecursively()
+        Unit
     }
 
     @Test
