@@ -296,10 +296,11 @@ internal object WorkshopConversionPlanner {
             return ResourceStrategy.REJECT to "global_texture_input_budget_exceeded"
         }
         val decision = TexMobileConverter.inspectEntryDecision(scenePackage, entry.offset, entry.length, device.maxHeapBytes)
+        val verifiedPassthrough = decision.route.isVerifiedPassthroughRoute()
         if (
             entry.length > policy.maxTextureInputBytes &&
             policy.presetId != MpkgConversionPreset.COMPATIBILITY.stableId &&
-            decision.route != TexEntryRoute.RETAIN_VERIFIED_RUNTIME_DESKTOP
+            !verifiedPassthrough
         ) {
             return ResourceStrategy.REJECT to "preset_texture_input_budget_exceeded"
         }
@@ -311,7 +312,7 @@ internal object WorkshopConversionPlanner {
         if (
             exceedsCompatibilityBudget &&
             decision.route != TexEntryRoute.CONVERT_IMAGE_TO_ETC2 &&
-            decision.route != TexEntryRoute.RETAIN_VERIFIED_RUNTIME_DESKTOP
+            !verifiedPassthrough
         ) {
             return ResourceStrategy.REJECT to "preset_texture_input_budget_exceeded"
         }
@@ -385,6 +386,12 @@ private fun persistedResourceBudget(resource: ConversionResourcePlan): Long =
     resource.path.toByteArray(Charsets.UTF_8).size.toLong() +
         resource.reason.toByteArray(Charsets.UTF_8).size.toLong() +
         MAX_RESOURCE_JSON_OVERHEAD_BYTES
+
+internal fun TexEntryRoute.isVerifiedPassthroughRoute(): Boolean =
+    this == TexEntryRoute.RETAIN_VERIFIED_MOBILE ||
+        this == TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE ||
+        this == TexEntryRoute.RETAIN_VERIFIED_VIDEO ||
+        this == TexEntryRoute.RETAIN_VERIFIED_RUNTIME_DESKTOP
 
 private fun String.isAbsolutePlanPath(): Boolean =
     startsWith('/') || startsWith('\\') || Regex("^[A-Za-z]:[/\\\\]").containsMatchIn(this)
