@@ -234,7 +234,7 @@ internal class SteamContentSdkWorkshopTransfer
             return try {
                 downloadOnce(target, destinationDirectory, credential, options, control, onProgress)
             } catch (failure: SteamContentSdkTaskFailureException) {
-                if (!isRecoverableSessionUnavailable(failure)) throw failure
+                if (!isRecoverableDownloadAttempt(failure)) throw failure
                 // The failed attempt has released its task and shared-session lease before this catch.
                 // Give the broker's final close a bounded turn, then open/borrow exactly once more.
                 delay(SESSION_RECOVERY_DELAY_MS)
@@ -648,8 +648,10 @@ private const val SDK_TASK_EVENT_LOG_INTERVAL_MS = 1_000L
 private const val SESSION_RECOVERY_DELAY_MS = 250L
 private const val SESSION_UNAVAILABLE_DIAGNOSTIC = "content resolution failed at session_unavailable"
 
-internal fun isRecoverableSessionUnavailable(failure: SteamContentSdkTaskFailureException): Boolean =
-    failure.ordinal == TaskFailure.AUTHORIZATION && failure.diagnostic == SESSION_UNAVAILABLE_DIAGNOSTIC
+internal fun isRecoverableDownloadAttempt(failure: SteamContentSdkTaskFailureException): Boolean =
+    failure.ordinal == TaskFailure.NO_PROGRESS ||
+        failure.ordinal == TaskFailure.SESSION_GENERATION_LOST ||
+        (failure.ordinal == TaskFailure.AUTHORIZATION && failure.diagnostic == SESSION_UNAVAILABLE_DIAGNOSTIC)
 
 /** A typed SDK task failure keeps retry policy on stable machine-readable fields. */
 internal class SteamContentSdkTaskFailureException(
@@ -690,6 +692,9 @@ internal fun sdkFailureName(ordinal: Long): String? =
         // "network" told the user to retry something that cannot succeed without the content or the account
         // changing.
         TaskFailure.CDN_REFUSED -> "cdn refused"
+        TaskFailure.NO_PROGRESS -> "no progress"
+        TaskFailure.ABORT_TIMEOUT -> "abort timeout"
+        TaskFailure.SESSION_GENERATION_LOST -> "session generation lost"
         else -> "failure $ordinal"
     }
 

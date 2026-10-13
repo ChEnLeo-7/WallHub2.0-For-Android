@@ -148,6 +148,34 @@ class SteamContentSdkWorkshopTransferTest {
         }
 
     @Test
+    fun noProgressFailureReopensAndRetriesExactlyOnce() =
+        assertTypedAttemptReopensExactlyOnce(TaskFailure.NO_PROGRESS)
+
+    @Test
+    fun sessionGenerationLossReopensAndRetriesExactlyOnce() =
+        assertTypedAttemptReopensExactlyOnce(TaskFailure.SESSION_GENERATION_LOST)
+
+    private fun assertTypedAttemptReopensExactlyOnce(failure: Long) =
+        runBlocking {
+            val fixture = Fixture()
+            try {
+                fixture.task.statuses += failed(failure)
+                val recovered = FakeTask().apply { statuses += completed(committedBytes = 9L) }
+                fixture.session.queueTask(recovered)
+
+                val result = fixture.download()
+
+                assertEquals(9L, result.downloadedBytes)
+                assertEquals(2, fixture.session.starts.size)
+                assertEquals(2, fixture.openerCalls)
+                assertEquals(1, fixture.task.closeCalls)
+                assertEquals(1, recovered.closeCalls)
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
     fun nonSessionAuthorizationFailureDoesNotRetry() {
         val failure =
             SteamContentSdkTaskFailureException(
