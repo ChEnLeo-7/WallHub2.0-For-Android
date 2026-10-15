@@ -8,6 +8,7 @@ import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
+import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.SettingsRepository
@@ -24,6 +25,36 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RoomDownloadTaskRepositoryTest {
+    @Test
+    fun `export scheduling failure preserves a previously published conversion`() {
+        val successful =
+            queuedRecord("published").toModel().copy(
+                status = DownloadStatus.COMPLETED,
+                outputUri = "content://output",
+                successfulConversionReportJson = "{\"version\":2}",
+            )
+        assertEquals(DownloadStatus.COMPLETED, exportSchedulingFailureStatus(successful))
+        assertEquals(DownloadStatus.FAILED, exportSchedulingFailureStatus(successful.copy(outputUri = null)))
+    }
+
+    @Test
+    fun `raw ZIP fallback does not require a parseable scene preset`() {
+        val root = java.nio.file.Files.createTempDirectory("raw-zip").toFile()
+        try {
+            root.resolve("broken-source.bin").writeBytes(byteArrayOf(1))
+            val failed =
+                queuedRecord("raw-zip").toModel().copy(
+                    status = DownloadStatus.FAILED,
+                    stagingDirectory = root.path,
+                    downloadedBytes = 1,
+                    totalBytes = 1,
+                )
+            assertTrue(canRequestRawZipExport(failed, ExportFormat.ZIP))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     @Test
     fun `pending UI control is derived from unapplied durable intent`() {
         val task =

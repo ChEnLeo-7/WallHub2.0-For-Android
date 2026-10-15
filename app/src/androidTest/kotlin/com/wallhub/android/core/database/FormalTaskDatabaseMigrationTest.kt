@@ -182,7 +182,17 @@ class FormalTaskDatabaseMigrationTest {
 
     @Test
     fun migration12To13AddsWorkshopSourceCacheColumnsWithStableDefaults() {
-        helper.createDatabase(TEST_DATABASE, 12).close()
+        helper.createDatabase(TEST_DATABASE, 12).use { database ->
+            database.execSQL(
+                "INSERT INTO formal_task_records (" +
+                    "taskId, workshopId, title, type, status, downloadedBytes, totalBytes, bytesPerSecond, " +
+                    "credentialMode, isResumable, contentManifestId, appId, stagingDirectory, exportFormat, conversionPreset, " +
+                    "preserveAudio, conversionPlanVersion, exportTransactionState, queuePosition, createdAt, updatedAt, attempt, " +
+                    "desiredIntent, desiredIntentRevision, appliedIntentRevision, quiescedIntentRevision, lastReceiptSequence) VALUES " +
+                    "('legacy-staging', 1, 'Legacy', 'SCENE', 'COMPLETED', 1, 1, 0, 'ANONYMOUS', 1, 0, 0, " +
+                    "'/private/staging', 'MPKG', 'balanced', 0, 1, 'NONE', 0, 1, 99, 0, 'RUN', 0, 0, 0, 0)",
+            )
+        }
 
         helper.runMigrationsAndValidate(
             TEST_DATABASE,
@@ -196,6 +206,15 @@ class FormalTaskDatabaseMigrationTest {
                 assertTrue("stagingRetainedBytes" in columns)
                 assertTrue("stagingLastAccessedAt" in columns)
                 assertTrue("stagingCacheState" in columns)
+            }
+            database.query(
+                "SELECT stagingRetainedBytes, stagingLastAccessedAt, stagingCacheState " +
+                    "FROM formal_task_records WHERE taskId = 'legacy-staging'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0L, cursor.getLong(0))
+                assertEquals(99L, cursor.getLong(1))
+                assertEquals("RETAINED", cursor.getString(2))
             }
         }
     }

@@ -18,7 +18,7 @@ class WorkshopSourceCacheManagerTest {
     fun `retain measures nested files touches row and evicts when disabled`() = runTest {
         val filesDir = Files.createTempDirectory("source-cache").toFile()
         try {
-            val source = filesDir.resolve("workshop-staging/task").apply { mkdirs() }
+            val source = filesDir.resolve("wallhub-workshop/task").apply { mkdirs() }
             source.resolve("one.bin").writeBytes(ByteArray(3))
             source.resolve("nested/two.bin").apply { parentFile.mkdirs(); writeBytes(ByteArray(5)) }
             val fake = FakeDao(record("task", source.path))
@@ -39,8 +39,10 @@ class WorkshopSourceCacheManagerTest {
     fun `clear retained removes private staging without touching export metadata`() = runTest {
         val filesDir = Files.createTempDirectory("source-cache").toFile()
         try {
-            val source = filesDir.resolve("workshop-staging/task").apply { mkdirs() }
+            val source = filesDir.resolve("wallhub-workshop/task").apply { mkdirs() }
             source.resolve("source.bin").writeBytes(ByteArray(8))
+            val sdkSource = filesDir.resolve(".sc-staging/wallhub-workshop/task").apply { mkdirs() }
+            sdkSource.resolve("checkpoint.bin").writeBytes(ByteArray(4))
             val fake =
                 FakeDao(
                     record("task", source.path).copy(
@@ -56,6 +58,7 @@ class WorkshopSourceCacheManagerTest {
             assertEquals(8L, manager.clearRetained())
 
             assertFalse(source.exists())
+            assertFalse(sdkSource.exists())
             assertEquals("content://exported/wallpaper", fake.task.outputUri)
             assertEquals("report", fake.task.conversionReportJson)
             assertEquals("NONE", fake.task.stagingCacheState)
@@ -69,7 +72,7 @@ class WorkshopSourceCacheManagerTest {
         val filesDir = Files.createTempDirectory("source-cache").toFile()
         try {
             val fake = FakeDao(
-                record("missing", filesDir.resolve("workshop-staging/missing").path).copy(
+                record("missing", filesDir.resolve("wallhub-workshop/missing").path).copy(
                     stagingRetainedBytes = 99,
                     stagingCacheState = "RETAINED",
                     outputUri = "content://success",

@@ -328,6 +328,7 @@ internal class FormalWorkshopConversionWorker(
                     ) == 1,
                 ) { "Recovered conversion attempt changed before publication" }
                 clearCompletedConversionCheckpoint(task)
+                sourceCacheManager.retainCompleted(task.taskId)
                 if (exporting.exportBackupUri == null) Result.success() else Result.retry()
             }
 
@@ -1211,7 +1212,12 @@ internal fun decideExportRecovery(
     expectedOutputName: String,
 ): ExportRecoveryDecision {
     val state = runCatching { ExportTransactionState.valueOf(transactionState) }.getOrDefault(ExportTransactionState.NONE)
-    if (target.exists && target.isPending != true && target.displayName == expectedOutputName) {
+    if (
+        target.exists &&
+        target.isPending != true &&
+        (target.displayName == expectedOutputName ||
+            (target.isPending == false && state in setOf(ExportTransactionState.WRITING, ExportTransactionState.COMMITTED)))
+    ) {
         return ExportRecoveryDecision.PROJECT_COMPLETED
     }
     if (state == ExportTransactionState.PREPARED || state == ExportTransactionState.WRITING || state == ExportTransactionState.COMMITTED) {

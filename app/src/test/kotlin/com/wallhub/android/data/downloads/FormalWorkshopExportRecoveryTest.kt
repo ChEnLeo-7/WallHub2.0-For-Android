@@ -62,6 +62,18 @@ class FormalWorkshopExportRecoveryTest {
     }
 
     @Test
+    fun `a published MediaStore target with auto-suffixed name is recovered instead of deleted`() {
+        assertEquals(
+            ExportRecoveryDecision.PROJECT_COMPLETED,
+            decideExportRecovery(
+                transactionState = ExportTransactionState.COMMITTED.name,
+                target = ExportArtifactSnapshot(exists = true, isPending = false, displayName = "wallpaper (1).mpkg"),
+                expectedOutputName = "wallpaper.mpkg",
+            ),
+        )
+    }
+
+    @Test
     fun `a saf target renamed before process death is recognized as committed`() {
         assertEquals(
             ExportRecoveryDecision.PROJECT_COMPLETED,

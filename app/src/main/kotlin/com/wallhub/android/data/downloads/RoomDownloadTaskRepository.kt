@@ -395,7 +395,7 @@ internal class RoomDownloadTaskRepository private constructor(
                         preserveAudio = current.preserveAudio,
                         message = context.getString(R.string.backend_conversion_retrying),
                         updatedAt = now,
-                        allowedStatuses = listOf(DownloadStatus.FAILED.name),
+                        allowedStatuses = listOf(DownloadStatus.FAILED.name, DownloadStatus.CANCELLED.name),
                     ) == 1,
                 ) { "Download state changed before conversion retry could begin" }
                 sourceCacheManager?.touch(task.id)
@@ -485,7 +485,7 @@ internal class RoomDownloadTaskRepository private constructor(
                 taskDao.find(task.id)?.let { converting ->
                     upsert(
                         converting.copy(
-                            status = DownloadStatus.FAILED.name,
+                            status = exportSchedulingFailureStatus(task).name,
                             message = enqueueFailedMessage(error.javaClass.simpleName),
                             updatedAt = System.currentTimeMillis(),
                         ).toModel(),
@@ -633,15 +633,22 @@ internal fun FormalTaskRecordEntity.isRetainedLocalVideo(): Boolean =
         type == WorkshopType.VIDEO.name &&
         !stagingDirectory.isNullOrBlank()
 
+internal fun exportSchedulingFailureStatus(task: DownloadTask): DownloadStatus =
+    if (!task.outputUri.isNullOrBlank() && !task.successfulConversionReportJson.isNullOrBlank()) {
+        DownloadStatus.COMPLETED
+    } else {
+        DownloadStatus.FAILED
+    }
+
 internal fun canRequestRawZipExport(
     task: DownloadTask,
     format: ExportFormat,
 ): Boolean =
     task.status == DownloadStatus.FAILED &&
         format == ExportFormat.ZIP &&
-        task.hasCompleteStagingDownload()
+        task.hasIntactStagingFiles()
 
-internal fun DownloadTask.hasCompleteStagingDownload(): Boolean {
+internal fun DownloadTask.hasIntactStagingFiles(): Boolean {
     if (totalBytes <= 0L || downloadedBytes < totalBytes) return false
     val directory = stagingDirectory?.let(::File)?.takeIf(File::isDirectory) ?: return false
     var hasFile = false
@@ -650,7 +657,12 @@ internal fun DownloadTask.hasCompleteStagingDownload(): Boolean {
         if (file.name.endsWith(PARTIAL_DOWNLOAD_SUFFIX, ignoreCase = true)) return false
         hasFile = true
     }
-    return hasFile && hasCompletePresetDependency(directory)
+    return hasFile
+}
+
+internal fun DownloadTask.hasCompleteStagingDownload(): Boolean {
+    if (!hasIntactStagingFiles()) return false
+    return hasCompletePresetDependency(requireNotNull(stagingDirectory).let(::File))
 }
 
 internal fun hasCompletePresetDependency(directory: File): Boolean =

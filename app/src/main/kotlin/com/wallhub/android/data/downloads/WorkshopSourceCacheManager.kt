@@ -147,12 +147,16 @@ internal class WorkshopSourceCacheManager private constructor(
             val directory = managedDirectory(task.stagingDirectory)
             if (task.stagingDirectory != null && directory == null) return false
             if (directory != null && directory.exists() && !directory.deleteRecursively()) return false
+            val sdkDirectory = sdkStagingDirectory(filesDir, task.taskId)
+            if (sdkDirectory != null && sdkDirectory.exists() && !sdkDirectory.deleteRecursively()) return false
             if (!ConversionPlanStore(filesDir).delete(task.taskId)) return false
             if (!ConversionCheckpointStore(filesDir).deleteTask(task.taskId)) return false
             return taskDao.clearStagingCache(task.taskId) == 1
         }
 
         private suspend fun clearMissingRecord(task: FormalTaskRecordEntity) {
+            val sdkDirectory = sdkStagingDirectory(filesDir, task.taskId)
+            if (sdkDirectory != null && sdkDirectory.exists() && !sdkDirectory.deleteRecursively()) return
             if (!ConversionPlanStore(filesDir).delete(task.taskId)) return
             if (!ConversionCheckpointStore(filesDir).deleteTask(task.taskId)) return
             taskDao.clearStagingCache(task.taskId)

@@ -111,6 +111,7 @@ import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.data.downloads.DownloadTimingContext
 import com.wallhub.android.data.downloads.DownloadTimingTelemetry
 import com.wallhub.android.data.downloads.hasCompleteStagingDownload
+import com.wallhub.android.data.downloads.hasIntactStagingFiles
 import com.wallhub.prototype.mpkg.ConversionReportJsonCodec
 import com.wallhub.prototype.mpkg.PersistedConversionReport
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -1075,7 +1076,7 @@ internal fun DownloadTask.canReconvert(): Boolean =
     status == DownloadStatus.COMPLETED && type == WorkshopType.SCENE && exportFormat != ExportFormat.ZIP
 
 internal fun DownloadTask.shouldOfferRawZipExport(): Boolean =
-    status == DownloadStatus.FAILED && hasCompleteStagingDownload()
+    status == DownloadStatus.FAILED && hasIntactStagingFiles()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -312,7 +312,11 @@ interface FormalTaskRecordDao {
         position: Long,
     )
 
-    @Query("SELECT * FROM formal_task_records WHERE stagingCacheState = 'RETAINED' ORDER BY stagingLastAccessedAt ASC, taskId ASC")
+    @Query(
+        "SELECT * FROM formal_task_records WHERE stagingDirectory IS NOT NULL " +
+            "AND status IN ('COMPLETED', 'FAILED', 'CANCELLED') " +
+            "ORDER BY stagingLastAccessedAt ASC, taskId ASC",
+    )
     suspend fun listRetainedStaging(): List<FormalTaskRecordEntity>
 
     @Query(
@@ -920,6 +924,11 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                     )
                     database.execSQL(
                         "ALTER TABLE formal_task_records ADD COLUMN stagingCacheState TEXT NOT NULL DEFAULT 'NONE'",
+                    )
+                    database.execSQL(
+                        "UPDATE formal_task_records SET stagingCacheState = 'RETAINED', " +
+                            "stagingLastAccessedAt = updatedAt WHERE stagingDirectory IS NOT NULL " +
+                            "AND status IN ('COMPLETED', 'FAILED', 'CANCELLED')",
                     )
                 }
             }
