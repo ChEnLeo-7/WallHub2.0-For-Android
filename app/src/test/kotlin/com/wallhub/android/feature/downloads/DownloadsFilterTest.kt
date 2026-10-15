@@ -102,6 +102,20 @@ class DownloadsFilterTest {
     }
 
     @Test
+    fun rawZipFallbackRequiresFailedTaskWithCompletePrivateStaging() {
+        val failedWithStaging =
+            task("failed-staging", DownloadStatus.FAILED).copy(
+                stagingDirectory = "/private/task",
+                downloadedBytes = 100,
+                totalBytes = 100,
+            )
+
+        assertEquals(true, failedWithStaging.shouldOfferRawZipExport())
+        assertEquals(false, failedWithStaging.copy(stagingDirectory = null).shouldOfferRawZipExport())
+        assertEquals(false, failedWithStaging.copy(status = DownloadStatus.COMPLETED).shouldOfferRawZipExport())
+    }
+
+    @Test
     fun warningReportDecodesStableSafeDetails() {
         val report =
             ConversionReportJsonCodec.decodeSummary(

@@ -2,12 +2,21 @@ package com.wallhub.android.data.downloads
 
 import com.wallhub.android.core.database.FormalTaskRecordEntity
 import com.wallhub.android.core.model.DownloadStatus
+import com.wallhub.prototype.mpkg.MpkgFormatLimitException
+import com.wallhub.prototype.mpkg.MpkgInsufficientSpaceException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FormalWorkshopExportRecoveryTest {
+    @Test
+    fun `fatal conversion failures map to stable bounded reason codes`() {
+        assertEquals("format_limit", classifyConversionFailure(MpkgFormatLimitException("private details")).reasonCode)
+        assertEquals("physical_disk", classifyConversionFailure(MpkgInsufficientSpaceException("private details")).reasonCode)
+        assertEquals("format_limit", classifyConversionFailure(IllegalStateException("wrapper", MpkgFormatLimitException("detail"))).reasonCode)
+    }
+
     @Test
     fun `public reconversion retains previous URI as publication backup`() {
         assertEquals("content://old", previousPublicOutputForReplacement(null, "content://old", true))
