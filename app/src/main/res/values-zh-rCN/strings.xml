@@ -573,6 +573,11 @@
     <string name='mpkg_preset_high_quality_preview'>预计策略：保留更多源细节，但会增加内存和存储占用。</string>
     <string name='mpkg_preset_source_fidelity_preview'>预计策略：尽可能保留已验证的源资源；此选项仍属实验性。</string>
     <string name='downloads_conversion_report_summary'>纹理转换 %1$d · 保留 %2$d · Shader %3$d · 移除音频 %4$d</string>
+    <string name='downloads_status_completed_with_warnings'>已完成（有警告）·%1$d项原样保留</string>
+    <string name='downloads_conversion_warning_message'>已生成 MPKG；部分资源原样保留，兼容性未验证</string>
+    <string name='downloads_conversion_warning_sheet_title'>兼容性警告 · %1$d项</string>
+    <string name='downloads_conversion_warning_count'>%1$s · %2$d项</string>
+    <string name='downloads_conversion_warning_details'>受影响路径（最多100条）</string>
     <string name='detail_download_queue_explanation'>%1$s 项目会加入下载队列，可在下载页面查看进度。</string>
     <string name='detail_download_staging_missing'>下载暂存文件不存在</string>
     <string name='detail_download_task_missing'>下载任务不存在</string>

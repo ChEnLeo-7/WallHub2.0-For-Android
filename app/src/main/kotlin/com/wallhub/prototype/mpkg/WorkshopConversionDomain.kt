@@ -109,8 +109,63 @@ class StaleConversionSourceException(
     val reason: String,
 ) : IllegalStateException(reason)
 
+data class PersistedConversionWarningDetail(
+    val path: String,
+    val code: String,
+    val strategy: String?,
+)
+
+data class PersistedConversionReport(
+    val convertedTextures: Int,
+    val copiedTextures: Int,
+    val removedAudio: Int,
+    val rewrittenShaders: Int,
+    val warningTotal: Int,
+    val warningCounts: Map<String, Int>,
+    val warningDetails: List<PersistedConversionWarningDetail>,
+)
+
 object ConversionReportJsonCodec {
     const val MAX_JSON_BYTES = 128 * 1024
+
+    fun decodeSummary(json: String): PersistedConversionReport? =
+        runCatching {
+            require(json.toByteArray(Charsets.UTF_8).size <= MAX_JSON_BYTES)
+            val root = JSONObject(json)
+            require(root.getInt("version") == 2)
+            val countsObject = root.optJSONObject("warningCounts") ?: JSONObject()
+            val counts =
+                countsObject.keys().asSequence().map { code ->
+                    require(code.isSafeWarningToken())
+                    code to countsObject.getInt(code).also { require(it >= 0) }
+                }.toMap().toSortedMap()
+            val detailsArray = root.optJSONArray("warningDetails") ?: JSONArray()
+            require(detailsArray.length() <= MAX_WARNING_DETAILS)
+            val details =
+                (0 until detailsArray.length()).map { index ->
+                    val detail = detailsArray.getJSONObject(index)
+                    val path = detail.getString("path").safeRelativeWarningPath()
+                    val code = detail.getString("code").also { require(it.isSafeWarningToken()) }
+                    val strategy =
+                        detail.optString("strategy").takeIf(String::isNotBlank)?.also {
+                            require(it.isSafeWarningToken())
+                        }
+                    PersistedConversionWarningDetail(path = path, code = code, strategy = strategy)
+                }.distinct().sortedWith(compareBy(PersistedConversionWarningDetail::path).thenBy(PersistedConversionWarningDetail::code))
+            val summarizedCounts =
+                counts.ifEmpty { details.groupingBy(PersistedConversionWarningDetail::code).eachCount().toSortedMap() }
+            val warningTotal = root.optInt("warningTotal", root.optInt("warningCount", summarizedCounts.values.sum()))
+            require(warningTotal >= 0)
+            PersistedConversionReport(
+                convertedTextures = root.optInt("convertedTextures").also { require(it >= 0) },
+                copiedTextures = root.optInt("copiedTextures").also { require(it >= 0) },
+                removedAudio = root.optInt("removedAudio").also { require(it >= 0) },
+                rewrittenShaders = root.optInt("rewrittenShaders").also { require(it >= 0) },
+                warningTotal = warningTotal,
+                warningCounts = summarizedCounts,
+                warningDetails = details,
+            )
+        }.getOrNull()
 
     /** Durable reports are summaries; resource outcomes remain process-local and warning detail is bounded. */
     fun encode(report: WorkshopConversionReport): String {
@@ -125,6 +180,7 @@ object ConversionReportJsonCodec {
             } else {
                 report.warningDetails.groupingBy(ConversionWarningDetail::code).eachCount().toSortedMap()
             }
+        val strategiesByPath = report.outcomes.associate { it.path to it.strategy.name.lowercase() }
         var persistedDetails = details
         while (true) {
             val encoded =
@@ -140,11 +196,17 @@ object ConversionReportJsonCodec {
                     .put("removedAudio", report.removedAudio)
                     .put("rewrittenShaders", report.rewrittenShaders)
                     .put("warningCount", counts.values.sum().takeIf { it > 0 } ?: report.warnings.size)
+                    .put("warningTotal", counts.values.sum().takeIf { it > 0 } ?: report.warnings.size)
                     .put(
                         "warningDetails",
                         JSONArray().also { array ->
                             persistedDetails.forEach { detail ->
-                                array.put(JSONObject().put("code", detail.code).put("path", detail.path))
+                                array.put(
+                                    JSONObject()
+                                        .put("code", detail.code)
+                                        .put("path", detail.path)
+                                        .also { json -> strategiesByPath[detail.path]?.let { json.put("strategy", it) } },
+                                )
                             }
                         },
                     ).put(
@@ -158,6 +220,18 @@ object ConversionReportJsonCodec {
     }
 
     private const val MAX_WARNING_DETAILS = 100
+}
+
+private fun String.isSafeWarningToken(): Boolean =
+    isNotBlank() && length <= 80 && all { it.isLetterOrDigit() || it == '_' || it == '-' }
+
+private fun String.safeRelativeWarningPath(): String {
+    val normalized = replace('\\', '/').trim()
+    require(normalized.isNotBlank() && normalized.length <= 1024)
+    require(!normalized.startsWith('/') && !Regex("^[A-Za-z]:/").containsMatchIn(normalized))
+    require(normalized.split('/').none { it.isBlank() || it == "." || it == ".." })
+    require(normalized.none { it.code < 0x20 || it == '\u007f' })
+    return normalized
 }
 
 object ConversionPlanJsonCodec {

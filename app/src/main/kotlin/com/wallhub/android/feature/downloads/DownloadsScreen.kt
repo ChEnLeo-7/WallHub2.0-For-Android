@@ -6,7 +6,6 @@ import android.Manifest
 import android.content.Context
 import android.widget.Toast
 import com.wallhub.android.core.model.MpkgConversionPreset
-import org.json.JSONObject
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
@@ -32,11 +31,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalRippleConfiguration
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.PrimaryTabRow
@@ -103,6 +105,8 @@ import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.data.downloads.DownloadTimingContext
 import com.wallhub.android.data.downloads.DownloadTimingTelemetry
+import com.wallhub.prototype.mpkg.ConversionReportJsonCodec
+import com.wallhub.prototype.mpkg.PersistedConversionReport
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.Channel
@@ -799,13 +803,26 @@ private fun DownloadTaskCard(
                 MaterialTheme.colorScheme.onSurfaceVariant
             else -> MaterialTheme.colorScheme.primary
         }
+    val conversionSummary = remember(task.conversionReportJson) {
+        task.conversionReportJson?.let(ConversionReportJsonCodec::decodeSummary)
+    }
+    val warningReport = conversionSummary?.takeIf { it.warningTotal > 0 }
+    var showWarningDetails by remember(task.id) { mutableStateOf(false) }
+    if (showWarningDetails && warningReport != null) {
+        ConversionWarningSheet(
+            report = warningReport,
+            onDismiss = { showWarningDetails = false },
+        )
+    }
     Surface(
         modifier =
             modifier
                 .fillMaxWidth()
                 .clickable(
                     enabled = task.status == DownloadStatus.COMPLETED,
-                    onClick = onOpenDetail,
+                    onClick = {
+                        if (warningReport == null) onOpenDetail() else showWarningDetails = true
+                    },
                 ),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -873,9 +890,6 @@ private fun DownloadTaskCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                val conversionSummary = remember(task.conversionReportJson) {
-                    task.conversionReportJson?.conversionReportCounts()
-                }
                 conversionSummary?.let { counts ->
                     Text(
                         text = stringResource(
@@ -889,6 +903,13 @@ private fun DownloadTaskCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (warningReport != null) {
+                    Text(
+                        text = stringResource(R.string.downloads_conversion_warning_message),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 if (showProgress) {
@@ -921,7 +942,10 @@ private fun DownloadTaskCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = task.statusDescription(),
+                        text =
+                            warningReport?.let {
+                                stringResource(R.string.downloads_status_completed_with_warnings, it.warningTotal)
+                            } ?: task.statusDescription(),
                         style = MaterialTheme.typography.labelMedium,
                         color = statusColor,
                         maxLines = 1,
@@ -957,6 +981,56 @@ private fun DownloadTaskCard(
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConversionWarningSheet(
+    report: PersistedConversionReport,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+        ) {
+            Text(
+                text = stringResource(R.string.downloads_conversion_warning_sheet_title, report.warningTotal),
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Text(
+                text = stringResource(R.string.downloads_conversion_warning_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            report.warningCounts.toSortedMap().forEach { (code, count) ->
+                Text(
+                    text = stringResource(R.string.downloads_conversion_warning_count, code, count),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            if (report.warningDetails.isNotEmpty()) {
+                HorizontalDivider()
+                Text(
+                    text = stringResource(R.string.downloads_conversion_warning_details),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                report.warningDetails.take(100).forEach { detail ->
+                    Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs)) {
+                        Text(text = detail.path, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            text = detail.strategy?.let { "${detail.code} · $it" } ?: detail.code,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
@@ -1121,24 +1195,6 @@ private fun MpkgConversionPreset.downloadQualityLabel(): String =
 
 internal fun DownloadTask.shouldShowConversionPresetLabel(): Boolean =
     type == WorkshopType.SCENE && exportFormat != ExportFormat.ZIP
-
-internal data class ConversionReportCounts(
-    val convertedTextures: Int,
-    val copiedTextures: Int,
-    val rewrittenShaders: Int,
-    val removedAudio: Int,
-)
-
-internal fun String.conversionReportCounts(): ConversionReportCounts? =
-    runCatching {
-        val report = JSONObject(this)
-        ConversionReportCounts(
-            convertedTextures = report.getInt("convertedTextures"),
-            copiedTextures = report.getInt("copiedTextures"),
-            rewrittenShaders = report.getInt("rewrittenShaders"),
-            removedAudio = report.getInt("removedAudio"),
-        )
-    }.getOrNull()
 
 private val REORDERABLE_DOWNLOAD_STATUSES =
     setOf(

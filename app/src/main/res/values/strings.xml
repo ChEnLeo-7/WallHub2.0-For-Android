@@ -598,6 +598,11 @@
     <string name='mpkg_preset_high_quality_preview'>Estimated policy: retains more source detail with higher memory and storage use.</string>
     <string name='mpkg_preset_source_fidelity_preview'>Estimated policy: preserves verified source payloads where possible; experimental.</string>
     <string name='downloads_conversion_report_summary'>Textures converted %1$d · retained %2$d · shaders %3$d · audio removed %4$d</string>
+    <string name='downloads_status_completed_with_warnings'>Completed (with warnings) · %1$d retained unchanged</string>
+    <string name='downloads_conversion_warning_message'>MPKG generated; some resources were retained unchanged and compatibility is unverified</string>
+    <string name='downloads_conversion_warning_sheet_title'>Compatibility warnings · %1$d</string>
+    <string name='downloads_conversion_warning_count'>%1$s · %2$d</string>
+    <string name='downloads_conversion_warning_details'>Affected paths (up to 100)</string>
     <string name='detail_download_queue_explanation'>%1$s tasks are added to the download queue. Track their progress on Downloads.</string>
     <string name='detail_download_staging_missing'>Download staging files do not exist</string>
     <string name='detail_download_task_missing'>Download task does not exist</string>

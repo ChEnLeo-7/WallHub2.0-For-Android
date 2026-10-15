@@ -98,6 +98,11 @@ class WorkshopConverterExecutionFallbackTest {
             assertEquals(100, persisted.getJSONArray("warningDetails").length())
             assertEquals(105, persisted.getJSONObject("warningCounts").getInt("shader_rewrite_failed"))
             assertEquals(105, persisted.getInt("warningCount"))
+            assertEquals("rewrite_shader", persisted.getJSONArray("warningDetails").getJSONObject(0).getString("strategy"))
+            assertEquals(
+                "rewrite_shader",
+                ConversionReportJsonCodec.decodeSummary(persisted.toString())?.warningDetails?.first()?.strategy,
+            )
         }
     }
 

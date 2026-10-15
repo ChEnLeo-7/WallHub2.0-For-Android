@@ -6,6 +6,7 @@ import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.prototype.mpkg.ConversionReportJsonCodec
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -88,6 +89,37 @@ class DownloadsFilterTest {
         assertEquals(false, video.shouldShowConversionPresetLabel())
         assertEquals(false, web.shouldShowConversionPresetLabel())
         assertEquals(false, scene.copy(exportFormat = ExportFormat.ZIP).shouldShowConversionPresetLabel())
+    }
+
+    @Test
+    fun warningReportDecodesStableSafeDetails() {
+        val report =
+            ConversionReportJsonCodec.decodeSummary(
+                """{"version":2,"convertedTextures":1,"copiedTextures":2,"removedAudio":0,"rewrittenShaders":3,"warningTotal":2,"warningCounts":{"shader_rewrite_failed":1,"texture_conversion_failed":1},"warningDetails":[{"path":"z/file.frag","code":"shader_rewrite_failed","strategy":"copied"},{"path":"a/file.tex","code":"texture_conversion_failed"}]}""",
+            )
+
+        assertEquals(2, report?.warningTotal)
+        assertEquals(listOf("a/file.tex", "z/file.frag"), report?.warningDetails?.map { it.path })
+        assertEquals("copied", report?.warningDetails?.last()?.strategy)
+    }
+
+    @Test
+    fun warningReportRejectsAbsoluteAndParentPaths() {
+        val absolute = """{"version":2,"warningTotal":1,"warningDetails":[{"path":"/private/file","code":"copy_failed"}]}"""
+        val parent = """{"version":2,"warningTotal":1,"warningDetails":[{"path":"../file","code":"copy_failed"}]}"""
+
+        assertEquals(null, ConversionReportJsonCodec.decodeSummary(absolute))
+        assertEquals(null, ConversionReportJsonCodec.decodeSummary(parent))
+    }
+
+    @Test
+    fun completedWarningTaskRemainsInCompletedFilter() {
+        val warningTask =
+            task("warning", DownloadStatus.COMPLETED).copy(
+                conversionReportJson = """{"version":2,"warningTotal":1}""",
+            )
+
+        assertEquals(listOf("warning"), filterTasks(listOf(warningTask), DownloadFilter.COMPLETED).map { it.id })
     }
 
     @Test
