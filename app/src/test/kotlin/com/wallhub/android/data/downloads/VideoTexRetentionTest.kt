@@ -26,7 +26,7 @@ class VideoTexRetentionTest {
             root.resolve("project.json").writeText("""{"type":"scene","file":"scene.pkg"}""")
             root.resolve("preview.png").writeBytes(PNG_SIGNATURE)
             val payload = mp4Payload("mp42", mediaPaddingBytes = 17 * 1024 * 1024)
-            writeDesktopPkg(root.resolve("scene.pkg"), "materials/video.tex", videoTex(payload))
+            writeDesktopPkg(root.resolve("scene.pkg"), "materials/video_color.tex", videoTex(payload))
 
             val balanced = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DeviceCapabilityProfile(256L * 1024 * 1024))
             val compatibility = WorkshopConverter.plan(root, MpkgConversionPreset.COMPATIBILITY, DeviceCapabilityProfile(256L * 1024 * 1024))

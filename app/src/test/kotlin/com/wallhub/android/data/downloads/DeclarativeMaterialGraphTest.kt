@@ -59,6 +59,46 @@ class DeclarativeMaterialGraphTest {
     }
 
     @Test
+    fun `depth fanout and aggregate node limits degrade documents with stable warnings`() {
+        val tooDeep = buildString {
+            repeat(DeclarativeMaterialGraph.MAX_DEPTH + 1) { append("{\"scene\":") }
+            append("{}")
+            repeat(DeclarativeMaterialGraph.MAX_DEPTH + 1) { append('}') }
+        }
+        val tooWide = buildString {
+            append('{')
+            repeat(DeclarativeMaterialGraph.MAX_REFERENCES_PER_NODE + 1) { index ->
+                if (index > 0) append(',')
+                append("\"material$index\":null")
+            }
+            append('}')
+        }
+        val tooManyNodes = buildString {
+            append('{')
+            repeat(4_096) { outer ->
+                if (outer > 0) append(',')
+                append("\"material$outer\":[")
+                repeat(25) { inner ->
+                    if (inner > 0) append(',')
+                    append("null")
+                }
+                append(']')
+            }
+            append('}')
+        }
+
+        val result =
+            DeclarativeMaterialGraph.analyze(
+                linkedMapOf("a-deep.scene.json" to tooDeep, "b-wide.material.json" to tooWide, "c-large.project.json" to tooManyNodes),
+                emptySet(),
+            )
+
+        assertTrue("material_graph_depth_exceeded" in result.warningCodes)
+        assertTrue("material_graph_fanout_exceeded" in result.warningCodes)
+        assertTrue("material_graph_node_limit_exceeded" in result.warningCodes)
+    }
+
+    @Test
     fun `analysis order and path separators do not change the result`() {
         val result =
             DeclarativeMaterialGraph.analyze(

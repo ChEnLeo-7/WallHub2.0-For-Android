@@ -2,6 +2,8 @@ package com.wallhub.prototype.mpkg
 
 import com.wallhub.android.core.model.MpkgConversionPreset
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
@@ -257,10 +259,19 @@ internal object WorkshopConversionPlanner {
         val policy = preset.policy()
         val archive = PkgReader.readIndex(scenePackage)
         require(archive.entries.size <= MAX_PLAN_RESOURCES) { "Conversion plan exceeds resource limit" }
+        val graphEntries = archive.entries.filter(::isDeclarativeGraphDocument).sortedBy(IndexedPkgEntry::path)
+        val texturePaths = archive.entries.filter { it.path.endsWith(".tex", ignoreCase = true) }.mapTo(mutableSetOf(), IndexedPkgEntry::path)
+        val materialGraph =
+            DeclarativeMaterialGraph.analyzeDocuments(
+                documents = boundedGraphDocuments(archive, graphEntries),
+                texturePaths = texturePaths,
+            )
         var persistedResourceBytes = 0L
         val resources =
             archive.entries.map { entry ->
-                val resource = resourcePlan(scenePackage, entry, policy, device)
+                val semantic = materialGraph.semantics[entry.path].takeIf { graphEntries.isNotEmpty() }
+                val graphWarning = materialGraph.documentWarnings[entry.path]?.firstOrNull()
+                val resource = resourcePlan(scenePackage, entry, policy, device, semantic, graphWarning)
                 persistedResourceBytes = Math.addExact(persistedResourceBytes, persistedResourceBudget(resource))
                 require(persistedResourceBytes <= MAX_PLAN_RESOURCE_BUDGET_BYTES) {
                     "Conversion plan exceeds persisted resource budget"
@@ -294,13 +305,21 @@ internal object WorkshopConversionPlanner {
         entry: IndexedPkgEntry,
         policy: ConversionPolicy,
         device: DeviceCapabilityProfile,
+        semantic: TextureSemantic?,
+        graphWarning: String?,
     ): ConversionResourcePlan {
         val extension = entry.path.substringAfterLast('.', "").lowercase()
         val (strategy, reason) =
             when (extension) {
                 "mp3", "wav", "ogg", "flac", "aac", "m4a" -> ResourceStrategy.REMOVE_AUDIO to "audio_removed_by_mobile_policy"
                 "frag", "vert" -> ResourceStrategy.REWRITE_SHADER to "rewrite_shader_for_mobile_glsl"
-                "tex" -> textureStrategy(scenePackage, entry, policy, device)
+                "tex" -> textureStrategy(scenePackage, entry, policy, device, semantic)
+                "json" ->
+                    if (graphWarning != null) {
+                        ResourceStrategy.PASSTHROUGH_WITH_WARNING to graphWarning
+                    } else {
+                        ResourceStrategy.COPY to "copy_non_texture"
+                    }
                 else -> ResourceStrategy.COPY to "copy_non_texture"
             }
         return ConversionResourcePlan(entry.path, entry.length, strategy, reason)
@@ -311,8 +330,33 @@ internal object WorkshopConversionPlanner {
         entry: IndexedPkgEntry,
         policy: ConversionPolicy,
         device: DeviceCapabilityProfile,
+        declaredSemantic: TextureSemantic?,
     ): Pair<ResourceStrategy, String> {
         val decision = TexMobileConverter.inspectEntryDecision(scenePackage, entry.offset, entry.length, device.maxHeapBytes)
+        val semantic = declaredSemantic ?: if (isConservativeColorTexturePath(entry.path)) TextureSemantic.COLOR else TextureSemantic.UNKNOWN
+        if (semantic != TextureSemantic.COLOR) {
+            return when {
+                decision.verifiedLosslessRgba -> ResourceStrategy.RETAIN_VERIFIED_MOBILE to "verified_lossless_rgba_retained"
+                decision.route == TexEntryRoute.CONVERT_IMAGE_TO_ETC2 && decision.rgbaConversionFitsMemoryBudget ->
+                    ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 to "semantic_texture_lossless_rgba"
+                decision.route in setOf(TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA, TexEntryRoute.CONVERT_IN_MEMORY) ->
+                    ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 to "semantic_texture_lossless_rgba"
+                else ->
+                    ResourceStrategy.PASSTHROUGH_WITH_WARNING to
+                        when {
+                            policy.presetId == MpkgConversionPreset.SOURCE_FIDELITY.stableId -> "tex_passthrough_source_fidelity_unverified"
+                            decision.route == TexEntryRoute.UNSUPPORTED_RESOURCE_BUDGET -> "tex_passthrough_resource_budget_exceeded"
+                            decision.route == TexEntryRoute.UNSUPPORTED_VIDEO -> "tex_passthrough_unsupported_video"
+                            decision.route == TexEntryRoute.UNSUPPORTED ->
+                                if (entry.length > LEGACY_BALANCED_TEXTURE_INPUT_BYTES) {
+                                    "tex_passthrough_resource_budget_exceeded"
+                                } else {
+                                    "tex_passthrough_unknown_profile"
+                                }
+                            else -> "tex_passthrough_semantic_requires_lossless_rgba"
+                        }
+            }
+        }
         if (policy.presetId == MpkgConversionPreset.SOURCE_FIDELITY.stableId) {
             return if (
                 decision.route == TexEntryRoute.UNSUPPORTED ||
@@ -333,15 +377,12 @@ internal object WorkshopConversionPlanner {
                 ResourceStrategy.RETAIN_VERIFIED_RUNTIME_DESKTOP to "verified_runtime_desktop_payload_retained"
             TexEntryRoute.CONVERT_IMAGE_TO_ETC2 -> {
                 val decodedBytes = decision.decodedRgbaBytes ?: Long.MAX_VALUE
-                val colorTexture = isConservativeColorTexturePath(entry.path)
                 when {
-                    policy.presetId == MpkgConversionPreset.COMPATIBILITY.stableId && colorTexture && device.supportsEtc2 ->
+                    policy.presetId == MpkgConversionPreset.COMPATIBILITY.stableId && device.supportsEtc2 ->
                         ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4 to "compatibility_color_texture_etc2"
-                    !colorTexture && decision.rgbaConversionFitsMemoryBudget ->
-                        ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 to "semantic_texture_lossless_rgba"
                     decodedBytes <= policy.maxStaticImageRgbaBytes && decision.rgbaConversionFitsMemoryBudget ->
                         ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 to "static_image_within_decoded_rgba_budget"
-                    colorTexture && device.supportsEtc2 ->
+                    device.supportsEtc2 ->
                         ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4 to "static_image_above_decoded_rgba_budget"
                     else -> ResourceStrategy.PASSTHROUGH_WITH_WARNING to "tex_passthrough_resource_budget_exceeded"
                 }
@@ -360,6 +401,41 @@ internal object WorkshopConversionPlanner {
                     } else {
                         "tex_passthrough_unknown_profile"
                     }
+        }
+    }
+
+    private fun isDeclarativeGraphDocument(entry: IndexedPkgEntry): Boolean {
+        if (!entry.path.endsWith(".json", ignoreCase = true)) return false
+        val normalized = entry.path.lowercase()
+        val nameTokens = normalized.substringAfterLast('/').substringBeforeLast('.').split(Regex("[^a-z0-9]+"))
+        val parentSegments = normalized.substringBeforeLast('/', "").split('/')
+        return nameTokens.any { it == "project" || it == "scene" || it == "material" } ||
+            parentSegments.any { it == "material" || it == "materials" }
+    }
+
+    private fun boundedGraphDocuments(
+        archive: PkgArchive,
+        entries: List<IndexedPkgEntry>,
+    ): Sequence<Pair<String, Result<String>>> = sequence {
+        var totalBytes = 0L
+        entries.forEach { entry ->
+            val nextTotal = runCatching { Math.addExact(totalBytes, entry.length) }.getOrDefault(Long.MAX_VALUE)
+            if (entry.length > MAX_GRAPH_DOCUMENT_BYTES || nextTotal > MAX_GRAPH_TOTAL_BYTES) {
+                yield(entry.path to Result.failure<String>(IllegalArgumentException("material graph JSON byte limit exceeded")))
+            } else {
+                totalBytes = nextTotal
+                val json =
+                    runCatching {
+                        val bytes = archive.readBytes(entry, MAX_GRAPH_DOCUMENT_BYTES)
+                        Charsets.UTF_8
+                            .newDecoder()
+                            .onMalformedInput(CodingErrorAction.REPORT)
+                            .onUnmappableCharacter(CodingErrorAction.REPORT)
+                            .decode(ByteBuffer.wrap(bytes))
+                            .toString()
+                    }
+                yield(entry.path to json)
+            }
         }
     }
 
@@ -395,6 +471,8 @@ private fun String.isAbsolutePlanPath(): Boolean =
     startsWith('/') || startsWith('\\') || Regex("^[A-Za-z]:[/\\\\]").containsMatchIn(this)
 
 private const val IDENTITY_BUFFER_BYTES = 64 * 1024
+private const val MAX_GRAPH_DOCUMENT_BYTES = 2L * 1024L * 1024L
+private const val MAX_GRAPH_TOTAL_BYTES = 8L * 1024L * 1024L
 private const val LEGACY_BALANCED_TEXTURE_INPUT_BYTES = 32L * 1024L * 1024L
 private val SAFE_COLOR_TEXTURE_TOKENS = setOf("background", "wallpaper", "backdrop", "scene", "color", "albedo", "diffuse")
 private val UNSAFE_TEXTURE_SEMANTIC_TOKENS = setOf("normal", "norm", "nrm", "mask", "roughness", "metallic", "height", "depth", "specular", "ao", "alpha")

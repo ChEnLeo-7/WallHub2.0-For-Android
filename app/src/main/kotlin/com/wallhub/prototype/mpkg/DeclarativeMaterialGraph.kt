@@ -3,6 +3,7 @@ package com.wallhub.prototype.mpkg
 import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 
 internal enum class TextureSemantic {
     COLOR,
@@ -13,6 +14,7 @@ internal enum class TextureSemantic {
 internal data class MaterialGraphResult(
     val semantics: Map<String, TextureSemantic>,
     val warningCodes: Set<String>,
+    val documentWarnings: Map<String, Set<String>>,
 )
 
 /** Bounded declarative project/scene/material texture-reference analysis; shader source is deliberately opaque. */
@@ -25,29 +27,51 @@ internal object DeclarativeMaterialGraph {
         documents: Map<String, String>,
         texturePaths: Set<String>,
         checkCancellation: () -> Unit = {},
+    ): MaterialGraphResult =
+        analyzeDocuments(
+            documents.toSortedMap().asSequence().map { (path, json) -> path to Result.success(json) },
+            texturePaths,
+            checkCancellation,
+        )
+
+    fun analyzeDocuments(
+        documents: Sequence<Pair<String, Result<String>>>,
+        texturePaths: Set<String>,
+        checkCancellation: () -> Unit = {},
     ): MaterialGraphResult {
         val normalizedTextures = texturePaths.associateBy(::normalizeReference)
         val semantics = mutableMapOf<String, TextureSemantic>()
         val warnings = mutableSetOf<String>()
+        val documentWarnings = mutableMapOf<String, MutableSet<String>>()
         var visited = 0
+
+        fun warn(documentPath: String, code: String) {
+            warnings += code
+            documentWarnings.getOrPut(documentPath) { mutableSetOf() } += code
+        }
         var exhausted = false
 
-        fun record(key: String, rawReference: String) {
-            val canonical = normalizedTextures[normalizeReference(rawReference)] ?: return
+        fun record(documentPath: String, key: String, rawReference: String) {
+            val normalized = normalizeReference(rawReference)
+            val documentParent = normalizeReference(documentPath).substringBeforeLast('/', "")
+            val canonical =
+                normalizedTextures[normalized]
+                    ?: documentParent.takeIf(String::isNotEmpty)?.let { normalizedTextures["$it/$normalized"] }
+                    ?: return
             val semantic = semanticForKey(key)
             semantics[canonical] = merge(semantics[canonical], semantic)
         }
 
-        fun visit(value: Any?, key: String, depth: Int) {
+        fun visit(documentPath: String, value: Any?, key: String, depth: Int) {
             checkCancellation()
             if (exhausted) return
             if (depth > MAX_DEPTH) {
-                warnings += "material_graph_depth_exceeded"
+                warn(documentPath, "material_graph_depth_exceeded")
                 return
             }
             visited = Math.addExact(visited, 1)
             if (visited > MAX_NODES) {
-                warnings += "material_graph_node_limit_exceeded"
+                warn(documentPath, "material_graph_node_limit_exceeded")
                 exhausted = true
                 return
             }
@@ -55,33 +79,75 @@ internal object DeclarativeMaterialGraph {
                 is JSONObject -> {
                     val keys = value.keys().asSequence().toList().sorted()
                     if (keys.size > MAX_REFERENCES_PER_NODE) {
-                        warnings += "material_graph_fanout_exceeded"
+                        warn(documentPath, "material_graph_fanout_exceeded")
                     }
                     keys.take(MAX_REFERENCES_PER_NODE).forEach { childKey ->
-                        visit(value.opt(childKey), childKey, depth + 1)
+                        visit(documentPath, value.opt(childKey), childKey, depth + 1)
                     }
                 }
                 is JSONArray -> {
                     if (value.length() > MAX_REFERENCES_PER_NODE) {
-                        warnings += "material_graph_fanout_exceeded"
+                        warn(documentPath, "material_graph_fanout_exceeded")
                     }
                     repeat(minOf(value.length(), MAX_REFERENCES_PER_NODE)) { index ->
-                        visit(value.opt(index), key, depth + 1)
+                        visit(documentPath, value.opt(index), key, depth + 1)
                     }
                 }
-                is String -> record(key, value)
+                is String -> record(documentPath, key, value)
             }
         }
 
-        documents.toSortedMap().forEach { (_, json) ->
-            val root = runCatching { JSONObject(json) }.getOrElse {
-                warnings += "material_graph_document_invalid"
+        documents.forEach { (documentPath, document) ->
+            checkCancellation()
+            val json = document.getOrElse {
+                warn(documentPath, "material_graph_document_invalid")
                 return@forEach
             }
-            visit(root, "", 0)
+            if (exceedsStructuralDepth(json)) {
+                warn(documentPath, "material_graph_depth_exceeded")
+                return@forEach
+            }
+            val root = runCatching { JSONTokener(json).nextValue() }.getOrElse {
+                warn(documentPath, "material_graph_document_invalid")
+                return@forEach
+            }
+            if (root !is JSONObject && root !is JSONArray) {
+                warn(documentPath, "material_graph_document_invalid")
+                return@forEach
+            }
+            visit(documentPath, root, "", 0)
         }
         texturePaths.filterNot(semantics::containsKey).forEach { path -> semantics[path] = TextureSemantic.UNKNOWN }
-        return MaterialGraphResult(semantics.toSortedMap(), warnings.toSortedSet())
+        return MaterialGraphResult(
+            semantics.toSortedMap(),
+            warnings.toSortedSet(),
+            documentWarnings.mapValues { (_, codes) -> codes.toSortedSet() }.toSortedMap(),
+        )
+    }
+
+    private fun exceedsStructuralDepth(json: String): Boolean {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        json.forEach { character ->
+            if (inString) {
+                when {
+                    escaped -> escaped = false
+                    character == '\\' -> escaped = true
+                    character == '"' -> inString = false
+                }
+            } else {
+                when (character) {
+                    '"' -> inString = true
+                    '{', '[' -> {
+                        depth = Math.addExact(depth, 1)
+                        if (depth > MAX_DEPTH + 1) return true
+                    }
+                    '}', ']' -> depth--
+                }
+            }
+        }
+        return false
     }
 
     private fun semanticForKey(rawKey: String): TextureSemantic {

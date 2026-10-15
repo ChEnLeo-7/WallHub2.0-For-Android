@@ -120,6 +120,7 @@ internal data class TexEntryDecision(
     val imageWidth: Int? = null,
     val imageHeight: Int? = null,
     val boundedStaticPngOrJpeg: Boolean = false,
+    val verifiedLosslessRgba: Boolean = false,
     val runtimeDesktopFamily: TexRuntimeDesktopFamily? = null,
 )
 
@@ -672,6 +673,9 @@ object TexMobileConverter {
                         metadata.payloadLength in 1..MAX_EMBEDDED_IMAGE_BYTES &&
                         metadata.imageWidth.toLong() * metadata.imageHeight <= MAX_IMAGE_DECODE_PIXELS &&
                         hasPngOrJpegPayload(sourceFile, metadata),
+                verifiedLosslessRgba =
+                    route in setOf(TexEntryRoute.RETAIN_VERIFIED_MOBILE, TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE) &&
+                        metadata.format == TEX_FORMAT_RGBA8888,
             )
         }.getOrDefault(TexEntryDecision(TexEntryRoute.UNSUPPORTED))
 

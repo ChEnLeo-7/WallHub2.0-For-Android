@@ -48,7 +48,7 @@ class VerifiedRuntimeDesktopTexTest {
             root.resolve("project.json").writeText("""{"type":"scene","file":"scene.json"}""")
             root.resolve("preview.png").writeBytes(PNG_SIGNATURE)
             val tex = standardAnimatedDxtTex()
-            writeDesktopPkg(root.resolve("scene.pkg"), "materials/runtime.tex", tex)
+            writeDesktopPkg(root.resolve("scene.pkg"), "materials/runtime_color.tex", tex)
 
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DeviceCapabilityProfile(256L * 1024 * 1024))
             assertEquals(ResourceStrategy.RETAIN_VERIFIED_RUNTIME_DESKTOP, plan.resources.single().strategy)
@@ -58,7 +58,7 @@ class VerifiedRuntimeDesktopTexTest {
             val report = WorkshopConverter.execute(plan, root, output)
             assertEquals("retained_verified_runtime_desktop_payload", report.outcomes.single().reason)
             val archive = PkgReader.readIndex(output)
-            val entry = archive.entries.single { it.path == "materials/runtime.tex" }
+            val entry = archive.entries.single { it.path == "materials/runtime_color.tex" }
             assertArrayEquals(tex, archive.readBytes(entry))
             assertEquals(TexEntryRoute.RETAIN_VERIFIED_RUNTIME_DESKTOP, TexMobileConverter.inspectEntryRoute(output, entry.offset, entry.length))
         } finally {
