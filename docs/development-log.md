@@ -15,6 +15,15 @@ Physical-device reproduction on a OnePlus 5T confirmed that Workshop `3299228616
 
 The implementation is test-driven at the `WorkshopConverter` plan/execute interface, the versioned Room task repository, the conversion worker transaction, the source-cache manager, and the Compose screen contracts. Real Workshop bytes remain off-repository; synthetic fixtures reproduce only independently described structures.
 
+### First physical-device repair evidence
+
+A commit-bound build at `4f35d2c` compiled successfully on the authorized Windows worker and was re-signed with the already-installed development identity for in-place device testing. On the same unlocked OnePlus 5T, both previously failed tasks reused their intact staging without another download and completed as MPKG:
+
+- `3299228616`: WorkManager `SUCCESS`, output `10,488,881` bytes, 14 converted textures, 5 retained resources, 11 rewritten shaders, 1 removed audio, and 5 compatibility warnings;
+- `3757572576`: WorkManager `SUCCESS`, output `261,292,120` bytes, 1 converted texture, 2 retained resources, 1 rewritten shader, no removed audio, and 2 compatibility warnings.
+
+MediaProvider logs show each candidate moving from a `.pending-*` path to the final MPKG name, and the UI reports `COMPLETED` with bounded warnings. This proves the two reported planning failures are repaired for the standard preset; the remaining four-preset matrix and reconversion transaction are separate exit evidence.
+
 ## 2026-09-13
 
 ### Fixed
