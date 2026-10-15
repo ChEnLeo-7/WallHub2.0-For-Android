@@ -44,6 +44,7 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.security.MessageDigest
 import java.util.Locale
 import java.util.UUID
 import java.util.zip.ZipEntry
@@ -214,6 +215,7 @@ internal class FormalWorkshopConversionWorker(
                             updatedAt = System.currentTimeMillis(),
                         ) == 1,
                     ) { "Conversion attempt changed before its committed output could be published" }
+                    clearCompletedConversionCheckpoint(task)
                     var completed = requireNotNull(taskDao.find(task.taskId))
                     if (completed.outputTreeUri.isNullOrBlank() && !completed.exportBackupUri.isNullOrBlank()) {
                         PublicDownloadsExportGateway.cleanCommittedBackup(applicationContext, completed.exportTransaction())
@@ -317,6 +319,7 @@ internal class FormalWorkshopConversionWorker(
                         updatedAt = System.currentTimeMillis(),
                     ) == 1,
                 ) { "Recovered conversion attempt changed before publication" }
+                clearCompletedConversionCheckpoint(task)
                 if (exporting.exportBackupUri == null) Result.success() else Result.retry()
             }
 
@@ -419,12 +422,15 @@ internal class FormalWorkshopConversionWorker(
                         }
                     },
                     execute = { currentPlan ->
+                        val checkpointIdentity = currentPlan.checkpointIdentity(task)
+                        val checkpointStore = ConversionCheckpointStore(applicationContext.filesDir)
                         WorkshopConverter.execute(
                             plan = currentPlan,
                             inputDir = sourceDirectory,
                             outputFile = outputFile,
                             contentTypeHint = contentHint,
                             checkCancellation = checkCancellation,
+                            resourceCheckpoint = ConversionResourceCheckpointAdapter(checkpointIdentity, checkpointStore),
                         )
                     },
                 ).also { completed ->
@@ -453,6 +459,23 @@ internal class FormalWorkshopConversionWorker(
             convertedTextures = report.convertedTextures,
             copiedTextures = report.copiedTextures,
             warnings = report.warnings,
+        )
+    }
+
+    private fun ConversionPlan.checkpointIdentity(task: FormalTaskRecordEntity): ConversionCheckpointIdentity {
+        val encoded = ConversionPlanJsonCodec.encode(this).toByteArray(Charsets.UTF_8)
+        val planSha256 =
+            MessageDigest.getInstance("SHA-256").digest(encoded).joinToString("") {
+                "%02x".format(it.toInt() and 0xff)
+            }
+        return ConversionCheckpointIdentity(
+            taskId = task.taskId,
+            attempt = task.conversionAttempt,
+            planSha256 = planSha256,
+            sourceIdentity = "pkg:${sourceIdentity.packageLength}:${sourceIdentity.indexDigest}",
+            presetId = presetId,
+            preserveAudio = preserveAudio,
+            converterVersion = "v2",
         )
     }
 
@@ -532,6 +555,15 @@ internal class FormalWorkshopConversionWorker(
                         output.closeEntry()
                     }
             }
+        }
+    }
+
+    private suspend fun clearCompletedConversionCheckpoint(task: FormalTaskRecordEntity) {
+        check(ConversionCheckpointStore(applicationContext.filesDir).deleteAttempt(task.taskId, task.conversionAttempt)) {
+            "Unable to clear completed conversion checkpoints"
+        }
+        check(taskDao.clearConversionCheckpointReference(task.taskId, task.conversionAttempt) == 1) {
+            "Conversion attempt changed before its checkpoint reference could be cleared"
         }
     }
 
@@ -1008,6 +1040,16 @@ internal object PublicDownloadsExportGateway {
             check(context.contentResolver.delete(Uri.parse(backupUri), null, null) >= 0) {
                 "Failed to remove the previous export from $OUTPUT_LABEL"
             }
+            val targetUri = requireNotNull(transaction.targetUri) { "Committed export target is missing" }
+            val canonicalName = requireNotNull(transaction.outputName) { "Committed export name is missing" }
+            check(
+                context.contentResolver.update(
+                    Uri.parse(targetUri),
+                    ContentValues().apply { put(MediaStore.MediaColumns.DISPLAY_NAME, canonicalName) },
+                    null,
+                    null,
+                ) == 1,
+            ) { "Failed to restore the canonical export name in $OUTPUT_LABEL" }
         } else {
             Uri.parse(backupUri).path?.let(::File)?.let { file -> check(!file.exists() || file.delete()) }
         }

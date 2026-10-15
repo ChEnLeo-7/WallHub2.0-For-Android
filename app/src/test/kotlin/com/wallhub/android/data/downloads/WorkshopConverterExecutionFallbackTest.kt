@@ -1,7 +1,9 @@
 package com.wallhub.android.data.downloads
 
 import com.wallhub.android.core.model.MpkgConversionPreset
+import com.wallhub.prototype.mpkg.ConversionCheckpointRequest
 import com.wallhub.prototype.mpkg.ConversionReportJsonCodec
+import com.wallhub.prototype.mpkg.ConversionResourceCheckpoint
 import com.wallhub.prototype.mpkg.DeviceCapabilityProfile
 import com.wallhub.prototype.mpkg.PkgReader
 import com.wallhub.prototype.mpkg.ResourceStrategy
@@ -10,6 +12,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.file.Files
+import java.util.concurrent.CancellationException
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -71,6 +74,55 @@ class WorkshopConverterExecutionFallbackTest {
             assertEquals("shader_rewrite_failed", report.warningDetails.single().code)
             assertEquals("shaders/main.frag", report.warningDetails.single().path)
             assertFalse(report.warnings.single().contains("unstable rewrite detail"))
+        }
+    }
+
+    @Test
+    fun `interrupted execution reuses each already verified resource`() {
+        val first = "void first() { gl_FragColor = vec4(1.0); }".toByteArray()
+        val second = "void second() { gl_FragColor = vec4(0.0); }".toByteArray()
+        withScene(listOf("shaders/first.frag" to first, "shaders/second.frag" to second)) { root ->
+            val plan = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE)
+            val products = linkedMapOf<String, File>()
+            val checkpoint =
+                object : ConversionResourceCheckpoint {
+                    override fun reuse(request: ConversionCheckpointRequest): File? = products[request.path]
+
+                    override fun record(request: ConversionCheckpointRequest, verifiedOutput: File): File {
+                        return root.resolve("checkpoint-${products.size}.frag").also {
+                            verifiedOutput.copyTo(it, overwrite = true)
+                            products[request.path] = it
+                        }
+                    }
+                }
+            var rewrites = 0
+            assertThrows(CancellationException::class.java) {
+                WorkshopConverter.execute(
+                    plan,
+                    root,
+                    root.resolve("interrupted.mpkg"),
+                    shaderRewriter = { source, _ ->
+                        rewrites += 1
+                        if (rewrites == 2) throw CancellationException("interrupted")
+                        "$source\n// mobile"
+                    },
+                    resourceCheckpoint = checkpoint,
+                )
+            }
+            assertEquals(setOf("shaders/first.frag"), products.keys)
+
+            WorkshopConverter.execute(
+                plan,
+                root,
+                root.resolve("resumed.mpkg"),
+                shaderRewriter = { source, _ ->
+                    rewrites += 1
+                    "$source\n// mobile"
+                },
+                resourceCheckpoint = checkpoint,
+            )
+            assertEquals(3, rewrites)
+            assertEquals(setOf("shaders/first.frag", "shaders/second.frag"), products.keys)
         }
     }
 

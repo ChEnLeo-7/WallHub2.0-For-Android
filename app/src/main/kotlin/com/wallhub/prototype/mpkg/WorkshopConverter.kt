@@ -66,6 +66,7 @@ object WorkshopConverter {
         animatedImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)? = null,
         staticImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)? = null,
         shaderRewriter: (String, () -> Unit) -> String = ShaderCompatibility::rewrite,
+        resourceCheckpoint: ConversionResourceCheckpoint? = null,
     ): WorkshopConversionReport {
         val current =
             WorkshopConversionPlanner.plan(
@@ -82,7 +83,17 @@ object WorkshopConverter {
         }
         val rejected = plan.resources.firstOrNull { it.strategy == ResourceStrategy.REJECT }
         require(rejected == null) { "Conversion plan rejected ${rejected?.path}: ${rejected?.reason}" }
-        val report = convertScene(inputDir, outputFile, checkCancellation, animatedImageDecoder, staticImageDecoder, plan, shaderRewriter)
+        val report =
+            convertScene(
+                inputDir,
+                outputFile,
+                checkCancellation,
+                animatedImageDecoder,
+                staticImageDecoder,
+                plan,
+                shaderRewriter,
+                resourceCheckpoint,
+            )
         val sourceAfterConversion = resolveScenePackage(inputDir, inputDir.resolve("project.json").let { file ->
             JSONObject(file.readText()).optString("file").takeIf(String::isNotBlank)
         })
@@ -189,6 +200,7 @@ object WorkshopConverter {
         staticImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)?,
         plan: ConversionPlan? = null,
         shaderRewriter: (String, () -> Unit) -> String = ShaderCompatibility::rewrite,
+        resourceCheckpoint: ConversionResourceCheckpoint? = null,
     ): WorkshopConversionReport {
         val projectFile = File(inputDir, "project.json")
         require(projectFile.isFile) { "Scene workshop is missing project.json" }
@@ -210,6 +222,14 @@ object WorkshopConverter {
             warningDetails += ConversionWarningDetail(code, path)
         }
         val archive = PkgReader.readIndex(scenePackage)
+        fun checkpointRequest(entry: IndexedPkgEntry, strategy: ResourceStrategy): ConversionCheckpointRequest =
+            ConversionCheckpointRequest(
+                path = entry.path,
+                sourceOffset = entry.offset,
+                sourceLength = entry.length,
+                sourceSha256 = digestFileSlice(scenePackage, entry.offset, entry.length, checkCancellation).toHex(),
+                strategy = strategy,
+            )
         val transformedDirectory = createConversionDirectory(outputFile)
         try {
             val entriesByPath = LinkedHashMap<String, MpkgInputEntry>(archive.entries.size)
@@ -292,16 +312,18 @@ object WorkshopConverter {
                             ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4 -> {
                                 require(route == TexEntryRoute.CONVERT_IMAGE_TO_ETC2) { "Planned ETC2 strategy is incompatible with ${entry.path}" }
                                 val transformed = File(transformedDirectory, "$index-etc2.tex")
-                                val result = TexMobileConverter.convertToEtc2File(scenePackage, entry.offset, entry.length, transformed, checkCancellation)
-                                val verified =
-                                    result.converted &&
-                                        runCatching {
-                                            TexMobileConverter.inspectEntryRoute(transformed, 0L, transformed.length()).isVerifiedPassthroughRoute()
-                                        }.getOrDefault(false)
-                                if (verified) {
+                                val request = checkpointRequest(entry, strategy)
+                                val reused = resourceCheckpoint?.reuse(request)?.takeIf(::isVerifiedTexture)
+                                val product =
+                                    reused ?: run {
+                                        val result = TexMobileConverter.convertToEtc2File(scenePackage, entry.offset, entry.length, transformed, checkCancellation)
+                                        transformed.takeIf { result.converted && isVerifiedTexture(it) }
+                                            ?.let { resourceCheckpoint?.record(request, it) ?: it }
+                                    }
+                                if (product != null) {
                                     convertedTextures += 1
                                     Log.i("WallhubMpkg", "ETC2 re-encode succeeded for ${entry.path}")
-                                    putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
+                                    putEntry(MpkgInputEntry(entry.path, FilePayload(product)))
                                 } else {
                                     fallbackToSource(entry, transformed, "texture_conversion_failed")
                                 }
@@ -309,23 +331,25 @@ object WorkshopConverter {
                             ResourceStrategy.DOWNSAMPLE_TO_ETC2 -> {
                                 require(route == TexEntryRoute.CONVERT_IMAGE_TO_ETC2) { "Planned downsample strategy is incompatible with ${entry.path}" }
                                 val transformed = File(transformedDirectory, "$index-downsampled-etc2.tex")
-                                val result =
-                                    TexMobileConverter.downsampleToEtc2File(
-                                        scenePackage,
-                                        entry.offset,
-                                        entry.length,
-                                        entry.path,
-                                        transformed,
-                                        checkCancellation,
-                                    )
-                                val verified =
-                                    result.converted &&
-                                        runCatching {
-                                            TexMobileConverter.inspectEntryRoute(transformed, 0L, transformed.length()).isVerifiedPassthroughRoute()
-                                        }.getOrDefault(false)
-                                if (verified) {
+                                val request = checkpointRequest(entry, strategy)
+                                val reused = resourceCheckpoint?.reuse(request)?.takeIf(::isVerifiedTexture)
+                                val product =
+                                    reused ?: run {
+                                        val result =
+                                            TexMobileConverter.downsampleToEtc2File(
+                                                scenePackage,
+                                                entry.offset,
+                                                entry.length,
+                                                entry.path,
+                                                transformed,
+                                                checkCancellation,
+                                            )
+                                        transformed.takeIf { result.converted && isVerifiedTexture(it) }
+                                            ?.let { resourceCheckpoint?.record(request, it) ?: it }
+                                    }
+                                if (product != null) {
                                     convertedTextures += 1
-                                    putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
+                                    putEntry(MpkgInputEntry(entry.path, FilePayload(product)))
                                 } else {
                                     fallbackToSource(entry, transformed, "texture_conversion_failed")
                                 }
@@ -344,36 +368,38 @@ object WorkshopConverter {
                             }
                             ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 -> {
                                 val transformed = File(transformedDirectory, "$index-rgba.tex")
-                                val result =
-                                    when (route) {
-                                        TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA ->
-                                            if (animatedImageDecoder == null) {
-                                                TexMobileConverter.convertAnimatedImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, checkCancellation)
-                                            } else {
-                                                TexMobileConverter.convertAnimatedImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, checkCancellation, animatedImageDecoder)
+                                val request = checkpointRequest(entry, strategy)
+                                val reused = resourceCheckpoint?.reuse(request)?.takeIf(::isVerifiedTexture)
+                                val product =
+                                    reused ?: run {
+                                        val result =
+                                            when (route) {
+                                                TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA ->
+                                                    if (animatedImageDecoder == null) {
+                                                        TexMobileConverter.convertAnimatedImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, checkCancellation)
+                                                    } else {
+                                                        TexMobileConverter.convertAnimatedImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, checkCancellation, animatedImageDecoder)
+                                                    }
+                                                TexEntryRoute.CONVERT_IMAGE_TO_ETC2 -> {
+                                                    val limit = MpkgConversionPreset.fromStableId(plan?.presetId ?: MpkgConversionPreset.SOURCE_FIDELITY.stableId).policy().maxStaticImageRgbaBytes
+                                                    if (staticImageDecoder == null) {
+                                                        TexMobileConverter.convertImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, limit, checkCancellation)
+                                                    } else {
+                                                        TexMobileConverter.convertImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, limit, checkCancellation, staticImageDecoder)
+                                                    }
+                                                }
+                                                TexEntryRoute.CONVERT_IN_MEMORY -> {
+                                                    require(entry.length <= texConversionInputLimit()) { "Static texture ${entry.path} exceeds the bounded in-memory conversion limit" }
+                                                    TexMobileConverter.convertToFile(archive.readBytes(entry, texConversionInputLimit()), transformed, checkCancellation)
+                                                }
+                                                else -> error("Planned RGBA strategy is incompatible with ${entry.path}")
                                             }
-                                        TexEntryRoute.CONVERT_IMAGE_TO_ETC2 -> {
-                                            val limit = MpkgConversionPreset.fromStableId(plan?.presetId ?: MpkgConversionPreset.SOURCE_FIDELITY.stableId).policy().maxStaticImageRgbaBytes
-                                            if (staticImageDecoder == null) {
-                                                TexMobileConverter.convertImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, limit, checkCancellation)
-                                            } else {
-                                                TexMobileConverter.convertImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, limit, checkCancellation, staticImageDecoder)
-                                            }
-                                        }
-                                        TexEntryRoute.CONVERT_IN_MEMORY -> {
-                                            require(entry.length <= texConversionInputLimit()) { "Static texture ${entry.path} exceeds the bounded in-memory conversion limit" }
-                                            TexMobileConverter.convertToFile(archive.readBytes(entry, texConversionInputLimit()), transformed, checkCancellation)
-                                        }
-                                        else -> error("Planned RGBA strategy is incompatible with ${entry.path}")
+                                        transformed.takeIf { result.converted && isVerifiedTexture(it) }
+                                            ?.let { resourceCheckpoint?.record(request, it) ?: it }
                                     }
-                                val verified =
-                                    result.converted &&
-                                        runCatching {
-                                            TexMobileConverter.inspectEntryRoute(transformed, 0L, transformed.length()).isVerifiedPassthroughRoute()
-                                        }.getOrDefault(false)
-                                if (verified) {
+                                if (product != null) {
                                     convertedTextures += 1
-                                    putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
+                                    putEntry(MpkgInputEntry(entry.path, FilePayload(product)))
                                 } else {
                                     fallbackToSource(entry, transformed, "texture_conversion_failed")
                                 }
@@ -386,27 +412,37 @@ object WorkshopConverter {
                         checkCancellation()
                         val originalBytes = archive.readBytes(entry, MAX_SHADER_SOURCE_BYTES)
                         val original = originalBytes.toString(Charsets.UTF_8)
-                        checkCancellation()
-                        val rewritten =
-                            try {
-                                shaderRewriter(original, checkCancellation)
-                            } catch (error: Exception) {
-                                if (error is CancellationException) throw error
-                                null
-                            }
-                        if (rewritten == null) {
-                            digestFileSlice(scenePackage, entry.offset, entry.length, checkCancellation)
-                            putEntry(MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length)))
-                            warn("shader_rewrite_failed", entry.path)
-                            actualOutcomes[entry.path] =
-                                ConversionResourceOutcome(entry.path, ResourceStrategy.PASSTHROUGH_WITH_WARNING, "shader_rewrite_failed")
+                        val strategy = plan?.resources?.get(index)?.strategy ?: ResourceStrategy.REWRITE_SHADER
+                        val request = checkpointRequest(entry, strategy)
+                        val reused = resourceCheckpoint?.reuse(request)?.takeIf(::isVerifiedShader)
+                        if (reused != null) {
+                            if (!reused.readBytes().contentEquals(originalBytes)) rewrittenShaders += 1
+                            putEntry(MpkgInputEntry(entry.path, FilePayload(reused)))
                         } else {
                             checkCancellation()
-                            if (rewritten != original) rewrittenShaders += 1
-                            val transformed = File(transformedDirectory, "$index.$extension")
-                            transformed.writeText(rewritten, Charsets.UTF_8)
-                            checkCancellation()
-                            putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
+                            val rewritten =
+                                try {
+                                    shaderRewriter(original, checkCancellation)
+                                } catch (error: Exception) {
+                                    if (error is CancellationException) throw error
+                                    null
+                                }
+                            if (rewritten == null) {
+                                digestFileSlice(scenePackage, entry.offset, entry.length, checkCancellation)
+                                putEntry(MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length)))
+                                warn("shader_rewrite_failed", entry.path)
+                                actualOutcomes[entry.path] =
+                                    ConversionResourceOutcome(entry.path, ResourceStrategy.PASSTHROUGH_WITH_WARNING, "shader_rewrite_failed")
+                            } else {
+                                checkCancellation()
+                                if (rewritten != original) rewrittenShaders += 1
+                                val transformed = File(transformedDirectory, "$index.$extension")
+                                transformed.writeText(rewritten, Charsets.UTF_8)
+                                checkCancellation()
+                                require(isVerifiedShader(transformed)) { "Rewritten shader verification failed: ${entry.path}" }
+                                val product = resourceCheckpoint?.record(request, transformed) ?: transformed
+                                putEntry(MpkgInputEntry(entry.path, FilePayload(product)))
+                            }
                         }
                     }
                     else ->
@@ -572,6 +608,19 @@ object WorkshopConverter {
         }
         return WorkshopConversionReport(WorkshopKind.WEB, outputFile)
     }
+
+    private fun isVerifiedTexture(file: File): Boolean =
+        runCatching {
+            file.isFile && TexMobileConverter.inspectEntryRoute(file, 0L, file.length()).isVerifiedPassthroughRoute()
+        }.getOrDefault(false)
+
+    private fun isVerifiedShader(file: File): Boolean =
+        runCatching {
+            file.isFile && file.length() <= MAX_SHADER_SOURCE_BYTES &&
+                file.readText(Charsets.UTF_8).toByteArray(Charsets.UTF_8).size.toLong() == file.length()
+        }.getOrDefault(false)
+
+    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
     private fun digestFileSlice(
         source: File,

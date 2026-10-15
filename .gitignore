@@ -80,6 +80,7 @@ signing.properties
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/DownloadLiveTelemetryTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/DownloadHostReconcilerTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/ConversionAdmissionCancellationTest.kt
+!/app/src/test/kotlin/com/wallhub/android/data/downloads/ConversionResourceCheckpointAdapterTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/
 /app/src/test/kotlin/com/wallhub/android/feature/*
 !/app/src/test/kotlin/com/wallhub/android/feature/detail/

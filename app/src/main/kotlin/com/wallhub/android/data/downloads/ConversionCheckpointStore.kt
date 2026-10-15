@@ -46,6 +46,17 @@ internal class ConversionCheckpointStore(
 ) {
     private val root = File(filesDir, "conversion-checkpoints")
 
+    @Synchronized
+    fun bind(identity: ConversionCheckpointIdentity) {
+        val directory = attemptDirectory(identity)
+        val existing = readIdentity(directory)
+        if (existing != null && existing != identity) {
+            check(directory.deleteRecursively()) { "Unable to invalidate stale checkpoint attempt" }
+        }
+        check(directory.exists() || directory.mkdirs()) { "Unable to create checkpoint directory" }
+        ensureIdentity(directory, identity)
+    }
+
     fun write(
         identity: ConversionCheckpointIdentity,
         normalizedPath: String,
