@@ -109,22 +109,52 @@ class StaleConversionSourceException(
 object ConversionReportJsonCodec {
     const val MAX_JSON_BYTES = 128 * 1024
 
-    /** Durable reports are summaries; per-resource outcomes remain process-local. */
-    fun encode(report: WorkshopConversionReport): String =
-        JSONObject()
-            .put("version", 1)
-            .put("planVersion", report.planVersion ?: 1)
-            .put("presetId", report.presetId ?: MpkgConversionPreset.BALANCED.stableId)
-            .put("kind", report.kind.name)
-            .put("outputBytes", report.outputFile.length())
-            .put("resourceCount", report.outcomes.size)
-            .put("convertedTextures", report.convertedTextures)
-            .put("copiedTextures", report.copiedTextures)
-            .put("removedAudio", report.removedAudio)
-            .put("rewrittenShaders", report.rewrittenShaders)
-            .put("warningCount", report.warnings.size)
-            .toString()
-            .also(::requireBoundedPersistedConversionJson)
+    /** Durable reports are summaries; resource outcomes remain process-local and warning detail is bounded. */
+    fun encode(report: WorkshopConversionReport): String {
+        val allDetails = report.warningDetails.distinct()
+        val details =
+            allDetails
+                .sortedWith(compareBy(ConversionWarningDetail::path).thenBy(ConversionWarningDetail::code))
+                .take(MAX_WARNING_DETAILS)
+        val counts =
+            if (report.warningCounts.isNotEmpty()) {
+                report.warningCounts.toSortedMap()
+            } else {
+                report.warningDetails.groupingBy(ConversionWarningDetail::code).eachCount().toSortedMap()
+            }
+        var persistedDetails = details
+        while (true) {
+            val encoded =
+                JSONObject()
+                    .put("version", 2)
+                    .put("planVersion", report.planVersion ?: 1)
+                    .put("presetId", report.presetId ?: MpkgConversionPreset.BALANCED.stableId)
+                    .put("kind", report.kind.name)
+                    .put("outputBytes", report.outputFile.length())
+                    .put("resourceCount", report.outcomes.size)
+                    .put("convertedTextures", report.convertedTextures)
+                    .put("copiedTextures", report.copiedTextures)
+                    .put("removedAudio", report.removedAudio)
+                    .put("rewrittenShaders", report.rewrittenShaders)
+                    .put("warningCount", counts.values.sum().takeIf { it > 0 } ?: report.warnings.size)
+                    .put(
+                        "warningDetails",
+                        JSONArray().also { array ->
+                            persistedDetails.forEach { detail ->
+                                array.put(JSONObject().put("code", detail.code).put("path", detail.path))
+                            }
+                        },
+                    ).put(
+                        "warningCounts",
+                        JSONObject().also { summary -> counts.forEach { (code, count) -> summary.put(code, count) } },
+                    ).toString()
+            if (encoded.toByteArray(Charsets.UTF_8).size <= MAX_JSON_BYTES) return encoded
+            require(persistedDetails.isNotEmpty()) { "Persisted conversion report summary exceeds byte limit" }
+            persistedDetails = persistedDetails.dropLast(1)
+        }
+    }
+
+    private const val MAX_WARNING_DETAILS = 100
 }
 
 object ConversionPlanJsonCodec {
