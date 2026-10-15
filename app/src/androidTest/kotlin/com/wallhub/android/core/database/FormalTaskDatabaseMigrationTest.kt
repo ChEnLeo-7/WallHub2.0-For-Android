@@ -181,6 +181,26 @@ class FormalTaskDatabaseMigrationTest {
     }
 
     @Test
+    fun migration12To13AddsWorkshopSourceCacheColumnsWithStableDefaults() {
+        helper.createDatabase(TEST_DATABASE, 12).close()
+
+        helper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            13,
+            true,
+            FormalTaskDatabase.MIGRATION_12_13,
+        ).use { database ->
+            database.query("PRAGMA table_info(formal_task_records)").use { cursor ->
+                val columns = mutableSetOf<String>()
+                while (cursor.moveToNext()) columns += cursor.getString(cursor.getColumnIndexOrThrow("name"))
+                assertTrue("stagingRetainedBytes" in columns)
+                assertTrue("stagingLastAccessedAt" in columns)
+                assertTrue("stagingCacheState" in columns)
+            }
+        }
+    }
+
+    @Test
     fun projectionUpsertPreservesTheTaskAudioSnapshot() {
         val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
         try {
@@ -195,6 +215,29 @@ class FormalTaskDatabaseMigrationTest {
 
                 assertTrue(merged.preserveAudio)
                 assertTrue(requireNotNull(dao.find("audio-snapshot")).preserveAudio)
+            }
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun projectionUpsertPreservesWorkshopSourceCacheAccounting() {
+        val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
+        try {
+            val dao = database.taskRecordDao()
+            kotlinx.coroutines.runBlocking {
+                dao.upsert(
+                    task("cache-snapshot", "COMPLETED").copy(
+                        stagingRetainedBytes = 42,
+                        stagingLastAccessedAt = 7,
+                        stagingCacheState = "RETAINED",
+                    ),
+                )
+                val merged = dao.upsertPreservingExecutionIntent(task("cache-snapshot", "FAILED"))
+                assertEquals(42L, merged.stagingRetainedBytes)
+                assertEquals(7L, merged.stagingLastAccessedAt)
+                assertEquals("RETAINED", merged.stagingCacheState)
             }
         } finally {
             database.close()

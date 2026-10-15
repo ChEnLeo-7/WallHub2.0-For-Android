@@ -42,6 +42,7 @@ internal class RoomDownloadTaskRepository private constructor(
     private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
     private val steamWorkshopContentClient: SteamWorkshopContentClient,
     private val liveTelemetry: DownloadLiveTelemetry,
+    private val sourceCacheManager: WorkshopSourceCacheManager?,
     private val queuedMessage: () -> String,
     private val enqueueFailedMessage: (String) -> String,
 ) : WorkshopDownloads {
@@ -56,6 +57,7 @@ internal class RoomDownloadTaskRepository private constructor(
         downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
         steamWorkshopContentClient: SteamWorkshopContentClient,
         liveTelemetry: DownloadLiveTelemetry,
+        sourceCacheManager: WorkshopSourceCacheManager,
     ) : this(
         context = context,
         taskDao = taskDao,
@@ -66,6 +68,7 @@ internal class RoomDownloadTaskRepository private constructor(
         downloadConcurrencyGovernor = downloadConcurrencyGovernor,
         steamWorkshopContentClient = steamWorkshopContentClient,
         liveTelemetry = liveTelemetry,
+        sourceCacheManager = sourceCacheManager,
         queuedMessage = { context.getString(R.string.backend_download_queued) },
         enqueueFailedMessage = { errorType ->
             context.getString(R.string.backend_download_start_failed, errorType)
@@ -82,6 +85,7 @@ internal class RoomDownloadTaskRepository private constructor(
         downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
         steamWorkshopContentClient: SteamWorkshopContentClient,
         liveTelemetry: DownloadLiveTelemetry = DownloadLiveTelemetry(),
+        sourceCacheManager: WorkshopSourceCacheManager? = null,
         queuedMessage: String,
         enqueueFailedMessage: (String) -> String,
     ) : this(
@@ -94,6 +98,7 @@ internal class RoomDownloadTaskRepository private constructor(
         downloadConcurrencyGovernor,
         steamWorkshopContentClient,
         liveTelemetry,
+        sourceCacheManager,
         { queuedMessage },
         enqueueFailedMessage,
     )
@@ -297,6 +302,7 @@ internal class RoomDownloadTaskRepository private constructor(
                     task
                 }
             if (action == DownloadAction.RETRY && recoveredTask.hasCompleteStagingDownload()) {
+                sourceCacheManager?.touch(task.id)
                 val converting = recoveredTask.copy(
                     status = DownloadStatus.CONVERTING,
                     message = context.getString(R.string.backend_conversion_retrying),
@@ -358,6 +364,7 @@ internal class RoomDownloadTaskRepository private constructor(
         }
 
         private suspend fun requestExport(task: DownloadTask) {
+            sourceCacheManager?.touch(task.id)
             val stagingDirectory = task.stagingDirectory?.let(::File)
             require(stagingDirectory?.isDirectory == true) { "Download staging files are missing; cannot export" }
             val converting = task.copy(
@@ -429,8 +436,14 @@ internal class RoomDownloadTaskRepository private constructor(
             require(
                 task.status in setOf(DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELLED),
             ) { "An active download cannot be deleted; cancel the task first" }
-            check(ConversionPlanStore(context.filesDir).delete(task.id)) { "Unable to delete conversion plan" }
-            deleteManagedDownloadDirectories(context, task.id, task.stagingDirectory)
+            val record = requireNotNull(taskDao.find(task.id))
+            if (sourceCacheManager != null) {
+                check(sourceCacheManager.discard(record)) { "Unable to delete private Workshop source cache" }
+            } else {
+                check(ConversionPlanStore(context.filesDir).delete(task.id)) { "Unable to delete conversion plan" }
+                check(ConversionCheckpointStore(context.filesDir).deleteTask(task.id)) { "Unable to delete conversion checkpoints" }
+                deleteManagedDownloadDirectories(context, task.id, task.stagingDirectory)
+            }
             check(taskDao.deleteTerminalWithCommands(task.id) == 1) {
                 "Download task changed before it could be deleted"
             }
@@ -494,12 +507,17 @@ internal class RoomDownloadTaskRepository private constructor(
 
         private suspend fun deleteHistoryTasks(tasks: List<FormalTaskRecordEntity>): Int =
             tasks.sumOf { task ->
-                check(ConversionPlanStore(context.filesDir).delete(task.taskId)) { "Unable to delete conversion plan" }
-                val deleted = taskDao.deleteTerminalWithCommands(task.taskId)
-                if (deleted > 0) {
+                if (sourceCacheManager != null) {
+                    check(sourceCacheManager.discard(task)) { "Unable to delete private Workshop source cache" }
+                } else {
+                    check(ConversionPlanStore(context.filesDir).delete(task.taskId)) { "Unable to delete conversion plan" }
+                    check(ConversionCheckpointStore(context.filesDir).deleteTask(task.taskId)) {
+                        "Unable to delete conversion checkpoints"
+                    }
                     deleteManagedDownloadDirectories(context, task.taskId, task.stagingDirectory)
-                    File(context.cacheDir, "wallhub-conversion/${task.taskId}").deleteRecursively()
                 }
+                val deleted = taskDao.deleteTerminalWithCommands(task.taskId)
+                if (deleted > 0) File(context.cacheDir, "wallhub-conversion/${task.taskId}").deleteRecursively()
                 deleted
             }
     }

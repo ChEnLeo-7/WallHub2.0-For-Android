@@ -117,6 +117,12 @@ internal class ConversionCheckpointStore(
 
     fun deleteAttempt(identity: ConversionCheckpointIdentity): Boolean = attemptDirectory(identity).deleteRecursively()
 
+    fun deleteTask(taskId: String): Boolean {
+        require(taskId.isNotBlank() && taskId.toByteArray().size <= 512) { "Invalid checkpoint task ID" }
+        val directory = File(root, safeTask(taskId))
+        return !directory.exists() || directory.deleteRecursively()
+    }
+
     fun cleanupTemporaryFiles(): Int {
         if (!root.isDirectory) return 0
         var deleted = 0

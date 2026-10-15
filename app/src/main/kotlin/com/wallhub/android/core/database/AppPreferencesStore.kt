@@ -153,6 +153,19 @@ class AppPreferencesStore(
         }
     }
 
+    suspend fun setWorkshopSourceCacheEnabled(enabled: Boolean) {
+        applicationContext.dataStore.edit { preferences ->
+            preferences[Keys.workshopSourceCacheEnabled] = enabled
+        }
+    }
+
+    suspend fun setWorkshopSourceCacheBudgetGiB(budgetGiB: Int) {
+        require(budgetGiB >= 0) { "Workshop source-cache budget must not be negative" }
+        applicationContext.dataStore.edit { preferences ->
+            preferences[Keys.workshopSourceCacheBudgetGiB] = budgetGiB
+        }
+    }
+
     suspend fun setOnlineStreamCacheLimitMb(limitMb: Int) {
         applicationContext.dataStore.edit { preferences ->
             preferences[Keys.mediaCacheLimitMb] = limitMb.coerceAtLeast(128)
@@ -340,6 +353,8 @@ class AppPreferencesStore(
                     ?.let(MpkgConversionPreset::fromStableId)
                     ?: MpkgConversionPreset.BALANCED,
             preserveAudio = preferences[Keys.preserveAudio] ?: false,
+            workshopSourceCacheEnabled = preferences[Keys.workshopSourceCacheEnabled] ?: true,
+            workshopSourceCacheBudgetGiB = (preferences[Keys.workshopSourceCacheBudgetGiB] ?: 5).coerceAtLeast(0),
             downloadProxyUrl = preferences[Keys.downloadProxyUrl].orEmpty(),
             downloadProxyEnabled = preferences[Keys.downloadProxyEnabled] ?: false,
             downloadProxyRequiresConfirmation =
@@ -392,6 +407,8 @@ class AppPreferencesStore(
         val chunkDownloadConcurrency = intPreferencesKey("chunk_download_concurrency")
         val mpkgConversionPreset = stringPreferencesKey("mpkg_conversion_preset")
         val preserveAudio = booleanPreferencesKey("mpkg_preserve_audio")
+        val workshopSourceCacheEnabled = booleanPreferencesKey("workshop_source_cache_enabled")
+        val workshopSourceCacheBudgetGiB = intPreferencesKey("workshop_source_cache_budget_gib")
         val downloadProxyUrl = stringPreferencesKey("download_proxy_url")
         val downloadProxyEnabled = booleanPreferencesKey("download_proxy_enabled")
         val steamAccessEnabled = booleanPreferencesKey("steam_access_enabled")

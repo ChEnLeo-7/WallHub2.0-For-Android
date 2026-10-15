@@ -143,6 +143,8 @@ data class AppPreferences(
     val chunkDownloadConcurrency: Int = DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY,
     val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
     val preserveAudio: Boolean = false,
+    val workshopSourceCacheEnabled: Boolean = true,
+    val workshopSourceCacheBudgetGiB: Int = 5,
     val downloadProxyUrl: String = "",
     val downloadProxyEnabled: Boolean = false,
     val downloadProxyRequiresConfirmation: Boolean = false,
@@ -174,7 +176,8 @@ data class AppPreferences(
             "homeCardAction=$homeCardAction, homePaginationMode=$homePaginationMode, " +
             "matureContentEnabled=$matureContentEnabled, maxConcurrentDownloads=$maxConcurrentDownloads, " +
             "chunkDownloadConcurrency=$chunkDownloadConcurrency, mpkgConversionPreset=$mpkgConversionPreset, " +
-            "preserveAudio=$preserveAudio, downloadProxyUrl=$downloadProxyUrl, " +
+            "preserveAudio=$preserveAudio, workshopSourceCacheEnabled=$workshopSourceCacheEnabled, " +
+            "workshopSourceCacheBudgetGiB=$workshopSourceCacheBudgetGiB, downloadProxyUrl=$downloadProxyUrl, " +
             "downloadProxyEnabled=$downloadProxyEnabled, " +
             "downloadProxyRequiresConfirmation=$downloadProxyRequiresConfirmation, " +
             "steamAccessEnabled=$steamAccessEnabled, steamAccessMode=$steamAccessMode, " +

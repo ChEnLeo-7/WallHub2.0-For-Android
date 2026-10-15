@@ -23,6 +23,9 @@ internal class PlaybackDownloadCoordinator @Inject constructor() {
         }
     }
 
+    val isPlaybackActive: Boolean
+        get() = activePlaybackCount.value > 0
+
     suspend fun awaitBackgroundWorkAllowed() {
         activePlaybackCount.first { it == 0 }
     }

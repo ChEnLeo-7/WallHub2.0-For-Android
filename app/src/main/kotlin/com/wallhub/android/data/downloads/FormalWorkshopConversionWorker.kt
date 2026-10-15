@@ -24,7 +24,6 @@ import com.wallhub.android.core.database.FormalTaskRecordEntity
 import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.ExportFormat
-import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.prototype.mpkg.ConversionPlan
 import com.wallhub.prototype.mpkg.ConversionPlanJsonCodec
@@ -56,6 +55,7 @@ internal class FormalWorkshopConversionWorker(
         private val taskDao: FormalTaskRecordDao,
         private val downloadConcurrencyGovernor: DownloadConcurrencyGovernor,
         private val playbackCoordinator: PlaybackDownloadCoordinator,
+        private val sourceCacheManager: WorkshopSourceCacheManager,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result =
         withContext(Dispatchers.IO) {
@@ -195,11 +195,6 @@ internal class FormalWorkshopConversionWorker(
                                 transaction = transaction,
                                 persistTransaction = persistTransaction,
                             )
-                    val keepVideoSourceForLocalPlayback =
-                        task.type.equals(
-                            WorkshopType.VIDEO.name,
-                            ignoreCase = true,
-                        )
                     val completed =
                         update(
                             task,
@@ -209,10 +204,8 @@ internal class FormalWorkshopConversionWorker(
                             outputLabel = exportedFile.label,
                             message = conversion.message(applicationContext, exportedFile.uri),
                         )
-                    // Keep completed output recoverable even if best-effort source cleanup fails.
-                    if (!keepVideoSourceForLocalPlayback && sourceDirectory.deleteRecursively()) {
-                        runCatching { taskDao.clearStagingDirectory(completed.taskId) }
-                    }
+                    // Successful output/report are independent of the private reconversion source cache.
+                    sourceCacheManager.retainCompleted(completed.taskId)
                     if (completed.exportBackupUri == null) Result.success() else Result.retry()
                 }
             } catch (error: CancellationException) {

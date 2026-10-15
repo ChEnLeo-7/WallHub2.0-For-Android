@@ -43,6 +43,9 @@ data class FormalTaskRecordEntity(
     val contentManifestId: Long = 0L,
     val appId: Int = 0,
     val stagingDirectory: String? = null,
+    @ColumnInfo(defaultValue = "0") val stagingRetainedBytes: Long = 0L,
+    @ColumnInfo(defaultValue = "0") val stagingLastAccessedAt: Long = 0L,
+    @ColumnInfo(defaultValue = "'NONE'") val stagingCacheState: String = "NONE",
     val outputTreeUri: String? = null,
     val outputUri: String? = null,
     val exportFormat: String = "AUTO",
@@ -185,6 +188,9 @@ interface FormalTaskRecordDao {
                 conversionPlanJson = current.conversionPlanJson,
                 conversionReportJson = current.conversionReportJson,
                 conversionPlanVersion = current.conversionPlanVersion,
+                stagingRetainedBytes = current.stagingRetainedBytes,
+                stagingLastAccessedAt = current.stagingLastAccessedAt,
+                stagingCacheState = current.stagingCacheState,
                 exportTransactionState = if (preserveExportTransaction) current.exportTransactionState else task.exportTransactionState,
                 exportTargetUri = if (preserveExportTransaction) current.exportTargetUri else task.exportTargetUri,
                 exportBackupUri = if (preserveExportTransaction) current.exportBackupUri else task.exportBackupUri,
@@ -292,6 +298,22 @@ interface FormalTaskRecordDao {
         taskId: String,
         position: Long,
     )
+
+    @Query("SELECT * FROM formal_task_records WHERE stagingCacheState = 'RETAINED' ORDER BY stagingLastAccessedAt ASC, taskId ASC")
+    suspend fun listRetainedStaging(): List<FormalTaskRecordEntity>
+
+    @Query(
+        "UPDATE formal_task_records SET stagingRetainedBytes = :retainedBytes, " +
+            "stagingLastAccessedAt = :accessedAt, stagingCacheState = 'RETAINED' WHERE taskId = :taskId",
+    )
+    suspend fun touchRetainedStaging(taskId: String, retainedBytes: Long, accessedAt: Long): Int
+
+    @Query(
+        "UPDATE formal_task_records SET stagingDirectory = NULL, stagingRetainedBytes = 0, " +
+            "stagingLastAccessedAt = 0, stagingCacheState = 'NONE', conversionPlanJson = NULL " +
+            "WHERE taskId = :taskId",
+    )
+    suspend fun clearStagingCache(taskId: String): Int
 
     @Query("UPDATE formal_task_records SET stagingDirectory = NULL WHERE taskId = :taskId")
     suspend fun clearStagingDirectory(taskId: String)
@@ -551,7 +573,7 @@ interface LocalWallpaperMetadataDao {
         LocalWallpaperStateEntity::class,
         LocalWallpaperTagEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 abstract class FormalTaskDatabase : RoomDatabase() {
@@ -822,6 +844,21 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 }
             }
 
+        internal val MIGRATION_12_13 =
+            object : Migration(12, 13) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records ADD COLUMN stagingRetainedBytes INTEGER NOT NULL DEFAULT 0",
+                    )
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records ADD COLUMN stagingLastAccessedAt INTEGER NOT NULL DEFAULT 0",
+                    )
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records ADD COLUMN stagingCacheState TEXT NOT NULL DEFAULT 'NONE'",
+                    )
+                }
+            }
+
         internal val migrations: Array<Migration> =
             arrayOf(
                 MIGRATION_1_2,
@@ -835,6 +872,7 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 MIGRATION_9_10,
                 MIGRATION_10_11,
                 MIGRATION_11_12,
+                MIGRATION_12_13,
             )
 
         @Volatile

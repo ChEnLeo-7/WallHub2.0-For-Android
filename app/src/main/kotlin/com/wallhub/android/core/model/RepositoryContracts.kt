@@ -51,6 +51,10 @@ interface SettingsRepository {
 
     suspend fun setPreserveAudio(enabled: Boolean) = Unit
 
+    suspend fun setWorkshopSourceCacheEnabled(enabled: Boolean) = Unit
+
+    suspend fun setWorkshopSourceCacheBudgetGiB(budgetGiB: Int) = Unit
+
     suspend fun setOnlineStreamCacheLimitMb(limitMb: Int) = Unit
 
     suspend fun setDownloadProxyEnabled(enabled: Boolean) = Unit

@@ -16,6 +16,7 @@ import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.data.downloads.DownloadWorkScheduler
 import com.wallhub.android.data.downloads.WallHubDownloadWorkerFactory
+import com.wallhub.android.data.downloads.WorkshopSourceCacheManager
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CancellationException
@@ -51,10 +52,22 @@ class WallHubApplication :
     @Inject
     internal lateinit var downloadWorkScheduler: DownloadWorkScheduler
 
+    @Inject
+    internal lateinit var workshopSourceCacheManager: WorkshopSourceCacheManager
+
     override fun onCreate() {
         super.onCreate()
         CrashDiagnostics.install(this)
         steamSessionRepository.restorePersistedSession()
+        applicationScope.launch {
+            try {
+                workshopSourceCacheManager.reconcileAndEnforceBudget()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Log.e(TAG, "Unable to reconcile the Workshop source cache during startup", error)
+            }
+        }
         applicationScope.launch {
             try {
                 downloadWorkScheduler.wake()

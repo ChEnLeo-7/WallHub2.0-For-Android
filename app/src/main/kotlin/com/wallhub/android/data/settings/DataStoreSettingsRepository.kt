@@ -88,6 +88,14 @@ class DataStoreSettingsRepository
             store.setPreserveAudio(enabled)
         }
 
+        override suspend fun setWorkshopSourceCacheEnabled(enabled: Boolean) {
+            store.setWorkshopSourceCacheEnabled(enabled)
+        }
+
+        override suspend fun setWorkshopSourceCacheBudgetGiB(budgetGiB: Int) {
+            store.setWorkshopSourceCacheBudgetGiB(budgetGiB)
+        }
+
         override suspend fun setOnlineStreamCacheLimitMb(limitMb: Int) {
             store.setOnlineStreamCacheLimitMb(limitMb)
         }

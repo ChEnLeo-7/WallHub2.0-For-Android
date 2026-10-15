@@ -124,6 +124,7 @@ internal class WallHubDownloadWorkerFactory
         private val downloadHostCoordinator: SingleProcessDownloadHostCoordinator,
         private val downloadHostWakeSignal: ProcessDownloadHostWakeSignal,
         private val playbackCoordinator: PlaybackDownloadCoordinator,
+        private val sourceCacheManager: WorkshopSourceCacheManager,
     ) : WorkerFactory() {
         override fun createWorker(
             appContext: Context,
@@ -156,6 +157,7 @@ internal class WallHubDownloadWorkerFactory
                         taskDao = taskDao,
                         downloadConcurrencyGovernor = downloadConcurrencyGovernor,
                         playbackCoordinator = playbackCoordinator,
+                        sourceCacheManager = sourceCacheManager,
                     )
 
                 else -> null
