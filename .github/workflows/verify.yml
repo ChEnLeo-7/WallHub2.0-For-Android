@@ -36,7 +36,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
+      - name: Use the hosted Android SDK
+        run: |
+          test -n "${ANDROID_HOME:-}"
+          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
       - name: Install the NDK
         run: sdkmanager "ndk;27.0.12077973" >/dev/null
       - name: Build the app-owned ETC2 encoder for every ABI
