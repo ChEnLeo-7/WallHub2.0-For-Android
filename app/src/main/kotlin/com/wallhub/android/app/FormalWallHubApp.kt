@@ -52,7 +52,6 @@ import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.app.AppNavigationCommandBus
 import com.wallhub.android.app.DebugVideoCommandBus
-import com.wallhub.android.navigation.DownloadsDestination
 import com.wallhub.android.feature.setup.WallHubSetupWizard
 import kotlinx.coroutines.flow.collect
 
