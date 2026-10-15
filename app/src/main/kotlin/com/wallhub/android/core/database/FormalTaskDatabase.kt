@@ -52,8 +52,15 @@ data class FormalTaskRecordEntity(
     @ColumnInfo(defaultValue = "'balanced'") val conversionPreset: String = "balanced",
     @ColumnInfo(defaultValue = "0") val preserveAudio: Boolean = false,
     val conversionPlanJson: String? = null,
+    /** Report from the most recent conversion attempt, whether it succeeded or failed. */
     val conversionReportJson: String? = null,
+    /** Current successful report paired with the published output. */
+    val successfulConversionReportJson: String? = null,
     @ColumnInfo(defaultValue = "1") val conversionPlanVersion: Int = 1,
+    @ColumnInfo(defaultValue = "0") val conversionAttempt: Long = 0L,
+    @ColumnInfo(defaultValue = "0") val lastSuccessfulAttempt: Long = 0L,
+    /** Small Room-owned pointer to the app-private per-resource checkpoint set. */
+    val conversionCheckpointReference: String? = null,
     @ColumnInfo(defaultValue = "'NONE'") val exportTransactionState: String = "NONE",
     val exportTargetUri: String? = null,
     val exportBackupUri: String? = null,
@@ -187,7 +194,11 @@ interface FormalTaskRecordDao {
                 preserveAudio = current.preserveAudio,
                 conversionPlanJson = current.conversionPlanJson,
                 conversionReportJson = current.conversionReportJson,
+                successfulConversionReportJson = current.successfulConversionReportJson,
                 conversionPlanVersion = current.conversionPlanVersion,
+                conversionAttempt = current.conversionAttempt,
+                lastSuccessfulAttempt = current.lastSuccessfulAttempt,
+                conversionCheckpointReference = current.conversionCheckpointReference,
                 stagingRetainedBytes = current.stagingRetainedBytes,
                 stagingLastAccessedAt = current.stagingLastAccessedAt,
                 stagingCacheState = current.stagingCacheState,
@@ -215,7 +226,9 @@ interface FormalTaskRecordDao {
 
     @Query(
         "UPDATE formal_task_records SET status = 'CONVERTING', downloadedBytes = :downloadedBytes, " +
-            "totalBytes = :totalBytes, bytesPerSecond = 0, outputLabel = NULL, message = :message, " +
+            "totalBytes = :totalBytes, bytesPerSecond = 0, conversionAttempt = conversionAttempt + 1, " +
+            "conversionPlanJson = NULL, conversionReportJson = NULL, conversionPlanVersion = 2, " +
+            "conversionCheckpointReference = '{\"attempt\":' || (conversionAttempt + 1) || '}', message = :message, " +
             "updatedAt = :updatedAt WHERE taskId = :taskId AND desiredIntent = 'RUN' " +
             "AND status IN ('QUEUED', 'RESOLVING', 'DOWNLOADING')",
     )
@@ -328,11 +341,63 @@ interface FormalTaskRecordDao {
         planVersion: Int,
     ): Int
 
-    @Query("UPDATE formal_task_records SET conversionReportJson = :reportJson WHERE taskId = :taskId")
+    @Query(
+        "UPDATE formal_task_records SET conversionReportJson = :reportJson " +
+            "WHERE taskId = :taskId AND conversionAttempt = :expectedAttempt",
+    )
     suspend fun persistConversionReport(
         taskId: String,
+        expectedAttempt: Long,
         reportJson: String?,
     ): Int
+
+    /**
+     * Starts one conversion attempt without invalidating the last published output. The expected attempt is the
+     * CAS token that prevents two UI taps or retry paths from accepting the same conversion intent.
+     */
+    @Query(
+        "UPDATE formal_task_records SET status = 'CONVERTING', conversionPreset = :preset, " +
+            "preserveAudio = :preserveAudio, conversionAttempt = conversionAttempt + 1, " +
+            "conversionPlanJson = NULL, conversionReportJson = NULL, conversionPlanVersion = 2, " +
+            "conversionCheckpointReference = '{\"attempt\":' || (conversionAttempt + 1) || '}', " +
+            "exportTransactionState = 'NONE', exportTargetUri = NULL, exportBackupUri = NULL, " +
+            "exportOutputName = NULL, exportMimeType = NULL, desiredIntent = 'RUN', message = :message, " +
+            "updatedAt = :updatedAt WHERE taskId = :taskId AND conversionAttempt = :expectedAttempt " +
+            "AND status IN (:allowedStatuses)",
+    )
+    suspend fun beginReconversion(
+        taskId: String,
+        expectedAttempt: Long,
+        preset: String,
+        preserveAudio: Boolean,
+        message: String,
+        updatedAt: Long,
+        allowedStatuses: List<String>,
+    ): Int
+
+    /** Publishes output and its report together only after the durable export transaction committed. */
+    @Query(
+        "UPDATE formal_task_records SET status = 'COMPLETED', outputUri = :outputUri, " +
+            "outputLabel = :outputLabel, successfulConversionReportJson = conversionReportJson, " +
+            "lastSuccessfulAttempt = conversionAttempt, stagingDirectory = :stagingDirectory, message = :message, " +
+            "updatedAt = :updatedAt WHERE taskId = :taskId AND conversionAttempt = :expectedAttempt " +
+            "AND status = 'EXPORTING' AND exportTransactionState = 'COMMITTED'",
+    )
+    suspend fun commitSuccessfulConversion(
+        taskId: String,
+        expectedAttempt: Long,
+        outputUri: String,
+        outputLabel: String,
+        stagingDirectory: String,
+        message: String,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        "UPDATE formal_task_records SET conversionCheckpointReference = NULL WHERE taskId = :taskId " +
+            "AND conversionAttempt = :expectedAttempt",
+    )
+    suspend fun clearConversionCheckpointReference(taskId: String, expectedAttempt: Long): Int
 
     @Transaction
     suspend fun updateQueueOrder(taskIds: List<String>) {
@@ -573,7 +638,7 @@ interface LocalWallpaperMetadataDao {
         LocalWallpaperStateEntity::class,
         LocalWallpaperTagEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = true,
 )
 abstract class FormalTaskDatabase : RoomDatabase() {
@@ -859,6 +924,31 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 }
             }
 
+        internal val MIGRATION_13_14 =
+            object : Migration(13, 14) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records " +
+                            "ADD COLUMN successfulConversionReportJson TEXT",
+                    )
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records " +
+                            "ADD COLUMN conversionAttempt INTEGER NOT NULL DEFAULT 0",
+                    )
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records " +
+                            "ADD COLUMN lastSuccessfulAttempt INTEGER NOT NULL DEFAULT 0",
+                    )
+                    database.execSQL("ALTER TABLE formal_task_records ADD COLUMN conversionCheckpointReference TEXT")
+                    database.execSQL(
+                        "UPDATE formal_task_records SET " +
+                            "successfulConversionReportJson = CASE WHEN status = 'COMPLETED' THEN conversionReportJson ELSE NULL END, " +
+                            "conversionAttempt = CASE WHEN conversionReportJson IS NULL THEN 0 ELSE 1 END, " +
+                            "lastSuccessfulAttempt = CASE WHEN status = 'COMPLETED' AND conversionReportJson IS NOT NULL THEN 1 ELSE 0 END",
+                    )
+                }
+            }
+
         internal val migrations: Array<Migration> =
             arrayOf(
                 MIGRATION_1_2,
@@ -873,6 +963,7 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 MIGRATION_10_11,
                 MIGRATION_11_12,
                 MIGRATION_12_13,
+                MIGRATION_13_14,
             )
 
         @Volatile

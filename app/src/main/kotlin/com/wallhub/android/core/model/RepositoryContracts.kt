@@ -384,6 +384,13 @@ interface WorkshopDownloads {
         format: ExportFormat,
     )
 
+    /** Reuses a complete retained Scene source to atomically replace its successful MPKG output. */
+    suspend fun requestReconversion(
+        taskId: String,
+        preset: MpkgConversionPreset,
+        preserveAudio: Boolean,
+    )
+
     suspend fun reorder(taskIds: List<String>)
 
     suspend fun clearFinishedHistory(): Int

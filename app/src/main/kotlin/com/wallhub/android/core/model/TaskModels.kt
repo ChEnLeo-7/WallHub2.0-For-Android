@@ -110,8 +110,14 @@ data class DownloadTask(
     val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
     val preserveAudio: Boolean = false,
     val conversionPlanJson: String? = null,
+    /** Report from the most recent attempt, successful or otherwise. */
     val conversionReportJson: String? = null,
+    /** Current successful report paired with [outputUri]. */
+    val successfulConversionReportJson: String? = null,
     val conversionPlanVersion: Int = 1,
+    val conversionAttempt: Long = 0L,
+    val lastSuccessfulAttempt: Long = 0L,
+    val conversionCheckpointReference: String? = null,
     val pendingControl: DownloadAction? = null,
     val isResumable: Boolean = true,
     val queuePosition: Long = 0L,

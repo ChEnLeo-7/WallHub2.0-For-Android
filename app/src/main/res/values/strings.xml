@@ -712,6 +712,12 @@
     <string name='downloads_storage_permission_denied'>Storage permission was not granted. Cannot export to Download/WallHub.</string>
     <string name='downloads_export_queued'>Added to the conversion and export queue</string>
     <string name='downloads_action_failed'>Operation failed. Try again later.</string>
+    <string name='downloads_action_reconvert'>Reconvert</string>
+    <string name='downloads_reconversion_title'>Reconvert</string>
+    <string name='downloads_reconversion_description'>Choose conversion quality and audio handling.</string>
+    <string name='downloads_reconversion_cache_note'>If the source cache is missing, it will be downloaded again before conversion.</string>
+    <string name='downloads_reconversion_confirm'>Reconvert</string>
+    <string name='downloads_reconversion_cancel'>Cancel</string>
     <string name='downloads_added_to_queue'>Added to download queue: %1$s</string>
     <string name='downloads_view_queue'>View downloads</string>
     <string name='downloads_enqueue_failed'>Unable to add to the download queue</string>

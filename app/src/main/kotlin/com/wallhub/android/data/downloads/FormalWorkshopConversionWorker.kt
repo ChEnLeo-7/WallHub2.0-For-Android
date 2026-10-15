@@ -61,12 +61,13 @@ internal class FormalWorkshopConversionWorker(
         withContext(Dispatchers.IO) {
             val taskId = inputData.getString(KEY_TASK_ID) ?: return@withContext Result.failure()
             var task = taskDao.find(taskId) ?: return@withContext Result.failure()
-            if (
-                task.status == DownloadStatus.COMPLETED.name &&
-                task.exportBackupUri.isNullOrBlank()
-            ) {
-                FormalWorkshopConversionCancellation.clear(taskId)
-                return@withContext Result.success()
+            when (decideConversionWorkerCandidate(task)) {
+                ConversionWorkerCandidateDecision.ALREADY_COMMITTED -> {
+                    FormalWorkshopConversionCancellation.clear(taskId)
+                    return@withContext Result.success()
+                }
+                ConversionWorkerCandidateDecision.REJECT -> return@withContext Result.failure()
+                ConversionWorkerCandidateDecision.RUN -> Unit
             }
             FormalWorkshopConversionCancellation.start(taskId)
             val temporaryDirectory = File(applicationContext.cacheDir, "wallhub-conversion/$taskId")
@@ -195,15 +196,18 @@ internal class FormalWorkshopConversionWorker(
                                 transaction = transaction,
                                 persistTransaction = persistTransaction,
                             )
-                    val completed =
-                        update(
-                            task,
-                            status = DownloadStatus.COMPLETED,
-                            stagingDirectory = sourceDirectory.absolutePath,
+                    check(
+                        taskDao.commitSuccessfulConversion(
+                            taskId = task.taskId,
+                            expectedAttempt = task.conversionAttempt,
                             outputUri = exportedFile.uri,
                             outputLabel = exportedFile.label,
+                            stagingDirectory = sourceDirectory.absolutePath,
                             message = conversion.message(applicationContext, exportedFile.uri),
-                        )
+                            updatedAt = System.currentTimeMillis(),
+                        ) == 1,
+                    ) { "Conversion attempt changed before its committed output could be published" }
+                    val completed = requireNotNull(taskDao.find(task.taskId))
                     // Successful output/report are independent of the private reconversion source cache.
                     sourceCacheManager.retainCompleted(completed.taskId)
                     if (completed.exportBackupUri == null) Result.success() else Result.retry()
@@ -268,27 +272,32 @@ internal class FormalWorkshopConversionWorker(
                 val kindLabel = transaction.outputName.substringAfterLast('.', "MPKG").uppercase(Locale.ROOT)
                 val finalizedTransaction =
                     if (isSaf) SafExportGateway.cleanCommittedBackup(applicationContext, transaction) else transaction
-                update(
-                    task,
-                    status = DownloadStatus.COMPLETED,
-                    outputUri = targetUri,
-                    outputLabel =
-                        if (isSaf) {
-                            applicationContext.getString(R.string.backend_conversion_selected_label)
-                        } else {
-                            PublicDownloadsExportGateway.OUTPUT_LABEL
-                        },
-                    message =
-                        applicationContext.getString(
-                            R.string.backend_conversion_complete,
-                            kindLabel,
-                            "",
-                            "",
-                            targetUri,
-                        ),
-                    exportTransaction = finalizedTransaction.copy(state = ExportTransactionState.COMMITTED),
-                )
-                if (finalizedTransaction.backupUri == null) Result.success() else Result.retry()
+                val committed = finalizedTransaction.copy(state = ExportTransactionState.COMMITTED)
+                val exporting = update(task, exportTransaction = committed)
+                check(
+                    taskDao.commitSuccessfulConversion(
+                        taskId = task.taskId,
+                        expectedAttempt = task.conversionAttempt,
+                        outputUri = targetUri,
+                        outputLabel =
+                            if (isSaf) {
+                                applicationContext.getString(R.string.backend_conversion_selected_label)
+                            } else {
+                                PublicDownloadsExportGateway.OUTPUT_LABEL
+                            },
+                        stagingDirectory = requireNotNull(task.stagingDirectory),
+                        message =
+                            applicationContext.getString(
+                                R.string.backend_conversion_complete,
+                                kindLabel,
+                                "",
+                                "",
+                                targetUri,
+                            ),
+                        updatedAt = System.currentTimeMillis(),
+                    ) == 1,
+                ) { "Recovered conversion attempt changed before publication" }
+                if (exporting.exportBackupUri == null) Result.success() else Result.retry()
             }
 
             ExportRecoveryDecision.CLEAN_AND_RESTART -> {
@@ -384,7 +393,7 @@ internal class FormalWorkshopConversionWorker(
                             preserveAudio = task.preserveAudio,
                         ).also { generated ->
                             persistPlanReference(task.taskId, generated, planStore)
-                            check(taskDao.persistConversionReport(task.taskId, null) == 1) {
+                            check(taskDao.persistConversionReport(task.taskId, task.conversionAttempt, null) == 1) {
                                 "Download task disappeared before its conversion report was cleared"
                             }
                         }
@@ -399,7 +408,13 @@ internal class FormalWorkshopConversionWorker(
                         )
                     },
                 ).also { completed ->
-                    check(taskDao.persistConversionReport(task.taskId, ConversionReportJsonCodec.encode(completed)) == 1) {
+                    check(
+                        taskDao.persistConversionReport(
+                            task.taskId,
+                            task.conversionAttempt,
+                            ConversionReportJsonCodec.encode(completed),
+                        ) == 1,
+                    ) {
                         "Download task disappeared before its conversion report was persisted"
                     }
                 }
@@ -504,13 +519,19 @@ internal class FormalWorkshopConversionWorker(
         task: FormalTaskRecordEntity,
         sourceDirectory: File?,
     ): Result {
-        sourceDirectory?.deleteRecursively()
+        // A conversion cancellation discards only this attempt's checkpoint reference. The complete retained
+        // Workshop source and any previously published output/report remain available for a later reconversion.
+        check(ConversionCheckpointStore(applicationContext.filesDir).deleteAttempt(task.taskId, task.conversionAttempt)) {
+            "Unable to delete cancelled conversion checkpoints"
+        }
+        check(taskDao.clearConversionCheckpointReference(task.taskId, task.conversionAttempt) == 1) {
+            "Conversion attempt changed before its checkpoint reference could be cleared"
+        }
         update(
             task,
             status = DownloadStatus.CANCELLED,
-            downloadedBytes = 0L,
             bytesPerSecond = 0L,
-            stagingDirectory = null,
+            stagingDirectory = sourceDirectory?.absolutePath ?: task.stagingDirectory,
             message = applicationContext.getString(R.string.backend_conversion_cancelled_cleaned),
         )
         check(taskDao.settleConversionCancellation(task.taskId) == 1) {
@@ -663,6 +684,24 @@ internal class FormalWorkshopConversionWorker(
         private const val MAX_OUTPUT_TITLE_LENGTH = 72
     }
 }
+
+internal enum class ConversionWorkerCandidateDecision {
+    RUN,
+    ALREADY_COMMITTED,
+    REJECT,
+}
+
+internal fun decideConversionWorkerCandidate(task: FormalTaskRecordEntity): ConversionWorkerCandidateDecision =
+    when {
+        task.status == DownloadStatus.COMPLETED.name &&
+            task.exportTransactionState == ExportTransactionState.COMMITTED.name &&
+            task.exportBackupUri.isNullOrBlank() -> ConversionWorkerCandidateDecision.ALREADY_COMMITTED
+        task.status == DownloadStatus.COMPLETED.name && !task.exportBackupUri.isNullOrBlank() ->
+            ConversionWorkerCandidateDecision.RUN
+        task.status in setOf(DownloadStatus.CONVERTING.name, DownloadStatus.EXPORTING.name) &&
+            task.conversionAttempt >= task.lastSuccessfulAttempt -> ConversionWorkerCandidateDecision.RUN
+        else -> ConversionWorkerCandidateDecision.REJECT
+    }
 
 internal data class ExportedFile(
     val uri: String,

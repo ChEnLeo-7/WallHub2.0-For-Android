@@ -121,6 +121,7 @@ class RoomDownloadTaskRepositoryTest {
         assertEquals("{\"plan\":1}", persisted.conversionPlanJson)
         assertEquals(3, persisted.conversionPlanVersion)
         assertEquals("{\"report\":1}", persisted.conversionReportJson)
+        assertEquals(null, persisted.successfulConversionReportJson)
     }
 
     @Test
@@ -133,6 +134,38 @@ class RoomDownloadTaskRepositoryTest {
         val failure = runCatching { repository.persistConversionPlan(original.taskId, oversized, 1) }.exceptionOrNull()
         assertTrue(failure is IllegalArgumentException)
         assertEquals(null, dao.records.single().conversionPlanJson)
+    }
+
+    @Test
+    fun `reconversion with missing source queues redownload and preserves successful output`() = runTest {
+        val original =
+            queuedRecord(taskId = "reconvert-missing").copy(
+                status = DownloadStatus.COMPLETED.name,
+                exportFormat = "MPKG",
+                outputUri = "content://successful",
+                outputLabel = "MPKG",
+                successfulConversionReportJson = "{\"success\":1}",
+                stagingDirectory = "/missing/source",
+                downloadedBytes = 42,
+                totalBytes = 42,
+            )
+        val dao = FakeTaskDao(original)
+        val scheduler = RecordingScheduler()
+        val repository = repository(dao, scheduler)
+
+        repository.requestReconversion(original.taskId, MpkgConversionPreset.HIGH_QUALITY, preserveAudio = true)
+
+        val queued = dao.records.single()
+        assertEquals(DownloadStatus.QUEUED.name, queued.status)
+        assertEquals("high_quality", queued.conversionPreset)
+        assertTrue(queued.preserveAudio)
+        assertEquals("content://successful", queued.outputUri)
+        assertEquals("{\"success\":1}", queued.successfulConversionReportJson)
+        assertEquals(null, queued.conversionReportJson)
+        assertEquals(null, queued.stagingDirectory)
+        assertEquals(0L, queued.downloadedBytes)
+        assertEquals(listOf("RUN"), dao.commands.map { it.command })
+        assertEquals(1, scheduler.wakeCount)
     }
 
     @Test
@@ -306,11 +339,38 @@ class RoomDownloadTaskRepositoryTest {
                     }
                     "persistConversionReport" -> {
                         val taskId = args!![0] as String
-                        val index = records.indexOfFirst { it.taskId == taskId }
+                        val expectedAttempt = args[1] as Long
+                        val index = records.indexOfFirst { it.taskId == taskId && it.conversionAttempt == expectedAttempt }
                         if (index < 0) {
                             0
                         } else {
-                            records[index] = records[index].copy(conversionReportJson = args[1] as String?)
+                            records[index] = records[index].copy(conversionReportJson = args[2] as String?)
+                            observed.value = records.toList()
+                            1
+                        }
+                    }
+                    "beginReconversion" -> {
+                        val taskId = args!![0] as String
+                        val expectedAttempt = args[1] as Long
+                        val allowed = args[6] as List<*>
+                        val index = records.indexOfFirst {
+                            it.taskId == taskId && it.conversionAttempt == expectedAttempt && it.status in allowed
+                        }
+                        if (index < 0) {
+                            0
+                        } else {
+                            records[index] = records[index].copy(
+                                status = DownloadStatus.CONVERTING.name,
+                                conversionPreset = args[2] as String,
+                                preserveAudio = args[3] as Boolean,
+                                conversionAttempt = expectedAttempt + 1,
+                                conversionPlanJson = null,
+                                conversionReportJson = null,
+                                conversionPlanVersion = 2,
+                                conversionCheckpointReference = "attempt:${expectedAttempt + 1}",
+                                message = args[4] as String,
+                                updatedAt = args[5] as Long,
+                            )
                             observed.value = records.toList()
                             1
                         }

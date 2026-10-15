@@ -32,7 +32,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,7 +43,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.runtime.Composable
@@ -162,6 +166,12 @@ sealed interface DownloadsAction {
         val action: DownloadAction,
     ) : DownloadsAction
 
+    data class RequestReconversion(
+        val taskId: String,
+        val preset: MpkgConversionPreset,
+        val preserveAudio: Boolean,
+    ) : DownloadsAction
+
     data class ReorderTasks(
         val taskIds: List<String>,
     ) : DownloadsAction
@@ -190,6 +200,12 @@ sealed interface DownloadsPendingOperation {
     data class TaskAction(
         val taskId: String,
         val action: DownloadAction,
+    ) : DownloadsPendingOperation
+
+    data class Reconversion(
+        val taskId: String,
+        val preset: MpkgConversionPreset,
+        val preserveAudio: Boolean,
     ) : DownloadsPendingOperation
 
     data class EnqueueWorkshop(
@@ -239,6 +255,16 @@ class DownloadsViewModel
                 is DownloadsAction.SelectFilter -> stateSource.setFilter(action.filter)
                 is DownloadsAction.ToggleTypeFilter -> stateSource.toggleTypeFilter(action.type)
                 is DownloadsAction.RequestTaskAction -> prepareTaskAction(action.taskId, action.action)
+                is DownloadsAction.RequestReconversion ->
+                    emitEffect(
+                        DownloadsEffect.ResolveLegacyStoragePermission(
+                            DownloadsPendingOperation.Reconversion(
+                                action.taskId,
+                                action.preset,
+                                action.preserveAudio,
+                            ),
+                        ),
+                    )
                 is DownloadsAction.ReorderTasks ->
                     viewModelScope.launch {
                         workshopDownloads.reorder(action.taskIds)
@@ -315,8 +341,23 @@ class DownloadsViewModel
                         operation.taskId,
                         operation.action,
                     )
+                is DownloadsPendingOperation.Reconversion ->
+                    requestReconversion(operation.taskId, operation.preset, operation.preserveAudio)
                 is DownloadsPendingOperation.EnqueueWorkshop -> enqueueWorkshop(operation.item)
                 DownloadsPendingOperation.RetryFailedTasks -> retryFailedTasks()
+            }
+        }
+
+        private fun requestReconversion(
+            taskId: String,
+            preset: MpkgConversionPreset,
+            preserveAudio: Boolean,
+        ) {
+            viewModelScope.launch {
+                runCatching { workshopDownloads.requestReconversion(taskId, preset, preserveAudio) }
+                    .onFailure {
+                        effectChannel.send(DownloadsEffect.ShowMessage(R.string.downloads_action_failed))
+                    }
             }
         }
 
@@ -607,6 +648,9 @@ fun DownloadsContent(
                     ReorderableDownloadList(
                         tasks = pageTasks,
                         onAction = { taskId, action -> onAction(DownloadsAction.RequestTaskAction(taskId, action)) },
+                        onReconvert = { taskId, preset, preserveAudio ->
+                            onAction(DownloadsAction.RequestReconversion(taskId, preset, preserveAudio))
+                        },
                         onPlayVideo = { taskId -> onAction(DownloadsAction.PlayVideo(taskId)) },
                         onOpenDetail = onOpenDetail,
                         onReorder = { taskIds -> onAction(DownloadsAction.ReorderTasks(taskIds)) },
@@ -626,6 +670,9 @@ fun DownloadsContent(
                 onAction = { taskId, action ->
                     onAction(DownloadsAction.RequestTaskAction(taskId, action))
                 },
+                onReconvert = { taskId, preset, preserveAudio ->
+                    onAction(DownloadsAction.RequestReconversion(taskId, preset, preserveAudio))
+                },
                 onPlayVideo = { taskId -> onAction(DownloadsAction.PlayVideo(taskId)) },
                 onOpenDetail = onOpenDetail,
                 onReorder = { taskIds -> onAction(DownloadsAction.ReorderTasks(taskIds)) },
@@ -639,6 +686,7 @@ fun DownloadsContent(
 private fun ReorderableDownloadList(
     tasks: List<DownloadTask>,
     onAction: (String, DownloadAction) -> Unit,
+    onReconvert: (String, MpkgConversionPreset, Boolean) -> Unit,
     onPlayVideo: (String) -> Unit,
     onOpenDetail: (Long) -> Unit,
     onReorder: (List<String>) -> Unit,
@@ -760,6 +808,7 @@ private fun ReorderableDownloadList(
             DownloadTaskCard(
                 task = task,
                 onAction = { action -> onAction(task.id, action) },
+                onReconvert = { preset, preserveAudio -> onReconvert(task.id, preset, preserveAudio) },
                 onPlayVideo = { onPlayVideo(task.id) },
                 onOpenDetail = { onOpenDetail(task.workshopId) },
                 modifier = dragModifier,
@@ -772,6 +821,7 @@ private fun ReorderableDownloadList(
 private fun DownloadTaskCard(
     task: DownloadTask,
     onAction: (DownloadAction) -> Unit,
+    onReconvert: (MpkgConversionPreset, Boolean) -> Unit,
     onPlayVideo: () -> Unit,
     onOpenDetail: () -> Unit,
     modifier: Modifier = Modifier,
@@ -804,11 +854,23 @@ private fun DownloadTaskCard(
                 MaterialTheme.colorScheme.onSurfaceVariant
             else -> MaterialTheme.colorScheme.primary
         }
-    val conversionSummary = remember(task.conversionReportJson) {
-        task.conversionReportJson?.let(ConversionReportJsonCodec::decodeSummary)
+    val conversionSummary = remember(task.successfulConversionReportJson) {
+        task.successfulConversionReportJson?.let(ConversionReportJsonCodec::decodeSummary)
     }
     val warningReport = conversionSummary?.takeIf { it.warningTotal > 0 }
     var showWarningDetails by remember(task.id) { mutableStateOf(false) }
+    var showReconversion by remember(task.id) { mutableStateOf(false) }
+    if (showReconversion) {
+        ReconvertSheet(
+            initialPreset = task.mpkgConversionPreset,
+            initialPreserveAudio = task.preserveAudio,
+            onDismiss = { showReconversion = false },
+            onConfirm = { preset, preserveAudio ->
+                showReconversion = false
+                onReconvert(preset, preserveAudio)
+            },
+        )
+    }
     if (showWarningDetails && warningReport != null) {
         ConversionWarningSheet(
             report = warningReport,
@@ -964,6 +1026,13 @@ private fun DownloadTaskCard(
                             onClick = onPlayVideo,
                         )
                     }
+                    if (task.canReconvert()) {
+                        DownloadCompactIconButton(
+                            icon = Icons.Outlined.Refresh,
+                            label = stringResource(R.string.downloads_action_reconvert),
+                            onClick = { showReconversion = true },
+                        )
+                    }
                     task.availableActions.forEach { action ->
                         DownloadCompactIconButton(
                             icon = action.icon(),
@@ -982,6 +1051,75 @@ private fun DownloadTaskCard(
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                     )
+                }
+            }
+        }
+    }
+}
+
+internal fun DownloadTask.canReconvert(): Boolean =
+    status == DownloadStatus.COMPLETED && type == WorkshopType.SCENE && exportFormat != ExportFormat.ZIP
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReconvertSheet(
+    initialPreset: MpkgConversionPreset,
+    initialPreserveAudio: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (MpkgConversionPreset, Boolean) -> Unit,
+) {
+    var preset by remember(initialPreset) { mutableStateOf(initialPreset) }
+    var preserveAudio by remember(initialPreserveAudio) { mutableStateOf(initialPreserveAudio) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+        ) {
+            Text(stringResource(R.string.downloads_reconversion_title), style = MaterialTheme.typography.titleLarge)
+            Text(
+                stringResource(R.string.downloads_reconversion_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            MpkgConversionPreset.entries.forEach { option ->
+                FilterChip(
+                    selected = preset == option,
+                    onClick = { preset = option },
+                    label = { Text(option.downloadQualityLabel()) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.detail_preserve_audio), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        stringResource(R.string.detail_preserve_audio_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = preserveAudio, onCheckedChange = { preserveAudio = it })
+            }
+            Text(
+                stringResource(R.string.downloads_reconversion_cache_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm, Alignment.End),
+            ) {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.downloads_reconversion_cancel)) }
+                Button(onClick = { onConfirm(preset, preserveAudio) }) {
+                    Text(stringResource(R.string.downloads_reconversion_confirm))
                 }
             }
         }

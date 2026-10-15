@@ -92,6 +92,16 @@ class DownloadsFilterTest {
     }
 
     @Test
+    fun onlyCompletedSceneMpkgTasksCanReconvert() {
+        val completed = task("scene", DownloadStatus.COMPLETED)
+
+        assertEquals(true, completed.canReconvert())
+        assertEquals(false, completed.copy(status = DownloadStatus.FAILED).canReconvert())
+        assertEquals(false, completed.copy(type = WorkshopType.VIDEO).canReconvert())
+        assertEquals(false, completed.copy(exportFormat = ExportFormat.ZIP).canReconvert())
+    }
+
+    @Test
     fun warningReportDecodesStableSafeDetails() {
         val report =
             ConversionReportJsonCodec.decodeSummary(
@@ -116,7 +126,7 @@ class DownloadsFilterTest {
     fun completedWarningTaskRemainsInCompletedFilter() {
         val warningTask =
             task("warning", DownloadStatus.COMPLETED).copy(
-                conversionReportJson = """{"version":2,"warningTotal":1}""",
+                successfulConversionReportJson = """{"version":2,"warningTotal":1}""",
             )
 
         assertEquals(listOf("warning"), filterTasks(listOf(warningTask), DownloadFilter.COMPLETED).map { it.id })

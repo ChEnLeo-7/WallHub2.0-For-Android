@@ -214,7 +214,8 @@ internal class RoomDownloadTaskRepository private constructor(
             reportJson: String?,
         ) = taskMutationMutex.withLock {
             requireBoundedPersistedConversionJson(reportJson)
-            check(taskDao.persistConversionReport(taskId, reportJson) == 1) {
+            val attempt = requireNotNull(taskDao.find(taskId)) { "Download task no longer exists" }.conversionAttempt
+            check(taskDao.persistConversionReport(taskId, attempt, reportJson) == 1) {
                 "Download task no longer exists"
             }
         }
@@ -243,6 +244,87 @@ internal class RoomDownloadTaskRepository private constructor(
             val configured = task.copy(exportFormat = format, updatedAt = System.currentTimeMillis())
             taskDao.upsertPreservingExecutionIntent(configured.toEntity())
             requestExport(configured)
+        }
+
+        override suspend fun requestReconversion(
+            taskId: String,
+            preset: MpkgConversionPreset,
+            preserveAudio: Boolean,
+        ) = taskMutationMutex.withLock {
+            val current = requireNotNull(taskDao.find(taskId)) { "Download task no longer exists" }
+            require(current.status == DownloadStatus.COMPLETED.name) { "Only a successful task can be reconverted" }
+            require(current.type == WorkshopType.SCENE.name && current.exportFormat != ExportFormat.ZIP.name) {
+                "Only Scene MPKG tasks can be reconverted"
+            }
+            val now = System.currentTimeMillis()
+            if (!current.toModel().hasCompleteStagingDownload()) {
+                val revision = current.desiredIntentRevision + 1L
+                val redownload =
+                    current.copy(
+                        status = DownloadStatus.QUEUED.name,
+                        conversionPreset = preset.stableId,
+                        preserveAudio = preserveAudio,
+                        conversionPlanJson = null,
+                        conversionReportJson = null,
+                        conversionCheckpointReference = null,
+                        downloadedBytes = 0L,
+                        totalBytes = 0L,
+                        bytesPerSecond = 0L,
+                        stagingDirectory = null,
+                        stagingRetainedBytes = 0L,
+                        stagingLastAccessedAt = 0L,
+                        stagingCacheState = "NONE",
+                        attempt = current.attempt + 1L,
+                        desiredIntent = "RUN",
+                        desiredIntentRevision = revision,
+                        message = queuedMessage(),
+                        updatedAt = now,
+                    )
+                taskDao.upsertWithCommand(
+                    task = redownload,
+                    command =
+                        DownloadCommandEntity(
+                            commandId = UUID.randomUUID().toString(),
+                            taskId = taskId,
+                            revision = revision,
+                            attempt = current.attempt + 1L,
+                            command = "RUN",
+                            createdAt = now,
+                        ),
+                )
+                try {
+                    workScheduler.wake()
+                } catch (error: Throwable) {
+                    Log.e(LOG_TAG, "Unable to wake host for durable reconversion download taskId=$taskId", error)
+                }
+                return@withLock
+            }
+            check(
+                taskDao.beginReconversion(
+                    taskId = taskId,
+                    expectedAttempt = current.conversionAttempt,
+                    preset = preset.stableId,
+                    preserveAudio = preserveAudio,
+                    message = context.getString(R.string.backend_conversion_preparing),
+                    updatedAt = now,
+                    allowedStatuses = listOf(DownloadStatus.COMPLETED.name),
+                ) == 1,
+            ) { "Download state changed before reconversion could begin" }
+            sourceCacheManager?.touch(taskId)
+            try {
+                conversionScheduler.replace(taskId)
+            } catch (error: Throwable) {
+                taskDao.find(taskId)?.let { converting ->
+                    upsert(
+                        converting.copy(
+                            status = DownloadStatus.COMPLETED.name,
+                            message = enqueueFailedMessage(error.javaClass.simpleName),
+                            updatedAt = System.currentTimeMillis(),
+                        ).toModel(),
+                    )
+                }
+                throw error
+            }
         }
 
         override suspend fun requestAction(
@@ -302,26 +384,32 @@ internal class RoomDownloadTaskRepository private constructor(
                     task
                 }
             if (action == DownloadAction.RETRY && recoveredTask.hasCompleteStagingDownload()) {
+                val current = requireNotNull(taskDao.find(task.id))
+                val now = System.currentTimeMillis()
+                check(
+                    taskDao.beginReconversion(
+                        taskId = task.id,
+                        expectedAttempt = current.conversionAttempt,
+                        preset = current.conversionPreset,
+                        preserveAudio = current.preserveAudio,
+                        message = context.getString(R.string.backend_conversion_retrying),
+                        updatedAt = now,
+                        allowedStatuses = listOf(DownloadStatus.FAILED.name),
+                    ) == 1,
+                ) { "Download state changed before conversion retry could begin" }
                 sourceCacheManager?.touch(task.id)
-                val converting = recoveredTask.copy(
-                    status = DownloadStatus.CONVERTING,
-                    message = context.getString(R.string.backend_conversion_retrying),
-                    updatedAt = System.currentTimeMillis(),
-                )
-                upsert(converting)
                 try {
                     conversionScheduler.replace(task.id)
                 } catch (error: Throwable) {
-                    upsert(
-                        converting.copy(
-                            status = DownloadStatus.FAILED,
-                            message = context.getString(
-                                R.string.backend_download_start_failed,
-                                error.javaClass.simpleName,
-                            ),
-                            updatedAt = System.currentTimeMillis(),
-                        ),
-                    )
+                    taskDao.find(task.id)?.let { converting ->
+                        upsert(
+                            converting.copy(
+                                status = DownloadStatus.FAILED.name,
+                                message = enqueueFailedMessage(error.javaClass.simpleName),
+                                updatedAt = System.currentTimeMillis(),
+                            ).toModel(),
+                        )
+                    }
                     throw error
                 }
                 return
@@ -367,27 +455,36 @@ internal class RoomDownloadTaskRepository private constructor(
             sourceCacheManager?.touch(task.id)
             val stagingDirectory = task.stagingDirectory?.let(::File)
             require(stagingDirectory?.isDirectory == true) { "Download staging files are missing; cannot export" }
-            val converting = task.copy(
-                status = DownloadStatus.CONVERTING,
-                outputTreeUri = settingsRepository.preferences.first().outputTreeUri,
-                outputUri = null,
-                message = context.getString(R.string.backend_conversion_preparing),
-                updatedAt = System.currentTimeMillis(),
-            )
-            upsert(converting)
+            val now = System.currentTimeMillis()
+            val configured =
+                task.copy(
+                    outputTreeUri = settingsRepository.preferences.first().outputTreeUri,
+                    updatedAt = now,
+                )
+            upsert(configured)
+            check(
+                taskDao.beginReconversion(
+                    taskId = task.id,
+                    expectedAttempt = task.conversionAttempt,
+                    preset = task.mpkgConversionPreset.stableId,
+                    preserveAudio = task.preserveAudio,
+                    message = context.getString(R.string.backend_conversion_preparing),
+                    updatedAt = now,
+                    allowedStatuses = listOf(DownloadStatus.COMPLETED.name),
+                ) == 1,
+            ) { "Download state changed before export conversion could begin" }
             try {
                 conversionScheduler.enqueue(task.id)
             } catch (error: Throwable) {
-                upsert(
-                    converting.copy(
-                        status = DownloadStatus.FAILED,
-                        message = context.getString(
-                            R.string.backend_download_start_failed,
-                            error.javaClass.simpleName,
-                        ),
-                        updatedAt = System.currentTimeMillis(),
-                    ),
-                )
+                taskDao.find(task.id)?.let { converting ->
+                    upsert(
+                        converting.copy(
+                            status = DownloadStatus.FAILED.name,
+                            message = enqueueFailedMessage(error.javaClass.simpleName),
+                            updatedAt = System.currentTimeMillis(),
+                        ).toModel(),
+                    )
+                }
             }
         }
 
@@ -571,7 +668,11 @@ internal fun FormalTaskRecordEntity.toModel(): DownloadTask =
         preserveAudio = preserveAudio,
         conversionPlanJson = conversionPlanJson,
         conversionReportJson = conversionReportJson,
+        successfulConversionReportJson = successfulConversionReportJson,
         conversionPlanVersion = conversionPlanVersion,
+        conversionAttempt = conversionAttempt,
+        lastSuccessfulAttempt = lastSuccessfulAttempt,
+        conversionCheckpointReference = conversionCheckpointReference,
         pendingControl =
             desiredIntent.toPendingControl().takeIf {
                 desiredIntentRevision > appliedIntentRevision
@@ -585,6 +686,8 @@ internal fun FormalTaskRecordEntity.toModel(): DownloadTask =
 internal fun DownloadTask.toEntity(): FormalTaskRecordEntity {
     requireBoundedPersistedConversionJson(conversionPlanJson)
     requireBoundedPersistedConversionJson(conversionReportJson)
+    requireBoundedPersistedConversionJson(successfulConversionReportJson)
+    requireBoundedPersistedConversionJson(conversionCheckpointReference)
     return FormalTaskRecordEntity(
         taskId = id,
         workshopId = workshopId,
@@ -609,7 +712,11 @@ internal fun DownloadTask.toEntity(): FormalTaskRecordEntity {
         preserveAudio = preserveAudio,
         conversionPlanJson = conversionPlanJson,
         conversionReportJson = conversionReportJson,
+        successfulConversionReportJson = successfulConversionReportJson,
         conversionPlanVersion = conversionPlanVersion,
+        conversionAttempt = conversionAttempt,
+        lastSuccessfulAttempt = lastSuccessfulAttempt,
+        conversionCheckpointReference = conversionCheckpointReference,
         message = message,
         isResumable = isResumable,
         queuePosition = queuePosition,

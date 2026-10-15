@@ -1,5 +1,7 @@
 package com.wallhub.android.data.downloads
 
+import com.wallhub.android.core.database.FormalTaskRecordEntity
+import com.wallhub.android.core.model.DownloadStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -72,6 +74,28 @@ class FormalWorkshopExportRecoveryTest {
     }
 
     @Test
+    fun `worker runs current conversion candidate and rejects terminal attempt`() {
+        val converting = conversionTask(DownloadStatus.CONVERTING, attempt = 2, successfulAttempt = 1)
+
+        assertEquals(ConversionWorkerCandidateDecision.RUN, decideConversionWorkerCandidate(converting))
+        assertEquals(
+            ConversionWorkerCandidateDecision.REJECT,
+            decideConversionWorkerCandidate(converting.copy(status = DownloadStatus.FAILED.name)),
+        )
+    }
+
+    @Test
+    fun `worker treats committed completed candidate as idempotent`() {
+        val completed =
+            conversionTask(DownloadStatus.COMPLETED, attempt = 2, successfulAttempt = 2).copy(
+                exportTransactionState = ExportTransactionState.COMMITTED.name,
+                outputUri = "content://output",
+            )
+
+        assertEquals(ConversionWorkerCandidateDecision.ALREADY_COMMITTED, decideConversionWorkerCandidate(completed))
+    }
+
+    @Test
     fun `failed saf restoration keeps the backup reference recoverable`() {
         val transaction =
             ExportTransaction(
@@ -91,4 +115,20 @@ class FormalWorkshopExportRecoveryTest {
         assertEquals(ExportTransactionState.NONE, restored.state)
         assertTrue(restored.targetUri == null)
     }
+
+    private fun conversionTask(
+        status: DownloadStatus,
+        attempt: Long,
+        successfulAttempt: Long,
+    ) = FormalTaskRecordEntity(
+        taskId = "task",
+        workshopId = 1,
+        title = "Task",
+        type = "SCENE",
+        status = status.name,
+        conversionAttempt = attempt,
+        lastSuccessfulAttempt = successfulAttempt,
+        createdAt = 1,
+        updatedAt = 1,
+    )
 }

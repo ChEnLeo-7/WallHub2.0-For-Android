@@ -201,6 +201,45 @@ class FormalTaskDatabaseMigrationTest {
     }
 
     @Test
+    fun migration13To14SeparatesSuccessfulReportFromMostRecentAttempt() {
+        helper.createDatabase(TEST_DATABASE, 13).use { database ->
+            database.execSQL(
+                "INSERT INTO formal_task_records (taskId, workshopId, title, type, status, downloadedBytes, " +
+                    "totalBytes, bytesPerSecond, credentialMode, isResumable, contentManifestId, appId, " +
+                    "outputUri, outputLabel, exportFormat, conversionPreset, preserveAudio, conversionReportJson, conversionPlanVersion, " +
+                    "stagingRetainedBytes, stagingLastAccessedAt, stagingCacheState, exportTransactionState, " +
+                    "queuePosition, createdAt, updatedAt, attempt, desiredIntent, desiredIntentRevision, " +
+                    "appliedIntentRevision, quiescedIntentRevision, lastReceiptSequence) VALUES " +
+                    "('completed', 1, 'Completed', 'SCENE', 'COMPLETED', 1, 1, 0, 'ANONYMOUS', 1, 0, 0, " +
+                    "'content://old-output', 'MPKG', 'MPKG', 'balanced', 0, '{\"ok\":1}', 1, 1, 1, 'RETAINED', 'COMMITTED', 0, 1, 1, 0, " +
+                    "'RUN', 0, 0, 0, 0), " +
+                    "('failed', 2, 'Failed', 'SCENE', 'FAILED', 1, 1, 0, 'ANONYMOUS', 1, 0, 0, " +
+                    "NULL, NULL, 'MPKG', 'balanced', 0, '{\"failed\":1}', 1, 1, 1, 'RETAINED', 'NONE', 0, 1, 1, 0, " +
+                    "'RUN', 0, 0, 0, 0)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(TEST_DATABASE, 14, true, FormalTaskDatabase.MIGRATION_13_14).use { database ->
+            database.query(
+                "SELECT successfulConversionReportJson, conversionReportJson, conversionAttempt, " +
+                    "lastSuccessfulAttempt, outputUri FROM formal_task_records ORDER BY taskId",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("{\"ok\":1}", cursor.getString(0))
+                assertEquals("{\"ok\":1}", cursor.getString(1))
+                assertEquals(1L, cursor.getLong(2))
+                assertEquals(1L, cursor.getLong(3))
+                assertEquals("content://old-output", cursor.getString(4))
+                assertTrue(cursor.moveToNext())
+                assertTrue(cursor.isNull(0))
+                assertEquals("{\"failed\":1}", cursor.getString(1))
+                assertEquals(1L, cursor.getLong(2))
+                assertEquals(0L, cursor.getLong(3))
+            }
+        }
+    }
+
+    @Test
     fun projectionUpsertPreservesTheTaskAudioSnapshot() {
         val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
         try {
@@ -252,12 +291,13 @@ class FormalTaskDatabaseMigrationTest {
             kotlinx.coroutines.runBlocking {
                 dao.upsert(task("conversion-snapshot", "CONVERTING"))
                 assertEquals(1, dao.persistConversionPlan("conversion-snapshot", "{\"plan\":1}", 2))
-                assertEquals(1, dao.persistConversionReport("conversion-snapshot", "{\"report\":1}"))
+                assertEquals(1, dao.persistConversionReport("conversion-snapshot", 0, "{\"report\":1}"))
 
                 val persisted = requireNotNull(dao.find("conversion-snapshot"))
                 assertEquals("{\"plan\":1}", persisted.conversionPlanJson)
                 assertEquals(2, persisted.conversionPlanVersion)
                 assertEquals("{\"report\":1}", persisted.conversionReportJson)
+                assertEquals(null, persisted.successfulConversionReportJson)
             }
         } finally {
             database.close()
