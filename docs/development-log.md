@@ -22,7 +22,9 @@ A commit-bound build at `4f35d2c` compiled successfully on the authorized Window
 - `3299228616`: WorkManager `SUCCESS`, output `10,488,881` bytes, 14 converted textures, 5 retained resources, 11 rewritten shaders, 1 removed audio, and 5 compatibility warnings;
 - `3757572576`: WorkManager `SUCCESS`, output `261,292,120` bytes, 1 converted texture, 2 retained resources, 1 rewritten shader, no removed audio, and 2 compatibility warnings.
 
-MediaProvider logs show each candidate moving from a `.pending-*` path to the final MPKG name, and the UI reports `COMPLETED` with bounded warnings. This proves the two reported planning failures are repaired for the standard preset; the remaining four-preset matrix and reconversion transaction are separate exit evidence.
+MediaProvider logs show each candidate moving from a `.pending-*` path to the final MPKG name, and the UI reports `COMPLETED` with bounded warnings. This proves the two reported planning failures are repaired for the standard preset.
+
+A subsequent commit-bound reconversion build completed the four-preset matrix from retained staging without redownloading. For `3299228616`, Compatibility and Standard were both `10,488,881` bytes, High Quality was `13,051,656` bytes, and corrected Source Fidelity was `10,516,875` bytes with `0` converted / `19` retained TEX resources. For `3757572576`, Compatibility, Standard, and High Quality were all `261,292,120` bytes, while corrected Source Fidelity was `261,292,205` bytes with `0` converted / `3` retained TEX resources. The required ordering `Compatibility <= Standard <= High Quality` therefore holds for both projects; equality is expected when the project has no eligible texture crossing the tier threshold. Source Fidelity is intentionally excluded from that ordering. Warning detail sheets showed only relative paths, stable reason codes, selected strategy, complete per-reason counts, and the bounded-warning completion state.
 
 ## 2026-09-13
 
