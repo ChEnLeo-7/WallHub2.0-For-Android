@@ -50,7 +50,9 @@ import com.wallhub.android.core.designsystem.WallHubTheme
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionState
+import com.wallhub.android.app.AppNavigationCommandBus
 import com.wallhub.android.app.DebugVideoCommandBus
+import com.wallhub.android.navigation.DownloadsDestination
 import com.wallhub.android.feature.setup.WallHubSetupWizard
 import kotlinx.coroutines.flow.collect
 
@@ -73,6 +75,12 @@ fun FormalWallHubApp(
         }
         val navController = rememberNavController()
         val debugWorkshopId by DebugVideoCommandBus.openWorkshopId.collectAsStateWithLifecycle()
+        val downloadsRequest by AppNavigationCommandBus.downloadsRequest.collectAsStateWithLifecycle()
+        LaunchedEffect(downloadsRequest) {
+            if (downloadsRequest > 0L) {
+                navController.navigate(DownloadsDestination) { launchSingleTop = true }
+            }
+        }
         LaunchedEffect(debugWorkshopId) {
             val workshopId = debugWorkshopId ?: return@LaunchedEffect
             navController.navigate(OnlineVideoPlayerDestination(workshopId)) { launchSingleTop = true }

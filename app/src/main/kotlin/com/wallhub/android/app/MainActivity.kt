@@ -1,5 +1,6 @@
 package com.wallhub.android
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
         }
+        AppNavigationCommandBus.accept(intent)
         setContent {
             val viewModel: ShellViewModel = hiltViewModel()
             val preferences by viewModel.preferences.collectAsStateWithLifecycle()
@@ -53,6 +55,11 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        AppNavigationCommandBus.accept(intent)
     }
 }
 
