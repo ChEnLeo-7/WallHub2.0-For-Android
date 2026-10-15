@@ -1,5 +1,20 @@
 # Development Log
 
+## 2026-10-15 — Android Scene MPKG high-success conversion contract
+
+Physical-device reproduction on a OnePlus 5T confirmed that Workshop `3299228616` downloads fully and then fails planning at `number.am.tex` with `unsupported_texture_profile`; Workshop `3757572576` completes after one transient SDK session retry and then fails planning at `全年龄.tex` with `preset_texture_input_budget_exceeded`. The owner froze the Android-only repair contract:
+
+- compatibility converts eligible color textures to ETC2; standard uses RGBA up to 8 MiB decoded and ETC2 above; high quality uses RGBA up to 32 MiB and ETC2 above; source fidelity passes every TEX through unchanged;
+- no preset downsamples; unknown, parse-failed, resource-constrained or execution-failed TEX and failed shader rewrites pass through with bounded warnings instead of rejecting the scene; source short reads, I/O, disk, cancellation, MPKG format limits and final container verification remain fatal;
+- passthrough bytes are length/SHA-256 verified; declarative project/scene/material references determine texture semantics conservatively; unknown/data semantics use lossless RGBA or passthrough, never lossy ETC2;
+- a Scene-only preserve-audio choice defaults off, is remembered globally and snapshotted per task; disabling it removes audio without rewriting references;
+- warning completion remains `COMPLETED`, keeps at most 100 stable resource details plus summary counts, and does not promise Wallpaper Engine runtime compatibility;
+- MPKG staging is retained for reconversion under an owner-visible LRU cache, and reconversion atomically replaces output only after verification while preserving the last successful output/report on failure;
+- conversion uses per-resource durable checkpoints, removes arbitrary texture/package/entry/index budgets, preserves the 4 KiB path limit and the 32-bit MPKG approximately-4-GiB format limit, and performs real peak-disk preflight with a `max(512 MiB, total capacity * 5%)` reserve;
+- this campaign changes Android only. Webview parity and the independently observed SDK `session_unavailable` retry are separate work.
+
+The implementation is test-driven at the `WorkshopConverter` plan/execute interface, the versioned Room task repository, the conversion worker transaction, the source-cache manager, and the Compose screen contracts. Real Workshop bytes remain off-repository; synthetic fixtures reproduce only independently described structures.
+
 ## 2026-09-13
 
 ### Fixed
