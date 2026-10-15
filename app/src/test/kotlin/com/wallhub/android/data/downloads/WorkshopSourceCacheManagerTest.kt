@@ -36,6 +36,35 @@ class WorkshopSourceCacheManagerTest {
     }
 
     @Test
+    fun `clear retained removes private staging without touching export metadata`() = runTest {
+        val filesDir = Files.createTempDirectory("source-cache").toFile()
+        try {
+            val source = filesDir.resolve("workshop-staging/task").apply { mkdirs() }
+            source.resolve("source.bin").writeBytes(ByteArray(8))
+            val fake =
+                FakeDao(
+                    record("task", source.path).copy(
+                        stagingRetainedBytes = 8,
+                        stagingCacheState = "RETAINED",
+                        outputUri = "content://exported/wallpaper",
+                        conversionReportJson = "report",
+                    ),
+                )
+            val manager = WorkshopSourceCacheManager(filesDir, fake.proxy, Settings(true))
+
+            assertEquals(8L, manager.retainedBytes())
+            assertEquals(8L, manager.clearRetained())
+
+            assertFalse(source.exists())
+            assertEquals("content://exported/wallpaper", fake.task.outputUri)
+            assertEquals("report", fake.task.conversionReportJson)
+            assertEquals("NONE", fake.task.stagingCacheState)
+        } finally {
+            filesDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `reconcile clears missing source without touching successful output or report`() = runTest {
         val filesDir = Files.createTempDirectory("source-cache").toFile()
         try {

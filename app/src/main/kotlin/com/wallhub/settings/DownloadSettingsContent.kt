@@ -2,19 +2,30 @@
 
 package com.wallhub.settings
 
+import android.text.format.Formatter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.AppPreferences
@@ -45,6 +56,10 @@ internal fun DownloadSettingsContent(
     onOnlineChunkPlaybackEnabledChange: (Boolean) -> Unit,
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
     onClearOnlineStreamCache: () -> Unit,
+    workshopSourceCacheState: WorkshopSourceCacheUiState,
+    onWorkshopSourceCacheEnabledChange: (Boolean) -> Unit,
+    onWorkshopSourceCacheBudgetChange: (Int) -> Unit,
+    onClearWorkshopSourceCache: () -> Unit,
 ) {
     fun saveDownloadPreferences(
         maxDownloads: Int = preferences.maxConcurrentDownloads,
@@ -105,6 +120,15 @@ internal fun DownloadSettingsContent(
         onSelected = onMpkgConversionPresetChange,
         position = PreferencePosition.Single,
         icon = Icons.Outlined.Tune,
+    )
+
+    WorkshopSourceCacheSettings(
+        enabled = preferences.workshopSourceCacheEnabled,
+        budgetGiB = preferences.workshopSourceCacheBudgetGiB,
+        state = workshopSourceCacheState,
+        onEnabledChange = onWorkshopSourceCacheEnabledChange,
+        onBudgetChange = onWorkshopSourceCacheBudgetChange,
+        onClear = onClearWorkshopSourceCache,
     )
 
     UwuSettingsCategory(title = stringResource(R.string.settings_download_performance_title))
@@ -201,6 +225,128 @@ internal fun DownloadSettingsContent(
                 Text(stringResource(R.string.settings_action_save_proxy_settings))
             }
         }
+}
+
+@Composable
+private fun WorkshopSourceCacheSettings(
+    enabled: Boolean,
+    budgetGiB: Int,
+    state: WorkshopSourceCacheUiState,
+    onEnabledChange: (Boolean) -> Unit,
+    onBudgetChange: (Int) -> Unit,
+    onClear: () -> Unit,
+) {
+    val context = LocalContext.current
+    var customBudget by remember(budgetGiB) { mutableStateOf(budgetGiB.toString()) }
+    var showCustomDialog by rememberSaveable { mutableStateOf(false) }
+    var showClearDialog by rememberSaveable { mutableStateOf(false) }
+    val selectedPreset = workshopSourceCacheBudgetPreset(budgetGiB)
+
+    UwuSettingsCategory(title = stringResource(R.string.settings_source_cache_title))
+    SwitchPreferenceRow(
+        title = stringResource(R.string.settings_source_cache_enabled),
+        summary = stringResource(R.string.settings_source_cache_enabled_description),
+        checked = enabled,
+        iconContent = { SettingsPreferenceIcon(Icons.Outlined.FolderOpen) },
+        position = PreferencePosition.Top,
+        onCheckedChange = onEnabledChange,
+    )
+    org.uwuaosp.compose.settingslib.PreferenceGroupSpacer()
+    SettingChoiceRow(
+        title = stringResource(R.string.settings_source_cache_budget),
+        selectedValue = selectedPreset,
+        values = WorkshopSourceCacheBudgetPreset.entries,
+        label = { preset ->
+            preset.budgetGiB?.let { stringResource(R.string.settings_source_cache_budget_gib, it) }
+                ?: stringResource(R.string.settings_custom_value, "$budgetGiB GiB")
+        },
+        onSelected = { preset ->
+            preset.budgetGiB?.let(onBudgetChange) ?: run { showCustomDialog = true }
+        },
+        position = PreferencePosition.Bottom,
+        icon = Icons.Outlined.Tune,
+    )
+    PreferenceRow(
+        title = stringResource(R.string.settings_source_cache_retained),
+        summary = Formatter.formatFileSize(context, state.retainedBytes),
+        position = PreferencePosition.Single,
+        iconContent = { SettingsPreferenceIcon(Icons.Outlined.Download) },
+        onClick = null,
+    )
+    SettingsNotice(
+        title = stringResource(R.string.settings_source_cache_effective_limit_title),
+        message = stringResource(R.string.settings_source_cache_effective_limit_description),
+    )
+    SettingsActionArea {
+        OutlinedButton(
+            onClick = { showClearDialog = true },
+            enabled = !state.isClearing,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Outlined.DeleteSweep, contentDescription = null)
+            Text(
+                text = stringResource(R.string.settings_source_cache_clear_now),
+                modifier = Modifier.padding(start = WallHubSpacing.xs),
+            )
+        }
+    }
+
+    if (showCustomDialog) {
+        val parsedBudget = parsePositiveGiB(customBudget)
+        AlertDialog(
+            onDismissRequest = { showCustomDialog = false },
+            title = { Text(stringResource(R.string.settings_source_cache_custom_budget)) },
+            text = {
+                SettingsFilledTextField(
+                    value = customBudget,
+                    onValueChange = { customBudget = it.filter(Char::isDigit) },
+                    label = { Text(stringResource(R.string.settings_source_cache_budget_gib_label)) },
+                    supportingText = {
+                        if (customBudget.isNotEmpty() && parsedBudget == null) {
+                            Text(stringResource(R.string.settings_source_cache_budget_error))
+                        }
+                    },
+                    isError = customBudget.isNotEmpty() && parsedBudget == null,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = parsedBudget != null,
+                    onClick = {
+                        parsedBudget?.let(onBudgetChange)
+                        showCustomDialog = false
+                    },
+                ) { Text(stringResource(R.string.settings_action_apply)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomDialog = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+        )
+    }
+    if (showClearDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearDialog = false },
+            title = { Text(stringResource(R.string.settings_source_cache_clear_confirm_title)) },
+            text = { Text(stringResource(R.string.settings_source_cache_clear_confirm_description)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearDialog = false
+                        onClear()
+                    },
+                ) { Text(stringResource(R.string.settings_source_cache_clear_now)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDialog = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+        )
+    }
 }
 
 @Composable

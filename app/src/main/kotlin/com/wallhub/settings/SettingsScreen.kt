@@ -54,6 +54,7 @@ fun SettingsScreen(
     diagnosticExportState: DiagnosticExportUiState,
     notificationsGranted: Boolean,
     appUpdateState: AppUpdateUiState,
+    workshopSourceCacheState: WorkshopSourceCacheUiState,
     openSteamSignIn: Boolean = false,
     onBack: () -> Unit,
     onAction: (SettingsAction) -> Unit,
@@ -108,6 +109,15 @@ fun SettingsScreen(
     }
     val onClearOnlineStreamCache: () -> Unit = {
         onAction(SettingsAction.ClearOnlineStreamCache)
+    }
+    val onWorkshopSourceCacheEnabledChange: (Boolean) -> Unit = {
+        onAction(SettingsAction.WorkshopSourceCacheEnabledChanged(it))
+    }
+    val onWorkshopSourceCacheBudgetChange: (Int) -> Unit = {
+        onAction(SettingsAction.WorkshopSourceCacheBudgetChanged(it))
+    }
+    val onClearWorkshopSourceCache: () -> Unit = {
+        onAction(SettingsAction.ClearWorkshopSourceCache)
     }
     val onSteamApiKeyChange: (String) -> Unit = { onAction(SettingsAction.SteamApiKeyChanged(it)) }
     val onSteamWorkshopDataSourceChange: (SteamWorkshopDataSource) -> Unit = {
@@ -313,6 +323,10 @@ fun SettingsScreen(
                                 onDownloadProxyEnabledChange = onDownloadProxyEnabledChange,
                                 onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
                                 onClearOnlineStreamCache = onClearOnlineStreamCache,
+                                workshopSourceCacheState = workshopSourceCacheState,
+                                onWorkshopSourceCacheEnabledChange = onWorkshopSourceCacheEnabledChange,
+                                onWorkshopSourceCacheBudgetChange = onWorkshopSourceCacheBudgetChange,
+                                onClearWorkshopSourceCache = onClearWorkshopSourceCache,
                                 onSteamAccessEnabledChange = onSteamAccessEnabledChange,
                                 onSteamAccessDohEndpointsChange = onSteamAccessDohEndpointsChange,
                                 onSteamWorkshopDataSourceChange = onSteamWorkshopDataSourceChange,
@@ -336,6 +350,8 @@ fun SettingsScreen(
             }
         }
     }
+
+
 }
 
 @Composable
@@ -356,6 +372,10 @@ internal fun SettingsCategoryContent(
     onDownloadProxyEnabledChange: (Boolean) -> Unit,
     onOnlineStreamCacheLimitChange: (Int) -> Unit,
     onClearOnlineStreamCache: () -> Unit,
+    workshopSourceCacheState: WorkshopSourceCacheUiState,
+    onWorkshopSourceCacheEnabledChange: (Boolean) -> Unit,
+    onWorkshopSourceCacheBudgetChange: (Int) -> Unit,
+    onClearWorkshopSourceCache: () -> Unit,
     onSteamAccessEnabledChange: (Boolean) -> Unit,
     onSteamAccessDohEndpointsChange: (List<String>, Set<String>) -> Unit,
     onSteamWorkshopDataSourceChange: (SteamWorkshopDataSource) -> Unit,
@@ -398,6 +418,10 @@ internal fun SettingsCategoryContent(
                 onOnlineChunkPlaybackEnabledChange = onOnlineChunkPlaybackEnabledChange,
                 onOnlineStreamCacheLimitChange = onOnlineStreamCacheLimitChange,
                 onClearOnlineStreamCache = onClearOnlineStreamCache,
+                workshopSourceCacheState = workshopSourceCacheState,
+                onWorkshopSourceCacheEnabledChange = onWorkshopSourceCacheEnabledChange,
+                onWorkshopSourceCacheBudgetChange = onWorkshopSourceCacheBudgetChange,
+                onClearWorkshopSourceCache = onClearWorkshopSourceCache,
             )
 
         SettingsCategory.STEAM ->

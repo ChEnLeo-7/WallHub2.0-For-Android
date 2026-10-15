@@ -25,6 +25,27 @@ data class DiagnosticExportUiState(
     val isFailure: Boolean = false,
 )
 
+data class WorkshopSourceCacheUiState(
+    val retainedBytes: Long = 0L,
+    val isClearing: Boolean = false,
+)
+
+internal enum class WorkshopSourceCacheBudgetPreset(
+    val budgetGiB: Int?,
+) {
+    GIB_1(1),
+    GIB_2(2),
+    GIB_5(5),
+    GIB_10(10),
+    CUSTOM(null),
+}
+
+internal fun workshopSourceCacheBudgetPreset(budgetGiB: Int): WorkshopSourceCacheBudgetPreset =
+    WorkshopSourceCacheBudgetPreset.entries.firstOrNull { it.budgetGiB == budgetGiB }
+        ?: WorkshopSourceCacheBudgetPreset.CUSTOM
+
+internal fun parsePositiveGiB(value: String): Int? = value.trim().toIntOrNull()?.takeIf { it > 0 }
+
 enum class AppUpdatePhase {
     IDLE,
     CHECKING,
@@ -113,6 +134,16 @@ sealed interface SettingsAction {
     ) : SettingsAction
 
     data object ClearOnlineStreamCache : SettingsAction
+
+    data class WorkshopSourceCacheEnabledChanged(
+        val enabled: Boolean,
+    ) : SettingsAction
+
+    data class WorkshopSourceCacheBudgetChanged(
+        val budgetGiB: Int,
+    ) : SettingsAction
+
+    data object ClearWorkshopSourceCache : SettingsAction
 
     data class SteamApiKeyChanged(
         val apiKey: String,

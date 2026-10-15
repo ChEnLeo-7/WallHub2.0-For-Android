@@ -8,16 +8,22 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
@@ -46,7 +52,9 @@ fun SettingsRoute(
     val session by viewModel.session.collectAsStateWithLifecycle()
     val diagnosticExportState by viewModel.diagnosticExportState.collectAsStateWithLifecycle()
     val appUpdateState by viewModel.appUpdateState.collectAsStateWithLifecycle()
+    val workshopSourceCacheState by viewModel.workshopSourceCacheState.collectAsStateWithLifecycle()
     val steamAccessState by viewModel.steamAccessState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
     var notificationsGranted by rememberSaveable {
         mutableStateOf(
             Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -191,20 +199,26 @@ fun SettingsRoute(
                         viewModel.onAction(SettingsAction.SystemActionFailed(effect.failureMessage))
                     }
                 }
-                is SettingsEffect.ShowMessage ->
-                    Toast.makeText(context.applicationContext, effect.message, Toast.LENGTH_SHORT).show()
+                is SettingsEffect.ShowMessage -> snackbarHostState.showSnackbar(effect.message)
             }
         }
     }
-    SettingsScreen(
-        preferences = preferences,
-        steamAccessState = steamAccessState,
-        session = session,
-        diagnosticExportState = diagnosticExportState,
-        notificationsGranted = notificationsGranted,
-        appUpdateState = appUpdateState,
-        openSteamSignIn = openSteamSignIn,
-        onBack = onBack,
-        onAction = viewModel::onAction,
-    )
+    Box(modifier = Modifier.fillMaxSize()) {
+        SettingsScreen(
+            preferences = preferences,
+            steamAccessState = steamAccessState,
+            session = session,
+            diagnosticExportState = diagnosticExportState,
+            notificationsGranted = notificationsGranted,
+            appUpdateState = appUpdateState,
+            workshopSourceCacheState = workshopSourceCacheState,
+            openSteamSignIn = openSteamSignIn,
+            onBack = onBack,
+            onAction = viewModel::onAction,
+        )
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
+    }
 }

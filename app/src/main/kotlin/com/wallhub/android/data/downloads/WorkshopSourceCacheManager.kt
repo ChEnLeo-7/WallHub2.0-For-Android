@@ -93,6 +93,27 @@ internal class WorkshopSourceCacheManager private constructor(
             discardLocked(task)
         }
 
+        /** Returns bytes retained under the app-private Workshop staging root. */
+        suspend fun retainedBytes(): Long = mutex.withLock {
+            taskDao.listRetainedStaging().fold(0L) { total, task ->
+                Math.addExact(total, task.stagingRetainedBytes.coerceAtLeast(0L))
+            }
+        }
+
+        /** Clears retained app-private staging, plans, and checkpoints without touching exported output. */
+        suspend fun clearRetained(): Long = mutex.withLock {
+            check(!isPlaybackActive()) { "Workshop source cache is in use" }
+            var clearedBytes = 0L
+            taskDao.listRetainedStaging()
+                .filterNot { it.status in PROTECTED_STATUSES }
+                .forEach { task ->
+                    if (discardLocked(task)) {
+                        clearedBytes = Math.addExact(clearedBytes, task.stagingRetainedBytes.coerceAtLeast(0L))
+                    }
+                }
+            clearedBytes
+        }
+
         private suspend fun enforceBudgetLocked() {
             val preferences = settingsRepository.preferences.first()
             val userLimitBytes = Math.multiplyExact(preferences.workshopSourceCacheBudgetGiB.toLong(), GIB)

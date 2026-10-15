@@ -23,6 +23,7 @@ import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
+import com.wallhub.android.data.downloads.WorkshopSourceCacheManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -41,7 +42,7 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel
     @Inject
-    constructor(
+    internal constructor(
         @ApplicationContext private val context: Context,
         private val settingsRepository: SettingsRepository,
         private val launcherIconController: LauncherIconController,
@@ -50,8 +51,10 @@ class SettingsViewModel
         private val steamAccessRepository: SteamAccessRepository,
         private val appUpdateRepository: AppUpdateRepository,
         private val workshopVideoStreamRepository: WorkshopVideoStreamRepository,
+        private val workshopSourceCacheManager: WorkshopSourceCacheManager,
     ) : ViewModel() {
         private val mutableDiagnosticExportState = MutableStateFlow(DiagnosticExportUiState())
+        private val mutableWorkshopSourceCacheState = MutableStateFlow(WorkshopSourceCacheUiState())
         private val mutableAppUpdateState =
             MutableStateFlow(
                 AppUpdateUiState(installed = appUpdateRepository.installedAppInfo),
@@ -77,9 +80,15 @@ class SettingsViewModel
             mutableDiagnosticExportState.asStateFlow()
 
         val appUpdateState: StateFlow<AppUpdateUiState> = mutableAppUpdateState.asStateFlow()
+        val workshopSourceCacheState: StateFlow<WorkshopSourceCacheUiState> =
+            mutableWorkshopSourceCacheState.asStateFlow()
 
         val steamAccessState: StateFlow<SteamAccessState> = steamAccessRepository.state
         val effects: Flow<SettingsEffect> = effectChannel.receiveAsFlow()
+
+        init {
+            refreshWorkshopSourceCacheUsage()
+        }
 
         fun onAction(action: SettingsAction) {
             action.toEffect()?.let(effectChannel::trySend) ?: handleStateAction(action)
@@ -126,6 +135,9 @@ class SettingsViewModel
                 is SettingsAction.DownloadProxyEnabledChanged -> setDownloadProxyEnabled(action.enabled)
                 is SettingsAction.OnlineStreamCacheLimitChanged -> setOnlineStreamCacheLimitMb(action.limitMb)
                 SettingsAction.ClearOnlineStreamCache -> clearOnlineStreamCache()
+                is SettingsAction.WorkshopSourceCacheEnabledChanged -> setWorkshopSourceCacheEnabled(action.enabled)
+                is SettingsAction.WorkshopSourceCacheBudgetChanged -> setWorkshopSourceCacheBudgetGiB(action.budgetGiB)
+                SettingsAction.ClearWorkshopSourceCache -> clearWorkshopSourceCache()
                 is SettingsAction.OutputDirectorySelected -> setOutputDirectory(action.treeUri, action.label)
                 SettingsAction.ClearOutputDirectory -> clearOutputDirectory()
                 else -> return false
@@ -271,6 +283,64 @@ class SettingsViewModel
                         effectChannel.send(
                             SettingsEffect.ShowMessage(
                                 context.getString(R.string.settings_streaming_cache_clear_failed),
+                            ),
+                        )
+                    }
+            }
+        }
+
+        private fun setWorkshopSourceCacheEnabled(enabled: Boolean) {
+            viewModelScope.launch {
+                settingsRepository.setWorkshopSourceCacheEnabled(enabled)
+                if (!enabled) workshopSourceCacheManager.reconcileAndEnforceBudget()
+                refreshWorkshopSourceCacheUsage()
+            }
+        }
+
+        private fun setWorkshopSourceCacheBudgetGiB(budgetGiB: Int) {
+            if (budgetGiB <= 0) return
+            viewModelScope.launch {
+                settingsRepository.setWorkshopSourceCacheBudgetGiB(budgetGiB)
+                workshopSourceCacheManager.reconcileAndEnforceBudget()
+                refreshWorkshopSourceCacheUsage()
+            }
+        }
+
+        private fun refreshWorkshopSourceCacheUsage() {
+            viewModelScope.launch {
+                val retainedBytes = runCatching { workshopSourceCacheManager.retainedBytes() }.getOrDefault(0L)
+                mutableWorkshopSourceCacheState.value =
+                    mutableWorkshopSourceCacheState.value.copy(retainedBytes = retainedBytes)
+            }
+        }
+
+        private fun clearWorkshopSourceCache() {
+            if (mutableWorkshopSourceCacheState.value.isClearing) return
+            mutableWorkshopSourceCacheState.value = mutableWorkshopSourceCacheState.value.copy(isClearing = true)
+            viewModelScope.launch {
+                runCatching { workshopSourceCacheManager.clearRetained() }
+                    .onSuccess { clearedBytes ->
+                        mutableWorkshopSourceCacheState.value =
+                            WorkshopSourceCacheUiState(
+                                retainedBytes =
+                                    runCatching { workshopSourceCacheManager.retainedBytes() }.getOrDefault(0L),
+                            )
+                        val message =
+                            if (clearedBytes > 0L) {
+                                context.getString(
+                                    R.string.settings_source_cache_cleared,
+                                    Formatter.formatFileSize(context, clearedBytes),
+                                )
+                            } else {
+                                context.getString(R.string.settings_source_cache_empty)
+                            }
+                        effectChannel.send(SettingsEffect.ShowMessage(message))
+                    }.onFailure {
+                        mutableWorkshopSourceCacheState.value =
+                            mutableWorkshopSourceCacheState.value.copy(isClearing = false)
+                        effectChannel.send(
+                            SettingsEffect.ShowMessage(
+                                context.getString(R.string.settings_source_cache_clear_failed),
                             ),
                         )
                     }
