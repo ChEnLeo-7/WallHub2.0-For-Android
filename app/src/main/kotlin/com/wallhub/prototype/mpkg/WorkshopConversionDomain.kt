@@ -89,12 +89,9 @@ data class ConversionPlan(
         require(version == 2) { "Unsupported conversion plan version: $version" }
         require(policyVersion == 2) { "Unsupported conversion policy version: $policyVersion" }
         require(MpkgConversionPreset.fromStableId(presetId).stableId == presetId) { "Unknown conversion preset: $presetId" }
-        require(resources.size <= MAX_PLAN_RESOURCES) { "Conversion plan exceeds resource limit" }
-        require(resources.sumOf(::persistedResourceBudget) <= MAX_PLAN_RESOURCE_BUDGET_BYTES) {
-            "Conversion plan exceeds persisted resource budget"
-        }
-        require(resources.map(ConversionResourcePlan::path).distinct().size == resources.size) {
-            "Conversion plan contains duplicate resource paths"
+        val paths = HashSet<String>()
+        resources.forEach { resource ->
+            require(paths.add(resource.path)) { "Conversion plan contains duplicate resource paths" }
         }
     }
 }
@@ -235,8 +232,6 @@ private fun String.safeRelativeWarningPath(): String {
 }
 
 object ConversionPlanJsonCodec {
-    const val MAX_JSON_BYTES = 4 * 1024 * 1024
-
     fun encode(plan: ConversionPlan): String {
         val root = JSONObject()
         root.put("version", plan.version)
@@ -270,11 +265,10 @@ object ConversionPlanJsonCodec {
                 }
             },
         )
-        return root.toString().also(::requireBoundedJson)
+        return root.toString()
     }
 
     fun decode(json: String): ConversionPlan {
-        requireBoundedJson(json)
         val root = JSONObject(json)
         requireKeys(root, setOf("version", "presetId", "policyVersion", "preserveAudio", "device", "sourceIdentity", "resources"))
         val deviceJson = root.getJSONObject("device")
@@ -282,7 +276,6 @@ object ConversionPlanJsonCodec {
         val identityJson = root.getJSONObject("sourceIdentity")
         requireKeys(identityJson, setOf("version", "packageLength", "indexDigest"))
         val resourcesJson = root.getJSONArray("resources")
-        require(resourcesJson.length() <= MAX_PLAN_RESOURCES) { "Conversion plan exceeds resource limit" }
         val resources =
             List(resourcesJson.length()) { index ->
                 val resource = resourcesJson.getJSONObject(index)
@@ -314,10 +307,6 @@ object ConversionPlanJsonCodec {
         )
     }
 
-    private fun requireBoundedJson(json: String) {
-        require(json.toByteArray(Charsets.UTF_8).size <= MAX_JSON_BYTES) { "Conversion plan JSON exceeds byte limit" }
-    }
-
     private fun requireKeys(value: JSONObject, expected: Set<String>) {
         val actual = value.keys().asSequence().toSet()
         require(actual == expected) { "Conversion plan JSON fields do not match v2 schema" }
@@ -340,7 +329,6 @@ internal object WorkshopConversionPlanner {
         val scenePackage = WorkshopConverter.resolveScenePackage(sceneRoot, project.optString("file").takeIf(String::isNotBlank))
         val policy = preset.policy()
         val archive = PkgReader.readIndex(scenePackage)
-        require(archive.entries.size <= MAX_PLAN_RESOURCES) { "Conversion plan exceeds resource limit" }
         val graphEntries = archive.entries.filter(::isDeclarativeGraphDocument).sortedBy(IndexedPkgEntry::path)
         val texturePaths = archive.entries.filter { it.path.endsWith(".tex", ignoreCase = true) }.mapTo(mutableSetOf(), IndexedPkgEntry::path)
         val materialGraph =
@@ -348,17 +336,11 @@ internal object WorkshopConversionPlanner {
                 documents = boundedGraphDocuments(archive, graphEntries),
                 texturePaths = texturePaths,
             )
-        var persistedResourceBytes = 0L
         val resources =
             archive.entries.map { entry ->
                 val semantic = materialGraph.semantics[entry.path].takeIf { graphEntries.isNotEmpty() }
                 val graphWarning = materialGraph.documentWarnings[entry.path]?.firstOrNull()
-                val resource = resourcePlan(scenePackage, entry, policy, device, preserveAudio, semantic, graphWarning)
-                persistedResourceBytes = Math.addExact(persistedResourceBytes, persistedResourceBudget(resource))
-                require(persistedResourceBytes <= MAX_PLAN_RESOURCE_BUDGET_BYTES) {
-                    "Conversion plan exceeds persisted resource budget"
-                }
-                resource
+                resourcePlan(scenePackage, entry, policy, device, preserveAudio, semantic, graphWarning)
             }
         return ConversionPlan(
             presetId = preset.stableId,
@@ -545,11 +527,6 @@ fun requireBoundedPersistedConversionJson(json: String?) {
     }
 }
 
-private fun persistedResourceBudget(resource: ConversionResourcePlan): Long =
-    resource.path.toByteArray(Charsets.UTF_8).size.toLong() +
-        resource.reason.toByteArray(Charsets.UTF_8).size.toLong() +
-        MAX_RESOURCE_JSON_OVERHEAD_BYTES
-
 internal fun TexEntryRoute.isVerifiedPassthroughRoute(): Boolean =
     this == TexEntryRoute.RETAIN_VERIFIED_MOBILE ||
         this == TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE ||
@@ -568,8 +545,5 @@ private val UNSAFE_TEXTURE_SEMANTIC_TOKENS = setOf("normal", "norm", "nrm", "mas
 private const val MIB = 1024L * 1024L
 private const val GIB = 1024L * MIB
 private const val MAX_PERSISTED_CONVERSION_JSON_BYTES = 128 * 1024
-private const val MAX_PLAN_RESOURCES = 32 * 1024
-private const val MAX_PLAN_PATH_BYTES = 4 * 1024
-private const val MAX_REASON_CHARS = 256
-private const val MAX_RESOURCE_JSON_OVERHEAD_BYTES = 160L
-private const val MAX_PLAN_RESOURCE_BUDGET_BYTES = ConversionPlanJsonCodec.MAX_JSON_BYTES.toLong() - 1024L
+internal const val MAX_PLAN_PATH_BYTES = 4 * 1024
+internal const val MAX_REASON_CHARS = 256

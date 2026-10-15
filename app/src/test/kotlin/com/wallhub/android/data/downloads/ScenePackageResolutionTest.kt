@@ -513,15 +513,38 @@ class ScenePackageResolutionTest {
     }
 
     @Test
-    fun conversionPlanStoreRoundTripsMoreThan1024ResourcesThroughAppPrivateFile() {
+    fun conversionPlanStoreRoundTripsMoreThan32768ResourcesAnd4MiBThroughAppPrivateFile() {
         withConversionPlanStore { store, root ->
-            val plan = storedConversionPlan(resourceCount = 1_025)
+            val plan = storedConversionPlan(resourceCount = 32_769, reasonLength = 128)
 
-            val reference = store.write("task-1025", plan)
+            val reference = store.write("task-large-plan", plan)
 
-            assertEquals(plan, store.read("task-1025", reference))
-            assertTrue(root.resolve("conversion-plans/task-1025.json").isFile)
+            assertTrue(reference.sizeBytes > 4L * 1024L * 1024L)
+            assertEquals(plan, store.read("task-large-plan", reference))
+            assertTrue(root.resolve("conversion-plans/task-large-plan.json").isFile)
             assertFalse(reference.toJson().contains(root.absolutePath))
+        }
+    }
+
+    @Test
+    fun streamedConversionPlanDigestMatchesCanonicalJsonDigest() {
+        val plan = storedConversionPlan(resourceCount = 3)
+        val expected =
+            java.security.MessageDigest.getInstance("SHA-256")
+                .digest(ConversionPlanJsonCodec.encode(plan).toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+        assertEquals(expected, conversionPlanDigest(plan))
+    }
+
+    @Test
+    fun conversionDiskEstimateUsesCheckedArithmeticWithoutArbitrary4GiBLimit() {
+        assertEquals(12L * 1024L * 1024L * 1024L, checkedConversionDiskEstimate(sequenceOf(3L shl 30, 3L shl 30)))
+        assertThrows(IllegalArgumentException::class.java) {
+            checkedConversionDiskEstimate(sequenceOf(Long.MAX_VALUE, 1L))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            checkedConversionDiskEstimate(sequenceOf(Long.MAX_VALUE / 2L + 1L))
         }
     }
 
@@ -601,7 +624,10 @@ class ScenePackageResolutionTest {
         }
     }
 
-    private fun storedConversionPlan(resourceCount: Int) =
+    private fun storedConversionPlan(
+        resourceCount: Int,
+        reasonLength: Int = "copy_non_texture".length,
+    ) =
         com.wallhub.prototype.mpkg.ConversionPlan(
             presetId = MpkgConversionPreset.BALANCED.stableId,
             policyVersion = 2,
@@ -613,7 +639,7 @@ class ScenePackageResolutionTest {
                         path = "resources/$index.bin",
                         sourceLength = index.toLong(),
                         strategy = ResourceStrategy.COPY,
-                        reason = "copy_non_texture",
+                        reason = "r".repeat(reasonLength),
                     )
                 },
         )

@@ -44,7 +44,6 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.security.MessageDigest
 import java.util.Locale
 import java.util.UUID
 import java.util.zip.ZipEntry
@@ -380,18 +379,10 @@ internal class FormalWorkshopConversionWorker(
         }
     }
 
-    private fun estimateConversionDiskBytes(sourceDirectory: File): Long {
-        var total = 0L
-        sourceDirectory.walkTopDown().filter(File::isFile).forEach { file ->
-            val length = file.length().coerceAtLeast(0L)
-            require(total <= MAX_CONVERSION_OUTPUT_BYTES - length) {
-                "Workshop content exceeds the $MAX_CONVERSION_OUTPUT_BYTES-byte conversion limit"
-            }
-            total += length
-        }
-        require(total <= Long.MAX_VALUE / CONVERSION_DISK_MULTIPLIER) { "Workshop conversion disk estimate overflow" }
-        return total * CONVERSION_DISK_MULTIPLIER
-    }
+    private fun estimateConversionDiskBytes(sourceDirectory: File): Long =
+        checkedConversionDiskEstimate(
+            sourceDirectory.walkTopDown().filter(File::isFile).map { it.length().coerceAtLeast(0L) },
+        )
 
     private suspend fun convertWithEngine(
         task: FormalTaskRecordEntity,
@@ -463,11 +454,7 @@ internal class FormalWorkshopConversionWorker(
     }
 
     private fun ConversionPlan.checkpointIdentity(task: FormalTaskRecordEntity): ConversionCheckpointIdentity {
-        val encoded = ConversionPlanJsonCodec.encode(this).toByteArray(Charsets.UTF_8)
-        val planSha256 =
-            MessageDigest.getInstance("SHA-256").digest(encoded).joinToString("") {
-                "%02x".format(it.toInt() and 0xff)
-            }
+        val planSha256 = conversionPlanDigest(this)
         return ConversionCheckpointIdentity(
             taskId = task.taskId,
             attempt = task.conversionAttempt,
@@ -1169,6 +1156,22 @@ private fun FormalTaskRecordEntity.exportTransaction(): ExportTransaction =
         mimeType = exportMimeType,
     )
 
-private const val MAX_CONVERSION_OUTPUT_BYTES = 4L * 1024L * 1024L * 1024L
+internal fun checkedConversionDiskEstimate(lengths: Sequence<Long>): Long {
+    val total =
+        lengths.fold(0L) { accumulated, length ->
+            require(length >= 0L) { "Negative workshop content length" }
+            try {
+                Math.addExact(accumulated, length)
+            } catch (_: ArithmeticException) {
+                throw IllegalArgumentException("Workshop conversion disk estimate overflow")
+            }
+        }
+    return try {
+        Math.multiplyExact(total, CONVERSION_DISK_MULTIPLIER)
+    } catch (_: ArithmeticException) {
+        throw IllegalArgumentException("Workshop conversion disk estimate overflow")
+    }
+}
+
 private const val MAX_LEGACY_INLINE_PLAN_BYTES = 128 * 1024
 private const val CONVERSION_DISK_MULTIPLIER = 2L
