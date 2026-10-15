@@ -10,6 +10,7 @@ import com.wallhub.prototype.mpkg.ResourceStrategy
 import com.wallhub.prototype.mpkg.WorkshopConverter
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.util.concurrent.CancellationException
@@ -48,6 +49,22 @@ class WorkshopConverterExecutionFallbackTest {
             assertEquals("materials/color.tex", report.warningDetails.single().path)
             assertEquals(mapOf("texture_conversion_failed" to 1), report.warningCounts)
             assertFalse(report.warnings.single().contains("unstable decoder detail"))
+        }
+    }
+
+    @Test
+    fun `texture decoder IO failure remains fatal instead of becoming passthrough`() {
+        withScene(listOf("materials/color.tex" to staticImageTex(2, 2))) { root ->
+            val plan = WorkshopConverter.plan(root, MpkgConversionPreset.HIGH_QUALITY, DEVICE)
+
+            assertThrows(IOException::class.java) {
+                WorkshopConverter.execute(
+                    plan = plan,
+                    inputDir = root,
+                    outputFile = root.resolve("converted.mpkg"),
+                    staticImageDecoder = { _, _, _, _ -> throw IOException("disk read failed") },
+                )
+            }
         }
     }
 

@@ -9,6 +9,7 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import java.io.OutputStream
 import java.io.RandomAccessFile
 import java.util.concurrent.CancellationException
@@ -180,7 +181,7 @@ object TexMobileConverter {
             TexFileConversionResult(true, prepared.reason)
         }.getOrElse { error ->
             outputFile.delete()
-            if (error is CancellationException) throw error
+            if (error is CancellationException || error is IOException) throw error
             TexFileConversionResult(
                 converted = false,
                 reason = error.message ?: error.javaClass.simpleName,
@@ -248,7 +249,7 @@ object TexMobileConverter {
             }
         }.getOrElse { error ->
             outputFile.delete()
-            if (error is CancellationException) throw error
+            if (error is CancellationException || error is IOException) throw error
             TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
         }
 
@@ -296,7 +297,7 @@ object TexMobileConverter {
             }
         }.getOrElse { error ->
             outputFile.delete()
-            if (error is CancellationException) throw error
+            if (error is CancellationException || error is IOException) throw error
             TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
         }
 
@@ -350,7 +351,7 @@ object TexMobileConverter {
             }
         }.getOrElse { error ->
             outputFile.delete()
-            if (error is CancellationException) throw error
+            if (error is CancellationException || error is IOException) throw error
             TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
         }
 
@@ -412,7 +413,7 @@ object TexMobileConverter {
             }
         }.getOrElse { error ->
             outputFile.delete()
-            if (error is CancellationException) throw error
+            if (error is CancellationException || error is IOException) throw error
             TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
         }
 
