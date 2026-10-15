@@ -299,7 +299,7 @@ interface FormalTaskRecordDao {
             "desiredIntentRevision = CASE WHEN desiredIntentRevision < 1 THEN 1 ELSE desiredIntentRevision END, " +
             "appliedIntentRevision = CASE WHEN desiredIntentRevision < 1 THEN 1 ELSE desiredIntentRevision END, " +
             "quiescedIntentRevision = CASE WHEN desiredIntentRevision < 1 THEN 1 ELSE desiredIntentRevision END " +
-            "WHERE taskId = :taskId AND status = 'CANCELLED' AND desiredIntent = 'CANCEL'",
+            "WHERE taskId = :taskId AND status IN ('CANCELLED', 'COMPLETED') AND desiredIntent = 'CANCEL'",
     )
     suspend fun settleConversionCancellation(taskId: String): Int
 

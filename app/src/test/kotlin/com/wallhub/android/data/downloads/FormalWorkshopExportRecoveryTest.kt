@@ -9,6 +9,14 @@ import org.junit.Test
 
 class FormalWorkshopExportRecoveryTest {
     @Test
+    fun `failed or cancelled reconversion keeps published output in completed status`() {
+        assertEquals(DownloadStatus.COMPLETED, settledConversionStatus(true, DownloadStatus.FAILED))
+        assertEquals(DownloadStatus.COMPLETED, settledConversionStatus(true, DownloadStatus.CANCELLED))
+        assertEquals(DownloadStatus.FAILED, settledConversionStatus(false, DownloadStatus.FAILED))
+        assertEquals(DownloadStatus.CANCELLED, settledConversionStatus(false, DownloadStatus.CANCELLED))
+    }
+
+    @Test
     fun `mpkg exports use the canonical package mime type`() {
         assertEquals("application/vnd.mpkg", WorkshopExportMimeTypes.MPKG)
     }

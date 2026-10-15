@@ -48,6 +48,7 @@ import java.util.Locale
 import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import org.json.JSONObject
 
 internal class FormalWorkshopConversionWorker(
     appContext: Context,
@@ -527,9 +528,14 @@ internal class FormalWorkshopConversionWorker(
         check(taskDao.clearConversionCheckpointReference(task.taskId, task.conversionAttempt) == 1) {
             "Conversion attempt changed before its checkpoint reference could be cleared"
         }
+        val keepsPublishedOutput = task.hasPublishedConversion()
+        val attemptReport = conversionAttemptReport("cancelled", "user_cancelled")
+        check(taskDao.persistConversionReport(task.taskId, task.conversionAttempt, attemptReport) == 1) {
+            "Conversion attempt changed before its cancellation report could be persisted"
+        }
         update(
-            task,
-            status = DownloadStatus.CANCELLED,
+            task.copy(conversionReportJson = attemptReport),
+            status = settledConversionStatus(keepsPublishedOutput, DownloadStatus.CANCELLED),
             bytesPerSecond = 0L,
             stagingDirectory = sourceDirectory?.absolutePath ?: task.stagingDirectory,
             message = applicationContext.getString(R.string.backend_conversion_cancelled_cleaned),
@@ -560,14 +566,39 @@ internal class FormalWorkshopConversionWorker(
         task: FormalTaskRecordEntity,
         message: String,
     ): Result {
+        val attemptReport = conversionAttemptReport("failed", stableFailureCode(message))
+        check(taskDao.persistConversionReport(task.taskId, task.conversionAttempt, attemptReport) == 1) {
+            "Conversion attempt changed before its failure report could be persisted"
+        }
         update(
-            task,
-            status = DownloadStatus.FAILED,
+            task.copy(conversionReportJson = attemptReport),
+            status = settledConversionStatus(task.hasPublishedConversion(), DownloadStatus.FAILED),
             bytesPerSecond = 0L,
             message = message,
         )
         return Result.success()
     }
+
+    private fun FormalTaskRecordEntity.hasPublishedConversion(): Boolean =
+        !outputUri.isNullOrBlank() && !successfulConversionReportJson.isNullOrBlank()
+
+    private fun conversionAttemptReport(
+        result: String,
+        reasonCode: String,
+    ): String =
+        JSONObject()
+            .put("version", 1)
+            .put("result", result)
+            .put("reasonCode", reasonCode)
+            .toString()
+
+    private fun stableFailureCode(message: String): String =
+        when {
+            message.contains("format", ignoreCase = true) || message.contains("0xffffffff", ignoreCase = true) -> "format_limit"
+            message.contains("space", ignoreCase = true) || message.contains("storage", ignoreCase = true) -> "insufficient_space"
+            message.contains("source", ignoreCase = true) || message.contains("package", ignoreCase = true) -> "source_invalid"
+            else -> "conversion_failed"
+        }
 
     private suspend fun update(
         previous: FormalTaskRecordEntity,
@@ -684,6 +715,11 @@ internal class FormalWorkshopConversionWorker(
         private const val MAX_OUTPUT_TITLE_LENGTH = 72
     }
 }
+
+internal fun settledConversionStatus(
+    hasPublishedOutput: Boolean,
+    firstAttemptTerminalStatus: DownloadStatus,
+): DownloadStatus = if (hasPublishedOutput) DownloadStatus.COMPLETED else firstAttemptTerminalStatus
 
 internal enum class ConversionWorkerCandidateDecision {
     RUN,
