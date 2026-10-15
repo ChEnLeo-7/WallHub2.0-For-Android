@@ -279,24 +279,6 @@ class ScenePackageResolutionTest {
     }
 
     @Test
-    fun mpkgWriterRejectsEntryCountBeyondMobileIndexBudgetBeforeWritingOutput() {
-        val root = Files.createTempDirectory("wallhub-mpkg-entry-budget").toFile()
-        try {
-            val output = root.resolve("too-many.mpkg")
-            val payload = ByteArrayPayload(byteArrayOf())
-            val entries = List(MpkgWriter.MAX_ENTRY_COUNT + 1) { index -> MpkgInputEntry("$index", payload) }
-
-            val failure = runCatching { MpkgWriter.write(entries, output, SCENE_MPKG_MAGIC) }.exceptionOrNull()
-
-            assertTrue(failure is IllegalArgumentException)
-            assertTrue(failure?.message.orEmpty().contains("entry count"))
-            assertFalse(output.exists())
-        } finally {
-            root.deleteRecursively()
-        }
-    }
-
-    @Test
     fun mpkgWriterRejectsOversizedIndexPathBeforeWritingOutput() {
         val root = Files.createTempDirectory("wallhub-mpkg-index-budget").toFile()
         try {

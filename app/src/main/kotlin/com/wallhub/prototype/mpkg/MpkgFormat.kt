@@ -1,9 +1,11 @@
 package com.wallhub.prototype.mpkg
 
+import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -11,6 +13,16 @@ import java.util.Locale
 
 const val SCENE_MPKG_MAGIC = "PKGM0020"
 const val VIDEO_MPKG_MAGIC = "PKGM0014"
+
+/** A requested package cannot be represented by the MPKG on-disk format. */
+class MpkgFormatLimitException(
+    message: String,
+) : IllegalArgumentException(message)
+
+/** The destination volume cannot satisfy the package plus its safety reserve. */
+class MpkgInsufficientSpaceException(
+    message: String,
+) : IOException(message)
 
 sealed interface MpkgPayload {
     val length: Long
@@ -56,7 +68,7 @@ data class FilePayload(
             while (remaining > 0L) {
                 checkCancellation()
                 val read = input.read(copyBuffer, 0, minOf(copyBuffer.size.toLong(), remaining).toInt())
-                require(read > 0) { "Unexpected end of MPKG source file: $file" }
+                if (read <= 0) throw IOException("Unexpected end of MPKG source file: $file")
                 output.write(copyBuffer, 0, read)
                 remaining -= read
             }
@@ -87,7 +99,7 @@ data class FileSlicePayload(
             while (remaining > 0L) {
                 checkCancellation()
                 val read = input.read(copyBuffer, 0, minOf(copyBuffer.size.toLong(), remaining).toInt())
-                require(read > 0) { "Unexpected end of MPKG source file: $file" }
+                if (read <= 0) throw IOException("Unexpected end of MPKG source file: $file")
                 output.write(copyBuffer, 0, read)
                 remaining -= read
             }
@@ -112,10 +124,8 @@ data class MpkgManifest(
 )
 
 object MpkgWriter {
-    internal const val MAX_ENTRY_COUNT = 50_000
     internal const val MAX_PATH_BYTES = 4 * 1024
-    internal const val MAX_INDEX_BYTES = 16L * 1024L * 1024L
-    private const val MAX_U32 = 0xffff_ffffL
+    internal const val MAX_U32 = 0xffff_ffffL
 
     fun write(
         entries: List<MpkgInputEntry>,
@@ -124,10 +134,7 @@ object MpkgWriter {
         checkCancellation: () -> Unit = {},
     ): MpkgManifest {
         require(magic.startsWith("PKGM")) { "Unsupported MPKG magic: $magic" }
-        require(entries.size <= MAX_ENTRY_COUNT) {
-            "MPKG entry count exceeds the $MAX_ENTRY_COUNT-entry mobile index budget: ${entries.size}"
-        }
-        val normalized = LinkedHashMap<String, MpkgInputEntry>(entries.size)
+        val normalized = HashMap<String, MpkgInputEntry>()
         entries.forEach { entry ->
             checkCancellation()
             val path = normalizePath(entry.path)
@@ -136,66 +143,96 @@ object MpkgWriter {
             }
         }
         val ordered =
-            normalized.values
-                .map { entry ->
-                    val directory = entry.path.substringBeforeLast('/', "").lowercase(Locale.ROOT)
-                    val name = entry.path.substringAfterLast('/').lowercase(Locale.ROOT)
-                    Triple(directory, name, entry)
-                }.sortedWith(compareBy<Triple<String, String, MpkgInputEntry>> { it.first }.thenBy { it.second })
-                .map { it.third }
+            normalized.values.sortedWith(
+                compareBy<MpkgInputEntry> { it.path.lowercase(Locale.ROOT) }.thenBy { it.path },
+            )
         var payloadBytes = 0L
         var indexBytes = 0L
-        val encodedPaths = ArrayList<ByteArray>(ordered.size)
         val manifestEntries = ArrayList<MpkgEntryInfo>(ordered.size)
         ordered.forEach { entry ->
             checkCancellation()
-            val name = entry.path.toByteArray(Charsets.UTF_8)
-            require(name.size <= MAX_PATH_BYTES) {
-                "MPKG entry path exceeds the $MAX_PATH_BYTES-byte limit: ${entry.path}"
+            val pathBytes = entry.path.toByteArray(Charsets.UTF_8).size
+            if (pathBytes > MAX_PATH_BYTES) {
+                throw MpkgFormatLimitException("MPKG entry path exceeds the $MAX_PATH_BYTES-byte format limit: ${entry.path}")
             }
-            indexBytes += Integer.BYTES.toLong() * 3L + name.size.toLong()
-            require(indexBytes <= MAX_INDEX_BYTES && indexBytes <= MAX_U32) {
-                "MPKG index exceeds the $MAX_INDEX_BYTES-byte mobile budget"
+            indexBytes = checkedFormatAdd(indexBytes, INDEX_ENTRY_FIXED_BYTES + pathBytes.toLong(), "MPKG index")
+            if (entry.payload.length !in 0..MAX_U32) {
+                throw MpkgFormatLimitException("MPKG entry length exceeds the 32-bit format limit: ${entry.path}")
             }
-            require(entry.payload.length in 0..MAX_U32) { "MPKG entry is too large: ${entry.path}" }
             manifestEntries += MpkgEntryInfo(entry.path, entry.payload.length, payloadBytes)
-            encodedPaths += name
-            payloadBytes += entry.payload.length
-            require(payloadBytes <= MAX_U32) { "MPKG payload exceeds 4 GiB format limit" }
+            payloadBytes = checkedFormatAdd(payloadBytes, entry.payload.length, "MPKG payload")
+            if (payloadBytes > MAX_U32) {
+                throw MpkgFormatLimitException("MPKG payload exceeds the 32-bit format limit")
+            }
         }
         val magicBytes = magic.toByteArray(Charsets.US_ASCII)
-        require(magicBytes.size <= MAX_PATH_BYTES) { "MPKG magic is too large" }
-        val headerBytes = Integer.BYTES.toLong() * 2L + magicBytes.size.toLong()
-        val outputBytes = headerBytes + indexBytes + payloadBytes
+        if (magicBytes.size > MAX_PATH_BYTES) throw MpkgFormatLimitException("MPKG magic is too large")
+        val headerBytes = checkedFormatAdd(HEADER_FIXED_BYTES, magicBytes.size.toLong(), "MPKG header")
+        val outputBytes = checkedFormatAdd(checkedFormatAdd(headerBytes, indexBytes, "MPKG output"), payloadBytes, "MPKG output")
+        if (outputBytes > MAX_U32) {
+            throw MpkgFormatLimitException("MPKG output exceeds the 32-bit format limit")
+        }
+
         val parent = outputFile.absoluteFile.parentFile ?: error("Output file has no parent directory")
         check(parent.exists() || parent.mkdirs()) { "Unable to create MPKG output directory: $parent" }
-        val reserve = MIN_MPKG_FREE_SPACE_BYTES.coerceAtMost(parent.totalSpace / 20L)
-        require(outputBytes <= parent.usableSpace - reserve) {
-            "Insufficient space for MPKG output: need $outputBytes bytes plus $reserve bytes reserve, " +
-                "but only ${parent.usableSpace} bytes are usable"
-        }
-        writeAtomically(outputFile) { temporaryFile ->
-            BufferedOutputStream(FileOutputStream(temporaryFile)).use { output ->
-                output.writeIntLe(magicBytes.size)
-                output.write(magicBytes)
-                output.writeIntLe(manifestEntries.size)
-                manifestEntries.indices.forEach { index ->
+        val peakNewBytes = checkedFormatAdd(outputBytes, indexBytes, "MPKG peak disk use")
+        requireAvailableSpace(parent, peakNewBytes)
+
+        val indexSpool = File.createTempFile(".${outputFile.name}.index.", ".tmp", parent)
+        try {
+            BufferedOutputStream(FileOutputStream(indexSpool)).use { spool ->
+                manifestEntries.forEach { entry ->
                     checkCancellation()
-                    val entry = manifestEntries[index]
-                    val name = encodedPaths[index]
-                    output.writeIntLe(name.size)
-                    output.write(name)
-                    output.writeIntLe(entry.offset.toInt())
-                    output.writeIntLe(entry.length.toInt())
-                }
-                val copyBuffer = ByteArray(COPY_BUFFER_SIZE)
-                ordered.forEach { entry ->
-                    checkCancellation()
-                    entry.payload.writeTo(output, copyBuffer, checkCancellation)
+                    val path = entry.path.toByteArray(Charsets.UTF_8)
+                    spool.writeIntLe(path.size)
+                    spool.write(path)
+                    spool.writeIntLe(entry.offset.toInt())
+                    spool.writeIntLe(entry.length.toInt())
                 }
             }
+            check(indexSpool.length() == indexBytes) { "MPKG index spool length changed unexpectedly" }
+            writeAtomically(outputFile) { temporaryFile ->
+                BufferedOutputStream(FileOutputStream(temporaryFile)).use { output ->
+                    output.writeIntLe(magicBytes.size)
+                    output.write(magicBytes)
+                    output.writeIntLe(manifestEntries.size)
+                    val copyBuffer = ByteArray(COPY_BUFFER_SIZE)
+                    BufferedInputStream(FileInputStream(indexSpool)).use { input ->
+                        while (true) {
+                            checkCancellation()
+                            val read = input.read(copyBuffer)
+                            if (read < 0) break
+                            output.write(copyBuffer, 0, read)
+                        }
+                    }
+                    ordered.forEach { entry ->
+                        checkCancellation()
+                        entry.payload.writeTo(output, copyBuffer, checkCancellation)
+                    }
+                }
+            }
+        } finally {
+            indexSpool.delete()
         }
         return MpkgManifest(magic, manifestEntries)
+    }
+
+    private fun requireAvailableSpace(parent: File, peakNewBytes: Long) {
+        val capacityReserve = parent.totalSpace / 20L
+        val reserve = maxOf(MIN_MPKG_FREE_SPACE_BYTES, capacityReserve)
+        val required =
+            try {
+                Math.addExact(peakNewBytes, reserve)
+            } catch (_: ArithmeticException) {
+                throw MpkgFormatLimitException("MPKG output and disk reserve exceed the supported size")
+            }
+        val usable = parent.usableSpace
+        if (usable < required) {
+            throw MpkgInsufficientSpaceException(
+                "Insufficient space for MPKG output: need $peakNewBytes bytes of peak staging plus $reserve bytes reserve, " +
+                    "but only $usable bytes are usable",
+            )
+        }
     }
 
     internal fun normalizePath(rawPath: String): String {
@@ -231,5 +268,18 @@ internal fun writeAtomically(
     }
 }
 
+private fun checkedFormatAdd(
+    left: Long,
+    right: Long,
+    subject: String,
+): Long =
+    try {
+        Math.addExact(left, right)
+    } catch (_: ArithmeticException) {
+        throw MpkgFormatLimitException("$subject size overflows")
+    }
+
+private const val INDEX_ENTRY_FIXED_BYTES = Integer.BYTES.toLong() * 3L
+private const val HEADER_FIXED_BYTES = Integer.BYTES.toLong() * 2L
 private const val COPY_BUFFER_SIZE = 1024 * 1024
-private const val MIN_MPKG_FREE_SPACE_BYTES = 128L * 1024L * 1024L
+private const val MIN_MPKG_FREE_SPACE_BYTES = 512L * 1024L * 1024L

@@ -61,6 +61,9 @@ signing.properties
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/DownloadCancellationPersistenceTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/FormalWorkshopExportRecoveryTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/MpkgScannerCompatibilityTest.kt
+!/app/src/test/kotlin/com/wallhub/prototype/
+!/app/src/test/kotlin/com/wallhub/prototype/mpkg/
+!/app/src/test/kotlin/com/wallhub/prototype/mpkg/MpkgFormatScaleTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/AnimatedTextureRetentionTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/TexMobileConverterEmbeddedImageTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/VerifiedRuntimeDesktopTexTest.kt
