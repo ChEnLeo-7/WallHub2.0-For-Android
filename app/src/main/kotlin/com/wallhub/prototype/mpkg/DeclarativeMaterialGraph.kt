@@ -80,9 +80,7 @@ internal object DeclarativeMaterialGraph {
             }
             visit(root, "", 0)
         }
-        if (warnings.isNotEmpty()) {
-            texturePaths.filterNot(semantics::containsKey).forEach { path -> semantics[path] = TextureSemantic.UNKNOWN }
-        }
+        texturePaths.filterNot(semantics::containsKey).forEach { path -> semantics[path] = TextureSemantic.UNKNOWN }
         return MaterialGraphResult(semantics.toSortedMap(), warnings.toSortedSet())
     }
 
