@@ -123,6 +123,7 @@ class WorkshopDetailViewModel
                             outputTreeUri = preferences.outputTreeUri,
                             outputDirectoryLabel = preferences.outputDirectoryLabel,
                             mpkgConversionPreset = preferences.mpkgConversionPreset,
+                            preserveAudio = preferences.preserveAudio,
                             onlineChunkPlaybackEnabled = preferences.onlineChunkPlaybackEnabled,
                         )
                     if (!preferences.onlineChunkPlaybackEnabled) stopInlineVideoPlayback()
@@ -498,7 +499,8 @@ class WorkshopDetailViewModel
         }
 
         fun enqueueDownload(playWhenReady: Boolean = false) {
-            val detail = mutableState.value.detail ?: return
+            val current = mutableState.value
+            val detail = current.detail ?: return
             viewModelScope.launch {
                 mutableState.value =
                     mutableState.value.copy(
@@ -513,9 +515,13 @@ class WorkshopDetailViewModel
                             type = detail.summary.type,
                             previewUrl = detail.summary.previewUrl,
                             expectedTotalBytes = detail.summary.fileSizeBytes ?: 0L,
-                            outputTreeUri = mutableState.value.outputTreeUri,
-                            exportFormat = mutableState.value.exportFormat,
-                            mpkgConversionPreset = mutableState.value.mpkgConversionPreset,
+                            outputTreeUri = current.outputTreeUri,
+                            exportFormat = current.exportFormat,
+                            mpkgConversionPreset = current.mpkgConversionPreset,
+                            preserveAudio =
+                                current.preserveAudio &&
+                                    detail.summary.type == WorkshopType.SCENE &&
+                                    current.exportFormat == ExportFormat.MPKG,
                         ),
                     )
                 }.onSuccess { result ->
@@ -579,6 +585,11 @@ class WorkshopDetailViewModel
 
         fun selectMpkgConversionPreset(preset: MpkgConversionPreset) {
             mutableState.value = mutableState.value.copy(mpkgConversionPreset = preset)
+        }
+
+        fun setPreserveAudio(enabled: Boolean) {
+            mutableState.value = mutableState.value.copy(preserveAudio = enabled)
+            viewModelScope.launch { settingsRepository.setPreserveAudio(enabled) }
         }
 
         fun convertExistingDownload(format: ExportFormat) {

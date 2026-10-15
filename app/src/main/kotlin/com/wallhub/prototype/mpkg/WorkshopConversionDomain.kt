@@ -80,6 +80,7 @@ data class ConversionPlan(
     val version: Int = 2,
     val presetId: String,
     val policyVersion: Int,
+    val preserveAudio: Boolean = false,
     val device: DeviceCapabilityProfile,
     val sourceIdentity: ScenePackageIdentity,
     val resources: List<ConversionResourcePlan>,
@@ -167,6 +168,7 @@ object ConversionPlanJsonCodec {
         root.put("version", plan.version)
         root.put("presetId", plan.presetId)
         root.put("policyVersion", plan.policyVersion)
+        root.put("preserveAudio", plan.preserveAudio)
         root.put(
             "device",
             JSONObject()
@@ -200,7 +202,7 @@ object ConversionPlanJsonCodec {
     fun decode(json: String): ConversionPlan {
         requireBoundedJson(json)
         val root = JSONObject(json)
-        requireKeys(root, setOf("version", "presetId", "policyVersion", "device", "sourceIdentity", "resources"))
+        requireKeys(root, setOf("version", "presetId", "policyVersion", "preserveAudio", "device", "sourceIdentity", "resources"))
         val deviceJson = root.getJSONObject("device")
         requireKeys(deviceJson, setOf("maxHeapBytes", "supportsEtc2"))
         val identityJson = root.getJSONObject("sourceIdentity")
@@ -226,6 +228,7 @@ object ConversionPlanJsonCodec {
             version = root.getInt("version"),
             presetId = presetId,
             policyVersion = root.getInt("policyVersion"),
+            preserveAudio = root.getBoolean("preserveAudio"),
             device = DeviceCapabilityProfile(deviceJson.getLong("maxHeapBytes"), deviceJson.getBoolean("supportsEtc2")),
             sourceIdentity =
                 ScenePackageIdentity(
@@ -248,7 +251,12 @@ object ConversionPlanJsonCodec {
 }
 
 internal object WorkshopConversionPlanner {
-    fun plan(inputDir: File, preset: MpkgConversionPreset, device: DeviceCapabilityProfile): ConversionPlan {
+    fun plan(
+        inputDir: File,
+        preset: MpkgConversionPreset,
+        device: DeviceCapabilityProfile,
+        preserveAudio: Boolean,
+    ): ConversionPlan {
         require(inputDir.isDirectory) { "Workshop input directory is missing" }
         require(WorkshopConverter.detect(inputDir) == WorkshopKind.SCENE) { "Conversion plans currently support scene MPKG conversion only" }
         val resolution = PresetDependencyResolver.resolve(inputDir).getOrThrow()
@@ -271,7 +279,7 @@ internal object WorkshopConversionPlanner {
             archive.entries.map { entry ->
                 val semantic = materialGraph.semantics[entry.path].takeIf { graphEntries.isNotEmpty() }
                 val graphWarning = materialGraph.documentWarnings[entry.path]?.firstOrNull()
-                val resource = resourcePlan(scenePackage, entry, policy, device, semantic, graphWarning)
+                val resource = resourcePlan(scenePackage, entry, policy, device, preserveAudio, semantic, graphWarning)
                 persistedResourceBytes = Math.addExact(persistedResourceBytes, persistedResourceBudget(resource))
                 require(persistedResourceBytes <= MAX_PLAN_RESOURCE_BUDGET_BYTES) {
                     "Conversion plan exceeds persisted resource budget"
@@ -281,6 +289,7 @@ internal object WorkshopConversionPlanner {
         return ConversionPlan(
             presetId = preset.stableId,
             policyVersion = policy.version,
+            preserveAudio = preserveAudio,
             device = device,
             sourceIdentity = identity(scenePackage),
             resources = resources,
@@ -305,13 +314,19 @@ internal object WorkshopConversionPlanner {
         entry: IndexedPkgEntry,
         policy: ConversionPolicy,
         device: DeviceCapabilityProfile,
+        preserveAudio: Boolean,
         semantic: TextureSemantic?,
         graphWarning: String?,
     ): ConversionResourcePlan {
         val extension = entry.path.substringAfterLast('.', "").lowercase()
         val (strategy, reason) =
             when (extension) {
-                "mp3", "wav", "ogg", "flac", "aac", "m4a" -> ResourceStrategy.REMOVE_AUDIO to "audio_removed_by_mobile_policy"
+                "mp3", "wav", "ogg", "flac", "aac", "m4a" ->
+                    if (preserveAudio) {
+                        ResourceStrategy.COPY to "audio_preserved_by_user_preference"
+                    } else {
+                        ResourceStrategy.REMOVE_AUDIO to "audio_removed_by_mobile_policy"
+                    }
                 "frag", "vert" -> ResourceStrategy.REWRITE_SHADER to "rewrite_shader_for_mobile_glsl"
                 "tex" -> textureStrategy(scenePackage, entry, policy, device, semantic)
                 "json" ->

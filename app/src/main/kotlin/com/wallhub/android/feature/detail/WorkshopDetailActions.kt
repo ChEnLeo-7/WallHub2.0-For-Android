@@ -3,6 +3,7 @@
 package com.wallhub.android.feature.detail
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,10 +24,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
@@ -237,6 +240,8 @@ internal fun DownloadChoiceSheet(
     exportFormats: List<ExportFormat>,
     mpkgConversionPreset: MpkgConversionPreset,
     onMpkgConversionPresetSelected: (MpkgConversionPreset) -> Unit,
+    preserveAudio: Boolean,
+    onPreserveAudioChanged: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     onDownload: (ExportFormat) -> Unit,
 ) {
@@ -274,6 +279,31 @@ internal fun DownloadChoiceSheet(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onPreserveAudioChanged(!preserveAudio) }
+                            .padding(vertical = WallHubSpacing.sm),
+                    horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.detail_preserve_audio),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = stringResource(R.string.detail_preserve_audio_description),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = preserveAudio,
+                        onCheckedChange = onPreserveAudioChanged,
+                    )
+                }
             }
             exportFormats.forEach { format ->
                 Button(

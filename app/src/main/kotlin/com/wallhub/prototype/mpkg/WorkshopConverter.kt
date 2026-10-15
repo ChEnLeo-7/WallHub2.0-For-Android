@@ -54,7 +54,8 @@ object WorkshopConverter {
         inputDir: File,
         preset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
         device: DeviceCapabilityProfile = DeviceCapabilityProfile(Runtime.getRuntime().maxMemory()),
-    ): ConversionPlan = WorkshopConversionPlanner.plan(inputDir, preset, device)
+        preserveAudio: Boolean = false,
+    ): ConversionPlan = WorkshopConversionPlanner.plan(inputDir, preset, device, preserveAudio)
 
     fun execute(
         plan: ConversionPlan,
@@ -66,7 +67,13 @@ object WorkshopConverter {
         staticImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)? = null,
         shaderRewriter: (String, () -> Unit) -> String = ShaderCompatibility::rewrite,
     ): WorkshopConversionReport {
-        val current = WorkshopConversionPlanner.plan(inputDir, MpkgConversionPreset.fromStableId(plan.presetId), plan.device)
+        val current =
+            WorkshopConversionPlanner.plan(
+                inputDir,
+                MpkgConversionPreset.fromStableId(plan.presetId),
+                plan.device,
+                plan.preserveAudio,
+            )
         if (current.sourceIdentity != plan.sourceIdentity) {
             throw StaleConversionSourceException("scene_package_identity_changed")
         }
@@ -222,7 +229,13 @@ object WorkshopConverter {
                 checkCancellation()
                 val extension = entry.path.substringAfterLast('.', "").lowercase(Locale.ROOT)
                 if (extension in audioExtensions) {
-                    removedAudio += 1
+                    val strategy = plan?.resources?.get(index)?.strategy ?: ResourceStrategy.REMOVE_AUDIO
+                    when (strategy) {
+                        ResourceStrategy.COPY ->
+                            putEntry(MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length)))
+                        ResourceStrategy.REMOVE_AUDIO -> removedAudio += 1
+                        else -> error("Planned strategy $strategy is invalid for audio ${entry.path}")
+                    }
                     return@forEachIndexed
                 }
                 when (extension) {

@@ -28,6 +28,7 @@ data class WorkshopDetailUiState(
     val outputDirectoryLabel: String? = null,
     val exportFormat: ExportFormat = ExportFormat.AUTO,
     val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
+    val preserveAudio: Boolean = false,
     val onlineChunkPlaybackEnabled: Boolean = false,
     val isEnqueuingDownload: Boolean = false,
     val downloadMessage: DetailUiText? = null,

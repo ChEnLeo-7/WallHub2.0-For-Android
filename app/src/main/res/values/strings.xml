@@ -587,6 +587,8 @@
     <string name='detail_download_mpkg'>Download MPKG (mobile)</string>
     <string name='detail_download_options'>Download options</string>
     <string name='detail_mpkg_conversion_quality'>MPKG conversion quality</string>
+    <string name='detail_preserve_audio'>Keep audio after conversion</string>
+    <string name='detail_preserve_audio_description'>Copies recognized audio files into the converted scene package. Turning this off removes them.</string>
     <string name='mpkg_preset_standard'>Standard quality (recommended)</string>
     <string name='mpkg_preset_compatibility'>Compatibility first</string>
     <string name='mpkg_preset_high_quality'>High quality</string>

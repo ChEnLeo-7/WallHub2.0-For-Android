@@ -62,6 +62,43 @@ class ConversionPolicyV2Test {
     }
 
     @Test
+    fun `audio strategy follows preserve audio snapshot`() {
+        val audio = byteArrayOf(9, 8, 7, 6)
+        withScene("audio/theme.ogg", audio) { root, source ->
+            val removePlan = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE, preserveAudio = false)
+            val preservePlan = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE, preserveAudio = true)
+
+            assertEquals(ResourceStrategy.REMOVE_AUDIO, removePlan.resources.single().strategy)
+            assertEquals(ResourceStrategy.COPY, preservePlan.resources.single().strategy)
+            assertTrue(removePlan != preservePlan)
+
+            val removedOutput = root.resolve("removed.mpkg")
+            val preservedOutput = root.resolve("preserved.mpkg")
+            WorkshopConverter.execute(removePlan, root, removedOutput)
+            WorkshopConverter.execute(preservePlan, root, preservedOutput)
+
+            assertTrue(PkgReader.readIndex(removedOutput).entries.none { it.path == "audio/theme.ogg" })
+            val preservedArchive = PkgReader.readIndex(preservedOutput)
+            assertArrayEquals(
+                source,
+                preservedArchive.readBytes(preservedArchive.entries.single { it.path == "audio/theme.ogg" }, source.size.toLong()),
+            )
+        }
+    }
+
+    @Test
+    fun `plan codec v2 preserves audio preference and equality`() {
+        withScene("audio/theme.mp3", byteArrayOf(1, 2, 3)) { root, _ ->
+            val plan = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE, preserveAudio = true)
+            val decoded = ConversionPlanJsonCodec.decode(ConversionPlanJsonCodec.encode(plan))
+
+            assertEquals(plan, decoded)
+            assertTrue(decoded.preserveAudio)
+            assertEquals(ResourceStrategy.COPY, decoded.resources.single().strategy)
+        }
+    }
+
+    @Test
     fun `plan codec v2 rejects v1 JSON`() {
         withScene("scripts/demo.txt", byteArrayOf(1, 2, 3)) { root, _ ->
             val encoded = ConversionPlanJsonCodec.encode(WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE))

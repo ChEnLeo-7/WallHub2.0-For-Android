@@ -16,6 +16,7 @@ internal data class ConversionPlanReference(
     val sizeBytes: Long,
     val sourceIdentity: ScenePackageIdentity,
     val presetId: String,
+    val preserveAudio: Boolean,
 ) {
     init {
         require(planVersion > 0) { "Conversion plan version must be positive" }
@@ -30,6 +31,7 @@ internal data class ConversionPlanReference(
             .put("sha256", sha256)
             .put("sizeBytes", sizeBytes)
             .put("presetId", presetId)
+            .put("preserveAudio", preserveAudio)
             .put(
                 "sourceIdentity",
                 JSONObject()
@@ -52,6 +54,7 @@ internal data class ConversionPlanReference(
                 sha256 = root.getString("sha256"),
                 sizeBytes = root.getLong("sizeBytes"),
                 presetId = root.getString("presetId"),
+                preserveAudio = root.getBoolean("preserveAudio"),
                 sourceIdentity =
                     ScenePackageIdentity(
                         version = identity.getInt("version"),
@@ -62,7 +65,8 @@ internal data class ConversionPlanReference(
         }
 
         private const val MAX_REFERENCE_JSON_BYTES = 4 * 1024
-        private val REFERENCE_KEYS = setOf("storage", "planVersion", "sha256", "sizeBytes", "presetId", "sourceIdentity")
+        private val REFERENCE_KEYS =
+            setOf("storage", "planVersion", "sha256", "sizeBytes", "presetId", "preserveAudio", "sourceIdentity")
         private val IDENTITY_KEYS = setOf("version", "packageLength", "indexDigest")
     }
 }
@@ -101,6 +105,7 @@ internal class ConversionPlanStore(
         val plan = ConversionPlanJsonCodec.decode(bytes.toString(Charsets.UTF_8))
         require(plan.version == reference.planVersion) { "Conversion plan version does not match reference" }
         require(plan.presetId == reference.presetId) { "Conversion plan preset does not match reference" }
+        require(plan.preserveAudio == reference.preserveAudio) { "Conversion plan audio preference does not match reference" }
         require(plan.sourceIdentity == reference.sourceIdentity) { "Conversion plan source identity does not match reference" }
         return plan
     }
@@ -126,6 +131,7 @@ internal class ConversionPlanStore(
             sizeBytes = bytes.size.toLong(),
             sourceIdentity = plan.sourceIdentity,
             presetId = plan.presetId,
+            preserveAudio = plan.preserveAudio,
         )
 
     companion object {

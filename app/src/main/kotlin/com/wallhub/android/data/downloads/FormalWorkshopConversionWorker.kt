@@ -388,6 +388,7 @@ internal class FormalWorkshopConversionWorker(
                             inputDir = sourceDirectory,
                             preset = preset,
                             device = DeviceCapabilityProfile(Runtime.getRuntime().maxMemory()),
+                            preserveAudio = task.preserveAudio,
                         ).also { generated ->
                             persistPlanReference(task.taskId, generated, planStore)
                             check(taskDao.persistConversionReport(task.taskId, null) == 1) {
@@ -437,10 +438,14 @@ internal class FormalWorkshopConversionWorker(
             runCatching { ConversionPlanReference.fromJson(stored) }
                 .mapCatching { reference -> store.read(task.taskId, reference) }
                 .getOrNull()
-        if (referenced != null) return referenced.takeIf { it.presetId == preset.stableId }
+        if (referenced != null) {
+            return referenced.takeIf {
+                it.presetId == preset.stableId && it.preserveAudio == task.preserveAudio
+            }
+        }
         if (stored.toByteArray(Charsets.UTF_8).size > MAX_LEGACY_INLINE_PLAN_BYTES) return null
         val legacy = runCatching { ConversionPlanJsonCodec.decode(stored) }.getOrNull() ?: return null
-        if (legacy.presetId != preset.stableId) return null
+        if (legacy.presetId != preset.stableId || legacy.preserveAudio != task.preserveAudio) return null
         persistPlanReference(task.taskId, legacy, store)
         return legacy
     }
