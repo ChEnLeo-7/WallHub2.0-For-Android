@@ -42,7 +42,7 @@ def main() -> None:
     coordinate, version = lock_module.configured_coordinate()
     lock = lock_module.load_lock()
     assert coordinate.endswith(":" + version)
-    assert version == "0.1.106"
+    assert version == lock["coordinate"].rsplit(":", 1)[1]
     lock_module.verify_shape(lock, coordinate)
 
     with tempfile.TemporaryDirectory(prefix="sdk-artifact-lock-") as temporary:
