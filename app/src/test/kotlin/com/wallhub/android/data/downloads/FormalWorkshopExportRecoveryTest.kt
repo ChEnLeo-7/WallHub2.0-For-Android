@@ -9,6 +9,13 @@ import org.junit.Test
 
 class FormalWorkshopExportRecoveryTest {
     @Test
+    fun `public reconversion retains previous URI as publication backup`() {
+        assertEquals("content://old", previousPublicOutputForReplacement(null, "content://old", true))
+        assertEquals(null, previousPublicOutputForReplacement("content://tree", "content://old", true))
+        assertEquals(null, previousPublicOutputForReplacement(null, "content://old", false))
+    }
+
+    @Test
     fun `failed or cancelled reconversion keeps published output in completed status`() {
         assertEquals(DownloadStatus.COMPLETED, settledConversionStatus(true, DownloadStatus.FAILED))
         assertEquals(DownloadStatus.COMPLETED, settledConversionStatus(true, DownloadStatus.CANCELLED))

@@ -168,6 +168,12 @@ internal class FormalWorkshopConversionWorker(
                     val transaction =
                         ExportTransaction(
                             state = ExportTransactionState.PREPARED,
+                            backupUri =
+                                previousPublicOutputForReplacement(
+                                    outputTreeUri = task.outputTreeUri,
+                                    outputUri = task.outputUri,
+                                    hasPublishedOutput = task.hasPublishedConversion(),
+                                ),
                             outputName = conversion.outputFile.name,
                             mimeType = conversion.mimeType,
                         )
@@ -208,7 +214,15 @@ internal class FormalWorkshopConversionWorker(
                             updatedAt = System.currentTimeMillis(),
                         ) == 1,
                     ) { "Conversion attempt changed before its committed output could be published" }
-                    val completed = requireNotNull(taskDao.find(task.taskId))
+                    var completed = requireNotNull(taskDao.find(task.taskId))
+                    if (completed.outputTreeUri.isNullOrBlank() && !completed.exportBackupUri.isNullOrBlank()) {
+                        PublicDownloadsExportGateway.cleanCommittedBackup(applicationContext, completed.exportTransaction())
+                        completed =
+                            update(
+                                completed,
+                                exportTransaction = completed.exportTransaction().copy(backupUri = null),
+                            )
+                    }
                     // Successful output/report are independent of the private reconversion source cache.
                     sourceCacheManager.retainCompleted(completed.taskId)
                     if (completed.exportBackupUri == null) Result.success() else Result.retry()
@@ -272,7 +286,12 @@ internal class FormalWorkshopConversionWorker(
                 val targetUri = requireNotNull(transaction.targetUri)
                 val kindLabel = transaction.outputName.substringAfterLast('.', "MPKG").uppercase(Locale.ROOT)
                 val finalizedTransaction =
-                    if (isSaf) SafExportGateway.cleanCommittedBackup(applicationContext, transaction) else transaction
+                    if (isSaf) {
+                        SafExportGateway.cleanCommittedBackup(applicationContext, transaction)
+                    } else {
+                        PublicDownloadsExportGateway.cleanCommittedBackup(applicationContext, transaction)
+                        transaction.copy(backupUri = null)
+                    }
                 val committed = finalizedTransaction.copy(state = ExportTransactionState.COMMITTED)
                 val exporting = update(task, exportTransaction = committed)
                 check(
@@ -716,6 +735,12 @@ internal class FormalWorkshopConversionWorker(
     }
 }
 
+internal fun previousPublicOutputForReplacement(
+    outputTreeUri: String?,
+    outputUri: String?,
+    hasPublishedOutput: Boolean,
+): String? = outputUri?.takeIf { outputTreeUri.isNullOrBlank() && hasPublishedOutput }
+
 internal fun settledConversionStatus(
     hasPublishedOutput: Boolean,
     firstAttemptTerminalStatus: DownloadStatus,
@@ -971,6 +996,21 @@ internal object PublicDownloadsExportGateway {
                 )
             } ?: ExportArtifactSnapshot(false, null, null)
         }.getOrDefault(ExportArtifactSnapshot(false, null, null))
+    }
+
+    fun cleanCommittedBackup(
+        context: Context,
+        transaction: ExportTransaction,
+    ) {
+        val backupUri = transaction.backupUri ?: return
+        if (backupUri == transaction.targetUri) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            check(context.contentResolver.delete(Uri.parse(backupUri), null, null) >= 0) {
+                "Failed to remove the previous export from $OUTPUT_LABEL"
+            }
+        } else {
+            Uri.parse(backupUri).path?.let(::File)?.let { file -> check(!file.exists() || file.delete()) }
+        }
     }
 
     fun cleanInterrupted(
