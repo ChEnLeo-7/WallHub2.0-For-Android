@@ -1,5 +1,6 @@
 package com.wallhub.android.data.settings
 
+import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.DEFAULT_MAX_CONCURRENT_DOWNLOADS
 import com.wallhub.android.core.model.MAX_CONCURRENT_DOWNLOAD_OPTIONS
 import com.wallhub.android.core.model.MAX_MAX_CONCURRENT_DOWNLOADS
@@ -9,6 +10,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class DownloadPreferenceOptionsTest {
+    @Test
+    fun `scene mpkg audio preservation defaults to disabled`() {
+        assertEquals(false, AppPreferences().preserveAudio)
+    }
+
     @Test
     fun `download limit offers every supported global concurrency`() {
         assertEquals((1..8).toList(), MAX_CONCURRENT_DOWNLOAD_OPTIONS)

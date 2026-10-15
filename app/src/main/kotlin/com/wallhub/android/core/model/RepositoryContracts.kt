@@ -49,6 +49,8 @@ interface SettingsRepository {
 
     suspend fun setMpkgConversionPreset(preset: MpkgConversionPreset) = Unit
 
+    suspend fun setPreserveAudio(enabled: Boolean) = Unit
+
     suspend fun setOnlineStreamCacheLimitMb(limitMb: Int) = Unit
 
     suspend fun setDownloadProxyEnabled(enabled: Boolean) = Unit

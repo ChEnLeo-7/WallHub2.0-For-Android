@@ -61,14 +61,23 @@ class RoomDownloadTaskRepositoryTest {
     }
 
     @Test
-    fun `enqueue snapshots conversion preset and starts without a plan or report`() = runTest {
+    fun `enqueue snapshots conversion preferences and starts without a plan or report`() = runTest {
         val dao = FakeTaskDao()
         val repository = repository(dao, RecordingScheduler())
 
-        val result = repository.enqueue(request(taskId = "preset-task", preset = MpkgConversionPreset.BALANCED))
+        val result =
+            repository.enqueue(
+                request(
+                    taskId = "preset-task",
+                    preset = MpkgConversionPreset.BALANCED,
+                    preserveAudio = true,
+                ),
+            )
 
         assertEquals(MpkgConversionPreset.BALANCED, result.task.mpkgConversionPreset)
+        assertTrue(result.task.preserveAudio)
         assertEquals("balanced", dao.records.single().conversionPreset)
+        assertTrue(dao.records.single().preserveAudio)
         assertEquals(null, dao.records.single().conversionPlanJson)
         assertEquals(null, dao.records.single().conversionReportJson)
         assertEquals(1, dao.records.single().conversionPlanVersion)
@@ -80,6 +89,7 @@ class RoomDownloadTaskRepositoryTest {
             queuedRecord(taskId = "retry-preset").copy(
                 status = DownloadStatus.FAILED.name,
                 conversionPreset = "balanced",
+                preserveAudio = true,
                 conversionPlanJson = "{\"plan\":true}",
                 conversionReportJson = "{\"report\":true}",
                 conversionPlanVersion = 7,
@@ -91,6 +101,7 @@ class RoomDownloadTaskRepositoryTest {
 
         val retried = dao.records.single()
         assertEquals("balanced", retried.conversionPreset)
+        assertTrue(retried.preserveAudio)
         assertEquals("{\"plan\":true}", retried.conversionPlanJson)
         assertEquals("{\"report\":true}", retried.conversionReportJson)
         assertEquals(7, retried.conversionPlanVersion)
@@ -212,6 +223,7 @@ class RoomDownloadTaskRepositoryTest {
     private fun request(
         taskId: String? = null,
         preset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
+        preserveAudio: Boolean = false,
     ) =
         DownloadRequest(
             workshopId = WORKSHOP_ID,
@@ -219,6 +231,7 @@ class RoomDownloadTaskRepositoryTest {
             type = WorkshopType.SCENE,
             taskId = taskId,
             mpkgConversionPreset = preset,
+            preserveAudio = preserveAudio,
         )
 
     private fun queuedRecord(taskId: String) =

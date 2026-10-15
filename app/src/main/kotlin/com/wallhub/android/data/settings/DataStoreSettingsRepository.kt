@@ -84,6 +84,10 @@ class DataStoreSettingsRepository
             store.setMpkgConversionPreset(preset)
         }
 
+        override suspend fun setPreserveAudio(enabled: Boolean) {
+            store.setPreserveAudio(enabled)
+        }
+
         override suspend fun setOnlineStreamCacheLimitMb(limitMb: Int) {
             store.setOnlineStreamCacheLimitMb(limitMb)
         }

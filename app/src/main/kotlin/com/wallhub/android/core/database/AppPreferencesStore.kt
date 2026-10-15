@@ -147,6 +147,12 @@ class AppPreferencesStore(
         }
     }
 
+    suspend fun setPreserveAudio(enabled: Boolean) {
+        applicationContext.dataStore.edit { preferences ->
+            preferences[Keys.preserveAudio] = enabled
+        }
+    }
+
     suspend fun setOnlineStreamCacheLimitMb(limitMb: Int) {
         applicationContext.dataStore.edit { preferences ->
             preferences[Keys.mediaCacheLimitMb] = limitMb.coerceAtLeast(128)
@@ -333,6 +339,7 @@ class AppPreferencesStore(
                 preferences[Keys.mpkgConversionPreset]
                     ?.let(MpkgConversionPreset::fromStableId)
                     ?: MpkgConversionPreset.BALANCED,
+            preserveAudio = preferences[Keys.preserveAudio] ?: false,
             downloadProxyUrl = preferences[Keys.downloadProxyUrl].orEmpty(),
             downloadProxyEnabled = preferences[Keys.downloadProxyEnabled] ?: false,
             downloadProxyRequiresConfirmation =
@@ -384,6 +391,7 @@ class AppPreferencesStore(
         val maxConcurrentDownloads = intPreferencesKey("max_concurrent_downloads")
         val chunkDownloadConcurrency = intPreferencesKey("chunk_download_concurrency")
         val mpkgConversionPreset = stringPreferencesKey("mpkg_conversion_preset")
+        val preserveAudio = booleanPreferencesKey("mpkg_preserve_audio")
         val downloadProxyUrl = stringPreferencesKey("download_proxy_url")
         val downloadProxyEnabled = booleanPreferencesKey("download_proxy_enabled")
         val steamAccessEnabled = booleanPreferencesKey("steam_access_enabled")

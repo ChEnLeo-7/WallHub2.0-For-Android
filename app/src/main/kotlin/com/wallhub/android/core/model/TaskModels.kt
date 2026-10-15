@@ -60,6 +60,7 @@ data class DownloadRequest(
     val outputTreeUri: String? = null,
     val exportFormat: ExportFormat = ExportFormat.AUTO,
     val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
+    val preserveAudio: Boolean = false,
 )
 
 sealed interface DownloadEnqueueResult {
@@ -107,6 +108,7 @@ data class DownloadTask(
     val outputUri: String? = null,
     val exportFormat: ExportFormat = ExportFormat.AUTO,
     val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
+    val preserveAudio: Boolean = false,
     val conversionPlanJson: String? = null,
     val conversionReportJson: String? = null,
     val conversionPlanVersion: Int = 1,

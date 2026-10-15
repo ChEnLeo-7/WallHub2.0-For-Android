@@ -47,6 +47,7 @@ data class FormalTaskRecordEntity(
     val outputUri: String? = null,
     val exportFormat: String = "AUTO",
     @ColumnInfo(defaultValue = "'balanced'") val conversionPreset: String = "balanced",
+    @ColumnInfo(defaultValue = "0") val preserveAudio: Boolean = false,
     val conversionPlanJson: String? = null,
     val conversionReportJson: String? = null,
     @ColumnInfo(defaultValue = "1") val conversionPlanVersion: Int = 1,
@@ -180,6 +181,7 @@ interface FormalTaskRecordDao {
                 lastReceiptSequence = current.lastReceiptSequence,
                 engineEpoch = current.engineEpoch,
                 conversionPreset = current.conversionPreset,
+                preserveAudio = current.preserveAudio,
                 conversionPlanJson = current.conversionPlanJson,
                 conversionReportJson = current.conversionReportJson,
                 conversionPlanVersion = current.conversionPlanVersion,
@@ -549,7 +551,7 @@ interface LocalWallpaperMetadataDao {
         LocalWallpaperStateEntity::class,
         LocalWallpaperTagEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 abstract class FormalTaskDatabase : RoomDatabase() {
@@ -810,6 +812,16 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 }
             }
 
+        internal val MIGRATION_11_12 =
+            object : Migration(11, 12) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "ALTER TABLE formal_task_records " +
+                            "ADD COLUMN preserveAudio INTEGER NOT NULL DEFAULT 0",
+                    )
+                }
+            }
+
         internal val migrations: Array<Migration> =
             arrayOf(
                 MIGRATION_1_2,
@@ -822,6 +834,7 @@ abstract class FormalTaskDatabase : RoomDatabase() {
                 MIGRATION_8_9,
                 MIGRATION_9_10,
                 MIGRATION_10_11,
+                MIGRATION_11_12,
             )
 
         @Volatile

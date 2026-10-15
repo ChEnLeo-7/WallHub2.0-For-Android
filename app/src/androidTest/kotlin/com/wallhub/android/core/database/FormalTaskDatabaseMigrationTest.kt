@@ -152,6 +152,56 @@ class FormalTaskDatabaseMigrationTest {
     }
 
     @Test
+    fun migration11To12AddsPreserveAudioSnapshotDefaultingToFalse() {
+        helper.createDatabase(TEST_DATABASE, 11).use { database ->
+            database.execSQL(
+                "INSERT INTO formal_task_records (" +
+                    "taskId, workshopId, title, type, status, downloadedBytes, totalBytes, bytesPerSecond, " +
+                    "credentialMode, isResumable, contentManifestId, appId, exportFormat, conversionPreset, " +
+                    "conversionPlanVersion, exportTransactionState, queuePosition, createdAt, updatedAt, attempt, " +
+                    "desiredIntent, desiredIntentRevision, appliedIntentRevision, quiescedIntentRevision, " +
+                    "lastReceiptSequence) VALUES ('legacy-audio', 1, 'Legacy', 'SCENE', 'FAILED', 0, 0, 0, " +
+                    "'ANONYMOUS', 1, 0, 0, 'AUTO', 'balanced', 1, 'NONE', 0, 1, 1, 0, 'RUN', 0, 0, 0, 0)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            12,
+            true,
+            FormalTaskDatabase.MIGRATION_11_12,
+        ).use { database ->
+            database
+                .query("SELECT preserveAudio FROM formal_task_records WHERE taskId = 'legacy-audio'")
+                .use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(0, cursor.getInt(0))
+                }
+        }
+    }
+
+    @Test
+    fun projectionUpsertPreservesTheTaskAudioSnapshot() {
+        val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
+        try {
+            val dao = database.taskRecordDao()
+            kotlinx.coroutines.runBlocking {
+                dao.upsert(task("audio-snapshot", "CONVERTING").copy(preserveAudio = true))
+
+                val merged =
+                    dao.upsertPreservingExecutionIntent(
+                        task("audio-snapshot", "FAILED").copy(preserveAudio = false),
+                    )
+
+                assertTrue(merged.preserveAudio)
+                assertTrue(requireNotNull(dao.find("audio-snapshot")).preserveAudio)
+            }
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun conversionArtifactUpdatesDoNotReplaceTheOtherSnapshot() {
         val database = Room.databaseBuilder(context, FormalTaskDatabase::class.java, TEST_DATABASE).build()
         try {
