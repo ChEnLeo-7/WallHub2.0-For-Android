@@ -8,6 +8,8 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
+import java.security.MessageDigest
 import java.util.Locale
 import java.util.UUID
 import java.util.zip.ZipEntry
@@ -84,6 +86,8 @@ object WorkshopConverter {
                         ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 -> "converted_to_rgba8888_lz4"
                         ResourceStrategy.REWRITE_SHADER -> "rewritten_for_mobile_glsl"
                         ResourceStrategy.REMOVE_AUDIO -> "removed"
+                        ResourceStrategy.PASSTHROUGH -> "passed_through"
+                        ResourceStrategy.PASSTHROUGH_WITH_WARNING -> resource.reason
                         ResourceStrategy.REJECT -> error("Rejected resources cannot execute")
                     }
                 ConversionResourceOutcome(resource.path, resource.strategy, reason)
@@ -264,6 +268,18 @@ object WorkshopConverter {
                                 warnings += "Downsampled texture for compatibility as ETC2 RGBA8 + LZ4: ${entry.path}"
                                 putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
                             }
+                            ResourceStrategy.PASSTHROUGH,
+                            ResourceStrategy.PASSTHROUGH_WITH_WARNING,
+                            -> {
+                                val before = digestFileSlice(scenePackage, entry.offset, entry.length, checkCancellation)
+                                putEntry(MpkgInputEntry(entry.path, FileSlicePayload(scenePackage, entry.offset, entry.length)))
+                                val after = digestFileSlice(scenePackage, entry.offset, entry.length, checkCancellation)
+                                require(before == after) { "Texture passthrough source changed: ${entry.path}" }
+                                copiedTextures += 1
+                                if (strategy == ResourceStrategy.PASSTHROUGH_WITH_WARNING) {
+                                    warnings += "${plan?.resources?.get(index)?.reason ?: "tex_passthrough_unknown_profile"}: ${entry.path}"
+                                }
+                            }
                             ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 -> {
                                 val transformed = File(transformedDirectory, "$index-rgba.tex")
                                 val result =
@@ -348,15 +364,26 @@ object WorkshopConverter {
                 val verifiedOutput = PkgReader.readIndex(candidate)
                 verifiedOutput.entries.filter { it.path.substringAfterLast('.', "").equals("tex", ignoreCase = true) }.forEach { entry ->
                     checkCancellation()
-                    require(
-                        TexMobileConverter.inspectEntryRoute(candidate, entry.offset, entry.length) in
-                            setOf(
-                                TexEntryRoute.RETAIN_VERIFIED_MOBILE,
-                                TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE,
-                                TexEntryRoute.RETAIN_VERIFIED_VIDEO,
-                                TexEntryRoute.RETAIN_VERIFIED_RUNTIME_DESKTOP,
+                    val sourceEntry = archive.entries.single { it.path == entry.path }
+                    val plannedStrategy = plan?.resources?.single { it.path == entry.path }?.strategy
+                    if (plannedStrategy == ResourceStrategy.PASSTHROUGH || plannedStrategy == ResourceStrategy.PASSTHROUGH_WITH_WARNING) {
+                        require(entry.length == sourceEntry.length) { "Passthrough texture length changed: ${entry.path}" }
+                        require(
+                            digestFileSlice(candidate, entry.offset, entry.length, checkCancellation).contentEquals(
+                                digestFileSlice(scenePackage, sourceEntry.offset, sourceEntry.length, checkCancellation),
                             ),
-                    ) { "Output texture ${entry.path} failed mobile reinspection" }
+                        ) { "Passthrough texture digest changed: ${entry.path}" }
+                    } else {
+                        require(
+                            TexMobileConverter.inspectEntryRoute(candidate, entry.offset, entry.length) in
+                                setOf(
+                                    TexEntryRoute.RETAIN_VERIFIED_MOBILE,
+                                    TexEntryRoute.RETAIN_VERIFIED_ANIMATED_MOBILE,
+                                    TexEntryRoute.RETAIN_VERIFIED_VIDEO,
+                                    TexEntryRoute.RETAIN_VERIFIED_RUNTIME_DESKTOP,
+                                ),
+                        ) { "Output texture ${entry.path} failed mobile reinspection" }
+                    }
                 }
             }
         } finally {
@@ -402,6 +429,28 @@ object WorkshopConverter {
             }
         }
         return WorkshopConversionReport(WorkshopKind.WEB, outputFile)
+    }
+
+    private fun digestFileSlice(
+        source: File,
+        offset: Long,
+        length: Long,
+        checkCancellation: () -> Unit,
+    ): ByteArray {
+        val digest = MessageDigest.getInstance("SHA-256")
+        RandomAccessFile(source, "r").use { input ->
+            input.seek(offset)
+            var remaining = length
+            val buffer = ByteArray(COPY_BUFFER_SIZE)
+            while (remaining > 0) {
+                checkCancellation()
+                val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                require(read > 0) { "Unexpected end of passthrough texture" }
+                digest.update(buffer, 0, read)
+                remaining -= read
+            }
+        }
+        return digest.digest()
     }
 
     private fun createConversionDirectory(outputFile: File): File {

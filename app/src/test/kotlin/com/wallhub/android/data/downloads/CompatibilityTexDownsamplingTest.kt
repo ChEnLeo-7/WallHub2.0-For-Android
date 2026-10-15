@@ -19,15 +19,15 @@ import org.junit.Test
 
 class CompatibilityTexDownsamplingTest {
     @Test
-    fun `compatibility planner downsamples a large verified background but not semantic textures`() {
+    fun `compatibility planner converts every decodable static texture to ETC2 without downsampling`() {
         val device = DeviceCapabilityProfile(256L * MIB)
         val background = planSingle("materials/plain_background.tex", staticImageTex(4096, 2048), device)
         val normal = planSingle("materials/plain_background_normal.tex", staticImageTex(4096, 2048), device)
         val mask = planSingle("materials/plain_background_mask.tex", staticImageTex(4096, 2048), device)
 
-        assertEquals(ResourceStrategy.DOWNSAMPLE_TO_ETC2, background)
-        assertEquals(ResourceStrategy.REJECT, normal)
-        assertEquals(ResourceStrategy.REJECT, mask)
+        assertEquals(ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4, background)
+        assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, normal)
+        assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, mask)
     }
 
     @Test

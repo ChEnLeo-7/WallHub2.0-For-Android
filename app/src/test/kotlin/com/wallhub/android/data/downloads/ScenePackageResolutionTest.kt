@@ -417,13 +417,13 @@ class ScenePackageResolutionTest {
     }
 
     @Test
-    fun conversionPresetPoliciesMatchTruthfulV1Golden() {
+    fun conversionPresetPoliciesMatchTruthfulV2Golden() {
         assertEquals(
             listOf(
-                "balanced|v1|static=etc2_rgba8_lz4|animated=rgba8888_lz4|verified=retain|input=33554432|package=1073741824|notice=standard",
-                "compatibility|v1|static=etc2_rgba8_lz4|animated=rgba8888_lz4|verified=retain|input=16777216|package=536870912|notice=compatibility_guardrails",
-                "high_quality|v1|static=rgba8888_lz4_up_to_16777216|animated=rgba8888_lz4|verified=retain|input=67108864|package=2147483648|notice=source_dimensions_retained",
-                "source_fidelity|v1|static=rgba8888_lz4_up_to_67108864|animated=rgba8888_lz4|verified=retain|input=67108864|package=4294967296|notice=verified_mobile_payloads_retained",
+                "balanced|v2|static=decoded_rgba_up_to_8mib_else_etc2|unknown=passthrough_with_warning|downsample=never",
+                "compatibility|v2|static=eligible_color_textures_etc2|unknown=passthrough_with_warning|downsample=never",
+                "high_quality|v2|static=decoded_rgba_up_to_32mib_else_etc2|unknown=passthrough_with_warning|downsample=never",
+                "source_fidelity|v2|static=all_tex_passthrough|unknown=passthrough_with_warning|downsample=never",
             ),
             MpkgConversionPreset.entries.map { it.policy().stableDescription() },
         )
@@ -622,7 +622,7 @@ class ScenePackageResolutionTest {
     private fun storedConversionPlan(resourceCount: Int) =
         com.wallhub.prototype.mpkg.ConversionPlan(
             presetId = MpkgConversionPreset.BALANCED.stableId,
-            policyVersion = 1,
+            policyVersion = 2,
             device = DeviceCapabilityProfile(256L * 1024L * 1024L),
             sourceIdentity = com.wallhub.prototype.mpkg.ScenePackageIdentity(packageLength = 123L, indexDigest = "a".repeat(64)),
             resources =
@@ -639,7 +639,7 @@ class ScenePackageResolutionTest {
     private fun conversionPlan(digest: String) =
         com.wallhub.prototype.mpkg.ConversionPlan(
             presetId = MpkgConversionPreset.BALANCED.stableId,
-            policyVersion = 1,
+            policyVersion = 2,
             device = DeviceCapabilityProfile(256L * 1024L * 1024L),
             sourceIdentity = com.wallhub.prototype.mpkg.ScenePackageIdentity(packageLength = 1L, indexDigest = digest),
             resources = emptyList(),
