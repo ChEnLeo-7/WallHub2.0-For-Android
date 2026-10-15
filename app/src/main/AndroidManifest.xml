@@ -62,9 +62,9 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
 
-                <data
-                    android:host="workshop"
-                    android:scheme="wallhub" />
+                <data android:scheme="wallhub" />
+                <data android:host="workshop" />
+                <data android:host="downloads" />
             </intent-filter>
         </activity>
         <activity-alias

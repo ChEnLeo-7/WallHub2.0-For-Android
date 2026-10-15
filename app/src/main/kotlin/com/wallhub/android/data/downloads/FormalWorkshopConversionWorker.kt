@@ -3,8 +3,10 @@ package com.wallhub.android.data.downloads
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.MediaScannerConnection
@@ -18,6 +20,7 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
+import com.wallhub.android.MainActivity
 import com.wallhub.android.R
 import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.database.FormalTaskRecordEntity
@@ -29,6 +32,10 @@ import com.wallhub.prototype.mpkg.ConversionPlan
 import com.wallhub.prototype.mpkg.ConversionPlanJsonCodec
 import com.wallhub.prototype.mpkg.ConversionReportJsonCodec
 import com.wallhub.prototype.mpkg.DeviceCapabilityProfile
+import com.wallhub.prototype.mpkg.MpkgFormatLimitException
+import com.wallhub.prototype.mpkg.MpkgInsufficientSpaceException
+import com.wallhub.prototype.mpkg.PkgFormatException
+import com.wallhub.prototype.mpkg.PkgSourceException
 import com.wallhub.prototype.mpkg.StaleConversionSourceException
 import com.wallhub.prototype.mpkg.WorkshopConverter
 import com.wallhub.prototype.mpkg.WorkshopKind
@@ -44,6 +51,7 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import java.util.Locale
 import java.util.UUID
 import java.util.zip.ZipEntry
@@ -101,7 +109,7 @@ internal class FormalWorkshopConversionWorker(
                         taskId = taskId,
                         task = task,
                         sourceDirectory = null,
-                        message = error.message ?: error.javaClass.simpleName,
+                        error = error,
                     )
                 } finally {
                     FormalWorkshopConversionCancellation.clear(taskId)
@@ -226,6 +234,7 @@ internal class FormalWorkshopConversionWorker(
                     }
                     // Successful output/report are independent of the private reconversion source cache.
                     sourceCacheManager.retainCompleted(completed.taskId)
+                    showCompletionNotification(completed.taskId, conversion.warnings.size)
                     if (completed.exportBackupUri == null) Result.success() else Result.retry()
                 }
             } catch (error: CancellationException) {
@@ -257,7 +266,7 @@ internal class FormalWorkshopConversionWorker(
                     } else {
                         fail(
                             task = latest ?: task,
-                            message = error.message ?: error.javaClass.simpleName,
+                            failure = classifyConversionFailure(error),
                         )
                     }
                 }
@@ -588,7 +597,7 @@ internal class FormalWorkshopConversionWorker(
         taskId: String,
         task: FormalTaskRecordEntity,
         sourceDirectory: File?,
-        message: String,
+        error: Throwable,
     ): Result =
         withContext(NonCancellable) {
             val userCancelled = FormalWorkshopConversionCancellation.claimCancellation(taskId)
@@ -596,15 +605,20 @@ internal class FormalWorkshopConversionWorker(
             if (latest?.isCancellationRequested() == true || userCancelled) {
                 cancelTask(latest ?: task, sourceDirectory)
             } else {
-                fail(latest ?: task, message)
+                fail(latest ?: task, classifyConversionFailure(error))
             }
         }
 
     private suspend fun fail(
         task: FormalTaskRecordEntity,
         message: String,
+    ): Result = fail(task, ConversionFailure("conversion_failed", message))
+
+    private suspend fun fail(
+        task: FormalTaskRecordEntity,
+        failure: ConversionFailure,
     ): Result {
-        val attemptReport = conversionAttemptReport("failed", stableFailureCode(message))
+        val attemptReport = conversionAttemptReport("failed", failure.reasonCode)
         check(taskDao.persistConversionReport(task.taskId, task.conversionAttempt, attemptReport) == 1) {
             "Conversion attempt changed before its failure report could be persisted"
         }
@@ -612,7 +626,7 @@ internal class FormalWorkshopConversionWorker(
             task.copy(conversionReportJson = attemptReport),
             status = settledConversionStatus(task.hasPublishedConversion(), DownloadStatus.FAILED),
             bytesPerSecond = 0L,
-            message = message,
+            message = conversionFailureMessage(applicationContext, failure.reasonCode),
         )
         return Result.success()
     }
@@ -705,6 +719,32 @@ internal class FormalWorkshopConversionWorker(
         }
     }
 
+    private fun showCompletionNotification(
+        taskId: String,
+        warningCount: Int,
+    ) {
+        val manager = applicationContext.getSystemService(NotificationManager::class.java)
+        val pendingIntent =
+            PendingIntent.getActivity(
+                applicationContext,
+                taskId.hashCode(),
+                Intent(Intent.ACTION_VIEW, Uri.parse(DOWNLOADS_DEEP_LINK), applicationContext, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        val text = completionNotificationText(applicationContext, warningCount)
+        val notification =
+            NotificationCompat
+                .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_wallhub_notification)
+                .setContentTitle(applicationContext.getString(R.string.backend_conversion_notification_complete_title))
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .build()
+        manager.notify(completionNotificationId(taskId), notification)
+    }
+
     private data class ConversionResult(
         val outputFile: File,
         val mimeType: String,
@@ -749,10 +789,62 @@ internal class FormalWorkshopConversionWorker(
         const val WORK_TAG_PREFIX = "wallhub_formal_conversion_"
         private const val NOTIFICATION_CHANNEL_ID = "wallhub_formal_conversion"
         private const val NOTIFICATION_ID = 4203
+        private const val DOWNLOADS_DEEP_LINK = "wallhub://downloads"
         private const val COPY_BUFFER_SIZE = 1024 * 1024
         private const val MAX_OUTPUT_TITLE_LENGTH = 72
     }
 }
+
+internal data class ConversionFailure(
+    val reasonCode: String,
+    val fallbackMessage: String,
+)
+
+internal fun classifyConversionFailure(error: Throwable): ConversionFailure {
+    val causes = generateSequence(error) { it.cause }.toList()
+    val reasonCode =
+        when {
+            causes.any { it is MpkgFormatLimitException } -> "format_limit"
+            causes.any { it is MpkgInsufficientSpaceException } -> "physical_disk"
+            causes.any { it is PkgFormatException } -> "scene_package_invalid"
+            causes.any { it is PkgSourceException } -> "source_container_invalid"
+            causes.any { it is IOException } -> "physical_disk"
+            causes.any { throwable ->
+                throwable is IllegalArgumentException || throwable is IllegalStateException
+            } -> "project_invalid"
+            else -> "conversion_failed"
+        }
+    return ConversionFailure(reasonCode, reasonCode)
+}
+
+internal fun conversionFailureMessage(
+    context: Context,
+    reasonCode: String,
+): String =
+    when (reasonCode) {
+        "format_limit" -> context.getString(R.string.backend_conversion_failure_format_limit)
+        "physical_disk" -> context.getString(R.string.backend_conversion_failure_physical_disk)
+        "scene_package_invalid" -> context.getString(R.string.backend_conversion_failure_scene_package)
+        "source_container_invalid" -> context.getString(R.string.backend_conversion_failure_source_container)
+        "project_invalid" -> context.getString(R.string.backend_conversion_failure_project)
+        else -> context.getString(R.string.backend_conversion_failure_generic)
+    }
+
+internal fun completionNotificationText(
+    context: Context,
+    warningCount: Int,
+): String =
+    if (warningCount > 0) {
+        context.resources.getQuantityString(
+            R.plurals.backend_conversion_notification_complete_with_warnings,
+            warningCount,
+            warningCount,
+        )
+    } else {
+        context.getString(R.string.backend_conversion_notification_complete)
+    }
+
+internal fun completionNotificationId(taskId: String): Int = 0x57000000 xor taskId.hashCode()
 
 internal fun previousPublicOutputForReplacement(
     outputTreeUri: String?,

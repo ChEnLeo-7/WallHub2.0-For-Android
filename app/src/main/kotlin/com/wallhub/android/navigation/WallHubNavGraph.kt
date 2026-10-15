@@ -169,7 +169,9 @@ internal fun WallHubNavHost(
                 onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
             )
         }
-        composable<DownloadsDestination> {
+        composable<DownloadsDestination>(
+            deepLinks = listOf(navDeepLink<DownloadsDestination>(basePath = "wallhub://downloads")),
+        ) {
             DownloadsRoute(
                 onBack = { navController.popBackStack() },
                 onPlayVideo = { navController.navigate(LocalVideoPlayerDestination(it)) },

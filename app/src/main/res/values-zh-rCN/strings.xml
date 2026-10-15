@@ -722,6 +722,7 @@
     <string name='downloads_action_resume'>继续</string>
     <string name='downloads_action_retry'>重试</string>
     <string name='downloads_action_export'>导出</string>
+    <string name='downloads_action_export_raw_zip'>导出原始 ZIP</string>
     <string name='downloads_action_cancel'>取消</string>
     <string name='downloads_action_delete'>删除</string>
     <string name='downloads_reading_size'>正在读取大小</string>
@@ -892,6 +893,17 @@
     <string name='backend_conversion_notification_channel'>WallHub 转换与导出</string>
     <string name='backend_conversion_notification_text'>正在生成 MPKG 或 ZIP 文件</string>
     <string name='backend_conversion_notification_title'>WallHub 正在转换</string>
+    <string name='backend_conversion_notification_complete_title'>WallHub 导出</string>
+    <string name='backend_conversion_notification_complete'>已生成</string>
+    <plurals name='backend_conversion_notification_complete_with_warnings'>
+        <item quantity='other'>已生成，含 %1$d 项兼容性警告</item>
+    </plurals>
+    <string name='backend_conversion_failure_format_limit'>项目超过 MPKG 格式限制（约 4 GiB），请改为导出原始 ZIP。</string>
+    <string name='backend_conversion_failure_physical_disk'>存储空间不足或不可用，无法生成文件。</string>
+    <string name='backend_conversion_failure_scene_package'>场景包无效，无法转换。</string>
+    <string name='backend_conversion_failure_source_container'>源容器不完整或无效。</string>
+    <string name='backend_conversion_failure_project'>项目无效，无法转换。</string>
+    <string name='backend_conversion_failure_generic'>无法转换项目，请改为导出原始 ZIP。</string>
     <string name='backend_conversion_preparing'>正在准备转换并导出…</string>
     <string name='backend_conversion_previous_interrupted'>上次导出被系统中断，请检查输出目录后重试</string>
     <string name='backend_conversion_progress'>正在转换 %1$s…</string>

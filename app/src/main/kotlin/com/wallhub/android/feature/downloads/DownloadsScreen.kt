@@ -110,6 +110,7 @@ import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.data.downloads.DownloadTimingContext
 import com.wallhub.android.data.downloads.DownloadTimingTelemetry
+import com.wallhub.android.data.downloads.hasCompleteStagingDownload
 import com.wallhub.prototype.mpkg.ConversionReportJsonCodec
 import com.wallhub.prototype.mpkg.PersistedConversionReport
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -378,8 +379,14 @@ class DownloadsViewModel
             action: DownloadAction,
         ) {
             viewModelScope.launch {
-                runCatching { workshopDownloads.requestAction(taskId, action) }
-                    .onSuccess {
+                runCatching {
+                    val task = workshopDownloads.find(taskId)
+                    if (action == DownloadAction.EXPORT && task?.status == DownloadStatus.FAILED) {
+                        workshopDownloads.requestExport(taskId, ExportFormat.ZIP)
+                    } else {
+                        workshopDownloads.requestAction(taskId, action)
+                    }
+                }.onSuccess {
                         if (action == DownloadAction.EXPORT) {
                             effectChannel.send(
                                 DownloadsEffect.ShowMessage(R.string.downloads_export_queued),
@@ -1033,6 +1040,13 @@ private fun DownloadTaskCard(
                             onClick = { showReconversion = true },
                         )
                     }
+                    if (task.shouldOfferRawZipExport()) {
+                        DownloadCompactIconButton(
+                            icon = Icons.Outlined.FileUpload,
+                            label = stringResource(R.string.downloads_action_export_raw_zip),
+                            onClick = { onAction(DownloadAction.EXPORT) },
+                        )
+                    }
                     task.availableActions.forEach { action ->
                         DownloadCompactIconButton(
                             icon = action.icon(),
@@ -1059,6 +1073,9 @@ private fun DownloadTaskCard(
 
 internal fun DownloadTask.canReconvert(): Boolean =
     status == DownloadStatus.COMPLETED && type == WorkshopType.SCENE && exportFormat != ExportFormat.ZIP
+
+internal fun DownloadTask.shouldOfferRawZipExport(): Boolean =
+    status == DownloadStatus.FAILED && hasCompleteStagingDownload()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

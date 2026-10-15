@@ -749,6 +749,7 @@
     <string name='downloads_action_resume'>Resume</string>
     <string name='downloads_action_retry'>Retry</string>
     <string name='downloads_action_export'>Export</string>
+    <string name='downloads_action_export_raw_zip'>Export original ZIP</string>
     <string name='downloads_action_cancel'>Cancel</string>
     <string name='downloads_action_delete'>Delete</string>
     <string name='downloads_reading_size'>Reading size</string>
@@ -928,6 +929,18 @@
     <string name='backend_conversion_notification_channel'>WallHub conversion and export</string>
     <string name='backend_conversion_notification_text'>Generating an MPKG or ZIP file</string>
     <string name='backend_conversion_notification_title'>WallHub is converting</string>
+    <string name='backend_conversion_notification_complete_title'>WallHub export</string>
+    <string name='backend_conversion_notification_complete'>Generated</string>
+    <plurals name='backend_conversion_notification_complete_with_warnings'>
+        <item quantity='one'>Generated with %1$d compatibility warning</item>
+        <item quantity='other'>Generated with %1$d compatibility warnings</item>
+    </plurals>
+    <string name='backend_conversion_failure_format_limit'>This project exceeds the MPKG format limit (about 4 GiB). Export the original ZIP instead.</string>
+    <string name='backend_conversion_failure_physical_disk'>The project could not be generated because storage is unavailable or full.</string>
+    <string name='backend_conversion_failure_scene_package'>The scene package is invalid and cannot be converted.</string>
+    <string name='backend_conversion_failure_source_container'>The source container is incomplete or invalid.</string>
+    <string name='backend_conversion_failure_project'>The project is invalid and cannot be converted.</string>
+    <string name='backend_conversion_failure_generic'>The project could not be converted. Export the original ZIP instead.</string>
     <string name='backend_conversion_preparing'>Preparing to convert and export…</string>
     <string name='backend_conversion_previous_interrupted'>The previous export was interrupted. Check the output folder and try again.</string>
     <string name='backend_conversion_progress'>Converting %1$s…</string>

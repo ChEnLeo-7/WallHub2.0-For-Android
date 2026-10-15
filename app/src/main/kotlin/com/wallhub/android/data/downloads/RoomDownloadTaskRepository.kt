@@ -238,7 +238,8 @@ internal class RoomDownloadTaskRepository private constructor(
             format: ExportFormat,
         ) = taskMutationMutex.withLock {
             val task = requireNotNull(find(taskId)) { "Download task no longer exists" }
-            require(DownloadAction.EXPORT in task.availableActions) {
+            val exportsFailedStagingAsZip = canRequestRawZipExport(task, format)
+            require(DownloadAction.EXPORT in task.availableActions || exportsFailedStagingAsZip) {
                 "Task status ${task.status} does not support export"
             }
             val configured = task.copy(exportFormat = format, updatedAt = System.currentTimeMillis())
@@ -470,7 +471,12 @@ internal class RoomDownloadTaskRepository private constructor(
                     preserveAudio = task.preserveAudio,
                     message = context.getString(R.string.backend_conversion_preparing),
                     updatedAt = now,
-                    allowedStatuses = listOf(DownloadStatus.COMPLETED.name),
+                    allowedStatuses =
+                        if (task.status == DownloadStatus.FAILED) {
+                            listOf(DownloadStatus.FAILED.name)
+                        } else {
+                            listOf(DownloadStatus.COMPLETED.name)
+                        },
                 ) == 1,
             ) { "Download state changed before export conversion could begin" }
             try {
@@ -626,6 +632,14 @@ internal fun FormalTaskRecordEntity.isRetainedLocalVideo(): Boolean =
     status == DownloadStatus.COMPLETED.name &&
         type == WorkshopType.VIDEO.name &&
         !stagingDirectory.isNullOrBlank()
+
+internal fun canRequestRawZipExport(
+    task: DownloadTask,
+    format: ExportFormat,
+): Boolean =
+    task.status == DownloadStatus.FAILED &&
+        format == ExportFormat.ZIP &&
+        task.hasCompleteStagingDownload()
 
 internal fun DownloadTask.hasCompleteStagingDownload(): Boolean {
     if (totalBytes <= 0L || downloadedBytes < totalBytes) return false
