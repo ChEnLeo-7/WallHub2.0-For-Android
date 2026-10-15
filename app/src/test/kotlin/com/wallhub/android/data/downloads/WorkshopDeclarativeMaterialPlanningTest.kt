@@ -43,6 +43,19 @@ class WorkshopDeclarativeMaterialPlanningTest {
     }
 
     @Test
+    fun `source fidelity passes declared data texture through without lossless conversion`() {
+        withScene(
+            "materials/material.json" to """{"normalTexture":"materials/normal.tex"}""".toByteArray(),
+            "materials/normal.tex" to staticImageTex(),
+        ) { root ->
+            val resource = WorkshopConverter.plan(root, MpkgConversionPreset.SOURCE_FIDELITY, DEVICE).texture("materials/normal.tex")
+
+            assertEquals(ResourceStrategy.PASSTHROUGH, resource.strategy)
+            assertEquals("source_fidelity_tex_passthrough", resource.reason)
+        }
+    }
+
+    @Test
     fun `unrelated JSON cannot override conservative filename semantics`() {
         withScene(
             "scripts/config.json" to """{"albedoTexture":"materials/normal.tex"}""".toByteArray(),

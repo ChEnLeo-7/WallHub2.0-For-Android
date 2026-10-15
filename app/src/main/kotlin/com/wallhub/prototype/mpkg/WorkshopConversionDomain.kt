@@ -422,6 +422,17 @@ internal object WorkshopConversionPlanner {
         declaredSemantic: TextureSemantic?,
     ): Pair<ResourceStrategy, String> {
         val decision = TexMobileConverter.inspectEntryDecision(scenePackage, entry.offset, entry.length, device.maxHeapBytes)
+        if (policy.presetId == MpkgConversionPreset.SOURCE_FIDELITY.stableId) {
+            return if (
+                decision.route == TexEntryRoute.UNSUPPORTED ||
+                decision.route == TexEntryRoute.UNSUPPORTED_VIDEO ||
+                decision.route == TexEntryRoute.UNSUPPORTED_RESOURCE_BUDGET
+            ) {
+                ResourceStrategy.PASSTHROUGH_WITH_WARNING to "tex_passthrough_source_fidelity_unverified"
+            } else {
+                ResourceStrategy.PASSTHROUGH to "source_fidelity_tex_passthrough"
+            }
+        }
         val semantic = declaredSemantic ?: if (isConservativeColorTexturePath(entry.path)) TextureSemantic.COLOR else TextureSemantic.UNKNOWN
         if (semantic != TextureSemantic.COLOR) {
             return when {
@@ -444,17 +455,6 @@ internal object WorkshopConversionPlanner {
                                 }
                             else -> "tex_passthrough_semantic_requires_lossless_rgba"
                         }
-            }
-        }
-        if (policy.presetId == MpkgConversionPreset.SOURCE_FIDELITY.stableId) {
-            return if (
-                decision.route == TexEntryRoute.UNSUPPORTED ||
-                decision.route == TexEntryRoute.UNSUPPORTED_VIDEO ||
-                decision.route == TexEntryRoute.UNSUPPORTED_RESOURCE_BUDGET
-            ) {
-                ResourceStrategy.PASSTHROUGH_WITH_WARNING to "tex_passthrough_source_fidelity_unverified"
-            } else {
-                ResourceStrategy.PASSTHROUGH to "source_fidelity_tex_passthrough"
             }
         }
         return when (decision.route) {
