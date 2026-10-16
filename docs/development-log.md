@@ -1586,6 +1586,24 @@ Release `a10f6fa` built successfully and the complete JVM unit suite passed at t
 absent after instrumentation reset, so authenticated transfer/Pause/Resume/Cancel remains a separate device check;
 no credential was requested or copied into the test environment.
 
+## 2026-10-16 — Official Wallpaper Engine MPKG tier alignment
+
+Read-only comparison of authorized official `3757572576` and `3808922316` MPKG samples established three dynamic tiers:
+`high_quality` keeps full resolution, `balanced` writes `scene.general.texturereduction=2` and stores roughly half-resolution visual mips,
+and `compatibility` writes `texturereduction=4` and stores roughly quarter-resolution visual mips. Official static visual TEX
+entries use ETC2 RGBA8 + LZ4, while R8/RG88 masks and flow data retain their channel formats. The Android converter now uses
+these three stable IDs with Chinese labels 高质量、更佳性能、高性能 (default 更佳性能), removes the Source Fidelity UI mode,
+invalidates pre-v3 checkpoints through the converter identity, rewrites scene reduction metadata, and records the official ETC2
+logical/physical dimension contract.
+
+The implementation also adds path-and-structure-gated Android shader handling, including the observed `g_PointerState`
+compatibility adapter for xray shaders; unknown shader/resources remain warning-complete rather than being silently rejected.
+Known visual TEX conversion failures are fatal instead of producing a known desktop-TEX gray/solid-color output. The authorized
+Windows build for the shader-test commit `c25def7` succeeded (`20261016T090407Z-943927971`); subsequent source-only metadata updates
+remain subject to the next authorized build. GitHub boundary CI for the preceding published implementation succeeded at
+`38873618430`. Physical Wallpaper Engine revalidation is pending because the authorized ADB device
+`192.168.2.234:33445` is currently unreachable (`No route to host`).
+
 ## 2026-10-01 (37) - Quality convergence removes dual download authority in source
 
 The source-only convergence phase made Durable Command/Desired Intent the only download-control authority, moved
