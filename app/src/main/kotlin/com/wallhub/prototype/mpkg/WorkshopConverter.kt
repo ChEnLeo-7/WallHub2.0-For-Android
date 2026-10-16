@@ -389,9 +389,26 @@ object WorkshopConverter {
                                                 TexEntryRoute.CONVERT_IMAGE_TO_ETC2 -> {
                                                     val limit = 64L * 1024L * 1024L
                                                     if (staticImageDecoder == null) {
-                                                        TexMobileConverter.convertImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, limit, checkCancellation)
+                                                        TexMobileConverter.convertImageToRgbaFile(
+                                                            sourceFile = scenePackage,
+                                                            offset = entry.offset,
+                                                            length = entry.length,
+                                                            outputFile = transformed,
+                                                            maxDecodedRgbaBytes = limit,
+                                                            textureReduction = MpkgConversionPreset.fromStableId(requireNotNull(plan).presetId).policy().textureReduction,
+                                                            checkCancellation = checkCancellation,
+                                                        )
                                                     } else {
-                                                        TexMobileConverter.convertImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, limit, checkCancellation, staticImageDecoder)
+                                                        TexMobileConverter.convertImageToRgbaFile(
+                                                            sourceFile = scenePackage,
+                                                            offset = entry.offset,
+                                                            length = entry.length,
+                                                            outputFile = transformed,
+                                                            maxDecodedRgbaBytes = limit,
+                                                            textureReduction = MpkgConversionPreset.fromStableId(requireNotNull(plan).presetId).policy().textureReduction,
+                                                            checkCancellation = checkCancellation,
+                                                            decodeImage = staticImageDecoder,
+                                                        )
                                                     }
                                                 }
                                                 TexEntryRoute.CONVERT_IN_MEMORY -> {

@@ -269,6 +269,7 @@ object TexMobileConverter {
         length: Long,
         outputFile: File,
         maxDecodedRgbaBytes: Long,
+        textureReduction: Int = 1,
         checkCancellation: () -> Unit = {},
         decodeImage: (File, Int, Int, () -> Unit) -> ByteArray = ::decodeImageFileToRgba,
     ): TexFileConversionResult =
