@@ -26,7 +26,7 @@ class WorkshopConverterExecutionFallbackTest {
     @Test
     fun `planned texture conversion decoder failure passes source bytes through with stable warning`() {
         val source = staticImageTex(2, 2)
-        withScene(listOf("materials/color.tex" to source)) { root ->
+        withScene(listOf("materials/effects/color.tex" to source)) { root ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.HIGH_QUALITY, DEVICE)
             assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, plan.resources.single().strategy)
 
@@ -40,13 +40,13 @@ class WorkshopConverterExecutionFallbackTest {
                 )
 
             val archive = PkgReader.readIndex(output)
-            val texture = archive.entries.single { it.path == "materials/color.tex" }
+            val texture = archive.entries.single { it.path == "materials/effects/color.tex" }
             assertArrayEquals(source, archive.readBytes(texture, source.size.toLong()))
             assertEquals(0, report.convertedTextures)
             assertEquals(1, report.copiedTextures)
             assertEquals(ResourceStrategy.PASSTHROUGH_WITH_WARNING, report.outcomes.single().strategy)
             assertEquals("texture_conversion_failed", report.warningDetails.single().code)
-            assertEquals("materials/color.tex", report.warningDetails.single().path)
+            assertEquals("materials/effects/color.tex", report.warningDetails.single().path)
             assertEquals(mapOf("texture_conversion_failed" to 1), report.warningCounts)
             assertFalse(report.warnings.single().contains("unstable decoder detail"))
         }
@@ -54,7 +54,7 @@ class WorkshopConverterExecutionFallbackTest {
 
     @Test
     fun `texture decoder IO failure remains fatal instead of becoming passthrough`() {
-        withScene(listOf("materials/color.tex" to staticImageTex(2, 2))) { root ->
+        withScene(listOf("materials/effects/color.tex" to staticImageTex(2, 2))) { root ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.HIGH_QUALITY, DEVICE)
 
             assertThrows(IOException::class.java) {
