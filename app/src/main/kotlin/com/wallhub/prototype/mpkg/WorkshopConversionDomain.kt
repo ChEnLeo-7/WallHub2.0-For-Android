@@ -10,20 +10,23 @@ import org.json.JSONObject
 
 fun MpkgConversionPreset.policy(): ConversionPolicy =
     when (this) {
-        MpkgConversionPreset.BALANCED -> ConversionPolicy(stableId, 8L * MIB, "decoded_rgba_up_to_8mib_else_etc2")
-        MpkgConversionPreset.COMPATIBILITY -> ConversionPolicy(stableId, 0L, "eligible_color_textures_etc2")
-        MpkgConversionPreset.HIGH_QUALITY -> ConversionPolicy(stableId, 32L * MIB, "decoded_rgba_up_to_32mib_else_etc2")
-        MpkgConversionPreset.SOURCE_FIDELITY -> ConversionPolicy(stableId, Long.MAX_VALUE, "all_tex_passthrough")
+        MpkgConversionPreset.COMPATIBILITY -> ConversionPolicy(stableId, textureReduction = 4, "official_high_performance")
+        MpkgConversionPreset.BALANCED -> ConversionPolicy(stableId, textureReduction = 2, "official_better_performance")
+        MpkgConversionPreset.HIGH_QUALITY -> ConversionPolicy(stableId, textureReduction = 1, "official_high_quality")
     }
 
 data class ConversionPolicy(
     val presetId: String,
-    val maxStaticImageRgbaBytes: Long,
+    val textureReduction: Int,
     val retentionNotice: String,
-    val version: Int = 2,
+    val version: Int = 3,
 ) {
+    init {
+        require(textureReduction in setOf(1, 2, 4)) { "Unsupported official texture reduction: $textureReduction" }
+    }
+
     fun stableDescription(): String =
-        "$presetId|v$version|static=$retentionNotice|unknown=passthrough_with_warning|downsample=never"
+        "$presetId|v$version|static=$retentionNotice|unknown=passthrough_with_warning|texture_reduction=$textureReduction"
 }
 
 data class DeviceCapabilityProfile(
@@ -77,7 +80,7 @@ data class ConversionResourcePlan(
 }
 
 data class ConversionPlan(
-    val version: Int = 2,
+    val version: Int = 3,
     val presetId: String,
     val policyVersion: Int,
     val preserveAudio: Boolean = false,
@@ -86,8 +89,8 @@ data class ConversionPlan(
     val resources: List<ConversionResourcePlan>,
 ) {
     init {
-        require(version == 2) { "Unsupported conversion plan version: $version" }
-        require(policyVersion == 2) { "Unsupported conversion policy version: $policyVersion" }
+        require(version == 3) { "Unsupported conversion plan version: $version" }
+        require(policyVersion == 3) { "Unsupported conversion policy version: $policyVersion" }
         require(MpkgConversionPreset.fromStableId(presetId).stableId == presetId) { "Unknown conversion preset: $presetId" }
         val paths = HashSet<String>()
         resources.forEach { resource ->
@@ -404,18 +407,13 @@ internal object WorkshopConversionPlanner {
         declaredSemantic: TextureSemantic?,
     ): Pair<ResourceStrategy, String> {
         val decision = TexMobileConverter.inspectEntryDecision(scenePackage, entry.offset, entry.length, device.maxHeapBytes)
-        if (policy.presetId == MpkgConversionPreset.SOURCE_FIDELITY.stableId) {
-            return if (
-                decision.route == TexEntryRoute.UNSUPPORTED ||
-                decision.route == TexEntryRoute.UNSUPPORTED_VIDEO ||
-                decision.route == TexEntryRoute.UNSUPPORTED_RESOURCE_BUDGET
-            ) {
-                ResourceStrategy.PASSTHROUGH_WITH_WARNING to "tex_passthrough_source_fidelity_unverified"
-            } else {
-                ResourceStrategy.PASSTHROUGH to "source_fidelity_tex_passthrough"
+        val semantic =
+            when {
+                declaredSemantic == TextureSemantic.DATA -> TextureSemantic.DATA
+                isOfficialVisualTexturePath(entry.path) -> TextureSemantic.COLOR
+                declaredSemantic != null -> declaredSemantic
+                else -> TextureSemantic.UNKNOWN
             }
-        }
-        val semantic = declaredSemantic ?: if (isConservativeColorTexturePath(entry.path)) TextureSemantic.COLOR else TextureSemantic.UNKNOWN
         if (semantic != TextureSemantic.COLOR) {
             return when {
                 decision.verifiedLosslessRgba -> ResourceStrategy.RETAIN_VERIFIED_MOBILE to "verified_lossless_rgba_retained"
@@ -426,7 +424,6 @@ internal object WorkshopConversionPlanner {
                 else ->
                     ResourceStrategy.PASSTHROUGH_WITH_WARNING to
                         when {
-                            policy.presetId == MpkgConversionPreset.SOURCE_FIDELITY.stableId -> "tex_passthrough_source_fidelity_unverified"
                             decision.route == TexEntryRoute.UNSUPPORTED_RESOURCE_BUDGET -> "tex_passthrough_resource_budget_exceeded"
                             decision.route == TexEntryRoute.UNSUPPORTED_VIDEO -> "tex_passthrough_unsupported_video"
                             decision.route == TexEntryRoute.UNSUPPORTED ->
@@ -446,18 +443,16 @@ internal object WorkshopConversionPlanner {
             -> ResourceStrategy.RETAIN_VERIFIED_MOBILE to "verified_mobile_payload_retained"
             TexEntryRoute.RETAIN_VERIFIED_RUNTIME_DESKTOP ->
                 ResourceStrategy.RETAIN_VERIFIED_RUNTIME_DESKTOP to "verified_runtime_desktop_payload_retained"
-            TexEntryRoute.CONVERT_IMAGE_TO_ETC2 -> {
-                val decodedBytes = decision.decodedRgbaBytes ?: Long.MAX_VALUE
+            TexEntryRoute.CONVERT_IMAGE_TO_ETC2 ->
                 when {
-                    policy.presetId == MpkgConversionPreset.COMPATIBILITY.stableId && device.supportsEtc2 ->
-                        ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4 to "compatibility_color_texture_etc2"
-                    decodedBytes <= policy.maxStaticImageRgbaBytes && decision.rgbaConversionFitsMemoryBudget ->
-                        ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 to "static_image_within_decoded_rgba_budget"
+                    device.supportsEtc2 && policy.textureReduction > 1 ->
+                        ResourceStrategy.DOWNSAMPLE_TO_ETC2 to "official_texture_reduction_${policy.textureReduction}x_etc2"
                     device.supportsEtc2 ->
-                        ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4 to "static_image_above_decoded_rgba_budget"
+                        ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4 to "official_high_quality_etc2"
+                    decision.rgbaConversionFitsMemoryBudget ->
+                        ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 to "etc2_unavailable_rgba_fallback"
                     else -> ResourceStrategy.PASSTHROUGH_WITH_WARNING to "tex_passthrough_resource_budget_exceeded"
                 }
-            }
             TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA,
             TexEntryRoute.CONVERT_IN_MEMORY,
             -> ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 to "texture_requires_rgba8888_lz4"
@@ -510,11 +505,9 @@ internal object WorkshopConversionPlanner {
         }
     }
 
-    private fun isConservativeColorTexturePath(path: String): Boolean {
-        val stem = path.substringAfterLast('/').substringBeforeLast('.').lowercase()
-        val semanticTokens = stem.split(Regex("[^a-z0-9]+"))
-        if (semanticTokens.any { it in UNSAFE_TEXTURE_SEMANTIC_TOKENS }) return false
-        return semanticTokens.any { it in SAFE_COLOR_TEXTURE_TOKENS }
+    private fun isOfficialVisualTexturePath(path: String): Boolean {
+        val normalized = path.replace('\\', '/').lowercase()
+        return normalized.startsWith("materials/") && normalized.count { it == '/' } == 1
     }
 
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it.toInt() and 0xff) }
@@ -540,8 +533,6 @@ private const val IDENTITY_BUFFER_BYTES = 64 * 1024
 private const val MAX_GRAPH_DOCUMENT_BYTES = 2L * 1024L * 1024L
 private const val MAX_GRAPH_TOTAL_BYTES = 8L * 1024L * 1024L
 private const val LEGACY_BALANCED_TEXTURE_INPUT_BYTES = 32L * 1024L * 1024L
-private val SAFE_COLOR_TEXTURE_TOKENS = setOf("background", "wallpaper", "backdrop", "scene", "color", "albedo", "diffuse")
-private val UNSAFE_TEXTURE_SEMANTIC_TOKENS = setOf("normal", "norm", "nrm", "mask", "roughness", "metallic", "height", "depth", "specular", "ao", "alpha")
 private const val MIB = 1024L * 1024L
 private const val GIB = 1024L * MIB
 private const val MAX_PERSISTED_CONVERSION_JSON_BYTES = 128 * 1024

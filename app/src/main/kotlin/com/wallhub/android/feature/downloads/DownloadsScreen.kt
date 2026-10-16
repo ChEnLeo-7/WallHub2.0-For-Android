@@ -1348,7 +1348,6 @@ private fun MpkgConversionPreset.downloadQualityLabel(): String =
         MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard)
         MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility)
         MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality)
-        MpkgConversionPreset.SOURCE_FIDELITY -> stringResource(R.string.mpkg_preset_source_fidelity)
     }
 
 internal fun DownloadTask.shouldShowConversionPresetLabel(): Boolean =

@@ -53,6 +53,7 @@ class CompatibilityTexDownsamplingTest {
                     0L,
                     source.length(),
                     "materials/plain_background.tex",
+                    4,
                     output,
                     encodeDownsampledEtc2 = { _, _, _, targetWidth, targetHeight, checkCancellation ->
                         checkCancellation()
@@ -62,12 +63,12 @@ class CompatibilityTexDownsamplingTest {
 
             assertTrue(result.reason, result.converted)
             assertEquals(TexEntryRoute.RETAIN_VERIFIED_MOBILE, TexMobileConverter.inspectEntryRoute(output, 0L, output.length()))
-            assertEquals(2048, readIntLe(output.readBytes(), 26))
-            assertEquals(1080, readIntLe(output.readBytes(), 30))
-            assertEquals(2048, readIntLe(output.readBytes(), 34))
-            assertEquals(1079, readIntLe(output.readBytes(), 38))
-            assertEquals(2048, readIntLe(output.readBytes(), 71))
-            assertEquals(1080, readIntLe(output.readBytes(), 75))
+            assertEquals(3874, readIntLe(output.readBytes(), 26))
+            assertEquals(2035, readIntLe(output.readBytes(), 30))
+            assertEquals(3862, readIntLe(output.readBytes(), 34))
+            assertEquals(2035, readIntLe(output.readBytes(), 38))
+            assertEquals(968, readIntLe(output.readBytes(), 71))
+            assertEquals(508, readIntLe(output.readBytes(), 75))
         } finally {
             root.deleteRecursively()
         }
@@ -85,6 +86,7 @@ class CompatibilityTexDownsamplingTest {
                     0L,
                     animated.length(),
                     "materials/plain_background.tex",
+                    4,
                     output,
                 )
             assertFalse(animatedResult.converted)
@@ -98,6 +100,7 @@ class CompatibilityTexDownsamplingTest {
                     0L,
                     source.length(),
                     "materials/plain_background.tex",
+                    4,
                     output,
                     checkCancellation = { throw CancellationException("cancelled") },
                     encodeDownsampledEtc2 = { _, _, _, _, _, _ ->

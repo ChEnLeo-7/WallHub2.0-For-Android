@@ -360,6 +360,7 @@ object TexMobileConverter {
         offset: Long,
         length: Long,
         resourcePath: String,
+        textureReduction: Int,
         outputFile: File,
         checkCancellation: () -> Unit = {},
         encodeDownsampledEtc2: (File, Int, Int, Int, Int, () -> Unit) -> ByteArray = ::encodeDownsampledEtc2,
@@ -367,10 +368,11 @@ object TexMobileConverter {
         runCatching {
             checkCancellation()
             val metadata = readTexEntryMetadata(sourceFile, offset, length)
-            require(metadata.flags == 0 && !metadata.isMp4) { "Compatibility downsampling requires a static color TEX" }
-            require(metadata.container == "TEXB0004" && metadata.mipmapCount == 1) { "TEX metadata is unsafe for downsampling" }
+            require(textureReduction in setOf(2, 4)) { "Official texture reduction must be 2 or 4" }
+            require(metadata.flags == 0 && !metadata.isMp4) { "Official texture reduction requires a static TEX" }
+            require(metadata.container in setOf("TEXB0003", "TEXB0004")) { "TEX metadata is unsafe for texture reduction" }
             require(metadata.imageFormat in STATIC_PNG_JPEG_FORMATS && !metadata.baseCompressed) {
-                "Compatibility downsampling requires an uncompressed PNG or JPEG payload"
+                "Official texture reduction requires an uncompressed PNG or JPEG payload"
             }
             require(metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight) {
                 "TEX base mipmap does not match image dimensions"
@@ -380,11 +382,9 @@ object TexMobileConverter {
             require(metadata.imageWidth.toLong() * metadata.imageHeight <= MAX_IMAGE_DECODE_PIXELS) {
                 "TEX image dimensions exceed global decode safety"
             }
-            require(isSafeColorTexturePath(resourcePath)) { "Texture path does not identify conservative color semantics" }
-            val (targetWidth, targetHeight) = compatibilityTargetSize(metadata.imageWidth, metadata.imageHeight)
-            require(targetWidth < metadata.imageWidth || targetHeight < metadata.imageHeight) {
-                "TEX does not exceed compatibility dimensions"
-            }
+            require(resourcePath.startsWith("materials/", ignoreCase = true)) { "Texture path is outside materials" }
+            val targetWidth = (metadata.imageWidth / textureReduction).coerceAtLeast(1)
+            val targetHeight = (metadata.imageHeight / textureReduction).coerceAtLeast(1)
             val tempImage = File(outputFile.parentFile, "${outputFile.name}.image")
             try {
                 val imageStart = locateEmbeddedImage(sourceFile, metadata.payloadStart, metadata.payloadLength)
@@ -402,7 +402,17 @@ object TexMobileConverter {
                 val physicalWidth = etc2BlockAligned(targetWidth)
                 val physicalHeight = etc2BlockAligned(targetHeight)
                 require(etc2.size == checkedPayloadSize(physicalWidth, physicalHeight, 1)) { "Unexpected ETC2 payload size" }
-                writeEtc2Payload(outputFile, metadata.unknown, targetWidth, targetHeight, etc2)
+                writeEtc2Payload(
+                    outputFile = outputFile,
+                    flags = metadata.flags,
+                    unknown = metadata.unknown,
+                    imageWidth = metadata.imageWidth,
+                    imageHeight = metadata.imageHeight,
+                    textureReduction = textureReduction,
+                    storedWidth = physicalWidth,
+                    storedHeight = physicalHeight,
+                    etc2 = etc2,
+                )
                 checkCancellation()
                 require(inspectEntryRoute(outputFile, 0L, outputFile.length()) == TexEntryRoute.RETAIN_VERIFIED_MOBILE) {
                     "Downsampled TEX failed mobile verification"
@@ -685,11 +695,23 @@ object TexMobileConverter {
             val tex = parse(source)
             require(tex.flags and TEX_FLAG_GIF == 0 && tex.tailData.isEmpty() && tex.mipmaps.size == 1)
             val base = tex.mipmaps.single()
-            require(base.width == tex.textureWidth && base.height == tex.textureHeight)
             require(tex.imageFormat == -1 && !tex.isMp4)
             require(tex.format == TEX_FORMAT_RGBA8888 || tex.format == TEX_FORMAT_ETC2_RGBA8_LZ4)
             if (tex.format == TEX_FORMAT_RGBA8888) {
+                require(base.width == tex.textureWidth && base.height == tex.textureHeight)
                 require(base.data.size == checkedPayloadSize(base.width, base.height, 4))
+            } else {
+                require(
+                    setOf(1, 2, 4).any { reduction ->
+                        val reducedWidth = (tex.imageWidth / reduction).coerceAtLeast(1)
+                        val reducedHeight = (tex.imageHeight / reduction).coerceAtLeast(1)
+                        val storedWidth = etc2BlockAligned(reducedWidth)
+                        val storedHeight = etc2BlockAligned(reducedHeight)
+                        base.width == storedWidth && base.height == storedHeight &&
+                            tex.textureWidth == tex.imageWidth + (storedWidth - reducedWidth) * reduction &&
+                            tex.textureHeight == tex.imageHeight + (storedHeight - reducedHeight) * reduction
+                    },
+                )
             }
             true
         }.getOrDefault(false)
@@ -701,9 +723,7 @@ object TexMobileConverter {
         ) {
             return false
         }
-        if (!metadata.baseCompressed || metadata.baseWidth != metadata.textureWidth || metadata.baseHeight != metadata.textureHeight) {
-            return false
-        }
+        if (!metadata.baseCompressed) return false
         val expected =
             when (metadata.format) {
                 TEX_FORMAT_RGBA8888 -> {
@@ -711,10 +731,18 @@ object TexMobileConverter {
                     checkedPayloadSize(metadata.baseWidth, metadata.baseHeight, 4)
                 }
                 TEX_FORMAT_ETC2_RGBA8_LZ4 -> {
-                    if (
-                        metadata.baseWidth != etc2BlockAligned(metadata.imageWidth) ||
-                        metadata.baseHeight != etc2BlockAligned(metadata.imageHeight)
-                    ) return false
+                    val reduction =
+                        setOf(1, 2, 4).firstOrNull { candidate ->
+                            val reducedWidth = (metadata.imageWidth / candidate).coerceAtLeast(1)
+                            val reducedHeight = (metadata.imageHeight / candidate).coerceAtLeast(1)
+                            val storedWidth = etc2BlockAligned(reducedWidth)
+                            val storedHeight = etc2BlockAligned(reducedHeight)
+                            metadata.baseWidth == storedWidth &&
+                                metadata.baseHeight == storedHeight &&
+                                metadata.textureWidth == metadata.imageWidth + (storedWidth - reducedWidth) * candidate &&
+                                metadata.textureHeight == metadata.imageHeight + (storedHeight - reducedHeight) * candidate
+                        } ?: return false
+                    require(reduction in setOf(1, 2, 4))
                     checkedPayloadSize(metadata.baseWidth, metadata.baseHeight, 1)
                 }
                 else -> return false
@@ -1550,18 +1578,37 @@ object TexMobileConverter {
 
     private fun writeEtc2Payload(
         outputFile: File,
+        flags: Int,
         unknown: Int,
-        logicalWidth: Int,
-        logicalHeight: Int,
+        imageWidth: Int,
+        imageHeight: Int,
+        textureReduction: Int,
+        storedWidth: Int,
+        storedHeight: Int,
         etc2: ByteArray,
     ) {
-        val physicalWidth = etc2BlockAligned(logicalWidth)
-        val physicalHeight = etc2BlockAligned(logicalHeight)
-        require(etc2.size == checkedPayloadSize(physicalWidth, physicalHeight, 1)) { "Unexpected ETC2 payload size" }
+        require(etc2.size == checkedPayloadSize(storedWidth, storedHeight, 1)) { "Unexpected ETC2 payload size" }
+        val reducedWidth = (imageWidth / textureReduction).coerceAtLeast(1)
+        val reducedHeight = (imageHeight / textureReduction).coerceAtLeast(1)
+        val textureWidth = Math.addExact(imageWidth, Math.multiplyExact(storedWidth - reducedWidth, textureReduction))
+        val textureHeight = Math.addExact(imageHeight, Math.multiplyExact(storedHeight - reducedHeight, textureReduction))
         val (compressed, compressedLength) = compress(etc2)
         outputFile.parentFile?.let { check(it.exists() || it.mkdirs()) { "Unable to create TEX output directory" } }
         BufferedOutputStream(FileOutputStream(outputFile)).use { output ->
-            output.write(etc2Header(0, physicalWidth, physicalHeight, logicalWidth, logicalHeight, unknown, etc2.size, compressedLength))
+            output.write(
+                etc2Header(
+                    flags = flags,
+                    width = textureWidth,
+                    height = textureHeight,
+                    logicalWidth = imageWidth,
+                    logicalHeight = imageHeight,
+                    mipWidth = storedWidth,
+                    mipHeight = storedHeight,
+                    unknown = unknown,
+                    decompressedLength = etc2.size,
+                    compressedLength = compressedLength,
+                ),
+            )
             output.write(compressed, 0, compressedLength)
         }
     }
@@ -1706,6 +1753,8 @@ object TexMobileConverter {
         height: Int,
         logicalWidth: Int,
         logicalHeight: Int,
+        mipWidth: Int = width,
+        mipHeight: Int = height,
         unknown: Int,
         decompressedLength: Int,
         compressedLength: Int,
@@ -1718,7 +1767,7 @@ object TexMobileConverter {
             offset = output.writeIntLe(offset, value)
         }
         offset = output.writeCString(offset, "TEXB0004")
-        listOf(1, -1, 0, 1, width, height, 1, decompressedLength, compressedLength).forEach { value ->
+        listOf(1, -1, 0, 1, mipWidth, mipHeight, 1, decompressedLength, compressedLength).forEach { value ->
             offset = output.writeIntLe(offset, value)
         }
         require(offset == MOBILE_TEX_HEADER_SIZE)

@@ -373,7 +373,6 @@ internal fun MpkgConversionPreset.label(): String =
         MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard)
         MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility)
         MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality)
-        MpkgConversionPreset.SOURCE_FIDELITY -> stringResource(R.string.mpkg_preset_source_fidelity)
     }
 
 @Composable
@@ -382,5 +381,4 @@ private fun MpkgConversionPreset.estimatedPolicyPreview(): String =
         MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard_preview)
         MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility_preview)
         MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality_preview)
-        MpkgConversionPreset.SOURCE_FIDELITY -> stringResource(R.string.mpkg_preset_source_fidelity_preview)
     }

@@ -22,8 +22,8 @@ class ConversionPolicyV2Test {
         withScene("materials/number.am.tex", "not-a-recognized-tex-shape".toByteArray()) { root, source ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE)
 
-            assertEquals(2, plan.version)
-            assertEquals(2, plan.policyVersion)
+            assertEquals(3, plan.version)
+            assertEquals(3, plan.policyVersion)
             assertEquals(ResourceStrategy.PASSTHROUGH_WITH_WARNING, plan.resources.single().strategy)
             assertEquals("tex_passthrough_unknown_profile", plan.resources.single().reason)
 
@@ -94,7 +94,7 @@ class ConversionPolicyV2Test {
     }
 
     @Test
-    fun `plan codec v2 preserves audio preference and equality`() {
+    fun `plan codec v3 preserves audio preference and equality`() {
         withScene("audio/theme.mp3", byteArrayOf(1, 2, 3)) { root, _ ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE, preserveAudio = true)
             val decoded = ConversionPlanJsonCodec.decode(ConversionPlanJsonCodec.encode(plan))
@@ -106,12 +106,12 @@ class ConversionPolicyV2Test {
     }
 
     @Test
-    fun `plan codec v2 rejects v1 JSON`() {
+    fun `plan codec v3 rejects v2 JSON`() {
         withScene("scripts/demo.txt", byteArrayOf(1, 2, 3)) { root, _ ->
             val encoded = ConversionPlanJsonCodec.encode(WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE))
-            val v1 = encoded.replaceFirst("\"version\":2", "\"version\":1")
+            val v2 = encoded.replaceFirst("\"version\":3", "\"version\":2")
 
-            assertThrows(IllegalArgumentException::class.java) { ConversionPlanJsonCodec.decode(v1) }
+            assertThrows(IllegalArgumentException::class.java) { ConversionPlanJsonCodec.decode(v2) }
         }
     }
 

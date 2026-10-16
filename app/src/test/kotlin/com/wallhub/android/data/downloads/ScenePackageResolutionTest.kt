@@ -399,13 +399,12 @@ class ScenePackageResolutionTest {
     }
 
     @Test
-    fun conversionPresetPoliciesMatchTruthfulV2Golden() {
+    fun conversionPresetPoliciesMatchOfficialV3Golden() {
         assertEquals(
             listOf(
-                "balanced|v2|static=decoded_rgba_up_to_8mib_else_etc2|unknown=passthrough_with_warning|downsample=never",
-                "compatibility|v2|static=eligible_color_textures_etc2|unknown=passthrough_with_warning|downsample=never",
-                "high_quality|v2|static=decoded_rgba_up_to_32mib_else_etc2|unknown=passthrough_with_warning|downsample=never",
-                "source_fidelity|v2|static=all_tex_passthrough|unknown=passthrough_with_warning|downsample=never",
+                "balanced|v3|static=official_better_performance|unknown=passthrough_with_warning|texture_reduction=2",
+                "compatibility|v3|static=official_high_performance|unknown=passthrough_with_warning|texture_reduction=4",
+                "high_quality|v3|static=official_high_quality|unknown=passthrough_with_warning|texture_reduction=1",
             ),
             MpkgConversionPreset.entries.map { it.policy().stableDescription() },
         )

@@ -19,13 +19,13 @@ class WorkshopDeclarativeMaterialPlanningTest {
         ) { root ->
             val resource = WorkshopConverter.plan(root, MpkgConversionPreset.COMPATIBILITY, DEVICE).texture("materials/normal.tex")
 
-            assertEquals(ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4, resource.strategy)
-            assertEquals("compatibility_color_texture_etc2", resource.reason)
+            assertEquals(ResourceStrategy.DOWNSAMPLE_TO_ETC2, resource.strategy)
+            assertEquals("official_texture_reduction_4x_etc2", resource.reason)
         }
     }
 
     @Test
-    fun `declared color follows all four preset strategies`() {
+    fun `declared color follows all three official preset strategies`() {
         withScene(
             "materials/material.json" to """{"albedoTexture":"materials/plain.tex"}""".toByteArray(),
             "materials/plain.tex" to staticImageTex(2_048, 2_048),
@@ -35,23 +35,9 @@ class WorkshopDeclarativeMaterialPlanningTest {
                     WorkshopConverter.plan(root, preset, DEVICE).texture("materials/plain.tex").strategy
                 }
 
-            assertEquals(ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4, strategies[MpkgConversionPreset.COMPATIBILITY])
-            assertEquals(ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4, strategies[MpkgConversionPreset.BALANCED])
-            assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, strategies[MpkgConversionPreset.HIGH_QUALITY])
-            assertEquals(ResourceStrategy.PASSTHROUGH, strategies[MpkgConversionPreset.SOURCE_FIDELITY])
-        }
-    }
-
-    @Test
-    fun `source fidelity passes declared data texture through without lossless conversion`() {
-        withScene(
-            "materials/material.json" to """{"normalTexture":"materials/normal.tex"}""".toByteArray(),
-            "materials/normal.tex" to staticImageTex(),
-        ) { root ->
-            val resource = WorkshopConverter.plan(root, MpkgConversionPreset.SOURCE_FIDELITY, DEVICE).texture("materials/normal.tex")
-
-            assertEquals(ResourceStrategy.PASSTHROUGH, resource.strategy)
-            assertEquals("source_fidelity_tex_passthrough", resource.reason)
+            assertEquals(ResourceStrategy.DOWNSAMPLE_TO_ETC2, strategies[MpkgConversionPreset.COMPATIBILITY])
+            assertEquals(ResourceStrategy.DOWNSAMPLE_TO_ETC2, strategies[MpkgConversionPreset.BALANCED])
+            assertEquals(ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4, strategies[MpkgConversionPreset.HIGH_QUALITY])
         }
     }
 

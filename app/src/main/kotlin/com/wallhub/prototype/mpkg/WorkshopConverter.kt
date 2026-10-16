@@ -341,6 +341,7 @@ object WorkshopConverter {
                                                 entry.offset,
                                                 entry.length,
                                                 entry.path,
+                                                MpkgConversionPreset.fromStableId(requireNotNull(plan).presetId).policy().textureReduction,
                                                 transformed,
                                                 checkCancellation,
                                             )
@@ -381,7 +382,7 @@ object WorkshopConverter {
                                                         TexMobileConverter.convertAnimatedImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, checkCancellation, animatedImageDecoder)
                                                     }
                                                 TexEntryRoute.CONVERT_IMAGE_TO_ETC2 -> {
-                                                    val limit = MpkgConversionPreset.fromStableId(plan?.presetId ?: MpkgConversionPreset.SOURCE_FIDELITY.stableId).policy().maxStaticImageRgbaBytes
+                                                    val limit = 64L * 1024L * 1024L
                                                     if (staticImageDecoder == null) {
                                                         TexMobileConverter.convertImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, limit, checkCancellation)
                                                     } else {
@@ -445,13 +446,20 @@ object WorkshopConverter {
                             }
                         }
                     }
-                    else ->
-                        putEntry(
-                            MpkgInputEntry(
-                                entry.path,
-                                FileSlicePayload(scenePackage, entry.offset, entry.length),
-                            ),
-                        )
+                    else -> {
+                        if (entry.path.equals("scene.json", ignoreCase = true) && plan != null) {
+                            val source = archive.readBytes(entry, MAX_SCENE_JSON_BYTES)
+                            val reduction = MpkgConversionPreset.fromStableId(plan.presetId).policy().textureReduction
+                            putEntry(MpkgInputEntry(entry.path, ByteArrayPayload(rewriteSceneTextureReduction(source, reduction))))
+                        } else {
+                            putEntry(
+                                MpkgInputEntry(
+                                    entry.path,
+                                    FileSlicePayload(scenePackage, entry.offset, entry.length),
+                                ),
+                            )
+                        }
+                    }
                 }
             }
             if (presetDependency != null) {
@@ -799,6 +807,21 @@ object WorkshopConverter {
         }.toByteArray(Charsets.UTF_8)
     }
 
+    private fun rewriteSceneTextureReduction(
+        source: ByteArray,
+        textureReduction: Int,
+    ): ByteArray {
+        require(textureReduction in setOf(1, 2, 4)) { "Unsupported official texture reduction" }
+        val scene = JSONObject(source.toString(Charsets.UTF_8))
+        val general = scene.optJSONObject("general") ?: JSONObject().also { scene.put("general", it) }
+        if (textureReduction == 1) {
+            general.remove("texturereduction")
+        } else {
+            general.put("texturereduction", textureReduction)
+        }
+        return scene.toString(2).toByteArray(Charsets.UTF_8)
+    }
+
     private class WorkshopProject(
         private val source: String,
     ) {
@@ -1027,5 +1050,6 @@ private const val TEX_CONVERSION_HEAP_DIVISOR = 24L
 private const val MIN_TEX_CONVERSION_INPUT_BYTES = 2L * 1024L * 1024L
 private const val MAX_TEX_CONVERSION_INPUT_BYTES = 8L * 1024L * 1024L
 internal const val MAX_SHADER_SOURCE_BYTES = 8L * 1024L * 1024L
+private const val MAX_SCENE_JSON_BYTES = 8L * 1024L * 1024L
 private const val COPY_BUFFER_SIZE = 1024 * 1024
 private const val MAX_WARNING_DETAILS = 100
