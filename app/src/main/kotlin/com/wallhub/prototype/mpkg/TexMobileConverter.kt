@@ -388,7 +388,9 @@ object TexMobileConverter {
             checkCancellation()
             val metadata = readTexEntryMetadata(sourceFile, offset, length)
             require(textureReduction in setOf(2, 4)) { "Official texture reduction must be 2 or 4" }
-            require(metadata.flags == 0 && !metadata.isMp4) { "Official texture reduction requires a static TEX" }
+            require(metadata.flags and (TEX_FLAG_GIF or TEX_FLAG_VIDEO) == 0 && !metadata.isMp4) {
+                "Official texture reduction requires a static TEX"
+            }
             require(metadata.container in setOf("TEXB0003", "TEXB0004")) { "TEX metadata is unsafe for texture reduction" }
             require(metadata.imageFormat in STATIC_PNG_JPEG_FORMATS && !metadata.baseCompressed) {
                 "Official texture reduction requires an uncompressed PNG or JPEG payload"
