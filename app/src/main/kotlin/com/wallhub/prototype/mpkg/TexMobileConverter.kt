@@ -305,7 +305,16 @@ object TexMobileConverter {
                     } else {
                         resizeRgbaAreaAverage(rgba, metadata.imageWidth, metadata.imageHeight, targetWidth, targetHeight)
                     }
-                writeMobileRgba(outputFile, metadata.flags, targetWidth, targetHeight, metadata.unknown, outputRgba)
+                writeReducedMobileRgba(
+                    outputFile = outputFile,
+                    flags = metadata.flags,
+                    imageWidth = metadata.imageWidth,
+                    imageHeight = metadata.imageHeight,
+                    storedWidth = targetWidth,
+                    storedHeight = targetHeight,
+                    unknown = metadata.unknown,
+                    rgba = outputRgba,
+                )
                 checkCancellation()
                 require(inspectEntryRoute(outputFile, 0L, outputFile.length()) == TexEntryRoute.RETAIN_VERIFIED_MOBILE) {
                     "Converted static TEX failed mobile verification"
@@ -758,7 +767,13 @@ object TexMobileConverter {
             require(tex.imageFormat == -1 && !tex.isMp4)
             require(tex.format == TEX_FORMAT_RGBA8888 || tex.format == TEX_FORMAT_ETC2_RGBA8_LZ4)
             if (tex.format == TEX_FORMAT_RGBA8888) {
-                require(base.width == tex.textureWidth && base.height == tex.textureHeight)
+                require(
+                    setOf(1, 2, 4).any { reduction ->
+                        base.width == (tex.imageWidth / reduction).coerceAtLeast(1) &&
+                            base.height == (tex.imageHeight / reduction).coerceAtLeast(1) &&
+                            tex.textureWidth == tex.imageWidth && tex.textureHeight == tex.imageHeight
+                    },
+                )
                 require(base.data.size == checkedPayloadSize(base.width, base.height, 4))
             } else {
                 require(
@@ -787,7 +802,13 @@ object TexMobileConverter {
         val expected =
             when (metadata.format) {
                 TEX_FORMAT_RGBA8888 -> {
-                    if (metadata.baseWidth != metadata.imageWidth || metadata.baseHeight != metadata.imageHeight) return false
+                    if (metadata.textureWidth != metadata.imageWidth || metadata.textureHeight != metadata.imageHeight) return false
+                    if (
+                        setOf(1, 2, 4).none { reduction ->
+                            metadata.baseWidth == (metadata.imageWidth / reduction).coerceAtLeast(1) &&
+                                metadata.baseHeight == (metadata.imageHeight / reduction).coerceAtLeast(1)
+                        }
+                    ) return false
                     checkedPayloadSize(metadata.baseWidth, metadata.baseHeight, 4)
                 }
                 TEX_FORMAT_ETC2_RGBA8_LZ4 -> {
@@ -1131,6 +1152,38 @@ object TexMobileConverter {
         }
     }
 
+    private fun writeReducedMobileRgba(
+        outputFile: File,
+        flags: Int,
+        imageWidth: Int,
+        imageHeight: Int,
+        storedWidth: Int,
+        storedHeight: Int,
+        unknown: Int,
+        rgba: ByteArray,
+    ) {
+        require(rgba.size == checkedPayloadSize(storedWidth, storedHeight, 4)) { "RGBA payload size does not match stored mip dimensions" }
+        val (compressed, compressedLength) = compress(rgba)
+        outputFile.parentFile?.let { parent ->
+            check(parent.exists() || parent.mkdirs()) { "Unable to create TEX output directory" }
+        }
+        BufferedOutputStream(FileOutputStream(outputFile)).use { output ->
+            output.write(
+                mobileRgbaHeader(
+                    flags = flags,
+                    width = imageWidth,
+                    height = imageHeight,
+                    mipWidth = storedWidth,
+                    mipHeight = storedHeight,
+                    unknown = unknown,
+                    decompressedLength = rgba.size,
+                    compressedLength = compressedLength,
+                ),
+            )
+            output.write(compressed, 0, compressedLength)
+        }
+    }
+
     private fun writeMobileRgbaWithAnimation(
         outputFile: File,
         flags: Int,
@@ -1270,6 +1323,8 @@ object TexMobileConverter {
         flags: Int,
         width: Int,
         height: Int,
+        mipWidth: Int = width,
+        mipHeight: Int = height,
         unknown: Int,
         decompressedLength: Int,
         compressedLength: Int,
@@ -1282,7 +1337,7 @@ object TexMobileConverter {
             offset = output.writeIntLe(offset, value)
         }
         offset = output.writeCString(offset, "TEXB0004")
-        listOf(1, -1, 0, 1, width, height, 1, decompressedLength, compressedLength).forEach { value ->
+        listOf(1, -1, 0, 1, mipWidth, mipHeight, 1, decompressedLength, compressedLength).forEach { value ->
             offset = output.writeIntLe(offset, value)
         }
         require(offset == MOBILE_TEX_HEADER_SIZE)
