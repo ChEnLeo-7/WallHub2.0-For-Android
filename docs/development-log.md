@@ -1603,7 +1603,12 @@ effect textures now match the official header contract as well: original logical
 while the only stored mip is 1/2 or 1/4 size. The authorized Windows build for commit `bdcddd2` succeeded
 (`20261016T133816Z-71627976`). GitHub boundary CI for the preceding published implementation succeeded at `38879448235`; this
 latest header correction remains subject to the next published CI run. Physical Wallpaper Engine revalidation is pending because the authorized ADB device
-`192.168.2.234:33445` is currently unreachable (`No route to host`).
+`192.168.2.234:33445` was initially unreachable (`No route to host`). After the device returned, final build `bdcddd2` installed in place and completed a physical Wallpaper Engine matrix for the two original failures:
+
+- `3757572576`: High Quality produced 42,343,924 bytes with 7800×5200 stored ETC2 mips and no `texturereduction`; Better Performance produced 11,291,738 bytes with 3900×2600 mips and `texturereduction=2`; High Performance produced 3,116,225 bytes with 1952×1300 mips, official virtual width 7808, and `texturereduction=4`. All three imported and rendered the complete collage rather than the former cyan screen.
+- `3299228616`: High Quality produced 8,451,678 bytes with a 3840×2160 main ETC2 mip; Better Performance produced 5,840,833 bytes with 1920×1080 and `texturereduction=2`; High Performance produced 5,045,879 bytes with 960×540 and `texturereduction=4`. All three imported with the cat background, clock, water ripple, and moving light effects visible rather than the former gray/white field.
+
+The new `3808922316` source still requires a WallHub-generated three-tier device run. Its cold Workshop detail request returned an upstream `CONNECT 502`, and the device later dropped off the LAN again; the authorized official MPKG fixtures remain format evidence but do not substitute for that final WallHub runtime check.
 
 ## 2026-10-01 (37) - Quality convergence removes dual download authority in source
 
