@@ -312,7 +312,7 @@ object ConversionPlanJsonCodec {
 
     private fun requireKeys(value: JSONObject, expected: Set<String>) {
         val actual = value.keys().asSequence().toSet()
-        require(actual == expected) { "Conversion plan JSON fields do not match v2 schema" }
+        require(actual == expected) { "Conversion plan JSON fields do not match v3 schema" }
     }
 }
 

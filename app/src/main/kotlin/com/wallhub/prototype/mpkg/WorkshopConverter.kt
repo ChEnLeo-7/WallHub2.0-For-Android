@@ -325,7 +325,8 @@ object WorkshopConverter {
                                     Log.i("WallhubMpkg", "ETC2 re-encode succeeded for ${entry.path}")
                                     putEntry(MpkgInputEntry(entry.path, FilePayload(product)))
                                 } else {
-                                    fallbackToSource(entry, transformed, "texture_conversion_failed")
+                                    transformed.delete()
+                                    error("Known visual texture could not be converted to a mobile ETC2 payload: ${entry.path}")
                                 }
                             }
                             ResourceStrategy.DOWNSAMPLE_TO_ETC2 -> {
@@ -352,7 +353,8 @@ object WorkshopConverter {
                                     convertedTextures += 1
                                     putEntry(MpkgInputEntry(entry.path, FilePayload(product)))
                                 } else {
-                                    fallbackToSource(entry, transformed, "texture_conversion_failed")
+                                    transformed.delete()
+                                    error("Known visual texture could not be reduced to a mobile ETC2 payload: ${entry.path}")
                                 }
                             }
                             ResourceStrategy.PASSTHROUGH,

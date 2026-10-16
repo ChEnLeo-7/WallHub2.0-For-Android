@@ -76,6 +76,15 @@ internal enum class TexRuntimeDesktopFamily {
     CONDITIONAL_VARIANT_EXTENDED,
 }
 
+private data class TexMipmapMetadata(
+    val width: Int,
+    val height: Int,
+    val compressed: Boolean,
+    val decompressedSize: Int,
+    val storedSize: Int,
+    val payloadStart: Long,
+)
+
 private data class TexEntryMetadata(
     val format: Int,
     val flags: Int,
@@ -95,6 +104,7 @@ private data class TexEntryMetadata(
     val baseStoredSize: Int,
     val payloadStart: Long,
     val payloadLength: Long,
+    val mipmaps: List<TexMipmapMetadata>,
     val animationTailStart: Long,
     val animationTailLength: Long,
     val hasVerifiedAnimationTail: Boolean,
@@ -385,16 +395,25 @@ object TexMobileConverter {
             require(resourcePath.startsWith("materials/", ignoreCase = true)) { "Texture path is outside materials" }
             val targetWidth = (metadata.imageWidth / textureReduction).coerceAtLeast(1)
             val targetHeight = (metadata.imageHeight / textureReduction).coerceAtLeast(1)
+            val targetMipIndex = if (textureReduction == 2) 1 else 2
+            val reusableMip =
+                metadata.mipmaps.getOrNull(targetMipIndex)?.takeIf { mip ->
+                    !mip.compressed && mip.width == targetWidth && mip.height == targetHeight
+                }
+            val selectedPayloadStart = reusableMip?.payloadStart ?: metadata.payloadStart
+            val selectedPayloadLength = reusableMip?.storedSize?.toLong() ?: metadata.payloadLength
+            val selectedWidth = reusableMip?.width ?: metadata.imageWidth
+            val selectedHeight = reusableMip?.height ?: metadata.imageHeight
             val tempImage = File(outputFile.parentFile, "${outputFile.name}.image")
             try {
-                val imageStart = locateEmbeddedImage(sourceFile, metadata.payloadStart, metadata.payloadLength)
-                val imageLength = Math.subtractExact(Math.addExact(metadata.payloadStart, metadata.payloadLength), imageStart)
+                val imageStart = locateEmbeddedImage(sourceFile, selectedPayloadStart, selectedPayloadLength)
+                val imageLength = Math.subtractExact(Math.addExact(selectedPayloadStart, selectedPayloadLength), imageStart)
                 copyImagePayload(sourceFile, imageStart, imageLength, tempImage, checkCancellation)
                 checkCancellation()
                 val etc2 = encodeDownsampledEtc2(
                     tempImage,
-                    metadata.imageWidth,
-                    metadata.imageHeight,
+                    selectedWidth,
+                    selectedHeight,
                     targetWidth,
                     targetHeight,
                     checkCancellation,
@@ -1272,6 +1291,7 @@ object TexMobileConverter {
             var baseStoredSize = 0
             var payloadStart = 0L
             var payloadLength = 0L
+            val mipmaps = ArrayList<TexMipmapMetadata>(mipCount)
             repeat(mipCount) { index ->
                 val width = input.readBoundedIntLe(end)
                 val height = input.readBoundedIntLe(end)
@@ -1290,6 +1310,15 @@ object TexMobileConverter {
                     }
                 require(storedSize >= 0) { "Invalid TEX payload size" }
                 require(input.filePointer <= end - storedSize.toLong()) { "Invalid TEX payload size" }
+                mipmaps +=
+                    TexMipmapMetadata(
+                        width = width,
+                        height = height,
+                        compressed = compressed,
+                        decompressedSize = decompressedSize,
+                        storedSize = storedSize,
+                        payloadStart = input.filePointer,
+                    )
                 if (index == 0) {
                     baseWidth = width
                     baseHeight = height
@@ -1347,6 +1376,7 @@ object TexMobileConverter {
                 baseStoredSize = baseStoredSize,
                 payloadStart = payloadStart,
                 payloadLength = payloadLength,
+                mipmaps = mipmaps,
                 animationTailStart = animationTailStart,
                 animationTailLength = animationTailLength,
                 hasVerifiedAnimationTail = hasVerifiedAnimationTail,
