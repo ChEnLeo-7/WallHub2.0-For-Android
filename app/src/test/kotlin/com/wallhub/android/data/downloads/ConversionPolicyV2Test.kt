@@ -4,6 +4,7 @@ import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.prototype.mpkg.ConversionPlanJsonCodec
 import com.wallhub.prototype.mpkg.DeviceCapabilityProfile
 import com.wallhub.prototype.mpkg.PkgReader
+import com.wallhub.prototype.mpkg.policy
 import com.wallhub.prototype.mpkg.ResourceStrategy
 import com.wallhub.prototype.mpkg.WorkshopConverter
 import java.io.ByteArrayOutputStream
@@ -46,18 +47,24 @@ class ConversionPolicyV2Test {
     }
 
     @Test
-    fun `v2 preset thresholds use decoded RGBA size and never downsample`() {
-        withScene("materials/color.tex", staticImageTex(2048, 2048)) { root, _ ->
+    fun `official presets retain stable ids while selecting quarter half and full texture reduction`() {
+        assertEquals(4, MpkgConversionPreset.COMPATIBILITY.policy().textureReduction)
+        assertEquals(2, MpkgConversionPreset.BALANCED.policy().textureReduction)
+        assertEquals(1, MpkgConversionPreset.HIGH_QUALITY.policy().textureReduction)
+        assertEquals(3, MpkgConversionPreset.COMPATIBILITY.policy().version)
+    }
+
+    @Test
+    fun `official presets convert ordinary image backed material textures to ETC2`() {
+        withScene("materials/全年龄.tex", staticImageTex(2048, 2048)) { root, _ ->
             val strategies =
                 MpkgConversionPreset.entries.associateWith { preset ->
                     WorkshopConverter.plan(root, preset, DEVICE).resources.single().strategy
                 }
 
-            assertEquals(ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4, strategies[MpkgConversionPreset.COMPATIBILITY])
-            assertEquals(ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4, strategies[MpkgConversionPreset.BALANCED])
-            assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, strategies[MpkgConversionPreset.HIGH_QUALITY])
-            assertEquals(ResourceStrategy.PASSTHROUGH, strategies[MpkgConversionPreset.SOURCE_FIDELITY])
-            assertTrue(strategies.values.none { it == ResourceStrategy.DOWNSAMPLE_TO_ETC2 })
+            assertEquals(ResourceStrategy.DOWNSAMPLE_TO_ETC2, strategies[MpkgConversionPreset.COMPATIBILITY])
+            assertEquals(ResourceStrategy.DOWNSAMPLE_TO_ETC2, strategies[MpkgConversionPreset.BALANCED])
+            assertEquals(ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4, strategies[MpkgConversionPreset.HIGH_QUALITY])
         }
     }
 
