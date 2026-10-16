@@ -66,7 +66,7 @@ object WorkshopConverter {
         animatedImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)? = null,
         staticImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)? = null,
         shaderRewriter: ((String, () -> Unit) -> String)? = null,
-        shaderRewriterWithPath: ((String, String, () -> Unit) -> String)? = null,
+        shaderRewriterWithPath: ((String, String, () -> Unit) -> String?)? = null,
         resourceCheckpoint: ConversionResourceCheckpoint? = null,
     ): WorkshopConversionReport {
         val current =
@@ -202,7 +202,7 @@ object WorkshopConverter {
         staticImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)?,
         plan: ConversionPlan? = null,
         shaderRewriter: ((String, () -> Unit) -> String)? = null,
-        shaderRewriterWithPath: ((String, String, () -> Unit) -> String)? = null,
+        shaderRewriterWithPath: ((String, String, () -> Unit) -> String?)? = null,
         resourceCheckpoint: ConversionResourceCheckpoint? = null,
     ): WorkshopConversionReport {
         val projectFile = File(inputDir, "project.json")
