@@ -320,6 +320,27 @@ class ScenePackageResolutionTest {
     }
 
     @Test
+    fun knownXrayShaderAdapterInjectsPointerStateOnlyForMatchingStructure() {
+        val source = """
+            varying vec4 v_PointerUV;
+            varying float v_PointerScale;
+            void main() { vec2 unprojectedUVs = v_PointerUV.xy; unprojectedUVs += 0.5; }
+        """.trimIndent()
+        val rewritten = ShaderCompatibility.rewriteKnownOrConservative("effects/xray.frag", source)
+        assertTrue(rewritten.contains("uniform vec4 g_PointerState;"))
+        assertTrue(rewritten.contains("g_PointerState.y"))
+        assertEquals(rewritten, ShaderCompatibility.rewriteKnownOrConservative("effects/xray.frag", rewritten))
+    }
+
+    @Test
+    fun unknownShaderPathUsesConservativeRewriteWithoutXrayInjection() {
+        val source = "varying vec2 uv; void main() { vec2 x = uv * 2 + 1; }"
+        val rewritten = ShaderCompatibility.rewriteKnownOrConservative("effects/custom.frag", source)
+        assertFalse(rewritten.contains("g_PointerState"))
+        assertTrue(rewritten.contains("2.0"))
+    }
+
+    @Test
     fun shaderRewritePreservesCompleteDecimalAndScientificOperands() {
         val source =
             """
