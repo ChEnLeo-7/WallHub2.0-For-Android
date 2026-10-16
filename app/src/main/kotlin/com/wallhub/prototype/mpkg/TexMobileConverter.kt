@@ -1323,11 +1323,11 @@ object TexMobileConverter {
         flags: Int,
         width: Int,
         height: Int,
-        mipWidth: Int = width,
-        mipHeight: Int = height,
         unknown: Int,
         decompressedLength: Int,
         compressedLength: Int,
+        mipWidth: Int = width,
+        mipHeight: Int = height,
     ): ByteArray {
         val output = ByteArray(MOBILE_TEX_HEADER_SIZE)
         var offset = 0
