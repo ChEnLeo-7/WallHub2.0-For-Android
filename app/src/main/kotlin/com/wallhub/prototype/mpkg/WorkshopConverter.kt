@@ -66,6 +66,7 @@ object WorkshopConverter {
         animatedImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)? = null,
         staticImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)? = null,
         shaderRewriter: (String, () -> Unit) -> String = ShaderCompatibility::rewrite,
+        shaderRewriterWithPath: ((String, String, () -> Unit) -> String)? = null,
         resourceCheckpoint: ConversionResourceCheckpoint? = null,
     ): WorkshopConversionReport {
         val current =
@@ -200,6 +201,7 @@ object WorkshopConverter {
         staticImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)?,
         plan: ConversionPlan? = null,
         shaderRewriter: (String, () -> Unit) -> String = ShaderCompatibility::rewrite,
+        shaderRewriterWithPath: ((String, String, () -> Unit) -> String)? = null,
         resourceCheckpoint: ConversionResourceCheckpoint? = null,
     ): WorkshopConversionReport {
         val projectFile = File(inputDir, "project.json")
@@ -425,7 +427,8 @@ object WorkshopConverter {
                             checkCancellation()
                             val rewritten =
                                 try {
-                                    shaderRewriter(original, checkCancellation)
+                                    shaderRewriterWithPath?.invoke(entry.path, original, checkCancellation)
+                                        ?: ShaderCompatibility.rewriteKnownOrConservative(entry.path, original, checkCancellation)
                                 } catch (error: Exception) {
                                     if (error is CancellationException) throw error
                                     null
@@ -843,6 +846,42 @@ object WorkshopConverter {
 }
 
 object ShaderCompatibility {
+    fun rewriteKnownOrConservative(
+        path: String,
+        source: String,
+        checkCancellation: () -> Unit = {},
+    ): String {
+        checkCancellation()
+        val normalized = path.replace('\\', '/').lowercase(Locale.ROOT)
+        return if (
+            normalized.endsWith("effects/xray.vert") || normalized.endsWith("effects/xray.frag")
+        ) {
+            rewriteXray(source, checkCancellation)
+        } else {
+            rewrite(source, checkCancellation)
+        }
+    }
+
+    private fun rewriteXray(source: String, checkCancellation: () -> Unit): String {
+        if (source.contains("uniform vec4 g_PointerState;")) return rewrite(source, checkCancellation)
+        require(source.contains("v_PointerUV") && source.contains("v_PointerScale")) {
+            "Known xray shader structure signature did not match"
+        }
+        var output = rewrite(source, checkCancellation)
+        if (!output.contains("uniform vec4 g_PointerState;")) {
+            val marker = "varying float v_PointerScale;"
+            require(output.contains(marker)) { "Known xray shader injection point is missing" }
+            output = output.replaceFirst(marker, "$marker\nuniform vec4 g_PointerState;")
+        }
+        if (output.contains("unprojectedUVs += 0.5;") && !output.contains("g_PointerState.y")) {
+            output = output.replaceFirst(
+                "unprojectedUVs += 0.5;",
+                "unprojectedUVs *= CAST2(1.0 / max(0.00001, g_PointerState.y));\nunprojectedUVs += 0.5;",
+            )
+        }
+        return output
+    }
+
     private val sampleCountDeclaration = Regex("const int sampleCount = (\\d+);")
     private val sampleCountLoop = Regex("for \\(int i = 0; i < sampleCount; \\+\\+i\\)")
     private val textureCoordinateZero = Regex("(v_TexCoord\\.[zw] = )0;")
