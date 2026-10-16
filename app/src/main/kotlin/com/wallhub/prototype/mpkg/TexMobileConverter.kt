@@ -297,7 +297,15 @@ object TexMobileConverter {
                 val rgba = decodeImage(tempImage, metadata.imageWidth, metadata.imageHeight, checkCancellation)
                 checkCancellation()
                 require(rgba.size.toLong() == rgbaBytes) { "Decoded TEX payload size does not match metadata" }
-                writeMobileRgba(outputFile, metadata.flags, metadata.imageWidth, metadata.imageHeight, metadata.unknown, rgba)
+                val targetWidth = (metadata.imageWidth / textureReduction).coerceAtLeast(1)
+                val targetHeight = (metadata.imageHeight / textureReduction).coerceAtLeast(1)
+                val outputRgba =
+                    if (textureReduction == 1) {
+                        rgba
+                    } else {
+                        resizeRgbaAreaAverage(rgba, metadata.imageWidth, metadata.imageHeight, targetWidth, targetHeight)
+                    }
+                writeMobileRgba(outputFile, metadata.flags, targetWidth, targetHeight, metadata.unknown, outputRgba)
                 checkCancellation()
                 require(inspectEntryRoute(outputFile, 0L, outputFile.length()) == TexEntryRoute.RETAIN_VERIFIED_MOBILE) {
                     "Converted static TEX failed mobile verification"
@@ -446,6 +454,36 @@ object TexMobileConverter {
             if (error is CancellationException || error is IOException) throw error
             TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
         }
+
+    private fun resizeRgbaAreaAverage(
+        rgba: ByteArray,
+        sourceWidth: Int,
+        sourceHeight: Int,
+        targetWidth: Int,
+        targetHeight: Int,
+    ): ByteArray {
+        val output = ByteArray(checkedPayloadSize(targetWidth, targetHeight, 4))
+        for (y in 0 until targetHeight) {
+            val sourceTop = y * sourceHeight / targetHeight
+            val sourceBottom = ((y + 1L) * sourceHeight / targetHeight).toInt().coerceAtLeast(sourceTop + 1)
+            for (x in 0 until targetWidth) {
+                val sourceLeft = x * sourceWidth / targetWidth
+                val sourceRight = ((x + 1L) * sourceWidth / targetWidth).toInt().coerceAtLeast(sourceLeft + 1)
+                val count = (sourceRight - sourceLeft) * (sourceBottom - sourceTop)
+                val destination = (y * targetWidth + x) * 4
+                for (channel in 0 until 4) {
+                    var sum = 0
+                    for (sourceY in sourceTop until sourceBottom) {
+                        for (sourceX in sourceLeft until sourceRight) {
+                            sum += rgba[(sourceY * sourceWidth + sourceX) * 4 + channel].toInt() and 0xff
+                        }
+                    }
+                    output[destination + channel] = ((sum + count / 2) / count).toByte()
+                }
+            }
+        }
+        return output
+    }
 
     internal fun compatibilityTargetSize(width: Int, height: Int): Pair<Int, Int> {
         require(width > 0 && height > 0) { "Invalid TEX dimensions" }
