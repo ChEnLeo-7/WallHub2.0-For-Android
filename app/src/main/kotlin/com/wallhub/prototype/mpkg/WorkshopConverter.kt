@@ -93,6 +93,7 @@ object WorkshopConverter {
                 staticImageDecoder,
                 plan,
                 shaderRewriter,
+                shaderRewriterWithPath,
                 resourceCheckpoint,
             )
         val sourceAfterConversion = resolveScenePackage(inputDir, inputDir.resolve("project.json").let { file ->
