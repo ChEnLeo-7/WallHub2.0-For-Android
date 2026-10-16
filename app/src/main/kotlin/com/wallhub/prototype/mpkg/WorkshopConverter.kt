@@ -65,7 +65,7 @@ object WorkshopConverter {
         checkCancellation: () -> Unit = {},
         animatedImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)? = null,
         staticImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)? = null,
-        shaderRewriter: (String, () -> Unit) -> String = ShaderCompatibility::rewrite,
+        shaderRewriter: ((String, () -> Unit) -> String)? = null,
         shaderRewriterWithPath: ((String, String, () -> Unit) -> String)? = null,
         resourceCheckpoint: ConversionResourceCheckpoint? = null,
     ): WorkshopConversionReport {
@@ -201,7 +201,7 @@ object WorkshopConverter {
         animatedImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)?,
         staticImageDecoder: ((File, Int, Int, () -> Unit) -> ByteArray)?,
         plan: ConversionPlan? = null,
-        shaderRewriter: (String, () -> Unit) -> String = ShaderCompatibility::rewrite,
+        shaderRewriter: ((String, () -> Unit) -> String)? = null,
         shaderRewriterWithPath: ((String, String, () -> Unit) -> String)? = null,
         resourceCheckpoint: ConversionResourceCheckpoint? = null,
     ): WorkshopConversionReport {
@@ -429,6 +429,7 @@ object WorkshopConverter {
                             val rewritten =
                                 try {
                                     shaderRewriterWithPath?.invoke(entry.path, original, checkCancellation)
+                                        ?: shaderRewriter?.invoke(original, checkCancellation)
                                         ?: ShaderCompatibility.rewriteKnownOrConservative(entry.path, original, checkCancellation)
                                 } catch (error: Exception) {
                                     if (error is CancellationException) throw error
