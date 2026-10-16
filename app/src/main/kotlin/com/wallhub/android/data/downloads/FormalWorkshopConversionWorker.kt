@@ -472,7 +472,7 @@ internal class FormalWorkshopConversionWorker(
             sourceIdentity = "pkg:${sourceIdentity.packageLength}:${sourceIdentity.indexDigest}",
             presetId = presetId,
             preserveAudio = preserveAudio,
-            converterVersion = "v2",
+            converterVersion = "v3-official-texture-tiers",
         )
     }
 
