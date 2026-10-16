@@ -1598,10 +1598,11 @@ logical/physical dimension contract.
 
 The implementation also adds path-and-structure-gated Android shader handling, including the observed `g_PointerState`
 compatibility adapter for xray shaders; unknown shader/resources remain warning-complete rather than being silently rejected.
-Known visual TEX conversion failures are fatal instead of producing a known desktop-TEX gray/solid-color output. The authorized
-Windows build for the shader-test commit `c25def7` succeeded (`20261016T090407Z-943927971`); subsequent source-only metadata updates
-remain subject to the next authorized build. GitHub boundary CI for the preceding published implementation succeeded at
-`38873618430`. Physical Wallpaper Engine revalidation is pending because the authorized ADB device
+Known visual TEX conversion failures are fatal instead of producing a known desktop-TEX gray/solid-color output. Reduced RGBA
+effect textures now match the official header contract as well: original logical `image/texture` dimensions remain in the header
+while the only stored mip is 1/2 or 1/4 size. The authorized Windows build for commit `bdcddd2` succeeded
+(`20261016T133816Z-71627976`). GitHub boundary CI for the preceding published implementation succeeded at `38879448235`; this
+latest header correction remains subject to the next published CI run. Physical Wallpaper Engine revalidation is pending because the authorized ADB device
 `192.168.2.234:33445` is currently unreachable (`No route to host`).
 
 ## 2026-10-01 (37) - Quality convergence removes dual download authority in source
