@@ -12,7 +12,6 @@ import com.wallhub.android.core.model.WorkshopCommentPage
 import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopPage
 import com.wallhub.android.core.model.WorkshopVideoOpenRequest
-import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
@@ -73,7 +72,7 @@ class CommunityWorkshopRepositoryTest {
     }
 
     @Test
-    fun `CM batch fills only missing details from public fallback`() =
+    fun `CM batch returns only CM details without cross-source fallback`() =
         runBlocking {
             val cmDetail = CommunityWorkshopParser.parseDetails(PUBLIC_DETAIL_JSON).single()
             val repository =
@@ -85,42 +84,19 @@ class CommunityWorkshopRepositoryTest {
 
             val details = repository.getDetails(listOf(WORKSHOP_ID, SECOND_WORKSHOP_ID))
 
-            assertEquals(listOf(WORKSHOP_ID, SECOND_WORKSHOP_ID), details.map { it.summary.id })
+            assertEquals(listOf(WORKSHOP_ID), details.map { it.summary.id })
         }
 
     @Test
-    fun `CM null loads public detail`() =
-        runBlocking {
-            val repository = repositoryWithPublicResponse(200, PUBLIC_DETAIL_JSON)
-
-            val detail = repository.getDetail(WORKSHOP_ID)
-
-            assertEquals(WORKSHOP_ID, detail.summary.id)
-            assertEquals("Fallback item", detail.summary.title)
-        }
-
-    @Test
-    fun `CM fallback rejects an oversized public details response`() {
-        val repository = repositoryWithPublicResponse(200, "x".repeat(1024 * 1024 + 1))
+    fun `CM unavailable detail fails without calling another source`() {
+        val repository = repositoryWithPublicResponse(200, PUBLIC_DETAIL_JSON)
 
         val failure =
-            assertThrows(IllegalArgumentException::class.java) {
+            assertThrows(IllegalStateException::class.java) {
                 runBlocking { repository.getDetail(WORKSHOP_ID) }
             }
 
-        assertEquals("Steam manifest response exceeds 1048576 bytes", failure.message)
-    }
-
-    @Test
-    fun `CM null keeps public detail failure as an error`() {
-        val repository = repositoryWithPublicResponse(503, "temporarily unavailable")
-
-        val failure =
-            assertThrows(IOException::class.java) {
-                runBlocking { repository.getDetail(WORKSHOP_ID) }
-            }
-
-        assertEquals("Steam public details request failed: HTTP 503", failure.message)
+        assertEquals("Steam CM is temporarily unavailable; retry this item", failure.message)
     }
 
     private fun repositoryWithPublicResponse(

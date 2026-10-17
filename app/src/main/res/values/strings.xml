@@ -190,7 +190,8 @@
     <string name='settings_steam_route_unstable'>Route unstable; waiting to check again</string>
     <string name='settings_steam_no_route'>No route is currently available</string>
     <string name='settings_action_check_routes_again'>Check routes again</string>
-    <string name='settings_workshop_data_source_title'>Workshop data source</string>
+    <string name='settings_workshop_data_source_title'>Public Workshop data source</string>
+    <string name='settings_workshop_data_source_account_note'>Favorites, subscriptions, friend activity, and your library always use the signed-in Steam CM session.</string>
     <string name='settings_data_source'>Data source</string>
     <string name='settings_steam_community_html'>Steam Community HTML</string>
     <string name='settings_steam_web_api'>Steam Web API</string>

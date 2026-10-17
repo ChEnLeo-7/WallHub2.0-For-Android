@@ -309,7 +309,7 @@ internal class SteamContentSdkWorkshopRepository
                     if (publicCacheEpoch.get() == readEpoch) publicPageCache.put(normalized, loaded)
                     loaded
                 } else {
-                    publicPageCache.getStale(normalized)
+                    null
                 }
             }
 
@@ -453,7 +453,7 @@ internal class SteamContentSdkWorkshopRepository
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Throwable) {
-                    cacheKey?.let { accountPageCache.getStale(it) } ?: throw failure
+                    throw failure
                 }
             }
 

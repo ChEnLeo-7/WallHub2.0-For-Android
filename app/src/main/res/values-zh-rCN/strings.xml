@@ -178,7 +178,8 @@
     <string name='settings_steam_route_unstable'>线路不稳定，等待重新检测</string>
     <string name='settings_steam_no_route'>当前没有可用线路</string>
     <string name='settings_action_check_routes_again'>重新检测线路</string>
-    <string name='settings_workshop_data_source_title'>创意工坊数据源</string>
+    <string name='settings_workshop_data_source_title'>公开 Workshop 数据源</string>
+    <string name='settings_workshop_data_source_account_note'>收藏、订阅、好友动态和个人库始终使用已登录的 Steam CM 会话。</string>
     <string name='settings_data_source'>数据获取源</string>
     <string name='settings_steam_community_html'>Steam Community HTML</string>
     <string name='settings_steam_web_api'>Steam Web API</string>

@@ -267,6 +267,12 @@ internal fun SteamSettingsContent(
                 }
             }
         }
+        Text(
+            text = stringResource(R.string.settings_workshop_data_source_account_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xs),
+        )
     }
 }
 

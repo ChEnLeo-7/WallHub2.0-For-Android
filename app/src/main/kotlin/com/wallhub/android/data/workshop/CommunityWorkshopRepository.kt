@@ -159,11 +159,7 @@ class CommunityWorkshopRepository internal constructor(
                             CmPublicDetailOutcome.NotFound ->
                                 error("Steam did not return this Workshop item; it may be deleted or not publicly accessible")
                             CmPublicDetailOutcome.Unavailable ->
-                                // The current CM port is nullable and cannot distinguish a temporary/session
-                                // failure from authoritative not-found. Treat null as unavailable and verify
-                                // through Steam's public details endpoint rather than reporting a false miss.
-                                getPublishedFileDetails(listOf(workshopId)).firstOrNull()
-                                    ?: error("Steam did not return this Workshop item; it may be deleted or not publicly accessible")
+                                error("Steam CM is temporarily unavailable; retry this item")
                         }
                 }
             }
@@ -229,11 +225,10 @@ class CommunityWorkshopRepository internal constructor(
                         val cm = unifiedWorkshopRepository.getPublicDetails(ids)
                         val resolvedIds = cm.mapTo(mutableSetOf()) { it.summary.id }
                         val missing = ids.filterNot(resolvedIds::contains)
-                        if (missing.isEmpty()) {
-                            cm
-                        } else {
-                            cm + runCatching { getPublishedFileDetails(missing) }.getOrDefault(emptyList())
+                        if (missing.isNotEmpty()) {
+                            Log.w(TAG, "Steam CM batch returned partial details missing=${missing.size} ids=${missing.take(20)}")
                         }
+                        cm
                     }
                 }
             }
