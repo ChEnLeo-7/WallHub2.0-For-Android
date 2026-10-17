@@ -13,20 +13,23 @@ fun MpkgConversionPreset.policy(): ConversionPolicy =
         MpkgConversionPreset.COMPATIBILITY -> ConversionPolicy(stableId, textureReduction = 4, "official_high_performance")
         MpkgConversionPreset.BALANCED -> ConversionPolicy(stableId, textureReduction = 2, "official_better_performance")
         MpkgConversionPreset.HIGH_QUALITY -> ConversionPolicy(stableId, textureReduction = 1, "official_high_quality")
+        MpkgConversionPreset.EXTREME_QUALITY ->
+            ConversionPolicy(stableId, textureReduction = 1, "extreme_lossless_visuals", losslessVisuals = true)
     }
 
 data class ConversionPolicy(
     val presetId: String,
     val textureReduction: Int,
     val retentionNotice: String,
-    val version: Int = 3,
+    val losslessVisuals: Boolean = false,
+    val version: Int = 4,
 ) {
     init {
         require(textureReduction in setOf(1, 2, 4)) { "Unsupported official texture reduction: $textureReduction" }
     }
 
     fun stableDescription(): String =
-        "$presetId|v$version|static=$retentionNotice|unknown=passthrough_with_warning|texture_reduction=$textureReduction"
+        "$presetId|v$version|static=$retentionNotice|unknown=passthrough_with_warning|texture_reduction=$textureReduction|lossless_visuals=$losslessVisuals"
 }
 
 data class DeviceCapabilityProfile(
@@ -80,7 +83,7 @@ data class ConversionResourcePlan(
 }
 
 data class ConversionPlan(
-    val version: Int = 3,
+    val version: Int = 4,
     val presetId: String,
     val policyVersion: Int,
     val preserveAudio: Boolean = false,
@@ -89,8 +92,8 @@ data class ConversionPlan(
     val resources: List<ConversionResourcePlan>,
 ) {
     init {
-        require(version == 3) { "Unsupported conversion plan version: $version" }
-        require(policyVersion == 3) { "Unsupported conversion policy version: $policyVersion" }
+        require(version == 4) { "Unsupported conversion plan version: $version" }
+        require(policyVersion == 4) { "Unsupported conversion policy version: $policyVersion" }
         require(MpkgConversionPreset.fromStableId(presetId).stableId == presetId) { "Unknown conversion preset: $presetId" }
         val paths = HashSet<String>()
         resources.forEach { resource ->
@@ -414,6 +417,33 @@ internal object WorkshopConversionPlanner {
                 declaredSemantic != null -> declaredSemantic
                 else -> TextureSemantic.UNKNOWN
             }
+        if (policy.losslessVisuals && semantic == TextureSemantic.COLOR) {
+            if (decision.verifiedLosslessRgba) {
+                return ResourceStrategy.RETAIN_VERIFIED_MOBILE to "verified_lossless_rgba_retained"
+            }
+            if (
+                decision.route !in
+                    setOf(
+                        TexEntryRoute.CONVERT_IMAGE_TO_ETC2,
+                        TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA,
+                        TexEntryRoute.CONVERT_IN_MEMORY,
+                    )
+            ) {
+                return ResourceStrategy.REJECT to "extreme_quality_visual_not_provably_lossless"
+            }
+        }
+        if (policy.losslessVisuals && semantic == TextureSemantic.UNKNOWN && !decision.verifiedLosslessRgba) {
+            if (
+                decision.route !in
+                    setOf(
+                        TexEntryRoute.CONVERT_IMAGE_TO_ETC2,
+                        TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA,
+                        TexEntryRoute.CONVERT_IN_MEMORY,
+                    )
+            ) {
+                return ResourceStrategy.REJECT to "extreme_quality_unknown_visual_not_provably_lossless"
+            }
+        }
         if (semantic != TextureSemantic.COLOR) {
             return when {
                 decision.verifiedLosslessRgba -> ResourceStrategy.RETAIN_VERIFIED_MOBILE to "verified_lossless_rgba_retained"
@@ -445,6 +475,8 @@ internal object WorkshopConversionPlanner {
                 ResourceStrategy.RETAIN_VERIFIED_RUNTIME_DESKTOP to "verified_runtime_desktop_payload_retained"
             TexEntryRoute.CONVERT_IMAGE_TO_ETC2 ->
                 when {
+                    policy.losslessVisuals ->
+                        ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 to "extreme_lossless_visuals"
                     device.supportsEtc2 && policy.textureReduction > 1 ->
                         ResourceStrategy.DOWNSAMPLE_TO_ETC2 to "official_texture_reduction_${policy.textureReduction}x_etc2"
                     device.supportsEtc2 ->

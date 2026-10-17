@@ -141,7 +141,7 @@ data class AppPreferences(
     val matureContentEnabled: Boolean = false,
     val maxConcurrentDownloads: Int = DEFAULT_MAX_CONCURRENT_DOWNLOADS,
     val chunkDownloadConcurrency: Int = DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY,
-    val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
+    val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.HIGH_QUALITY,
     val preserveAudio: Boolean = false,
     val workshopSourceCacheEnabled: Boolean = true,
     val workshopSourceCacheBudgetGiB: Int = 5,

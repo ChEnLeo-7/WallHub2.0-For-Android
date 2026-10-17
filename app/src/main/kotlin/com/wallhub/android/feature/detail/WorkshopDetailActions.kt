@@ -277,7 +277,12 @@ internal fun DownloadChoiceSheet(
                 Text(
                     text = mpkgConversionPreset.estimatedPolicyPreview(),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color =
+                        if (mpkgConversionPreset == MpkgConversionPreset.EXTREME_QUALITY) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                 )
                 Row(
                     modifier =
@@ -373,6 +378,7 @@ internal fun MpkgConversionPreset.label(): String =
         MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard)
         MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility)
         MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality)
+        MpkgConversionPreset.EXTREME_QUALITY -> stringResource(R.string.mpkg_preset_extreme_quality)
     }
 
 @Composable
@@ -381,4 +387,5 @@ private fun MpkgConversionPreset.estimatedPolicyPreview(): String =
         MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard_preview)
         MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility_preview)
         MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality_preview)
+        MpkgConversionPreset.EXTREME_QUALITY -> stringResource(R.string.mpkg_preset_extreme_quality_preview)
     }

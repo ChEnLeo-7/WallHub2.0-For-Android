@@ -53,6 +53,25 @@ class WorkshopConverterExecutionFallbackTest {
     }
 
     @Test
+    fun `extreme quality decoder failure is fatal and never publishes a downgraded MPKG`() {
+        withScene(listOf("materials/effects/color.tex" to staticImageTex(2, 2))) { root ->
+            val plan = WorkshopConverter.plan(root, MpkgConversionPreset.EXTREME_QUALITY, DEVICE)
+            assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, plan.resources.single().strategy)
+            val output = root.resolve("extreme-failed.mpkg")
+
+            assertThrows(IllegalStateException::class.java) {
+                WorkshopConverter.execute(
+                    plan = plan,
+                    inputDir = root,
+                    outputFile = output,
+                    staticImageDecoder = { _, _, _, _ -> error("decoder detail") },
+                )
+            }
+            assertFalse(output.exists())
+        }
+    }
+
+    @Test
     fun `texture decoder IO failure remains fatal instead of becoming passthrough`() {
         withScene(listOf("materials/effects/color.tex" to staticImageTex(2, 2))) { root ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.HIGH_QUALITY, DEVICE)

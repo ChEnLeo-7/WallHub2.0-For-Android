@@ -41,6 +41,7 @@ enum class MpkgConversionPreset(
     BALANCED("balanced"),
     COMPATIBILITY("compatibility"),
     HIGH_QUALITY("high_quality"),
+    EXTREME_QUALITY("extreme_quality"),
     ;
 
     companion object {
@@ -61,7 +62,7 @@ data class DownloadRequest(
     val expectedTotalBytes: Long = 0L,
     val outputTreeUri: String? = null,
     val exportFormat: ExportFormat = ExportFormat.AUTO,
-    val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
+    val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.HIGH_QUALITY,
     val preserveAudio: Boolean = false,
 )
 
@@ -109,7 +110,7 @@ data class DownloadTask(
     val outputTreeUri: String? = null,
     val outputUri: String? = null,
     val exportFormat: ExportFormat = ExportFormat.AUTO,
-    val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
+    val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.HIGH_QUALITY,
     val preserveAudio: Boolean = false,
     val conversionPlanJson: String? = null,
     /** Report from the most recent attempt, successful or otherwise. */

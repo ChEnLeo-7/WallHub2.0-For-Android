@@ -355,4 +355,5 @@ private fun MpkgConversionPreset.label(): String =
         MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard)
         MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility)
         MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality)
+        MpkgConversionPreset.EXTREME_QUALITY -> stringResource(R.string.mpkg_preset_extreme_quality)
     }

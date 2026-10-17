@@ -25,7 +25,7 @@ class WorkshopDeclarativeMaterialPlanningTest {
     }
 
     @Test
-    fun `declared color follows all three official preset strategies`() {
+    fun `declared color follows official and extreme preset strategies`() {
         withScene(
             "materials/material.json" to """{"albedoTexture":"materials/plain.tex"}""".toByteArray(),
             "materials/plain.tex" to staticImageTex(2_048, 2_048),
@@ -38,6 +38,7 @@ class WorkshopDeclarativeMaterialPlanningTest {
             assertEquals(ResourceStrategy.DOWNSAMPLE_TO_ETC2, strategies[MpkgConversionPreset.COMPATIBILITY])
             assertEquals(ResourceStrategy.DOWNSAMPLE_TO_ETC2, strategies[MpkgConversionPreset.BALANCED])
             assertEquals(ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4, strategies[MpkgConversionPreset.HIGH_QUALITY])
+            assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, strategies[MpkgConversionPreset.EXTREME_QUALITY])
         }
     }
 

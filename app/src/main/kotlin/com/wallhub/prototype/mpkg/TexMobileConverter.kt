@@ -205,6 +205,7 @@ object TexMobileConverter {
         offset: Long,
         length: Long,
         outputFile: File,
+        maxDecodedRgbaBytes: Long = STANDARD_MAX_RGBA_BYTES,
         checkCancellation: () -> Unit = {},
         decodeImage: (File, Int, Int, () -> Unit) -> ByteArray = ::decodeImageFileToRgba,
     ): TexFileConversionResult =
@@ -220,7 +221,7 @@ object TexMobileConverter {
                 "TEX base mipmap does not match logical image dimensions"
             }
             val rgbaBytes = checkedPayloadSizeLong(metadata.imageWidth, metadata.imageHeight, 4)
-            require(rgbaBytes <= MAX_STATIC_RGBA_BYTES) { "Animated TEX exceeds the 64 MiB RGBA conversion limit" }
+            require(rgbaBytes <= maxDecodedRgbaBytes) { "Animated TEX exceeds the configured RGBA conversion limit" }
             require(metadata.payloadLength in 1..MAX_EMBEDDED_IMAGE_BYTES) { "Animated TEX image payload exceeds the bounded size" }
             val descriptor = readFileRange(sourceFile, metadata.animationTailStart, metadata.animationTailLength, checkCancellation)
             val tempImage = File(outputFile.parentFile, "${outputFile.name}.image")
@@ -274,7 +275,7 @@ object TexMobileConverter {
         decodeImage: (File, Int, Int, () -> Unit) -> ByteArray = ::decodeImageFileToRgba,
     ): TexFileConversionResult =
         runCatching {
-            require(maxDecodedRgbaBytes in 1..MAX_STATIC_RGBA_BYTES) { "Invalid static image RGBA limit" }
+            require(maxDecodedRgbaBytes in 1..MAX_ALLOWED_RGBA_BYTES) { "Invalid static image RGBA limit" }
             checkCancellation()
             val metadata = readTexEntryMetadata(sourceFile, offset, length)
             require(metadata.flags and (TEX_FLAG_GIF or TEX_FLAG_VIDEO) == 0 && !metadata.isMp4) {
@@ -865,7 +866,7 @@ object TexMobileConverter {
                     metadata.imageHeight != etc2BlockAligned(metadata.imageHeight),
             )
             require(metadata.payloadLength in 1..MAX_EMBEDDED_IMAGE_BYTES)
-            require(checkedPayloadSizeLong(metadata.imageWidth, metadata.imageHeight, 4) <= MAX_STATIC_RGBA_BYTES)
+            require(checkedPayloadSizeLong(metadata.imageWidth, metadata.imageHeight, 4) <= STANDARD_MAX_RGBA_BYTES)
             true
         }.getOrDefault(false)
 
@@ -951,7 +952,7 @@ object TexMobileConverter {
         runCatching {
             require(entryLength > 0L && maxHeapBytes > 0L)
             val rgbaBytes = checkedPayloadSizeLong(metadata.imageWidth, metadata.imageHeight, 4)
-            require(rgbaBytes <= MAX_STATIC_RGBA_BYTES)
+            require(rgbaBytes <= STANDARD_MAX_RGBA_BYTES)
             // Bitmap pixels, getPixels IntArray, RGBA ByteArray, LZ4 destination and compressor workspace
             // can coexist until the output write completes. Include the source entry because the converter's
             // caller may still own its package/index buffers while this operation runs.
@@ -1000,7 +1001,7 @@ object TexMobileConverter {
             require(entryBytes > 0L && storedBytes > 0L && decompressedBytes > 0L && maxHeapBytes > 0L)
             val textureRgba = checkedPayloadSizeLong(textureWidth, textureHeight, 4)
             val imageRgba = checkedPayloadSizeLong(imageWidth, imageHeight, 4)
-            require(imageRgba <= MAX_STATIC_RGBA_BYTES && decompressedBytes <= MAX_STATIC_DECOMPRESSED_BYTES)
+            require(imageRgba <= STANDARD_MAX_RGBA_BYTES && decompressedBytes <= MAX_STATIC_DECOMPRESSED_BYTES)
             val croppedRgba = if (textureWidth == imageWidth && textureHeight == imageHeight) 0L else imageRgba
             val decodedBytes = if (format == TEX_FORMAT_RGBA8888) 0L else textureRgba
             val parsePeak = checkedSum(entryBytes, storedBytes, decompressedBytes)
@@ -1222,8 +1223,8 @@ object TexMobileConverter {
         require(bounds.outWidth == width && bounds.outHeight == height) {
             "Embedded image dimensions do not match TEX metadata"
         }
-        require(checkedPayloadSizeLong(width, height, 4) <= MAX_STATIC_RGBA_BYTES) {
-            "Animated TEX exceeds the 64 MiB RGBA conversion limit"
+        require(checkedPayloadSizeLong(width, height, 4) <= STANDARD_MAX_RGBA_BYTES) {
+            "Animated TEX exceeds the 256 MiB RGBA conversion limit"
         }
         checkCancellation()
         val bitmap =
@@ -2021,7 +2022,7 @@ object TexMobileConverter {
         require(bounds.outWidth == targetWidth && bounds.outHeight == targetHeight) {
             "Image-backed TEX dimensions do not match metadata"
         }
-        require(checkedPayloadSize(bounds.outWidth, bounds.outHeight, 4).toLong() <= MAX_STATIC_RGBA_BYTES) {
+        require(checkedPayloadSize(bounds.outWidth, bounds.outHeight, 4).toLong() <= STANDARD_MAX_RGBA_BYTES) {
             "Image-backed TEX exceeds the static conversion limit"
         }
         val bitmap =
@@ -2397,7 +2398,8 @@ private val UNSAFE_TEXTURE_SEMANTIC_TOKENS = setOf("normal", "norm", "nrm", "mas
 private const val MAX_ETC2_PIXELS = 48L * 1024 * 1024
 private const val MAX_ETC2_TILE_WORKING_BYTES = 64L * 1024 * 1024
 private val CONVERTIBLE_STATIC_FORMATS = setOf(TEX_FORMAT_RGBA8888, TEX_FORMAT_DXT1, TEX_FORMAT_DXT3, TEX_FORMAT_DXT5, TEX_FORMAT_RG88, TEX_FORMAT_R8)
-private const val MAX_STATIC_RGBA_BYTES = 64L * 1024 * 1024
+private const val STANDARD_MAX_RGBA_BYTES = 64L * 1024 * 1024
+private const val MAX_ALLOWED_RGBA_BYTES = 256L * 1024 * 1024
 private const val MAX_STATIC_DECOMPRESSED_BYTES = 64L * 1024 * 1024
 // Encoded image bytes are copied between files in bounded buffers. Decoded memory is constrained
 // independently by MAX_IMAGE_DECODE_PIXELS and the heap admission checks above.

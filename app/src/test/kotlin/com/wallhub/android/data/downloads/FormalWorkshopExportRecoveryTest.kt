@@ -14,7 +14,9 @@ class FormalWorkshopExportRecoveryTest {
     fun `fatal conversion failures map to stable bounded reason codes`() {
         assertEquals("format_limit", classifyConversionFailure(MpkgFormatLimitException("private details")).reasonCode)
         assertEquals("physical_disk", classifyConversionFailure(MpkgInsufficientSpaceException("private details")).reasonCode)
-        assertEquals("format_limit", classifyConversionFailure(IllegalStateException("wrapper", MpkgFormatLimitException("detail"))).reasonCode)
+        val nested = classifyConversionFailure(IllegalStateException("wrapper", MpkgFormatLimitException("detail")))
+        assertEquals("format_limit", nested.reasonCode)
+        assertTrue(nested.fallbackMessage.contains("MpkgFormatLimitException: detail"))
     }
 
     @Test

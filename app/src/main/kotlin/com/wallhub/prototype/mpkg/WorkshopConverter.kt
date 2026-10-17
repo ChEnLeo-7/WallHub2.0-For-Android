@@ -52,7 +52,7 @@ object WorkshopConverter {
 
     fun plan(
         inputDir: File,
-        preset: MpkgConversionPreset = MpkgConversionPreset.BALANCED,
+        preset: MpkgConversionPreset = MpkgConversionPreset.HIGH_QUALITY,
         device: DeviceCapabilityProfile = DeviceCapabilityProfile(Runtime.getRuntime().maxMemory()),
         preserveAudio: Boolean = false,
     ): ConversionPlan = WorkshopConversionPlanner.plan(inputDir, preset, device, preserveAudio)
@@ -382,12 +382,27 @@ object WorkshopConverter {
                                             when (route) {
                                                 TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA ->
                                                     if (animatedImageDecoder == null) {
-                                                        TexMobileConverter.convertAnimatedImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, checkCancellation)
+                                                        TexMobileConverter.convertAnimatedImageToRgbaFile(
+                                                            sourceFile = scenePackage,
+                                                            offset = entry.offset,
+                                                            length = entry.length,
+                                                            outputFile = transformed,
+                                                            maxDecodedRgbaBytes = rgbaLimitForPreset(plan),
+                                                            checkCancellation = checkCancellation,
+                                                        )
                                                     } else {
-                                                        TexMobileConverter.convertAnimatedImageToRgbaFile(scenePackage, entry.offset, entry.length, transformed, checkCancellation, animatedImageDecoder)
+                                                        TexMobileConverter.convertAnimatedImageToRgbaFile(
+                                                            sourceFile = scenePackage,
+                                                            offset = entry.offset,
+                                                            length = entry.length,
+                                                            outputFile = transformed,
+                                                            maxDecodedRgbaBytes = rgbaLimitForPreset(plan),
+                                                            checkCancellation = checkCancellation,
+                                                            decodeImage = animatedImageDecoder,
+                                                        )
                                                     }
                                                 TexEntryRoute.CONVERT_IMAGE_TO_ETC2 -> {
-                                                    val limit = 64L * 1024L * 1024L
+                                                    val limit = rgbaLimitForPreset(plan)
                                                     if (staticImageDecoder == null) {
                                                         TexMobileConverter.convertImageToRgbaFile(
                                                             sourceFile = scenePackage,
@@ -424,6 +439,9 @@ object WorkshopConverter {
                                     convertedTextures += 1
                                     putEntry(MpkgInputEntry(entry.path, FilePayload(product)))
                                 } else {
+                                    if (MpkgConversionPreset.fromStableId(requireNotNull(plan).presetId).policy().losslessVisuals) {
+                                        error("Extreme quality texture conversion failed: ${entry.path}")
+                                    }
                                     fallbackToSource(entry, transformed, "texture_conversion_failed")
                                 }
                             }
@@ -1105,6 +1123,16 @@ object ShaderCompatibility {
 
 internal fun texConversionInputLimit(maxHeapBytes: Long = Runtime.getRuntime().maxMemory()): Long =
     (maxHeapBytes / TEX_CONVERSION_HEAP_DIVISOR).coerceIn(MIN_TEX_CONVERSION_INPUT_BYTES, MAX_TEX_CONVERSION_INPUT_BYTES)
+
+private const val WORKSHOP_STANDARD_MAX_RGBA_BYTES = 64L * 1024L * 1024L
+private const val EXTREME_MAX_RGBA_BYTES = 256L * 1024L * 1024L
+
+private fun rgbaLimitForPreset(plan: ConversionPlan?): Long =
+    if (plan != null && MpkgConversionPreset.fromStableId(plan.presetId).policy().losslessVisuals) {
+        EXTREME_MAX_RGBA_BYTES
+    } else {
+        WORKSHOP_STANDARD_MAX_RGBA_BYTES
+    }
 
 private const val TEX_CONVERSION_HEAP_DIVISOR = 24L
 private const val MIN_TEX_CONVERSION_INPUT_BYTES = 2L * 1024L * 1024L

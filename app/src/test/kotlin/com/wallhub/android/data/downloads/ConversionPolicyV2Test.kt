@@ -22,8 +22,8 @@ class ConversionPolicyV2Test {
         withScene("materials/number.am.tex", "not-a-recognized-tex-shape".toByteArray()) { root, source ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE)
 
-            assertEquals(3, plan.version)
-            assertEquals(3, plan.policyVersion)
+            assertEquals(4, plan.version)
+            assertEquals(4, plan.policyVersion)
             assertEquals(ResourceStrategy.PASSTHROUGH_WITH_WARNING, plan.resources.single().strategy)
             assertEquals("tex_passthrough_unknown_profile", plan.resources.single().reason)
 
@@ -51,7 +51,9 @@ class ConversionPolicyV2Test {
         assertEquals(4, MpkgConversionPreset.COMPATIBILITY.policy().textureReduction)
         assertEquals(2, MpkgConversionPreset.BALANCED.policy().textureReduction)
         assertEquals(1, MpkgConversionPreset.HIGH_QUALITY.policy().textureReduction)
-        assertEquals(3, MpkgConversionPreset.COMPATIBILITY.policy().version)
+        assertEquals(1, MpkgConversionPreset.EXTREME_QUALITY.policy().textureReduction)
+        assertTrue(MpkgConversionPreset.EXTREME_QUALITY.policy().losslessVisuals)
+        assertEquals(4, MpkgConversionPreset.COMPATIBILITY.policy().version)
     }
 
     @Test
@@ -65,6 +67,16 @@ class ConversionPolicyV2Test {
             assertEquals(ResourceStrategy.DOWNSAMPLE_TO_ETC2, strategies[MpkgConversionPreset.COMPATIBILITY])
             assertEquals(ResourceStrategy.DOWNSAMPLE_TO_ETC2, strategies[MpkgConversionPreset.BALANCED])
             assertEquals(ResourceStrategy.CONVERT_TO_ETC2_RGBA8_LZ4, strategies[MpkgConversionPreset.HIGH_QUALITY])
+            assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, strategies[MpkgConversionPreset.EXTREME_QUALITY])
+        }
+    }
+
+    @Test
+    fun `extreme quality rejects an unrecognized visual texture instead of warning passthrough`() {
+        withScene("materials/unknown.tex", "not-a-recognized-tex-shape".toByteArray()) { root, _ ->
+            val resource = WorkshopConverter.plan(root, MpkgConversionPreset.EXTREME_QUALITY, DEVICE).resources.single()
+            assertEquals(ResourceStrategy.REJECT, resource.strategy)
+            assertEquals("extreme_quality_visual_not_provably_lossless", resource.reason)
         }
     }
 
@@ -94,7 +106,7 @@ class ConversionPolicyV2Test {
     }
 
     @Test
-    fun `plan codec v3 preserves audio preference and equality`() {
+    fun `plan codec v4 preserves audio preference and equality`() {
         withScene("audio/theme.mp3", byteArrayOf(1, 2, 3)) { root, _ ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE, preserveAudio = true)
             val decoded = ConversionPlanJsonCodec.decode(ConversionPlanJsonCodec.encode(plan))
@@ -106,12 +118,12 @@ class ConversionPolicyV2Test {
     }
 
     @Test
-    fun `plan codec v3 rejects v2 JSON`() {
+    fun `plan codec v4 rejects v3 JSON`() {
         withScene("scripts/demo.txt", byteArrayOf(1, 2, 3)) { root, _ ->
             val encoded = ConversionPlanJsonCodec.encode(WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE))
-            val v2 = encoded.replaceFirst("\"version\":3", "\"version\":2")
+            val v3 = encoded.replaceFirst("\"version\":4", "\"version\":3")
 
-            assertThrows(IllegalArgumentException::class.java) { ConversionPlanJsonCodec.decode(v2) }
+            assertThrows(IllegalArgumentException::class.java) { ConversionPlanJsonCodec.decode(v3) }
         }
     }
 

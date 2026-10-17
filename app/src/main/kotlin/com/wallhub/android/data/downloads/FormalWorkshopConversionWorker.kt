@@ -472,7 +472,7 @@ internal class FormalWorkshopConversionWorker(
             sourceIdentity = "pkg:${sourceIdentity.packageLength}:${sourceIdentity.indexDigest}",
             presetId = presetId,
             preserveAudio = preserveAudio,
-            converterVersion = "v3-official-texture-tiers",
+            converterVersion = "v4-extreme-lossless-visuals",
         )
     }
 
@@ -619,7 +619,7 @@ internal class FormalWorkshopConversionWorker(
         task: FormalTaskRecordEntity,
         failure: ConversionFailure,
     ): Result {
-        val attemptReport = conversionAttemptReport("failed", failure.reasonCode)
+        val attemptReport = conversionAttemptReport("failed", failure.reasonCode, failure.fallbackMessage)
         check(taskDao.persistConversionReport(task.taskId, task.conversionAttempt, attemptReport) == 1) {
             "Conversion attempt changed before its failure report could be persisted"
         }
@@ -638,11 +638,13 @@ internal class FormalWorkshopConversionWorker(
     private fun conversionAttemptReport(
         result: String,
         reasonCode: String,
+        detail: String? = null,
     ): String =
         JSONObject()
-            .put("version", 1)
+            .put("version", 2)
             .put("result", result)
             .put("reasonCode", reasonCode)
+            .apply { detail?.takeIf(String::isNotBlank)?.let { put("detail", it.take(MAX_FAILURE_DETAIL_LENGTH)) } }
             .toString()
 
     private fun stableFailureCode(message: String): String =
@@ -793,6 +795,7 @@ internal class FormalWorkshopConversionWorker(
         private const val DOWNLOADS_DEEP_LINK = "wallhub://downloads"
         private const val COPY_BUFFER_SIZE = 1024 * 1024
         private const val MAX_OUTPUT_TITLE_LENGTH = 72
+        private const val MAX_FAILURE_DETAIL_LENGTH = 4_000
     }
 }
 
@@ -815,7 +818,12 @@ internal fun classifyConversionFailure(error: Throwable): ConversionFailure {
             } -> "project_invalid"
             else -> "conversion_failed"
         }
-    return ConversionFailure(reasonCode, reasonCode)
+    val detail =
+        causes.joinToString(separator = " ← ") { throwable ->
+            val type = throwable.javaClass.simpleName.ifBlank { "ConversionError" }
+            throwable.message?.takeIf(String::isNotBlank)?.let { "$type: $it" } ?: type
+        }
+    return ConversionFailure(reasonCode, detail)
 }
 
 internal fun conversionFailureMessage(

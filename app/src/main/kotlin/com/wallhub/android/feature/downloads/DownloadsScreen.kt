@@ -61,6 +61,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -126,6 +128,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import org.uwuaosp.compose.settingslib.SettingsToolbarActionButton
 import javax.inject.Inject
 import androidx.compose.material.icons.Icons
@@ -866,7 +869,9 @@ private fun DownloadTaskCard(
         task.successfulConversionReportJson?.let(ConversionReportJsonCodec::decodeSummary)
     }
     val warningReport = conversionSummary?.takeIf { it.warningTotal > 0 }
+    val failureDetail = remember(task.conversionReportJson) { task.conversionReportJson.decodeConversionFailureDetail() }
     var showWarningDetails by remember(task.id) { mutableStateOf(false) }
+    var showFailureDetails by remember(task.id) { mutableStateOf(false) }
     var showReconversion by remember(task.id) { mutableStateOf(false) }
     if (showReconversion) {
         ReconvertSheet(
@@ -885,14 +890,24 @@ private fun DownloadTaskCard(
             onDismiss = { showWarningDetails = false },
         )
     }
+    if (showFailureDetails && failureDetail != null) {
+        ConversionFailureSheet(
+            detail = failureDetail,
+            onDismiss = { showFailureDetails = false },
+        )
+    }
     Surface(
         modifier =
             modifier
                 .fillMaxWidth()
                 .clickable(
-                    enabled = task.status == DownloadStatus.COMPLETED,
+                    enabled = task.status == DownloadStatus.COMPLETED || failureDetail != null,
                     onClick = {
-                        if (warningReport == null) onOpenDetail() else showWarningDetails = true
+                        when {
+                            failureDetail != null -> showFailureDetails = true
+                            warningReport != null -> showWarningDetails = true
+                            else -> onOpenDetail()
+                        }
                     },
                 ),
         shape = MaterialTheme.shapes.medium,
@@ -1111,6 +1126,13 @@ private fun ReconvertSheet(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+            if (preset == MpkgConversionPreset.EXTREME_QUALITY) {
+                Text(
+                    text = stringResource(R.string.mpkg_preset_extreme_quality_preview),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1194,6 +1216,49 @@ private fun ConversionWarningSheet(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ConversionFailureSheet(
+    detail: String,
+    onDismiss: () -> Unit,
+) {
+    val clipboard = LocalClipboardManager.current
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+        ) {
+            Text(stringResource(R.string.downloads_conversion_failure_title), style = MaterialTheme.typography.titleLarge)
+            Text(
+                stringResource(R.string.downloads_conversion_failure_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(detail, style = MaterialTheme.typography.bodySmall)
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { clipboard.setText(AnnotatedString(detail)) },
+            ) {
+                Text(stringResource(R.string.downloads_conversion_failure_copy))
+            }
+        }
+    }
+}
+
+internal fun String?.decodeConversionFailureDetail(): String? =
+    this?.let { payload ->
+        runCatching {
+            JSONObject(payload)
+                .takeIf { it.optString("result") == "failed" }
+                ?.optString("detail")
+                ?.takeIf(String::isNotBlank)
+        }.getOrNull()
+    }
 
 @Composable
 private fun DownloadCompactIconButton(
@@ -1348,6 +1413,7 @@ private fun MpkgConversionPreset.downloadQualityLabel(): String =
         MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard)
         MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility)
         MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality)
+        MpkgConversionPreset.EXTREME_QUALITY -> stringResource(R.string.mpkg_preset_extreme_quality)
     }
 
 internal fun DownloadTask.shouldShowConversionPresetLabel(): Boolean =

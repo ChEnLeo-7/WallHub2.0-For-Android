@@ -87,6 +87,7 @@ class RoomDownloadTaskRepositoryTest {
         assertEquals("balanced", MpkgConversionPreset.BALANCED.stableId)
         assertEquals("compatibility", MpkgConversionPreset.COMPATIBILITY.stableId)
         assertEquals("high_quality", MpkgConversionPreset.HIGH_QUALITY.stableId)
+        assertEquals("extreme_quality", MpkgConversionPreset.EXTREME_QUALITY.stableId)
         assertEquals(MpkgConversionPreset.HIGH_QUALITY, MpkgConversionPreset.fromStableId("source_fidelity"))
         assertEquals(MpkgConversionPreset.BALANCED, MpkgConversionPreset.fromStableId("future-mode"))
     }
