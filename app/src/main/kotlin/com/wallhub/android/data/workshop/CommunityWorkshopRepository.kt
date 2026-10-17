@@ -1,6 +1,7 @@
 package com.wallhub.android.data.workshop
 
 import android.net.Uri
+import android.util.Log
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.CmPublicDetailResult
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
@@ -225,7 +226,7 @@ class CommunityWorkshopRepository internal constructor(
                     SteamWorkshopDataSource.CM_WEBSOCKET -> {
                         val batch = unifiedWorkshopRepository.getPublicDetailsResult(ids)
                         if (batch.missingCount > 0) {
-                            Log.w(TAG, "Steam CM batch returned partial details missing=${batch.missingCount}")
+                            Log.w("WallHubWorkshop", "Steam CM batch returned partial details missing=${batch.missingCount}")
                         }
                         batch.available
                     }
