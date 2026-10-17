@@ -226,6 +226,10 @@ fun WorkshopDetailScreen(
                                 title = state.error.resolve(),
                                 actionLabel = stringResource(R.string.detail_retry),
                                 onAction = onRetry,
+                                secondaryActionLabel = stringResource(R.string.detail_copy_error_details),
+                                onSecondaryAction = {
+                                    onCopyText(state.error.resolve(), context.getString(R.string.detail_error_details_copied))
+                                },
                                 modifier =
                                     Modifier
                                         .fillMaxSize()

@@ -676,6 +676,8 @@
     <string name='detail_project_id'>Project ID</string>
     <string name='detail_project_id_copied'>Project ID copied: %1$d</string>
     <string name='detail_retry'>Retry</string>
+    <string name='detail_copy_error_details'>Copy error details</string>
+    <string name='detail_error_details_copied'>Error details copied</string>
     <string name='detail_reconnect'>Reconnect</string>
     <string name='detail_retry_loading_more_comments'>Retry loading more comments</string>
     <string name='detail_sending_steam_request'>Sending request to Steam…</string>
