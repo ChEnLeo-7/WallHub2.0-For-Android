@@ -50,9 +50,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -89,34 +86,8 @@ internal class SteamContentSdkWorkshopRepository
     ) : SteamUnifiedWorkshopRepository,
         AccountWorkshopRepository,
         SteamPlaytimeRepository {
-        /** Native handles remain single-lane, but foreground reads now jump queued background discovery work. */
-        private val mutex = Mutex()
-        private val reads =
-            SteamWorkshopReadCoordinator(
-                maxConcurrent = 1,
-                onTiming = { timing ->
-                    Log.i(
-                        TAG,
-                        "read kind=${timing.kind} priority=${timing.priority} outcome=${timing.outcome} " +
-                            "queueMs=${timing.queueMillis} runMs=${timing.runMillis}",
-                    )
-                },
-            )
-        private val recovery =
-            SteamSessionRequestRecovery(
-                object : RecoverableSteamSession {
-                    override fun generation(): SteamSessionGeneration? =
-                        engine.currentSessionGeneration()?.let(::SteamSessionGeneration)
-
-                    override fun isUsable(generation: SteamSessionGeneration): Boolean =
-                        engine.currentSessionGeneration() == generation.value &&
-                            engine.state() == io.steamcontent.sdk.SessionState.AUTHENTICATED
-
-                    override suspend fun reconnectIfCurrent(expected: SteamSessionGeneration): Boolean =
-                        engine.reconnectSessionIfCurrent(expected.value)
-                },
-            )
-        private val writes = SteamWorkshopWriteCoordinator(reads, recovery)
+        /** Public and account operations share this one native SDK lane and recovery authority. */
+        private val gateway = SteamWorkshopSdkGateway(engine)
         private val cache = SteamWorkshopCacheStore()
         private val personaCache by lazy {
             SteamPersonaCache(
@@ -153,7 +124,7 @@ internal class SteamContentSdkWorkshopRepository
                 if (cacheable) cache.publicPages.getFresh(normalized)?.let { return@withContext it }
                 val readEpoch = cache.publicEpoch.get()
                 val loaded = runCatchingUnavailable {
-                    awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, ::awaitSignedInSession)
+                    awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, gateway::awaitSignedInSession)
                     val creatorId = normalized.creatorId?.toLongOrNull()?.takeIf { it > 0L }
                     sdkRead(
                         key = publicWorkshopReadKey(readEpoch, "browse:$normalized"),
@@ -247,7 +218,7 @@ internal class SteamContentSdkWorkshopRepository
                 val ids = workshopIds.filter { it > 0L }.distinct()
                 if (ids.isEmpty()) return@withContext CmPublicDetailsBatch(emptyList())
                 runCatchingUnavailable {
-                    awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, ::awaitSignedInSession)
+                    awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, gateway::awaitSignedInSession)
                     val readEpoch = cache.publicEpoch.get()
                     val entries = ids.chunked(MAX_SDK_DETAILS_ITEMS).flatMap { batch ->
                         sdkRead(
@@ -366,8 +337,8 @@ internal class SteamContentSdkWorkshopRepository
                 val normalized = query.normalized()
                 var cacheKey: AccountPageCacheKey? = null
                 try {
-                    awaitWorkshopSession(WorkshopSessionAccess.AUTHENTICATED_ACCOUNT, ::awaitSignedInSession)
-                    val accountId = signedInAccountId() ?: error("No signed-in Steam account is available")
+                    awaitWorkshopSession(WorkshopSessionAccess.AUTHENTICATED_ACCOUNT, gateway::awaitSignedInSession)
+                    val accountId = gateway.signedInAccountId() ?: error("No signed-in Steam account is available")
                     val generation =
                         engine.currentSessionGeneration()
                             ?: error("No signed-in Steam session generation is available")
@@ -463,7 +434,11 @@ internal class SteamContentSdkWorkshopRepository
                     cache.detailInteractions.take(workshopId, generation)?.let { return@withContext it }
                 }
                 runCatchingUnavailable {
-                    mutex.withLock { readInteraction(workshopId) }
+                    sdkRead(
+                        key = "interaction:$workshopId",
+                        kind = WorkshopReadKind.INTERACTION,
+                        priority = WorkshopReadPriority.FOREGROUND,
+                    ) { readInteraction(workshopId) }
                 } ?: WorkshopInteraction()
             }
 
@@ -473,9 +448,9 @@ internal class SteamContentSdkWorkshopRepository
         ): WorkshopInteraction =
             withContext(Dispatchers.IO) {
                 val confirmed =
-                    writes.write(WorkshopReadKind.SET_SUBSCRIBED) {
-                        val accountId = signedInAccountId() ?: error("No signed-in Steam account is available")
-                        mutex.withLock { engine.setSubscribed(workshopId, accountId, subscribed) }
+                    gateway.write(WorkshopReadKind.SET_SUBSCRIBED) {
+                        val accountId = gateway.signedInAccountId() ?: error("No signed-in Steam account is available")
+                        engine.setSubscribed(workshopId, accountId, subscribed)
                     }
                 // The write is a mutation of the operator's own Steam state, so the line names the item, the
                 // direction asked for, and what the service confirmed - a refused write must not read as one.
@@ -498,9 +473,9 @@ internal class SteamContentSdkWorkshopRepository
         ): WorkshopInteraction =
             withContext(Dispatchers.IO) {
                 val confirmed =
-                    writes.write(WorkshopReadKind.SET_FAVORITED) {
-                        val accountId = signedInAccountId() ?: error("No signed-in Steam account is available")
-                        mutex.withLock { engine.setFavorited(workshopId, accountId, favorited) }
+                    gateway.write(WorkshopReadKind.SET_FAVORITED) {
+                        val accountId = gateway.signedInAccountId() ?: error("No signed-in Steam account is available")
+                        engine.setFavorited(workshopId, accountId, favorited)
                     }
                 Log.i(
                     TAG,
@@ -529,10 +504,8 @@ internal class SteamContentSdkWorkshopRepository
             text: String,
         ) = withContext(Dispatchers.IO) {
             val request = normalizeWorkshopCommentRequest(workshopId, ownerId, text)
-            writes.write(WorkshopReadKind.POST_COMMENT) {
-                mutex.withLock {
-                    engine.postComment(request.workshopId, request.ownerId.toLong(), request.text)
-                }
+            gateway.write(WorkshopReadKind.POST_COMMENT) {
+                engine.postComment(request.workshopId, request.ownerId.toLong(), request.text)
             }
             invalidateMutationCaches()
         }
@@ -895,38 +868,8 @@ internal class SteamContentSdkWorkshopRepository
             kind: WorkshopReadKind,
             priority: WorkshopReadPriority,
             operation: suspend () -> T,
-        ): T {
-            val generation = engine.currentSessionGeneration()?.toString() ?: "none"
-            return reads.read("session:$generation:$key", kind, priority) {
-                recovery.execute { mutex.withLock { operation() } }
-            }
-        }
+        ): T = gateway.read(key, kind, priority, operation)
 
-        /**
-         * The signed-in account id from the SDK session, or null when nobody is signed in.
-         *
-         * The session names the account it is authorized as (ADR 0034) and reports zero when no account is
-         * signed in, so a zero never reaches an account-scoped read: the caller reports the read unavailable
-         * instead. No stored token is parsed and no credential crosses this helper.
-         */
-        private fun signedInAccountId(): Long? =
-            runCatching { engine.currentSession()?.accountId() }.getOrNull()?.takeIf { it > 0L }
-
-        /**
-         * Waits, briefly, for the engine's own session to be signed in.
-         *
-         * The engine restores its session while a screen asks for its first page, and a workshop read that
-         * arrives before it is ready is refused *before it is sent* - a typed local refusal, not a wait, so the
-         * page it was serving reads as a failure and a screen that does not retry stays empty. This is the one
-         * bounded wait that turns that race into a page; it returns at once once the session answers.
-         */
-        private suspend fun awaitSignedInSession() {
-            if (signedInAccountId() != null) return
-            repeat(SESSION_READY_ATTEMPTS) {
-                delay(SESSION_READY_DELAY_MS)
-                if (signedInAccountId() != null) return
-            }
-        }
     }
 
 /**
@@ -1123,8 +1066,6 @@ private const val MAX_SDK_PROFILE_ACCOUNTS = 16
 private const val MAX_SDK_DETAILS_ITEMS = 16
 
 /** How long a workshop read waits for the engine's session to be signed in, and how often it looks. */
-private const val SESSION_READY_ATTEMPTS = 20
-private const val SESSION_READY_DELAY_MS = 250L
 
 private const val MAX_SDK_COMMENT_PAGE_SIZE = 50
 private const val MAX_SDK_PAGE_SIZE = 50
