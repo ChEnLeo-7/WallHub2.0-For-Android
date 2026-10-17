@@ -1,5 +1,9 @@
 package com.wallhub.android.data.steam
 
+import com.wallhub.android.core.model.FavoriteState
+import com.wallhub.android.core.model.SubscriptionState
+import com.wallhub.android.core.model.WorkshopInteraction
+import io.steamcontent.sdk.SteamContentEngine
 import io.steamcontent.sdk.WorkshopItemField
 import io.steamcontent.sdk.WorkshopPage
 import io.steamcontent.sdk.WorkshopResult
@@ -57,6 +61,26 @@ internal fun summaryFieldsOf(page: WorkshopPage, index: Int): SdkSummaryFields =
             }
         },
     )
+
+internal fun interactionOf(result: WorkshopResult): WorkshopInteraction =
+    WorkshopInteraction(
+        subscriptionState = subscriptionStateOf(result.field(WorkshopItemField.SUBSCRIBED)),
+        favoriteState = favoriteStateOf(result.field(WorkshopItemField.FAVOURITED)),
+    )
+
+private fun subscriptionStateOf(field: SteamContentEngine.WorkshopFieldValue): SubscriptionState =
+    when {
+        field.state != io.steamcontent.sdk.WorkshopField.VALUE -> SubscriptionState.UNKNOWN
+        field.value != 0L -> SubscriptionState.SUBSCRIBED
+        else -> SubscriptionState.NOT_SUBSCRIBED
+    }
+
+private fun favoriteStateOf(field: SteamContentEngine.WorkshopFieldValue): FavoriteState =
+    when {
+        field.state != io.steamcontent.sdk.WorkshopField.VALUE -> FavoriteState.UNKNOWN
+        field.value != 0L -> FavoriteState.FAVORITED
+        else -> FavoriteState.NOT_FAVORITED
+    }
 
 internal data class SdkPlayerProfile(
     val personaName: String,

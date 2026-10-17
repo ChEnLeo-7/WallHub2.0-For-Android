@@ -89,6 +89,7 @@ internal class SteamContentSdkWorkshopRepository
         /** Public and account operations share this one native SDK lane and recovery authority. */
         private val gateway = SteamWorkshopSdkGateway(engine)
         private val cache = SteamWorkshopCacheStore()
+        private val accountMutations = SteamWorkshopAccountMutations(engine, gateway, cache)
         private val personaCache by lazy {
             SteamPersonaCache(
                 loader = SteamPersonaLoader { accountIds ->
@@ -428,91 +429,16 @@ internal class SteamContentSdkWorkshopRepository
                 ?.let { personaCache.get(it)?.displayName }
 
         override suspend fun getInteraction(workshopId: Long): WorkshopInteraction =
-            withContext(Dispatchers.IO) {
-                val generation = engine.currentSessionGeneration()
-                if (generation != null) {
-                    cache.detailInteractions.take(workshopId, generation)?.let { return@withContext it }
-                }
-                runCatchingUnavailable {
-                    sdkRead(
-                        key = "interaction:$workshopId",
-                        kind = WorkshopReadKind.INTERACTION,
-                        priority = WorkshopReadPriority.FOREGROUND,
-                    ) { readInteraction(workshopId) }
-                } ?: WorkshopInteraction()
-            }
+            accountMutations.getInteraction(workshopId)
 
-        override suspend fun setSubscribed(
-            workshopId: Long,
-            subscribed: Boolean,
-        ): WorkshopInteraction =
-            withContext(Dispatchers.IO) {
-                val confirmed =
-                    gateway.write(WorkshopReadKind.SET_SUBSCRIBED) {
-                        val accountId = gateway.signedInAccountId() ?: error("No signed-in Steam account is available")
-                        engine.setSubscribed(workshopId, accountId, subscribed)
-                    }
-                // The write is a mutation of the operator's own Steam state, so the line names the item, the
-                // direction asked for, and what the service confirmed - a refused write must not read as one.
-                Log.i(
-                    TAG,
-                    "workshop subscribe write id=$workshopId ask=$subscribed confirmed=${confirmed.enabled}",
-                )
-                invalidateMutationCaches()
-                // The confirmed half is the SDK's own answer; the favourite half is not part of it and stays
-                // unknown rather than being guessed or re-read.
-                WorkshopInteraction(
-                    subscriptionState =
-                        if (confirmed.enabled) SubscriptionState.SUBSCRIBED else SubscriptionState.NOT_SUBSCRIBED,
-                )
-            }
+        override suspend fun setSubscribed(workshopId: Long, subscribed: Boolean): WorkshopInteraction =
+            accountMutations.setSubscribed(workshopId, subscribed)
 
-        override suspend fun setFavorited(
-            workshopId: Long,
-            favorited: Boolean,
-        ): WorkshopInteraction =
-            withContext(Dispatchers.IO) {
-                val confirmed =
-                    gateway.write(WorkshopReadKind.SET_FAVORITED) {
-                        val accountId = gateway.signedInAccountId() ?: error("No signed-in Steam account is available")
-                        engine.setFavorited(workshopId, accountId, favorited)
-                    }
-                Log.i(
-                    TAG,
-                    "workshop favorite write id=$workshopId ask=$favorited confirmed=${confirmed.enabled}",
-                )
-                invalidateMutationCaches()
-                // Mirror of the subscription case: the confirmed favourite is reported, the subscription half
-                // is not carried by this answer.
-                WorkshopInteraction(
-                    favoriteState =
-                        if (confirmed.enabled) FavoriteState.FAVORITED else FavoriteState.NOT_FAVORITED,
-                )
-            }
+        override suspend fun setFavorited(workshopId: Long, favorited: Boolean): WorkshopInteraction =
+            accountMutations.setFavorited(workshopId, favorited)
 
-        /**
-         * Writes one comment to an item's public thread (ADR 0033).
-         *
-         * The AAR's own second argument is the account that owns the thread - the contract's `ownerId`, which
-         * the caller already holds - while the write itself is authorized as the session's signed-in account;
-         * no acting-account number is sent. The app's comment rules stay caller errors, while SDK failures are
-         * recovered once when possible and otherwise propagate to the caller.
-         */
-        override suspend fun postComment(
-            workshopId: Long,
-            ownerId: String,
-            text: String,
-        ) = withContext(Dispatchers.IO) {
-            val request = normalizeWorkshopCommentRequest(workshopId, ownerId, text)
-            gateway.write(WorkshopReadKind.POST_COMMENT) {
-                engine.postComment(request.workshopId, request.ownerId.toLong(), request.text)
-            }
-            invalidateMutationCaches()
-        }
-
-        private suspend fun invalidateMutationCaches() {
-            cache.invalidateAfterMutation()
-        }
+        override suspend fun postComment(workshopId: Long, ownerId: String, text: String) =
+            accountMutations.postComment(workshopId, ownerId, text)
 
         // ------------------------------------------------------------------
         // SteamPlaytimeRepository
@@ -787,36 +713,6 @@ internal class SteamContentSdkWorkshopRepository
             }
         }
 
-        /** Maps interaction fields already present on a details result. */
-        private fun interactionOf(result: WorkshopResult): WorkshopInteraction =
-            WorkshopInteraction(
-                subscriptionState = subscriptionStateOf(result.field(WorkshopItemField.SUBSCRIBED)),
-                favoriteState = favoriteStateOf(result.field(WorkshopItemField.FAVOURITED)),
-            )
-
-        /** Reads both interaction halves once, or reports both as unknown. */
-        private fun readInteraction(workshopId: Long): WorkshopInteraction {
-            require(workshopId > 0L) { "Invalid Workshop item ID" }
-            return engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result ->
-                val interaction = interactionOf(result)
-                val subscribed = interaction.subscriptionState
-                val favorited = interaction.favoriteState
-                // The detail screen draws a hollow star for both "not favourited" and "the read did not
-                // answer", so a screen alone cannot say which. One line per read makes the two states - and
-                // the field states behind them - readable, and the ids are the public catalog numbers a
-                // reading already logs elsewhere.
-                Log.i(
-                    TAG,
-                    "workshop interaction id=$workshopId subscribed=$subscribed favorited=$favorited " +
-                        "subscribed-field=${result.field(WorkshopItemField.SUBSCRIBED).state} " +
-                        "subscribed-value=${result.field(WorkshopItemField.SUBSCRIBED).value} " +
-                        "favorited-field=${result.field(WorkshopItemField.FAVOURITED).state} " +
-                        "favorited-value=${result.field(WorkshopItemField.FAVOURITED).value}",
-                )
-                interaction
-            }
-        }
-
         // ------------------------------------------------------------------
         // Player profiles and account identity
         // ------------------------------------------------------------------
@@ -1023,22 +919,6 @@ private fun SteamContentEngine.WorkshopFieldValue.valueOrZero(): Long =
  */
 private fun SteamContentEngine.WorkshopFieldValue.epochSeconds(): Long? =
     (valueOrZero() / 1_000L).takeIf { it > 0L }
-
-/** The subscription half of an interaction: a present value is the answer, anything else stays unknown. */
-private fun subscriptionStateOf(field: SteamContentEngine.WorkshopFieldValue): SubscriptionState =
-    when {
-        field.state != WorkshopField.VALUE -> SubscriptionState.UNKNOWN
-        field.value != 0L -> SubscriptionState.SUBSCRIBED
-        else -> SubscriptionState.NOT_SUBSCRIBED
-    }
-
-/** The favourite half of an interaction, with the same present/absent reading. */
-private fun favoriteStateOf(field: SteamContentEngine.WorkshopFieldValue): FavoriteState =
-    when {
-        field.state != WorkshopField.VALUE -> FavoriteState.UNKNOWN
-        field.value != 0L -> FavoriteState.FAVORITED
-        else -> FavoriteState.NOT_FAVORITED
-    }
 
 /** The page count for a reported total, mirroring the kSteam page mapping's own ceiling. */
 private fun Int.toMaximumPage(pageSize: Int): Int {
