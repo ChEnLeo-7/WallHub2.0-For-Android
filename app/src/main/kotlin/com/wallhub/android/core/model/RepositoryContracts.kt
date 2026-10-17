@@ -270,6 +270,20 @@ interface WorkshopVideoStreamRepository {
     suspend fun clearCache(): Long = 0L
 }
 
+/** A typed public CM detail result; nullable APIs cannot distinguish these states. */
+sealed interface CmPublicDetailResult {
+    data class Available(val detail: WorkshopDetail) : CmPublicDetailResult
+    data object NotFound : CmPublicDetailResult
+    data class Unavailable(val reason: String? = null) : CmPublicDetailResult
+}
+
+data class CmPublicDetailsBatch(
+    val outcomes: List<Pair<Long, CmPublicDetailResult>>,
+) {
+    val available: List<WorkshopDetail> = outcomes.mapNotNull { (_, outcome) -> (outcome as? CmPublicDetailResult.Available)?.detail }
+    val missingCount: Int = outcomes.count { (_, outcome) -> outcome !is CmPublicDetailResult.Available }
+}
+
 /** Public Workshop data over signed-in or anonymous Steam Connection Manager sessions. */
 interface SteamUnifiedWorkshopRepository {
     /** Drops process-local list and persona data before a realtime Discover generation. */
@@ -280,8 +294,15 @@ interface SteamUnifiedWorkshopRepository {
 
     suspend fun getPublicDetail(workshopId: Long): WorkshopDetail?
 
+    suspend fun getPublicDetailResult(workshopId: Long): CmPublicDetailResult =
+        getPublicDetail(workshopId)?.let(CmPublicDetailResult::Available)
+            ?: CmPublicDetailResult.Unavailable("CM detail result unavailable")
+
     suspend fun getPublicDetails(workshopIds: List<Long>): List<WorkshopDetail> =
-        workshopIds.distinct().mapNotNull { getPublicDetail(it) }
+        getPublicDetailsResult(workshopIds).available
+
+    suspend fun getPublicDetailsResult(workshopIds: List<Long>): CmPublicDetailsBatch =
+        CmPublicDetailsBatch(workshopIds.distinct().map { id -> id to getPublicDetailResult(id) })
 
     /** Returns the ordered direct children of a Workshop collection, or null when CM is unavailable. */
     suspend fun getPublicCollectionChildren(collectionId: Long): List<Long>? = null

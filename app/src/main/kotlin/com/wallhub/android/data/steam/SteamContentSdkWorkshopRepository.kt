@@ -42,6 +42,7 @@ import io.steamcontent.sdk.WorkshopPage as SdkWorkshopPage
 import io.steamcontent.sdk.WorkshopPersonalList
 import io.steamcontent.sdk.WorkshopResult
 import io.steamcontent.sdk.WorkshopTextField
+import io.steamcontent.sdk.WorkshopDetailsStatus
 import io.steamcontent.sdk.WorkshopTrendWindow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -301,32 +302,55 @@ internal class SteamContentSdkWorkshopRepository
             }
 
         override suspend fun getPublicDetail(workshopId: Long): WorkshopDetail? =
-            withContext(Dispatchers.IO) { loadWorkshopDetail(workshopId) }
+            when (val result = getPublicDetailResult(workshopId)) {
+                is CmPublicDetailResult.Available -> result.detail
+                else -> null
+            }
 
-        override suspend fun getPublicDetails(workshopIds: List<Long>): List<WorkshopDetail> =
+        override suspend fun getPublicDetailResult(workshopId: Long): CmPublicDetailResult =
+            withContext(Dispatchers.IO) {
+                getPublicDetailsResult(listOf(workshopId)).outcomes.firstOrNull()?.second
+                    ?: CmPublicDetailResult.Unavailable("CM detail result unavailable")
+            }
+
+        override suspend fun getPublicDetailsResult(workshopIds: List<Long>): CmPublicDetailsBatch =
             withContext(Dispatchers.IO) {
                 val ids = workshopIds.filter { it > 0L }.distinct()
-                if (ids.isEmpty()) return@withContext emptyList()
+                if (ids.isEmpty()) return@withContext CmPublicDetailsBatch(emptyList())
                 runCatchingUnavailable {
                     awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, ::awaitSignedInSession)
                     val readEpoch = publicCacheEpoch.get()
-                    ids.chunked(MAX_SDK_DETAILS_ITEMS).flatMap { batch ->
+                    val entries = ids.chunked(MAX_SDK_DETAILS_ITEMS).flatMap { batch ->
                         sdkRead(
-                            key = publicWorkshopReadKey(readEpoch, "details:${batch.joinToString(",")}"),
+                            key = publicWorkshopReadKey(readEpoch, "typed-details:${batch.joinToString(",")}"),
                             kind = WorkshopReadKind.DETAILS,
-                            // Discover enrichment must not jump visible list searches in the single native lane.
-                            priority = WorkshopReadPriority.BACKGROUND,
-                        ) {
-                            val entries = engine.openWorkshopItems(batch.toLongArray(), WALLPAPER_ENGINE_APP_ID.toLong())
-                            try {
-                                entries.mapNotNull { entry -> entry.result?.let(::readWorkshopDetail) }
-                            } finally {
-                                entries.forEach { entry -> entry.result?.close() }
-                            }
-                        }
+                            priority = WorkshopReadPriority.FOREGROUND,
+                        ) { engine.openWorkshopItems(batch.toLongArray(), WALLPAPER_ENGINE_APP_ID.toLong()) }
                     }
-                }.orEmpty()
+                    try {
+                        CmPublicDetailsBatch(
+                            entries.map { entry ->
+                                entry.itemId to when {
+                                    entry.status == WorkshopDetailsStatus.NOT_FOUND -> CmPublicDetailResult.NotFound
+                                    entry.status == WorkshopDetailsStatus.OK && entry.result != null -> {
+                                        val detail = readWorkshopDetail(entry.result)
+                                        engine.currentSessionGeneration()?.let { generation ->
+                                            detailInteractionCache.remember(entry.itemId, generation, interactionOf(entry.result))
+                                        }
+                                        CmPublicDetailResult.Available(detail)
+                                    }
+                                    else -> CmPublicDetailResult.Unavailable("CM status=${entry.status} service=${entry.serviceResult}")
+                                }
+                            },
+                        )
+                    } finally {
+                        entries.forEach { it.result?.close() }
+                    }
+                } ?: CmPublicDetailsBatch(ids.map { it to CmPublicDetailResult.Unavailable("CM unavailable") })
             }
+
+        override suspend fun getPublicDetails(workshopIds: List<Long>): List<WorkshopDetail> =
+            getPublicDetailsResult(workshopIds).available
 
         /**
          * The ordered direct children of a collection (ADR 0033).
@@ -628,42 +652,6 @@ internal class SteamContentSdkWorkshopRepository
         // ------------------------------------------------------------------
         // Reads
         // ------------------------------------------------------------------
-
-        /**
-         * Resolves one item's detail, or null when the SDK cannot serve the read.
-         *
-         * The item is named on the failure line: the contract's null answer carries no reason, and the SDK's
-         * typed failure is logged with this id so a device reading can tell which item a refusal was about.
-         */
-        private suspend fun loadWorkshopDetail(workshopId: Long): WorkshopDetail? {
-            val readEpoch = publicCacheEpoch.get()
-            val detail =
-                runCatchingUnavailable {
-                    awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, ::awaitSignedInSession)
-                    require(workshopId > 0L) { "Invalid Workshop item ID" }
-                    sdkRead(
-                        key = publicWorkshopReadKey(readEpoch, "detail:$workshopId"),
-                        kind = WorkshopReadKind.DETAILS,
-                        priority = WorkshopReadPriority.FOREGROUND,
-                    ) {
-                        engine.openWorkshopItem(workshopId, WALLPAPER_ENGINE_APP_ID.toLong()).use { result ->
-                            val detail = readWorkshopDetail(result)
-                            engine.currentSessionGeneration()?.let { generation ->
-                                detailInteractionCache.remember(
-                                    workshopId = workshopId,
-                                    sessionGeneration = generation,
-                                    interaction = interactionOf(result),
-                                )
-                            }
-                            detail
-                        }
-                    }
-                }
-            if (detail == null) {
-                Log.w(TAG, "workshop detail unavailable id=$workshopId")
-            }
-            return detail
-        }
 
         /** Builds one detail from a resolved item, reading each field the app model needs once. */
         private fun readWorkshopDetail(result: WorkshopResult): WorkshopDetail {

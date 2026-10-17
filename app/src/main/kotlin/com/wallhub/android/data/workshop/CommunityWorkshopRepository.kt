@@ -2,6 +2,7 @@ package com.wallhub.android.data.workshop
 
 import android.net.Uri
 import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.core.model.CmPublicDetailResult
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
@@ -154,11 +155,11 @@ class CommunityWorkshopRepository internal constructor(
                     }
 
                     SteamWorkshopDataSource.CM_WEBSOCKET ->
-                        when (val outcome = getCmPublicDetail(workshopId)) {
-                            is CmPublicDetailOutcome.Available -> outcome.detail
-                            CmPublicDetailOutcome.NotFound ->
-                                error("Steam did not return this Workshop item; it may be deleted or not publicly accessible")
-                            CmPublicDetailOutcome.Unavailable ->
+                        when (val outcome = unifiedWorkshopRepository.getPublicDetailResult(workshopId)) {
+                            is CmPublicDetailResult.Available -> outcome.detail
+                            CmPublicDetailResult.NotFound ->
+                                error("Steam CM reports this Workshop item was not found or is not publicly accessible")
+                            is CmPublicDetailResult.Unavailable ->
                                 error("Steam CM is temporarily unavailable; retry this item")
                         }
                 }
@@ -222,33 +223,14 @@ class CommunityWorkshopRepository internal constructor(
                     SteamWorkshopDataSource.COMMUNITY_HTML -> getPublishedFileDetails(ids)
                     SteamWorkshopDataSource.WEB_API -> getPublishedFileDetails(ids, steamApiKey).map { enrichDetailAuthor(it, steamApiKey) }
                     SteamWorkshopDataSource.CM_WEBSOCKET -> {
-                        val cm = unifiedWorkshopRepository.getPublicDetails(ids)
-                        val resolvedIds = cm.mapTo(mutableSetOf()) { it.summary.id }
-                        val missing = ids.filterNot(resolvedIds::contains)
-                        if (missing.isNotEmpty()) {
-                            Log.w(TAG, "Steam CM batch returned partial details missing=${missing.size} ids=${missing.take(20)}")
+                        val batch = unifiedWorkshopRepository.getPublicDetailsResult(ids)
+                        if (batch.missingCount > 0) {
+                            Log.w(TAG, "Steam CM batch returned partial details missing=${batch.missingCount}")
                         }
-                        cm
+                        batch.available
                     }
                 }
             }
-
-        private suspend fun getCmPublicDetail(workshopId: Long): CmPublicDetailOutcome =
-            unifiedWorkshopRepository
-                .getPublicDetail(workshopId)
-                ?.let(CmPublicDetailOutcome::Available)
-                ?: CmPublicDetailOutcome.Unavailable
-
-        private sealed interface CmPublicDetailOutcome {
-            data class Available(
-                val detail: WorkshopDetail,
-            ) : CmPublicDetailOutcome
-
-            /** Reserved for a future CM port that can report an authoritative missing item. */
-            data object NotFound : CmPublicDetailOutcome
-
-            data object Unavailable : CmPublicDetailOutcome
-        }
 
         private suspend fun resolveWorkshopOwnerId(
             workshopId: Long,
