@@ -41,14 +41,12 @@ import io.steamcontent.sdk.WorkshopContentType
 import io.steamcontent.sdk.WorkshopField
 import io.steamcontent.sdk.WorkshopItemField
 import io.steamcontent.sdk.WorkshopPage as SdkWorkshopPage
-import io.steamcontent.sdk.WorkshopPersonalList
 import io.steamcontent.sdk.WorkshopResult
 import io.steamcontent.sdk.WorkshopTextField
 import io.steamcontent.sdk.WorkshopDetailsStatus
 import io.steamcontent.sdk.WorkshopTrendWindow
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -90,6 +88,10 @@ internal class SteamContentSdkWorkshopRepository
         private val gateway = SteamWorkshopSdkGateway(engine)
         private val cache = SteamWorkshopCacheStore()
         private val accountMutations = SteamWorkshopAccountMutations(engine, gateway, cache)
+        private val accountReader =
+            SteamWorkshopAccountReader(engine, gateway, cache) { page, requestedPage, collection ->
+                readWorkshopPage(page, requestedPage, collection)
+            }
         private val personaCache by lazy {
             SteamPersonaCache(
                 loader = SteamPersonaLoader { accountIds ->
@@ -334,68 +336,7 @@ internal class SteamContentSdkWorkshopRepository
         // ------------------------------------------------------------------
 
         override suspend fun browseCollection(query: AccountWorkshopQuery): WorkshopPage =
-            withContext(Dispatchers.IO) {
-                val normalized = query.normalized()
-                var cacheKey: AccountPageCacheKey? = null
-                try {
-                    awaitWorkshopSession(WorkshopSessionAccess.AUTHENTICATED_ACCOUNT, gateway::awaitSignedInSession)
-                    val accountId = gateway.signedInAccountId() ?: error("No signed-in Steam account is available")
-                    val generation =
-                        engine.currentSessionGeneration()
-                            ?: error("No signed-in Steam session generation is available")
-                    cacheKey = AccountPageCacheKey(accountId, generation, normalized)
-                    cache.accountPages.getFresh(checkNotNull(cacheKey))?.let { return@withContext it }
-                val readEpoch = cache.accountEpoch.get()
-                val list = normalized.collection.sdkPersonalList()
-                val loaded = if (!normalized.hasInteractiveFilters()) {
-                    val source =
-                        loadPersonalCollectionPage(accountId, generation, list, normalized, normalized.page, normalized.pageSize)
-                    source.copy(items = source.items.filter(normalized::matchesAccountCollectionItem))
-                } else {
-                    cache.accountPager.page(
-                        scope = AccountCollectionScope(accountId, generation),
-                        query = normalized,
-                    ) { sourcePage, sourcePageSize ->
-                        loadPersonalCollectionPage(accountId, generation, list, normalized, sourcePage, sourcePageSize)
-                    }
-                }
-                    if (cache.accountEpoch.get() == readEpoch) {
-                        cache.accountPages.put(checkNotNull(cacheKey), loaded)
-                    }
-                    loaded
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (failure: Throwable) {
-                    throw failure
-                }
-            }
-
-        /** One personal-list operation; SDK unavailability remains a failure for Library retry/UI. */
-        private suspend fun loadPersonalCollectionPage(
-            accountId: Long,
-            sessionGeneration: Long,
-            list: Int,
-            query: AccountWorkshopQuery,
-            sourcePage: Int,
-            sourcePageSize: Int,
-        ): WorkshopPage =
-            sdkRead(
-                key = "account:$accountId:$sessionGeneration:${query.collection}:$sourcePage:$sourcePageSize",
-                kind = WorkshopReadKind.ACCOUNT_COLLECTION,
-                priority = WorkshopReadPriority.FOREGROUND,
-            ) {
-                val page =
-                    engine.workshopPersonalItems(
-                        accountId = accountId,
-                        list = list,
-                        pageSize = sourcePageSize,
-                        pageOffset = pageOffsetOf(sourcePage, sourcePageSize),
-                        // A personal read is answered within one App's Workshop: without the scope the
-                        // service omits each row's own tags and file type.
-                        appId = WALLPAPER_ENGINE_APP_ID.toLong(),
-                    )
-                page.use { readWorkshopPage(it, sourcePage, query.collection) }
-            }
+            accountReader.browseCollection(query)
 
         /**
          * Resolves the creator's public display name through the player family (ADR 0032).
@@ -896,16 +837,6 @@ private fun List<String>.toWorkshopType(): WorkshopType =
 /** Maps the SDK's content-type ordinal onto the app's type. Only the video ordinal names one. */
 private fun Long.toWorkshopType(): WorkshopType =
     if (this == WorkshopContentType.VIDEO.toLong()) WorkshopType.VIDEO else WorkshopType.UNKNOWN
-
-/** Maps the app's collection onto the SDK's personal list, one to one. */
-private fun AccountWorkshopCollection.sdkPersonalList(): Int =
-    when (this) {
-        AccountWorkshopCollection.SUBSCRIPTIONS -> WorkshopPersonalList.SUBSCRIBED
-        AccountWorkshopCollection.FAVORITES -> WorkshopPersonalList.FAVORITED
-        // The SDK's ordinal is sent as `type = "myvotes"`, which is the selector kSteam used for this same
-        // collection, so the two paths ask the service the same question.
-        AccountWorkshopCollection.VOTED -> WorkshopPersonalList.VOTED
-    }
 
 /** A field's number, or zero when the provider could not answer it. */
 private fun SteamContentEngine.WorkshopFieldValue.valueOrZero(): Long =
