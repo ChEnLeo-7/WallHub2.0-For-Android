@@ -33,6 +33,7 @@ fun WorkshopDetailRoute(
     onSearchTag: (String) -> Unit = {},
     onOpenLocalVideo: (String) -> Unit = {},
     onOpenDownloads: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     viewModel: WorkshopDetailViewModel =
         androidx.hilt.navigation.compose
             .hiltViewModel(),
@@ -105,6 +106,7 @@ fun WorkshopDetailRoute(
             viewModel.onAction(WorkshopDetailAction.OpenSteam(workshopId))
         },
         onOpenDownloads = { leaveDetail(onOpenDownloads) },
+        onOpenSettings = { leaveDetail(onOpenSettings) },
     )
 }
 

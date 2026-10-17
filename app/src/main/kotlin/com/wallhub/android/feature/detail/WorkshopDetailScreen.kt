@@ -123,6 +123,7 @@ fun WorkshopDetailScreen(
     onCopyText: (String, String) -> Unit,
     onOpenSteam: (Long) -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val selectedSummary = state.detail?.summary
     val unknown = stringResource(R.string.detail_unknown)
@@ -231,6 +232,8 @@ fun WorkshopDetailScreen(
                                 onSecondaryAction = {
                                     onCopyText(resolvedError, context.getString(R.string.detail_error_details_copied))
                                 },
+                                tertiaryActionLabel = stringResource(R.string.detail_open_data_source_settings),
+                                onTertiaryAction = onOpenSettings,
                                 modifier =
                                     Modifier
                                         .fillMaxSize()

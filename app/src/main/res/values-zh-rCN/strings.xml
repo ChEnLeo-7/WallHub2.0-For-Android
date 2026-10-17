@@ -651,6 +651,7 @@
     <string name='detail_retry'>重试</string>
     <string name='detail_copy_error_details'>复制错误详情</string>
     <string name='detail_error_details_copied'>错误详情已复制</string>
+    <string name='detail_open_data_source_settings'>前往数据源设置</string>
     <string name='detail_reconnect'>重连</string>
     <string name='detail_retry_loading_more_comments'>重试加载更多评论</string>
     <string name='detail_sending_steam_request'>正在向 Steam 提交请求…</string>

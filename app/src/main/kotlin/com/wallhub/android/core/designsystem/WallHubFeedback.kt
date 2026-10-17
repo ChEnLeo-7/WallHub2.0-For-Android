@@ -50,6 +50,8 @@ fun WallHubEmptyState(
     onAction: (() -> Unit)? = null,
     secondaryActionLabel: String? = null,
     onSecondaryAction: (() -> Unit)? = null,
+    tertiaryActionLabel: String? = null,
+    onTertiaryAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -69,6 +71,9 @@ fun WallHubEmptyState(
         }
         if (secondaryActionLabel != null && onSecondaryAction != null) {
             TextButton(onClick = onSecondaryAction) { Text(secondaryActionLabel) }
+        }
+        if (tertiaryActionLabel != null && onTertiaryAction != null) {
+            TextButton(onClick = onTertiaryAction) { Text(tertiaryActionLabel) }
         }
     }
 }

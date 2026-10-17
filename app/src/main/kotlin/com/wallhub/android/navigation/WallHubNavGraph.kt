@@ -221,6 +221,7 @@ internal fun WallHubNavHost(
                 onSearchTag = navigateToTagSearch,
                 onOpenLocalVideo = { navController.navigate(LocalVideoPlayerDestination(it)) },
                 onOpenDownloads = openDownloads,
+                onOpenSettings = { navController.navigate(SettingsDestination) },
             )
         }
         composable<LocalVideoPlayerDestination> { LocalVideoPlayerRoute(onBack = { navController.popBackStack() }) }
