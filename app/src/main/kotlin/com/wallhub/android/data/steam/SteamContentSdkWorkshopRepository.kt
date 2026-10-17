@@ -56,64 +56,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
- * One Workshop summary row as the SDK reports it: a field number per ordinal, in a fixed slot order.
- *
- * The slots exist because the SDK reads a page item one field at a time while a details handle reads the same
- * rows through a different entry point; both then build the app model through one mapping. Every ordinal in
- * [ORDINALS] is one the SDK answers on a page row *and* on a details result, which is why `VIEWS` and
- * `FILE_SIZE` are here and the interaction rows are not.
- */
-private class SdkSummaryFields(
-    private val numbers: LongArray,
-) {
-    /** The number at one ordinal slot. */
-    fun at(slot: Int): Long = numbers[slot]
-
-    /** The author's account id, or null when the row reported none. */
-    fun authorIdOrNull(): Long? = at(AUTHOR).takeIf { it > 0L }
-
-    /** How many tag strings the row states, clamped to the bound this adapter copies. */
-    fun tagCount(): Int = at(TAG_COUNT).coerceIn(0L, MAX_SDK_ITEM_TAGS.toLong()).toInt()
-
-    companion object {
-        const val ITEM = 0
-        const val AUTHOR = 1
-        const val CONTENT_TYPE = 2
-        const val SUBSCRIPTIONS = 3
-        const val FAVOURITES = 4
-        const val TAG_COUNT = 5
-        const val VIEWS = 6
-        const val FILE_SIZE = 7
-
-        /** The summary rows a resolved item and a page row can both answer. */
-        val ORDINALS: IntArray =
-            intArrayOf(
-                WorkshopItemField.ITEM,
-                WorkshopItemField.AUTHOR,
-                WorkshopItemField.CONTENT_TYPE,
-                WorkshopItemField.SUBSCRIPTIONS,
-                WorkshopItemField.FAVOURITES,
-                WorkshopItemField.TAG_COUNT,
-                WorkshopItemField.VIEWS,
-                WorkshopItemField.FILE_SIZE,
-            )
-    }
-}
-
-/** One resolved Steam profile as the player family reports it, after the avatar URL is built app-side. */
-private data class SdkPlayerProfile(
-    val personaName: String,
-    val avatarUrl: String?,
-)
-
-/** One comment row as the page reports it, before the persona read decorates it. */
-private data class SdkCommentRow(
-    val text: String,
-    val authorId: Long?,
-    val createdAt: Long?,
-)
-
-/**
  * The Steam Content SDK as this app's public and account Workshop reader.
  *
  * It serves the contracts [SteamUnifiedWorkshopRepository], [AccountWorkshopRepository], and
@@ -680,29 +622,6 @@ internal class SteamContentSdkWorkshopRepository
             val count = result.childCount()
             return (0 until count).map { index -> result.child(index) }.filter { it > 0L }
         }
-
-        /** Reads the summary rows a resolved item reports. */
-        private fun summaryFieldsOf(result: WorkshopResult): SdkSummaryFields =
-            SdkSummaryFields(
-                LongArray(SdkSummaryFields.ORDINALS.size).also { values ->
-                    SdkSummaryFields.ORDINALS.forEachIndexed { slot, ordinal ->
-                        values[slot] = result.field(ordinal).value
-                    }
-                }
-            )
-
-        /** Reads the summary rows of one page row. */
-        private fun summaryFieldsOf(
-            page: SdkWorkshopPage,
-            index: Int,
-        ): SdkSummaryFields =
-            SdkSummaryFields(
-                LongArray(SdkSummaryFields.ORDINALS.size).also { values ->
-                    SdkSummaryFields.ORDINALS.forEachIndexed { slot, ordinal ->
-                        values[slot] = page.field(index, ordinal).value
-                    }
-                }
-            )
 
         /** Builds the app summary of one page row, closing over the page it reads text and tags from. */
         private fun readWorkshopPage(
