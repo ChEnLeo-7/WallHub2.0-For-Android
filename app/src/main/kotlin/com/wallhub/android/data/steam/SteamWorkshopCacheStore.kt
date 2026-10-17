@@ -14,12 +14,12 @@ internal class SteamWorkshopCacheStore {
     val publicPages = SteamReadCache<WorkshopBrowseQuery, WorkshopPage>(freshMillis = FRESH_MILLIS, staleMillis = FRESH_MILLIS)
     val accountPages = SteamReadCache<AccountPageCacheKey, WorkshopPage>(freshMillis = FRESH_MILLIS, staleMillis = FRESH_MILLIS)
 
-    fun invalidatePublic() {
+    suspend fun invalidatePublic() {
         publicEpoch.incrementAndGet()
         publicPages.invalidateAll()
     }
 
-    fun invalidateAfterMutation() {
+    suspend fun invalidateAfterMutation() {
         publicEpoch.incrementAndGet()
         accountEpoch.incrementAndGet()
         detailInteractions.invalidateAll()
