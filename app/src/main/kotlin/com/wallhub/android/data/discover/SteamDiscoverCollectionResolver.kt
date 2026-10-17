@@ -1,26 +1,16 @@
 package com.wallhub.android.data.discover
 
-import com.wallhub.android.core.model.WorkshopRepository
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopPage
 import com.wallhub.android.core.model.WorkshopSummary
-import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import com.wallhub.android.feature.discover.DiscoverCollectionResolver
 import com.wallhub.android.feature.discover.DiscoverNetworkBudget
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.FormBody
-import okhttp3.Request
 import org.json.JSONObject
-import java.io.IOException
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,25 +18,11 @@ import javax.inject.Singleton
 class SteamDiscoverCollectionResolver
     @Inject
     constructor(
-        private val workshopRepository: WorkshopRepository,
         private val unifiedWorkshopRepository: SteamUnifiedWorkshopRepository,
         private val networkBudget: DiscoverNetworkBudget,
-        clientFactory: SteamHttpClientFactory,
     ) : DiscoverCollectionResolver {
-        private val memberCache = ConcurrentHashMap<MemberCacheKey, CachedCollectionMembers>()
-        private val cacheGeneration = AtomicLong()
-        private val client =
-            clientFactory
-                .newBuilder()
-                .connectTimeout(20, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .callTimeout(45, TimeUnit.SECONDS)
-                .build()
 
-        override suspend fun invalidateDiscoverCache() {
-            cacheGeneration.incrementAndGet()
-            memberCache.clear()
-        }
+        override suspend fun invalidateDiscoverCache() = Unit
 
         override suspend fun browse(
             collectionId: Long,
@@ -61,8 +37,7 @@ class SteamDiscoverCollectionResolver
                     unifiedWorkshopRepository.getPublicCollectionChildren(collectionId)
                 }
             val members =
-                unifiedMembers?.takeIf(List<Long>::isNotEmpty)
-                    ?: networkBudget.withPermit { loadMembers(collectionId) }
+                unifiedMembers ?: error("Steam CM collection members are temporarily unavailable")
             val start = ((normalizedPage - 1L) * normalizedPageSize).coerceAtMost(members.size.toLong()).toInt()
             val end = (start + normalizedPageSize).coerceAtMost(members.size)
             val pageIds = members.subList(start, end)
@@ -76,48 +51,12 @@ class SteamDiscoverCollectionResolver
             )
         }
 
-        private suspend fun loadMembers(collectionId: Long): List<Long> = withContext(Dispatchers.IO) {
-            val now = System.currentTimeMillis()
-            val key = MemberCacheKey(cacheGeneration.get(), collectionId)
-            memberCache[key]?.takeIf { now - it.loadedAtMillis < COLLECTION_CACHE_TTL_MILLIS }?.let {
-                return@withContext it.memberIds
-            }
-            val form =
-                FormBody
-                    .Builder()
-                    .add("collectioncount", "1")
-                    .add("publishedfileids[0]", collectionId.toString())
-                    .build()
-            val request =
-                Request
-                    .Builder()
-                    .url(COLLECTION_DETAILS_URL)
-                    .post(form)
-                    .header("Accept", "application/json")
-                    .header("User-Agent", USER_AGENT)
-                    .build()
-            val memberIds =
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        throw IOException("Steam collection details request failed: HTTP ${response.code}")
-                    }
-                    parseCollectionMemberIds(response.body.string(), collectionId)
-                }
-            if (memberIds.isNotEmpty() && key.generation == cacheGeneration.get()) {
-                memberCache[key] = CachedCollectionMembers(memberIds, now)
-            }
-            memberIds
-        }
-
         private suspend fun resolveDetails(ids: List<Long>): List<WorkshopSummary> =
             runCatching {
                 networkBudget.withPermit {
-                    val primary = unifiedWorkshopRepository.getPublicDetails(ids)
-                    val resolved = primary.associateBy { it.summary.id }
-                    val missing = ids.filterNot(resolved::containsKey)
-                    val fallback = if (missing.isEmpty()) emptyList() else workshopRepository.getDetails(missing)
-                    val combined = (primary + fallback).associateBy { it.summary.id }
-                    ids.mapNotNull(combined::get).map(WorkshopDetail::summary)
+                    val primary = unifiedWorkshopRepository.getPublicDetailsResult(ids)
+                    val resolved = primary.available.associateBy { it.summary.id }
+                    ids.mapNotNull(resolved::get).map(WorkshopDetail::summary)
                 }
             }.getOrDefault(emptyList())
     }
@@ -147,16 +86,6 @@ internal fun parseCollectionMemberIds(
     return emptyList()
 }
 
-private data class MemberCacheKey(
-    val generation: Long,
-    val collectionId: Long,
-)
-
-private data class CachedCollectionMembers(
-    val memberIds: List<Long>,
-    val loadedAtMillis: Long,
-)
-
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class DiscoverCollectionResolverModule {
@@ -167,8 +96,4 @@ abstract class DiscoverCollectionResolverModule {
     ): DiscoverCollectionResolver
 }
 
-private const val COLLECTION_DETAILS_URL =
-    "https://api.steampowered.com/ISteamRemoteStorage/GetCollectionDetails/v1/"
-private const val USER_AGENT = "WallHub-Android/0.8 (Discover Collection Resolver)"
 private const val MAX_COLLECTION_PAGE_SIZE = 50
-private const val COLLECTION_CACHE_TTL_MILLIS = 10 * 60 * 1_000L

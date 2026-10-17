@@ -202,12 +202,9 @@ class DiscoverFeedCoordinator
                 (discoverOptional {
                     networkBudget.withPermit {
                         val ids = (coverIds + collectionIds).distinct()
-                        val primary = unifiedWorkshopRepository.getPublicDetails(ids)
-                        val resolved = primary.associateBy { it.summary.id }
-                        val missing = ids.filterNot(resolved::containsKey)
-                        val fallback = if (missing.isEmpty()) emptyList() else workshopRepository.getDetails(missing)
-                        val combined = (primary + fallback).associateBy { it.summary.id }
-                        ids.mapNotNull(combined::get)
+                        val primary = unifiedWorkshopRepository.getPublicDetailsResult(ids)
+                        val resolved = primary.available.associateBy { it.summary.id }
+                        ids.mapNotNull(resolved::get)
                     }
                 } ?: emptyList()).associateBy { it.summary.id }
             val fallbackCollectionCovers =
