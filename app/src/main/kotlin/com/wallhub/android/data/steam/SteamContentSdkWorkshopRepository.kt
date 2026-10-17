@@ -43,7 +43,6 @@ import io.steamcontent.sdk.WorkshopItemField
 import io.steamcontent.sdk.WorkshopPage as SdkWorkshopPage
 import io.steamcontent.sdk.WorkshopResult
 import io.steamcontent.sdk.WorkshopTextField
-import io.steamcontent.sdk.WorkshopDetailsStatus
 import io.steamcontent.sdk.WorkshopTrendWindow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -92,6 +91,14 @@ internal class SteamContentSdkWorkshopRepository
             SteamWorkshopAccountReader(engine, gateway, cache) { page, requestedPage, collection ->
                 readWorkshopPage(page, requestedPage, collection)
             }
+        private val publicDetailsReader =
+            SteamWorkshopPublicDetailsReader(
+                engine = engine,
+                gateway = gateway,
+                cache = cache,
+                mapDetail = ::readWorkshopDetail,
+                mapChildren = ::readCollectionChildren,
+            )
         private val personaCache by lazy {
             SteamPersonaCache(
                 loader = SteamPersonaLoader { accountIds ->
@@ -211,85 +218,16 @@ internal class SteamContentSdkWorkshopRepository
             }
 
         override suspend fun getPublicDetailResult(workshopId: Long): CmPublicDetailResult =
-            withContext(Dispatchers.IO) {
-                getPublicDetailsResult(listOf(workshopId)).outcomes.firstOrNull()?.second
-                    ?: CmPublicDetailResult.Unavailable("CM detail result unavailable")
-            }
+            publicDetailsReader.getDetail(workshopId)
 
         override suspend fun getPublicDetailsResult(workshopIds: List<Long>): CmPublicDetailsBatch =
-            withContext(Dispatchers.IO) {
-                val ids = workshopIds.filter { it > 0L }.distinct()
-                if (ids.isEmpty()) return@withContext CmPublicDetailsBatch(emptyList())
-                runCatchingUnavailable {
-                    awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, gateway::awaitSignedInSession)
-                    val readEpoch = cache.publicEpoch.get()
-                    val entries = ids.chunked(MAX_SDK_DETAILS_ITEMS).flatMap { batch ->
-                        sdkRead(
-                            key = publicWorkshopReadKey(readEpoch, "typed-details:${batch.joinToString(",")}"),
-                            kind = WorkshopReadKind.DETAILS,
-                            priority = WorkshopReadPriority.FOREGROUND,
-                        ) { engine.openWorkshopItems(batch.toLongArray(), WALLPAPER_ENGINE_APP_ID.toLong()) }
-                    }
-                    try {
-                        CmPublicDetailsBatch(
-                            entries.map { entry ->
-                                val result = entry.result
-                                val detail =
-                                    if (entry.status == WorkshopDetailsStatus.OK && result != null) {
-                                        readWorkshopDetail(result).also {
-                                            engine.currentSessionGeneration()?.let { generation ->
-                                                cache.detailInteractions.remember(entry.itemId, generation, interactionOf(result))
-                                            }
-                                        }
-                                    } else {
-                                        null
-                                    }
-                                entry.itemId to mapCmDetailOutcome(entry.status, entry.serviceResult, detail)
-                            },
-                        )
-                    } finally {
-                        entries.forEach { it.result?.close() }
-                    }
-                } ?: CmPublicDetailsBatch(ids.map { it to CmPublicDetailResult.Unavailable("CM unavailable") })
-            }
+            publicDetailsReader.getDetails(workshopIds)
 
         override suspend fun getPublicDetails(workshopIds: List<Long>): List<WorkshopDetail> =
             getPublicDetailsResult(workshopIds).available
 
-        /**
-         * The ordered direct children of a collection (ADR 0033).
-         *
-         * The details response the item was resolved from now carries them, ordered by its own `sortorder`
-         * ascending, so this is a pass-through over the result handle. Null is the unavailable answer the
-         * contract allows; a resolved item with no children answers an empty list.
-         */
         override suspend fun getPublicCollectionChildren(collectionId: Long): List<Long>? =
-            withContext(Dispatchers.IO) {
-                runCatchingUnavailable {
-                    require(collectionId > 0L) { "Invalid Workshop collection ID" }
-                    val readEpoch = cache.publicEpoch.get()
-                    sdkRead(
-                        key = publicWorkshopReadKey(readEpoch, "collection:$collectionId"),
-                        kind = WorkshopReadKind.DETAILS,
-                        priority = WorkshopReadPriority.FOREGROUND,
-                    ) {
-                        engine
-                            .openWorkshopItem(collectionId, WALLPAPER_ENGINE_APP_ID.toLong())
-                            .use { result ->
-                                val children = readCollectionChildren(result)
-                                // A collection's children travel on the details response, so the reading this
-                                // owes is the count and the ids the service put there - the same one-line shape
-                                // the interaction reads use. Null is the unavailable answer, not an empty list.
-                                Log.i(
-                                    TAG,
-                                    "workshop collection children id=$collectionId count=${children?.size} " +
-                                        "ids=${children?.take(MAX_LOGGED_CHILDREN)}",
-                                )
-                                children
-                            }
-                    }
-                }
-            }
+            publicDetailsReader.getCollectionChildren(collectionId)
 
         override suspend fun getAuthenticatedComments(
             workshopId: Long,
@@ -861,9 +799,6 @@ private fun Int.toMaximumPage(pageSize: Int): Int {
 
 private const val TAG = "WallHubSdkWorkshop"
 
-/** Most child ids one reading logs; a collection can hold more than a line should carry. */
-private const val MAX_LOGGED_CHILDREN = 12
-
 /** How many tag names one diagnostic page line may carry: enough to name the type, no more. */
 private const val MAX_LOGGED_TAGS = 8
 
@@ -874,7 +809,6 @@ private const val MAX_LOGGED_TAGS = 8
  * longer list before the call leaves the process, so this mirrors it rather than guessing.
  */
 private const val MAX_SDK_PROFILE_ACCOUNTS = 16
-private const val MAX_SDK_DETAILS_ITEMS = 16
 
 /** How long a workshop read waits for the engine's session to be signed in, and how often it looks. */
 
