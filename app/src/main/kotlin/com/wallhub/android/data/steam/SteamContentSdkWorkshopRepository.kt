@@ -197,9 +197,9 @@ internal class SteamContentSdkWorkshopRepository
         private val accountCacheEpoch = AtomicLong()
         private val detailInteractionCache = WorkshopDetailInteractionCache()
         private val publicPageCache =
-            SteamReadCache<WorkshopBrowseQuery, WorkshopPage>(freshMillis = 120_000L, staleMillis = 600_000L)
+            SteamReadCache<WorkshopBrowseQuery, WorkshopPage>(freshMillis = 120_000L, staleMillis = 120_000L)
         private val accountPageCache =
-            SteamReadCache<AccountPageCacheKey, WorkshopPage>(freshMillis = 120_000L, staleMillis = 300_000L)
+            SteamReadCache<AccountPageCacheKey, WorkshopPage>(freshMillis = 120_000L, staleMillis = 120_000L)
         private val personaCache by lazy {
             SteamPersonaCache(
                 loader = SteamPersonaLoader { accountIds ->

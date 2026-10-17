@@ -676,9 +676,9 @@ internal class SteamContentSdkSessionBackend(
      *
      * One tick is one drain and one maintenance step: the drain reads whatever the peer already sent, and a
      * socket nobody reads is one the peer closes, while the step writes the heartbeat that is due. A tick
-     * that finds the session no longer authenticated reports the loss and rebuilds it once from the token
-     * the SDK retained; a rebuild that fails is published rather than retried in a loop, which is the same
-     * one-attempt rule the logon paths already use.
+     * that finds the session no longer authenticated reports the loss and stops. The next foreground request
+     * owns the single reconnect attempt through SteamSessionRequestRecovery, so maintenance and request handling
+     * can never race as two independent recovery authorities.
      */
     private fun startMaintenance(session: SteamContentSdkPlatformSession) {
         if (maintenanceIntervalMs <= 0L) return
@@ -705,11 +705,11 @@ internal class SteamContentSdkSessionBackend(
                             return@launch
                         }
                         if (state == SteamContentSdkSessionState.AUTHENTICATED) continue
-                        record("session_lost")
-                        if (!rebuildSession(session)) {
-                            record("session_maintenance_stopped rebuild_failed")
-                            return@launch
-                        }
+                        record("session_lost request_recovery_required")
+                        // Connection recovery has one owner: the next foreground SDK request retries once
+                        // through SteamSessionRequestRecovery. The background maintenance loop only detects
+                        // loss; it never starts a competing reconnect attempt.
+                        return@launch
                     }
                 } catch (error: CancellationException) {
                     // A cancellation is the one stop with no other trace of its own, so it is named too.
@@ -719,54 +719,6 @@ internal class SteamContentSdkSessionBackend(
             }
         maintenanceJob.getAndSet(MaintenanceLoop(session, job))?.job?.cancel()
     }
-
-    /** Rebuilds a connection a tick found gone. Returns whether the session is usable again. */
-    private suspend fun rebuildSession(session: SteamContentSdkPlatformSession): Boolean {
-        val rebuilt = runCatching { session.reconnect() }
-        val outcome = rebuilt.getOrNull()
-        val state =
-            if (outcome?.succeeded == true) {
-                runCatching { session.state() }.getOrNull()
-            } else {
-                null
-            }
-        if (outcome?.succeeded == true && state == SteamContentSdkSessionState.AUTHENTICATED) {
-            record(
-                "session_rebuilt",
-                detail = "replayable=${outcome.replayableRequests} abandoned=${outcome.abandonedRequests}",
-            )
-            return true
-        }
-        val failure = outcome?.failure ?: SteamContentSdkSessionFailure.INTERNAL
-        record(
-            "session_rebuild_failed",
-            error = rebuilt.exceptionOrNull(),
-            detail =
-                "failure=${failure.name.lowercase()} " +
-                    "sdk=${rebuildFailureReason(session, rebuilt) ?: "none"}",
-        )
-        if (!releaseSessionIfCurrent(session)) {
-            record("session_rebuild_stale")
-            return false
-        }
-        publish(
-            SteamSessionPhase.SIGNING_IN,
-            messages.restoringSession,
-            hasStoredSession = true,
-        )
-        restorePersistedSession()
-        return false
-    }
-
-    /** The SDK's own explanation of a refused rebuild, bounded and without control characters. */
-    private fun rebuildFailureReason(
-        session: SteamContentSdkPlatformSession,
-        rebuilt: Result<SteamContentSdkReconnect>,
-    ): String? =
-        (runCatching { session.lastError() }.getOrNull() ?: rebuilt.exceptionOrNull()?.message)
-            ?.filter { !it.isISOControl() }
-            ?.take(REBUILD_REASON_LENGTH)
-            ?.takeIf { it.isNotBlank() }
 
     private suspend fun driveToOutcome(
         session: SteamContentSdkPlatformSession,
@@ -1430,6 +1382,5 @@ internal class SteamContentSdkSessionBackend(
             longArrayOf(5_000L, 15_000L, 30_000L, 60_000L, 120_000L, 240_000L)
 
         /** How much of the SDK's rebuild refusal is kept; the bridge already bounds and redacts its own text. */
-        const val REBUILD_REASON_LENGTH = 240
     }
 }
