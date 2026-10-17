@@ -333,17 +333,17 @@ internal class SteamContentSdkWorkshopRepository
                         CmPublicDetailsBatch(
                             entries.map { entry ->
                                 val result = entry.result
-                                entry.itemId to when {
-                                    entry.status == WorkshopDetailsStatus.NOT_FOUND -> CmPublicDetailResult.NotFound
-                                    entry.status == WorkshopDetailsStatus.OK && result != null -> {
-                                        val detail = readWorkshopDetail(result)
-                                        engine.currentSessionGeneration()?.let { generation ->
-                                            detailInteractionCache.remember(entry.itemId, generation, interactionOf(result))
+                                val detail =
+                                    if (entry.status == WorkshopDetailsStatus.OK && result != null) {
+                                        readWorkshopDetail(result).also {
+                                            engine.currentSessionGeneration()?.let { generation ->
+                                                detailInteractionCache.remember(entry.itemId, generation, interactionOf(result))
+                                            }
                                         }
-                                        CmPublicDetailResult.Available(detail)
+                                    } else {
+                                        null
                                     }
-                                    else -> CmPublicDetailResult.Unavailable("CM status=${entry.status} service=${entry.serviceResult}")
-                                }
+                                entry.itemId to mapCmDetailOutcome(entry.status, entry.serviceResult, detail)
                             },
                         )
                     } finally {
