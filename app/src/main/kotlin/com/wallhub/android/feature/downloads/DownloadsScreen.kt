@@ -407,7 +407,8 @@ class DownloadsViewModel
         private fun enqueueWorkshop(item: WorkshopSummary) {
             viewModelScope.launch {
                 runCatching {
-                    val outputTreeUri = settingsRepository.preferences.first().outputTreeUri
+                    val preferences = settingsRepository.preferences.first()
+                    val outputTreeUri = preferences.outputTreeUri
                     workshopDownloads.enqueue(
                         DownloadRequest(
                             workshopId = item.id,
@@ -417,6 +418,7 @@ class DownloadsViewModel
                             expectedTotalBytes = item.fileSizeBytes ?: 0L,
                             outputTreeUri = outputTreeUri,
                             exportFormat = ExportFormat.AUTO,
+                            mpkgConversionPreset = preferences.mpkgConversionPreset,
                         ),
                     )
                 }.onSuccess { result ->

@@ -4,6 +4,8 @@ package com.wallhub.android.feature.detail
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -28,6 +29,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -245,6 +248,7 @@ internal fun DownloadChoiceSheet(
     onDismiss: () -> Unit,
     onDownload: (ExportFormat) -> Unit,
 ) {
+    var step by remember { mutableStateOf(0) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier =
@@ -259,19 +263,50 @@ internal fun DownloadChoiceSheet(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (shouldShowMpkgPreset(type, exportFormats)) {
+            if (step == 1 && shouldShowMpkgPreset(type, exportFormats)) {
                 Text(
                     stringResource(R.string.detail_mpkg_conversion_quality),
                     style = MaterialTheme.typography.titleMedium,
                 )
-                Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs)) {
+                Column(
+                    modifier = Modifier.selectableGroup(),
+                    verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                ) {
                     MpkgConversionPreset.entries.forEach { preset ->
-                        FilterChip(
-                            selected = preset == mpkgConversionPreset,
-                            onClick = { onMpkgConversionPresetSelected(preset) },
-                            label = { Text(preset.label()) },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        Surface(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(64.dp)
+                                    .selectable(
+                                        selected = preset == mpkgConversionPreset,
+                                        onClick = { onMpkgConversionPresetSelected(preset) },
+                                    ),
+                            shape = MaterialTheme.shapes.large,
+                            color =
+                                if (preset == mpkgConversionPreset) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHighest
+                                },
+                            tonalElevation = if (preset == mpkgConversionPreset) 2.dp else 0.dp,
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = WallHubSpacing.md),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                Text(
+                                    text = preset.label(),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color =
+                                        if (preset == mpkgConversionPreset) {
+                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        },
+                                )
+                            }
+                        }
                     }
                 }
                 Text(
@@ -310,18 +345,33 @@ internal fun DownloadChoiceSheet(
                     )
                 }
             }
-            exportFormats.forEach { format ->
+            if (step == 0 && ExportFormat.MPKG in exportFormats) {
                 Button(
-                    onClick = { onDownload(format) },
-                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { step = 1 },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
                 ) {
-                    Text(
-                        when (format) {
-                            ExportFormat.MPKG -> stringResource(R.string.detail_download_mpkg)
-                            ExportFormat.ZIP -> stringResource(R.string.detail_download_zip)
-                            ExportFormat.AUTO -> stringResource(R.string.detail_choose_format_automatically)
-                        },
-                    )
+                    Text(stringResource(R.string.detail_download_mpkg))
+                }
+            }
+            if (step == 0 && ExportFormat.ZIP in exportFormats) {
+                OutlinedButton(
+                    onClick = { onDownload(ExportFormat.ZIP) },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                ) {
+                    Text(stringResource(R.string.detail_download_zip))
+                }
+            }
+            if (step == 1 && ExportFormat.MPKG in exportFormats) {
+                Button(
+                    onClick = { onDownload(ExportFormat.MPKG) },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                ) {
+                    Text(stringResource(R.string.detail_download_mpkg))
+                }
+            }
+            if (step == 1) {
+                WallHubSecondaryButton(onClick = { step = 0 }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.detail_back_to_download_type))
                 }
             }
             WallHubSecondaryButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {

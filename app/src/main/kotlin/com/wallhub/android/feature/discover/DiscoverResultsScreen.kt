@@ -328,6 +328,7 @@ class DiscoverResultsViewModel
                             expectedTotalBytes = item.fileSizeBytes ?: 0L,
                             outputTreeUri = preferences.outputTreeUri,
                             exportFormat = ExportFormat.AUTO,
+                            mpkgConversionPreset = preferences.mpkgConversionPreset,
                         ),
                     )
                 }.onSuccess { result ->

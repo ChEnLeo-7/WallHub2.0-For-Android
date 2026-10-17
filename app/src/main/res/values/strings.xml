@@ -603,6 +603,7 @@
     <string name='detail_download_enqueue_failed'>Could not add to the download queue</string>
     <string name='detail_download_mpkg'>Download MPKG (mobile)</string>
     <string name='detail_download_options'>Download options</string>
+    <string name='detail_back_to_download_type'>Back to file type</string>
     <string name='detail_mpkg_conversion_quality'>MPKG conversion quality</string>
     <string name='detail_preserve_audio'>Keep audio after conversion</string>
     <string name='detail_preserve_audio_description'>Copies recognized audio files into the converted scene package. Turning this off removes them.</string>

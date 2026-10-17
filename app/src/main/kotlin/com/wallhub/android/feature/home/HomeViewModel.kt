@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -316,6 +317,7 @@ class HomeViewModel
             val item = request.item
             viewModelScope.launch {
                 runCatching {
+                    val preferences = settingsRepository.preferences.first()
                     downloadTaskRepository.enqueue(
                         DownloadRequest(
                             workshopId = item.id,
@@ -326,6 +328,7 @@ class HomeViewModel
                             expectedTotalBytes = item.fileSizeBytes ?: 0L,
                             outputTreeUri = mutableState.value.outputTreeUri,
                             exportFormat = ExportFormat.AUTO,
+                            mpkgConversionPreset = preferences.mpkgConversionPreset,
                         ),
                     )
                 }.onSuccess { result ->
