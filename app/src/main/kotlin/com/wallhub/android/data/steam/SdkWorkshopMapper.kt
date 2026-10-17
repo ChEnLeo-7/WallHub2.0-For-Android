@@ -1,6 +1,8 @@
 package com.wallhub.android.data.steam
 
 import io.steamcontent.sdk.WorkshopItemField
+import io.steamcontent.sdk.WorkshopPage
+import io.steamcontent.sdk.WorkshopResult
 
 /** Field snapshot shared by SDK page and resolved-detail mappings. */
 internal class SdkSummaryFields(
@@ -37,6 +39,24 @@ internal class SdkSummaryFields(
             )
     }
 }
+
+internal fun summaryFieldsOf(result: WorkshopResult): SdkSummaryFields =
+    SdkSummaryFields(
+        LongArray(SdkSummaryFields.ORDINALS.size).also { values ->
+            SdkSummaryFields.ORDINALS.forEachIndexed { slot, ordinal ->
+                values[slot] = result.field(ordinal).value
+            }
+        },
+    )
+
+internal fun summaryFieldsOf(page: WorkshopPage, index: Int): SdkSummaryFields =
+    SdkSummaryFields(
+        LongArray(SdkSummaryFields.ORDINALS.size).also { values ->
+            SdkSummaryFields.ORDINALS.forEachIndexed { slot, ordinal ->
+                values[slot] = page.field(index, ordinal).value
+            }
+        },
+    )
 
 internal data class SdkPlayerProfile(
     val personaName: String,
