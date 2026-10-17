@@ -117,19 +117,6 @@ private data class SdkCommentRow(
     val createdAt: Long?,
 )
 
-internal enum class WorkshopSessionAccess {
-    PUBLIC,
-    AUTHENTICATED_ACCOUNT,
-}
-
-/** Public CM reads proceed immediately; only account-scoped reads wait for authentication. */
-internal suspend fun awaitWorkshopSession(
-    access: WorkshopSessionAccess,
-    awaitAuthenticated: suspend () -> Unit,
-) {
-    if (access == WorkshopSessionAccess.AUTHENTICATED_ACCOUNT) awaitAuthenticated()
-}
-
 /**
  * The Steam Content SDK as this app's public and account Workshop reader.
  *
@@ -1050,28 +1037,6 @@ internal class SteamContentSdkWorkshopRepository
                 if (signedInAccountId() != null) return
             }
         }
-    }
-
-/**
- * Runs an SDK call and answers null when the engine has no provider, no session, or no such operation.
- *
- * The typed failure is logged before it becomes null: the contract's null/empty answers carry no reason, so
- * without this line a failed read is indistinguishable from an absent capability on the device. The text is
- * the SDK's own redacted error, and it names no credential, token, or URL.
- *
- * A cancelled read is not an unavailable read. `JobCancellationException` is itself an
- * `IllegalStateException`, so catching that alone swallowed every cancellation: it stopped the cancellation
- * from propagating, and it logged a failure for a read the caller had simply abandoned, with a minified job
- * class name as the reason (`ne5 was cancelled`). Cancellation is rethrown before the handler below.
- */
-private inline fun <T> runCatchingUnavailable(block: () -> T): T? =
-    try {
-        block()
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: IllegalStateException) {
-        Log.w(TAG, "workshop read unavailable: ${error.message}")
-        null
     }
 
 /**
