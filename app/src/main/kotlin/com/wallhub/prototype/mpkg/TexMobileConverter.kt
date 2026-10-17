@@ -2239,8 +2239,13 @@ object TexMobileConverter {
         checkCancellation: () -> Unit,
     ) {
         val decoderInput = FileInputStream(imageFile)
-        val decoder = BitmapRegionDecoder.newInstance(decoderInput.fd, true)
-        decoderInput.close()
+        val decoder =
+            try {
+                BitmapRegionDecoder.newInstance(decoderInput.fd, true)
+            } catch (error: Throwable) {
+                decoderInput.close()
+                throw error
+            }
         try {
             val rowsPerChunk = (CHUNKED_RGBA_BUDGET_BYTES / (width.toLong() * 4L)).toInt().coerceIn(1, MAX_REGION_ROWS)
             val pixels = IntArray(Math.multiplyExact(width, rowsPerChunk))
@@ -2258,6 +2263,7 @@ object TexMobileConverter {
             }
         } finally {
             decoder.recycle()
+            decoderInput.close()
         }
     }
 

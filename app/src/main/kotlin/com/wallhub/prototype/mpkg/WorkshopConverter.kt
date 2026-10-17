@@ -559,7 +559,11 @@ object WorkshopConverter {
                     }
                 }
                 writeCandidate()
-                failedConvertedTextures().forEach { failedOutput ->
+                val failedOutputTextures = failedConvertedTextures()
+                if (failedOutputTextures.isNotEmpty() && MpkgConversionPreset.fromStableId(requireNotNull(plan).presetId).policy().losslessVisuals) {
+                    error("Extreme quality output texture verification failed: ${failedOutputTextures.first().path}")
+                }
+                failedOutputTextures.forEach { failedOutput ->
                     val sourceEntry = archive.entries.single { it.path == failedOutput.path }
                     entriesByPath[failedOutput.path] =
                         MpkgInputEntry(failedOutput.path, FileSlicePayload(scenePackage, sourceEntry.offset, sourceEntry.length))
