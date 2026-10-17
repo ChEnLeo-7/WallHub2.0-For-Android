@@ -53,6 +53,18 @@ class WorkshopConverterExecutionFallbackTest {
     }
 
     @Test
+    fun `extreme quality static image uses chunked RGBA path and publishes verified output`() {
+        withScene(listOf("materials/effects/color.tex" to staticImageTex(2, 2))) { root ->
+            val plan = WorkshopConverter.plan(root, MpkgConversionPreset.EXTREME_QUALITY, DEVICE)
+            val output = root.resolve("extreme-chunked.mpkg")
+            val report = WorkshopConverter.execute(plan, root, output)
+            assertTrue(output.isFile)
+            assertEquals(1, report.convertedTextures)
+            assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, report.outcomes.single().strategy)
+        }
+    }
+
+    @Test
     fun `extreme quality decoder failure is fatal and never publishes a downgraded MPKG`() {
         withScene(listOf("materials/effects/color.tex" to staticImageTex(2, 2))) { root ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.EXTREME_QUALITY, DEVICE)

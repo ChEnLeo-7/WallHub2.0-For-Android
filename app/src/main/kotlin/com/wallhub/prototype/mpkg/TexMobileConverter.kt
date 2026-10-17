@@ -2,8 +2,10 @@ package com.wallhub.prototype.mpkg
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.BitmapRegionDecoder
 import android.graphics.Rect
+import android.os.Build
 import net.jpountz.lz4.LZ4Factory
 import java.io.BufferedOutputStream
 import java.io.File
@@ -12,7 +14,11 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.OutputStream
 import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
 import java.util.concurrent.CancellationException
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.math.min
 import org.json.JSONObject
 
@@ -323,6 +329,63 @@ object TexMobileConverter {
                 TexFileConversionResult(true, "RGBA8888 + LZ4 HC3 static image")
             } finally {
                 tempImage.delete()
+            }
+        }.getOrElse { error ->
+            outputFile.delete()
+            if (error is CancellationException || error is IOException) throw error
+            TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
+        }
+
+    internal fun convertImageToRgbaChunkedFile(
+        sourceFile: File,
+        offset: Long,
+        length: Long,
+        outputFile: File,
+        maxDecodedRgbaBytes: Long,
+        checkCancellation: () -> Unit = {},
+    ): TexFileConversionResult =
+        runCatching {
+            checkCancellation()
+            val metadata = readTexEntryMetadata(sourceFile, offset, length)
+            require(metadata.flags and (TEX_FLAG_GIF or TEX_FLAG_VIDEO) == 0 && !metadata.isMp4) {
+                "TEX is not a static image-backed texture"
+            }
+            require(metadata.imageFormat >= 0 && !metadata.baseCompressed) { "TEX payload is not an uncompressed image" }
+            require(metadata.baseWidth == metadata.imageWidth && metadata.baseHeight == metadata.imageHeight) {
+                "TEX base mipmap does not match image dimensions"
+            }
+            val rgbaBytes = checkedPayloadSizeLong(metadata.imageWidth, metadata.imageHeight, 4)
+            require(rgbaBytes <= MAX_CHUNKED_RGBA_BYTES) { "TEX exceeds the chunked RGBA size limit" }
+            require(maxDecodedRgbaBytes > 0) { "Invalid chunked RGBA limit" }
+            require(metadata.payloadLength in 1..MAX_EMBEDDED_IMAGE_BYTES) { "TEX image payload exceeds the bounded size" }
+            val tempImage = File(outputFile.parentFile, "${outputFile.name}.image")
+            val rawRgba = File(outputFile.parentFile, "${outputFile.name}.rgba")
+            val compressed = File(outputFile.parentFile, "${outputFile.name}.lz4")
+            try {
+                val imageStart = locateEmbeddedImage(sourceFile, metadata.payloadStart, metadata.payloadLength)
+                val imageLength = Math.subtractExact(Math.addExact(metadata.payloadStart, metadata.payloadLength), imageStart)
+                copyImagePayload(sourceFile, imageStart, imageLength, tempImage, checkCancellation)
+                decodeImageInRegions(tempImage, metadata.imageWidth, metadata.imageHeight, rawRgba, checkCancellation)
+                val compressedLength = compressMappedRgba(rawRgba, compressed, checkCancellation)
+                writeMappedRgbaHeader(
+                    outputFile = outputFile,
+                    flags = metadata.flags,
+                    width = metadata.imageWidth,
+                    height = metadata.imageHeight,
+                    unknown = metadata.unknown,
+                    decompressedLength = rgbaBytes.toIntChecked(),
+                    compressedFile = compressed,
+                    compressedLength = compressedLength,
+                )
+                checkCancellation()
+                require(inspectEntryRoute(outputFile, 0L, outputFile.length()) == TexEntryRoute.RETAIN_VERIFIED_MOBILE) {
+                    "Chunked converted TEX failed mobile verification"
+                }
+                TexFileConversionResult(true, "RGBA8888 + chunked LZ4")
+            } finally {
+                tempImage.delete()
+                rawRgba.delete()
+                compressed.delete()
             }
         }.getOrElse { error ->
             outputFile.delete()
@@ -1224,7 +1287,7 @@ object TexMobileConverter {
             "Embedded image dimensions do not match TEX metadata"
         }
         require(checkedPayloadSizeLong(width, height, 4) <= STANDARD_MAX_RGBA_BYTES) {
-            "Animated TEX exceeds the 256 MiB RGBA conversion limit"
+            "Animated TEX exceeds the configured RGBA conversion limit"
         }
         checkCancellation()
         val bitmap =
@@ -2168,6 +2231,179 @@ object TexMobileConverter {
         require(it <= Int.MAX_VALUE) { "TEX payload dimensions are too large" }
     }.toInt()
 
+    private fun decodeImageInRegions(
+        imageFile: File,
+        width: Int,
+        height: Int,
+        outputFile: File,
+        checkCancellation: () -> Unit,
+    ) {
+        val decoderInput = FileInputStream(imageFile)
+        val decoder = BitmapRegionDecoder.newInstance(decoderInput.fd, true)
+        decoderInput.close()
+        try {
+            val rowsPerChunk = (CHUNKED_RGBA_BUDGET_BYTES / (width.toLong() * 4L)).toInt().coerceIn(1, MAX_REGION_ROWS)
+            val pixels = IntArray(Math.multiplyExact(width, rowsPerChunk))
+            val rgba = ByteArray(Math.multiplyExact(Math.multiplyExact(width, rowsPerChunk), 4))
+            FileOutputStream(outputFile).use { output ->
+                var top = 0
+                while (top < height) {
+                    checkCancellation()
+                    val rows = min(rowsPerChunk, height - top)
+                    decodeRegionPixels(decoder, width, top, rows, pixels, checkCancellation)
+                    parallelSwizzlePixels(pixels, rgba, checkCancellation)
+                    output.write(rgba, 0, rows * width * 4)
+                    top += rows
+                }
+            }
+        } finally {
+            decoder.recycle()
+        }
+    }
+
+    private fun decodeRegionPixels(
+        decoder: BitmapRegionDecoder,
+        width: Int,
+        top: Int,
+        rows: Int,
+        pixels: IntArray,
+        checkCancellation: () -> Unit,
+    ) {
+        val region = Rect(0, top, width, top + rows)
+        // Prefer Android's hardware-backed decoder and GPU raster path for each bounded region. Some
+        // vendor decoders reject HARDWARE here; that is a per-region fallback, never a quality fallback.
+        val hardwareBitmap =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                runCatching {
+                    decoder.decodeRegion(region, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.HARDWARE })
+                }.getOrNull()
+            } else {
+                null
+            }
+        if (hardwareBitmap != null) {
+            val gpuSucceeded =
+                runCatching {
+                    val software = Bitmap.createBitmap(width, rows, Bitmap.Config.ARGB_8888)
+                    try {
+                        Canvas(software).drawBitmap(hardwareBitmap, 0f, 0f, null)
+                        software.getPixels(pixels, 0, width, 0, 0, width, rows)
+                        checkCancellation()
+                    } finally {
+                        software.recycle()
+                    }
+                }.isSuccess
+            hardwareBitmap.recycle()
+            if (gpuSucceeded) return
+        }
+        val bitmap = decoder.decodeRegion(region, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 })
+            ?: error("Unable to decode image region")
+        try {
+            require(bitmap.width == width && bitmap.height == rows) { "Decoded image region dimensions changed" }
+            bitmap.getPixels(pixels, 0, width, 0, 0, width, rows)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun parallelSwizzlePixels(
+        pixels: IntArray,
+        rgba: ByteArray,
+        checkCancellation: () -> Unit,
+    ) {
+        val workerCount = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        if (workerCount == 1 || pixels.size < PARALLEL_PIXEL_THRESHOLD) {
+            swizzleRange(pixels, rgba, 0, pixels.size)
+            checkCancellation()
+            return
+        }
+        val executor = Executors.newFixedThreadPool(workerCount.coerceAtMost(8))
+        try {
+            val futures = (0 until workerCount.coerceAtMost(8)).map { worker ->
+                val start = pixels.size * worker / workerCount.coerceAtMost(8)
+                val end = pixels.size * (worker + 1) / workerCount.coerceAtMost(8)
+                executor.submit { swizzleRange(pixels, rgba, start, end) }
+            }
+            futures.forEach { it.get() }
+            checkCancellation()
+        } finally {
+            executor.shutdown()
+            executor.awaitTermination(1, TimeUnit.SECONDS)
+        }
+    }
+
+    private fun swizzleRange(pixels: IntArray, rgba: ByteArray, start: Int, end: Int) {
+        var pixel = start
+        while (pixel < end) {
+            val source = pixels[pixel]
+            val destination = pixel * 4
+            rgba[destination] = ((source ushr 16) and 0xff).toByte()
+            rgba[destination + 1] = ((source ushr 8) and 0xff).toByte()
+            rgba[destination + 2] = (source and 0xff).toByte()
+            rgba[destination + 3] = ((source ushr 24) and 0xff).toByte()
+            pixel += 1
+        }
+    }
+
+    private fun compressMappedRgba(
+        inputFile: File,
+        outputFile: File,
+        checkCancellation: () -> Unit,
+    ): Long {
+        val inputLength = inputFile.length()
+        require(inputLength in 1..MAX_CHUNKED_RGBA_BYTES) { "Chunked RGBA source size is invalid" }
+        val maxOutput = lz4MaximumOutputBytes(inputLength)
+        RandomAccessFile(outputFile, "rw").use { output ->
+            output.setLength(maxOutput)
+            FileInputStream(inputFile).channel.use { inputChannel ->
+                output.channel.use { outputChannel ->
+                    val source = inputChannel.map(FileChannel.MapMode.READ_ONLY, 0L, inputLength)
+                    val destination = outputChannel.map(FileChannel.MapMode.READ_WRITE, 0L, maxOutput)
+                    val compressed = LZ4Factory.fastestJavaInstance().fastCompressor().compress(
+                        source,
+                        0,
+                        inputLength.toInt(),
+                        destination,
+                        0,
+                        maxOutput.toInt(),
+                    )
+                    checkCancellation()
+                    return compressed.toLong()
+                }
+            }
+        }
+    }
+
+    private fun writeMappedRgbaHeader(
+        outputFile: File,
+        flags: Int,
+        width: Int,
+        height: Int,
+        unknown: Int,
+        decompressedLength: Int,
+        compressedFile: File,
+        compressedLength: Long,
+    ) {
+        outputFile.parentFile?.let { parent -> check(parent.exists() || parent.mkdirs()) }
+        BufferedOutputStream(FileOutputStream(outputFile)).use { output ->
+            output.write(mobileRgbaHeader(flags, width, height, unknown, decompressedLength, compressedLength.toInt()))
+            FileInputStream(compressedFile).use { input ->
+                var remaining = compressedLength
+                val buffer = ByteArray(COPY_BUFFER_SIZE)
+                while (remaining > 0) {
+                    val read = input.read(buffer, 0, min(buffer.size.toLong(), remaining).toInt())
+                    require(read > 0) { "Chunked compressed TEX ended before declared length" }
+                    output.write(buffer, 0, read)
+                    remaining -= read
+                }
+            }
+        }
+    }
+
+    private fun Long.toIntChecked(): Int {
+        require(this in 1..Int.MAX_VALUE) { "TEX payload is too large for mobile header" }
+        return toInt()
+    }
+
     private fun checkedPayloadSizeLong(
         width: Int,
         height: Int,
@@ -2399,6 +2635,11 @@ private const val MAX_ETC2_PIXELS = 48L * 1024 * 1024
 private const val MAX_ETC2_TILE_WORKING_BYTES = 64L * 1024 * 1024
 private val CONVERTIBLE_STATIC_FORMATS = setOf(TEX_FORMAT_RGBA8888, TEX_FORMAT_DXT1, TEX_FORMAT_DXT3, TEX_FORMAT_DXT5, TEX_FORMAT_RG88, TEX_FORMAT_R8)
 private const val STANDARD_MAX_RGBA_BYTES = 64L * 1024 * 1024
+private const val MAX_CHUNKED_RGBA_BYTES = 512L * 1024 * 1024
+private const val CHUNKED_RGBA_BUDGET_BYTES = 8L * 1024 * 1024
+private const val MAX_REGION_ROWS = 512
+private const val PARALLEL_PIXEL_THRESHOLD = 256 * 1024
+private const val COPY_BUFFER_SIZE = 1024 * 1024
 private const val MAX_ALLOWED_RGBA_BYTES = 256L * 1024 * 1024
 private const val MAX_STATIC_DECOMPRESSED_BYTES = 64L * 1024 * 1024
 // Encoded image bytes are copied between files in bounded buffers. Decoded memory is constrained
