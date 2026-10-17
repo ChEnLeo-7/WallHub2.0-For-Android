@@ -4,6 +4,8 @@ import android.util.Log
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
+import com.wallhub.android.core.model.CmPublicDetailResult
+import com.wallhub.android.core.model.CmPublicDetailsBatch
 import com.wallhub.android.core.model.FavoriteState
 import com.wallhub.android.core.model.SteamAppPlaytime
 import com.wallhub.android.core.model.SteamPlaytimeRepository
