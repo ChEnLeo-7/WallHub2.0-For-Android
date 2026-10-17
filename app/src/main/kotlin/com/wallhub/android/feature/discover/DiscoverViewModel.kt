@@ -249,6 +249,7 @@ class DiscoverViewModel
                         error = null,
                         metrics = loaded.metrics,
                         featuredItems = loaded.featuredItems,
+                        partialMissingCount = loaded.partialMissingCount,
                     )
                 }
                 if (loaded.items.isEmpty() && nextSpecIndex < generationSpecs.size) {

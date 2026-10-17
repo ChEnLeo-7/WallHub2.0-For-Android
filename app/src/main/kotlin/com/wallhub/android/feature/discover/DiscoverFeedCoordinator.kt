@@ -198,11 +198,13 @@ class DiscoverFeedCoordinator
             val children = sampleFeaturedChildren(spec.children, generation, spec.id)
             val coverIds = children.mapNotNull(DiscoverRailSpec::coverSubmissionId)
             val collectionIds = children.mapNotNull { it.queryPlan.collectionId }
+            var partialMissingCount = 0
             val details =
                 (discoverOptional {
                     networkBudget.withPermit {
                         val ids = (coverIds + collectionIds).distinct()
                         val primary = unifiedWorkshopRepository.getPublicDetailsResult(ids)
+                        partialMissingCount = primary.missingCount
                         val resolved = primary.available.associateBy { it.summary.id }
                         ids.mapNotNull(resolved::get)
                     }
@@ -258,6 +260,7 @@ class DiscoverFeedCoordinator
                 resolvedTitle = null,
                 metrics = metrics,
                 featuredItems = featured,
+                partialMissingCount = partialMissingCount,
             )
         }
 

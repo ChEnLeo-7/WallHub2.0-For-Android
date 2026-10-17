@@ -132,6 +132,16 @@ fun DiscoverRoute(
                     contentPadding = PaddingValues(bottom = 96.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
+                    if (state.partialMissingCount > 0) {
+                        item(key = "discover-cm-partial-notice") {
+                            Text(
+                                stringResource(R.string.discover_cm_partial_results, state.partialMissingCount),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                        }
+                    }
                     if (state.metadataSource == DiscoverMetadataSource.STATIC_FALLBACK) {
                         item(key = "discover-fallback-notice") {
                             Text(

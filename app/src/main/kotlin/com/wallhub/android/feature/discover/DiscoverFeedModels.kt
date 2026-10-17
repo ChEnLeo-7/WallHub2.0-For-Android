@@ -106,6 +106,7 @@ data class DiscoverRailState(
     val error: String? = null,
     val metrics: DiscoverRailMetrics = DiscoverRailMetrics(),
     val featuredItems: List<DiscoverFeaturedItem> = emptyList(),
+    val partialMissingCount: Int = 0,
 )
 
 data class DiscoverFeaturedItem(
@@ -127,6 +128,9 @@ data class DiscoverFeedState(
 ) {
     val isLoading: Boolean
         get() = isPreparing || rails.any { it.loadState == DiscoverRailLoadState.QUEUED || it.loadState == DiscoverRailLoadState.LOADING }
+
+    val partialMissingCount: Int
+        get() = rails.sumOf(DiscoverRailState::partialMissingCount)
 }
 
 data class DiscoverGeneration(
@@ -141,6 +145,7 @@ data class DiscoverRailLoadResult(
     val resolvedTitle: String?,
     val metrics: DiscoverRailMetrics,
     val featuredItems: List<DiscoverFeaturedItem> = emptyList(),
+    val partialMissingCount: Int = 0,
 )
 
 internal fun DiscoverFeedState.updateRailIfCurrent(

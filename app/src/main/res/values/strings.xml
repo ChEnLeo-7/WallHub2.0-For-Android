@@ -328,6 +328,7 @@
     <string name='discover_rail_keyword'>Explore %1$s</string>
     <string name='discover_results_load_failed'>This topic could not be loaded</string>
     <string name='discover_static_fallback'>WallHub-derived discovery</string>
+    <string name='discover_cm_partial_results'>Steam CM · %1$d items unavailable</string>
     <string name='discover_content_menu'>Your content</string>
     <string name='discover_following'>Following</string>
     <string name='discover_friend_favorites'>Friend favorites</string>

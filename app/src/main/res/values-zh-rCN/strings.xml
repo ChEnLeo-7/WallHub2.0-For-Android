@@ -307,6 +307,7 @@
     <string name='discover_rail_keyword'>探索%1$s</string>
     <string name='discover_results_load_failed'>此主题内容加载失败</string>
     <string name='discover_static_fallback'>WallHub 派生发现</string>
+    <string name='discover_cm_partial_results'>Steam CM · 部分数据缺失（%1$d 项）</string>
     <string name='discover_content_menu'>你的内容</string>
     <string name='discover_following'>关注的内容</string>
     <string name='discover_friend_favorites'>好友收藏</string>
