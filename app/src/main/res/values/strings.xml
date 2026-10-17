@@ -607,6 +607,12 @@
     <string name='detail_mpkg_conversion_quality'>MPKG conversion quality</string>
     <string name='detail_preserve_audio'>Keep audio after conversion</string>
     <string name='detail_preserve_audio_description'>Copies recognized audio files into the converted scene package. Turning this off removes them.</string>
+    <string name='detail_preserve_audio_compact'>Include recognized audio in the scene package</string>
+    <string name='detail_start_download_mpkg'>Start MPKG download</string>
+    <string name='mpkg_preset_compact_compatibility'>1/4 resolution</string>
+    <string name='mpkg_preset_compact_balanced'>1/2 resolution</string>
+    <string name='mpkg_preset_compact_high_quality'>Original resolution</string>
+    <string name='mpkg_preset_compact_extreme_quality'>Lossless RGBA</string>
     <string name='mpkg_preset_standard'>Better performance</string>
     <string name='mpkg_preset_compatibility'>High performance</string>
     <string name='mpkg_preset_high_quality'>High quality (default)</string>

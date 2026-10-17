@@ -2,10 +2,21 @@
 
 package com.wallhub.android.feature.detail
 
+import android.provider.Settings
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +32,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -36,6 +49,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,6 +71,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.StarBorder
@@ -249,138 +265,174 @@ internal fun DownloadChoiceSheet(
     onDownload: (ExportFormat) -> Unit,
 ) {
     var step by remember { mutableStateOf(0) }
+    val context = LocalContext.current
+    val reduceMotion = remember(context) {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    }
+    val duration = if (reduceMotion) 120 else 260
+    val easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = WallHubSpacing.lg, vertical = WallHubSpacing.sm),
-            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
-        ) {
-            Text(stringResource(R.string.detail_download_options), style = MaterialTheme.typography.titleLarge)
-            Text(
-                stringResource(R.string.detail_download_queue_explanation, type.label()),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (step == 1 && shouldShowMpkgPreset(type, exportFormats)) {
-                Text(
-                    stringResource(R.string.detail_mpkg_conversion_quality),
-                    style = MaterialTheme.typography.titleMedium,
+        AnimatedContent(
+            targetState = step,
+            transitionSpec = {
+                val forward = targetState > initialState
+                val enter = if (reduceMotion) fadeIn(tween(duration)) else slideInHorizontally(tween(duration, easing = easing)) { if (forward) it else -it } + fadeIn(tween(duration))
+                val exit = if (reduceMotion) fadeOut(tween(duration)) else slideOutHorizontally(tween(duration, easing = easing)) { if (forward) -it else it } + fadeOut(tween(duration))
+                enter.togetherWith(exit).using(SizeTransform(clip = false, sizeAnimationSpec = { _, _ -> tween(duration, easing = easing) }))
+            },
+            label = "download-sheet-pages",
+        ) { page ->
+            when (page) {
+                0 -> DownloadTypePage(type, exportFormats, onMpkg = { step = 1 }, onDownload = onDownload, onDismiss = onDismiss)
+                else -> MpkgQualityPage(
+                    preset = mpkgConversionPreset,
+                    onPreset = onMpkgConversionPresetSelected,
+                    preserveAudio = preserveAudio,
+                    onPreserveAudio = onPreserveAudioChanged,
+                    onBack = { step = 0 },
+                    onDownload = { onDownload(ExportFormat.MPKG) },
                 )
-                Column(
-                    modifier = Modifier.selectableGroup(),
-                    verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
-                ) {
-                    MpkgConversionPreset.entries.forEach { preset ->
-                        Surface(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .height(64.dp)
-                                    .selectable(
-                                        selected = preset == mpkgConversionPreset,
-                                        onClick = { onMpkgConversionPresetSelected(preset) },
-                                    ),
-                            shape = MaterialTheme.shapes.large,
-                            color =
-                                if (preset == mpkgConversionPreset) {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHighest
-                                },
-                            tonalElevation = if (preset == mpkgConversionPreset) 2.dp else 0.dp,
-                        ) {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = WallHubSpacing.md),
-                                contentAlignment = Alignment.CenterStart,
-                            ) {
-                                Text(
-                                    text = preset.label(),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color =
-                                        if (preset == mpkgConversionPreset) {
-                                            MaterialTheme.colorScheme.onPrimaryContainer
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurface
-                                        },
-                                )
-                            }
-                        }
-                    }
-                }
-                Text(
-                    text = mpkgConversionPreset.estimatedPolicyPreview(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color =
-                        if (mpkgConversionPreset == MpkgConversionPreset.EXTREME_QUALITY) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                )
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { onPreserveAudioChanged(!preserveAudio) }
-                            .padding(vertical = WallHubSpacing.sm),
-                    horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.detail_preserve_audio),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            text = stringResource(R.string.detail_preserve_audio_description),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = preserveAudio,
-                        onCheckedChange = onPreserveAudioChanged,
-                    )
-                }
             }
-            if (step == 0 && ExportFormat.MPKG in exportFormats) {
-                Button(
-                    onClick = { step = 1 },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                ) {
-                    Text(stringResource(R.string.detail_download_mpkg))
-                }
-            }
-            if (step == 0 && ExportFormat.ZIP in exportFormats) {
-                OutlinedButton(
-                    onClick = { onDownload(ExportFormat.ZIP) },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                ) {
-                    Text(stringResource(R.string.detail_download_zip))
-                }
-            }
-            if (step == 1 && ExportFormat.MPKG in exportFormats) {
-                Button(
-                    onClick = { onDownload(ExportFormat.MPKG) },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                ) {
-                    Text(stringResource(R.string.detail_download_mpkg))
-                }
-            }
-            if (step == 1) {
-                WallHubSecondaryButton(onClick = { step = 0 }, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.detail_back_to_download_type))
-                }
-            }
-            WallHubSecondaryButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.detail_close))
-            }
-            Spacer(modifier = Modifier.height(WallHubSpacing.sm))
         }
     }
 }
+
+@Composable
+private fun DownloadTypePage(
+    type: WorkshopType,
+    exportFormats: List<ExportFormat>,
+    onMpkg: () -> Unit,
+    onDownload: (ExportFormat) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = WallHubSpacing.lg, vertical = WallHubSpacing.sm),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+    ) {
+        Text(stringResource(R.string.detail_download_options), style = MaterialTheme.typography.titleLarge)
+        Text(
+            stringResource(R.string.detail_download_queue_explanation, type.label()),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (ExportFormat.MPKG in exportFormats) {
+            Button(onClick = onMpkg, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(50)) {
+                Text(stringResource(R.string.detail_download_mpkg))
+            }
+        }
+        if (ExportFormat.ZIP in exportFormats) {
+            OutlinedButton(onClick = { onDownload(ExportFormat.ZIP) }, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(50)) {
+                Text(stringResource(R.string.detail_download_zip))
+            }
+        }
+        Button(
+            onClick = onDismiss,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(50),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest, contentColor = MaterialTheme.colorScheme.onSurface),
+        ) {
+            Text(stringResource(R.string.detail_close))
+        }
+        Spacer(modifier = Modifier.height(WallHubSpacing.sm))
+    }
+}
+
+@Composable
+private fun MpkgQualityPage(
+    preset: MpkgConversionPreset,
+    onPreset: (MpkgConversionPreset) -> Unit,
+    preserveAudio: Boolean,
+    onPreserveAudio: (Boolean) -> Unit,
+    onBack: () -> Unit,
+    onDownload: () -> Unit,
+) {
+    var dragDistance = 0f
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragDistance = 0f },
+                        onHorizontalDrag = { _, amount -> dragDistance += amount },
+                        onDragEnd = { if (dragDistance > 96.dp.toPx()) onBack() },
+                    )
+                }.padding(horizontal = WallHubSpacing.lg, vertical = WallHubSpacing.sm),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBack, contentDescription = stringResource(R.string.detail_back_to_download_type)) }
+            Text(stringResource(R.string.detail_mpkg_conversion_quality), style = MaterialTheme.typography.titleLarge)
+        }
+        Column(modifier = Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs)) {
+            MpkgConversionPreset.entries.chunked(2).forEach { rowPresets ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs)) {
+                    rowPresets.forEach { option ->
+                        QualityPresetCard(
+                            preset = option,
+                            selected = option == preset,
+                            onClick = { onPreset(option) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    if (rowPresets.size == 1) Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+        Text(
+            text = preset.estimatedPolicyPreview(),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (preset == MpkgConversionPreset.EXTREME_QUALITY) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { onPreserveAudio(!preserveAudio) }.padding(vertical = WallHubSpacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.detail_preserve_audio), style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.detail_preserve_audio_compact), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = preserveAudio, onCheckedChange = onPreserveAudio)
+        }
+        Button(onClick = onDownload, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(50)) {
+            Text(stringResource(R.string.detail_start_download_mpkg))
+        }
+        Spacer(modifier = Modifier.height(WallHubSpacing.sm))
+    }
+}
+
+@Composable
+private fun QualityPresetCard(
+    preset: MpkgConversionPreset,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.height(88.dp).selectable(selected = selected, onClick = onClick),
+        shape = MaterialTheme.shapes.large,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+        tonalElevation = if (selected) 2.dp else 0.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = WallHubSpacing.sm, vertical = WallHubSpacing.xs),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(preset.label(), style = MaterialTheme.typography.titleMedium, color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
+            Text(preset.compactDescription(), style = MaterialTheme.typography.bodySmall, color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun MpkgConversionPreset.compactDescription(): String =
+    when (this) {
+        MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compact_compatibility)
+        MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_compact_balanced)
+        MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_compact_high_quality)
+        MpkgConversionPreset.EXTREME_QUALITY -> stringResource(R.string.mpkg_preset_compact_extreme_quality)
+    }
 
 @Composable
 internal fun WorkshopType.label(): String =
