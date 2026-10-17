@@ -10,7 +10,7 @@ internal class SdkSummaryFields(
 
     fun authorIdOrNull(): Long? = at(AUTHOR).takeIf { it > 0L }
 
-    fun tagCount(): Int = at(TAG_COUNT).coerceIn(0L, MAX_SDK_ITEM_TAGS.toLong()).toInt()
+    fun tagCount(): Int = at(TAG_COUNT).coerceIn(0L, MAX_SUMMARY_TAGS.toLong()).toInt()
 
     companion object {
         const val ITEM = 0
@@ -21,6 +21,8 @@ internal class SdkSummaryFields(
         const val TAG_COUNT = 5
         const val VIEWS = 6
         const val FILE_SIZE = 7
+
+        private const val MAX_SUMMARY_TAGS = 256
 
         val ORDINALS: IntArray =
             intArrayOf(

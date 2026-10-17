@@ -1132,5 +1132,4 @@ private const val MAX_SDK_SEARCH_LENGTH = 128
 private const val MAX_SDK_TAGS = 48
 
 /** The most tag copies this adapter reads from one item, well past any list the service reports. */
-private const val MAX_SDK_ITEM_TAGS = 256
 private const val MAX_SDK_DIRECT_BROWSE_PAGE = 1_000
