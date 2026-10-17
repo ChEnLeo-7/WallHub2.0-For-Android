@@ -6,13 +6,25 @@ import com.wallhub.android.core.model.WorkshopPage
 import java.util.concurrent.atomic.AtomicLong
 
 /** Owns CM cache data and its epochs so invalidation cannot diverge from freshness checks. */
-internal class SteamWorkshopCacheStore {
+internal class SteamWorkshopCacheStore(
+    clockMillis: () -> Long = System::currentTimeMillis,
+) {
     val publicEpoch = AtomicLong()
     val accountEpoch = AtomicLong()
     val detailInteractions = WorkshopDetailInteractionCache()
     val accountPager = AccountCollectionPager()
-    val publicPages = SteamReadCache<WorkshopBrowseQuery, WorkshopPage>(freshMillis = FRESH_MILLIS, staleMillis = FRESH_MILLIS)
-    val accountPages = SteamReadCache<AccountPageCacheKey, WorkshopPage>(freshMillis = FRESH_MILLIS, staleMillis = FRESH_MILLIS)
+    val publicPages =
+        SteamReadCache<WorkshopBrowseQuery, WorkshopPage>(
+            freshMillis = FRESH_MILLIS,
+            staleMillis = FRESH_MILLIS,
+            clockMillis = clockMillis,
+        )
+    val accountPages =
+        SteamReadCache<AccountPageCacheKey, WorkshopPage>(
+            freshMillis = FRESH_MILLIS,
+            staleMillis = FRESH_MILLIS,
+            clockMillis = clockMillis,
+        )
 
     suspend fun invalidatePublic() {
         publicEpoch.incrementAndGet()
