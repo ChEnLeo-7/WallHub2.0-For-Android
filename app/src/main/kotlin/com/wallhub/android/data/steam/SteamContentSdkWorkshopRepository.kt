@@ -51,7 +51,6 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -102,12 +101,6 @@ private class SdkSummaryFields(
 }
 
 /** One resolved Steam profile as the player family reports it, after the avatar URL is built app-side. */
-private data class AccountPageCacheKey(
-    val accountId: Long,
-    val sessionGeneration: Long,
-    val query: AccountWorkshopQuery,
-)
-
 private data class SdkPlayerProfile(
     val personaName: String,
     val avatarUrl: String?,
@@ -182,18 +175,11 @@ internal class SteamContentSdkWorkshopRepository
                 },
             )
         private val writes = SteamWorkshopWriteCoordinator(reads, recovery)
-        private val accountCollectionPager = AccountCollectionPager()
-        private val publicCacheEpoch = AtomicLong()
-        private val accountCacheEpoch = AtomicLong()
-        private val detailInteractionCache = WorkshopDetailInteractionCache()
-        private val publicPageCache =
-            SteamReadCache<WorkshopBrowseQuery, WorkshopPage>(freshMillis = 120_000L, staleMillis = 120_000L)
-        private val accountPageCache =
-            SteamReadCache<AccountPageCacheKey, WorkshopPage>(freshMillis = 120_000L, staleMillis = 120_000L)
+        private val cache = SteamWorkshopCacheStore()
         private val personaCache by lazy {
             SteamPersonaCache(
                 loader = SteamPersonaLoader { accountIds ->
-                    val readEpoch = publicCacheEpoch.get()
+                    val readEpoch = cache.publicEpoch.get()
                     sdkRead(
                         key = publicWorkshopReadKey(readEpoch, "profiles:${accountIds.sorted().joinToString(",")}"),
                         kind = WorkshopReadKind.PROFILE,
@@ -212,8 +198,7 @@ internal class SteamContentSdkWorkshopRepository
         // ------------------------------------------------------------------
 
         override suspend fun invalidateDiscoverCache() {
-            publicCacheEpoch.incrementAndGet()
-            publicPageCache.invalidateAll()
+            cache.invalidatePublic()
             personaCache.invalidateAll()
         }
 
@@ -223,8 +208,8 @@ internal class SteamContentSdkWorkshopRepository
                 val cacheable =
                     normalized.sort != WorkshopSort.FRIENDS_FAVORITES &&
                         normalized.sort != WorkshopSort.FRIENDS_CREATED
-                if (cacheable) publicPageCache.getFresh(normalized)?.let { return@withContext it }
-                val readEpoch = publicCacheEpoch.get()
+                if (cacheable) cache.publicPages.getFresh(normalized)?.let { return@withContext it }
+                val readEpoch = cache.publicEpoch.get()
                 val loaded = runCatchingUnavailable {
                     awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, ::awaitSignedInSession)
                     val creatorId = normalized.creatorId?.toLongOrNull()?.takeIf { it > 0L }
@@ -296,7 +281,7 @@ internal class SteamContentSdkWorkshopRepository
                 if (!cacheable) {
                     loaded
                 } else if (loaded != null) {
-                    if (publicCacheEpoch.get() == readEpoch) publicPageCache.put(normalized, loaded)
+                    if (cache.publicEpoch.get() == readEpoch) cache.publicPages.put(normalized, loaded)
                     loaded
                 } else {
                     null
@@ -321,7 +306,7 @@ internal class SteamContentSdkWorkshopRepository
                 if (ids.isEmpty()) return@withContext CmPublicDetailsBatch(emptyList())
                 runCatchingUnavailable {
                     awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, ::awaitSignedInSession)
-                    val readEpoch = publicCacheEpoch.get()
+                    val readEpoch = cache.publicEpoch.get()
                     val entries = ids.chunked(MAX_SDK_DETAILS_ITEMS).flatMap { batch ->
                         sdkRead(
                             key = publicWorkshopReadKey(readEpoch, "typed-details:${batch.joinToString(",")}"),
@@ -337,7 +322,7 @@ internal class SteamContentSdkWorkshopRepository
                                     if (entry.status == WorkshopDetailsStatus.OK && result != null) {
                                         readWorkshopDetail(result).also {
                                             engine.currentSessionGeneration()?.let { generation ->
-                                                detailInteractionCache.remember(entry.itemId, generation, interactionOf(result))
+                                                cache.detailInteractions.remember(entry.itemId, generation, interactionOf(result))
                                             }
                                         }
                                     } else {
@@ -366,7 +351,7 @@ internal class SteamContentSdkWorkshopRepository
             withContext(Dispatchers.IO) {
                 runCatchingUnavailable {
                     require(collectionId > 0L) { "Invalid Workshop collection ID" }
-                    val readEpoch = publicCacheEpoch.get()
+                    val readEpoch = cache.publicEpoch.get()
                     sdkRead(
                         key = publicWorkshopReadKey(readEpoch, "collection:$collectionId"),
                         kind = WorkshopReadKind.DETAILS,
@@ -445,23 +430,23 @@ internal class SteamContentSdkWorkshopRepository
                         engine.currentSessionGeneration()
                             ?: error("No signed-in Steam session generation is available")
                     cacheKey = AccountPageCacheKey(accountId, generation, normalized)
-                    accountPageCache.getFresh(checkNotNull(cacheKey))?.let { return@withContext it }
-                val readEpoch = accountCacheEpoch.get()
+                    cache.accountPages.getFresh(checkNotNull(cacheKey))?.let { return@withContext it }
+                val readEpoch = cache.accountEpoch.get()
                 val list = normalized.collection.sdkPersonalList()
                 val loaded = if (!normalized.hasInteractiveFilters()) {
                     val source =
                         loadPersonalCollectionPage(accountId, generation, list, normalized, normalized.page, normalized.pageSize)
                     source.copy(items = source.items.filter(normalized::matchesAccountCollectionItem))
                 } else {
-                    accountCollectionPager.page(
+                    cache.accountPager.page(
                         scope = AccountCollectionScope(accountId, generation),
                         query = normalized,
                     ) { sourcePage, sourcePageSize ->
                         loadPersonalCollectionPage(accountId, generation, list, normalized, sourcePage, sourcePageSize)
                     }
                 }
-                    if (accountCacheEpoch.get() == readEpoch) {
-                        accountPageCache.put(checkNotNull(cacheKey), loaded)
+                    if (cache.accountEpoch.get() == readEpoch) {
+                        cache.accountPages.put(checkNotNull(cacheKey), loaded)
                     }
                     loaded
                 } catch (cancelled: CancellationException) {
@@ -509,7 +494,7 @@ internal class SteamContentSdkWorkshopRepository
             withContext(Dispatchers.IO) {
                 require(workshopId > 0L) { "Invalid Workshop item ID" }
                 runCatchingUnavailable {
-                    val readEpoch = publicCacheEpoch.get()
+                    val readEpoch = cache.publicEpoch.get()
                     val authorId =
                         sdkRead(
                             key = publicWorkshopReadKey(readEpoch, "author-id:$workshopId"),
@@ -533,7 +518,7 @@ internal class SteamContentSdkWorkshopRepository
             withContext(Dispatchers.IO) {
                 val generation = engine.currentSessionGeneration()
                 if (generation != null) {
-                    detailInteractionCache.take(workshopId, generation)?.let { return@withContext it }
+                    cache.detailInteractions.take(workshopId, generation)?.let { return@withContext it }
                 }
                 runCatchingUnavailable {
                     mutex.withLock { readInteraction(workshopId) }
@@ -611,12 +596,7 @@ internal class SteamContentSdkWorkshopRepository
         }
 
         private suspend fun invalidateMutationCaches() {
-            publicCacheEpoch.incrementAndGet()
-            accountCacheEpoch.incrementAndGet()
-            detailInteractionCache.invalidateAll()
-            publicPageCache.invalidateAll()
-            accountPageCache.invalidateAll()
-            accountCollectionPager.invalidateAll()
+            cache.invalidateAfterMutation()
         }
 
         // ------------------------------------------------------------------
