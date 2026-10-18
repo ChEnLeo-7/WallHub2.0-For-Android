@@ -147,7 +147,7 @@ class SteamContentSdkEngine
                         transport = route.transport,
                         connectAttempts = route.connectAttempts,
                         cmCandidates = route.cmCandidates,
-                        storageRoot = storageRootPath,
+                        storageRoot = storageRootPath.takeIf { sessionMode == SessionMode.ACCOUNT },
                         cdnProxy = route.cdnProxy,
                         cdnProxyAuthorization = route.cdnProxyAuthorization,
                         cmProxy = route.cmProxy,
