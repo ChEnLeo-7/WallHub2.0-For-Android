@@ -340,6 +340,17 @@ private data class LibraryQueryKey(
     val paginationMode: HomePaginationMode,
 )
 
+internal fun shouldLoadLibraryForSignedInSession(
+    previousPhase: SteamSessionPhase,
+    activeAccountName: String?,
+    observedAccountName: String?,
+    refreshWhenSignedIn: Boolean,
+): Boolean =
+    activeAccountName == null ||
+        previousPhase != SteamSessionPhase.SIGNED_IN ||
+        !activeAccountName.equals(observedAccountName, ignoreCase = true) ||
+        refreshWhenSignedIn
+
 private data class LibraryCacheEntry(
     val items: List<WorkshopSummary>,
     val nextPage: Int,
@@ -410,11 +421,17 @@ class LibraryViewModel
                     val accountChanged =
                         activeAccountName != null &&
                             !activeAccountName.equals(session.accountName, ignoreCase = true)
-                    val becameSignedIn = previous.session.phase != SteamSessionPhase.SIGNED_IN
+                    val shouldLoad =
+                        shouldLoadLibraryForSignedInSession(
+                            previousPhase = previous.session.phase,
+                            activeAccountName = activeAccountName,
+                            observedAccountName = session.accountName,
+                            refreshWhenSignedIn = refreshWhenSignedIn,
+                        )
                     if (accountChanged) clearCache()
                     activeAccountName = session.accountName
                     mutableState.value = previous.copy(session = session)
-                    if (becameSignedIn || accountChanged || refreshWhenSignedIn) {
+                    if (shouldLoad) {
                         refreshWhenSignedIn = false
                         loadCurrentPage(forceRefresh = true, refreshing = false)
                     }
