@@ -112,6 +112,7 @@ fun WorkshopDetailScreen(
     onMpkgConversionPresetSelected: (MpkgConversionPreset) -> Unit,
     onPreserveAudioChanged: (Boolean) -> Unit,
     onDownload: () -> Unit,
+    onCommentsVisible: () -> Unit,
     onRetryComments: () -> Unit,
     onLoadMoreComments: () -> Unit,
     onCommentDraftChanged: (String) -> Unit,
@@ -277,6 +278,7 @@ fun WorkshopDetailScreen(
                             commentDraft = state.commentDraft,
                             isPostingComment = state.isPostingComment,
                             commentPostError = state.commentPostError,
+                            onCommentsVisible = onCommentsVisible,
                             onRetryComments = onRetryComments,
                             onLoadMoreComments = onLoadMoreComments,
                             onCommentDraftChanged = onCommentDraftChanged,
@@ -365,6 +367,7 @@ internal fun WorkshopDetailPagerContent(
     commentDraft: String,
     isPostingComment: Boolean,
     commentPostError: DetailUiText?,
+    onCommentsVisible: () -> Unit,
     onRetryComments: () -> Unit,
     onLoadMoreComments: () -> Unit,
     onCommentDraftChanged: (String) -> Unit,
@@ -397,8 +400,10 @@ internal fun WorkshopDetailPagerContent(
     LaunchedEffect(maxHeaderCollapsePx) {
         headerOffsetPx = headerOffsetPx.coerceIn(-maxHeaderCollapsePx, 0f)
     }
-    LaunchedEffect(pagerState.currentPage) {
-        if (pagerState.currentPage != DETAIL_COMMENTS_PAGE) {
+    LaunchedEffect(pagerState.currentPage, summary.id) {
+        if (pagerState.currentPage == DETAIL_COMMENTS_PAGE) {
+            onCommentsVisible()
+        } else {
             focusManager.clearFocus(force = true)
         }
     }
@@ -451,6 +456,7 @@ internal fun WorkshopDetailPagerContent(
         commentDraft = commentDraft,
         isPostingComment = isPostingComment,
         commentPostError = commentPostError,
+        onCommentsVisible = onCommentsVisible,
         onRetryComments = onRetryComments,
         onLoadMoreComments = onLoadMoreComments,
         onCommentDraftChanged = onCommentDraftChanged,
@@ -521,6 +527,7 @@ internal fun WorkshopDetailPane(
     commentDraft: String,
     isPostingComment: Boolean,
     commentPostError: DetailUiText?,
+    onCommentsVisible: () -> Unit,
     onRetryComments: () -> Unit,
     onLoadMoreComments: () -> Unit,
     onCommentDraftChanged: (String) -> Unit,
@@ -729,6 +736,7 @@ internal fun ColumnScope.WorkshopDetailTabPager(
     commentPostError: DetailUiText?,
     isWallpaperHeaderCollapsed: Boolean,
     onReturnToWallpaperTop: () -> Unit,
+    onCommentsVisible: () -> Unit,
     onRetryComments: () -> Unit,
     onLoadMoreComments: () -> Unit,
     onCommentDraftChanged: (String) -> Unit,

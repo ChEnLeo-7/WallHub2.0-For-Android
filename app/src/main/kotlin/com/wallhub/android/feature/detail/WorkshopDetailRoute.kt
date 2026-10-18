@@ -89,6 +89,7 @@ fun WorkshopDetailRoute(
                 WorkshopDetailAction.RequestOperation(WorkshopDetailPendingOperation.Download),
             )
         },
+        onCommentsVisible = viewModel::onCommentsVisible,
         onRetryComments = viewModel::retryComments,
         onLoadMoreComments = viewModel::loadMoreComments,
         onCommentDraftChanged = viewModel::updateCommentDraft,

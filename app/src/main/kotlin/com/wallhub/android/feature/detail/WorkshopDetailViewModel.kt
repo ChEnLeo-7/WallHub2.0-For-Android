@@ -45,6 +45,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 import javax.inject.Inject
 
 @HiltViewModel
@@ -194,6 +196,7 @@ class WorkshopDetailViewModel
                         commentsNextStart = 0,
                         commentsHasMore = false,
                         commentsOwnerId = null,
+                        commentsRequested = false,
                         commentsError = null,
                         inlineVideoStream = null,
                         inlineVideoPlayer = null,
@@ -212,7 +215,6 @@ class WorkshopDetailViewModel
                                 exportFormat = detail.summary.type.defaultExportFormat(),
                             )
                         refreshInteraction()
-                        loadComments(refresh = true)
                         viewModelScope.launch {
                             val author =
                                 runCatching {
@@ -347,7 +349,15 @@ class WorkshopDetailViewModel
             mutableState.value = current.copy(isInlineVideoFullscreen = fullscreen)
         }
 
+        fun onCommentsVisible() {
+            val current = mutableState.value
+            if (current.commentsRequested || current.detail == null) return
+            mutableState.value = current.copy(commentsRequested = true)
+            loadComments(refresh = true)
+        }
+
         fun retryComments() {
+            mutableState.value = mutableState.value.copy(commentsRequested = true)
             loadComments(refresh = true)
         }
 
@@ -424,12 +434,14 @@ class WorkshopDetailViewModel
                             commentsError = null,
                         )
                     runCatching {
-                        workshopRepository.getComments(
+                        withTimeout(COMMENTS_LOAD_TIMEOUT_MS) {
+                            workshopRepository.getComments(
                             workshopId = workshopId,
                             start = start,
                             count = COMMENTS_PAGE_SIZE,
                             ownerId = current.commentsOwnerId ?: detail.creatorId,
                         )
+                        }
                     }.onSuccess { page ->
                         val latest = mutableState.value
                         val comments =
@@ -452,7 +464,7 @@ class WorkshopDetailViewModel
                                 commentsError = null,
                             )
                     }.onFailure { error ->
-                        if (error is CancellationException) throw error
+                        if (error is CancellationException && error !is TimeoutCancellationException) throw error
                         mutableState.value =
                             mutableState.value.copy(
                                 isLoadingComments = false,
@@ -664,6 +676,7 @@ class WorkshopDetailViewModel
 
         private companion object {
             const val COMMENTS_PAGE_SIZE = 20
+            const val COMMENTS_LOAD_TIMEOUT_MS = 5_000L
         }
     }
 

@@ -41,6 +41,7 @@ data class WorkshopDetailUiState(
     val commentsNextStart: Int = 0,
     val commentsHasMore: Boolean = false,
     val commentsOwnerId: String? = null,
+    val commentsRequested: Boolean = false,
     val isLoadingComments: Boolean = false,
     val isLoadingMoreComments: Boolean = false,
     val commentsError: DetailUiText? = null,
