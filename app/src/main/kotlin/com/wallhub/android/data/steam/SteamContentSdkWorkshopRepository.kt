@@ -95,14 +95,19 @@ internal class SteamContentSdkWorkshopRepository
             SteamWorkshopAccountReader(engine, gateway, cache) { page, requestedPage, collection ->
                 readWorkshopPage(page, requestedPage, collection)
             }
-        private val publicDetailsReader =
-            SteamWorkshopPublicDetailsReader(
-                engine = engine,
-                gateway = gateway,
-                cache = cache,
-                mapDetail = ::readWorkshopDetail,
-                mapChildren = ::readCollectionChildren,
-            )
+        private val accountPublicDetailsReader = publicDetailsReader(engine, gateway)
+        private val anonymousPublicDetailsReader = publicDetailsReader(anonymousEngine, anonymousGateway)
+
+        private fun publicDetailsReader(
+            selectedEngine: SteamContentSdkEngine,
+            selectedGateway: SteamWorkshopSdkGateway,
+        ) = SteamWorkshopPublicDetailsReader(
+            engine = selectedEngine,
+            gateway = selectedGateway,
+            cache = cache,
+            mapDetail = ::readWorkshopDetail,
+            mapChildren = ::readCollectionChildren,
+        )
         private val personaCache by lazy {
             SteamPersonaCache(
                 loader = SteamPersonaLoader { accountIds ->
@@ -222,16 +227,16 @@ internal class SteamContentSdkWorkshopRepository
             }
 
         override suspend fun getPublicDetailResult(workshopId: Long): CmPublicDetailResult =
-            publicDetailsReader.getDetail(workshopId)
+            publicDetailsOperation { it.getDetail(workshopId) }
 
         override suspend fun getPublicDetailsResult(workshopIds: List<Long>): CmPublicDetailsBatch =
-            publicDetailsReader.getDetails(workshopIds)
+            publicDetailsOperation { it.getDetails(workshopIds) }
 
         override suspend fun getPublicDetails(workshopIds: List<Long>): List<WorkshopDetail> =
             getPublicDetailsResult(workshopIds).available
 
         override suspend fun getPublicCollectionChildren(collectionId: Long): List<Long>? =
-            publicDetailsReader.getCollectionChildren(collectionId)
+            publicDetailsOperation { it.getCollectionChildren(collectionId) }
 
         override suspend fun getAuthenticatedComments(
             workshopId: Long,
@@ -252,13 +257,13 @@ internal class SteamContentSdkWorkshopRepository
                 // own details before it reads the thread. kSteam had to be handed the same value by the
                 // caller; both end up sending the item's author as the thread key.
                 runCatchingUnavailable {
-                    sdkRead(
+                    sdkPublicRead(
                         key = "comments:$workshopId:$pageStart:$pageCount",
                         kind = WorkshopReadKind.COMMENTS,
                         priority = WorkshopReadPriority.FOREGROUND,
-                    ) {
+                    ) { publicEngine ->
                         val page =
-                            engine.workshopComments(
+                            publicEngine.workshopComments(
                                 itemId = workshopId,
                                 // kSteam's request carries no ordering field, so the service's newest-first
                                 // default answered it. The SDK names that ordering explicitly instead -
@@ -640,6 +645,24 @@ internal class SteamContentSdkWorkshopRepository
                     )
             }
             return resolved
+        }
+
+        private suspend fun <T> publicDetailsOperation(
+            operation: suspend (SteamWorkshopPublicDetailsReader) -> T,
+        ): T {
+            val selected =
+                runCatching { publicSessionRouter.acquire() }.getOrElse { anonymousFailure ->
+                    publicSessionRouter.awaitAuthenticated() ?: throw anonymousFailure
+                }
+            val reader =
+                if (selected === anonymousEngine) anonymousPublicDetailsReader else accountPublicDetailsReader
+            return try {
+                operation(reader)
+            } catch (failure: Throwable) {
+                if (selected !== anonymousEngine) throw failure
+                publicSessionRouter.awaitAuthenticated() ?: throw failure
+                operation(accountPublicDetailsReader)
+            }
         }
 
         private suspend fun <T> sdkPublicRead(

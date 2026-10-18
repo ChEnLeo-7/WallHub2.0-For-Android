@@ -13,16 +13,19 @@ import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
 import com.wallhub.android.core.model.LauncherIconController
 import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.data.downloads.DownloadWorkScheduler
 import com.wallhub.android.data.downloads.WallHubDownloadWorkerFactory
 import com.wallhub.android.data.downloads.WorkshopSourceCacheManager
+import com.wallhub.android.data.steam.SteamWorkshopPublicSessionRouter
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -55,10 +58,20 @@ class WallHubApplication :
     @Inject
     internal lateinit var workshopSourceCacheManager: WorkshopSourceCacheManager
 
+    @Inject
+    internal lateinit var publicSessionRouter: SteamWorkshopPublicSessionRouter
+
     override fun onCreate() {
         super.onCreate()
         CrashDiagnostics.install(this)
         steamSessionRepository.restorePersistedSession()
+        applicationScope.launch {
+            steamSessionRepository.session.collect { state ->
+                if (state.phase == SteamSessionPhase.SIGNED_IN) {
+                    publicSessionRouter.onAccountAuthenticated()
+                }
+            }
+        }
         applicationScope.launch {
             try {
                 workshopSourceCacheManager.reconcileAndEnforceBudget()
@@ -89,6 +102,7 @@ class WallHubApplication :
 
                     override fun onStop(owner: LifecycleOwner) {
                         steamSessionRepository.onAppBackgrounded()
+                        applicationScope.launch { publicSessionRouter.onAppBackgrounded() }
                     }
                 },
             )

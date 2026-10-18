@@ -17,6 +17,7 @@ internal class SteamWorkshopAccountMutations(
 ) {
     suspend fun getInteraction(workshopId: Long): WorkshopInteraction =
         withContext(Dispatchers.IO) {
+            awaitWorkshopSession(WorkshopSessionAccess.AUTHENTICATED_ACCOUNT, gateway::awaitSignedInSession)
             val generation = engine.currentSessionGeneration()
             if (generation != null) {
                 cache.detailInteractions.take(workshopId, generation)?.let { return@withContext it }
@@ -32,6 +33,7 @@ internal class SteamWorkshopAccountMutations(
 
     suspend fun setSubscribed(workshopId: Long, subscribed: Boolean): WorkshopInteraction =
         withContext(Dispatchers.IO) {
+            awaitWorkshopSession(WorkshopSessionAccess.AUTHENTICATED_ACCOUNT, gateway::awaitSignedInSession)
             val confirmed =
                 gateway.write(WorkshopReadKind.SET_SUBSCRIBED) {
                     val accountId = gateway.signedInAccountId() ?: error("No signed-in Steam account is available")
@@ -47,6 +49,7 @@ internal class SteamWorkshopAccountMutations(
 
     suspend fun setFavorited(workshopId: Long, favorited: Boolean): WorkshopInteraction =
         withContext(Dispatchers.IO) {
+            awaitWorkshopSession(WorkshopSessionAccess.AUTHENTICATED_ACCOUNT, gateway::awaitSignedInSession)
             val confirmed =
                 gateway.write(WorkshopReadKind.SET_FAVORITED) {
                     val accountId = gateway.signedInAccountId() ?: error("No signed-in Steam account is available")
@@ -61,6 +64,7 @@ internal class SteamWorkshopAccountMutations(
 
     suspend fun postComment(workshopId: Long, ownerId: String, text: String) =
         withContext(Dispatchers.IO) {
+            awaitWorkshopSession(WorkshopSessionAccess.AUTHENTICATED_ACCOUNT, gateway::awaitSignedInSession)
             val request = normalizeWorkshopCommentRequest(workshopId, ownerId, text)
             gateway.write(WorkshopReadKind.POST_COMMENT) {
                 engine.postComment(request.workshopId, request.ownerId.toLong(), request.text)
