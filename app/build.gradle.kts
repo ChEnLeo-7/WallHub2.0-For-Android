@@ -223,7 +223,7 @@ dependencies {
     implementation(libs.ktor.client.okhttp)
     // Steam Content SDK: the app's Steam session, Workshop, and content backend. The AAR is a local,
     // gitignored preview published from the SDK repository.
-    implementation("io.steamcontent.sdk:sc-content-android-preview:0.1.124")
+    implementation("io.steamcontent.sdk:sc-content-android-preview:0.1.125")
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.jdk8)
