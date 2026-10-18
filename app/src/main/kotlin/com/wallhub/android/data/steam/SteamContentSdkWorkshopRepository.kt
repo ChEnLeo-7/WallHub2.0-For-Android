@@ -30,6 +30,7 @@ import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.core.model.steamSearchText
 import com.wallhub.android.core.model.workshopAuthorSearchOrNull
 import com.wallhub.android.core.model.workshopDetailTagSearch
+import com.wallhub.android.di.SteamAnonymousWorkshopEngine
 import com.wallhub.android.di.SteamSessionSdkEngine
 import io.steamcontent.sdk.PlayerField
 import io.steamcontent.sdk.PlayerProfileField
@@ -80,11 +81,14 @@ internal class SteamContentSdkWorkshopRepository
     @Inject
     constructor(
         @SteamSessionSdkEngine private val engine: SteamContentSdkEngine,
+        @SteamAnonymousWorkshopEngine private val anonymousEngine: SteamContentSdkEngine,
+        private val publicSessionRouter: SteamWorkshopPublicSessionRouter,
     ) : SteamUnifiedWorkshopRepository,
         AccountWorkshopRepository,
         SteamPlaytimeRepository {
         /** Public and account operations share this one native SDK lane and recovery authority. */
         private val gateway = SteamWorkshopSdkGateway(engine)
+        private val anonymousGateway = SteamWorkshopSdkGateway(anonymousEngine)
         private val cache = SteamWorkshopCacheStore()
         private val accountMutations = SteamWorkshopAccountMutations(engine, gateway, cache)
         private val accountReader =
@@ -136,7 +140,7 @@ internal class SteamContentSdkWorkshopRepository
                 val loaded = runCatchingUnavailable {
                     awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, gateway::awaitSignedInSession)
                     val creatorId = normalized.creatorId?.toLongOrNull()?.takeIf { it > 0L }
-                    sdkRead(
+                    sdkPublicRead(
                         key = publicWorkshopReadKey(readEpoch, "browse:$normalized"),
                         kind = WorkshopReadKind.SEARCH,
                         priority =
@@ -147,10 +151,10 @@ internal class SteamContentSdkWorkshopRepository
                             } else {
                                 WorkshopReadPriority.BACKGROUND
                             },
-                    ) {
+                    ) { publicEngine ->
                         val page =
                             if (creatorId == null) {
-                                engine.workshopSearch(
+                                publicEngine.workshopSearch(
                                     appId = WALLPAPER_ENGINE_APP_ID.toLong(),
                                     sort = normalized.sort.sdkSort(),
                                     // Only DEFAULT is accepted by this release, so the search's own trend
@@ -188,7 +192,7 @@ internal class SteamContentSdkWorkshopRepository
                                     tagGroups = normalized.normalizedRequiredTagGroups(),
                                 )
                             } else {
-                                engine.workshopAuthorItems(
+                                publicEngine.workshopAuthorItems(
                                     authorId = creatorId,
                                     pageSize = normalized.pageSize,
                                     pageOffset = normalized.pageOffset(),
@@ -636,6 +640,17 @@ internal class SteamContentSdkWorkshopRepository
                     )
             }
             return resolved
+        }
+
+        private suspend fun <T> sdkPublicRead(
+            key: String,
+            kind: WorkshopReadKind,
+            priority: WorkshopReadPriority,
+            operation: suspend (SteamContentSdkEngine) -> T,
+        ): T {
+            val selected = publicSessionRouter.acquire()
+            val selectedGateway = if (selected === anonymousEngine) anonymousGateway else gateway
+            return selectedGateway.read(key, kind, priority) { operation(selected) }
         }
 
         private suspend fun <T> sdkRead(
