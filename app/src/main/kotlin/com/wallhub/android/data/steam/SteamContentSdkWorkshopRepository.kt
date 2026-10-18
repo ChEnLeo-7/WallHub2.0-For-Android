@@ -346,7 +346,7 @@ internal class SteamContentSdkWorkshopRepository
                         sdkRead(
                             key = "playtime:$appId",
                             kind = WorkshopReadKind.PLAYTIME,
-                            priority = WorkshopReadPriority.FOREGROUND,
+                            priority = WorkshopReadPriority.BACKGROUND,
                         ) { engine.playerPlaytime(appId.toLong()) }
                     }
                 playtime

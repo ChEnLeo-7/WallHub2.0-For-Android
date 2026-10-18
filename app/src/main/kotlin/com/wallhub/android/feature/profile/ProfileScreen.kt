@@ -103,22 +103,22 @@ class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionReposi
                                     ).totalCount ?: 0
                                 }.getOrDefault(0)
                             }
-                            val runtime = async {
-                                runCatching {
-                                    playtimeRepository.getAppPlaytime(WALLPAPER_ENGINE_APP_ID)
-                                        ?.totalMinutes
-                                        ?.div(60)
-                                }.getOrNull()
-                            }
-                            // Steam refuses every selector that could list voted items with EResult 8.
+                            // Counts are the profile's primary content. Publish them before starting the
+                            // optional playtime read so a slow player-service RPC cannot hold both collection
+                            // requests behind the single serialized CM lane.
                             _counts.value =
                                 ProfileCounts(
                                     subscriptions = subscriptions.await(),
                                     favorites = favorites.await(),
                                     votedUnavailable = true,
                                 )
-                            _runtimeHours.value = runtime.await()
                             loadedAccount = current.accountName
+                            _runtimeHours.value =
+                                runCatching {
+                                    playtimeRepository.getAppPlaytime(WALLPAPER_ENGINE_APP_ID)
+                                        ?.totalMinutes
+                                        ?.div(60)
+                                }.getOrNull()
                         }
                     }
                     current.phase == SteamSessionPhase.SIGNING_IN && current.hasStoredSession -> {
