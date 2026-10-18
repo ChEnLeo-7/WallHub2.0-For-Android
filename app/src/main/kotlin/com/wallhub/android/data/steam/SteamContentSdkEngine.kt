@@ -495,8 +495,12 @@ class SteamContentSdkEngine
                                 itemId = page.field(index, WorkshopItemField.ITEM).value,
                                 title = page.text(index, WorkshopTextField.TITLE),
                                 contentType = page.field(index, WorkshopItemField.CONTENT_TYPE).value,
-                                subscribed = page.field(index, WorkshopItemField.SUBSCRIBED).takeValueOrNull(),
-                                favourited = page.field(index, WorkshopItemField.FAVOURITED).takeValueOrNull(),
+                                subscribed =
+                                    runCatching { page.field(index, WorkshopItemField.SUBSCRIBED).takeValueOrNull() }
+                                        .getOrNull(),
+                                favourited =
+                                    runCatching { page.field(index, WorkshopItemField.FAVOURITED).takeValueOrNull() }
+                                        .getOrNull(),
                             )
                         },
                 )
