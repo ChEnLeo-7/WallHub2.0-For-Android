@@ -469,7 +469,12 @@ class WorkshopDetailViewModel
                             mutableState.value.copy(
                                 isLoadingComments = false,
                                 isLoadingMoreComments = false,
-                                commentsError = error.toDetailUiText(R.string.detail_comments_load_failed),
+                                commentsError =
+                                    if (error is TimeoutCancellationException) {
+                                        DetailUiText.Resource(R.string.detail_comments_load_failed)
+                                    } else {
+                                        error.toDetailUiText(R.string.detail_comments_load_failed)
+                                    },
                             )
                     }
                 }
