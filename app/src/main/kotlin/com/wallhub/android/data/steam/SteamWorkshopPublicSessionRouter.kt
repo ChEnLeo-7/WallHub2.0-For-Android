@@ -30,20 +30,27 @@ internal class SteamWorkshopPublicSessionRouter
             return anonymousMutex.withLock {
                 authenticatedSessions.currentAuthenticated()?.let { return@withLock it }
                 if (anonymousEngine.state() == SessionState.AUTHENTICATED) return@withLock anonymousEngine
-                anonymousEngine.closeSession()
-                val route = routes.platformRoute(refreshLive = false)
-                    ?: error("The platform's Steam route is unavailable for anonymous public reads")
-                val session = anonymousEngine.open(route)
-                    ?: error("The anonymous Steam Content SDK session is unavailable")
-                session.beginAnonymousLogon()
-                withTimeout(ANONYMOUS_READY_TIMEOUT_MS) {
-                    while (session.state() != SessionState.AUTHENTICATED) {
-                        session.pollEvent(ANONYMOUS_POLL_MS.toInt())
-                        delay(ANONYMOUS_POLL_MS)
+                runCatching { openAnonymous(refreshLive = false) }
+                    .getOrElse {
+                        anonymousEngine.closeSession()
+                        openAnonymous(refreshLive = true)
                     }
-                }
-                anonymousEngine
             }
+        }
+
+        private suspend fun openAnonymous(refreshLive: Boolean): SteamContentSdkEngine {
+            val route = routes.platformRoute(refreshLive = refreshLive)
+                ?: error("The platform's Steam route is unavailable for anonymous public reads")
+            val session = anonymousEngine.open(route)
+                ?: error("The anonymous Steam Content SDK session is unavailable")
+            session.beginAnonymousLogon()
+            withTimeout(ANONYMOUS_READY_TIMEOUT_MS) {
+                while (session.state() != SessionState.AUTHENTICATED) {
+                    session.pollEvent(ANONYMOUS_POLL_MS.toInt())
+                    delay(ANONYMOUS_POLL_MS)
+                }
+            }
+            return anonymousEngine
         }
 
         suspend fun awaitAuthenticated(timeoutMs: Long = PUBLIC_FAILURE_DEADLINE_MS): SteamContentSdkEngine? =

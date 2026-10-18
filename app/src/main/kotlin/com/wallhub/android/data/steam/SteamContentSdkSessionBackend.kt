@@ -466,15 +466,8 @@ internal class SteamContentSdkSessionBackend(
         // and kSteam is never consulted.
         record("restore_retry_live_candidates")
         restoreOnce(stored, refreshLive = true)
-        // One schedule per restore, not one per attempt. Scheduling from the first attempt's failure meant the
-        // live-candidate retry's own failure replaced the five-second retry with a fifteen-second one, so the
-        // schedule the log advertised was not the schedule that ran: the first retry to actually happen was
-        // the second one listed. A transient restore failure that has now spent both attempts is what a
-        // recovery retry is for, and a network still down after the whole schedule is reported rather than
-        // hammered forever.
-        if (lastAttemptFailure.get() == SteamContentSdkSessionFailure.NETWORK) {
-            scheduleRecoveryRetry()
-        }
+        // A second transport failure is final for this foreground recovery. The user may retry explicitly;
+        // no background reconnect loop competes with public anonymous reads or another foreground attempt.
     }
 
     private suspend fun restoreOnce(
