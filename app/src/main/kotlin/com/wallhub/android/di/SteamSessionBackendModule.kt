@@ -12,6 +12,7 @@ import com.wallhub.android.data.steam.SteamContentSdkPlatform
 import com.wallhub.android.data.steam.SteamContentSdkRouteFactory
 import com.wallhub.android.data.steam.SteamContentSdkSessionBackend
 import com.wallhub.android.data.steam.SteamContentSdkSessionMessages
+import io.steamcontent.sdk.SessionMode
 import com.wallhub.android.data.steam.SteamDeviceSeedStore
 import dagger.Module
 import dagger.Provides
@@ -52,7 +53,15 @@ internal object SteamSessionBackendModule {
     internal fun provideSteamSessionSdkEngine(
         @ApplicationContext context: Context,
         deviceSeed: SteamDeviceSeedStore,
-    ): SteamContentSdkEngine = SteamContentSdkEngine(context, deviceSeed)
+    ): SteamContentSdkEngine = SteamContentSdkEngine(context, deviceSeed, SessionMode.ACCOUNT)
+
+    @Provides
+    @Singleton
+    @SteamAnonymousWorkshopEngine
+    internal fun provideAnonymousWorkshopEngine(
+        @ApplicationContext context: Context,
+        deviceSeed: SteamDeviceSeedStore,
+    ): SteamContentSdkEngine = SteamContentSdkEngine(context, deviceSeed, SessionMode.ANONYMOUS)
 
     @Provides
     @Singleton

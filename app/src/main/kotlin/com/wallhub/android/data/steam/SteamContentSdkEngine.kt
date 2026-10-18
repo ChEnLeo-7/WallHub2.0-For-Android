@@ -57,6 +57,7 @@ class SteamContentSdkEngine
     internal constructor(
         @ApplicationContext private val context: Context,
         private val deviceSeed: SteamDeviceSeedStore,
+        private val sessionMode: Int = SessionMode.ACCOUNT,
     ) {
         /**
          * Route inputs the host may supply. Empty means "connect directly".
@@ -144,7 +145,7 @@ class SteamContentSdkEngine
                     SteamContentEngine.SessionOptions(
                         eventCapacity = 64,
                         trustRootsPem = roots,
-                        sessionMode = SessionMode.ACCOUNT,
+                        sessionMode = sessionMode,
                         transport = route.transport,
                         connectAttempts = route.connectAttempts,
                         cmCandidates = route.cmCandidates,

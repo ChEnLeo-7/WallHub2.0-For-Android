@@ -51,6 +51,13 @@ internal class SteamContentSdkAuthenticatedSessionRegistry
      * authenticated is dropped rather than returned. Names are compared the way Steam compares them,
      * ignoring case.
      */
+    fun currentAuthenticated(): SteamContentSdkEngine? {
+        val published = synchronized(lock) { engine } ?: return null
+        if (published.state() == SessionState.AUTHENTICATED) return published
+        clear(published)
+        return null
+    }
+
     fun authenticated(accountName: String): SteamContentSdkEngine? {
         val published =
             synchronized(lock) {
