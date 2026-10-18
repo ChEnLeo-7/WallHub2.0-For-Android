@@ -143,12 +143,19 @@ class MainActivity : ComponentActivity() {
                                     "sdk_operation"
                                 }
                         }
+                    val safeDiagnostic =
+                        generateSequence(error as Throwable?) { it.cause }
+                            .map { it.message.orEmpty().replace(Regex("[^A-Za-z0-9 _:#.-]"), "?") }
+                            .filter(String::isNotBlank)
+                            .take(3)
+                            .joinToString(" | ")
+                            .take(240)
                     Log.e(
                         CM_PARITY_PROBE_TAG,
                         "failed stage=$stage type=${error.javaClass.simpleName} " +
                             "repositoryPhase=${steamSessionRepository.session.value.phase} " +
                             "sdkState=${steamContentSdkEngine.state()} " +
-                            "elapsedMs=${SystemClock.elapsedRealtime() - startedAt}",
+                            "elapsedMs=${SystemClock.elapsedRealtime() - startedAt} diagnostic=$safeDiagnostic",
                     )
                 }
             finish()
