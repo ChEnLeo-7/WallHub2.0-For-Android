@@ -431,14 +431,20 @@ class SteamContentSdkEngine
                                 val anonymous =
                                     runCatching { diagnosticSearchPage(anonymousEngine) }
                                         .getOrElse { failure ->
+                                            val messages =
+                                                generateSequence(failure as Throwable?) { it.cause }
+                                                    .map { it.message.orEmpty() }
+                                                    .joinToString(" ")
                                             val category =
                                                 when {
-                                                    failure.message.orEmpty().contains("does not support", ignoreCase = true) -> "unsupported"
-                                                    failure.message.orEmpty().contains("session", ignoreCase = true) -> "session"
-                                                    failure.message.orEmpty().contains("temporarily", ignoreCase = true) -> "temporary"
-                                                    failure.message.orEmpty().contains("refused", ignoreCase = true) -> "refused"
-                                                    failure.message.orEmpty().contains("transport", ignoreCase = true) ||
-                                                        failure.message.orEmpty().contains("connection", ignoreCase = true) -> "transport"
+                                                    messages.contains("does not support", ignoreCase = true) -> "unsupported"
+                                                    messages.contains("session", ignoreCase = true) -> "session"
+                                                    messages.contains("temporarily", ignoreCase = true) -> "temporary"
+                                                    messages.contains("refused", ignoreCase = true) -> "refused"
+                                                    messages.contains("result 15", ignoreCase = true) -> "result15"
+                                                    messages.contains("result 8", ignoreCase = true) -> "result8"
+                                                    messages.contains("transport", ignoreCase = true) ||
+                                                        messages.contains("connection", ignoreCase = true) -> "transport"
                                                     else -> "other"
                                                 }
                                             throw IllegalStateException("Anonymous CM search failed:$category", failure)
