@@ -24,16 +24,9 @@ import io.steamcontent.sdk.SteamContentEngine.WorkshopResolveResponse
 import io.steamcontent.sdk.SteamContentEngine.WorkshopSearchRequest
 import io.steamcontent.sdk.SteamDownloadTask
 import io.steamcontent.sdk.SteamSession
-import io.steamcontent.sdk.WorkshopItemField
 import io.steamcontent.sdk.WorkshopOperation
-import io.steamcontent.sdk.WorkshopSort
-import io.steamcontent.sdk.WorkshopTextField
-import io.steamcontent.sdk.WorkshopTrendWindow
 import io.steamcontent.sdk.WorkshopPage
 import io.steamcontent.sdk.WorkshopResult
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.KeyStore
 import java.security.cert.X509Certificate
@@ -377,156 +370,6 @@ class SteamContentSdkEngine
             engineRoute = null
         }
 
-        internal data class DiagnosticPublicRow(
-            val itemId: Long,
-            val title: String?,
-            val contentType: Long,
-            val subscribed: Long?,
-            val favourited: Long?,
-        )
-
-        internal data class DiagnosticPublicPage(
-            val total: Int,
-            val nextOffset: Int,
-            val rows: List<DiagnosticPublicRow>,
-        )
-
-        /** Temporary device-only differential probe; removed after anonymous/account parity evidence is captured. */
-        internal suspend fun diagnosticAnonymousPublicSearch(
-            requiredTags: List<String>,
-            excludedTags: List<String>,
-            language: Int,
-        ): DiagnosticPublicPage =
-            withContext(Dispatchers.IO) {
-                val route = engineRoute ?: Route()
-                val roots =
-                    if (route.extraTrustRootPem.isNullOrEmpty()) {
-                        trustBundle
-                    } else {
-                        trustBundle + route.extraTrustRootPem.toByteArray(Charsets.US_ASCII)
-                    }
-                val anonymousEngine =
-                    checkNotNull(
-                        SteamContentEngine.createWithSession(
-                            SteamContentEngine.SessionOptions(
-                                eventCapacity = 64,
-                                trustRootsPem = roots,
-                                sessionMode = SessionMode.ANONYMOUS,
-                                transport = route.transport,
-                                connectAttempts = route.connectAttempts,
-                                cmCandidates = route.cmCandidates,
-                                storageRoot = null,
-                                cdnProxy = route.cdnProxy,
-                                cdnProxyAuthorization = route.cdnProxyAuthorization,
-                                cmProxy = route.cmProxy,
-                                cmProxyAuthorization = route.cmProxyAuthorization,
-                                deviceSeed = deviceSeed.seed(),
-                            ),
-                        ),
-                    ) { "Anonymous CM engine creation failed" }
-                try {
-                    anonymousEngine.start()
-                    val anonymousSession = checkNotNull(anonymousEngine.openSession()) { "Anonymous CM session unavailable" }
-                    try {
-                        anonymousSession.beginAnonymousLogon()
-                        repeat(DIAGNOSTIC_SESSION_ATTEMPTS) {
-                            runCatching { anonymousSession.pollEvent(DIAGNOSTIC_SESSION_POLL_MS.toInt()) }
-                            if (anonymousSession.state() == SessionState.AUTHENTICATED) {
-                                runCatching {
-                                    anonymousEngine.openWorkshopItem(
-                                        DIAGNOSTIC_PUBLIC_ITEM_ID,
-                                        WALLPAPER_ENGINE_APP_ID.toLong(),
-                                    ).close()
-                                }.getOrElse { failure ->
-                                    throw IllegalStateException("Anonymous CM detail failed", failure)
-                                }
-                                val anonymous =
-                                    runCatching {
-                                        diagnosticSearchPage(
-                                            target = anonymousEngine,
-                                            requiredTags = requiredTags,
-                                            excludedTags = excludedTags,
-                                            language = language,
-                                        )
-                                    }
-                                        .getOrElse { failure ->
-                                            val messages =
-                                                (
-                                                    generateSequence(failure as Throwable?) { it.cause }
-                                                        .map { it.message.orEmpty() }
-                                                        .toList() + anonymousSession.lastError().orEmpty()
-                                                ).joinToString(" ")
-                                            val category =
-                                                when {
-                                                    messages.contains("does not support", ignoreCase = true) -> "unsupported"
-                                                    messages.contains("session", ignoreCase = true) -> "session"
-                                                    messages.contains("temporarily", ignoreCase = true) -> "temporary"
-                                                    messages.contains("refused", ignoreCase = true) -> "refused"
-                                                    messages.contains("result 15", ignoreCase = true) -> "result15"
-                                                    messages.contains("result 8", ignoreCase = true) -> "result8"
-                                                    messages.contains("transport", ignoreCase = true) ||
-                                                        messages.contains("connection", ignoreCase = true) -> "transport"
-                                                    else -> "other"
-                                                }
-                                            throw IllegalStateException("Anonymous CM search failed:$category", failure)
-                                        }
-                                return@withContext anonymous
-                            }
-                            delay(DIAGNOSTIC_SESSION_POLL_MS)
-                        }
-                        error("Anonymous CM authentication timed out")
-                    } finally {
-                        anonymousSession.close()
-                    }
-                } finally {
-                    anonymousEngine.close()
-                }
-            }
-
-        private fun diagnosticSearchPage(
-            target: SteamContentEngine,
-            requiredTags: List<String>,
-            excludedTags: List<String>,
-            language: Int,
-        ): DiagnosticPublicPage =
-            target.workshopSearch(
-                WorkshopSearchRequest(
-                    appId = WALLPAPER_ENGINE_APP_ID.toLong(),
-                    sort = WorkshopSort.MOST_RECENT,
-                    trendWindow = WorkshopTrendWindow.DEFAULT,
-                    pageSize = DIAGNOSTIC_PAGE_SIZE,
-                    pageOffset = 0,
-                    queryText = null,
-                    contentTypes = emptyList(),
-                    tags = requiredTags,
-                    excludedTags = excludedTags,
-                    language = language,
-                ),
-            ).use { page ->
-                val state = page.state()
-                DiagnosticPublicPage(
-                    total = state.total,
-                    nextOffset = state.nextOffset,
-                    rows =
-                        List(page.size()) { index ->
-                            DiagnosticPublicRow(
-                                itemId = page.field(index, WorkshopItemField.ITEM).value,
-                                title = page.text(index, WorkshopTextField.TITLE),
-                                contentType = page.field(index, WorkshopItemField.CONTENT_TYPE).value,
-                                subscribed =
-                                    runCatching { page.field(index, WorkshopItemField.SUBSCRIBED).takeValueOrNull() }
-                                        .getOrNull(),
-                                favourited =
-                                    runCatching { page.field(index, WorkshopItemField.FAVOURITED).takeValueOrNull() }
-                                        .getOrNull(),
-                            )
-                        },
-                )
-            }
-
-        private fun SteamContentEngine.WorkshopFieldValue.takeValueOrNull(): Long? =
-            value.takeIf { state == io.steamcontent.sdk.WorkshopField.VALUE }
-
         /**
          * Resolves one page of browse or search results, read through [WorkshopPage].
          *
@@ -790,10 +633,6 @@ class SteamContentSdkEngine
         companion object {
             /** The platform trust store that holds the system roots and the user-installed certificates. */
             private const val ANDROID_CA_STORE = "AndroidCAStore"
-            private const val DIAGNOSTIC_PAGE_SIZE = 30
-            private const val DIAGNOSTIC_PUBLIC_ITEM_ID = 3_757_572_576L
-            private const val DIAGNOSTIC_SESSION_ATTEMPTS = 80
-            private const val DIAGNOSTIC_SESSION_POLL_MS = 100L
 
             /** Session events the future adapter will render, named here so the mapping is in one place. */
             val OBSERVED_EVENTS: Set<Int> =
