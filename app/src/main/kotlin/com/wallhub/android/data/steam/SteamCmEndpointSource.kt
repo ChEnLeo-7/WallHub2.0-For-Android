@@ -114,8 +114,8 @@ internal class SteamCmEndpointSource
  *
  * The extraction is textual on purpose: the response's key order is not a contract, and a JVM unit test
  * carries no Android JSON implementation. Only hosts and ports the platform can actually accelerate are
- * kept, WebSocket-port endpoints come first (the bridge route speaks that transport), and the order is
- * otherwise the directory's own.
+ * kept, and their order remains exactly the directory's own. Steam owns regional/load assignment; the app
+ * must not replace it with a port or geography preference.
  */
 internal fun cmCandidatesFromBody(body: String): String =
     CM_ENDPOINT_REGEX
@@ -126,6 +126,5 @@ internal fun cmCandidatesFromBody(body: String): String =
             if (!SteamDomainPolicy.supportsEndpoint(host, port)) return@mapNotNull null
             "$host:$port"
         }.distinct()
-        .sortedByDescending { endpoint -> endpoint.endsWith(":$CM_WEBSOCKET_PORT") }
         .take(MAX_CM_CANDIDATES)
         .joinToString("\n")
