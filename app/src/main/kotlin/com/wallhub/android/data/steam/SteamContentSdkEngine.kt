@@ -392,7 +392,11 @@ class SteamContentSdkEngine
         )
 
         /** Temporary device-only differential probe; removed after anonymous/account parity evidence is captured. */
-        internal suspend fun diagnosticAnonymousPublicSearch(): DiagnosticPublicPage =
+        internal suspend fun diagnosticAnonymousPublicSearch(
+            requiredTags: List<String>,
+            excludedTags: List<String>,
+            language: Int,
+        ): DiagnosticPublicPage =
             withContext(Dispatchers.IO) {
                 val route = engineRoute ?: Route()
                 val roots =
@@ -437,7 +441,14 @@ class SteamContentSdkEngine
                                     throw IllegalStateException("Anonymous CM detail failed", failure)
                                 }
                                 val anonymous =
-                                    runCatching { diagnosticSearchPage(anonymousEngine) }
+                                    runCatching {
+                                        diagnosticSearchPage(
+                                            target = anonymousEngine,
+                                            requiredTags = requiredTags,
+                                            excludedTags = excludedTags,
+                                            language = language,
+                                        )
+                                    }
                                         .getOrElse { failure ->
                                             val messages =
                                                 (
@@ -472,7 +483,12 @@ class SteamContentSdkEngine
                 }
             }
 
-        private fun diagnosticSearchPage(target: SteamContentEngine): DiagnosticPublicPage =
+        private fun diagnosticSearchPage(
+            target: SteamContentEngine,
+            requiredTags: List<String>,
+            excludedTags: List<String>,
+            language: Int,
+        ): DiagnosticPublicPage =
             target.workshopSearch(
                 WorkshopSearchRequest(
                     appId = WALLPAPER_ENGINE_APP_ID.toLong(),
@@ -482,7 +498,9 @@ class SteamContentSdkEngine
                     pageOffset = 0,
                     queryText = null,
                     contentTypes = emptyList(),
-                    tags = emptyList(),
+                    tags = requiredTags,
+                    excludedTags = excludedTags,
+                    language = language,
                 ),
             ).use { page ->
                 val state = page.state()

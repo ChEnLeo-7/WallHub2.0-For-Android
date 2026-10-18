@@ -35,6 +35,7 @@ import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopSort
+import com.wallhub.android.core.model.steamTagCriteria
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.data.steam.SteamContentSdkEngine
@@ -102,7 +103,13 @@ class MainActivity : ComponentActivity() {
             runCatching {
                 workshopRepository.invalidateDiscoverCache()
                 val account = checkNotNull(workshopRepository.browsePublic(query)) { "Account CM search failed" }
-                val anonymous = steamContentSdkEngine.diagnosticAnonymousPublicSearch()
+                val criteria = query.steamTagCriteria()
+                val anonymous =
+                    steamContentSdkEngine.diagnosticAnonymousPublicSearch(
+                        requiredTags = criteria.requiredTags,
+                        excludedTags = criteria.excludedTags,
+                        language = query.language,
+                    )
                 account to anonymous
             }.onSuccess { (account, anonymous) ->
                 val accountIds = account.items.map { it.id }
