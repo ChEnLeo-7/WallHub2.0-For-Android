@@ -49,6 +49,13 @@ internal annotation class SteamSessionSdkEngine
 internal object SteamSessionBackendModule {
     @Provides
     @Singleton
+    internal fun provideApplicationSdkEngine(
+        @ApplicationContext context: Context,
+        deviceSeed: SteamDeviceSeedStore,
+    ): SteamContentSdkEngine = SteamContentSdkEngine(context, deviceSeed, SessionMode.ACCOUNT)
+
+    @Provides
+    @Singleton
     @SteamSessionSdkEngine
     internal fun provideSteamSessionSdkEngine(
         @ApplicationContext context: Context,

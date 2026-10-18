@@ -31,7 +31,6 @@ import java.io.File
 import java.security.KeyStore
 import java.security.cert.X509Certificate
 import java.util.Base64
-import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
@@ -53,7 +52,6 @@ import javax.inject.Singleton
  */
 @Singleton
 class SteamContentSdkEngine
-    @Inject
     internal constructor(
         @ApplicationContext private val context: Context,
         private val deviceSeed: SteamDeviceSeedStore,
