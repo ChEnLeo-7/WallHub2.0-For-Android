@@ -9,7 +9,6 @@ import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SteamVerificationMethod
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
@@ -92,10 +91,6 @@ internal class SteamContentSdkSessionBackend(
      * restore held the gate for up to its whole five-minute deadline.
      */
     private val pendingAttempt = AtomicReference<(suspend () -> Unit)?>(null)
-
-    /** How many recovery retries the current outage has spent, and the one waiting to run. */
-    private val recoveryAttempts = AtomicInteger(0)
-    private val recoveryJob = AtomicReference<Job?>(null)
 
     /**
      * The credential-store generation the running attempt read its stored credential at, or
@@ -275,8 +270,6 @@ internal class SteamContentSdkSessionBackend(
                 // opposite of what this call is doing. It matters most in the failing case below: when the
                 // store cannot be cleared the credential is still there, so a retry left running would read
                 // it and sign the user back in after they had signed out.
-                recoveryJob.getAndSet(null)?.cancel()
-                recoveryAttempts.set(0)
                 val session = activeSession.getAndSet(null)
                 if (session != null) {
                     withSession { runCatching { session.logout() } }
@@ -351,7 +344,6 @@ internal class SteamContentSdkSessionBackend(
         // that closed one: without this it would fire up to eight minutes later against a backend that is gone
         // and open the very thing close() just released. It is cancelled before the gate is opened so a retry
         // already inside restorePersistedSession is torn down with the rest.
-        recoveryJob.getAndSet(null)?.cancel()
         // The maintenance loop drives the session this is about to close, so it stops first - the same order
         // releaseSession uses. Leaving it running leaves it ticking against a closed session for up to one
         // interval, which is the leak this path had.
@@ -972,8 +964,6 @@ internal class SteamContentSdkSessionBackend(
         stage: String,
     ) {
         // A signed-in session ends whatever outage the retries were riding out.
-        recoveryAttempts.set(0)
-        recoveryJob.getAndSet(null)?.cancel()
         if (logoutInProgress.get()) {
             // The session this edge belongs to is being torn down. A Guard answer runs in its own coroutine
             // rather than under the attempt gate, so it can reach here after logout has already published
@@ -1367,24 +1357,6 @@ internal class SteamContentSdkSessionBackend(
      * Bounded on purpose: a network that is really down should be reported to the user rather than hammered, so
      * the attempts are counted, spaced out, and dropped as soon as an attempt signs in.
      */
-    private fun scheduleRecoveryRetry() {
-        val attempt = recoveryAttempts.incrementAndGet()
-        if (attempt > SESSION_RECOVERY_DELAYS_MS.size) {
-            recoveryAttempts.set(0)
-            record("session_recovery_exhausted attempts=${SESSION_RECOVERY_DELAYS_MS.size}")
-            return
-        }
-        val delayMs = SESSION_RECOVERY_DELAYS_MS[attempt - 1]
-        record("session_recovery_scheduled attempt=$attempt delay_ms=$delayMs")
-        val job =
-            scope.launch {
-                delay(delayMs)
-                if (mutableSession.value.phase == SteamSessionPhase.SIGNED_IN) return@launch
-                restorePersistedSession()
-            }
-        recoveryJob.getAndSet(job)?.cancel()
-    }
-
     /**
      * Names why a maintenance call failed.
      *
@@ -1428,18 +1400,6 @@ internal class SteamContentSdkSessionBackend(
 
         /** How much of a maintenance failure's own text a device reading keeps. */
         const val MAINTENANCE_REASON_LENGTH = 160
-
-        /**
-         * The gaps between those retries.
-         *
-         * Sized from the device, not from taste: one outage in the 0.1.71 capture ran 7m36s before a human
-         * retried it by hand, and the whole point of the schedule is that nobody has to. The last gap lands
-         * the final attempt at 7m50s, which covers that reading with a little room; a network still down
-         * after it is reported. The first gap is short so an ordinary hiccup - the ones the same capture
-         * shows recovering in three seconds - is invisible.
-         */
-        val SESSION_RECOVERY_DELAYS_MS =
-            longArrayOf(5_000L, 15_000L, 30_000L, 60_000L, 120_000L, 240_000L)
 
         /** How much of the SDK's rebuild refusal is kept; the bridge already bounds and redacts its own text. */
     }
