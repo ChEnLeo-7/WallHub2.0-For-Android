@@ -995,22 +995,37 @@ internal class SteamContentSdkSessionBackend(
         // restore alike. The store write happens only when the SDK's retained token differs from the stored
         // one, so a session that is already healthy does not rewrite the encrypted store on every restore.
         val persisted = persistRetainedToken(accountName, stage)
-        // The account's own Steam profile is read here, on the authentication edge, because it is the moment
-        // the service can answer about this account and the moment the profile screen first shows it. The
-        // persona and the avatar are the service's answer, not something derived from a credential.
-        val profile = activeSession.get()?.let { session -> runCatching { session.accountProfile() }.getOrNull() }
-        record("account_profile persona=${profile?.personaName != null} avatar=${profile?.avatarUrl != null}")
+        // Account collections need only the authenticated edge, not the optional persona/avatar projection.
+        // Publish readiness first so Library can load immediately; enrich the header later without holding the
+        // signed-in transition behind another Steam request.
         publish(
             SteamSessionPhase.SIGNED_IN,
             messages.signedIn,
             accountName = accountName,
             hasStoredSession = hasStoredSession || persisted,
-            personaName = profile?.personaName,
-            avatarUrl = profile?.avatarUrl,
         )
-        // The authentication edge is also where this host takes over the schedule: from here the connection
-        // is kept alive by the loop below, because nothing inside the SDK ticks on its own.
-        activeSession.get()?.let(::startMaintenance)
+        val authenticatedSession = activeSession.get()
+        authenticatedSession?.let(::startMaintenance)
+        if (authenticatedSession != null) {
+            scope.launch {
+                delay(ACCOUNT_PROFILE_DEFER_MILLIS)
+                if (activeSession.get() !== authenticatedSession) return@launch
+                val profile =
+                    withTimeoutOrNull(ACCOUNT_PROFILE_TIMEOUT_MILLIS) {
+                        withSession { authenticatedSession.accountProfile() }
+                    }
+                record("account_profile persona=${profile?.personaName != null} avatar=${profile?.avatarUrl != null}")
+                if (activeSession.get() !== authenticatedSession || profile == null) return@launch
+                val current = mutableSession.value
+                if (current.phase == SteamSessionPhase.SIGNED_IN) {
+                    mutableSession.value =
+                        current.copy(
+                            personaName = profile.personaName ?: current.personaName,
+                            avatarUrl = profile.avatarUrl ?: current.avatarUrl,
+                        )
+                }
+            }
+        }
     }
 
     /**
@@ -1410,6 +1425,8 @@ internal class SteamContentSdkSessionBackend(
         const val TAG = "WallHubSteamSession"
         const val SESSION_POLL_TIMEOUT_MS = 250
         const val SESSION_ATTEMPT_TIMEOUT_MS = 5 * 60_000L
+        const val ACCOUNT_PROFILE_DEFER_MILLIS = 2_000L
+        const val ACCOUNT_PROFILE_TIMEOUT_MILLIS = 5_000L
         const val SHORT_TOKEN_LENGTH = 32
         const val LONG_TOKEN_LENGTH = 256
 

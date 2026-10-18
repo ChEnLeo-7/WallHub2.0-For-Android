@@ -10,6 +10,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -44,6 +45,26 @@ class SteamContentSdkSessionBackendTest {
             assertContentEquals(credential.refreshToken.toByteArray(Charsets.UTF_8), restore.refreshToken)
             assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
             assertEquals(0, fixture.session.closeCalls)
+        }
+
+    @Test
+    fun authenticatedStateIsPublishedBeforeOptionalAccountProfileEnrichment() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(PersistedSteamCredential("account", opaqueValue(seed = 67)))
+            fixture.session.accountProfile = SteamContentSdkAccountProfile("persona", "avatar")
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            val backend = fixture.backend(this)
+
+            backend.restorePersistedSession()
+            runCurrent()
+
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+            assertNull(backend.session.value.personaName)
+            advanceTimeBy(2_001L)
+            runCurrent()
+            assertEquals("persona", backend.session.value.personaName)
+            assertEquals("avatar", backend.session.value.avatarUrl)
         }
 
     @Test
