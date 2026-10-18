@@ -43,6 +43,8 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 import javax.inject.Inject
 
 @HiltViewModel
@@ -393,7 +395,10 @@ class HomeViewModel
                             mutableState.value = mutableState.value.copy(isSteamIpPrewarming = false)
                         }
                         val response =
-                            workshopRepository.browse(
+                            withTimeout(
+                                if (!append && requestState.items.isEmpty()) HOME_INITIAL_LOAD_TIMEOUT_MS else Long.MAX_VALUE,
+                            ) {
+                                workshopRepository.browse(
                                 WorkshopBrowseQuery(
                                     page = page,
                                     pageSize = requestState.pageSize,
@@ -412,6 +417,7 @@ class HomeViewModel
                                     allowNsfw = requestState.matureContentEnabled,
                                 ),
                             )
+                            }
                         if (version != requestVersion) return@launch
                         val mergedState =
                             withContext(Dispatchers.Default) {
@@ -427,6 +433,18 @@ class HomeViewModel
                             } else {
                                 mergedState
                             }
+                    } catch (error: TimeoutCancellationException) {
+                        if (version != requestVersion) return@launch
+                        Log.w(HOME_LOG_TAG, "home initial load timed out after ${HOME_INITIAL_LOAD_TIMEOUT_MS}ms")
+                        mutableState.value =
+                            requestState.copy(
+                                isInitialLoading = false,
+                                isSteamIpPrewarming = false,
+                                isLoadingMore = false,
+                                isPageLoading = false,
+                                error = null,
+                                errorRes = R.string.home_unable_to_load_workshop,
+                            )
                     } catch (error: CancellationException) {
                         throw error
                     } catch (error: Throwable) {
@@ -550,3 +568,4 @@ private fun Int.nextPageOrLast(): Int = if (this < Int.MAX_VALUE) this + 1 else 
 
 /** The log tag the home flow writes its own stages under, so one filter reads the whole load. */
 private const val HOME_LOG_TAG = "WallHubHome"
+private const val HOME_INITIAL_LOAD_TIMEOUT_MS = 8_000L
