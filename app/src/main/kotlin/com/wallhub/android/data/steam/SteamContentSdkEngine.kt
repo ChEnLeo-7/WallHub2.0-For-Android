@@ -428,13 +428,23 @@ class SteamContentSdkEngine
                         repeat(DIAGNOSTIC_SESSION_ATTEMPTS) {
                             runCatching { anonymousSession.pollEvent(DIAGNOSTIC_SESSION_POLL_MS.toInt()) }
                             if (anonymousSession.state() == SessionState.AUTHENTICATED) {
+                                runCatching {
+                                    anonymousEngine.openWorkshopItem(
+                                        DIAGNOSTIC_PUBLIC_ITEM_ID,
+                                        WALLPAPER_ENGINE_APP_ID.toLong(),
+                                    ).close()
+                                }.getOrElse { failure ->
+                                    throw IllegalStateException("Anonymous CM detail failed", failure)
+                                }
                                 val anonymous =
                                     runCatching { diagnosticSearchPage(anonymousEngine) }
                                         .getOrElse { failure ->
                                             val messages =
-                                                generateSequence(failure as Throwable?) { it.cause }
-                                                    .map { it.message.orEmpty() }
-                                                    .joinToString(" ")
+                                                (
+                                                    generateSequence(failure as Throwable?) { it.cause }
+                                                        .map { it.message.orEmpty() }
+                                                        .toList() + anonymousSession.lastError().orEmpty()
+                                                ).joinToString(" ")
                                             val category =
                                                 when {
                                                     messages.contains("does not support", ignoreCase = true) -> "unsupported"
@@ -759,6 +769,7 @@ class SteamContentSdkEngine
             /** The platform trust store that holds the system roots and the user-installed certificates. */
             private const val ANDROID_CA_STORE = "AndroidCAStore"
             private const val DIAGNOSTIC_PAGE_SIZE = 30
+            private const val DIAGNOSTIC_PUBLIC_ITEM_ID = 3_757_572_576L
             private const val DIAGNOSTIC_SESSION_ATTEMPTS = 80
             private const val DIAGNOSTIC_SESSION_POLL_MS = 100L
 

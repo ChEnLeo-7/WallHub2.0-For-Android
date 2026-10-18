@@ -133,6 +133,7 @@ class MainActivity : ComponentActivity() {
                             "Account CM engine is unavailable", "Published account CM engine unavailable" -> "account_engine_unavailable"
                             "Account CM search failed" -> "account_search"
                             "Anonymous CM engine creation failed" -> "anonymous_engine_create"
+                            "Anonymous CM detail failed" -> "anonymous_detail"
                             "Anonymous CM session unavailable" -> "anonymous_session_open"
                             "Anonymous CM authentication timed out" -> "anonymous_auth_timeout"
                             else ->
