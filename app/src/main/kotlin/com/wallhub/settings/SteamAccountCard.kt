@@ -44,6 +44,7 @@ import coil.compose.SubcomposeAsyncImageContent
 import com.wallhub.android.R
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionState
+import com.wallhub.android.core.model.SteamVerificationMethod
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Lock
@@ -205,7 +206,17 @@ internal fun SteamAccountCard(
                             onValueChange = { guardCode = it },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                             singleLine = true,
-                            label = { Text(stringResource(R.string.settings_steam_guard_code)) },
+                            label = {
+                                Text(
+                                    stringResource(
+                                        if (session.verificationMethod == SteamVerificationMethod.EMAIL_CODE) {
+                                            R.string.settings_steam_email_code
+                                        } else {
+                                            R.string.settings_steam_mobile_code
+                                        },
+                                    ),
+                                )
+                            },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         )
                         Button(

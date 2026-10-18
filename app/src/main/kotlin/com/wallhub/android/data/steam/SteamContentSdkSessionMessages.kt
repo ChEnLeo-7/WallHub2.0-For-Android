@@ -19,7 +19,11 @@ internal interface SteamContentSdkSessionMessages {
 
     val enterCredentials: String
 
-    val enterGuardCode: String
+    val checkingLoginMethod: String
+
+    val enterEmailCode: String
+
+    val enterMobileCode: String
 
     val confirmMobile: String
 
@@ -73,7 +77,13 @@ internal class AndroidSteamContentSdkSessionMessages(
     override val enterCredentials: String
         get() = context.getString(R.string.backend_steam_enter_credentials)
 
-    override val enterGuardCode: String
+    override val checkingLoginMethod: String
+        get() = context.getString(R.string.backend_steam_checking_login_method)
+
+    override val enterEmailCode: String
+        get() = context.getString(R.string.backend_steam_enter_email_code)
+
+    override val enterMobileCode: String
         get() = context.getString(R.string.backend_steam_enter_guard_code)
 
     override val confirmMobile: String

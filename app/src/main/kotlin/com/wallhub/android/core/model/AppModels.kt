@@ -81,6 +81,12 @@ data class SteamAccessState(
     val updatedAt: Long = System.currentTimeMillis(),
 )
 
+enum class SteamVerificationMethod {
+    EMAIL_CODE,
+    MOBILE_AUTHENTICATOR_CODE,
+    DEVICE_CONFIRMATION,
+}
+
 enum class SteamSessionPhase {
     SIGNED_OUT,
     RESTORABLE,
@@ -100,6 +106,7 @@ data class SteamSessionState(
     val message: String? = null,
     val requiresCode: Boolean = false,
     val awaitingDeviceConfirmation: Boolean = false,
+    val verificationMethod: SteamVerificationMethod? = null,
     val hasStoredSession: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
 )

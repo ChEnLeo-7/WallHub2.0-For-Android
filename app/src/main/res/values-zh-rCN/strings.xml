@@ -1005,7 +1005,11 @@
     <string name='backend_steam_credentials_expired'>保存的 Steam 登录凭据已失效，请重新登录。</string>
     <string name='backend_steam_disconnected'>Steam 连接已中断，请重试恢复会话。</string>
     <string name='backend_steam_enter_credentials'>请输入 Steam 用户名和密码</string>
-    <string name='backend_steam_enter_guard_code'>请输入 Steam Guard 手机验证码</string>
+    <string name='backend_steam_checking_login_method'>正在登录并确认验证方式…</string>
+    <string name='backend_steam_enter_email_code'>请输入 Steam 发送到邮箱的验证码</string>
+    <string name='backend_steam_enter_guard_code'>请输入 Steam Guard 手机令牌验证码</string>
+    <string name='settings_steam_email_code'>Steam 邮件验证码</string>
+    <string name='settings_steam_mobile_code'>Steam Guard 手机令牌验证码</string>
     <string name='backend_steam_login_failed'>Steam 登录验证失败：%1$s</string>
     <string name='backend_steam_login_timeout'>Steam 登录超时，请检查网络后重试。</string>
     <string name='backend_steam_machine_token_unsupported'>此 Steam 登录需要机器令牌，WallHub 当前没有可用令牌。请先在可信 Steam 客户端中登录。</string>

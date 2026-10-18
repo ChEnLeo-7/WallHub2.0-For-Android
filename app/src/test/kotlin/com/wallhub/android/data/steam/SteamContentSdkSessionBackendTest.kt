@@ -3,6 +3,7 @@ package com.wallhub.android.data.steam
 import com.wallhub.android.core.model.DiagnosticEvent
 import com.wallhub.android.core.model.DiagnosticRepository
 import com.wallhub.android.core.model.SteamSessionPhase
+import com.wallhub.android.core.model.SteamVerificationMethod
 import com.wallhub.android.data.security.EncryptedStringReadResult
 import com.wallhub.android.data.security.EncryptedStringStore
 import kotlin.test.Test
@@ -209,6 +210,8 @@ class SteamContentSdkSessionBackendTest {
 
             assertEquals(SteamSessionPhase.WAITING_FOR_CODE, backend.session.value.phase)
             assertTrue(backend.session.value.requiresCode)
+            assertEquals(SteamVerificationMethod.EMAIL_CODE, backend.session.value.verificationMethod)
+            assertEquals(FakeMessages.enterEmailCode, backend.session.value.message)
 
             val code = opaqueValue(seed = 17)
             fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
@@ -219,6 +222,23 @@ class SteamContentSdkSessionBackendTest {
             assertContentEquals(challengeId, fixture.session.answers.single().challengeId)
             assertContentEquals(code.toByteArray(Charsets.UTF_8), fixture.session.answers.single().answer)
             assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+        }
+
+    @Test
+    fun aMobileCodeChallengeUsesTheAuthenticatorSpecificState() =
+        runTest {
+            val fixture = Fixture()
+            fixture.session.pendingChallengeId = opaqueValue(seed = 18).toByteArray(Charsets.UTF_8)
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.AuthenticationChallenge(SteamContentSdkChallengeKind.MOBILE)
+            val backend = fixture.backend(this)
+
+            backend.login("account", opaqueValue(seed = 20))
+            advanceUntilIdle()
+
+            assertEquals(SteamSessionPhase.WAITING_FOR_CODE, backend.session.value.phase)
+            assertEquals(SteamVerificationMethod.MOBILE_AUTHENTICATOR_CODE, backend.session.value.verificationMethod)
+            assertEquals(FakeMessages.enterMobileCode, backend.session.value.message)
         }
 
     @Test
@@ -1249,7 +1269,9 @@ class SteamContentSdkSessionBackendTest {
         override val connecting = "connecting"
         override val requestingLogin = "requesting-login"
         override val enterCredentials = "enter-credentials"
-        override val enterGuardCode = "enter-guard-code"
+        override val checkingLoginMethod = "checking-login-method"
+        override val enterEmailCode = "enter-email-code"
+        override val enterMobileCode = "enter-mobile-code"
         override val confirmMobile = "confirm-mobile"
         override val codeSubmitted = "code-submitted"
         override val signedIn = "signed-in"

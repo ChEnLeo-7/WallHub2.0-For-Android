@@ -7,6 +7,7 @@ import com.wallhub.android.core.model.DiagnosticRepository
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
+import com.wallhub.android.core.model.SteamVerificationMethod
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -223,7 +224,11 @@ internal class SteamContentSdkSessionBackend(
     override fun useManualSteamGuardFallback() {
         val pending = pendingChallenge.get()
         if (pending != null) {
-            publish(steamContentSdkChallengePhase(pending.kind), messages.enterGuardCode)
+            publish(
+                steamContentSdkChallengePhase(pending.kind),
+                challengeMessage(pending.kind),
+                verificationMethod = pending.kind.verificationMethod(),
+            )
             return
         }
         if (mutableSession.value.phase != SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION) {
@@ -573,7 +578,7 @@ internal class SteamContentSdkSessionBackend(
             publish(SteamSessionPhase.FAILED, messages.authRejected, accountName = accountName)
             return true
         }
-        publish(SteamSessionPhase.SIGNING_IN, messages.requestingLogin, accountName = accountName)
+        publish(SteamSessionPhase.SIGNING_IN, messages.checkingLoginMethod, accountName = accountName)
         val secret = password.toByteArray(Charsets.UTF_8)
         try {
             session.beginAccountLogon(accountName, secret)
@@ -875,9 +880,10 @@ internal class SteamContentSdkSessionBackend(
                     pendingChallenge.set(PendingChallenge(kind, id, session))
                     publish(
                         SteamSessionPhase.WAITING_FOR_CODE,
-                        messages.enterGuardCode,
+                        challengeMessage(kind),
                         accountName = accountName,
                         hasStoredSession = hasStoredSession,
+                        verificationMethod = kind.verificationMethod(),
                     )
                 }
                 true
@@ -891,6 +897,7 @@ internal class SteamContentSdkSessionBackend(
                     messages.confirmMobile,
                     accountName = accountName,
                     hasStoredSession = hasStoredSession,
+                    verificationMethod = SteamVerificationMethod.DEVICE_CONFIRMATION,
                 )
                 false
             }
@@ -901,6 +908,21 @@ internal class SteamContentSdkSessionBackend(
                 failChallenge(accountName, hasStoredSession)
                 true
             }
+        }
+
+    private fun challengeMessage(kind: SteamContentSdkChallengeKind): String =
+        when (kind) {
+            SteamContentSdkChallengeKind.EMAIL -> messages.enterEmailCode
+            SteamContentSdkChallengeKind.MOBILE -> messages.enterMobileCode
+            else -> messages.challengeUnsupported
+        }
+
+    private fun SteamContentSdkChallengeKind.verificationMethod(): SteamVerificationMethod? =
+        when (this) {
+            SteamContentSdkChallengeKind.EMAIL -> SteamVerificationMethod.EMAIL_CODE
+            SteamContentSdkChallengeKind.MOBILE -> SteamVerificationMethod.MOBILE_AUTHENTICATOR_CODE
+            SteamContentSdkChallengeKind.DEVICE_CONFIRMATION -> SteamVerificationMethod.DEVICE_CONFIRMATION
+            else -> null
         }
 
     private fun failAttempt(
@@ -1181,6 +1203,7 @@ internal class SteamContentSdkSessionBackend(
         accountName: String? = null,
         requiresCode: Boolean = phase == SteamSessionPhase.WAITING_FOR_CODE,
         awaitingDeviceConfirmation: Boolean = phase == SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
+        verificationMethod: SteamVerificationMethod? = null,
         hasStoredSession: Boolean? = null,
         personaName: String? = null,
         avatarUrl: String? = null,
@@ -1197,6 +1220,7 @@ internal class SteamContentSdkSessionBackend(
                 message = message,
                 requiresCode = requiresCode,
                 awaitingDeviceConfirmation = awaitingDeviceConfirmation,
+                verificationMethod = verificationMethod,
                 hasStoredSession = hasStoredSession ?: previous.hasStoredSession,
             )
         record("phase_${phase.name.lowercase()}")

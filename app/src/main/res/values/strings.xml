@@ -1053,7 +1053,11 @@
     <string name='backend_steam_credentials_expired'>The saved Steam credentials have expired. Sign in again.</string>
     <string name='backend_steam_disconnected'>The Steam connection was interrupted. Try restoring the session.</string>
     <string name='backend_steam_enter_credentials'>Enter your Steam username and password</string>
-    <string name='backend_steam_enter_guard_code'>Enter the Steam Guard mobile code</string>
+    <string name='backend_steam_checking_login_method'>Signing in and checking the required verification method…</string>
+    <string name='backend_steam_enter_email_code'>Enter the code Steam sent by email</string>
+    <string name='backend_steam_enter_guard_code'>Enter the Steam Guard mobile authenticator code</string>
+    <string name='settings_steam_email_code'>Steam email code</string>
+    <string name='settings_steam_mobile_code'>Steam Guard mobile authenticator code</string>
     <string name='backend_steam_login_failed'>Steam sign-in failed: %1$s</string>
     <string name='backend_steam_login_timeout'>Steam sign-in timed out. Check your network and try again.</string>
     <string name='backend_steam_machine_token_unsupported'>This Steam login requires a machine token that WallHub does not have. Sign in from a trusted Steam client first.</string>
