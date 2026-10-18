@@ -31,6 +31,27 @@ class SteamSessionRequestRecoveryTest {
         }
 
     @Test
+    fun `a stale connection failure before service answer reconnects and retries once`() =
+        runTest {
+            val session = FakeRecoverableSession()
+            val recovery = SteamSessionRequestRecovery(session)
+            var calls = 0
+
+            val result =
+                recovery.execute {
+                    calls += 1
+                    if (calls == 1) {
+                        error("temporarily_unavailable: the connection failed before the service answered")
+                    }
+                    "detail"
+                }
+
+            assertEquals("detail", result)
+            assertEquals(2, calls)
+            assertEquals(1, session.reconnectCalls)
+        }
+
+    @Test
     fun `a session unavailable failure reconnects and retries once`() =
         runTest {
             val session = FakeRecoverableSession()

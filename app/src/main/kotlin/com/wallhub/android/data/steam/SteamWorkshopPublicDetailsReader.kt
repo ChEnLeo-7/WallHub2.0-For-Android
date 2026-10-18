@@ -19,8 +19,15 @@ internal class SteamWorkshopPublicDetailsReader(
     private val mapChildren: (WorkshopResult) -> List<Long>,
 ) {
     suspend fun getDetail(workshopId: Long): CmPublicDetailResult =
-        getDetails(listOf(workshopId)).outcomes.firstOrNull()?.second
-            ?: CmPublicDetailResult.Unavailable("CM detail result unavailable")
+        withContext(Dispatchers.IO) {
+            require(workshopId > 0L) { "Invalid Workshop item ID" }
+            cache.publicDetails.getFresh(workshopId)?.let {
+                return@withContext CmPublicDetailResult.Available(it)
+            }
+            gateway.awaitUsableSession()
+            getDetails(listOf(workshopId)).outcomes.firstOrNull()?.second
+                ?: CmPublicDetailResult.Unavailable("CM detail result unavailable")
+        }
 
     suspend fun getDetails(workshopIds: List<Long>): CmPublicDetailsBatch =
         withContext(Dispatchers.IO) {
@@ -36,26 +43,29 @@ internal class SteamWorkshopPublicDetailsReader(
                     ) { engine.openWorkshopItems(batch.toLongArray(), WALLPAPER_ENGINE_APP_ID.toLong()) }
                 }
                 try {
-                    CmPublicDetailsBatch(
-                        entries.map { entry ->
-                            val result = entry.result
-                            val detail =
-                                if (entry.status == WorkshopDetailsStatus.OK && result != null) {
-                                    mapDetail(result).also {
-                                        engine.currentSessionGeneration()?.let { generation ->
-                                            cache.detailInteractions.remember(
-                                                entry.itemId,
-                                                generation,
-                                                interactionOf(result),
-                                            )
+                    val response =
+                        CmPublicDetailsBatch(
+                            entries.map { entry ->
+                                val result = entry.result
+                                val detail =
+                                    if (entry.status == WorkshopDetailsStatus.OK && result != null) {
+                                        mapDetail(result).also {
+                                            engine.currentSessionGeneration()?.let { generation ->
+                                                cache.detailInteractions.remember(
+                                                    entry.itemId,
+                                                    generation,
+                                                    interactionOf(result),
+                                                )
+                                            }
                                         }
+                                    } else {
+                                        null
                                     }
-                                } else {
-                                    null
-                                }
-                            entry.itemId to mapCmDetailOutcome(entry.status, entry.serviceResult, detail)
-                        },
-                    )
+                                entry.itemId to mapCmDetailOutcome(entry.status, entry.serviceResult, detail)
+                            },
+                        )
+                    response.available.forEach { detail -> cache.publicDetails.put(detail.summary.id, detail) }
+                    response
                 } finally {
                     entries.forEach { it.result?.close() }
                 }

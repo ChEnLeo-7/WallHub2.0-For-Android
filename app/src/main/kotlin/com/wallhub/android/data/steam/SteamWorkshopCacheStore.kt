@@ -2,6 +2,7 @@ package com.wallhub.android.data.steam
 
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.WorkshopBrowseQuery
+import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopPage
 import java.util.concurrent.atomic.AtomicLong
 
@@ -13,6 +14,13 @@ internal class SteamWorkshopCacheStore(
     val accountEpoch = AtomicLong()
     val detailInteractions = WorkshopDetailInteractionCache()
     val accountPager = AccountCollectionPager()
+    val publicDetails =
+        SteamReadCache<Long, WorkshopDetail>(
+            maxEntries = 64,
+            freshMillis = FRESH_MILLIS,
+            staleMillis = FRESH_MILLIS,
+            clockMillis = clockMillis,
+        )
     val publicPages =
         SteamReadCache<WorkshopBrowseQuery, WorkshopPage>(
             freshMillis = FRESH_MILLIS,
@@ -28,6 +36,7 @@ internal class SteamWorkshopCacheStore(
 
     suspend fun invalidatePublic() {
         publicEpoch.incrementAndGet()
+        publicDetails.invalidateAll()
         publicPages.invalidateAll()
     }
 
@@ -35,6 +44,7 @@ internal class SteamWorkshopCacheStore(
         publicEpoch.incrementAndGet()
         accountEpoch.incrementAndGet()
         detailInteractions.invalidateAll()
+        publicDetails.invalidateAll()
         publicPages.invalidateAll()
         accountPages.invalidateAll()
         accountPager.invalidateAll()

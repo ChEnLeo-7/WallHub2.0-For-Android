@@ -28,6 +28,7 @@ internal interface RecoverableSteamSession {
 internal enum class SteamRequestRecoveryCause {
     REQUEST_REFUSED_BEFORE_SENT,
     SESSION_UNAVAILABLE,
+    CONNECTION_FAILED_BEFORE_ANSWER,
 }
 
 /**
@@ -44,6 +45,8 @@ internal fun steamRequestRecoveryCause(error: Throwable): SteamRequestRecoveryCa
             SteamRequestRecoveryCause.REQUEST_REFUSED_BEFORE_SENT
         "session_unavailable" in message || "session unavailable" in message ->
             SteamRequestRecoveryCause.SESSION_UNAVAILABLE
+        "the connection failed before the service answered" in message ->
+            SteamRequestRecoveryCause.CONNECTION_FAILED_BEFORE_ANSWER
         else -> null
     }
 }

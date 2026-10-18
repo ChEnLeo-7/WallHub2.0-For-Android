@@ -63,6 +63,14 @@ internal class SteamWorkshopSdkGateway(
     fun signedInAccountId(): Long? =
         runCatching { engine.currentSession()?.accountId() }.getOrNull()?.takeIf { it > 0L }
 
+    suspend fun awaitUsableSession() {
+        if (runCatching { engine.state() == SessionState.AUTHENTICATED }.getOrDefault(false)) return
+        repeat(PUBLIC_SESSION_READY_ATTEMPTS) {
+            delay(SESSION_READY_DELAY_MS)
+            if (runCatching { engine.state() == SessionState.AUTHENTICATED }.getOrDefault(false)) return
+        }
+    }
+
     suspend fun awaitSignedInSession() {
         if (signedInAccountId() != null) return
         repeat(SESSION_READY_ATTEMPTS) {
@@ -74,6 +82,7 @@ internal class SteamWorkshopSdkGateway(
     private companion object {
         const val TAG = "WallHubSdkWorkshop"
         const val SESSION_READY_ATTEMPTS = 20
+        const val PUBLIC_SESSION_READY_ATTEMPTS = 32
         const val SESSION_READY_DELAY_MS = 250L
     }
 }

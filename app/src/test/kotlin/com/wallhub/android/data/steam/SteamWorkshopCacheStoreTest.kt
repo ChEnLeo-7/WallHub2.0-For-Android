@@ -1,6 +1,8 @@
 package com.wallhub.android.data.steam
 
 import com.wallhub.android.core.model.WorkshopBrowseQuery
+import com.wallhub.android.core.model.WorkshopDetail
+import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopPage
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -22,6 +24,19 @@ class SteamWorkshopCacheStoreTest {
         now += 2L
         assertNull(store.publicPages.getFresh(query))
         assertNull(store.publicPages.getStale(query))
+    }
+
+    @Test
+    fun `public CM detail uses the same two-minute fresh-only window`() = runTest {
+        var now = 20_000L
+        val store = SteamWorkshopCacheStore { now }
+        val detail = WorkshopDetail(WorkshopSummary(id = 42L, title = "detail", author = "author"))
+
+        store.publicDetails.put(42L, detail)
+        assertEquals(detail, store.publicDetails.getFresh(42L))
+        now += 120_001L
+        assertNull(store.publicDetails.getFresh(42L))
+        assertNull(store.publicDetails.getStale(42L))
     }
 
     @Test
