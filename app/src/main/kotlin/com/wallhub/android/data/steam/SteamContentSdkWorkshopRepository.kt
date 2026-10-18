@@ -648,9 +648,18 @@ internal class SteamContentSdkWorkshopRepository
             priority: WorkshopReadPriority,
             operation: suspend (SteamContentSdkEngine) -> T,
         ): T {
-            val selected = publicSessionRouter.acquire()
+            val selected =
+                runCatching { publicSessionRouter.acquire() }.getOrElse { anonymousFailure ->
+                    publicSessionRouter.awaitAuthenticated() ?: throw anonymousFailure
+                }
             val selectedGateway = if (selected === anonymousEngine) anonymousGateway else gateway
-            return selectedGateway.read(key, kind, priority) { operation(selected) }
+            return try {
+                selectedGateway.read(key, kind, priority) { operation(selected) }
+            } catch (failure: Throwable) {
+                if (selected !== anonymousEngine) throw failure
+                val authenticated = publicSessionRouter.awaitAuthenticated() ?: throw failure
+                gateway.read(key, kind, priority) { operation(authenticated) }
+            }
         }
 
         private suspend fun <T> sdkRead(

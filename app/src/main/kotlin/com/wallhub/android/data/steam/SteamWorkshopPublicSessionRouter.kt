@@ -46,6 +46,16 @@ internal class SteamWorkshopPublicSessionRouter
             }
         }
 
+        suspend fun awaitAuthenticated(timeoutMs: Long = PUBLIC_FAILURE_DEADLINE_MS): SteamContentSdkEngine? =
+            withTimeoutOrNull(timeoutMs) {
+                var authenticated = authenticatedSessions.currentAuthenticated()
+                while (authenticated == null) {
+                    delay(ACCOUNT_POLL_MS)
+                    authenticated = authenticatedSessions.currentAuthenticated()
+                }
+                authenticated
+            }
+
         suspend fun onAccountAuthenticated() {
             anonymousMutex.withLock { anonymousEngine.closeSession() }
         }
@@ -59,5 +69,6 @@ internal class SteamWorkshopPublicSessionRouter
             const val ACCOUNT_POLL_MS = 25L
             const val ANONYMOUS_READY_TIMEOUT_MS = 8_000L
             const val ANONYMOUS_POLL_MS = 50L
+            const val PUBLIC_FAILURE_DEADLINE_MS = 8_000L
         }
     }
