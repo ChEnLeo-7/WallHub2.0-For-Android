@@ -8,37 +8,22 @@ import javax.inject.Singleton
 import okhttp3.Request
 import org.json.JSONObject
 
-internal const val CM_LIST_CACHE_FRESH_TTL_MS = 24L * 60L * 60L * 1000L
 internal const val CM_LIST_CACHE_STALE_TTL_MS = 7L * 24L * 60L * 60L * 1000L
 internal const val MAX_CM_LIST_CACHE_BYTES = 256L * 1024L
-
-internal enum class SteamCmListCacheAction {
-    SERVE_CACHED,
-    FETCH_LIVE,
-    FETCH_LIVE_WITH_FALLBACK,
-}
-
-internal fun cmListCacheDecision(ageMs: Long?): SteamCmListCacheAction =
-    when {
-        ageMs == null -> SteamCmListCacheAction.FETCH_LIVE
-        ageMs < CM_LIST_CACHE_FRESH_TTL_MS -> SteamCmListCacheAction.SERVE_CACHED
-        else -> SteamCmListCacheAction.FETCH_LIVE_WITH_FALLBACK
-    }
 
 internal fun cmListCacheStaleUsable(ageMs: Long): Boolean =
     ageMs in 0 until CM_LIST_CACHE_STALE_TTL_MS
 
 /**
- * Whether the SDK route source may answer from the cache without a directory request.
+ * Whether a failed live Directory request may fall back to the persisted response.
  *
- * A fresh cache answers, so a signed-in app normally answers with no network call. A cache past its fresh
- * age is refreshed first, and a caller that is retrying after a transport-level failure never takes the
- * cached list at all: that list is exactly the input being questioned.
+ * Every cold start asks Steam first. A normal attempt may use a bounded cached response only after that live
+ * request fails; a transport-recovery retry never reuses the same candidate input already under suspicion.
  */
-internal fun cmCandidatesCacheAnswers(
+internal fun cmCandidatesMayFallBack(
     ageMs: Long?,
     refreshLive: Boolean,
-): Boolean = !refreshLive && cmListCacheDecision(ageMs) == SteamCmListCacheAction.SERVE_CACHED
+): Boolean = !refreshLive && ageMs != null && cmListCacheStaleUsable(ageMs)
 
 internal fun Request.isCmListRequest(): Boolean =
     url.host.equals("api.steampowered.com", ignoreCase = true) &&

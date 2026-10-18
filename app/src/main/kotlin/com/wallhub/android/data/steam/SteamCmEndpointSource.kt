@@ -35,11 +35,9 @@ private val CM_ENDPOINT_REGEX = Regex("([A-Za-z0-9][A-Za-z0-9.-]*\\.steamserver\
  * [SteamContentSdkEngine.Route.cmCandidates]; the engine then connects to one of them directly, which is how
  * this platform's own signed-in transport reaches the same channel.
  *
- * Cache first while the cached directory is fresh: the directory the kSteam transport already caches is read
- * before any request, so a signed-in app normally answers without a network call. Past the fresh age the
- * directory is read first and the stale body only answers if that read fails, and a caller retrying after a
- * transport-level failure never takes the cached body at all. A fetch that fails leaves the decision to the
- * engine rather than inventing an endpoint.
+ * Every cold start reads Steam's directory live so a changed egress receives Steam's current regional/load
+ * assignment. The persisted response is disaster recovery only: a normal attempt may use it after the live
+ * request fails, while a retry after a transport failure never reuses the same candidate input.
  */
 @Singleton
 internal class SteamCmEndpointSource
@@ -61,10 +59,6 @@ internal class SteamCmEndpointSource
                         .loadMostRecent()
                         ?.takeIf { cmListCacheStaleUsable(it.ageMs) }
                 val cachedCandidates = cached?.body?.let(::cmCandidatesFromBody).orEmpty()
-                if (cmCandidatesCacheAnswers(cached?.ageMs, refreshLive) && cachedCandidates.isNotEmpty()) {
-                    Log.i(TAG, "cm candidates=${cachedCandidates.lines().size} source=cache")
-                    return@withContext cachedCandidates
-                }
                 val live =
                     runCatching { fetchDirectory() }
                         .getOrNull()
@@ -75,13 +69,15 @@ internal class SteamCmEndpointSource
                     "cm candidates=${live.lines().size} source=live" + if (refreshLive) " retry=true" else "",
                 )
                 if (live.isNotEmpty()) return@withContext live
-                // The directory is unreachable. "No route" is worse than a candidate list the platform has
-                // already read and that may have gone stale: with no route there is no session at all, and a
-                // recovery attempt that could not reach the directory is exactly when the cached list is the
-                // only thing left to try. It used to be withheld from the live retry on the theory that the
-                // retry had already seen it fail, which left a dropped connection with nothing to reconnect
-                // through until the operator brought the app back to the foreground.
-                cachedCandidates.takeIf { it.isNotEmpty() }
+                // The first cold-start attempt may recover from a Directory outage with the bounded persisted
+                // response. A transport retry deliberately refuses that same input: it already failed to make a
+                // usable session, so presenting it again would not be a new attempt.
+                cachedCandidates
+                    .takeIf {
+                        it.isNotEmpty() && cmCandidatesMayFallBack(cached?.ageMs, refreshLive)
+                    }?.also {
+                        Log.i(TAG, "cm candidates=${it.lines().size} source=cache_fallback")
+                    }
             }
 
         private fun fetchDirectory(): String? {

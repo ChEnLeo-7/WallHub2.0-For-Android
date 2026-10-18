@@ -1,48 +1,27 @@
 package com.wallhub.android.data.steam
 
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import okhttp3.Request
 
 class SteamCmListCacheTest {
     @Test
-    fun `cm list cache serves fresh entries and falls back for stale ones`() {
-        assertEquals(SteamCmListCacheAction.FETCH_LIVE, cmListCacheDecision(null))
-        assertEquals(SteamCmListCacheAction.SERVE_CACHED, cmListCacheDecision(0L))
-        assertEquals(SteamCmListCacheAction.SERVE_CACHED, cmListCacheDecision(CM_LIST_CACHE_FRESH_TTL_MS - 1))
-        assertEquals(
-            SteamCmListCacheAction.FETCH_LIVE_WITH_FALLBACK,
-            cmListCacheDecision(CM_LIST_CACHE_FRESH_TTL_MS),
-        )
-        assertEquals(
-            SteamCmListCacheAction.FETCH_LIVE_WITH_FALLBACK,
-            cmListCacheDecision(CM_LIST_CACHE_STALE_TTL_MS - 1),
-        )
-        assertEquals(
-            SteamCmListCacheAction.FETCH_LIVE_WITH_FALLBACK,
-            cmListCacheDecision(CM_LIST_CACHE_STALE_TTL_MS + 1),
-        )
-    }
-
-    @Test
     fun `stale cm list fallback expires after hard ttl`() {
         assertTrue(cmListCacheStaleUsable(0L))
-        assertTrue(cmListCacheStaleUsable(CM_LIST_CACHE_FRESH_TTL_MS))
+        assertTrue(cmListCacheStaleUsable(24L * 60L * 60L * 1000L))
         assertTrue(cmListCacheStaleUsable(CM_LIST_CACHE_STALE_TTL_MS - 1))
         assertFalse(cmListCacheStaleUsable(CM_LIST_CACHE_STALE_TTL_MS))
         assertFalse(cmListCacheStaleUsable(-1L))
     }
 
     @Test
-    fun `the sdk route source answers from the cache only while it is fresh and never on a retry`() {
-        assertTrue(cmCandidatesCacheAnswers(0L, refreshLive = false))
-        assertTrue(cmCandidatesCacheAnswers(CM_LIST_CACHE_FRESH_TTL_MS - 1, refreshLive = false))
-        assertFalse(cmCandidatesCacheAnswers(CM_LIST_CACHE_FRESH_TTL_MS, refreshLive = false))
-        assertFalse(cmCandidatesCacheAnswers(CM_LIST_CACHE_STALE_TTL_MS - 1, refreshLive = false))
-        assertFalse(cmCandidatesCacheAnswers(null, refreshLive = false))
-        assertFalse(cmCandidatesCacheAnswers(0L, refreshLive = true))
+    fun `a failed live request may use bounded cache except on transport retry`() {
+        assertTrue(cmCandidatesMayFallBack(0L, refreshLive = false))
+        assertTrue(cmCandidatesMayFallBack(CM_LIST_CACHE_STALE_TTL_MS - 1, refreshLive = false))
+        assertFalse(cmCandidatesMayFallBack(CM_LIST_CACHE_STALE_TTL_MS, refreshLive = false))
+        assertFalse(cmCandidatesMayFallBack(null, refreshLive = false))
+        assertFalse(cmCandidatesMayFallBack(0L, refreshLive = true))
     }
 
     @Test
