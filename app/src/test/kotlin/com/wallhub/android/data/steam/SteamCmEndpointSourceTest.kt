@@ -5,7 +5,7 @@ import org.junit.Test
 
 class SteamCmEndpointSourceTest {
     @Test
-    fun theWebsocketPortEndpointsComeFirstAndTheOrderInsideAGroupIsTheDirectoriesOwn() {
+    fun theDirectoryOrderIsPreservedAcrossCmPorts() {
         val body =
             """
             {"response":{"serverlist":[
@@ -16,7 +16,7 @@ class SteamCmEndpointSourceTest {
             """.trimIndent()
 
         assertEquals(
-            "cmp2-b.steamserver.net:443\ncmp1-a.steamserver.net:27019\ncmp3-c.steamserver.net:27017",
+            "cmp1-a.steamserver.net:27019\ncmp2-b.steamserver.net:443\ncmp3-c.steamserver.net:27017",
             cmCandidatesFromBody(body),
         )
     }
