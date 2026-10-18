@@ -1,5 +1,7 @@
 package com.wallhub.android.data.steam
 
+import android.os.SystemClock
+import android.util.Log
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
@@ -20,16 +22,23 @@ internal class SteamWorkshopAccountReader(
     suspend fun browseCollection(query: AccountWorkshopQuery): WorkshopPage =
         withContext(Dispatchers.IO) {
             val normalized = query.normalized()
+            val startedAt = SystemClock.elapsedRealtime()
+            Log.i(TAG, "account collection begin collection=${normalized.collection} page=${normalized.page}")
             try {
                 awaitWorkshopSession(WorkshopSessionAccess.AUTHENTICATED_ACCOUNT, gateway::awaitSignedInSession)
+                Log.i(TAG, "account collection session-ready ms=${SystemClock.elapsedRealtime() - startedAt}")
                 val accountId = gateway.signedInAccountId() ?: error("No signed-in Steam account is available")
                 val generation =
                     engine.currentSessionGeneration()
                         ?: error("No signed-in Steam session generation is available")
                 val cacheKey = AccountPageCacheKey(accountId, generation, normalized)
-                cache.accountPages.getFresh(cacheKey)?.let { return@withContext it }
+                cache.accountPages.getFresh(cacheKey)?.let {
+                    Log.i(TAG, "account collection cache-hit ms=${SystemClock.elapsedRealtime() - startedAt}")
+                    return@withContext it
+                }
                 val readEpoch = cache.accountEpoch.get()
                 val list = normalized.collection.sdkPersonalList()
+                Log.i(TAG, "account collection request-start ms=${SystemClock.elapsedRealtime() - startedAt}")
                 val loaded =
                     if (!normalized.hasInteractiveFilters()) {
                         val source = loadPage(accountId, generation, list, normalized, normalized.page, normalized.pageSize)
@@ -43,6 +52,11 @@ internal class SteamWorkshopAccountReader(
                         }
                     }
                 if (cache.accountEpoch.get() == readEpoch) cache.accountPages.put(cacheKey, loaded)
+                Log.i(
+                    TAG,
+                    "account collection complete collection=${normalized.collection} items=${loaded.items.size} " +
+                        "ms=${SystemClock.elapsedRealtime() - startedAt}",
+                )
                 loaded
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -81,5 +95,9 @@ internal class SteamWorkshopAccountReader(
     private fun pageOffsetOf(page: Int, pageSize: Int): Int {
         val offset = (page.coerceAtLeast(1).toLong() - 1L) * pageSize.coerceAtLeast(1).toLong()
         return offset.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+    }
+
+    private companion object {
+        const val TAG = "WallHubSdkWorkshop"
     }
 }
