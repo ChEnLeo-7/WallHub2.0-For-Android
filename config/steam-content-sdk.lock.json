@@ -1,11 +1,11 @@
 {
-  "aarSha256": "27bcd7ac6e6ffa29bd88bac7298fc09921ed5ef8703798c82fba14596c9a1adb",
-  "coordinate": "io.steamcontent.sdk:sc-content-android-preview:0.1.121",
+  "aarSha256": "bc18483e1d20fb3cbcf94bb2b1d6c619456810b7fbd0e329dfe85a0664a091ca",
+  "coordinate": "io.steamcontent.sdk:sc-content-android-preview:0.1.122",
   "nativeLibraries": {
-    "arm64-v8a/libsc_content_ffi.so": "406fac4dabe267ace7cd152d386ddf6d3b85e97f2aec8e32997d6b1f6aaffb67",
+    "arm64-v8a/libsc_content_ffi.so": "9bd8fc2bef5cd6a2a1a7b71a7bd1e160b66b86cfee0a62833d67dd21a0f23784",
     "arm64-v8a/libsc_content_jni.so": "8938448dc96978c8f2390b695cedab357e41e982fe01f1a0dfc3462e5865aa2f"
   },
-  "pomSha256": "5cf44c7843ac4e0a696d7416a846011b805dda86cee8dae7e4352fa43d2fdcef",
+  "pomSha256": "7ddb1a9577f1cb77f9554210a91e73165e11417413dd3a51be65069a2d6a1af4",
   "schemaVersion": 1,
-  "sdkCommit": "72721b791c38f0ff863495ba19f15419d6f9523a"
+  "sdkCommit": "6d53a57ffdee5c185865f134bde10361e76c7fdb"
 }
