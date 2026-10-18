@@ -12,6 +12,16 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+internal fun accountCollectionPriority(
+    query: AccountWorkshopQuery,
+    sourcePageSize: Int,
+): WorkshopReadPriority =
+    if (query.resolveTotalCount && sourcePageSize == 1) {
+        WorkshopReadPriority.BACKGROUND
+    } else {
+        WorkshopReadPriority.FOREGROUND
+    }
+
 /** Authenticated account collection paging, isolated from public Workshop reads. */
 internal class SteamWorkshopAccountReader(
     private val engine: SteamContentSdkEngine,
@@ -74,7 +84,7 @@ internal class SteamWorkshopAccountReader(
         gateway.read(
             key = "account:$accountId:$sessionGeneration:${query.collection}:$sourcePage:$sourcePageSize",
             kind = WorkshopReadKind.ACCOUNT_COLLECTION,
-            priority = WorkshopReadPriority.FOREGROUND,
+            priority = accountCollectionPriority(query, sourcePageSize),
         ) {
             engine.workshopPersonalItems(
                 accountId = accountId,

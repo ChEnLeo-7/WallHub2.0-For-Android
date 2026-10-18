@@ -20,6 +20,20 @@ class AccountCollectionPagerTest {
     private val scope = AccountCollectionScope(accountId = 76561198000000001L, sessionGeneration = 7L)
 
     @Test
+    fun `default filtered source window favors first render over maximum batch size`() {
+        assertEquals(24, AccountCollectionPagerLimits().sourcePageSize)
+        assertTrue(AccountCollectionPagerLimits().sourcePageSize < MAX_ACCOUNT_WORKSHOP_PAGE_SIZE)
+    }
+
+    @Test
+    fun `profile count probes are background while collection pages are foreground`() {
+        val count = AccountWorkshopQuery(AccountWorkshopCollection.SUBSCRIPTIONS, pageSize = 1, resolveTotalCount = true)
+        val page = AccountWorkshopQuery(AccountWorkshopCollection.SUBSCRIPTIONS, pageSize = 16)
+        assertEquals(WorkshopReadPriority.BACKGROUND, accountCollectionPriority(count, 1))
+        assertEquals(WorkshopReadPriority.FOREGROUND, accountCollectionPriority(page, 16))
+    }
+
+    @Test
     fun `next ui page continues from the materialized cursor instead of rescanning source page one`() = runTest {
         val pager = AccountCollectionPager()
         val calls = mutableListOf<Int>()

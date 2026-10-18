@@ -18,10 +18,12 @@ internal data class AccountCollectionScope(
     val sessionGeneration: Long,
 )
 
+internal const val DEFAULT_ACCOUNT_COLLECTION_SOURCE_PAGE_SIZE = 24
+
 internal data class AccountCollectionPagerLimits(
     val maxCursors: Int = DEFAULT_MAX_ACCOUNT_COLLECTION_CURSORS,
     val maxSourcePagesPerCursor: Int = MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES,
-    val sourcePageSize: Int = MAX_ACCOUNT_WORKSHOP_PAGE_SIZE,
+    val sourcePageSize: Int = DEFAULT_ACCOUNT_COLLECTION_SOURCE_PAGE_SIZE,
 ) {
     init {
         require(maxCursors > 0) { "maxCursors must be positive" }
