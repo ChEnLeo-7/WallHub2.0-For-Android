@@ -242,6 +242,26 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
+    fun aRejectedGuardCodeKeepsTheMatchingVerificationPage() =
+        runTest {
+            val fixture = Fixture()
+            fixture.session.pendingChallengeId = opaqueValue(seed = 22).toByteArray(Charsets.UTF_8)
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.AuthenticationChallenge(SteamContentSdkChallengeKind.EMAIL)
+            val backend = fixture.backend(this)
+
+            backend.login("account", opaqueValue(seed = 24))
+            advanceUntilIdle()
+            fixture.session.events += SteamContentSdkSessionEvent.PendingFailed
+            backend.submitSteamGuardCode(opaqueValue(seed = 26))
+            advanceUntilIdle()
+
+            assertEquals(SteamSessionPhase.WAITING_FOR_CODE, backend.session.value.phase)
+            assertEquals(SteamVerificationMethod.EMAIL_CODE, backend.session.value.verificationMethod)
+            assertEquals(FakeMessages.authRejected, backend.session.value.message)
+        }
+
+    @Test
     fun aGuardAnswerWithoutAPendingChallengeFails() =
         runTest {
             val fixture = Fixture()

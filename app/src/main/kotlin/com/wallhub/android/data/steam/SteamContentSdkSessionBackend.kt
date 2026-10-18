@@ -158,7 +158,7 @@ internal class SteamContentSdkSessionBackend(
     override fun submitSteamGuardCode(code: String) {
         val answerText = code.trim()
         // Claiming the pending challenge atomically keeps a second submission from answering twice.
-        val challenge = pendingChallenge.getAndSet(null)
+        val challenge = pendingChallenge.get()
         if (answerText.isEmpty() || challenge == null || logoutInProgress.get()) {
             publish(SteamSessionPhase.FAILED, messages.noGuardRequest)
             return
@@ -199,8 +199,11 @@ internal class SteamContentSdkSessionBackend(
                 return@launchAttempt
             }
             if (!accepted) {
-                releaseSession()
-                publish(SteamSessionPhase.FAILED, messages.authRejected)
+                publish(
+                    SteamSessionPhase.WAITING_FOR_CODE,
+                    messages.authRejected,
+                    verificationMethod = challenge.kind.verificationMethod(),
+                )
                 return@launchAttempt
             }
             publish(SteamSessionPhase.SIGNING_IN, messages.codeSubmitted)
@@ -807,13 +810,15 @@ internal class SteamContentSdkSessionBackend(
                 handleChallenge(session, event.kind, accountName, hasStoredSession)
 
             SteamContentSdkSessionEvent.PendingFailed -> {
-                releaseSession()
-                publish(
-                    SteamSessionPhase.FAILED,
-                    messages.authRejected,
-                    accountName = accountName,
-                    hasStoredSession = hasStoredSession,
-                )
+                if (!republishRejectedChallenge(session, accountName, hasStoredSession)) {
+                    releaseSession()
+                    publish(
+                        SteamSessionPhase.FAILED,
+                        messages.authRejected,
+                        accountName = accountName,
+                        hasStoredSession = hasStoredSession,
+                    )
+                }
                 true
             }
 
@@ -824,7 +829,12 @@ internal class SteamContentSdkSessionBackend(
             }
 
             is SteamContentSdkSessionEvent.CommandFailed ->
-                if (handleCommandFailure(event.failure, session, restore, accountName, hasStoredSession)) {
+                if (
+                    event.failure == SteamContentSdkSessionFailure.AUTHENTICATION_FAILED &&
+                    republishRejectedChallenge(session, accountName, hasStoredSession)
+                ) {
+                    true
+                } else if (handleCommandFailure(event.failure, session, restore, accountName, hasStoredSession)) {
                     releaseSession()
                     true
                 } else {
@@ -835,6 +845,22 @@ internal class SteamContentSdkSessionBackend(
             SteamContentSdkSessionEvent.Unknown,
             -> false
         }
+
+    private fun republishRejectedChallenge(
+        session: SteamContentSdkPlatformSession,
+        accountName: String?,
+        hasStoredSession: Boolean,
+    ): Boolean {
+        val pending = pendingChallenge.get()?.takeIf { it.session === session } ?: return false
+        publish(
+            SteamSessionPhase.WAITING_FOR_CODE,
+            messages.authRejected,
+            accountName = accountName,
+            hasStoredSession = hasStoredSession,
+            verificationMethod = pending.kind.verificationMethod(),
+        )
+        return true
+    }
 
     private fun handleStateChanged(
         state: SteamContentSdkSessionState,

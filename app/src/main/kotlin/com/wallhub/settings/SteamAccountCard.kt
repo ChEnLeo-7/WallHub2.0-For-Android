@@ -95,6 +95,11 @@ internal fun SteamAccountCard(
                 credentialLoginInProgress = false
             }
 
+            SteamSessionPhase.SIGNING_IN -> password = ""
+            SteamSessionPhase.FAILED, SteamSessionPhase.EXPIRED -> {
+                password = ""
+                guardCode = ""
+            }
             SteamSessionPhase.RESTORABLE -> credentialLoginInProgress = false
             else -> Unit
         }

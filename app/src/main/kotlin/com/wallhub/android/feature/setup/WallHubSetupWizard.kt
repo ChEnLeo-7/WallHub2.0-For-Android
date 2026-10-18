@@ -178,9 +178,20 @@ fun WallHubSetupWizard(
     val session by viewModel.session.collectAsStateWithLifecycle()
     var page by rememberSaveable { mutableStateOf(WallHubSetupPage.Welcome) }
     val pageIndex = WallHubSetupPage.entries.indexOf(page)
-    BackHandler(enabled = pageIndex > 0) {
+    val navigateBack = {
+        if (
+            page == WallHubSetupPage.Steam &&
+            session.phase in setOf(
+                SteamSessionPhase.SIGNING_IN,
+                SteamSessionPhase.WAITING_FOR_CODE,
+                SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
+            )
+        ) {
+            viewModel.logoutSteam()
+        }
         page = WallHubSetupPage.entries[pageIndex - 1]
     }
+    BackHandler(enabled = pageIndex > 0, onBack = navigateBack)
     MaterialTheme(typography = rememberSettingsTypography()) {
     Box(modifier = Modifier.fillMaxSize()) {
         AnimatedContent(
@@ -230,7 +241,18 @@ fun WallHubSetupWizard(
                 }
             },
             secondaryLabel = stringResource(R.string.setup_action_skip),
-            onSecondaryClick = { page = WallHubSetupPage.Network },
+            onSecondaryClick = {
+                if (
+                    session.phase in setOf(
+                        SteamSessionPhase.SIGNING_IN,
+                        SteamSessionPhase.WAITING_FOR_CODE,
+                        SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
+                    )
+                ) {
+                    viewModel.logoutSteam()
+                }
+                page = WallHubSetupPage.Network
+            },
             showPrimary = showPrimary,
             showSecondary = showSkip,
         )
@@ -238,7 +260,7 @@ fun WallHubSetupWizard(
             SettingsToolbarActionButton(
                 imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                 contentDescription = stringResource(R.string.settings_action_back),
-                onClick = { page = WallHubSetupPage.entries[pageIndex - 1] },
+                onClick = navigateBack,
                 iconSize = 16.dp,
                 modifier =
                     Modifier
