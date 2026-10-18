@@ -3,6 +3,7 @@
 package com.wallhub.android.feature.home
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.getValue
@@ -44,6 +45,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.TimeoutCancellationException
 import javax.inject.Inject
 
@@ -198,21 +200,44 @@ class HomeViewModel
                 )
         }
 
+        private fun updateFirstContentCompletion(state: HomeUiState): HomeUiState {
+            if (state.firstContentCompleteAtElapsedMs != null || state.items.isEmpty()) return state
+            val firstItems = state.items.take((state.columns.coerceAtLeast(1) * 2))
+            val complete = firstItems.all { item ->
+                item.authorPlaceholder == WorkshopAuthorPlaceholder.NONE ||
+                    state.authorDisplayNames[item.id] != null ||
+                    item.id in state.personaDegradedItemIds
+            }
+            return if (complete) {
+                state.copy(firstContentCompleteAtElapsedMs = SystemClock.elapsedRealtime())
+            } else {
+                state
+            }
+        }
+
         private fun requestAuthorDisplayName(item: WorkshopSummary) {
             if (item.authorPlaceholder == WorkshopAuthorPlaceholder.NONE || item.id in authorNameRequests) return
             authorNameRequests += item.id
             viewModelScope.launch {
                 val authorName =
-                    runCatching {
-                        workshopRepository.getDetail(item.id).summary
-                    }.getOrNull()?.takeIf { it.authorPlaceholder == WorkshopAuthorPlaceholder.NONE }?.author
+                    withTimeoutOrNull(PERSONA_COMPLETION_TIMEOUT_MS) {
+                        runCatching {
+                            workshopRepository.getDetail(item.id).summary
+                        }.getOrNull()?.takeIf { it.authorPlaceholder == WorkshopAuthorPlaceholder.NONE }?.author
+                    }
                 if (!authorName.isNullOrBlank()) {
                     mutableState.value =
                         mutableState.value.let { state ->
-                            state.copy(authorDisplayNames = state.authorDisplayNames + (item.id to authorName))
+                            updateFirstContentCompletion(
+                                state.copy(authorDisplayNames = state.authorDisplayNames + (item.id to authorName)),
+                            )
                         }
                 } else {
                     authorNameRequests -= item.id
+                    mutableState.value =
+                        updateFirstContentCompletion(
+                            mutableState.value.copy(personaDegradedItemIds = mutableState.value.personaDegradedItemIds + item.id),
+                        )
                 }
             }
         }
@@ -427,11 +452,18 @@ class HomeViewModel
                                 )
                             }
                         if (version != requestVersion) return@launch
+                        val visibleAt = mergedState.firstContentVisibleAtElapsedMs
+                            ?: mergedState.items.take((mergedState.columns.coerceAtLeast(1) * 2))
+                                .takeIf { it.isNotEmpty() }
+                                ?.let { SystemClock.elapsedRealtime() }
+                        val completedState = updateFirstContentCompletion(
+                            mergedState.copy(firstContentVisibleAtElapsedMs = visibleAt),
+                        )
                         mutableState.value =
                             if (scrollToTopOnSuccess) {
-                                mergedState.copy(successfulSearchToken = requestState.successfulSearchToken + 1L)
+                                completedState.copy(successfulSearchToken = requestState.successfulSearchToken + 1L)
                             } else {
-                                mergedState
+                                completedState
                             }
                     } catch (error: TimeoutCancellationException) {
                         if (version != requestVersion) return@launch
@@ -569,3 +601,4 @@ private fun Int.nextPageOrLast(): Int = if (this < Int.MAX_VALUE) this + 1 else 
 /** The log tag the home flow writes its own stages under, so one filter reads the whole load. */
 private const val HOME_LOG_TAG = "WallHubHome"
 private const val HOME_INITIAL_LOAD_TIMEOUT_MS = 8_000L
+private const val PERSONA_COMPLETION_TIMEOUT_MS = 5_000L
