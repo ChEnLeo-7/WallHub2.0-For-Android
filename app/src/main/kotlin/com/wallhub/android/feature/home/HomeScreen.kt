@@ -893,32 +893,6 @@ internal fun ViewModeButton(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
-@Composable
-private fun HomeInitialSkeleton(
-    modifier: Modifier,
-    columns: Int,
-) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(columns.coerceAtLeast(1)),
-        modifier = modifier,
-        contentPadding = PaddingValues(horizontal = HOME_GRID_HORIZONTAL_PADDING, vertical = WallHubSpacing.sm),
-        horizontalArrangement = Arrangement.spacedBy(HOME_GRID_ITEM_SPACING),
-        verticalArrangement = Arrangement.spacedBy(HOME_GRID_ITEM_SPACING),
-        userScrollEnabled = false,
-    ) {
-        items(columns.coerceAtLeast(1) * 2) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(220.dp),
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            ) {}
-        }
-    }
-}
-
 @Composable
 internal fun HomeResults(
     state: HomeUiState,
@@ -1001,10 +975,7 @@ internal fun HomeResults(
                         )
                     }
                 } else {
-                    HomeInitialSkeleton(
-                        modifier = Modifier.fillMaxSize(),
-                        columns = state.columns,
-                    )
+                    Box(modifier = Modifier.fillMaxSize())
                 }
             }
 
