@@ -647,6 +647,7 @@ internal fun WorkshopDetailPane(
                 commentPostError = commentPostError,
                 isWallpaperHeaderCollapsed = headerOffsetPx < -1f,
                 onReturnToWallpaperTop = { onHeaderOffsetChange(0f) },
+                onCommentsVisible = onCommentsVisible,
                 onRetryComments = onRetryComments,
                 onLoadMoreComments = onLoadMoreComments,
                 onCommentDraftChanged = onCommentDraftChanged,
