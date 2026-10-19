@@ -472,8 +472,8 @@ class SteamContentSdkSessionBackendTest {
             assertTrue(
                 fixture.diagnostics.events
                     .mapNotNull { it.attributes["stage"] }
-                    .any { it.startsWith("session_recovery_scheduled") },
-                "no recovery retry was scheduled, so this test proves nothing",
+                    .none { it.startsWith("session_recovery_scheduled") },
+                "the bounded owner must not leave a delayed recovery schedule behind",
             )
 
             backend.logout()
@@ -676,8 +676,9 @@ class SteamContentSdkSessionBackendTest {
                 fixture.platform.openCalls,
                 "a state read failure must schedule exactly one restore handoff",
             )
-            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
-            // The successful handoff starts a fresh periodic maintenance loop; stop it so runTest does not
+            assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
+            // The handed-off restore is bounded and remains failed when the replacement cannot authenticate.
+            // Stop the maintenance scope so runTest does not
             // correctly keep advancing an intentionally infinite schedule during teardown.
             backend.close()
         }
@@ -707,7 +708,7 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
-    fun aTransientRestoreFailureIsRetriedPastTheOutageTheDeviceShowed() =
+    fun aTransientRestoreFailureGetsOneBoundedLiveDirectoryRetry() =
         runTest {
             val fixture = Fixture()
             fixture.storeCredential(
@@ -720,43 +721,24 @@ class SteamContentSdkSessionBackendTest {
             val backend = fixture.backend(this)
 
             backend.restorePersistedSession()
-            // Explicit steps rather than advanceUntilIdle: the schedule is time-based, and a test that drains
-            // everything hides whether a retry was scheduled at all.
+            // Explicit steps expose the initial and one live-directory attempt without inventing a delayed loop.
             advanceTimeBy(1L)
             runCurrent()
             val stages = fixture.diagnostics.events.mapNotNull { it.attributes["stage"] }
-            assertTrue(
-                stages.any { it.startsWith("session_recovery_scheduled") },
-                "no retry was scheduled: $stages",
-            )
-            val openCallsAfterFirstAttempt = fixture.platform.openCalls
+            assertTrue(stages.contains("restore_retry_live_candidates"), "the one live-directory retry did not run: $stages")
+            assertEquals(1, fixture.platform.openCalls)
+            assertEquals(1, fixture.platform.liveOpenCalls)
 
-            // The first retry is five seconds out, and it does run.
-            advanceTimeBy(5_001L)
+            // Recovery is deliberately bounded: there is no delayed retry schedule that can outlive logout or
+            // overlap another owner. Time passing cannot create another account CM session.
+            advanceTimeBy(660_000L)
             runCurrent()
-            assertTrue(
-                fixture.platform.openCalls > openCallsAfterFirstAttempt,
-                "the scheduled recovery attempt did not run",
-            )
-
-            // The outage this schedule exists for: the 0.1.71 capture shows one running 7m36s before a human
-            // retried it by hand. Six minutes in, the app must still be trying - nobody should have to.
-            advanceTimeBy(360_000L)
-            runCurrent()
+            assertEquals(1, fixture.platform.openCalls)
+            assertEquals(1, fixture.platform.liveOpenCalls)
             assertTrue(
                 fixture.diagnostics.events
                     .mapNotNull { it.attributes["stage"] }
-                    .none { it.startsWith("session_recovery_exhausted") },
-                "the schedule gave up inside the outage the device showed",
-            )
-
-            // ...and it does end. A network that is really down is reported rather than hammered forever.
-            advanceTimeBy(300_000L)
-            runCurrent()
-            assertTrue(
-                fixture.diagnostics.events
-                    .mapNotNull { it.attributes["stage"] }
-                    .any { it.startsWith("session_recovery_exhausted") },
+                    .none { it.startsWith("session_recovery_scheduled") },
                 "the schedule never ended",
             )
             val afterSchedule = fixture.platform.openCalls
