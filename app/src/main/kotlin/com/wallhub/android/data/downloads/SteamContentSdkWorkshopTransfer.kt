@@ -15,7 +15,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /** One Workshop item the SDK resolved to the content identity a download accepts. */
@@ -242,8 +241,19 @@ internal class SteamContentSdkWorkshopTransfer
                         onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RECOVERING_SESSION))
                     }
                 }
-                delay(SESSION_RECOVERY_DELAY_MS)
-                downloadOnce(target, destinationDirectory, credential, options, control, onProgress)
+                if (downloadRecoveryDecision(failure) == DownloadRecoveryDecision.REOPEN_SESSION_ONCE) {
+                    downloadOnce(
+                        target,
+                        destinationDirectory,
+                        credential,
+                        options,
+                        control,
+                        onProgress,
+                        afterGeneration = failure.sessionGeneration,
+                    )
+                } else {
+                    downloadOnce(target, destinationDirectory, credential, options, control, onProgress)
+                }
             }
         }
 
@@ -254,6 +264,7 @@ internal class SteamContentSdkWorkshopTransfer
             options: SteamContentDownloadOptions,
             control: suspend () -> SteamDownloadControl,
             onProgress: suspend (SteamDownloadProgress) -> Unit,
+            afterGeneration: Long? = null,
         ): SteamContentDownloadResult =
             withContext(Dispatchers.IO) {
                 require(target.publishedFileId > 0L) { "Invalid Workshop item ID" }
@@ -268,7 +279,7 @@ internal class SteamContentSdkWorkshopTransfer
                 options.timingContext?.let { context ->
                     DownloadTimingTelemetry.log(DownloadTimingTelemetry.SDK_SESSION_ACQUIRE_STARTED, context)
                 }
-                val lease = sessionBroker.acquire(effectiveCredential)
+                val lease = sessionBroker.acquire(effectiveCredential, afterGeneration)
                 options.timingContext?.let { context ->
                     DownloadTimingTelemetry.log(DownloadTimingTelemetry.SDK_SESSION_ACQUIRED, context)
                 }
@@ -356,7 +367,7 @@ internal class SteamContentSdkWorkshopTransfer
                     ) {
                         lease.reportSessionLoss()
                     }
-                    throw failure
+                    throw failure.withSessionGeneration(lease.generation)
                 } finally {
                     // The lease, not this download, owns the session: closing it here would take it away from
                     // the downloads that are still running beside this one.
@@ -662,7 +673,6 @@ internal class SdkTaskEventLog(
 }
 
 private const val SDK_TASK_EVENT_LOG_INTERVAL_MS = 1_000L
-private const val SESSION_RECOVERY_DELAY_MS = 250L
 private const val SESSION_UNAVAILABLE_DIAGNOSTIC = "content resolution failed at session_unavailable"
 // ABI minor 44 append-only ordinals. Kept locally so this adapter can compile against the prior preview AAR
 // while staging the new native artifact; control flow still switches on stable numbers, never diagnostic text.
@@ -696,7 +706,15 @@ internal class SteamContentSdkTaskFailureException(
     val ordinal: Long,
     val diagnostic: String?,
     message: String,
-) : IllegalStateException(message)
+    val sessionGeneration: Long? = null,
+) : IllegalStateException(message) {
+    fun withSessionGeneration(generation: Long): SteamContentSdkTaskFailureException =
+        if (sessionGeneration == generation) {
+            this
+        } else {
+            SteamContentSdkTaskFailureException(ordinal, diagnostic, message.orEmpty(), generation)
+        }
+}
 
 /** Maps an SDK task state onto the phase vocabulary the app's progress contract already publishes. */
 internal fun sdkProgressPhase(

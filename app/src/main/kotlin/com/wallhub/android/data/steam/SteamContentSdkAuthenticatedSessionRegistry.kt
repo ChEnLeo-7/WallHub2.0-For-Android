@@ -1,71 +1,152 @@
 package com.wallhub.android.data.steam
 
 import io.steamcontent.sdk.SessionState
+import java.util.Locale
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** A usable account-session snapshot published by the one account-session owner. */
+internal data class SteamContentSdkAuthenticatedSession(
+    val engine: SteamContentSdkEngine,
+    val generation: Long,
+)
+
+/** The one non-blocking recovery signal content callers may send to the account-session owner. */
+internal fun interface SteamContentSdkAccountSessionRecoveryOwner {
+    fun recoverIfCurrent(
+        accountName: String,
+        generation: Long,
+    )
+}
 
 /**
- * The one SDK session the process currently has authenticated, if any.
+ * Publishes the one account CM session that is both authenticated and transport-usable.
  *
- * The session domain and the content path deliberately run on separate engines, so that neither can close
- * the other's engine. That separation also lets both hold a live session for the same Steam account at the
- * same time - and the peer refuses the second live session for one account. Publishing the authenticated
- * engine here lets the content path borrow the session the session domain already owns instead of
- * `restore`-ing a competing one.
- *
- * A record is an engine reference plus the account name that session was authenticated for; it holds no
- * token, no event, and no session handle. It is cleared when the owning session closes, and a lender
- * re-checks the engine's own state before lending, so a stale record cannot hand out a dead session.
+ * The registry owns no session, reconnect loop, lease count or parallel generation. Every mutation compares the
+ * complete publication (account, engine and authorization generation), so an obsolete platform wrapper cannot
+ * clear or resurrect a replacement hosted by the same process-wide engine.
  */
 @javax.inject.Singleton
 internal class SteamContentSdkAuthenticatedSessionRegistry
     @javax.inject.Inject
     constructor() {
-    private val lock = Any()
-    private var accountName: String? = null
-    private var engine: SteamContentSdkEngine? = null
+        private data class Published(
+            val accountKey: String,
+            val snapshot: SteamContentSdkAuthenticatedSession,
+        )
 
-    /** Records that [engine] holds a session authenticated for [accountName]. */
-    fun publish(
-        accountName: String,
-        engine: SteamContentSdkEngine,
-    ) {
-        synchronized(lock) {
-            this.accountName = accountName
-            this.engine = engine
+        private val lock = Any()
+        private val published = MutableStateFlow<Published?>(null)
+        private var recoveryOwner: SteamContentSdkAccountSessionRecoveryOwner? = null
+        private val retiredGenerations = mutableMapOf<String, Long>()
+
+        fun installRecoveryOwner(owner: SteamContentSdkAccountSessionRecoveryOwner) {
+            synchronized(lock) { recoveryOwner = owner }
         }
-    }
 
-    /** Forgets [engine] when it is the published one. The owning session's close path calls this. */
-    fun clear(engine: SteamContentSdkEngine) {
-        synchronized(lock) {
-            if (this.engine === engine) {
-                accountName = null
-                this.engine = null
-            }
-        }
-    }
-
-    /**
-     * The engine holding a live authenticated session for [accountName], or null when there is none.
-     *
-     * Null means the caller has to open and restore its own session. A record whose engine is no longer
-     * authenticated is dropped rather than returned. Names are compared the way Steam compares them,
-     * ignoring case.
-     */
-    fun currentAuthenticated(): SteamContentSdkEngine? {
-        val published = synchronized(lock) { engine } ?: return null
-        if (published.state() == SessionState.AUTHENTICATED) return published
-        clear(published)
-        return null
-    }
-
-    fun authenticated(accountName: String): SteamContentSdkEngine? {
-        val published =
+        /** Publishes only a newer authenticated authorization generation. */
+        fun publish(
+            accountName: String,
+            engine: SteamContentSdkEngine,
+            expectedGeneration: Long,
+        ): Long? {
+            val generation = engine.currentSessionGeneration()?.takeIf { it == expectedGeneration } ?: return null
+            if (engine.state() != SessionState.AUTHENTICATED) return null
             synchronized(lock) {
-                if (!accountName.equals(this.accountName, ignoreCase = true)) return null
-                engine ?: return null
+                val accountKey = accountName.accountKey()
+                if (generation <= (retiredGenerations[accountKey] ?: Long.MIN_VALUE)) return null
+                val current = published.value
+                if (
+                    current != null &&
+                    current.accountKey == accountName.accountKey() &&
+                    current.snapshot.engine === engine &&
+                    current.snapshot.generation > generation
+                ) {
+                    return null
+                }
+                published.value =
+                    Published(
+                        accountKey = accountKey,
+                        snapshot = SteamContentSdkAuthenticatedSession(engine, generation),
+                    )
             }
-        if (published.state() == SessionState.AUTHENTICATED) return published
-        clear(published)
-        return null
+            return generation
+        }
+
+        /** Clears only the exact publication the closing owner previously published. */
+        fun clear(
+            engine: SteamContentSdkEngine,
+            generation: Long?,
+        ) {
+            if (generation == null) return
+            synchronized(lock) {
+                val current = published.value ?: return
+                if (current.snapshot.engine === engine && current.snapshot.generation == generation) {
+                    published.value = null
+                }
+            }
+        }
+
+        fun currentAuthenticated(): SteamContentSdkEngine? = currentUsable()?.engine
+
+        fun authenticated(accountName: String): SteamContentSdkEngine? = currentUsable(accountName)?.engine
+
+        fun currentUsable(accountName: String? = null): SteamContentSdkAuthenticatedSession? {
+            val value = published.value ?: return null
+            if (accountName != null && value.accountKey != accountName.accountKey()) return null
+            if (isStillUsable(value.snapshot)) return value.snapshot
+            clear(value.snapshot.engine, value.snapshot.generation)
+            return null
+        }
+
+        /** Waits for a usable account session, optionally strictly newer than [afterGeneration]. */
+        suspend fun awaitUsable(
+            accountName: String,
+            afterGeneration: Long? = null,
+            timeoutMs: Long,
+        ): SteamContentSdkAuthenticatedSession? {
+            currentUsable(accountName)?.takeIf { afterGeneration == null || it.generation > afterGeneration }?.let {
+                return it
+            }
+            return withTimeoutOrNull(timeoutMs) {
+                published.first { value ->
+                    value != null &&
+                        value.accountKey == accountName.accountKey() &&
+                        (afterGeneration == null || value.snapshot.generation > afterGeneration) &&
+                        isStillUsable(value.snapshot)
+                }?.snapshot
+            }
+        }
+
+        /** Retires exactly the failed generation and asks the sole account owner to recover it. */
+        fun reportUnavailable(
+            accountName: String,
+            generation: Long,
+        ): Boolean {
+            val owner =
+                synchronized(lock) {
+                    val current = published.value ?: return false
+                    if (
+                        current.accountKey != accountName.accountKey() ||
+                        current.snapshot.generation != generation
+                    ) {
+                        return false
+                    }
+                    val installed = recoveryOwner ?: return false
+                    retiredGenerations[current.accountKey] = generation
+                    published.value = null
+                    installed
+                }
+            owner.recoverIfCurrent(accountName, generation)
+            return true
+        }
+
+        private fun isStillUsable(snapshot: SteamContentSdkAuthenticatedSession): Boolean =
+            runCatching {
+                snapshot.engine.currentSessionGeneration() == snapshot.generation &&
+                    snapshot.engine.state() == SessionState.AUTHENTICATED
+            }.getOrDefault(false)
+
+        private fun String.accountKey(): String = trim().lowercase(Locale.ROOT)
     }
-}

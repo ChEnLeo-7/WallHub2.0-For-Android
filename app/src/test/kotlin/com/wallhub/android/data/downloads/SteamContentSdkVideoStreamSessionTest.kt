@@ -18,9 +18,7 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -138,37 +136,6 @@ private class FakeRangeSession : SteamContentSdkSession {
 }
 
 class SteamContentSdkVideoStreamSessionTest {
-    @Test
-    fun `synchronous restore clears account and token byte arrays after success`() {
-        val account = "account".toByteArray()
-        val token = "synthetic-token".toByteArray()
-        var passedAccount: ByteArray? = null
-        var passedToken: ByteArray? = null
-
-        restoreWithClearedCredentials(account, token) { accountBytes, tokenBytes ->
-            passedAccount = accountBytes
-            passedToken = tokenBytes
-        }
-
-        assertArrayEquals(ByteArray(account.size), account)
-        assertArrayEquals(ByteArray(token.size), token)
-        assertArrayEquals(ByteArray(account.size), passedAccount)
-        assertArrayEquals(ByteArray(token.size), passedToken)
-    }
-
-    @Test
-    fun `synchronous restore clears account and token byte arrays after failure`() {
-        val account = "account".toByteArray()
-        val token = "synthetic-token".toByteArray()
-
-        assertThrows(IllegalStateException::class.java) {
-            restoreWithClearedCredentials(account, token) { _, _ -> error("restore refused") }
-        }
-
-        assertArrayEquals(ByteArray(account.size), account)
-        assertArrayEquals(ByteArray(token.size), token)
-    }
-
     @Test
     fun `byte cursor distinguishes contiguous reopen from a real seek`() {
         val cursor = StreamByteCursor()

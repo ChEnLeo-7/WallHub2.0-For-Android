@@ -323,6 +323,9 @@ internal fun steamContentSdkFailurePhase(failure: SteamContentSdkSessionFailure)
  * library. Methods take and return only app-owned types or opaque bytes; no SDK ordinal or SDK type crosses it.
  */
 internal interface SteamContentSdkPlatformSession : Closeable {
+    /** Current authenticated authorization generation; distinct from the native handle's close fence. */
+    fun authorizationGeneration(): Long? = null
+
     fun supportsAccountLogon(): Boolean
 
     fun supportsRestore(): Boolean
@@ -453,6 +456,8 @@ private class SteamContentSdkEnginePlatformSession(
     private val sessionOwner: GenerationHandleOwner.Handle<SteamSession>,
     private val authenticatedSessions: SteamContentSdkAuthenticatedSessionRegistry,
 ) : SteamContentSdkPlatformSession {
+    override fun authorizationGeneration(): Long? = engine.sessionAuthorizationGeneration(session)
+
     private val session: SteamSession
         get() = sessionOwner.value
     /**
@@ -460,6 +465,7 @@ private class SteamContentSdkEnginePlatformSession(
      * content path may borrow. Set by the logon and restore that started it, and never logged.
      */
     private var accountName: String? = null
+    private var publishedGeneration: Long? = null
 
     override fun supportsAccountLogon(): Boolean =
         session.capabilities().supports(SessionCapabilityBits.ACCOUNT_LOGIN)
@@ -537,7 +543,8 @@ private class SteamContentSdkEnginePlatformSession(
     private fun publishWhenAuthenticated(state: SteamContentSdkSessionState) {
         val name = accountName ?: return
         if (state == SteamContentSdkSessionState.AUTHENTICATED) {
-            authenticatedSessions.publish(name, engine)
+            val generation = authorizationGeneration() ?: return
+            authenticatedSessions.publish(name, engine, generation)?.let { publishedGeneration = it }
         }
     }
 
@@ -582,7 +589,7 @@ private class SteamContentSdkEnginePlatformSession(
     override fun logout() = session.logout()
 
     override fun close() {
-        authenticatedSessions.clear(engine)
+        authenticatedSessions.clear(engine, publishedGeneration)
         // Only the session. This engine is the process-wide session engine, and a download or a range stream
         // may have borrowed it; closing the engine here is what turned a lost connection into
         // `invalid task handle` on a transfer that was still running.

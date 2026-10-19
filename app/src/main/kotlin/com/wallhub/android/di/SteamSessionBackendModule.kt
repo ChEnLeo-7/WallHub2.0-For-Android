@@ -25,13 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 
-/**
- * The SDK session backend needs its own platform engine.
- *
- * [SteamContentSdkEngine] owns one session at a time and `open` replaces it, and the download path already
- * holds the application-wide instance. A separate instance for the session domain keeps a download from
- * closing the session the sign-in flow is holding open.
- */
+/** Qualifies the account-session engine from the anonymous public Workshop engine. */
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.FUNCTION, AnnotationTarget.VALUE_PARAMETER)
@@ -47,13 +41,6 @@ internal annotation class SteamSessionSdkEngine
 @Module
 @InstallIn(SingletonComponent::class)
 internal object SteamSessionBackendModule {
-    @Provides
-    @Singleton
-    internal fun provideApplicationSdkEngine(
-        @ApplicationContext context: Context,
-        deviceSeed: SteamDeviceSeedStore,
-    ): SteamContentSdkEngine = SteamContentSdkEngine(context, deviceSeed, SessionMode.ACCOUNT)
-
     @Provides
     @Singleton
     @SteamSessionSdkEngine
@@ -97,12 +84,14 @@ internal object SteamSessionBackendModule {
         credentialStore: EncryptedSteamCredentialStore,
         messages: SteamContentSdkSessionMessages,
         diagnostics: DiagnosticRepository,
+        authenticatedSessions: SteamContentSdkAuthenticatedSessionRegistry,
     ): SteamSessionRepository =
         SteamContentSdkSessionBackend(
             platform = platform,
             credentialStore = credentialStore,
             messages = messages,
             diagnostics = diagnostics,
+            authenticatedSessions = authenticatedSessions,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
         )
 }

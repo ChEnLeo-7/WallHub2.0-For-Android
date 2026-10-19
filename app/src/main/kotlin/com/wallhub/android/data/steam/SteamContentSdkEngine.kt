@@ -207,6 +207,13 @@ class SteamContentSdkEngine
         internal fun currentSessionGeneration(): Long? =
             sessions.currentHandle()?.let { publishedSessionGeneration }
 
+        /** Returns the authorization generation only while [session] is still this engine's current handle. */
+        @Synchronized
+        internal fun sessionAuthorizationGeneration(session: SteamSession): Long? =
+            sessions.currentHandle()
+                ?.takeIf { it.value === session }
+                ?.let { publishedSessionGeneration }
+
         /** Reconnects only the session generation that actually refused the foreground request. */
         @Synchronized
         internal fun reconnectSessionIfCurrent(expectedGeneration: Long): Boolean {

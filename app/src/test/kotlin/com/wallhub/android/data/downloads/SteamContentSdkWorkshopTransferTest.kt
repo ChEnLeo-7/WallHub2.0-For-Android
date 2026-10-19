@@ -732,8 +732,8 @@ class SteamContentSdkWorkshopTransferTest {
                 secondRun.join()
 
                 assertEquals(0L, bothInside.count)
-                assertEquals("both downloads must share one session", 1, fixture.openerCalls)
-                assertEquals("the shared session must be closed exactly once", 1, fixture.session.closeCalls)
+                assertEquals("the thin adapter owns no shared account-session state", 2, fixture.openerCalls)
+                assertEquals("each non-owning facade is released", 2, fixture.session.closeCalls)
                 assertEquals(2, fixture.session.resolveCalls.get())
             } finally {
                 fixture.close()

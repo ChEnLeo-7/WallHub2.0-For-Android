@@ -19,8 +19,6 @@ import com.wallhub.android.data.diagnostics.FileDiagnosticRepository
 import com.wallhub.android.data.discover.HttpOfficialDiscoverMetadataRepository
 import com.wallhub.android.data.downloads.LocalWallpaperFileRepository
 import com.wallhub.android.data.downloads.RoomDownloadTaskRepository
-import com.wallhub.android.data.downloads.SteamContentSdkEngineSessionOpener
-import com.wallhub.android.data.downloads.SteamContentSdkSessionOpener
 import com.wallhub.android.data.downloads.SteamWorkshopVideoStreamRepository
 import com.wallhub.android.data.settings.DataStoreSettingsRepository
 import com.wallhub.android.data.steam.SteamContentSdkCredentialProvider
@@ -52,16 +50,6 @@ internal abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindLauncherIconController(controller: AndroidLauncherIconController): LauncherIconController
-
-    /**
-     * The SDK download path's session opener. It reads the same platform hook and route factory the
-     * engine already exposes; binding it here keeps the transfer itself free of SDK/native types.
-     */
-    @Binds
-    @Singleton
-    abstract fun bindSteamContentSdkSessionOpener(
-        opener: SteamContentSdkEngineSessionOpener,
-    ): SteamContentSdkSessionOpener
 
     companion object {
         /**

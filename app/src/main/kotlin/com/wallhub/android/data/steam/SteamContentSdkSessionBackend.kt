@@ -64,6 +64,8 @@ internal class SteamContentSdkSessionBackend(
     private val credentialStore: EncryptedSteamCredentialStore,
     private val messages: SteamContentSdkSessionMessages,
     private val diagnostics: DiagnosticRepository,
+    private val authenticatedSessions: SteamContentSdkAuthenticatedSessionRegistry =
+        SteamContentSdkAuthenticatedSessionRegistry(),
     private val scope: CoroutineScope,
     /**
      * How often an established session is drained and maintained, or zero to leave the schedule to nobody.
@@ -113,6 +115,12 @@ internal class SteamContentSdkSessionBackend(
     private val lastAttemptFailure = AtomicReference(SteamContentSdkSessionFailure.NONE)
     private val sessionMutex = Mutex()
 
+    init {
+        authenticatedSessions.installRecoveryOwner(
+            SteamContentSdkAccountSessionRecoveryOwner(::requestAccountSessionRecovery),
+        )
+    }
+
     private class PendingChallenge(
         val kind: SteamContentSdkChallengeKind,
         val id: ByteArray,
@@ -123,6 +131,26 @@ internal class SteamContentSdkSessionBackend(
     // ------------------------------------------------------------------
     // Session transitions
     // ------------------------------------------------------------------
+
+    private fun requestAccountSessionRecovery(
+        accountName: String,
+        generation: Long,
+    ) {
+        launchAttempt {
+            val current = activeSession.get() ?: return@launchAttempt
+            if (!accountName.equals(mutableSession.value.accountName, ignoreCase = true)) return@launchAttempt
+            if (current.authorizationGeneration() != generation) return@launchAttempt
+            record("content_session_recovery_requested generation=$generation")
+            if (!releaseSessionIfCurrent(current)) return@launchAttempt
+            publish(
+                SteamSessionPhase.RESTORABLE,
+                messages.restoreFailed,
+                accountName = accountName,
+                hasStoredSession = true,
+            )
+            restoreStoredSession()
+        }
+    }
 
     override fun restorePersistedSession() {
         // The check is inside the block so it is re-read when the attempt actually runs: a queued restore
@@ -673,6 +701,12 @@ internal class SteamContentSdkSessionBackend(
      * owns the single reconnect attempt through SteamSessionRequestRecovery, so maintenance and request handling
      * can never race as two independent recovery authorities.
      */
+    private fun reportSessionUnavailable(session: SteamContentSdkPlatformSession) {
+        val accountName = mutableSession.value.accountName ?: return
+        val generation = session.authorizationGeneration() ?: return
+        authenticatedSessions.reportUnavailable(accountName, generation)
+    }
+
     private fun startMaintenance(session: SteamContentSdkPlatformSession) {
         if (maintenanceIntervalMs <= 0L) return
         val job =
@@ -695,10 +729,12 @@ internal class SteamContentSdkSessionBackend(
                         val state = tick.getOrNull()
                         if (state == null) {
                             record("session_maintenance_failed", error = tick.exceptionOrNull())
+                            reportSessionUnavailable(session)
                             return@launch
                         }
                         if (state == SteamContentSdkSessionState.AUTHENTICATED) continue
                         record("session_lost request_recovery_required")
+                        reportSessionUnavailable(session)
                         // Connection recovery has one owner: the next foreground SDK request retries once
                         // through SteamSessionRequestRecovery. The background maintenance loop only detects
                         // loss; it never starts a competing reconnect attempt.
