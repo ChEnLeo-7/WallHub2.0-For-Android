@@ -40,7 +40,7 @@ internal class SteamContentSdkAuthenticatedSessionRegistry
         private val lock = Any()
         private val published = MutableStateFlow<Published?>(null)
         private var recoveryOwner: SteamContentSdkAccountSessionRecoveryOwner? = null
-        private val retiredGenerations = mutableMapOf<String, Long>()
+        private var retiredGeneration = Long.MIN_VALUE
 
         fun installRecoveryOwner(owner: SteamContentSdkAccountSessionRecoveryOwner) {
             synchronized(lock) { recoveryOwner = owner }
@@ -56,7 +56,7 @@ internal class SteamContentSdkAuthenticatedSessionRegistry
             if (engine.state() != SessionState.AUTHENTICATED) return null
             synchronized(lock) {
                 val accountKey = accountName.accountKey()
-                if (generation <= (retiredGenerations[accountKey] ?: Long.MIN_VALUE)) return null
+                if (generation <= retiredGeneration) return null
                 val current = published.value
                 if (
                     current != null &&
@@ -152,7 +152,7 @@ internal class SteamContentSdkAuthenticatedSessionRegistry
                         return false
                     }
                     val installed = recoveryOwner ?: return false
-                    retiredGenerations[current.accountKey] = generation
+                    retiredGeneration = maxOf(retiredGeneration, generation)
                     published.value = null
                     installed
                 }
