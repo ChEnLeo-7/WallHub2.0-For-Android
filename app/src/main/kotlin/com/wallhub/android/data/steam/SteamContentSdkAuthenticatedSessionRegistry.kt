@@ -8,6 +8,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 /** A usable account-session snapshot published by the one account-session owner. */
 internal data class SteamContentSdkAuthenticatedSession(
+    val accountName: String,
     val engine: SteamContentSdkEngine,
     val generation: Long,
 )
@@ -68,7 +69,7 @@ internal class SteamContentSdkAuthenticatedSessionRegistry
                 published.value =
                     Published(
                         accountKey = accountKey,
-                        snapshot = SteamContentSdkAuthenticatedSession(engine, generation),
+                        snapshot = SteamContentSdkAuthenticatedSession(accountName, engine, generation),
                     )
             }
             return generation
@@ -100,7 +101,24 @@ internal class SteamContentSdkAuthenticatedSessionRegistry
             return null
         }
 
-        /** Waits for a usable account session, optionally strictly newer than [afterGeneration]. */
+        /** Waits for the sole usable account session, optionally strictly newer than [afterGeneration]. */
+        suspend fun awaitCurrentUsable(
+            afterGeneration: Long? = null,
+            timeoutMs: Long,
+        ): SteamContentSdkAuthenticatedSession? {
+            currentUsable()?.takeIf { afterGeneration == null || it.generation > afterGeneration }?.let {
+                return it
+            }
+            return withTimeoutOrNull(timeoutMs) {
+                published.first { value ->
+                    value != null &&
+                        (afterGeneration == null || value.snapshot.generation > afterGeneration) &&
+                        isStillUsable(value.snapshot)
+                }?.snapshot
+            }
+        }
+
+        /** Waits for a named usable account session, retained for account-scoped public routing. */
         suspend fun awaitUsable(
             accountName: String,
             afterGeneration: Long? = null,

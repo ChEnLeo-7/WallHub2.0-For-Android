@@ -1,6 +1,5 @@
 package com.wallhub.android.data.downloads
 
-import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.prototype.mpkg.MAX_PRESET_DEPENDENCY_DEPTH
 import com.wallhub.prototype.mpkg.PresetDependencyResolver
 import java.io.File
@@ -15,7 +14,6 @@ internal class WorkshopPresetDependencyDownloader
         suspend fun download(
             sourceDirectory: File,
             rootWorkshopId: Long,
-            credential: SteamContentCredential?,
             options: SteamContentDownloadOptions,
             proxyUrl: String,
             control: suspend () -> SteamDownloadControl,
@@ -45,7 +43,6 @@ internal class WorkshopPresetDependencyDownloader
                     contentClient.download(
                         target = target,
                         destinationDirectory = dependencyDirectory,
-                        credential = credential,
                         options = options,
                         control = control,
                     ) { progress ->

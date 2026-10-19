@@ -1,6 +1,5 @@
 package com.wallhub.android.data.downloads
 
-import com.wallhub.android.core.model.SteamContentCredential
 import io.steamcontent.sdk.TaskEventKind
 import io.steamcontent.sdk.TaskFailure
 import io.steamcontent.sdk.TaskState
@@ -20,8 +19,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
-
-private val SDK_CREDENTIAL = SteamContentCredential(accountName = "account", refreshToken = "synthetic-test-token")
 
 private fun completed(committedBytes: Long): SteamContentSdkTaskStatus =
     SteamContentSdkTaskStatus(
@@ -617,38 +614,6 @@ class SteamContentSdkWorkshopTransferTest {
         }
 
     @Test
-    fun aMissingRefreshTokenFailsInsteadOfFallingBack() {
-        val fixture = Fixture()
-        try {
-            val failure =
-                assertThrows(IllegalStateException::class.java) {
-                    runBlocking { fixture.download(credential = null) }
-                }
-            assertTrue(failure.message.orEmpty().contains("refresh token"))
-            assertEquals(0, fixture.openerCalls)
-        } finally {
-            fixture.close()
-        }
-    }
-
-    @Test
-    fun aBlankRefreshTokenFailsInsteadOfFallingBack() {
-        val fixture = Fixture()
-        try {
-            val failure =
-                assertThrows(IllegalStateException::class.java) {
-                    runBlocking {
-                        fixture.download(credential = SteamContentCredential("account", "   "))
-                    }
-                }
-            assertTrue(failure.message.orEmpty().contains("refresh token"))
-            assertEquals(0, fixture.openerCalls)
-        } finally {
-            fixture.close()
-        }
-    }
-
-    @Test
     fun anUnreadableTokenFailsInsteadOfFallingBack() {
         val fixture = Fixture()
         try {
@@ -764,19 +729,14 @@ class SteamContentSdkWorkshopTransferTest {
 
         fun queueTask(): FakeTask = FakeTask().also(session::queueTask)
         var openerCalls = 0
-        private var opener: suspend (SteamContentCredential) -> SteamContentSdkSession = { session }
+        private var opener: suspend () -> SteamContentSdkSession = { session }
         private val transfer =
             SteamContentSdkWorkshopTransfer(
                 sessionBroker =
-                    SteamContentSdkSessionBroker(
-                        opener =
-                            object : SteamContentSdkSessionOpener {
-                                override suspend fun open(credential: SteamContentCredential): SteamContentSdkSession {
-                                    openerCalls += 1
-                                    return opener(credential)
-                                }
-                            },
-                    ),
+                    SteamContentSdkSessionBroker {
+                        openerCalls += 1
+                        opener()
+                    },
             )
         val target =
             WorkshopContentTarget(
@@ -791,17 +751,15 @@ class SteamContentSdkWorkshopTransferTest {
         suspend fun download(
             destination: File = this.destination,
             target: WorkshopContentTarget = this.target,
-            credential: SteamContentCredential? = SDK_CREDENTIAL,
             control: suspend () -> SteamDownloadControl = { SteamDownloadControl.CONTINUE },
             onProgress: suspend (SteamDownloadProgress) -> Unit = {},
             onFirstChunkCommitted: (suspend () -> Unit)? = null,
-            opener: (suspend (SteamContentCredential) -> SteamContentSdkSession)? = null,
+            opener: (suspend () -> SteamContentSdkSession)? = null,
         ): SteamContentDownloadResult {
             if (opener != null) this.opener = opener
             return transfer.download(
                 target = target,
                 destinationDirectory = destination,
-                credential = credential,
                 options = SteamContentDownloadOptions(onFirstChunkCommitted = onFirstChunkCommitted),
                 control = control,
                 onProgress = onProgress,

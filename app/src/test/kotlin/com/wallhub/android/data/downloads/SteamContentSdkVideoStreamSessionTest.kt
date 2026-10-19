@@ -4,8 +4,6 @@ import com.wallhub.android.core.model.AccentPreference
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.SettingsRepository
-import com.wallhub.android.core.model.SteamContentCredential
-import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.ThemePreference
 import com.wallhub.android.core.model.WorkshopVideoReadDemand
 import com.wallhub.android.core.model.WorkshopVideoOpenRequest
@@ -154,7 +152,6 @@ class SteamContentSdkVideoStreamSessionTest {
 
         SteamWorkshopVideoStreamRepository(
             cacheRootDirectory = File(root, "cache"),
-            credentialProvider = testCredentialProvider,
             settingsRepository = RepositoryTestSettings(flowOf(AppPreferences())),
             contentTargetFetcher = {
                 targetFetches += 1
@@ -180,7 +177,6 @@ class SteamContentSdkVideoStreamSessionTest {
         val repository =
             SteamWorkshopVideoStreamRepository(
                 cacheRootDirectory = File(root, "cache"),
-                credentialProvider = testCredentialProvider,
                 settingsRepository = RepositoryTestSettings(flowOf(AppPreferences())),
                 contentTargetFetcher = {
                     targetFetches += 1
@@ -216,7 +212,6 @@ class SteamContentSdkVideoStreamSessionTest {
         val repository =
             SteamWorkshopVideoStreamRepository(
                 cacheRootDirectory = File(root, "cache"),
-                credentialProvider = testCredentialProvider,
                 settingsRepository = RepositoryTestSettings(flowOf(AppPreferences())),
                 contentTargetFetcher = {
                     targetFetches += 1
@@ -241,11 +236,6 @@ class SteamContentSdkVideoStreamSessionTest {
             val repository =
                 SteamWorkshopVideoStreamRepository(
                     cacheRootDirectory = File(root, "cache"),
-                    credentialProvider =
-                        object : SteamContentCredentialProvider {
-                            override suspend fun loadContentCredential() =
-                                SteamContentCredential("account", "synthetic-test-token")
-                        },
                     settingsRepository = RepositoryTestSettings(flowOf(AppPreferences(mediaCacheLimitMb = 512))),
                     contentTargetFetcher = {
                         WorkshopContentTarget(
@@ -521,12 +511,6 @@ class SteamContentSdkVideoStreamSessionTest {
 
         override fun warn(message: String) = Unit
     }
-
-    private val testCredentialProvider =
-        object : SteamContentCredentialProvider {
-            override suspend fun loadContentCredential() =
-                SteamContentCredential("account", "synthetic-test-token")
-        }
 
     private class RecordingRepositorySession(
         override val storageRoot: File,

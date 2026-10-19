@@ -363,7 +363,6 @@ internal class FormalDownloadRunner
                             steamWorkshopContentClient.download(
                                 target = target,
                                 destinationDirectory = resolvedDirectory,
-                                credential = effectiveCredential,
                                 options =
                                     SteamContentDownloadOptions(
                                         chunkConcurrency = downloadPreferences.chunkDownloadConcurrency,
@@ -387,7 +386,6 @@ internal class FormalDownloadRunner
                             presetDependencies.download(
                                 sourceDirectory = resolvedDirectory,
                                 rootWorkshopId = task.workshopId,
-                                credential = credential.takeIf { task.credentialMode == DownloadCredentialMode.ACCOUNT.name },
                                 options =
                                     SteamContentDownloadOptions(
                                         chunkConcurrency = downloadPreferences.chunkDownloadConcurrency,

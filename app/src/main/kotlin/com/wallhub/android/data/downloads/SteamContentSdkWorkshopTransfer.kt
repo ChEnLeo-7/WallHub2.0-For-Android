@@ -1,7 +1,6 @@
 package com.wallhub.android.data.downloads
 
 import android.util.Log
-import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
 import io.steamcontent.sdk.TaskEventKind
 import io.steamcontent.sdk.TaskFailure
@@ -197,10 +196,6 @@ internal interface SteamContentSdkSession : Closeable {
  * implementation must throw when the credential is absent or unusable instead of returning a session
  * that would silently fall back to another backend.
  */
-internal fun interface SteamContentSdkSessionOpener {
-    suspend fun open(credential: SteamContentCredential): SteamContentSdkSession
-}
-
 /**
  * Serves one manifest-backed Workshop download with the Steam Content SDK.
  *
@@ -225,34 +220,33 @@ internal class SteamContentSdkWorkshopTransfer
         suspend fun download(
             target: WorkshopContentTarget,
             destinationDirectory: File,
-            credential: SteamContentCredential?,
             options: SteamContentDownloadOptions,
             control: suspend () -> SteamDownloadControl,
             onProgress: suspend (SteamDownloadProgress) -> Unit,
         ): SteamContentDownloadResult {
             return try {
-                downloadOnce(target, destinationDirectory, credential, options, control, onProgress)
+                downloadOnce(target, destinationDirectory, options, control, onProgress)
             } catch (failure: SteamContentSdkTaskFailureException) {
-                when (downloadRecoveryDecision(failure)) {
+                val decision = downloadRecoveryDecision(failure)
+                when (decision) {
                     DownloadRecoveryDecision.FAIL -> throw failure
-                    DownloadRecoveryDecision.RETRY_ONCE -> Unit
-                    DownloadRecoveryDecision.REOPEN_SESSION_ONCE -> {
-                        Log.i(TAG, "recovering Steam content session after typed generation loss")
+                    DownloadRecoveryDecision.RETRY_DATA_PLANE_ONCE -> Unit
+                    DownloadRecoveryDecision.WAIT_FOR_ACCOUNT_SESSION -> {
+                        Log.i(TAG, "waiting for a newer account session after typed generation loss")
                         onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RECOVERING_SESSION))
                     }
                 }
-                if (downloadRecoveryDecision(failure) == DownloadRecoveryDecision.REOPEN_SESSION_ONCE) {
+                if (decision == DownloadRecoveryDecision.WAIT_FOR_ACCOUNT_SESSION) {
                     downloadOnce(
                         target,
                         destinationDirectory,
-                        credential,
                         options,
                         control,
                         onProgress,
                         afterGeneration = failure.sessionGeneration,
                     )
                 } else {
-                    downloadOnce(target, destinationDirectory, credential, options, control, onProgress)
+                    downloadOnce(target, destinationDirectory, options, control, onProgress)
                 }
             }
         }
@@ -260,7 +254,6 @@ internal class SteamContentSdkWorkshopTransfer
         private suspend fun downloadOnce(
             target: WorkshopContentTarget,
             destinationDirectory: File,
-            credential: SteamContentCredential?,
             options: SteamContentDownloadOptions,
             control: suspend () -> SteamDownloadControl,
             onProgress: suspend (SteamDownloadProgress) -> Unit,
@@ -268,18 +261,11 @@ internal class SteamContentSdkWorkshopTransfer
         ): SteamContentDownloadResult =
             withContext(Dispatchers.IO) {
                 require(target.publishedFileId > 0L) { "Invalid Workshop item ID" }
-                val effectiveCredential = credential
-                check(effectiveCredential != null) {
-                    "The Steam Content SDK download path needs the stored Steam refresh token; none was read"
-                }
-                check(effectiveCredential.refreshToken.isNotBlank()) {
-                    "The Steam Content SDK download path needs the stored Steam refresh token; none was read"
-                }
                 onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.CONNECTING))
                 options.timingContext?.let { context ->
                     DownloadTimingTelemetry.log(DownloadTimingTelemetry.SDK_SESSION_ACQUIRE_STARTED, context)
                 }
-                val lease = sessionBroker.acquire(effectiveCredential, afterGeneration)
+                val lease = sessionBroker.acquire(afterGeneration)
                 options.timingContext?.let { context ->
                     DownloadTimingTelemetry.log(DownloadTimingTelemetry.SDK_SESSION_ACQUIRED, context)
                 }
@@ -680,9 +666,9 @@ internal const val SDK_TASK_FAILURE_CONTENT_DIRECTORY_UNAVAILABLE = 12L
 internal const val SDK_TASK_FAILURE_MANIFEST_TRANSPORT_UNAVAILABLE = 13L
 
 internal enum class DownloadRecoveryDecision {
+    WAIT_FOR_ACCOUNT_SESSION,
+    RETRY_DATA_PLANE_ONCE,
     FAIL,
-    RETRY_ONCE,
-    REOPEN_SESSION_ONCE,
 }
 
 /** A bounded, typed decision; the caller always performs at most two SDK task attempts. */
@@ -690,11 +676,12 @@ internal fun downloadRecoveryDecision(failure: SteamContentSdkTaskFailureExcepti
     when {
         failure.ordinal == TaskFailure.SESSION_GENERATION_LOST ||
             failure.ordinal == SDK_TASK_FAILURE_CONTENT_DIRECTORY_UNAVAILABLE ->
-            DownloadRecoveryDecision.REOPEN_SESSION_ONCE
-        failure.ordinal == SDK_TASK_FAILURE_MANIFEST_TRANSPORT_UNAVAILABLE -> DownloadRecoveryDecision.RETRY_ONCE
+            DownloadRecoveryDecision.WAIT_FOR_ACCOUNT_SESSION
+        failure.ordinal == SDK_TASK_FAILURE_MANIFEST_TRANSPORT_UNAVAILABLE ->
+            DownloadRecoveryDecision.RETRY_DATA_PLANE_ONCE
         // Compatibility for older SDKs which lacked SESSION_GENERATION_LOST. New flow never parses diagnostics.
         failure.ordinal == TaskFailure.AUTHORIZATION && failure.diagnostic == SESSION_UNAVAILABLE_DIAGNOSTIC ->
-            DownloadRecoveryDecision.RETRY_ONCE
+            DownloadRecoveryDecision.RETRY_DATA_PLANE_ONCE
         else -> DownloadRecoveryDecision.FAIL
     }
 

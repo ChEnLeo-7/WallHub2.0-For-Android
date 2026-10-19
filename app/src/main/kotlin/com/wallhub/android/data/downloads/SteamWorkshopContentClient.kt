@@ -1,6 +1,5 @@
 package com.wallhub.android.data.downloads
 
-import com.wallhub.android.core.model.SteamContentCredential
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -27,7 +26,6 @@ internal interface WorkshopContentGateway {
     suspend fun download(
         target: WorkshopContentTarget,
         destinationDirectory: File,
-        credential: SteamContentCredential?,
         options: SteamContentDownloadOptions,
         control: suspend () -> SteamDownloadControl,
         onProgress: suspend (SteamDownloadProgress) -> Unit,
@@ -50,7 +48,6 @@ internal class FormalSteamWorkshopContentGateway(
     override suspend fun download(
         target: WorkshopContentTarget,
         destinationDirectory: File,
-        credential: SteamContentCredential?,
         options: SteamContentDownloadOptions,
         control: suspend () -> SteamDownloadControl,
         onProgress: suspend (SteamDownloadProgress) -> Unit,
@@ -71,7 +68,6 @@ internal class FormalSteamWorkshopContentGateway(
         return sdkTransfer.download(
             target = target,
             destinationDirectory = destinationDirectory,
-            credential = credential,
             options = options,
             control = control,
             onProgress = onProgress,
@@ -497,7 +493,6 @@ internal class SteamWorkshopContentClient private constructor(
     internal suspend fun download(
         target: WorkshopContentTarget,
         destinationDirectory: File,
-        credential: SteamContentCredential?,
         options: SteamContentDownloadOptions,
         control: suspend () -> SteamDownloadControl,
         onProgress: suspend (SteamDownloadProgress) -> Unit,
@@ -505,7 +500,6 @@ internal class SteamWorkshopContentClient private constructor(
         gateway.download(
             target = target,
             destinationDirectory = destinationDirectory,
-            credential = credential,
             options = options,
             control = control,
             onProgress = onProgress,

@@ -177,7 +177,6 @@ private class CountingWorkshopContentGateway(
     override suspend fun download(
         target: WorkshopContentTarget,
         destinationDirectory: File,
-        credential: com.wallhub.android.core.model.SteamContentCredential?,
         options: SteamContentDownloadOptions,
         control: suspend () -> SteamDownloadControl,
         onProgress: suspend (SteamDownloadProgress) -> Unit,

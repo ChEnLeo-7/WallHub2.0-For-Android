@@ -1,6 +1,5 @@
 package com.wallhub.android.data.downloads
 
-import com.wallhub.android.core.model.SteamContentCredential
 import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.test.runTest
@@ -13,16 +12,13 @@ class SteamContentSdkSessionBrokerTest {
         val opens = AtomicInteger()
         val closes = AtomicInteger()
         val broker =
-            SteamContentSdkSessionBroker(
-                SteamContentSdkSessionOpener {
-                    opens.incrementAndGet()
-                    fakeSession(closes)
-                },
-            )
-        val credential = SteamContentCredential("account", "token")
+            SteamContentSdkSessionBroker {
+                opens.incrementAndGet()
+                fakeSession(closes)
+            }
 
-        val first = broker.acquire(credential)
-        val second = broker.acquire(credential)
+        val first = broker.acquire()
+        val second = broker.acquire()
         assertEquals(2, opens.get())
         assertEquals(1L, first.generation)
         assertEquals(1L, second.generation)

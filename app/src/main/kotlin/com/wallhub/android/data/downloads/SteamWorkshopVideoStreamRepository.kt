@@ -3,7 +3,6 @@ package com.wallhub.android.data.downloads
 import android.content.Context
 import android.util.Log
 import com.wallhub.android.core.model.SettingsRepository
-import com.wallhub.android.core.model.SteamContentCredentialProvider
 import com.wallhub.android.core.model.WorkshopVideoOpenRequest
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamSession
@@ -22,7 +21,6 @@ import javax.inject.Singleton
 @Singleton
 internal class SteamWorkshopVideoStreamRepository private constructor(
     private val cacheRootDirectory: File,
-    private val credentialProvider: SteamContentCredentialProvider,
     private val settingsRepository: SettingsRepository,
     private val steamHttpClientFactory: SteamHttpClientFactory?,
     private val contentTargetFetcher: suspend (Long) -> WorkshopContentTarget,
@@ -32,14 +30,12 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
     @Inject
     constructor(
         @ApplicationContext context: Context,
-        credentialProvider: SteamContentCredentialProvider,
         settingsRepository: SettingsRepository,
         steamHttpClientFactory: SteamHttpClientFactory,
         playbackCoordinator: PlaybackDownloadCoordinator,
         sdkSessionBroker: SteamContentSdkSessionBroker,
     ) : this(
         cacheRootDirectory = File(context.cacheDir, STREAM_CACHE_DIRECTORY),
-        credentialProvider = credentialProvider,
         settingsRepository = settingsRepository,
         steamHttpClientFactory = steamHttpClientFactory,
         contentTargetFetcher = { workshopId ->
@@ -54,14 +50,12 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
 
     internal constructor(
         cacheRootDirectory: File,
-        credentialProvider: SteamContentCredentialProvider,
         settingsRepository: SettingsRepository,
         contentTargetFetcher: suspend (Long) -> WorkshopContentTarget,
         playbackCoordinator: PlaybackDownloadCoordinator,
         sdkSessionBroker: SteamContentSdkSessionBroker,
     ) : this(
         cacheRootDirectory = cacheRootDirectory,
-        credentialProvider = credentialProvider,
         settingsRepository = settingsRepository,
         steamHttpClientFactory = null,
         contentTargetFetcher = contentTargetFetcher,
@@ -135,16 +129,8 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
             request: WorkshopVideoOpenRequest,
             operationId: Long,
         ): WorkshopVideoStreamSession {
-            val credentialStarted = System.nanoTime()
-            val credential =
-                credentialProvider.loadContentCredential()
-                    ?: credentialProvider.restoreContentCredential()
-            check(credential != null && credential.refreshToken.isNotBlank()) {
-                "The Steam Content SDK range path needs the stored Steam refresh token; none was read"
-            }
-            logPhase(operationId, "credential", credentialStarted, "stored")
             val sessionStarted = System.nanoTime()
-            val sessionLease = sdkSessionBroker.acquire(credential)
+            val sessionLease = sdkSessionBroker.acquire()
             logPhase(operationId, "session_lease", sessionStarted, "complete")
             val session = sessionLease.session
             try {
