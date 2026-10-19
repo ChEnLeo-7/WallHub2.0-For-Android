@@ -67,9 +67,8 @@ import kotlinx.coroutines.withContext
  *
  * The acting account comes from the SDK session (ADR 0034), so this class holds no credential store and
  * parses no token: it reads through the engine the session domain authenticated. That engine is the one
- * injected here, and it is the reason for the qualifier - the process also owns an application-wide engine
- * for the download path, and a read issued on *that* one finds no session and answers the empty page this
- * class would otherwise report as "no items".
+ * injected here, and it is the reason for the qualifier: account Workshop operations and content transfers
+ * now borrow this same backend-owned engine, while public reads may use the separately owned anonymous engine.
  *
  * `RepositoryModule` binds all three contracts to this class, so the Workshop reads the product performs are
  * served by the SDK rather than by kSteam; the last adapter-level capability gaps it inherited (the thread
