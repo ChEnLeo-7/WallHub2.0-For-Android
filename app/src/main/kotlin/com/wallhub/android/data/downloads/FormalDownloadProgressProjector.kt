@@ -68,7 +68,10 @@ internal class FormalDownloadProgressProjector(
                                 progress.phase == SteamDownloadPhase.DOWNLOADING ||
                                 progress.phase == SteamDownloadPhase.VERIFYING
                             ) {
-                                durableDownloadedBytes(durableCheckpointBytes, progress.completedBytes)
+                                maxOf(
+                                    task.downloadedBytes.coerceAtLeast(0L),
+                                    durableDownloadedBytes(durableCheckpointBytes, progress.completedBytes),
+                                )
                             } else {
                                 task.downloadedBytes
                             },
@@ -117,6 +120,7 @@ internal class FormalDownloadProgressProjector(
         when (phase) {
             SteamDownloadPhase.CONNECTING,
             SteamDownloadPhase.AUTHENTICATING,
+            SteamDownloadPhase.RECOVERING_SESSION,
             SteamDownloadPhase.RESOLVING,
             -> DownloadStatus.RESOLVING
 
@@ -140,6 +144,7 @@ internal class FormalDownloadProgressProjector(
                     },
                 )
             SteamDownloadPhase.AUTHENTICATING -> context.getString(R.string.backend_download_authenticating)
+            SteamDownloadPhase.RECOVERING_SESSION -> context.getString(R.string.backend_download_recovering_session)
             SteamDownloadPhase.RESOLVING -> context.getString(R.string.backend_download_resolving_content)
             SteamDownloadPhase.PREPARING_DOWNLOAD ->
                 context.getString(R.string.backend_download_preparing_transfer, totalFiles)

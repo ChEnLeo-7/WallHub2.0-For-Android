@@ -55,7 +55,7 @@ internal class FormalDownloadAttemptSettlement
                 "taskId=${task.taskId} interrupted by the system; re-queueing status=${latest?.status}",
             )
             projections.persist(
-                task,
+                latest ?: task,
                 status = DownloadStatus.QUEUED,
                 message = context.getString(R.string.backend_download_interrupted),
             )
@@ -66,14 +66,23 @@ internal class FormalDownloadAttemptSettlement
             task: FormalTaskRecordEntity,
             error: Throwable,
         ): DownloadHostRunResult {
-            contentClient.invalidateContentTarget(task.workshopId)
+            val sdkFailure = error as? SteamContentSdkTaskFailureException
+            if (
+                sdkFailure?.ordinal == io.steamcontent.sdk.TaskFailure.AUTHORIZATION ||
+                sdkFailure?.ordinal == io.steamcontent.sdk.TaskFailure.INVALID_INPUT
+            ) {
+                // Only identity/entitlement-shaped terminal answers can make the cached public target stale.
+                // Session, directory, TLS, storage and interruption failures preserve it.
+                contentClient.invalidateContentTarget(task.workshopId)
+            }
+            val latest = taskDao.find(task.taskId)
             Log.e(
                 DOWNLOAD_LOG_TAG,
                 "Formal Steam download failed taskId=${task.taskId}, type=${error.javaClass.name}",
                 error,
             )
             projections.persist(
-                task,
+                latest ?: task,
                 status = DownloadStatus.FAILED,
                 bytesPerSecond = 0L,
                 message = error.message ?: error.javaClass.simpleName,

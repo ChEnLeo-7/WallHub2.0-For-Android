@@ -90,6 +90,7 @@ internal class DownloadLiveTelemetry internal constructor(
                         }
                         SteamDownloadPhase.CONNECTING,
                         SteamDownloadPhase.AUTHENTICATING,
+                        SteamDownloadPhase.RECOVERING_SESSION,
                         SteamDownloadPhase.RESOLVING,
                         -> return@update current - taskId
                     }

@@ -234,9 +234,14 @@ internal class SteamContentSdkWorkshopTransfer
             return try {
                 downloadOnce(target, destinationDirectory, credential, options, control, onProgress)
             } catch (failure: SteamContentSdkTaskFailureException) {
-                if (!isRecoverableDownloadAttempt(failure)) throw failure
-                // The failed attempt has released its task and shared-session lease before this catch.
-                // Give the broker's final close a bounded turn, then open/borrow exactly once more.
+                when (downloadRecoveryDecision(failure)) {
+                    DownloadRecoveryDecision.FAIL -> throw failure
+                    DownloadRecoveryDecision.RETRY_ONCE -> Unit
+                    DownloadRecoveryDecision.REOPEN_SESSION_ONCE -> {
+                        Log.i(TAG, "recovering Steam content session after typed generation loss")
+                        onProgress(SteamDownloadProgress(phase = SteamDownloadPhase.RECOVERING_SESSION))
+                    }
+                }
                 delay(SESSION_RECOVERY_DELAY_MS)
                 downloadOnce(target, destinationDirectory, credential, options, control, onProgress)
             }
@@ -340,6 +345,18 @@ internal class SteamContentSdkWorkshopTransfer
                             } finally {
                                 runCatching { task.close() }
                             }
+                } catch (failure: SteamContentSdkTaskFailureException) {
+                    if (
+                        failure.ordinal == TaskFailure.SESSION_GENERATION_LOST ||
+                        failure.ordinal == SDK_TASK_FAILURE_CONTENT_DIRECTORY_UNAVAILABLE ||
+                        (
+                            failure.ordinal == TaskFailure.AUTHORIZATION &&
+                                failure.diagnostic == SESSION_UNAVAILABLE_DIAGNOSTIC
+                        )
+                    ) {
+                        lease.reportSessionLoss()
+                    }
+                    throw failure
                 } finally {
                     // The lease, not this download, owns the session: closing it here would take it away from
                     // the downloads that are still running beside this one.
@@ -647,11 +664,32 @@ internal class SdkTaskEventLog(
 private const val SDK_TASK_EVENT_LOG_INTERVAL_MS = 1_000L
 private const val SESSION_RECOVERY_DELAY_MS = 250L
 private const val SESSION_UNAVAILABLE_DIAGNOSTIC = "content resolution failed at session_unavailable"
+// ABI minor 44 append-only ordinals. Kept locally so this adapter can compile against the prior preview AAR
+// while staging the new native artifact; control flow still switches on stable numbers, never diagnostic text.
+internal const val SDK_TASK_FAILURE_CONTENT_DIRECTORY_UNAVAILABLE = 12L
+internal const val SDK_TASK_FAILURE_MANIFEST_TRANSPORT_UNAVAILABLE = 13L
+
+internal enum class DownloadRecoveryDecision {
+    FAIL,
+    RETRY_ONCE,
+    REOPEN_SESSION_ONCE,
+}
+
+/** A bounded, typed decision; the caller always performs at most two SDK task attempts. */
+internal fun downloadRecoveryDecision(failure: SteamContentSdkTaskFailureException): DownloadRecoveryDecision =
+    when {
+        failure.ordinal == TaskFailure.SESSION_GENERATION_LOST ||
+            failure.ordinal == SDK_TASK_FAILURE_CONTENT_DIRECTORY_UNAVAILABLE ->
+            DownloadRecoveryDecision.REOPEN_SESSION_ONCE
+        failure.ordinal == SDK_TASK_FAILURE_MANIFEST_TRANSPORT_UNAVAILABLE -> DownloadRecoveryDecision.RETRY_ONCE
+        // Compatibility for older SDKs which lacked SESSION_GENERATION_LOST. New flow never parses diagnostics.
+        failure.ordinal == TaskFailure.AUTHORIZATION && failure.diagnostic == SESSION_UNAVAILABLE_DIAGNOSTIC ->
+            DownloadRecoveryDecision.RETRY_ONCE
+        else -> DownloadRecoveryDecision.FAIL
+    }
 
 internal fun isRecoverableDownloadAttempt(failure: SteamContentSdkTaskFailureException): Boolean =
-    failure.ordinal == TaskFailure.NO_PROGRESS ||
-        failure.ordinal == TaskFailure.SESSION_GENERATION_LOST ||
-        (failure.ordinal == TaskFailure.AUTHORIZATION && failure.diagnostic == SESSION_UNAVAILABLE_DIAGNOSTIC)
+    downloadRecoveryDecision(failure) != DownloadRecoveryDecision.FAIL
 
 /** A typed SDK task failure keeps retry policy on stable machine-readable fields. */
 internal class SteamContentSdkTaskFailureException(

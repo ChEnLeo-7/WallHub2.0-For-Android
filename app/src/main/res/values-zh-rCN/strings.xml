@@ -929,6 +929,7 @@
         <item quantity='other'>；%1$d 项兼容性提示</item>
     </plurals>
     <string name='backend_download_authenticating'>正在使用已登录 Steam 账户验证内容访问…</string>
+    <string name='backend_download_recovering_session'>正在恢复 Steam 下载会话…</string>
     <string name='backend_download_cancelled_cleaned'>下载任务已取消，暂存文件已清理</string>
     <string name='backend_download_paused'>下载已暂停</string>
     <string name='backend_download_cancelling'>正在取消下载并清理暂存文件</string>

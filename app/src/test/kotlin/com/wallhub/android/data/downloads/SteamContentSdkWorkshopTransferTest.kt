@@ -148,12 +148,28 @@ class SteamContentSdkWorkshopTransferTest {
         }
 
     @Test
-    fun noProgressFailureReopensAndRetriesExactlyOnce() =
-        assertTypedAttemptReopensExactlyOnce(TaskFailure.NO_PROGRESS)
+    fun noProgressFailureDoesNotGuessThatTheSessionWasLost() {
+        val failure =
+            SteamContentSdkTaskFailureException(
+                ordinal = TaskFailure.NO_PROGRESS,
+                diagnostic = null,
+                message = "no progress",
+            )
+
+        assertEquals(DownloadRecoveryDecision.FAIL, downloadRecoveryDecision(failure))
+    }
 
     @Test
     fun sessionGenerationLossReopensAndRetriesExactlyOnce() =
         assertTypedAttemptReopensExactlyOnce(TaskFailure.SESSION_GENERATION_LOST)
+
+    @Test
+    fun contentDirectoryFailureReopensAndRetriesExactlyOnce() =
+        assertTypedAttemptReopensExactlyOnce(SDK_TASK_FAILURE_CONTENT_DIRECTORY_UNAVAILABLE)
+
+    @Test
+    fun manifestTransportFailureRetriesTheTaskExactlyOnce() =
+        assertTypedAttemptReopensExactlyOnce(SDK_TASK_FAILURE_MANIFEST_TRANSPORT_UNAVAILABLE)
 
     private fun assertTypedAttemptReopensExactlyOnce(failure: Long) =
         runBlocking {

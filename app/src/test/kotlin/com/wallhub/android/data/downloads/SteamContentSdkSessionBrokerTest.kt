@@ -7,8 +7,10 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SteamContentSdkSessionBrokerTest {
@@ -30,6 +32,57 @@ class SteamContentSdkSessionBrokerTest {
         assertEquals(1, closes.get())
         second.close()
         assertEquals(1, closes.get())
+    }
+
+    @Test
+    fun `reported generation loss retires epoch and replacement waits for every lease to drain`() = runTest {
+        val opens = AtomicInteger()
+        val firstCloses = AtomicInteger()
+        val secondCloses = AtomicInteger()
+        val sessions = listOf(fakeSession(firstCloses), fakeSession(secondCloses))
+        val broker = SteamContentSdkSessionBroker { sessions[opens.getAndIncrement()] }
+        val credential = SteamContentCredential("account", "token")
+
+        val failed = broker.acquire(credential)
+        val overlapping = broker.acquire(credential)
+        assertEquals(failed.generation, overlapping.generation)
+
+        failed.reportSessionLoss()
+        failed.reportSessionLoss()
+        val replacement = async { broker.acquire(credential) }
+        failed.close()
+        assertEquals(null, withTimeoutOrNull(50) { replacement.await() })
+        assertEquals(1, opens.get())
+
+        overlapping.close()
+        val fresh = replacement.await()
+        assertEquals(2, opens.get())
+        assertEquals(1, firstCloses.get())
+        assertTrue(fresh.generation > failed.generation)
+        fresh.close()
+        assertEquals(1, secondCloses.get())
+    }
+
+    @Test
+    fun `concurrent loss reports coalesce into one replacement epoch`() = runTest {
+        val opens = AtomicInteger()
+        val closes = AtomicInteger()
+        val broker = SteamContentSdkSessionBroker { opens.incrementAndGet(); fakeSession(closes) }
+        val credential = SteamContentCredential("account", "token")
+        val first = broker.acquire(credential)
+        val second = broker.acquire(credential)
+
+        first.reportSessionLoss()
+        second.reportSessionLoss()
+        first.close()
+        second.close()
+        val replacements = listOf(async { broker.acquire(credential) }, async { broker.acquire(credential) })
+        val leases = replacements.map { it.await() }
+
+        assertEquals(2, opens.get())
+        assertSame(leases[0].session, leases[1].session)
+        assertEquals(leases[0].generation, leases[1].generation)
+        leases.forEach { it.close() }
     }
 
     @Test

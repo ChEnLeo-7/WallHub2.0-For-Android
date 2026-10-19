@@ -15,6 +15,7 @@ import java.io.File
 internal enum class SteamDownloadPhase {
     CONNECTING,
     AUTHENTICATING,
+    RECOVERING_SESSION,
     RESOLVING,
     PREPARING_DOWNLOAD,
     DOWNLOADING,
