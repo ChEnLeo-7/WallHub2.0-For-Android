@@ -49,7 +49,7 @@ class MpkgFormatScaleTest {
     fun `writer returns typed format limit before u32 payload overflow writes`() =
         withTempDirectory("mpkg-u32-limit") { root ->
             val output = root.resolve("overflow.mpkg")
-            val virtualPayload = VirtualPayload(0x1_0000_0000L)
+            val virtualPayload = FilePayload(root.resolve("never-read"), 0x1_0000_0000L)
 
             val failure =
                 runCatching {
@@ -148,18 +148,6 @@ class MpkgFormatScaleTest {
             assertTrue(failure is PkgSourceException)
             assertTrue(failure?.message.orEmpty().contains("offset"))
         }
-
-    private class VirtualPayload(
-        override val length: Long,
-    ) : MpkgPayload {
-        override fun writeTo(
-            output: BufferedOutputStream,
-            copyBuffer: ByteArray,
-            checkCancellation: () -> Unit,
-        ) {
-            throw AssertionError("overflowing payload must not be written")
-        }
-    }
 
     private fun writeHeader(
         file: File,

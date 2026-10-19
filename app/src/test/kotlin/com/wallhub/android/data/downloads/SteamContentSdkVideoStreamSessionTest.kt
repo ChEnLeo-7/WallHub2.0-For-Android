@@ -479,7 +479,7 @@ class SteamContentSdkVideoStreamSessionTest {
             sdkSession = sdkSession,
             session =
                 SteamContentSdkVideoStreamSession(
-                    sessionLease = SteamContentSdkSessionBroker.Lease.create(sdkSession) { sdkSession.close() },
+                    sessionLease = SteamContentSdkSessionBroker.Lease(sdkSession, 1L) { sdkSession.close() },
                     stream = stream,
                     title = "Scene",
                     fileName = "scene.mp4",

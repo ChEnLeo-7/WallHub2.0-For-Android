@@ -274,7 +274,6 @@ class RoomDownloadTaskRepositoryTest {
                         override suspend fun download(
                             target: WorkshopContentTarget,
                             destinationDirectory: java.io.File,
-                            credential: SteamContentCredential?,
                             options: SteamContentDownloadOptions,
                             control: suspend () -> SteamDownloadControl,
                             onProgress: suspend (SteamDownloadProgress) -> Unit,

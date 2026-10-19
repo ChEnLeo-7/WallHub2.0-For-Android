@@ -642,7 +642,7 @@ class SteamContentSdkSessionBackendTest {
             fixture.session.reconnectFailure = SteamContentSdkSessionFailure.PROTOCOL_ADAPTER
             advanceTimeBy(1_001L)
 
-            assertEquals(1, fixture.session.reconnects)
+            assertEquals(0, fixture.session.reconnects)
             assertTrue(
                 fixture.platform.openCalls >= 2,
                 "a refused rebuild hands recovery to the attempt path, which re-opens the session",
@@ -670,7 +670,7 @@ class SteamContentSdkSessionBackendTest {
             fixture.session.failStateAfterReconnect = true
             advanceTimeBy(1_001L)
 
-            assertEquals(1, fixture.session.reconnects)
+            assertEquals(0, fixture.session.reconnects)
             assertEquals(
                 2,
                 fixture.platform.openCalls,
@@ -1152,6 +1152,7 @@ class SteamContentSdkSessionBackendTest {
 
     private class FakeSdkSession : SteamContentSdkPlatformSession {
         val events = ArrayDeque<SteamContentSdkSessionEvent>()
+        override fun authorizationGeneration(): Long = 1L
         val logons = mutableListOf<LogonCall>()
         val restores = mutableListOf<RestoreCall>()
         val answers = mutableListOf<ChallengeAnswerCall>()

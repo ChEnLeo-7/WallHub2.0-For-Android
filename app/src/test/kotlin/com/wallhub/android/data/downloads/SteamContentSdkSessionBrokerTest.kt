@@ -31,6 +31,31 @@ class SteamContentSdkSessionBrokerTest {
         assertEquals(2, closes.get())
     }
 
+    @Test
+    fun `replacement borrow waits strictly after rejected backend generation`() = runTest {
+        val observedFences = mutableListOf<Long?>()
+        val reportedLosses = mutableListOf<Long>()
+        val closes = AtomicInteger()
+        val broker =
+            SteamContentSdkSessionBroker(
+                testBorrow = { afterGeneration ->
+                    observedFences += afterGeneration
+                    fakeSession(closes) to if (afterGeneration == null) 7L else 8L
+                },
+                reportLoss = reportedLosses::add,
+            )
+
+        val failed = broker.acquire()
+        failed.reportSessionLoss()
+        val replacement = broker.acquire(afterGeneration = failed.generation)
+
+        assertEquals(listOf(null, 7L), observedFences)
+        assertEquals(listOf(7L), reportedLosses)
+        assertEquals(8L, replacement.generation)
+        failed.close()
+        replacement.close()
+    }
+
     private fun fakeSession(closes: AtomicInteger): SteamContentSdkSession =
         Proxy.newProxyInstance(
             SteamContentSdkSession::class.java.classLoader,

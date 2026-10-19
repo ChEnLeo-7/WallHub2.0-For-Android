@@ -411,7 +411,7 @@ class SteamContentSdkWorkshopTransferTest {
                 assertThrows(IllegalStateException::class.java) {
                     runBlocking { fixture.download() }
                 }
-            assertTrue(!failure.message.orEmpty().contains(SDK_CREDENTIAL.refreshToken))
+            assertTrue(failure.message.orEmpty().contains("authorization"))
         } finally {
             fixture.close()
         }

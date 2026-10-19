@@ -143,7 +143,7 @@ class WorkshopDeclarativeMaterialPlanningTest {
         ByteArrayOutputStream().use { output ->
             output.writeCString("TEXV0005")
             output.writeCString("TEXI0001")
-            listOf(0, 0, width, height, width, height, 0).forEach(output::writeIntLe)
+            listOf(0, 0, width, height, width, height, 0).forEach { value -> output.writeIntLe(value) }
             output.writeCString("TEXB0004")
             val png =
                 ByteArrayOutputStream().use { image ->
@@ -156,7 +156,7 @@ class WorkshopDeclarativeMaterialPlanningTest {
                     image.writeIntBe(0)
                     image.toByteArray()
                 }
-            listOf(1, 13, 0, 1, width, height, 0, 0, png.size).forEach(output::writeIntLe)
+            listOf(1, 13, 0, 1, width, height, 0, 0, png.size).forEach { value -> output.writeIntLe(value) }
             output.write(png)
             output.toByteArray()
         }

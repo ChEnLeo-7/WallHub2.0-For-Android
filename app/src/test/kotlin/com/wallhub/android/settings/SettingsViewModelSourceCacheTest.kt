@@ -1,6 +1,6 @@
 package com.wallhub.settings
 
-import android.test.mock.MockContext
+import android.content.ContextWrapper
 import com.wallhub.android.core.database.FormalTaskRecordDao
 import com.wallhub.android.core.model.AccentPreference
 import com.wallhub.android.core.model.AppPreferences
@@ -54,7 +54,7 @@ class SettingsViewModelSourceCacheTest {
         settings: SettingsRepository,
         sourceCacheManager: WorkshopSourceCacheManager,
     ) = SettingsViewModel(
-        context = MockContext(),
+        context = ContextWrapper(null),
         settingsRepository = settings,
         launcherIconController = object : LauncherIconController {
             override fun setThemedIconEnabled(enabled: Boolean) = Unit

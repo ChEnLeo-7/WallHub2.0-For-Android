@@ -34,6 +34,16 @@ internal class SteamContentSdkSessionBroker private constructor(
     )
 
     /** Test adapter only; production has no independent opener or account restore authority. */
+    internal constructor(
+        testBorrow: suspend (Long?) -> Pair<SteamContentSdkSession, Long>,
+        reportLoss: (Long) -> Unit,
+    ) : this(
+        borrow = { afterGeneration ->
+            val (session, generation) = testBorrow(afterGeneration)
+            Borrowed(session, generation) { reportLoss(generation) }
+        },
+    )
+
     internal constructor(opener: suspend () -> SteamContentSdkSession) : this(
         borrow = {
             Borrowed(

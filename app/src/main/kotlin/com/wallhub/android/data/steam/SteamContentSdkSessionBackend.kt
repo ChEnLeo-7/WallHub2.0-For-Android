@@ -704,7 +704,9 @@ internal class SteamContentSdkSessionBackend(
     private fun reportSessionUnavailable(session: SteamContentSdkPlatformSession) {
         val accountName = mutableSession.value.accountName ?: return
         val generation = session.authorizationGeneration() ?: return
-        authenticatedSessions.reportUnavailable(accountName, generation)
+        if (!authenticatedSessions.reportUnavailable(accountName, generation)) {
+            requestAccountSessionRecovery(accountName, generation)
+        }
     }
 
     private fun startMaintenance(session: SteamContentSdkPlatformSession) {
