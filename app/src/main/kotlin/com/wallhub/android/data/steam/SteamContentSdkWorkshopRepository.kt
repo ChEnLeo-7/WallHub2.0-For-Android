@@ -83,11 +83,12 @@ internal class SteamContentSdkWorkshopRepository
         @SteamSessionSdkEngine private val engine: SteamContentSdkEngine,
         @SteamAnonymousWorkshopEngine private val anonymousEngine: SteamContentSdkEngine,
         private val publicSessionRouter: SteamWorkshopPublicSessionRouter,
+        authenticatedSessions: SteamContentSdkAuthenticatedSessionRegistry,
     ) : SteamUnifiedWorkshopRepository,
         AccountWorkshopRepository,
         SteamPlaytimeRepository {
         /** Public and account operations share this one native SDK lane and recovery authority. */
-        private val gateway = SteamWorkshopSdkGateway(engine)
+        private val gateway = SteamWorkshopSdkGateway(engine, authenticatedSessions)
         private val anonymousGateway = SteamWorkshopSdkGateway(anonymousEngine)
         private val cache = SteamWorkshopCacheStore()
         private val accountMutations = SteamWorkshopAccountMutations(engine, gateway, cache)

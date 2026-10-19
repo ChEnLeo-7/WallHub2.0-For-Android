@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.withLock
  */
 internal class SteamWorkshopSdkGateway(
     private val engine: SteamContentSdkEngine,
+    accountSessions: SteamContentSdkAuthenticatedSessionRegistry? = null,
 ) {
     private val mutex = Mutex()
     private val reads =
@@ -30,15 +31,10 @@ internal class SteamWorkshopSdkGateway(
         )
     private val recovery =
         SteamSessionRequestRecovery(
-            object : RecoverableSteamSession {
-                override fun generation(): SteamSessionGeneration? =
-                    engine.currentSessionGeneration()?.let(::SteamSessionGeneration)
-
-                override fun isUsable(generation: SteamSessionGeneration): Boolean =
-                    engine.currentSessionGeneration() == generation.value && engine.state() == SessionState.AUTHENTICATED
-
-                override suspend fun reconnectIfCurrent(expected: SteamSessionGeneration): Boolean =
-                    engine.reconnectSessionIfCurrent(expected.value)
+            if (accountSessions == null) {
+                AnonymousRecoverableSteamSession(engine)
+            } else {
+                AccountRecoverableSteamSession(engine, accountSessions)
             },
         )
     private val writes = SteamWorkshopWriteCoordinator(reads, recovery)
@@ -79,10 +75,48 @@ internal class SteamWorkshopSdkGateway(
         }
     }
 
+    private class AccountRecoverableSteamSession(
+        private val engine: SteamContentSdkEngine,
+        private val sessions: SteamContentSdkAuthenticatedSessionRegistry,
+    ) : RecoverableSteamSession {
+        override fun generation(): SteamSessionGeneration? =
+            sessions.currentUsable()
+                ?.takeIf { it.engine === engine }
+                ?.generation
+                ?.let(::SteamSessionGeneration)
+
+        override fun isUsable(generation: SteamSessionGeneration): Boolean =
+            sessions.currentUsable()?.let { it.engine === engine && it.generation == generation.value } == true
+
+        override suspend fun reconnectIfCurrent(expected: SteamSessionGeneration): Boolean {
+            val failed = sessions.currentUsable()?.takeIf { it.engine === engine } ?: return false
+            if (failed.generation != expected.value) return isUsable(SteamSessionGeneration(failed.generation))
+            if (!sessions.reportUnavailable(failed.accountName, failed.generation)) return false
+            return sessions.awaitCurrentUsable(
+                afterGeneration = failed.generation,
+                timeoutMs = ACCOUNT_SESSION_RECOVERY_TIMEOUT_MS,
+            )?.engine === engine
+        }
+    }
+
+    private class AnonymousRecoverableSteamSession(
+        private val engine: SteamContentSdkEngine,
+    ) : RecoverableSteamSession {
+        override fun generation(): SteamSessionGeneration? =
+            engine.currentSessionGeneration()?.let(::SteamSessionGeneration)
+
+        override fun isUsable(generation: SteamSessionGeneration): Boolean =
+            engine.currentSessionGeneration() == generation.value && engine.state() == SessionState.AUTHENTICATED
+
+        override suspend fun reconnectIfCurrent(expected: SteamSessionGeneration): Boolean =
+            engine.reconnectSessionIfCurrent(expected.value)
+    }
+
     private companion object {
         const val TAG = "WallHubSdkWorkshop"
         const val SESSION_READY_ATTEMPTS = 20
         const val PUBLIC_SESSION_READY_ATTEMPTS = 32
         const val SESSION_READY_DELAY_MS = 250L
+        const val ACCOUNT_SESSION_RECOVERY_TIMEOUT_MS = 15_000L
     }
 }
