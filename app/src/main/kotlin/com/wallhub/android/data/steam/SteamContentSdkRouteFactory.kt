@@ -55,14 +55,12 @@ internal class SteamContentSdkRouteFactory
             val preferences = settingsRepository.preferences.first()
             val configuredProxy =
                 cdnProxy ?: preferences.downloadProxyUrl.takeIf { preferences.downloadProxyEnabled }
-            val nativeSteam3 = configuredProxy == null
             val preparedCandidates = mutableListOf<String>()
             directoryCandidates.lineSequence().map(String::trim).filter(String::isNotEmpty).forEach { candidate ->
                 val endpoint = parseCmEndpoint(candidate) ?: return@forEach
-                // Match the working WebView/SteamKit topology: enhancement does not force account CM onto WSS.
-                // Native Steam3 keeps Steam's advertised port; only an explicit HTTP proxy selects WSS/443,
-                // because the SDK intentionally does not tunnel plaintext Steam3 through an HTTP proxy.
-                val normalized = "${endpoint.first}:${if (nativeSteam3) endpoint.second else CM_WEBSOCKET_PORT}"
+                // Match the working WebView password/remembered-login path: account authentication uses direct
+                // WSS, while enhancement owns the Directory/WebAPI bootstrap rather than proxying the CM socket.
+                val normalized = "${endpoint.first}:$CM_WEBSOCKET_PORT"
                 if (normalized !in preparedCandidates) preparedCandidates += normalized
             }
             val candidates = preparedCandidates.joinToString("\n").takeIf(String::isNotBlank) ?: return null
@@ -77,7 +75,7 @@ internal class SteamContentSdkRouteFactory
                 enhancedCmProxy = null,
                 enhancedCmProxyAuthorization = null,
                 enhancedTrustRootPem = configuredProxy?.let { null } ?: bridge.routeTrustRootPem,
-                cmTransport = if (nativeSteam3) SessionTransportKind.STEAM3 else SessionTransportKind.WEBSOCKET,
+                cmTransport = SessionTransportKind.WEBSOCKET,
             )
         }
 
