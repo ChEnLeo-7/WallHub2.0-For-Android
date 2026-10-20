@@ -659,9 +659,13 @@ internal class SteamContentSdkWorkshopRepository
             return try {
                 operation(reader)
             } catch (failure: Throwable) {
-                if (selected !== anonymousEngine) throw failure
-                publicSessionRouter.awaitAuthenticated() ?: throw failure
-                operation(accountPublicDetailsReader)
+                if (selected !== anonymousEngine) {
+                    publicSessionRouter.acquireAnonymous()
+                    operation(anonymousPublicDetailsReader)
+                } else {
+                    publicSessionRouter.awaitAuthenticated() ?: throw failure
+                    operation(accountPublicDetailsReader)
+                }
             }
         }
 
@@ -679,9 +683,13 @@ internal class SteamContentSdkWorkshopRepository
             return try {
                 selectedGateway.read(key, kind, priority) { operation(selected) }
             } catch (failure: Throwable) {
-                if (selected !== anonymousEngine) throw failure
-                val authenticated = publicSessionRouter.awaitAuthenticated() ?: throw failure
-                gateway.read(key, kind, priority) { operation(authenticated) }
+                if (selected !== anonymousEngine) {
+                    val anonymous = publicSessionRouter.acquireAnonymous()
+                    anonymousGateway.read(key, kind, priority) { operation(anonymous) }
+                } else {
+                    val authenticated = publicSessionRouter.awaitAuthenticated() ?: throw failure
+                    gateway.read(key, kind, priority) { operation(authenticated) }
+                }
             }
         }
 

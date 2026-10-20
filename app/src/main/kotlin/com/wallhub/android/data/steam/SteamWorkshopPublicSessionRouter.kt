@@ -28,8 +28,11 @@ internal class SteamWorkshopPublicSessionRouter
                 while (authenticatedSessions.currentAuthenticated() == null) delay(ACCOUNT_POLL_MS)
             }
             authenticatedSessions.currentAuthenticated()?.let { return it }
-            return anonymousMutex.withLock {
-                authenticatedSessions.currentAuthenticated()?.let { return@withLock it }
+            return acquireAnonymous()
+        }
+
+        suspend fun acquireAnonymous(): SteamContentSdkEngine =
+            anonymousMutex.withLock {
                 if (anonymousEngine.state() == SessionState.AUTHENTICATED) return@withLock anonymousEngine
                 runCatching { openAnonymous(refreshLive = false) }
                     .getOrElse {
@@ -37,7 +40,6 @@ internal class SteamWorkshopPublicSessionRouter
                         openAnonymous(refreshLive = true)
                     }
             }
-        }
 
         private suspend fun openAnonymous(refreshLive: Boolean): SteamContentSdkEngine {
             val route =

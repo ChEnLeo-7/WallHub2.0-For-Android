@@ -156,6 +156,17 @@ internal class SteamContentSdkSessionBackend(
             } finally {
                 preserveSignedInDuringRestore.set(false)
             }
+            if (
+                activeSession.get()?.state() != SteamContentSdkSessionState.AUTHENTICATED &&
+                mutableSession.value.phase == SteamSessionPhase.SIGNED_IN
+            ) {
+                publish(
+                    SteamSessionPhase.FAILED,
+                    messages.restoreFailed,
+                    accountName = accountName,
+                    hasStoredSession = true,
+                )
+            }
         }
     }
 
@@ -1281,7 +1292,12 @@ internal class SteamContentSdkSessionBackend(
         val projectedPhase =
             if (
                 preserveSignedInDuringRestore.get() &&
-                phase in setOf(SteamSessionPhase.RESTORABLE, SteamSessionPhase.SIGNING_IN)
+                phase in
+                    setOf(
+                        SteamSessionPhase.RESTORABLE,
+                        SteamSessionPhase.SIGNING_IN,
+                        SteamSessionPhase.FAILED,
+                    )
             ) {
                 SteamSessionPhase.SIGNED_IN
             } else {
