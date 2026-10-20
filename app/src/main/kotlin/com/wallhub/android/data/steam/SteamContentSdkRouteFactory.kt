@@ -64,7 +64,6 @@ internal class SteamContentSdkRouteFactory
                 // accept the real tunnel, or pass a short probe and later kill the authenticated channel. Keep
                 // every policy-validated directory candidate; the Bridge validates the current Generation and
                 // strict TLS on the actual CONNECT instead of turning a prewarm miss into "platform unavailable".
-                bridge.prepareCmEndpoint(endpoint.first, CM_WEBSOCKET_PORT)
                 val normalized = "${endpoint.first}:$CM_WEBSOCKET_PORT"
                 if (normalized !in preparedCandidates) preparedCandidates += normalized
             }
