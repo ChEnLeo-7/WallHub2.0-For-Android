@@ -84,6 +84,7 @@ internal class SteamLoopbackTlsBridge
                 if (request.authorization == cdnAuthorization) {
                     val host = SteamDomainPolicy.requireAuthenticatedCdnEndpoint(request.host, request.port)
                     if (!accessManager.enhancedConnectionEnabled()) {
+                        Log.i(LOG_TAG, "SDK bridge plane=cdn mode=direct")
                         val upstream = connectDirect(host, request.port)
                         upstreamSocket = upstream
                         writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
@@ -92,6 +93,7 @@ internal class SteamLoopbackTlsBridge
                         relay(clientSocket, upstream)
                         return
                     }
+                    Log.i(LOG_TAG, "SDK bridge plane=cdn mode=enhanced")
                     val upstream =
                         noSniTlsDialer.connect(
                             hostname = host,
@@ -124,6 +126,7 @@ internal class SteamLoopbackTlsBridge
                 }
                 val host = SteamDomainPolicy.requireSupportedEndpoint(request.host, request.port)
                 if (SteamDomainPolicy.isCmHost(host) && !accessManager.enhancedConnectionEnabled()) {
+                    Log.i(LOG_TAG, "SDK bridge plane=cm mode=direct")
                     val upstream = connectDirect(host, request.port)
                     upstreamSocket = upstream
                     writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
@@ -132,6 +135,7 @@ internal class SteamLoopbackTlsBridge
                     relay(clientSocket, upstream)
                     return
                 }
+                if (SteamDomainPolicy.isCmHost(host)) Log.i(LOG_TAG, "SDK bridge plane=cm mode=enhanced")
                 val route = accessManager.acceleratedRoute(host, request.port)
                 selectedRoute = route
                 val upstream =
