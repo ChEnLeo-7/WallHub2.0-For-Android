@@ -56,6 +56,19 @@ class SteamCmEndpointSourceTest {
     }
 
     @Test
+    fun refreshedWindowKeepsNewPriorityAndUnusedPriorCandidates() {
+        assertEquals(
+            "cmp5.steamserver.net:443\ncmp2.steamserver.net:443\ncmp1.steamserver.net:443\ncmp3.steamserver.net:443",
+            mergeCmCandidateWindows(
+                live = "cmp5.steamserver.net:443\ncmp2.steamserver.net:443",
+                previous =
+                    "cmp1.steamserver.net:443\ncmp2.steamserver.net:443\n" +
+                        "cmp3.steamserver.net:443\ncmp4.steamserver.net:443",
+            ),
+        )
+    }
+
+    @Test
     fun aBodyWithNoUsableEndpointYieldsNothing() {
         assertEquals("", cmCandidatesFromBody("""{"response":{"serverlist":[]}}"""))
         assertEquals("", cmCandidatesFromBody(""))

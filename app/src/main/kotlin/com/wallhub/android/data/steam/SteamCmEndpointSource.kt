@@ -68,7 +68,12 @@ internal class SteamCmEndpointSource
                     TAG,
                     "cm candidates=${live.lines().size} source=live" + if (refreshLive) " retry=true" else "",
                 )
-                if (live.isNotEmpty()) return@withContext live
+                if (live.isNotEmpty()) {
+                    val selected =
+                        if (refreshLive) mergeCmCandidateWindows(live, cachedCandidates) else live
+                    Log.i(TAG, "cm candidates=${selected.lines().size} source=selected")
+                    return@withContext selected
+                }
                 // The first cold-start attempt may recover from a Directory outage with the bounded persisted
                 // response. A transport retry deliberately refuses that same input: it already failed to make a
                 // usable session, so presenting it again would not be a new attempt.
@@ -104,6 +109,15 @@ internal class SteamCmEndpointSource
             }
         }
     }
+
+/** Merges a refreshed CM window with still-fresh prior candidates, keeping fresh order and one bounded cap. */
+internal fun mergeCmCandidateWindows(live: String, previous: String): String =
+    (live.lineSequence() + previous.lineSequence())
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+        .distinct()
+        .take(MAX_CM_CANDIDATES)
+        .joinToString("\n")
 
 /**
  * Extracts the platform-supported CM endpoints from a CM directory body.
