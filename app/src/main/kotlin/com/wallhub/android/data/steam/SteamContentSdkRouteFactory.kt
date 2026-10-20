@@ -55,16 +55,14 @@ internal class SteamContentSdkRouteFactory
             val preferences = settingsRepository.preferences.first()
             val configuredProxy =
                 cdnProxy ?: preferences.downloadProxyUrl.takeIf { preferences.downloadProxyEnabled }
+            val nativeSteam3 = configuredProxy == null
             val preparedCandidates = mutableListOf<String>()
             directoryCandidates.lineSequence().map(String::trim).filter(String::isNotEmpty).forEach { candidate ->
                 val endpoint = parseCmEndpoint(candidate) ?: return@forEach
-                // This adapter always selects WebSocket; the SDK CONNECT authority is therefore HTTPS/443 even
-                // when Steam's directory also advertises the same CM host's native Steam3 port.
-                // A CM prewarm is advisory only: mainland mobile paths can fail one DNS/probe moment and then
-                // accept the real tunnel, or pass a short probe and later kill the authenticated channel. Keep
-                // every policy-validated directory candidate; the Bridge validates the current Generation and
-                // strict TLS on the actual CONNECT instead of turning a prewarm miss into "platform unavailable".
-                val normalized = "${endpoint.first}:$CM_WEBSOCKET_PORT"
+                // Match the working WebView/SteamKit topology: enhancement does not force account CM onto WSS.
+                // Native Steam3 keeps Steam's advertised port; only an explicit HTTP proxy selects WSS/443,
+                // because the SDK intentionally does not tunnel plaintext Steam3 through an HTTP proxy.
+                val normalized = "${endpoint.first}:${if (nativeSteam3) endpoint.second else CM_WEBSOCKET_PORT}"
                 if (normalized !in preparedCandidates) preparedCandidates += normalized
             }
             val candidates = preparedCandidates.joinToString("\n").takeIf(String::isNotBlank) ?: return null
@@ -76,9 +74,10 @@ internal class SteamContentSdkRouteFactory
                 configuredProxyUri = configuredProxy,
                 authenticatedCdnProxy = configuredProxy?.let { null } ?: bridgeAuthority,
                 authenticatedCdnProxyAuthorization = configuredProxy?.let { null } ?: bridge.cdnProxyAuthorization,
-                enhancedCmProxy = configuredProxy?.let { null } ?: bridgeAuthority,
-                enhancedCmProxyAuthorization = configuredProxy?.let { null } ?: bridge.cmProxyAuthorization,
+                enhancedCmProxy = null,
+                enhancedCmProxyAuthorization = null,
                 enhancedTrustRootPem = configuredProxy?.let { null } ?: bridge.routeTrustRootPem,
+                cmTransport = if (nativeSteam3) SessionTransportKind.STEAM3 else SessionTransportKind.WEBSOCKET,
             )
         }
 
@@ -102,17 +101,21 @@ internal fun sdkPlatformRoute(
     enhancedCmProxy: String? = null,
     enhancedCmProxyAuthorization: String? = null,
     enhancedTrustRootPem: String? = null,
+    cmTransport: Int = SessionTransportKind.WEBSOCKET,
 ): SteamContentSdkEngine.Route {
     val configuredProxy = configuredProxyUri?.let(::sdkHttpProxyAuthority)
     return SteamContentSdkEngine.Route(
         cmCandidates = cmCandidates,
         connectAttempts = cmCandidates.lineSequence().count { it.isNotBlank() }.coerceAtMost(MAX_CM_CANDIDATES),
-        transport = SessionTransportKind.WEBSOCKET,
+        transport = cmTransport,
         cdnProxy = configuredProxy ?: authenticatedCdnProxy,
         cdnProxyAuthorization = authenticatedCdnProxyAuthorization.takeIf { configuredProxy == null && authenticatedCdnProxy != null },
         cmProxy = configuredProxy ?: enhancedCmProxy,
         cmProxyAuthorization = enhancedCmProxyAuthorization.takeIf { configuredProxy == null && enhancedCmProxy != null },
-        extraTrustRootPem = enhancedTrustRootPem.takeIf { configuredProxy == null && enhancedCmProxy != null },
+        extraTrustRootPem =
+            enhancedTrustRootPem.takeIf {
+                configuredProxy == null && (enhancedCmProxy != null || authenticatedCdnProxy != null)
+            },
     )
 }
 

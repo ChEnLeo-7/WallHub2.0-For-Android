@@ -56,11 +56,6 @@ internal class SteamLoopbackTlsBridge
             "-----BEGIN CERTIFICATE-----\n$encoded\n-----END CERTIFICATE-----\n"
         }
 
-        suspend fun prepareCmEndpoint(
-            hostname: String,
-            port: Int,
-        ): Boolean = accessManager.prewarmSteamEndpoint(hostname, port)
-
         init {
             executor.execute(::acceptLoop)
         }

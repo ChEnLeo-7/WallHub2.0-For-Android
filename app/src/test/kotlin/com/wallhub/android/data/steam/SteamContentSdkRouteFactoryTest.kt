@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import io.steamcontent.sdk.SessionTransportKind
 import kotlin.test.assertTrue
 
 class SteamContentSdkRouteFactoryTest {
@@ -82,6 +83,24 @@ class SteamContentSdkRouteFactoryTest {
         assertEquals("Basic cdn", route.cdnProxyAuthorization)
         assertEquals("127.0.0.1:32123", route.cmProxy)
         assertEquals("Basic cm", route.cmProxyAuthorization)
+        assertTrue(route.extraTrustRootPem.orEmpty().contains("BEGIN CERTIFICATE"))
+    }
+
+    @Test
+    fun `native Steam3 keeps CM off the HTTP bridge while CDN remains enhanced`() {
+        val route =
+            sdkPlatformRoute(
+                cmCandidates = "cmp1-hkg1.steamserver.net:27018",
+                configuredProxyUri = null,
+                authenticatedCdnProxy = "127.0.0.1:32123",
+                authenticatedCdnProxyAuthorization = "Basic cdn",
+                enhancedTrustRootPem = "-----BEGIN CERTIFICATE-----\nroute\n-----END CERTIFICATE-----\n",
+                cmTransport = SessionTransportKind.STEAM3,
+            )
+
+        assertEquals(SessionTransportKind.STEAM3, route.transport)
+        assertNull(route.cmProxy)
+        assertEquals("127.0.0.1:32123", route.cdnProxy)
         assertTrue(route.extraTrustRootPem.orEmpty().contains("BEGIN CERTIFICATE"))
     }
 
