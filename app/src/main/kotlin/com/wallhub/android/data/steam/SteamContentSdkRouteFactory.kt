@@ -60,10 +60,13 @@ internal class SteamContentSdkRouteFactory
                 val endpoint = parseCmEndpoint(candidate) ?: return@forEach
                 // This adapter always selects WebSocket; the SDK CONNECT authority is therefore HTTPS/443 even
                 // when Steam's directory also advertises the same CM host's native Steam3 port.
-                if (bridge.prepareCmEndpoint(endpoint.first, CM_WEBSOCKET_PORT)) {
-                    val normalized = "${endpoint.first}:$CM_WEBSOCKET_PORT"
-                    if (normalized !in preparedCandidates) preparedCandidates += normalized
-                }
+                // A CM prewarm is advisory only: mainland mobile paths can fail one DNS/probe moment and then
+                // accept the real tunnel, or pass a short probe and later kill the authenticated channel. Keep
+                // every policy-validated directory candidate; the Bridge validates the current Generation and
+                // strict TLS on the actual CONNECT instead of turning a prewarm miss into "platform unavailable".
+                bridge.prepareCmEndpoint(endpoint.first, CM_WEBSOCKET_PORT)
+                val normalized = "${endpoint.first}:$CM_WEBSOCKET_PORT"
+                if (normalized !in preparedCandidates) preparedCandidates += normalized
             }
             val candidates = preparedCandidates.joinToString("\n").takeIf(String::isNotBlank) ?: return null
             val bridgeAddress = bridge.proxy.address() as InetSocketAddress
