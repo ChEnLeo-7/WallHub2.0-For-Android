@@ -615,7 +615,7 @@ internal class SteamContentSdkSessionBackend(
             try {
                 if (refreshLive) platform.openWithLiveCandidates() else platform.open()
             } catch (error: Throwable) {
-                record("platform_open_failure", error)
+                record("platform_open_failure", error, error.message?.take(240))
                 return null
             }
         if (opened == null) {
