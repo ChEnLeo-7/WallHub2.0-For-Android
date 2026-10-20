@@ -111,20 +111,18 @@ internal class SteamLoopbackTlsBridge
                                 port = request.port,
                                 hideSni = true,
                             )
-                        }.getOrElse { noSniFailure ->
-                            Log.i(LOG_TAG, "SDK bridge plane=cdn upstream_sni=fallback")
-                            runCatching {
-                                noSniTlsDialer.connectAuthenticatedCdn(
-                                    tlsHostname = tlsHost,
-                                    candidates = addresses,
-                                    port = request.port,
-                                    hideSni = false,
-                                )
-                            }.getOrElse { sniFailure ->
-                                throw IOException("No strictly verified CDN route", sniFailure).also {
-                                    it.addSuppressed(noSniFailure)
-                                }
-                            }
+                        }.getOrElse {
+                            // Some SteamPipe providers require their ordinary ClientHello behavior. Preserve the
+                            // SDK's own strict rustls verification on this fallback instead of duplicating the
+                            // provider's virtual-host semantics in the Android bridge.
+                            Log.i(LOG_TAG, "SDK bridge plane=cdn upstream_sni=transparent_fallback")
+                            val transparent = connectDirect(host, request.port, addresses)
+                            upstreamSocket = transparent
+                            writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
+                            clientSocket.soTimeout = 0
+                            tunnelEstablished = true
+                            relay(clientSocket, transparent)
+                            return
                         }
                     upstreamSocket = upstream.socket
                     writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
