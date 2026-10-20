@@ -5,6 +5,12 @@ import org.junit.Test
 
 class SteamCmEndpointSourceTest {
     @Test
+    fun emptyCandidateWindowCountsAsZero() {
+        assertEquals(0, cmCandidateCount(""))
+        assertEquals(2, cmCandidateCount("cmp1.steamserver.net:443\ncmp2.steamserver.net:443"))
+    }
+
+    @Test
     fun theDirectoryOrderIsPreservedAcrossCmPorts() {
         val body =
             """

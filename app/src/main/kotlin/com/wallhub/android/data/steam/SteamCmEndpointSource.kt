@@ -23,6 +23,13 @@ internal const val MAX_CM_CANDIDATES = 4
 private const val CM_FETCH_TIMEOUT_MS = 6_000L
 
 private const val TAG = "WallHubSdkRoute"
+private val CM_BOOTSTRAP_CANDIDATES =
+    listOf(
+        "cmp1-hkg1.steamserver.net:443",
+        "cmp2-hkg1.steamserver.net:443",
+        "cmp1-tyo3.steamserver.net:443",
+        "cmp1-sgp1.steamserver.net:443",
+    ).joinToString("\n")
 private val CM_ENDPOINT_REGEX = Regex("([A-Za-z0-9][A-Za-z0-9.-]*\\.steamserver\\.net):(\\d{2,5})")
 
 /**
@@ -66,12 +73,12 @@ internal class SteamCmEndpointSource
                         .orEmpty()
                 Log.i(
                     TAG,
-                    "cm candidates=${live.lines().size} source=live" + if (refreshLive) " retry=true" else "",
+                    "cm candidates=${cmCandidateCount(live)} source=live" + if (refreshLive) " retry=true" else "",
                 )
                 if (live.isNotEmpty()) {
                     val selected =
                         if (refreshLive) mergeCmCandidateWindows(live, cachedCandidates) else live
-                    Log.i(TAG, "cm candidates=${selected.lines().size} source=selected")
+                    Log.i(TAG, "cm candidates=${cmCandidateCount(selected)} source=selected")
                     return@withContext selected
                 }
                 // The first cold-start attempt may recover from a Directory outage with the bounded persisted
@@ -81,7 +88,9 @@ internal class SteamCmEndpointSource
                     .takeIf {
                         it.isNotEmpty() && cmCandidatesMayFallBack(cached?.ageMs, refreshLive)
                     }?.also {
-                        Log.i(TAG, "cm candidates=${it.lines().size} source=cache_fallback")
+                        Log.i(TAG, "cm candidates=${cmCandidateCount(it)} source=cache_fallback")
+                    } ?: CM_BOOTSTRAP_CANDIDATES.also {
+                        Log.i(TAG, "cm candidates=${cmCandidateCount(it)} source=bootstrap")
                     }
             }
 
@@ -109,6 +118,8 @@ internal class SteamCmEndpointSource
             }
         }
     }
+
+internal fun cmCandidateCount(candidates: String): Int = candidates.lineSequence().count { it.isNotBlank() }
 
 /** Merges a refreshed CM window with still-fresh prior candidates, keeping fresh order and one bounded cap. */
 internal fun mergeCmCandidateWindows(live: String, previous: String): String =
