@@ -58,7 +58,12 @@ internal class SteamContentSdkRouteFactory
             val preparedCandidates = mutableListOf<String>()
             directoryCandidates.lineSequence().map(String::trim).filter(String::isNotEmpty).forEach { candidate ->
                 val endpoint = parseCmEndpoint(candidate) ?: return@forEach
-                if (bridge.prepareCmEndpoint(endpoint.first, endpoint.second)) preparedCandidates += candidate
+                // This adapter always selects WebSocket; the SDK CONNECT authority is therefore HTTPS/443 even
+                // when Steam's directory also advertises the same CM host's native Steam3 port.
+                if (bridge.prepareCmEndpoint(endpoint.first, CM_WEBSOCKET_PORT)) {
+                    val normalized = "${endpoint.first}:$CM_WEBSOCKET_PORT"
+                    if (normalized !in preparedCandidates) preparedCandidates += normalized
+                }
             }
             val candidates = preparedCandidates.joinToString("\n").takeIf(String::isNotBlank) ?: return null
             val bridgeAddress = bridge.proxy.address() as InetSocketAddress
