@@ -149,7 +149,10 @@ internal class SteamLoopbackTlsBridge
                 }
                 val upstream =
                     if (SteamDomainPolicy.isCmHost(host)) {
-                        noSniTlsDialer.connectWithSni(host, route.addresses, request.port, recordFailure)
+                        // Steam CM serves the same strictly verified per-host certificate without SNI. Hiding
+                        // the ClientHello name is the part that prevents mainland mobile paths from admitting
+                        // login and then repeatedly terminating the long-lived authenticated channel.
+                        noSniTlsDialer.connect(host, route.addresses, request.port, recordFailure)
                     } else {
                         noSniTlsDialer.connect(host, route.addresses, request.port, recordFailure)
                     }
