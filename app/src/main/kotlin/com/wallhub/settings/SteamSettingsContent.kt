@@ -123,20 +123,6 @@ internal fun SteamSettingsContent(
     var apiKeyVisible by rememberSaveable { mutableStateOf(false) }
     val apiKeyChanged = apiKey != savedApiKey
 
-    SettingsSectionSurface(
-        modifier = Modifier.padding(vertical = WallHubSpacing.xs),
-    ) {
-        SteamAccountCard(
-            session = session,
-            onLogin = onLoginSteam,
-            onSubmitCode = onSubmitSteamGuardCode,
-            onUseManualCodeFallback = onUseManualSteamGuardFallback,
-            onRestore = onRestoreSteamSession,
-            onLogout = onLogoutSteam,
-            containerColor = Color.Transparent,
-        )
-    }
-
     SettingsSection(
         title = stringResource(R.string.settings_steam_service_access_title),
     ) {
@@ -170,6 +156,20 @@ internal fun SteamSettingsContent(
                 )
             }
         }
+    }
+
+    SettingsSectionSurface(
+        modifier = Modifier.padding(vertical = WallHubSpacing.xs),
+    ) {
+        SteamAccountCard(
+            session = session,
+            onLogin = onLoginSteam,
+            onSubmitCode = onSubmitSteamGuardCode,
+            onUseManualCodeFallback = onUseManualSteamGuardFallback,
+            onRestore = onRestoreSteamSession,
+            onLogout = onLogoutSteam,
+            containerColor = Color.Transparent,
+        )
     }
 
     SettingsSection(

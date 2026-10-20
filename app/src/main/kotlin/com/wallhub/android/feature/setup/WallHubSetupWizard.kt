@@ -100,8 +100,8 @@ import androidx.compose.material.icons.outlined.VisibilityOff
 
 private enum class WallHubSetupPage {
     Welcome,
-    Steam,
     Network,
+    Steam,
     Finish,
 }
 
@@ -213,7 +213,7 @@ fun WallHubSetupWizard(
                         onSaveDohEndpoints = viewModel::saveDohEndpoints,
                         onContinue = { proxyUrl, proxyEnabled, accessEnabled, source, apiKey ->
                             viewModel.saveNetwork(proxyUrl, proxyEnabled, accessEnabled, source, apiKey)
-                            page = WallHubSetupPage.Finish
+                            page = WallHubSetupPage.Steam
                         },
                     )
                 WallHubSetupPage.Finish -> FinishPage()
@@ -234,8 +234,8 @@ fun WallHubSetupWizard(
             primaryLabel = primaryLabel,
             onPrimaryClick = {
                 when (page) {
-                    WallHubSetupPage.Welcome -> page = WallHubSetupPage.Steam
-                    WallHubSetupPage.Steam -> page = WallHubSetupPage.Network
+                    WallHubSetupPage.Welcome -> page = WallHubSetupPage.Network
+                    WallHubSetupPage.Steam -> page = WallHubSetupPage.Finish
                     WallHubSetupPage.Network -> Unit
                     WallHubSetupPage.Finish -> onComplete()
                 }
@@ -251,7 +251,7 @@ fun WallHubSetupWizard(
                 ) {
                     viewModel.logoutSteam()
                 }
-                page = WallHubSetupPage.Network
+                page = WallHubSetupPage.Finish
             },
             showPrimary = showPrimary,
             showSecondary = showSkip,
