@@ -50,6 +50,7 @@ internal class SteamContentSdkRouteFactory
         suspend fun platformRoute(
             cdnProxy: String? = null,
             refreshLive: Boolean = false,
+            cmTransport: Int = SessionTransportKind.WEBSOCKET,
         ): SteamContentSdkEngine.Route? {
             val directoryCandidates = cmEndpoints.candidates(refreshLive = refreshLive) ?: return null
             val preferences = settingsRepository.preferences.first()
@@ -58,9 +59,10 @@ internal class SteamContentSdkRouteFactory
             val preparedCandidates = mutableListOf<String>()
             directoryCandidates.lineSequence().map(String::trim).filter(String::isNotEmpty).forEach { candidate ->
                 val endpoint = parseCmEndpoint(candidate) ?: return@forEach
-                // Match the working WebView password/remembered-login path: account authentication uses direct
-                // WSS, while enhancement owns the Directory/WebAPI bootstrap rather than proxying the CM socket.
-                val normalized = "${endpoint.first}:$CM_WEBSOCKET_PORT"
+                // Match WebView's split topology: password/remembered account sessions use direct WSS, while
+                // ordinary anonymous/download CM keeps Steam's advertised native Steam3 port.
+                val port = if (cmTransport == SessionTransportKind.WEBSOCKET) CM_WEBSOCKET_PORT else endpoint.second
+                val normalized = "${endpoint.first}:$port"
                 if (normalized !in preparedCandidates) preparedCandidates += normalized
             }
             val candidates = preparedCandidates.joinToString("\n").takeIf(String::isNotBlank) ?: return null
@@ -75,7 +77,7 @@ internal class SteamContentSdkRouteFactory
                 enhancedCmProxy = null,
                 enhancedCmProxyAuthorization = null,
                 enhancedTrustRootPem = configuredProxy?.let { null } ?: bridge.routeTrustRootPem,
-                cmTransport = SessionTransportKind.WEBSOCKET,
+                cmTransport = cmTransport,
             )
         }
 

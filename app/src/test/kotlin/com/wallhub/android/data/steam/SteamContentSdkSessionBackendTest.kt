@@ -638,10 +638,18 @@ class SteamContentSdkSessionBackendTest {
             // handed to the attempt path, which re-opens the session rather than leaving a signed-in claim
             // over a dead socket. CLOSED is the state a re-opened session that cannot authenticate reports, so
             // the handed-off attempt ends by itself and this test does not need to cancel it.
+            fixture.diagnostics.events.clear()
             fixture.session.stateAfterEvents = SteamContentSdkSessionState.CLOSED
             fixture.session.reconnectFailure = SteamContentSdkSessionFailure.PROTOCOL_ADAPTER
             advanceTimeBy(1_001L)
 
+            val recoveryPhases =
+                fixture.diagnostics.events
+                    .mapNotNull { it.attributes["stage"] }
+                    .filter { it.startsWith("phase_") }
+            assertFalse(recoveryPhases.contains("phase_restorable"), recoveryPhases.toString())
+            assertFalse(recoveryPhases.contains("phase_signing_in"), recoveryPhases.toString())
+            assertTrue(recoveryPhases.contains("phase_signed_in"), recoveryPhases.toString())
             assertEquals(0, fixture.session.reconnects)
             assertTrue(
                 fixture.platform.openCalls >= 2,

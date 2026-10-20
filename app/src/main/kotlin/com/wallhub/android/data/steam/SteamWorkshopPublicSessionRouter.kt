@@ -2,6 +2,7 @@ package com.wallhub.android.data.steam
 
 import com.wallhub.android.di.SteamAnonymousWorkshopEngine
 import io.steamcontent.sdk.SessionState
+import io.steamcontent.sdk.SessionTransportKind
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.delay
@@ -39,7 +40,11 @@ internal class SteamWorkshopPublicSessionRouter
         }
 
         private suspend fun openAnonymous(refreshLive: Boolean): SteamContentSdkEngine {
-            val route = routes.platformRoute(refreshLive = refreshLive)
+            val route =
+                routes.platformRoute(
+                    refreshLive = refreshLive,
+                    cmTransport = SessionTransportKind.STEAM3,
+                )
                 ?: error("The platform's Steam route is unavailable for anonymous public reads")
             val session = anonymousEngine.open(route)
                 ?: error("The anonymous Steam Content SDK session is unavailable")

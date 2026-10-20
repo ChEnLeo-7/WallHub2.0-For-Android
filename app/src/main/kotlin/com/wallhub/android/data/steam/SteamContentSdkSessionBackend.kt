@@ -81,6 +81,8 @@ internal class SteamContentSdkSessionBackend(
 
     private val attemptInProgress = AtomicBoolean(false)
     private val logoutInProgress = AtomicBoolean(false)
+    /** Keeps the persisted account identity stable while the one bounded background CM replacement runs. */
+    private val preserveSignedInDuringRestore = AtomicBoolean(false)
     private val attemptJob = AtomicReference<Job?>(null)
     private val activeSession = AtomicReference<SteamContentSdkPlatformSession?>(null)
     private val pendingChallenge = AtomicReference<PendingChallenge?>(null)
@@ -142,13 +144,18 @@ internal class SteamContentSdkSessionBackend(
             if (current.authorizationGeneration() != generation) return@launchAttempt
             record("content_session_recovery_requested generation=$generation")
             if (!releaseSessionIfCurrent(current)) return@launchAttempt
+            preserveSignedInDuringRestore.set(true)
             publish(
-                SteamSessionPhase.RESTORABLE,
-                messages.restoreFailed,
+                SteamSessionPhase.SIGNED_IN,
+                messages.restoringSession,
                 accountName = accountName,
                 hasStoredSession = true,
             )
-            restoreStoredSession()
+            try {
+                restoreStoredSession()
+            } finally {
+                preserveSignedInDuringRestore.set(false)
+            }
         }
     }
 
@@ -1271,9 +1278,18 @@ internal class SteamContentSdkSessionBackend(
         avatarUrl: String? = null,
     ) {
         val previous = mutableSession.value
+        val projectedPhase =
+            if (
+                preserveSignedInDuringRestore.get() &&
+                phase in setOf(SteamSessionPhase.RESTORABLE, SteamSessionPhase.SIGNING_IN)
+            ) {
+                SteamSessionPhase.SIGNED_IN
+            } else {
+                phase
+            }
         mutableSession.value =
             SteamSessionState(
-                phase = phase,
+                phase = projectedPhase,
                 accountName = accountName ?: previous.accountName,
                 // The profile is read once, on the authenticated edge; every later phase carries it forward so
                 // a state published for a challenge or a failure does not blank the account's own name.
@@ -1285,7 +1301,7 @@ internal class SteamContentSdkSessionBackend(
                 verificationMethod = verificationMethod,
                 hasStoredSession = hasStoredSession ?: previous.hasStoredSession,
             )
-        record("phase_${phase.name.lowercase()}")
+        record("phase_${projectedPhase.name.lowercase()}")
     }
 
     private fun clearStoredCredential(guard: Long? = null): Boolean =
