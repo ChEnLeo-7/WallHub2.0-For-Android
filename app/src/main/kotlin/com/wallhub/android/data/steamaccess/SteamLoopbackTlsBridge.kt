@@ -136,7 +136,15 @@ internal class SteamLoopbackTlsBridge
                     return
                 }
                 if (SteamDomainPolicy.isCmHost(host)) Log.i(LOG_TAG, "SDK bridge plane=cm mode=enhanced")
-                val route = accessManager.acceleratedRoute(host, request.port)
+                val route =
+                    runCatching { accessManager.acceleratedRoute(host, request.port) }.getOrElse {
+                        val prepared =
+                            kotlinx.coroutines.runBlocking {
+                                accessManager.prewarmSteamEndpoint(host, request.port)
+                            }
+                        if (!prepared) throw it
+                        accessManager.acceleratedRoute(host, request.port)
+                    }
                 selectedRoute = route
                 val recordFailure: (InetAddress, Throwable) -> Unit = { address, error ->
                     accessManager.recordAcceleratedFailure(
