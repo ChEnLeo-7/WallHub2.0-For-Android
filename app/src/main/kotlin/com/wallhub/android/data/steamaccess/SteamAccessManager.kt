@@ -244,14 +244,21 @@ class SteamAccessManager
         ): Boolean {
             val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
             preferencesReady.await()
-            if (!isAcceleratedRouteExpected(host, port)) return true
+            val requiresEnhancedRoute = SteamDomainPolicy.isCmHost(host) && preferences.steamAccessEnabled
+            if (!requiresEnhancedRoute && !isAcceleratedRouteExpected(host, port)) return true
             while (true) {
                 if (!preferences.steamAccessEnabled) return true
                 val selectedNetworkType = networkType
                 val generation = routeGeneration.get()
                 val key = SteamRoutePrewarmKey(selectedNetworkType, generation, host, port)
                 val lookup = routeSnapshots.lookup(steamRouteCacheKey(selectedNetworkType, host, port))
-                if (lookup.route?.available == true && !lookup.shouldRefresh) return true
+                val ready =
+                    if (requiresEnhancedRoute) {
+                        lookup.route?.accelerated == true
+                    } else {
+                        lookup.route?.available == true
+                    }
+                if (ready && !lookup.shouldRefresh) return true
                 val result =
                     routePrewarmTracker.awaitCompletionOrInvalidation(key) {
                         requestRouteRefresh(host, port)
