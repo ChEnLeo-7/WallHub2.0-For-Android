@@ -67,9 +67,10 @@ internal class NoSniTlsDialer internal constructor(
         tlsHostname: String,
         candidates: List<InetAddress>,
         port: Int = HTTPS_PORT,
+        hideSni: Boolean = true,
         onFailure: (InetAddress, Throwable) -> Unit = { _, _ -> },
     ): AuthenticatedSteamSocket =
-        connectAuthenticated(tlsHostname, candidates, port, hideSni = true, authenticatedCdn = true, onFailure)
+        connectAuthenticated(tlsHostname, candidates, port, hideSni, authenticatedCdn = true, onFailure)
 
     private fun connectAuthenticated(
         hostname: String,

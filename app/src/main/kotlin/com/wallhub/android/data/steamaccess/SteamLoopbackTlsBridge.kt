@@ -104,11 +104,28 @@ internal class SteamLoopbackTlsBridge
                             .runBlocking { accessManager.enhancedAddresses(host) }
                             .filter(::isAuthenticatedCdnAddress)
                     val upstream =
-                        noSniTlsDialer.connectAuthenticatedCdn(
-                            tlsHostname = tlsHost,
-                            candidates = addresses,
-                            port = request.port,
-                        )
+                        runCatching {
+                            noSniTlsDialer.connectAuthenticatedCdn(
+                                tlsHostname = tlsHost,
+                                candidates = addresses,
+                                port = request.port,
+                                hideSni = true,
+                            )
+                        }.getOrElse { noSniFailure ->
+                            Log.i(LOG_TAG, "SDK bridge plane=cdn upstream_sni=fallback")
+                            runCatching {
+                                noSniTlsDialer.connectAuthenticatedCdn(
+                                    tlsHostname = tlsHost,
+                                    candidates = addresses,
+                                    port = request.port,
+                                    hideSni = false,
+                                )
+                            }.getOrElse { sniFailure ->
+                                throw IOException("No strictly verified CDN route", sniFailure).also {
+                                    it.addSuppressed(noSniFailure)
+                                }
+                            }
+                        }
                     upstreamSocket = upstream.socket
                     writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
                     val securedClient =
