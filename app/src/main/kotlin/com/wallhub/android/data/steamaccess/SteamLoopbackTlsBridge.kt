@@ -94,25 +94,16 @@ internal class SteamLoopbackTlsBridge
                         return
                     }
                     Log.i(LOG_TAG, "SDK bridge plane=cdn mode=enhanced")
-                    val upstream =
-                        noSniTlsDialer.connectAuthenticatedCdn(
-                            hostname = host,
-                            candidates =
-                                kotlinx.coroutines
-                                    .runBlocking { accessManager.enhancedAddresses(host) }
-                                    .filter(::isAuthenticatedCdnAddress),
-                            port = request.port,
-                        )
-                    upstreamSocket = upstream.socket
+                    val addresses =
+                        kotlinx.coroutines
+                            .runBlocking { accessManager.enhancedAddresses(host) }
+                            .filter(::isAuthenticatedCdnAddress)
+                    val upstream = connectDirect(host, request.port, addresses)
+                    upstreamSocket = upstream
                     writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
-                    val securedClient =
-                        privateCa.createAuthenticatedCdnServerSocket(clientSocket, host).apply {
-                            soTimeout = 0
-                            startHandshake()
-                        }
-                    securedClientSocket = securedClient
+                    clientSocket.soTimeout = 0
                     tunnelEstablished = true
-                    relay(securedClient, upstream.socket)
+                    relay(clientSocket, upstream)
                     return
                 }
                 if (request.authorization != authorization) {
@@ -206,10 +197,10 @@ internal class SteamLoopbackTlsBridge
         private fun connectDirect(
             hostname: String,
             port: Int,
+            preparedAddresses: List<InetAddress>? = null,
         ): Socket {
             var lastError: IOException? = null
-            InetAddress
-                .getAllByName(hostname)
+            (preparedAddresses ?: InetAddress.getAllByName(hostname).toList())
                 .asSequence()
                 .filter(::isAuthenticatedCdnAddress)
                 .distinctBy(InetAddress::getHostAddress)

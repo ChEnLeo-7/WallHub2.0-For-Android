@@ -89,15 +89,6 @@ internal class WallHubPrivateCa
             hostname: String,
         ): SSLSocket = createServerSocketForHost(socket, SteamDomainPolicy.requireSupported(hostname))
 
-        fun createAuthenticatedCdnServerSocket(
-            socket: Socket,
-            hostname: String,
-        ): SSLSocket =
-            createServerSocketForHost(
-                socket,
-                SteamDomainPolicy.requireAuthenticatedCdnEndpoint(hostname, STEAM_HTTPS_PORT),
-            )
-
         private fun createServerSocketForHost(
             socket: Socket,
             host: String,
