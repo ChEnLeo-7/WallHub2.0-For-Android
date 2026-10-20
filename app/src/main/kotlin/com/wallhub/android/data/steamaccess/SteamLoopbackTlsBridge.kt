@@ -98,22 +98,12 @@ internal class SteamLoopbackTlsBridge
                         kotlinx.coroutines
                             .runBlocking { accessManager.enhancedAddresses(host) }
                             .filter(::isAuthenticatedCdnAddress)
-                    val upstream =
-                        noSniTlsDialer.connectAuthenticatedCdn(
-                            hostname = host,
-                            candidates = addresses,
-                            port = request.port,
-                        )
-                    upstreamSocket = upstream.socket
+                    val upstream = connectDirect(host, request.port, addresses)
+                    upstreamSocket = upstream
                     writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
-                    val securedClient =
-                        privateCa.createAuthenticatedCdnServerSocket(clientSocket, host).apply {
-                            soTimeout = 0
-                            startHandshake()
-                        }
-                    securedClientSocket = securedClient
+                    clientSocket.soTimeout = 0
                     tunnelEstablished = true
-                    relay(securedClient, upstream.socket)
+                    relay(clientSocket, upstream)
                     return
                 }
                 if (request.authorization != authorization) {
