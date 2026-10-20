@@ -94,16 +94,31 @@ internal class SteamLoopbackTlsBridge
                         return
                     }
                     Log.i(LOG_TAG, "SDK bridge plane=cdn mode=enhanced")
+                    val tlsHost =
+                        SteamDomainPolicy.requireAuthenticatedCdnEndpoint(
+                            request.tlsServerName ?: host,
+                            request.port,
+                        )
                     val addresses =
                         kotlinx.coroutines
                             .runBlocking { accessManager.enhancedAddresses(host) }
                             .filter(::isAuthenticatedCdnAddress)
-                    val upstream = connectDirect(host, request.port, addresses)
-                    upstreamSocket = upstream
+                    val upstream =
+                        noSniTlsDialer.connectAuthenticatedCdn(
+                            tlsHostname = tlsHost,
+                            candidates = addresses,
+                            port = request.port,
+                        )
+                    upstreamSocket = upstream.socket
                     writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
-                    clientSocket.soTimeout = 0
+                    val securedClient =
+                        privateCa.createAuthenticatedCdnServerSocket(clientSocket, tlsHost).apply {
+                            soTimeout = 0
+                            startHandshake()
+                        }
+                    securedClientSocket = securedClient
                     tunnelEstablished = true
-                    relay(clientSocket, upstream)
+                    relay(securedClient, upstream.socket)
                     return
                 }
                 if (request.authorization != authorization) {
@@ -349,6 +364,7 @@ internal data class ConnectRequest(
     val host: String,
     val port: Int,
     val authorization: String?,
+    val tlsServerName: String?,
 )
 
 internal fun parseSteamConnectRequest(headersText: String): ConnectRequest {
@@ -382,6 +398,7 @@ internal fun parseSteamConnectRequest(headersText: String): ConnectRequest {
         host = host,
         port = port,
         authorization = headers["proxy-authorization"],
+        tlsServerName = headers["x-steam-content-tls-server-name"]?.lowercase()?.trimEnd('.'),
     )
 }
 

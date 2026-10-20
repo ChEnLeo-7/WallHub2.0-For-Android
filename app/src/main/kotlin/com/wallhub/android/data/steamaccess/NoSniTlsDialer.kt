@@ -52,7 +52,7 @@ internal class NoSniTlsDialer internal constructor(
         port: Int = HTTPS_PORT,
         onFailure: (InetAddress, Throwable) -> Unit = { _, _ -> },
     ): AuthenticatedSteamSocket =
-        connectAuthenticated(hostname, candidates, port, hideSni = true, onFailure)
+        connectAuthenticated(hostname, candidates, port, hideSni = true, authenticatedCdn = false, onFailure)
 
     /** Connects to selected IP candidates while preserving the original Steam authority as TLS SNI. */
     fun connectWithSni(
@@ -61,16 +61,30 @@ internal class NoSniTlsDialer internal constructor(
         port: Int = HTTPS_PORT,
         onFailure: (InetAddress, Throwable) -> Unit = { _, _ -> },
     ): AuthenticatedSteamSocket =
-        connectAuthenticated(hostname, candidates, port, hideSni = false, onFailure)
+        connectAuthenticated(hostname, candidates, port, hideSni = false, authenticatedCdn = false, onFailure)
+
+    fun connectAuthenticatedCdn(
+        tlsHostname: String,
+        candidates: List<InetAddress>,
+        port: Int = HTTPS_PORT,
+        onFailure: (InetAddress, Throwable) -> Unit = { _, _ -> },
+    ): AuthenticatedSteamSocket =
+        connectAuthenticated(tlsHostname, candidates, port, hideSni = true, authenticatedCdn = true, onFailure)
 
     private fun connectAuthenticated(
         hostname: String,
         candidates: List<InetAddress>,
         port: Int,
         hideSni: Boolean,
+        authenticatedCdn: Boolean,
         onFailure: (InetAddress, Throwable) -> Unit,
     ): AuthenticatedSteamSocket {
-        val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
+        val host =
+            if (authenticatedCdn) {
+                SteamDomainPolicy.requireAuthenticatedCdnEndpoint(hostname, port)
+            } else {
+                SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
+            }
         val addresses = candidates.distinctBy(InetAddress::getHostAddress).take(MAX_RACE_ADDRESSES)
         if (addresses.isEmpty()) throw IOException("No no-SNI candidates for $host")
 

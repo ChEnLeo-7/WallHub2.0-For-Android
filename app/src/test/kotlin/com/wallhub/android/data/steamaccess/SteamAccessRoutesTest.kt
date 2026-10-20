@@ -51,12 +51,14 @@ class SteamAccessRoutesTest {
         val request =
             parseSteamConnectRequest(
                 "CONNECT steamcommunity.com:443 HTTP/1.1\r\n" +
-                    "Proxy-Authorization: Basic test-token\r\n\r\n",
+                    "Proxy-Authorization: Basic test-token\r\n" +
+                    "X-Steam-Content-TLS-Server-Name: cdn.example\r\n\r\n",
             )
 
         assertEquals("steamcommunity.com", request.host)
         assertEquals(443, request.port)
         assertEquals("Basic test-token", request.authorization)
+        assertEquals("cdn.example", request.tlsServerName)
         assertFailsWith<java.io.IOException> {
             parseSteamConnectRequest("GET https://steamcommunity.com HTTP/1.1\r\n\r\n")
         }
