@@ -1,6 +1,7 @@
 package com.wallhub.android.data.steam
 
 import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.data.steamaccess.SteamDomainPolicy
 import com.wallhub.android.data.steamaccess.SteamLoopbackTlsBridge
 import io.steamcontent.sdk.SessionTransportKind
 import java.net.InetSocketAddress
@@ -15,13 +16,12 @@ import kotlinx.coroutines.flow.first
  * The SDK deliberately takes route inputs and never guesses one. This class is the only place that knows both
  * vocabularies, and it exists so the adapter above it deals in SDK types only:
  *
- * - **the CM channel** is reached directly, with the endpoint set the platform read from Steam's directory.
- *   That is how the platform's own signed-in transport reaches it, and the engine's own discovery cannot
- *   reach the directory on a network that only passes the platform's bridge.
+ * - **the CM channel** uses the platform's authenticated loopback route. The bridge is transparent while
+ *   enhancement is disabled and selects strictly verified enhanced candidates while it is enabled.
  * - **the directory fetch** is the platform's job, through the same bridged client its other Web API calls
  *   use, so the endpoint set it hands over is one the platform already proved reachable.
- * - **trust** stays the platform store. The bridge's own root is only needed by a route that terminates TLS
- *   locally, and this route does not.
+ * - **trust** stays the platform store plus one process-private root scoped to this immutable SDK route; the
+ *   root is used only when the bridge terminates loopback TLS after strictly validating Steam upstream.
  */
 @Singleton
 internal class SteamContentSdkRouteFactory
@@ -34,16 +34,10 @@ internal class SteamContentSdkRouteFactory
         /**
          * The route this platform actually has.
          *
-         * The channel is reached the way the platform's own transport reaches it: directly, with the endpoint
-         * set the platform read from Steam's directory, because the engine's own discovery cannot reach that
-         * directory on a network that only passes the platform's bridge. The directory fetch itself goes
-         * through the bridge, like every other Web API call the platform makes, and so does the trust the
-         * CDN needs if a caller supplies one.
-         *
-         * The loopback bridge is deliberately **not** used for the channel. It only tunnels a route the
-         * platform has already discovered, and it never discovers a CM endpoint: `shouldAccelerate` and
-         * `requestRouteRefresh` both cover the Web API and community hosts only, so a bridged CM channel
-         * cannot come up at all. The platform's own signed-in transport proves the direct channel works here.
+         * Directory discovery, CM, and CDN share one stable process-private loopback authority. The bridge
+         * decides direct versus enhanced upstream routing for each new CONNECT, so changing the enhancement
+         * toggle never changes the engine route or invalidates an active download/range task. An explicit user
+         * proxy still takes precedence and replaces the internal route for both CM and CDN.
          *
          * Returns null when the platform has no endpoint set to offer, which means the platform route is
          * unavailable rather than "connect directly": the caller must not silently fall back to the engine's
@@ -57,27 +51,33 @@ internal class SteamContentSdkRouteFactory
             cdnProxy: String? = null,
             refreshLive: Boolean = false,
         ): SteamContentSdkEngine.Route? {
-            val candidates = cmEndpoints.candidates(refreshLive = refreshLive) ?: return null
-            val configuredProxy = cdnProxy ?: configuredProxyUri()
+            val directoryCandidates = cmEndpoints.candidates(refreshLive = refreshLive) ?: return null
+            val preferences = settingsRepository.preferences.first()
+            val configuredProxy =
+                cdnProxy ?: preferences.downloadProxyUrl.takeIf { preferences.downloadProxyEnabled }
+            val preparedCandidates = mutableListOf<String>()
+            directoryCandidates.lineSequence().map(String::trim).filter(String::isNotEmpty).forEach { candidate ->
+                val endpoint = parseCmEndpoint(candidate) ?: return@forEach
+                if (bridge.prepareCmEndpoint(endpoint.first, endpoint.second)) preparedCandidates += candidate
+            }
+            val candidates = preparedCandidates.joinToString("\n").takeIf(String::isNotBlank) ?: return null
             val bridgeAddress = bridge.proxy.address() as InetSocketAddress
             val bridgeHost = bridgeAddress.address?.hostAddress ?: bridgeAddress.hostString
+            val bridgeAuthority = "$bridgeHost:${bridgeAddress.port}"
             return sdkPlatformRoute(
                 cmCandidates = candidates,
                 configuredProxyUri = configuredProxy,
-                authenticatedCdnProxy = configuredProxy?.let { null } ?: "$bridgeHost:${bridgeAddress.port}",
+                authenticatedCdnProxy = configuredProxy?.let { null } ?: bridgeAuthority,
                 authenticatedCdnProxyAuthorization = configuredProxy?.let { null } ?: bridge.cdnProxyAuthorization,
+                enhancedCmProxy = configuredProxy?.let { null } ?: bridgeAuthority,
+                enhancedCmProxyAuthorization = configuredProxy?.let { null } ?: bridge.cmProxyAuthorization,
+                enhancedTrustRootPem = configuredProxy?.let { null } ?: bridge.routeTrustRootPem,
             )
         }
 
         /** The route for a network that passes Steam directly. No extra root is trusted here. */
         fun direct(cdnProxy: String? = null): SteamContentSdkEngine.Route =
             SteamContentSdkEngine.Route(cdnProxy = cdnProxy)
-
-        /** The enabled proxy URI from the product's settings, or null for a direct route. */
-        private suspend fun configuredProxyUri(): String? {
-            val preferences = settingsRepository.preferences.first()
-            return preferences.downloadProxyUrl.takeIf { preferences.downloadProxyEnabled }
-        }
     }
 
 /**
@@ -92,6 +92,9 @@ internal fun sdkPlatformRoute(
     configuredProxyUri: String?,
     authenticatedCdnProxy: String? = null,
     authenticatedCdnProxyAuthorization: String? = null,
+    enhancedCmProxy: String? = null,
+    enhancedCmProxyAuthorization: String? = null,
+    enhancedTrustRootPem: String? = null,
 ): SteamContentSdkEngine.Route {
     val configuredProxy = configuredProxyUri?.let(::sdkHttpProxyAuthority)
     return SteamContentSdkEngine.Route(
@@ -100,8 +103,19 @@ internal fun sdkPlatformRoute(
         transport = SessionTransportKind.WEBSOCKET,
         cdnProxy = configuredProxy ?: authenticatedCdnProxy,
         cdnProxyAuthorization = authenticatedCdnProxyAuthorization.takeIf { configuredProxy == null && authenticatedCdnProxy != null },
-        cmProxy = configuredProxy,
+        cmProxy = configuredProxy ?: enhancedCmProxy,
+        cmProxyAuthorization = enhancedCmProxyAuthorization.takeIf { configuredProxy == null && enhancedCmProxy != null },
+        extraTrustRootPem = enhancedTrustRootPem.takeIf { configuredProxy == null && enhancedCmProxy != null },
     )
+}
+
+private fun parseCmEndpoint(candidate: String): Pair<String, Int>? {
+    val separator = candidate.lastIndexOf(':')
+    if (separator <= 0 || separator == candidate.lastIndex) return null
+    val host = candidate.substring(0, separator).trim().removePrefix("[").removeSuffix("]")
+    val port = candidate.substring(separator + 1).trim().toIntOrNull() ?: return null
+    if (!SteamDomainPolicy.supportsEndpoint(host, port)) return null
+    return host to port
 }
 
 /** Returns the `host:port` accepted by the SDK, rejecting every non-HTTP or credentialed proxy URI. */

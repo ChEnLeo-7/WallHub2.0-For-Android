@@ -17,7 +17,7 @@ internal object SteamDomainPolicy {
 
     fun accelerates(hostname: String): Boolean {
         val host = normalize(hostname)
-        return host in coreHosts
+        return host in coreHosts || isCmHost(host)
     }
 
     fun requireSupported(hostname: String): String =

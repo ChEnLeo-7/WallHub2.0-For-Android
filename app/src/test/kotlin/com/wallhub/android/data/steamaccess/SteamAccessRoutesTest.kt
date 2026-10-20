@@ -146,9 +146,9 @@ class SteamAccessRoutesTest {
     }
 
     @Test
-    fun `cm login connections bypass acceleration and prefer ipv4 addresses`() {
-        assertFalse(SteamDomainPolicy.accelerates("cmp3-hkg1.steamserver.net"))
-        assertFalse(SteamDomainPolicy.accelerates("cmp1-sgp1.steamserver.net"))
+    fun `cm login connections use enhanced routing and prefer ipv4 addresses`() {
+        assertTrue(SteamDomainPolicy.accelerates("cmp3-hkg1.steamserver.net"))
+        assertTrue(SteamDomainPolicy.accelerates("cmp1-sgp1.steamserver.net"))
         assertTrue(SteamDomainPolicy.accelerates("steamcommunity.com"))
         assertTrue(SteamDomainPolicy.accelerates("api.steampowered.com"))
         assertFalse(SteamDomainPolicy.accelerates("evil.steamcommunity.com"))

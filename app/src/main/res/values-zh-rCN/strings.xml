@@ -169,7 +169,7 @@
     <string name='settings_steam_disconnected'>连接已中断</string>
     <string name='settings_steam_avatar'>Steam 账户头像</string>
     <string name='settings_steam_service_access_title'>Steam 服务访问</string>
-    <string name='settings_steam_service_access_description'>仅在社区与 API 直连异常时启用内置无 SNI 线路</string>
+    <string name='settings_steam_service_access_description'>在直连不完整时增强 Steam 社区、Web API、账号 CM 与内容下载连接</string>
     <string name='settings_steam_automatic_anti_blocking'>自动防阻断</string>
     <string name='settings_disabled'>已关闭</string>
     <string name='settings_enabled'>已开启</string>

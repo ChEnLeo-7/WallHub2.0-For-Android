@@ -87,8 +87,21 @@ internal class WallHubPrivateCa
         fun createServerSocket(
             socket: Socket,
             hostname: String,
+        ): SSLSocket = createServerSocketForHost(socket, SteamDomainPolicy.requireSupported(hostname))
+
+        fun createAuthenticatedCdnServerSocket(
+            socket: Socket,
+            hostname: String,
+        ): SSLSocket =
+            createServerSocketForHost(
+                socket,
+                SteamDomainPolicy.requireAuthenticatedCdnEndpoint(hostname, STEAM_HTTPS_PORT),
+            )
+
+        private fun createServerSocketForHost(
+            socket: Socket,
+            host: String,
         ): SSLSocket {
-            val host = SteamDomainPolicy.requireSupported(hostname)
             val identity = identities.computeIfAbsent(host, ::createLeafIdentity)
             val keyStore =
                 KeyStore.getInstance(KeyStore.getDefaultType()).apply {

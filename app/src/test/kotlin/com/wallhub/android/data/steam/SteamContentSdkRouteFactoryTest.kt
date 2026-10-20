@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class SteamContentSdkRouteFactoryTest {
     @Test
@@ -62,6 +63,26 @@ class SteamContentSdkRouteFactoryTest {
         assertEquals("Basic secret", route.cdnProxyAuthorization)
         assertNull(route.cmProxy)
         assertNull(route.cmProxyAuthorization)
+    }
+
+    @Test
+    fun `the internal enhanced route covers both CM and CDN with route-scoped trust`() {
+        val route =
+            sdkPlatformRoute(
+                cmCandidates = "cm1.steamserver.net:443",
+                configuredProxyUri = null,
+                authenticatedCdnProxy = "127.0.0.1:32123",
+                authenticatedCdnProxyAuthorization = "Basic cdn",
+                enhancedCmProxy = "127.0.0.1:32123",
+                enhancedCmProxyAuthorization = "Basic cm",
+                enhancedTrustRootPem = "-----BEGIN CERTIFICATE-----\nroute\n-----END CERTIFICATE-----\n",
+            )
+
+        assertEquals("127.0.0.1:32123", route.cdnProxy)
+        assertEquals("Basic cdn", route.cdnProxyAuthorization)
+        assertEquals("127.0.0.1:32123", route.cmProxy)
+        assertEquals("Basic cm", route.cmProxyAuthorization)
+        assertTrue(route.extraTrustRootPem.orEmpty().contains("BEGIN CERTIFICATE"))
     }
 
     @Test

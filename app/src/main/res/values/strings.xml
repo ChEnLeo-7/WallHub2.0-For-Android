@@ -181,7 +181,7 @@
     <string name='settings_steam_disconnected'>Connection interrupted</string>
     <string name='settings_steam_avatar'>Steam profile avatar</string>
     <string name='settings_steam_service_access_title'>Steam service access</string>
-    <string name='settings_steam_service_access_description'>Uses the built-in no-SNI route only when Community or API direct access fails</string>
+    <string name='settings_steam_service_access_description'>Enhances Steam Community, Web API, account CM, and content delivery when direct access is incomplete</string>
     <string name='settings_steam_automatic_anti_blocking'>Automatic anti-blocking</string>
     <string name='settings_disabled'>Disabled</string>
     <string name='settings_enabled'>Enabled</string>

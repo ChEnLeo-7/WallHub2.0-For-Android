@@ -46,6 +46,21 @@ internal class SteamLoopbackTlsBridge
         val cdnProxyAuthorization: String
             get() = cdnAuthorization
 
+        /** Authenticated loopback CONNECT route used only by the SDK's Steam CM channel. */
+        val cmProxyAuthorization: String
+            get() = authorization
+
+        /** Trust is scoped to the SDK route that terminates TLS inside this process. */
+        val routeTrustRootPem: String by lazy {
+            val encoded = Base64.getMimeEncoder(64, "\n".toByteArray()).encodeToString(privateCa.rootCertificate().encoded)
+            "-----BEGIN CERTIFICATE-----\n$encoded\n-----END CERTIFICATE-----\n"
+        }
+
+        suspend fun prepareCmEndpoint(
+            hostname: String,
+            port: Int,
+        ): Boolean = accessManager.prewarmSteamEndpoint(hostname, port)
+
         init {
             executor.execute(::acceptLoop)
         }
@@ -68,12 +83,34 @@ internal class SteamLoopbackTlsBridge
                 val request = readConnectRequest(clientSocket)
                 if (request.authorization == cdnAuthorization) {
                     val host = SteamDomainPolicy.requireAuthenticatedCdnEndpoint(request.host, request.port)
-                    val upstream = connectAuthenticatedCdn(host, request.port)
-                    upstreamSocket = upstream
+                    if (!accessManager.enhancedConnectionEnabled()) {
+                        val upstream = connectDirect(host, request.port)
+                        upstreamSocket = upstream
+                        writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
+                        clientSocket.soTimeout = 0
+                        tunnelEstablished = true
+                        relay(clientSocket, upstream)
+                        return
+                    }
+                    val upstream =
+                        noSniTlsDialer.connect(
+                            hostname = host,
+                            candidates =
+                                kotlinx.coroutines
+                                    .runBlocking { accessManager.enhancedAddresses(host) }
+                                    .filter(::isAuthenticatedCdnAddress),
+                            port = request.port,
+                        )
+                    upstreamSocket = upstream.socket
                     writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
-                    clientSocket.soTimeout = 0
+                    val securedClient =
+                        privateCa.createAuthenticatedCdnServerSocket(clientSocket, host).apply {
+                            soTimeout = 0
+                            startHandshake()
+                        }
+                    securedClientSocket = securedClient
                     tunnelEstablished = true
-                    relay(clientSocket, upstream)
+                    relay(securedClient, upstream.socket)
                     return
                 }
                 if (request.authorization != authorization) {
@@ -86,6 +123,15 @@ internal class SteamLoopbackTlsBridge
                     return
                 }
                 val host = SteamDomainPolicy.requireSupportedEndpoint(request.host, request.port)
+                if (SteamDomainPolicy.isCmHost(host) && !accessManager.enhancedConnectionEnabled()) {
+                    val upstream = connectDirect(host, request.port)
+                    upstreamSocket = upstream
+                    writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
+                    clientSocket.soTimeout = 0
+                    tunnelEstablished = true
+                    relay(clientSocket, upstream)
+                    return
+                }
                 val route = accessManager.acceleratedRoute(host, request.port)
                 selectedRoute = route
                 val upstream =
@@ -145,7 +191,7 @@ internal class SteamLoopbackTlsBridge
             }
         }
 
-        private fun connectAuthenticatedCdn(
+        private fun connectDirect(
             hostname: String,
             port: Int,
         ): Socket {

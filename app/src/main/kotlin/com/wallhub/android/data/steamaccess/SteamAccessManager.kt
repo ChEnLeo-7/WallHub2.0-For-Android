@@ -211,6 +211,33 @@ class SteamAccessManager
             return prewarmSteamEndpoint(host, STEAM_HTTPS_PORT)
         }
 
+        internal fun enhancedConnectionEnabled(): Boolean =
+            preferencesInitialized && preferences.steamAccessEnabled
+
+        /**
+         * Resolves one authenticated SDK CDN endpoint through the same enhanced resolver policy.
+         * The caller still performs strict TLS and hostname validation; no token or URL enters this module.
+         */
+        internal suspend fun enhancedAddresses(hostname: String): List<InetAddress> {
+            val host = SteamDomainPolicy.requireAuthenticatedCdnEndpoint(hostname, STEAM_HTTPS_PORT)
+            preferencesReady.await()
+            val systemAddresses = systemEndpointLookup(host)
+            if (!preferences.steamAccessEnabled) return systemAddresses
+            val resolved =
+                when (preferences.steamAccessMode) {
+                    SteamAccessMode.HOSTS -> parsedHosts[host].orEmpty()
+                    SteamAccessMode.SMART_DOH ->
+                        dohResolver.resolve(
+                            hostnames = listOf(host),
+                            endpoints = preferences.enabledSteamAccessDohEndpoints(),
+                            includeIpv6 = currentNetworkSupportsIpv6(),
+                        )
+                }
+            return (resolved + systemAddresses)
+                .distinctBy(InetAddress::getHostAddress)
+                .take(MAX_NO_SNI_PROBE_ADDRESSES)
+        }
+
         internal suspend fun prewarmSteamEndpoint(
             hostname: String,
             port: Int,
@@ -554,7 +581,12 @@ class SteamAccessManager
                     updatedAt = startedAt,
                 )
             val systemAddresses = systemEndpointLookup(hostname)
-            val directHealthy = directProbe.rank(hostname, systemAddresses, port).any(SteamProbeResult::successful)
+            // A short CM probe cannot prove a long-lived authenticated channel: mainland mobile networks can
+            // complete TLS and then repeatedly close Steam CM after logon. When enhancement is enabled CM is
+            // therefore always routed through the authenticated bridge; Web/Community keep direct-first policy.
+            val directHealthy =
+                !SteamDomainPolicy.isCmHost(hostname) &&
+                    directProbe.rank(hostname, systemAddresses, port).any(SteamProbeResult::successful)
             if (directHealthy) {
                 val now = System.currentTimeMillis()
                 val route =
