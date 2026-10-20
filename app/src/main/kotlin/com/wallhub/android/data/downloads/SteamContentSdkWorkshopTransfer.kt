@@ -372,6 +372,9 @@ internal class SteamContentSdkWorkshopTransfer
             var totalBytes = 0L
             var manifestResolved = false
             var firstChunkNotified = false
+            var lastActivityAtNanos = System.nanoTime()
+            var lastNetworkBytes = 0L
+            var lastCommittedReading = 0L
             val eventLog = SdkTaskEventLog()
             suspend fun acceptEvent(event: SteamContentSdkTaskEvent) {
                 if (event.kind == TaskEventKind.MANIFEST_RESOLVED) {
@@ -419,6 +422,12 @@ internal class SteamContentSdkWorkshopTransfer
                 // the remaining suffix. The max still protects the app contract from a stale status read.
                 committedBytes = maxOf(committedBytes, status.committedBytes.coerceAtLeast(0L))
                 totalBytes = maxOf(totalBytes, status.totalDecodedBytes.coerceAtLeast(0L))
+                val currentNetworkBytes = status.networkBytes.coerceAtLeast(0L)
+                if (committedBytes > lastCommittedReading || currentNetworkBytes > lastNetworkBytes) {
+                    lastCommittedReading = committedBytes
+                    lastNetworkBytes = currentNetworkBytes
+                    lastActivityAtNanos = System.nanoTime()
+                }
                 when (status.state) {
                     TaskState.COMPLETED -> {
                         eventLog.flushPending()
@@ -468,6 +477,19 @@ internal class SteamContentSdkWorkshopTransfer
                     }
 
                     else -> {
+                        if (
+                            status.state == TaskState.DOWNLOADING &&
+                            (status.firstContentReceived || currentNetworkBytes > 0L) &&
+                            System.nanoTime() - lastActivityAtNanos >= DOWNLOAD_NO_PROGRESS_TIMEOUT_NANOS
+                        ) {
+                            Log.w(TAG, "SDK download made no network or durable progress; pausing for bounded retry")
+                            pauseAndAwaitTerminal(task, ::acceptEvent)
+                            throw SteamContentSdkTaskFailureException(
+                                ordinal = TaskFailure.NETWORK,
+                                diagnostic = DOWNLOAD_NO_PROGRESS_DIAGNOSTIC,
+                                message = "Steam Content SDK download stalled after content transfer began",
+                            )
+                        }
                         onProgress(
                             SteamDownloadProgress(
                                 phase = sdkProgressPhase(status, manifestResolved),
@@ -660,6 +682,8 @@ internal class SdkTaskEventLog(
 
 private const val SDK_TASK_EVENT_LOG_INTERVAL_MS = 1_000L
 private const val SESSION_UNAVAILABLE_DIAGNOSTIC = "content resolution failed at session_unavailable"
+private const val DOWNLOAD_NO_PROGRESS_DIAGNOSTIC = "sdk_download_no_progress"
+private const val DOWNLOAD_NO_PROGRESS_TIMEOUT_NANOS = 45_000_000_000L
 // ABI minor 44 append-only ordinals. Kept locally so this adapter can compile against the prior preview AAR
 // while staging the new native artifact; control flow still switches on stable numbers, never diagnostic text.
 internal const val SDK_TASK_FAILURE_CONTENT_DIRECTORY_UNAVAILABLE = 12L
@@ -677,7 +701,8 @@ internal fun downloadRecoveryDecision(failure: SteamContentSdkTaskFailureExcepti
         failure.ordinal == TaskFailure.SESSION_GENERATION_LOST ||
             failure.ordinal == SDK_TASK_FAILURE_CONTENT_DIRECTORY_UNAVAILABLE ->
             DownloadRecoveryDecision.WAIT_FOR_ACCOUNT_SESSION
-        failure.ordinal == SDK_TASK_FAILURE_MANIFEST_TRANSPORT_UNAVAILABLE ->
+        failure.ordinal == SDK_TASK_FAILURE_MANIFEST_TRANSPORT_UNAVAILABLE ||
+            (failure.ordinal == TaskFailure.NETWORK && failure.diagnostic == DOWNLOAD_NO_PROGRESS_DIAGNOSTIC) ->
             DownloadRecoveryDecision.RETRY_DATA_PLANE_ONCE
         // Compatibility for older SDKs which lacked SESSION_GENERATION_LOST. New flow never parses diagnostics.
         failure.ordinal == TaskFailure.AUTHORIZATION && failure.diagnostic == SESSION_UNAVAILABLE_DIAGNOSTIC ->

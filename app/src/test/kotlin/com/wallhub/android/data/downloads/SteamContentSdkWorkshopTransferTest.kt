@@ -157,6 +157,25 @@ class SteamContentSdkWorkshopTransferTest {
     }
 
     @Test
+    fun adapterWatchdogRetriesOnlyItsOwnTypedNetworkFailure() {
+        val watchdog =
+            SteamContentSdkTaskFailureException(
+                ordinal = TaskFailure.NETWORK,
+                diagnostic = "sdk_download_no_progress",
+                message = "stalled",
+            )
+        val otherNetwork =
+            SteamContentSdkTaskFailureException(
+                ordinal = TaskFailure.NETWORK,
+                diagnostic = "other",
+                message = "network",
+            )
+
+        assertEquals(DownloadRecoveryDecision.RETRY_DATA_PLANE_ONCE, downloadRecoveryDecision(watchdog))
+        assertEquals(DownloadRecoveryDecision.FAIL, downloadRecoveryDecision(otherNetwork))
+    }
+
+    @Test
     fun sessionGenerationLossReopensAndRetriesExactlyOnce() =
         assertTypedAttemptReopensExactlyOnce(TaskFailure.SESSION_GENERATION_LOST)
 
