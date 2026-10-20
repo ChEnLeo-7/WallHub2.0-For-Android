@@ -33,7 +33,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  * and frequent enough that a connection the peer closed is noticed within seconds rather than when the next
  * read happens to fail.
  */
-internal const val STEAM_SESSION_MAINTENANCE_INTERVAL_MS = 1_000L
+internal const val STEAM_SESSION_MAINTENANCE_INTERVAL_MS = 5_000L
 
 /**
  * The Steam Content SDK as this app's session owner.
