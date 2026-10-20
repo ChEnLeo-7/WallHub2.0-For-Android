@@ -632,7 +632,16 @@ class SteamAccessManager
                 }.distinctBy(InetAddress::getHostAddress)
                     .filterNot { address -> address.hostAddress.orEmpty() in coolingDown }
                     .take(MAX_NO_SNI_PROBE_ADDRESSES)
-            val tasks = candidates.map { address -> Callable { noSniTlsDialer.probe(hostname, address, port) } }
+            val tasks =
+                candidates.map { address ->
+                    Callable {
+                        if (SteamDomainPolicy.isCmHost(hostname)) {
+                            noSniTlsDialer.probeWithSni(hostname, address, port)
+                        } else {
+                            noSniTlsDialer.probe(hostname, address, port)
+                        }
+                    }
+                }
             val probeResults =
                 if (tasks.isEmpty()) {
                     emptyList()

@@ -95,7 +95,7 @@ internal class SteamLoopbackTlsBridge
                     }
                     Log.i(LOG_TAG, "SDK bridge plane=cdn mode=enhanced")
                     val upstream =
-                        noSniTlsDialer.connect(
+                        noSniTlsDialer.connectWithSni(
                             hostname = host,
                             candidates =
                                 kotlinx.coroutines
@@ -138,22 +138,22 @@ internal class SteamLoopbackTlsBridge
                 if (SteamDomainPolicy.isCmHost(host)) Log.i(LOG_TAG, "SDK bridge plane=cm mode=enhanced")
                 val route = accessManager.acceleratedRoute(host, request.port)
                 selectedRoute = route
-                val upstream =
-                    noSniTlsDialer.connect(
+                val recordFailure: (InetAddress, Throwable) -> Unit = { address, error ->
+                    accessManager.recordAcceleratedFailure(
                         hostname = host,
-                        candidates = route.addresses,
+                        selectedNetworkType = route.networkType,
+                        generation = route.generation,
                         port = request.port,
-                        onFailure = { address, error ->
-                            accessManager.recordAcceleratedFailure(
-                                hostname = host,
-                                selectedNetworkType = route.networkType,
-                                generation = route.generation,
-                                port = request.port,
-                                address = address,
-                                error = error,
-                            )
-                        },
+                        address = address,
+                        error = error,
                     )
+                }
+                val upstream =
+                    if (SteamDomainPolicy.isCmHost(host)) {
+                        noSniTlsDialer.connectWithSni(host, route.addresses, request.port, recordFailure)
+                    } else {
+                        noSniTlsDialer.connect(host, route.addresses, request.port, recordFailure)
+                    }
                 upstreamSocket = upstream.socket
                 val committed =
                     accessManager.commitAcceleratedRoute(

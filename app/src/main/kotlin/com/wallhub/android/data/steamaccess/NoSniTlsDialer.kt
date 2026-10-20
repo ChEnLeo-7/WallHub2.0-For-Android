@@ -51,6 +51,22 @@ internal class NoSniTlsDialer internal constructor(
         candidates: List<InetAddress>,
         port: Int = HTTPS_PORT,
         onFailure: (InetAddress, Throwable) -> Unit = { _, _ -> },
+    ): AuthenticatedSteamSocket = connectAuthenticated(hostname, candidates, port, hideSni = true, onFailure)
+
+    /** Connects to selected IP candidates while preserving the original Steam authority as TLS SNI. */
+    fun connectWithSni(
+        hostname: String,
+        candidates: List<InetAddress>,
+        port: Int = HTTPS_PORT,
+        onFailure: (InetAddress, Throwable) -> Unit = { _, _ -> },
+    ): AuthenticatedSteamSocket = connectAuthenticated(hostname, candidates, port, hideSni = false, onFailure)
+
+    private fun connectAuthenticated(
+        hostname: String,
+        candidates: List<InetAddress>,
+        port: Int,
+        hideSni: Boolean,
+        onFailure: (InetAddress, Throwable) -> Unit,
     ): AuthenticatedSteamSocket {
         val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
         val addresses = candidates.distinctBy(InetAddress::getHostAddress).take(MAX_RACE_ADDRESSES)
@@ -69,7 +85,7 @@ internal class NoSniTlsDialer internal constructor(
                         if (index > 0) Thread.sleep(raceDelayMs)
                         DialAttempt(
                             address = address,
-                            result = runCatching { authenticate(host, address, port, openedSockets) },
+                            result = runCatching { authenticate(host, address, port, openedSockets, hideSni) },
                         )
                     },
                 )
@@ -113,6 +129,19 @@ internal class NoSniTlsDialer internal constructor(
         hostname: String,
         address: InetAddress,
         port: Int = HTTPS_PORT,
+    ): SteamProbeResult = probeAuthenticated(hostname, address, port, hideSni = true)
+
+    fun probeWithSni(
+        hostname: String,
+        address: InetAddress,
+        port: Int = HTTPS_PORT,
+    ): SteamProbeResult = probeAuthenticated(hostname, address, port, hideSni = false)
+
+    private fun probeAuthenticated(
+        hostname: String,
+        address: InetAddress,
+        port: Int,
+        hideSni: Boolean,
     ): SteamProbeResult {
         val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
         val startedAt = System.nanoTime()
@@ -123,6 +152,7 @@ internal class NoSniTlsDialer internal constructor(
                     address = address,
                     port = port,
                     openedSockets = null,
+                    hideSni = hideSni,
                 ).socket.close()
             }.isSuccess
         return SteamProbeResult(
@@ -137,6 +167,7 @@ internal class NoSniTlsDialer internal constructor(
         address: InetAddress,
         port: Int,
         openedSockets: ConcurrentLinkedQueue<Socket>?,
+        hideSni: Boolean,
     ): AuthenticatedSteamSocket {
         val startedAt = System.nanoTime()
         val rawSocket = Socket()
@@ -148,7 +179,7 @@ internal class NoSniTlsDialer internal constructor(
             val sslSocket =
                 socketFactory.createSocket(
                     rawSocket,
-                    address.hostAddress,
+                    if (hideSni) address.hostAddress else hostname,
                     port,
                     true,
                 ) as SSLSocket
@@ -161,7 +192,7 @@ internal class NoSniTlsDialer internal constructor(
             sslSocket.sslParameters =
                 sslSocket.sslParameters.apply {
                     endpointIdentificationAlgorithm = null
-                    serverNames = Collections.emptyList()
+                    if (hideSni) serverNames = Collections.emptyList()
                 }
             sslSocket.startHandshake()
             if (!hostnameVerifier.verify(hostname, sslSocket.session)) {
