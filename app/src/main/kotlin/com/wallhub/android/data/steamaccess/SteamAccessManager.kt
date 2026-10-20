@@ -632,27 +632,25 @@ class SteamAccessManager
                 }.distinctBy(InetAddress::getHostAddress)
                     .filterNot { address -> address.hostAddress.orEmpty() in coolingDown }
                     .take(MAX_NO_SNI_PROBE_ADDRESSES)
-            val tasks =
-                candidates.map { address ->
-                    Callable {
-                        if (SteamDomainPolicy.isCmHost(hostname)) {
-                            noSniTlsDialer.probeWithSni(hostname, address, port)
-                        } else {
-                            noSniTlsDialer.probe(hostname, address, port)
-                        }
-                    }
-                }
             val probeResults =
-                if (tasks.isEmpty()) {
-                    emptyList()
+                if (SteamDomainPolicy.isCmHost(hostname)) {
+                    // CM route validity is established by the bridge's real authority-preserving TLS handshake.
+                    // A separate probe is both redundant and observably less reliable on mobile networks; the
+                    // selected candidates remain bounded and every failed real connect feeds route health back.
+                    candidates.map { address -> SteamProbeResult(address, true, 0L) }
                 } else {
-                    queryExecutor
-                        .invokeAll(tasks, NO_SNI_PROBE_BUDGET_MS, TimeUnit.MILLISECONDS)
-                        .mapIndexed { index, future ->
-                            runCatching { future.get() }.getOrElse {
-                                SteamProbeResult(candidates[index], false, NO_SNI_PROBE_BUDGET_MS)
-                            }
-                        }.sortedWith(compareByDescending<SteamProbeResult> { it.successful }.thenBy { it.elapsedMs })
+                    val tasks = candidates.map { address -> Callable { noSniTlsDialer.probe(hostname, address, port) } }
+                    if (tasks.isEmpty()) {
+                        emptyList()
+                    } else {
+                        queryExecutor
+                            .invokeAll(tasks, NO_SNI_PROBE_BUDGET_MS, TimeUnit.MILLISECONDS)
+                            .mapIndexed { index, future ->
+                                runCatching { future.get() }.getOrElse {
+                                    SteamProbeResult(candidates[index], false, NO_SNI_PROBE_BUDGET_MS)
+                                }
+                            }.sortedWith(compareByDescending<SteamProbeResult> { it.successful }.thenBy { it.elapsedMs })
+                    }
                 }
             probeResults.forEach { result ->
                 if (result.successful) {
