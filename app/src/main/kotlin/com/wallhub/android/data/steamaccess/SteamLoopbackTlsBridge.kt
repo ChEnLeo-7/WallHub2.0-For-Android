@@ -95,7 +95,7 @@ internal class SteamLoopbackTlsBridge
                     }
                     Log.i(LOG_TAG, "SDK bridge plane=cdn mode=enhanced")
                     val upstream =
-                        noSniTlsDialer.connectWithSni(
+                        noSniTlsDialer.connectAuthenticatedCdn(
                             hostname = host,
                             candidates =
                                 kotlinx.coroutines
