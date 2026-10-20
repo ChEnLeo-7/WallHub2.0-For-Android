@@ -233,7 +233,11 @@ class SteamAccessManager
                             includeIpv6 = currentNetworkSupportsIpv6(),
                         )
                 }
-            return (resolved + systemAddresses)
+            // SteamPipe provider authorities are geo-steered: the active carrier's resolver commonly returns
+            // the certificate-compatible local edge, while a public DoH answer may point at another provider
+            // edge whose certificate does not cover this authority. Keep DoH as a bounded fallback rather than
+            // overriding the carrier-local answer; the SDK still performs end-to-end TLS verification.
+            return (systemAddresses + resolved)
                 .distinctBy(InetAddress::getHostAddress)
                 .take(MAX_NO_SNI_PROBE_ADDRESSES)
         }
