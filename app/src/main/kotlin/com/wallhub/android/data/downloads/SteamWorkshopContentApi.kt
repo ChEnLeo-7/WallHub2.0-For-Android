@@ -8,6 +8,7 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
@@ -32,6 +33,9 @@ internal class SteamWorkshopContentApi(
 ) {
     private val client =
         clientBuilder
+            // Some mainland Akamai edges advertise h2 but omit the server SETTINGS preface. This bounded
+            // Web API POST needs no multiplexing; HTTP/1.1 avoids that broken negotiation without weakening TLS.
+            .protocols(listOf(Protocol.HTTP_1_1))
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .callTimeout(45, TimeUnit.SECONDS)
