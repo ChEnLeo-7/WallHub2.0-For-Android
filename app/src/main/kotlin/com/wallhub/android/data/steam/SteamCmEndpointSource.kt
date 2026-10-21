@@ -78,7 +78,7 @@ internal class SteamCmEndpointSource
                 )
                 if (live.isNotEmpty()) {
                     val selected =
-                        if (refreshLive) mergeCmCandidateWindows(live, cachedCandidates) else live
+                        if (refreshLive) rotateCmCandidateWindow(mergeCmCandidateWindows(live, cachedCandidates)) else live
                     Log.i(TAG, "cm candidates=${cmCandidateCount(selected)} source=selected")
                     return@withContext selected
                 }
@@ -131,6 +131,13 @@ internal fun mergeCmCandidateWindows(live: String, previous: String): String =
         .distinct()
         .take(MAX_CM_CANDIDATES)
         .joinToString("\n")
+
+/** A bounded retry starts with a different Directory candidate instead of repeating the failed first host. */
+internal fun rotateCmCandidateWindow(candidates: String): String {
+    val entries = candidates.lineSequence().map(String::trim).filter(String::isNotEmpty).toList()
+    if (entries.size < 2) return entries.joinToString("\n")
+    return (entries.drop(1) + entries.first()).joinToString("\n")
+}
 
 /**
  * Extracts the platform-supported CM endpoints from a CM directory body.
