@@ -44,11 +44,10 @@ internal class FormalSteamWorkshopContentGateway(
         publishedFileId: Long,
         proxyUrl: String,
     ): WorkshopContentTarget {
-        check(httpClientFactory.prewarmSteamEndpoint(STEAM_WEB_API_HOST, STEAM_HTTPS_PORT)) {
-            "The enhanced Steam Web API route is unavailable"
-        }
         return SteamWorkshopContentApi(
-            httpClientFactory.newBuilder().applyDownloadProxy(proxyUrl),
+            httpClientFactory
+                .builderForSteamEndpoint(STEAM_WEB_API_HOST, STEAM_HTTPS_PORT)
+                .applyDownloadProxy(proxyUrl),
         ).fetchContentTarget(publishedFileId)
     }
 

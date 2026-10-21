@@ -67,10 +67,16 @@ class SteamHttpClientFactory
                     }
                 }.sslSocketFactory(privateCa.clientSocketFactory, privateCa.clientTrustManager)
 
-        internal suspend fun prewarmSteamEndpoint(
+        internal suspend fun builderForSteamEndpoint(
             hostname: String,
             port: Int,
-        ): Boolean = manager.prewarmSteamEndpoint(hostname, port)
+        ): OkHttpClient.Builder {
+            if (!manager.enhancedConnectionEnabled()) return newBuilder()
+            check(manager.prewarmSteamEndpoint(hostname, port)) {
+                "The enhanced Steam route is unavailable"
+            }
+            return newBuilder().proxy(bridge.proxy)
+        }
     }
 
 internal fun shouldPrewarmSteamUrl(
