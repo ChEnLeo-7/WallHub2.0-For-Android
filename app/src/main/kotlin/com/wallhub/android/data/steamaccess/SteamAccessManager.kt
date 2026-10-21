@@ -646,9 +646,17 @@ class SteamAccessManager
             val coolingDown = routeStore.coolingDownAddresses(selectedNetworkType, hostname, port)
             val candidates =
                 buildList {
-                    addAll(routeStore.preferred(selectedNetworkType, hostname, port))
-                    addAll(resolvedAddresses)
-                    addAll(systemAddresses)
+                    if (SteamDomainPolicy.isCmHost(hostname)) {
+                        addAll(routeStore.preferred(selectedNetworkType, hostname, port))
+                        addAll(resolvedAddresses)
+                        addAll(systemAddresses)
+                    } else {
+                        // Akamai/Steam Web routes are carrier-local. Prefer the mobile carrier's currently
+                        // reachable edge; DoH and remembered routes remain bounded fallbacks.
+                        addAll(systemAddresses)
+                        addAll(routeStore.preferred(selectedNetworkType, hostname, port))
+                        addAll(resolvedAddresses)
+                    }
                     addAll(SteamAccessRoutes.seeds(hostname))
                 }.distinctBy(InetAddress::getHostAddress)
                     .filterNot { address -> address.hostAddress.orEmpty() in coolingDown }
