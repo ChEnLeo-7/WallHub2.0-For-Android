@@ -2,9 +2,7 @@ package com.wallhub.android.data.steam
 
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.data.steamaccess.SteamDomainPolicy
-import com.wallhub.android.data.steamaccess.SteamLoopbackTlsBridge
 import io.steamcontent.sdk.SessionTransportKind
-import java.net.InetSocketAddress
 import java.net.URI
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,15 +27,13 @@ internal class SteamContentSdkRouteFactory
     constructor(
         private val cmEndpoints: SteamCmEndpointSource,
         private val settingsRepository: SettingsRepository,
-        private val bridge: SteamLoopbackTlsBridge,
     ) {
         /**
          * The route this platform actually has.
          *
-         * Directory discovery, CM, and CDN share one stable process-private loopback authority. The bridge
-         * decides direct versus enhanced upstream routing for each new CONNECT, so changing the enhancement
-         * toggle never changes the engine route or invalidates an active download/range task. An explicit user
-         * proxy still takes precedence and replaces the internal route for both CM and CDN.
+         * Directory discovery uses the platform-enhanced Web API route. Account CM uses direct WSS and public
+         * CM uses Steam3, matching WebView/SteamKit. SteamPipe content follows the Directory-advertised scheme
+         * directly; an explicit user HTTP proxy still takes precedence for the SDK content route.
          *
          * Returns null when the platform has no endpoint set to offer, which means the platform route is
          * unavailable rather than "connect directly": the caller must not silently fall back to the engine's
@@ -66,17 +62,16 @@ internal class SteamContentSdkRouteFactory
                 if (normalized !in preparedCandidates) preparedCandidates += normalized
             }
             val candidates = preparedCandidates.joinToString("\n").takeIf(String::isNotBlank) ?: return null
-            val bridgeAddress = bridge.proxy.address() as InetSocketAddress
-            val bridgeHost = bridgeAddress.address?.hostAddress ?: bridgeAddress.hostString
-            val bridgeAuthority = "$bridgeHost:${bridgeAddress.port}"
             return sdkPlatformRoute(
                 cmCandidates = candidates,
                 configuredProxyUri = configuredProxy,
-                authenticatedCdnProxy = configuredProxy?.let { null } ?: bridgeAuthority,
-                authenticatedCdnProxyAuthorization = configuredProxy?.let { null } ?: bridge.cdnProxyAuthorization,
+                // Match WebView/DepotDownloader's nearest strategy: SteamPipe content connects directly using
+                // the scheme Steam Directory advertised. Only an explicit user HTTP proxy replaces this route.
+                authenticatedCdnProxy = null,
+                authenticatedCdnProxyAuthorization = null,
                 enhancedCmProxy = null,
                 enhancedCmProxyAuthorization = null,
-                enhancedTrustRootPem = configuredProxy?.let { null } ?: bridge.routeTrustRootPem,
+                enhancedTrustRootPem = null,
                 cmTransport = cmTransport,
             )
         }
