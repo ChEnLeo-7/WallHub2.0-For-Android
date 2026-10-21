@@ -655,7 +655,8 @@ class SteamContentSdkSessionBackendTest {
                 fixture.platform.openCalls >= 2,
                 "a refused rebuild hands recovery to the attempt path, which re-opens the session",
             )
-            assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+            assertTrue(backend.session.value.hasStoredSession)
         }
 
     @Test

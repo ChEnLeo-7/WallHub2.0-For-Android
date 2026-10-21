@@ -156,17 +156,10 @@ internal class SteamContentSdkSessionBackend(
             } finally {
                 preserveSignedInDuringRestore.set(false)
             }
-            if (
-                activeSession.get()?.state() != SteamContentSdkSessionState.AUTHENTICATED &&
-                mutableSession.value.phase == SteamSessionPhase.SIGNED_IN
-            ) {
-                publish(
-                    SteamSessionPhase.FAILED,
-                    messages.restoreFailed,
-                    accountName = accountName,
-                    hasStoredSession = true,
-                )
-            }
+            // A bounded background restore that exhausts transport routes does not revoke the persisted
+            // account identity. Account operations still see no authenticated activeSession and therefore
+            // return WAIT_FOR_ACCOUNT_SESSION; only Steam's explicit credential/session rejection may move
+            // the identity to EXPIRED or SIGNED_OUT.
         }
     }
 
