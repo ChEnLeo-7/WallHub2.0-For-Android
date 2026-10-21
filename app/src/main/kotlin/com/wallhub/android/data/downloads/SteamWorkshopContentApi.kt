@@ -36,9 +36,9 @@ internal class SteamWorkshopContentApi(
             // Some mainland Akamai edges advertise h2 but omit the server SETTINGS preface. This bounded
             // Web API POST needs no multiplexing; HTTP/1.1 avoids that broken negotiation without weakening TLS.
             .protocols(listOf(Protocol.HTTP_1_1))
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .callTimeout(45, TimeUnit.SECONDS)
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .callTimeout(12, TimeUnit.SECONDS)
             .build()
 
     suspend fun fetchContentTarget(publishedFileId: Long): WorkshopContentTarget =
@@ -59,8 +59,17 @@ internal class SteamWorkshopContentApi(
                     .header("Accept", "application/json")
                     .header("User-Agent", USER_AGENT)
                     .build()
-            val body = client.newCall(request).awaitBody()
-            parseTarget(body, publishedFileId)
+            var transportFailure: IOException? = null
+            repeat(MAX_TRANSPORT_ATTEMPTS) { attempt ->
+                try {
+                    return@withContext parseTarget(client.newCall(request).awaitBody(), publishedFileId)
+                } catch (error: IOException) {
+                    transportFailure = error
+                    if (attempt + 1 >= MAX_TRANSPORT_ATTEMPTS) throw error
+                    client.connectionPool.evictAll()
+                }
+            }
+            throw transportFailure ?: IOException("Steam public details request failed")
         }
 
     private suspend fun Call.awaitBody(): String =
@@ -188,6 +197,7 @@ internal class SteamWorkshopContentApi(
 
     private companion object {
         const val MAX_WORKSHOP_DETAILS_BYTES = 1024 * 1024
+        const val MAX_TRANSPORT_ATTEMPTS = 2
         const val RESULT_OK = 1L
         const val USER_AGENT = "WallHub-Android/0.6 (Workshop Downloader)"
         const val PUBLISHED_FILE_DETAILS_URL =
