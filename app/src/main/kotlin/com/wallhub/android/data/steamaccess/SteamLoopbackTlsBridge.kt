@@ -166,23 +166,18 @@ internal class SteamLoopbackTlsBridge
                 }
                 if (!SteamDomainPolicy.isCmHost(host)) {
                     val addresses = kotlinx.coroutines.runBlocking { accessManager.enhancedAddresses(host) }
-                    val upstream =
-                        runCatching {
-                            noSniTlsDialer.connect(host, addresses, request.port)
-                        }.getOrElse {
-                            Log.i(LOG_TAG, "SDK bridge plane=web upstream_sni=fallback host=$host")
-                            noSniTlsDialer.connectWithSni(host, addresses, request.port)
-                        }
-                    upstreamSocket = upstream.socket
+                    val upstream = connectDirect(host, request.port, addresses)
+                    Log.i(
+                        LOG_TAG,
+                        "SDK bridge plane=web mode=transparent host=$host " +
+                            "address=${upstream.inetAddress.hostAddress.orEmpty()}",
+                    )
+                    upstreamSocket = upstream
                     writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
-                    val securedClient =
-                        privateCa.createServerSocket(clientSocket, host).apply {
-                            soTimeout = 0
-                            startHandshake()
-                        }
-                    securedClientSocket = securedClient
+                    clientSocket.soTimeout = 0
                     tunnelEstablished = true
-                    relay(securedClient, upstream.socket)
+                    // TLS remains end-to-end in OkHttp, including SNI, hostname verification and ALPN.
+                    relay(clientSocket, upstream)
                     return
                 }
                 Log.i(LOG_TAG, "SDK bridge plane=cm mode=enhanced")
