@@ -16,6 +16,9 @@ import java.util.LinkedHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private const val STEAM_WEB_API_HOST = "api.steampowered.com"
+private const val STEAM_HTTPS_PORT = 443
+
 /** Separates the externally hosted Steam session from WorkManager task orchestration. */
 internal interface WorkshopContentGateway {
     suspend fun fetchContentTarget(
@@ -40,10 +43,14 @@ internal class FormalSteamWorkshopContentGateway(
     override suspend fun fetchContentTarget(
         publishedFileId: Long,
         proxyUrl: String,
-    ): WorkshopContentTarget =
-        SteamWorkshopContentApi(
+    ): WorkshopContentTarget {
+        check(httpClientFactory.prewarmSteamEndpoint(STEAM_WEB_API_HOST, STEAM_HTTPS_PORT)) {
+            "The enhanced Steam Web API route is unavailable"
+        }
+        return SteamWorkshopContentApi(
             httpClientFactory.newBuilder().applyDownloadProxy(proxyUrl),
         ).fetchContentTarget(publishedFileId)
+    }
 
     override suspend fun download(
         target: WorkshopContentTarget,

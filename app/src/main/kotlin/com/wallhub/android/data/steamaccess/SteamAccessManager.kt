@@ -248,7 +248,7 @@ class SteamAccessManager
         ): Boolean {
             val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
             preferencesReady.await()
-            val requiresEnhancedRoute = SteamDomainPolicy.isCmHost(host) && preferences.steamAccessEnabled
+            val requiresEnhancedRoute = SteamDomainPolicy.accelerates(host) && preferences.steamAccessEnabled
             if (!requiresEnhancedRoute && !isAcceleratedRouteExpected(host, port)) return true
             while (true) {
                 if (!preferences.steamAccessEnabled) return true
