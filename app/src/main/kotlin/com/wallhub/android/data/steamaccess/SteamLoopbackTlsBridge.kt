@@ -164,7 +164,28 @@ internal class SteamLoopbackTlsBridge
                     relay(clientSocket, upstream)
                     return
                 }
-                if (SteamDomainPolicy.isCmHost(host)) Log.i(LOG_TAG, "SDK bridge plane=cm mode=enhanced")
+                if (!SteamDomainPolicy.isCmHost(host)) {
+                    val addresses = kotlinx.coroutines.runBlocking { accessManager.enhancedAddresses(host) }
+                    val upstream =
+                        runCatching {
+                            noSniTlsDialer.connect(host, addresses, request.port)
+                        }.getOrElse {
+                            Log.i(LOG_TAG, "SDK bridge plane=web upstream_sni=fallback host=$host")
+                            noSniTlsDialer.connectWithSni(host, addresses, request.port)
+                        }
+                    upstreamSocket = upstream.socket
+                    writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
+                    val securedClient =
+                        privateCa.createServerSocket(clientSocket, host).apply {
+                            soTimeout = 0
+                            startHandshake()
+                        }
+                    securedClientSocket = securedClient
+                    tunnelEstablished = true
+                    relay(securedClient, upstream.socket)
+                    return
+                }
+                Log.i(LOG_TAG, "SDK bridge plane=cm mode=enhanced")
                 val route =
                     runCatching { accessManager.acceleratedRoute(host, request.port) }.getOrElse {
                         val prepared =

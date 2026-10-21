@@ -72,9 +72,7 @@ class SteamHttpClientFactory
             port: Int,
         ): OkHttpClient.Builder {
             if (!manager.enhancedConnectionEnabled()) return newBuilder()
-            check(manager.prewarmSteamEndpoint(hostname, port)) {
-                "The enhanced Steam route is unavailable"
-            }
+            SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
             return newBuilder().proxy(bridge.proxy)
         }
     }
