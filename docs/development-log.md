@@ -1,5 +1,13 @@
 # Development Log
 
+## 2026-10-22 — China Mobile enhanced Steam login and HTTP-only Workshop completion
+
+A PJZ110 on China Mobile NR_SA, with Wi-Fi disabled and App data cleared, completed enhanced-first onboarding, account login/verification, fresh public Workshop reads, and a first uncached Workshop download. The platform now routes Steam Web/API and CM Directory through the authenticated loopback broker with end-to-end TLS and bounded candidate racing; account and anonymous Steam CM use WebSocket routes without introducing a second account-session owner. Password login and refresh-token restore retain Steam's distinct verification outcomes, and a temporary CM route outage preserves persisted account identity while account operations continue to wait for a real authenticated Session.
+
+Steam's cell-0 Directory returned regional nodes with `https_support=unavailable`. SDK 0.1.145 therefore followed HTTP/80 exactly as advertised, without generic downgrade: unknown/missing capability remains HTTPS-only, transport failure cannot switch scheme, redirects preserve scheme and bounds, and a regional HTTP node may hand off to a validated HTTP delivery host without forwarding its Authorization. Account CM replacement clears unresolved resolution material and idle sockets but no longer revokes an already-authorized Manifest/chunk data plane.
+
+Final device task `d98e519f-4d20-4526-903b-89f7dc2d1022` downloaded Workshop `3804689861` from zero cache: public target completed, Depot Key / Manifest Request Code / CDN tokens completed, Manifest fetched and decoded, chunks reached `174,194,098 / 174,194,098`, verification ran, and the SDK emitted `COMPLETED`. Observed chunk throughput was roughly 5–18 MB/s. The final LAN-Windows artifact is job `20261021T155406Z-2506214711`, Android commit `d6c255c`, SDK commit `003e794`, SDK version `0.1.145`; APK SHA-256 is `f533c8be105a1c70fc7e8b8a46f240745d4c316f3245afb343fa986c2fc8ccb0`, and AAR SHA-256 is `bfdb4b0cf3263c0f27192035e5fc30f30112f0357c9330889fdb7c0892c39ae1`. All SDK/AAR/APK builds ran on the LAN Windows worker; the source host only edited and staged source.
+
 ## 2026-10-15 — Android Scene MPKG high-success conversion contract
 
 Physical-device reproduction on a OnePlus 5T confirmed that Workshop `3299228616` downloads fully and then fails planning at `number.am.tex` with `unsupported_texture_profile`; Workshop `3757572576` completes after one transient SDK session retry and then fails planning at `全年龄.tex` with `preset_texture_input_budget_exceeded`. The owner froze the Android-only repair contract:
