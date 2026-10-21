@@ -194,7 +194,12 @@ internal class SteamLoopbackTlsBridge
                             noSniTlsDialer.connectWithSni(host, route.addresses, request.port, recordFailure)
                         }
                     } else {
-                        noSniTlsDialer.connect(host, route.addresses, request.port, recordFailure)
+                        runCatching {
+                            noSniTlsDialer.connect(host, route.addresses, request.port, recordFailure)
+                        }.getOrElse {
+                            Log.i(LOG_TAG, "SDK bridge plane=web upstream_sni=fallback host=$host")
+                            noSniTlsDialer.connectWithSni(host, route.addresses, request.port, recordFailure)
+                        }
                     }
                 upstreamSocket = upstream.socket
                 val committed =

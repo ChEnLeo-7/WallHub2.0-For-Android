@@ -526,7 +526,11 @@ class SteamAccessManager
             val selected = routeSnapshots.publishKeepingUsable(cacheKey, route)
             routePrewarmTracker.complete(
                 SteamRoutePrewarmKey(selectedNetworkType, generation, hostname, port),
-                selected.available,
+                if (preferences.steamAccessEnabled && SteamDomainPolicy.accelerates(hostname)) {
+                    selected.accelerated
+                } else {
+                    selected.available
+                },
             )
             return selected
         }
@@ -540,7 +544,13 @@ class SteamAccessManager
             generation: Long,
         ) {
             if (routeGeneration.get() != generation || networkType != selectedNetworkType) return
-            val fallbackAvailable = routeSnapshots.lookup(cacheKey).route?.available == true
+            val fallbackRoute = routeSnapshots.lookup(cacheKey).route
+            val fallbackAvailable =
+                if (preferences.steamAccessEnabled && SteamDomainPolicy.accelerates(hostname)) {
+                    fallbackRoute?.accelerated == true
+                } else {
+                    fallbackRoute?.available == true
+                }
             routePrewarmTracker.complete(
                 SteamRoutePrewarmKey(selectedNetworkType, generation, hostname, port),
                 fallbackAvailable,
@@ -650,7 +660,15 @@ class SteamAccessManager
                     // selected candidates remain bounded and every failed real connect feeds route health back.
                     candidates.map { address -> SteamProbeResult(address, true, 0L) }
                 } else {
-                    val tasks = candidates.map { address -> Callable { noSniTlsDialer.probe(hostname, address, port) } }
+                    val tasks =
+                        candidates.map { address ->
+                            Callable {
+                                noSniTlsDialer
+                                    .probe(hostname, address, port)
+                                    .takeIf(SteamProbeResult::successful)
+                                    ?: noSniTlsDialer.probeWithSni(hostname, address, port)
+                            }
+                        }
                     if (tasks.isEmpty()) {
                         emptyList()
                     } else {
