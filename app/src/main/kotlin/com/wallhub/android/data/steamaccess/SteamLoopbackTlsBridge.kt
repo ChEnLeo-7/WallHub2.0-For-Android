@@ -12,8 +12,10 @@ import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.Callable
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -263,24 +265,49 @@ internal class SteamLoopbackTlsBridge
             port: Int,
             preparedAddresses: List<InetAddress>? = null,
         ): Socket {
-            var lastError: IOException? = null
-            (preparedAddresses ?: InetAddress.getAllByName(hostname).toList())
-                .asSequence()
-                .filter(::isAuthenticatedCdnAddress)
-                .distinctBy(InetAddress::getHostAddress)
-                .take(MAX_CDN_ADDRESSES)
-                .forEach { address ->
-                    val socket = Socket()
-                    try {
-                        socket.tcpNoDelay = true
-                        socket.connect(InetSocketAddress(address, port), CDN_CONNECT_TIMEOUT_MS)
-                        return socket
-                    } catch (error: IOException) {
-                        lastError = error
-                        socket.closeQuietly()
-                    }
+            val addresses =
+                (preparedAddresses ?: InetAddress.getAllByName(hostname).toList())
+                    .asSequence()
+                    .filter(::isAuthenticatedCdnAddress)
+                    .distinctBy(InetAddress::getHostAddress)
+                    .take(MAX_CDN_ADDRESSES)
+                    .toList()
+            if (addresses.isEmpty()) throw IOException("No public route for $hostname")
+            val opened = ConcurrentLinkedQueue<Socket>()
+            val completion = ExecutorCompletionService<Result<Socket>>(executor)
+            val futures =
+                addresses.mapIndexed { index, address ->
+                    completion.submit(
+                        Callable {
+                            if (index > 0) Thread.sleep(index * DIRECT_RACE_DELAY_MS)
+                            runCatching {
+                                Socket().also { socket ->
+                                    opened += socket
+                                    socket.tcpNoDelay = true
+                                    socket.connect(InetSocketAddress(address, port), CDN_CONNECT_TIMEOUT_MS)
+                                }
+                            }
+                        },
+                    )
                 }
-            throw IOException("No reachable CDN route for $hostname", lastError)
+            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DIRECT_RACE_BUDGET_MS)
+            var winner: Socket? = null
+            var lastError: Throwable? = null
+            try {
+                repeat(addresses.size) {
+                    val remaining = deadline - System.nanoTime()
+                    if (remaining <= 0L) return@repeat
+                    val completed = completion.poll(remaining, TimeUnit.NANOSECONDS) ?: return@repeat
+                    completed.get().onSuccess { socket ->
+                        winner = socket
+                        return socket
+                    }.onFailure { error -> lastError = error }
+                }
+                throw IOException("No reachable route for $hostname", lastError)
+            } finally {
+                futures.forEach { it.cancel(true) }
+                opened.filter { it !== winner }.forEach { socket -> socket.closeQuietly() }
+            }
         }
 
         private fun relay(
@@ -365,7 +392,9 @@ internal class SteamLoopbackTlsBridge
             const val TOKEN_BYTES = 32
             const val MAX_HEADER_BYTES = 16 * 1024
             const val HEADER_TIMEOUT_MS = 5_000
-            const val CDN_CONNECT_TIMEOUT_MS = 8_000
+            const val CDN_CONNECT_TIMEOUT_MS = 5_000
+            const val DIRECT_RACE_DELAY_MS = 150L
+            const val DIRECT_RACE_BUDGET_MS = 7_000L
             const val MAX_CDN_ADDRESSES = 4
             const val RELAY_BUFFER_BYTES = 32 * 1024
             const val LOG_TAG = "WallHubSteamAccess"
