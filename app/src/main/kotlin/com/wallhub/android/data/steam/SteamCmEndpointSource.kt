@@ -8,6 +8,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Protocol
 import okhttp3.Request
 
 /** The directory the platform reads its own CM endpoint set from. */
@@ -94,10 +95,11 @@ internal class SteamCmEndpointSource
                     }
             }
 
-        private fun fetchDirectory(): String? {
+        private suspend fun fetchDirectory(): String? {
             val client =
                 httpClientFactory
-                    .newBuilder()
+                    .builderForSteamEndpoint("api.steampowered.com", CM_WEBSOCKET_PORT)
+                    .protocols(listOf(Protocol.HTTP_1_1))
                     .connectTimeout(CM_FETCH_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                     .readTimeout(CM_FETCH_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                     .callTimeout(CM_FETCH_TIMEOUT_MS, TimeUnit.MILLISECONDS)
