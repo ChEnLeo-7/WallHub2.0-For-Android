@@ -650,23 +650,8 @@ internal class SteamContentSdkWorkshopRepository
         private suspend fun <T> publicDetailsOperation(
             operation: suspend (SteamWorkshopPublicDetailsReader) -> T,
         ): T {
-            val selected =
-                runCatching { publicSessionRouter.acquire() }.getOrElse { anonymousFailure ->
-                    publicSessionRouter.awaitAuthenticated() ?: throw anonymousFailure
-                }
-            val reader =
-                if (selected === anonymousEngine) anonymousPublicDetailsReader else accountPublicDetailsReader
-            return try {
-                operation(reader)
-            } catch (failure: Throwable) {
-                if (selected !== anonymousEngine) {
-                    publicSessionRouter.acquireAnonymous()
-                    operation(anonymousPublicDetailsReader)
-                } else {
-                    publicSessionRouter.awaitAuthenticated() ?: throw failure
-                    operation(accountPublicDetailsReader)
-                }
-            }
+            publicSessionRouter.acquire()
+            return operation(anonymousPublicDetailsReader)
         }
 
         private suspend fun <T> sdkPublicRead(
@@ -675,22 +660,8 @@ internal class SteamContentSdkWorkshopRepository
             priority: WorkshopReadPriority,
             operation: suspend (SteamContentSdkEngine) -> T,
         ): T {
-            val selected =
-                runCatching { publicSessionRouter.acquire() }.getOrElse { anonymousFailure ->
-                    publicSessionRouter.awaitAuthenticated() ?: throw anonymousFailure
-                }
-            val selectedGateway = if (selected === anonymousEngine) anonymousGateway else gateway
-            return try {
-                selectedGateway.read(key, kind, priority) { operation(selected) }
-            } catch (failure: Throwable) {
-                if (selected !== anonymousEngine) {
-                    val anonymous = publicSessionRouter.acquireAnonymous()
-                    anonymousGateway.read(key, kind, priority) { operation(anonymous) }
-                } else {
-                    val authenticated = publicSessionRouter.awaitAuthenticated() ?: throw failure
-                    gateway.read(key, kind, priority) { operation(authenticated) }
-                }
-            }
+            val anonymous = publicSessionRouter.acquire()
+            return anonymousGateway.read(key, kind, priority) { operation(anonymous) }
         }
 
         private suspend fun <T> sdkRead(

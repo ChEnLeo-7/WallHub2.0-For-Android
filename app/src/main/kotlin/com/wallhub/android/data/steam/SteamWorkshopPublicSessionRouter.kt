@@ -9,27 +9,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 
-/** Selects the authenticated CM session when ready, otherwise owns one foreground anonymous public session. */
+/** Owns the foreground anonymous Steam3 session used by every public Workshop read. */
 @Singleton
 internal class SteamWorkshopPublicSessionRouter
     @Inject
     constructor(
-        private val authenticatedSessions: SteamContentSdkAuthenticatedSessionRegistry,
         @SteamAnonymousWorkshopEngine private val anonymousEngine: SteamContentSdkEngine,
         private val routes: SteamContentSdkRouteFactory,
     ) {
         private val anonymousMutex = Mutex()
 
-        suspend fun acquire(): SteamContentSdkEngine {
-            authenticatedSessions.currentAuthenticated()?.let { return it }
-            withTimeoutOrNull(ACCOUNT_FAST_PATH_WAIT_MS) {
-                while (authenticatedSessions.currentAuthenticated() == null) delay(ACCOUNT_POLL_MS)
-            }
-            authenticatedSessions.currentAuthenticated()?.let { return it }
-            return acquireAnonymous()
-        }
+        suspend fun acquire(): SteamContentSdkEngine = acquireAnonymous()
 
         suspend fun acquireAnonymous(): SteamContentSdkEngine =
             anonymousMutex.withLock {
@@ -60,16 +51,6 @@ internal class SteamWorkshopPublicSessionRouter
             return anonymousEngine
         }
 
-        suspend fun awaitAuthenticated(timeoutMs: Long = PUBLIC_FAILURE_DEADLINE_MS): SteamContentSdkEngine? =
-            withTimeoutOrNull(timeoutMs) {
-                var authenticated = authenticatedSessions.currentAuthenticated()
-                while (authenticated == null) {
-                    delay(ACCOUNT_POLL_MS)
-                    authenticated = authenticatedSessions.currentAuthenticated()
-                }
-                authenticated
-            }
-
         suspend fun onAccountAuthenticated() {
             anonymousMutex.withLock { anonymousEngine.closeSession() }
         }
@@ -79,10 +60,7 @@ internal class SteamWorkshopPublicSessionRouter
         }
 
         private companion object {
-            const val ACCOUNT_FAST_PATH_WAIT_MS = 300L
-            const val ACCOUNT_POLL_MS = 25L
             const val ANONYMOUS_READY_TIMEOUT_MS = 8_000L
             const val ANONYMOUS_POLL_MS = 50L
-            const val PUBLIC_FAILURE_DEADLINE_MS = 8_000L
         }
     }
