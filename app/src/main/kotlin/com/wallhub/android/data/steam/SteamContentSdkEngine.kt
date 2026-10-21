@@ -686,11 +686,18 @@ private const val PEM_LINE_LENGTH = 64
 /**
  * Whether a reopen may keep the engine that is already live.
  *
- * The engine's settings are immutable once it is created - transport, candidates, proxies and trust roots are
- * all baked in - so only a request for the same route may reuse it. Everything else is a restart, and a
- * restart is what drops the tasks the engine owns.
+ * The engine's data-plane settings are immutable once created. A refreshed CM candidate window is Session
+ * recovery input and cannot justify destroying already-authorized tasks; the existing engine keeps its bounded
+ * window for that replacement. Transport, proxy, authorization or trust changes still require a restart.
  */
 internal fun canReuseEngine(
     openRoute: SteamContentSdkEngine.Route?,
     requested: SteamContentSdkEngine.Route,
-): Boolean = openRoute != null && openRoute == requested
+): Boolean =
+    openRoute != null &&
+        openRoute.cdnProxy == requested.cdnProxy &&
+        openRoute.cdnProxyAuthorization == requested.cdnProxyAuthorization &&
+        openRoute.cmProxy == requested.cmProxy &&
+        openRoute.cmProxyAuthorization == requested.cmProxyAuthorization &&
+        openRoute.transport == requested.transport &&
+        openRoute.extraTrustRootPem == requested.extraTrustRootPem

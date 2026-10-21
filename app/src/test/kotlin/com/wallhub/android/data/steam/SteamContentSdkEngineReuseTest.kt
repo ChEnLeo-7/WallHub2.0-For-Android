@@ -24,6 +24,16 @@ class SteamContentSdkEngineReuseTest {
     }
 
     @Test
+    fun `a refreshed CM candidate window keeps the data-plane engine`() {
+        assertTrue(
+            canReuseEngine(
+                SteamContentSdkEngine.Route(cmCandidates = "old.example:443", connectAttempts = 1),
+                SteamContentSdkEngine.Route(cmCandidates = "new.example:443", connectAttempts = 4),
+            ),
+        )
+    }
+
+    @Test
     fun `a different cdn proxy is a restart`() {
         assertFalse(
             canReuseEngine(
