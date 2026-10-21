@@ -97,7 +97,12 @@ internal class SteamContentSdkAuthenticatedSessionRegistry
             val value = published.value ?: return null
             if (accountName != null && value.accountKey != accountName.accountKey()) return null
             if (isStillUsable(value.snapshot)) return value.snapshot
-            clear(value.snapshot.engine, value.snapshot.generation)
+            // A content caller can be the first observer of a dead CM generation. Retiring it silently made
+            // awaitCurrentUsable wait for a replacement nobody had requested. Notify the sole Backend owner;
+            // this registry still never opens or owns a Session itself.
+            if (!reportUnavailable(value.snapshot.accountName, value.snapshot.generation)) {
+                clear(value.snapshot.engine, value.snapshot.generation)
+            }
             return null
         }
 
