@@ -2,7 +2,9 @@ package com.wallhub.android.data.steam
 
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.data.steamaccess.SteamDomainPolicy
+import com.wallhub.android.data.steamaccess.SteamLoopbackTlsBridge
 import io.steamcontent.sdk.SessionTransportKind
+import java.net.InetSocketAddress
 import java.net.URI
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,6 +29,7 @@ internal class SteamContentSdkRouteFactory
     constructor(
         private val cmEndpoints: SteamCmEndpointSource,
         private val settingsRepository: SettingsRepository,
+        private val bridge: SteamLoopbackTlsBridge,
     ) {
         /**
          * The route this platform actually has.
@@ -62,6 +65,9 @@ internal class SteamContentSdkRouteFactory
                 if (normalized !in preparedCandidates) preparedCandidates += normalized
             }
             val candidates = preparedCandidates.joinToString("\n").takeIf(String::isNotBlank) ?: return null
+            val bridgeAddress = bridge.proxy.address() as InetSocketAddress
+            val bridgeHost = bridgeAddress.address?.hostAddress ?: bridgeAddress.hostString
+            val bridgeAuthority = "$bridgeHost:${bridgeAddress.port}"
             return sdkPlatformRoute(
                 cmCandidates = candidates,
                 configuredProxyUri = configuredProxy,
@@ -69,9 +75,9 @@ internal class SteamContentSdkRouteFactory
                 // the scheme Steam Directory advertised. Only an explicit user HTTP proxy replaces this route.
                 authenticatedCdnProxy = null,
                 authenticatedCdnProxyAuthorization = null,
-                enhancedCmProxy = null,
-                enhancedCmProxyAuthorization = null,
-                enhancedTrustRootPem = null,
+                enhancedCmProxy = configuredProxy?.let { null } ?: bridgeAuthority,
+                enhancedCmProxyAuthorization = configuredProxy?.let { null } ?: bridge.cmProxyAuthorization,
+                enhancedTrustRootPem = configuredProxy?.let { null } ?: bridge.routeTrustRootPem,
                 cmTransport = cmTransport,
             )
         }
