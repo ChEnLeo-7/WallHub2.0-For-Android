@@ -88,7 +88,6 @@ internal class SteamLoopbackTlsBridge
                         relay(clientSocket, upstream)
                         return
                     }
-                    Log.i(LOG_TAG, "SDK bridge plane=cdn mode=enhanced")
                     val tlsHost =
                         SteamDomainPolicy.requireAuthenticatedCdnEndpoint(
                             request.tlsServerName ?: host,
@@ -98,6 +97,11 @@ internal class SteamLoopbackTlsBridge
                         kotlinx.coroutines
                             .runBlocking { accessManager.enhancedAddresses(host) }
                             .filter(::isAuthenticatedCdnAddress)
+                    Log.i(
+                        LOG_TAG,
+                        "SDK bridge plane=cdn mode=enhanced route_host=$host tls_host=$tlsHost " +
+                            "port=${request.port} candidates=${addresses.joinToString(",") { it.hostAddress.orEmpty() }}",
+                    )
                     val upstream =
                         runCatching {
                             noSniTlsDialer.connectAuthenticatedCdn(
@@ -106,12 +110,21 @@ internal class SteamLoopbackTlsBridge
                                 port = request.port,
                                 hideSni = true,
                             )
-                        }.getOrElse {
+                        }.getOrElse { noSniFailure ->
                             // Some SteamPipe providers require their ordinary ClientHello behavior. Preserve the
                             // SDK's own strict rustls verification on this fallback instead of duplicating the
                             // provider's virtual-host semantics in the Android bridge.
-                            Log.i(LOG_TAG, "SDK bridge plane=cdn upstream_sni=transparent_fallback")
+                            Log.i(
+                                LOG_TAG,
+                                "SDK bridge plane=cdn upstream_sni=transparent_fallback " +
+                                    "failure=${sanitizedFailure(noSniFailure)}",
+                            )
                             val transparent = connectDirect(host, request.port, addresses)
+                            Log.i(
+                                LOG_TAG,
+                                "SDK bridge plane=cdn transparent_connected " +
+                                    "route_host=$host address=${transparent.inetAddress.hostAddress.orEmpty()}",
+                            )
                             upstreamSocket = transparent
                             writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
                             clientSocket.soTimeout = 0
@@ -318,6 +331,11 @@ internal class SteamLoopbackTlsBridge
 
         private fun Socket?.closeQuietly() {
             if (this != null) runCatching { close() }
+        }
+
+        private fun sanitizedFailure(error: Throwable): String {
+            val chain = generateSequence(error) { it.cause }.take(4).toList()
+            return chain.joinToString("<-") { it::class.java.simpleName.take(48) }
         }
 
         private companion object {
