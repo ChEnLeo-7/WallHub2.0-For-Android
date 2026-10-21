@@ -659,8 +659,10 @@ class SteamAccessManager
                     }
                     addAll(SteamAccessRoutes.seeds(hostname))
                 }.distinctBy(InetAddress::getHostAddress)
-                    .filterNot { address -> address.hostAddress.orEmpty() in coolingDown }
-                    .take(MAX_NO_SNI_PROBE_ADDRESSES)
+                    .filterNot { address ->
+                        address.hostAddress.orEmpty() in coolingDown &&
+                            (SteamDomainPolicy.isCmHost(hostname) || address !in systemAddresses)
+                    }.take(MAX_NO_SNI_PROBE_ADDRESSES)
             val probeResults =
                 if (SteamDomainPolicy.isCmHost(hostname)) {
                     // CM route validity is established by the bridge's real authority-preserving TLS handshake.
