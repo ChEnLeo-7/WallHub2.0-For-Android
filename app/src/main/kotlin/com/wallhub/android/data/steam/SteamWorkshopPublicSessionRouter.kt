@@ -10,7 +10,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 
-/** Owns the foreground anonymous Steam3 session used by every public Workshop read. */
+/** Owns the foreground anonymous CM WebSocket session used by every public Workshop read. */
 @Singleton
 internal class SteamWorkshopPublicSessionRouter
     @Inject
@@ -36,7 +36,7 @@ internal class SteamWorkshopPublicSessionRouter
             val route =
                 routes.platformRoute(
                     refreshLive = refreshLive,
-                    cmTransport = SessionTransportKind.STEAM3,
+                    cmTransport = SessionTransportKind.WEBSOCKET,
                 )
                 ?: error("The platform's Steam route is unavailable for anonymous public reads")
             val session = anonymousEngine.open(route)
