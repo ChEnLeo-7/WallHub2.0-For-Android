@@ -52,8 +52,10 @@ class SteamHttpClientFactory
             OkHttpClient
                 .Builder()
                 .dns(manager)
+                .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
+                .retryOnConnectionFailure(false)
+                .followSslRedirects(false)
                 .connectionPool(manager.connectionPool)
-                .eventListenerFactory { manager.eventListener() }
                 .proxySelector(proxySelector)
                 .proxyAuthenticator { route, response ->
                     val address = route?.proxy?.address() as? InetSocketAddress
@@ -77,14 +79,6 @@ class SteamHttpClientFactory
             return newBuilder().proxy(bridge.proxy)
         }
     }
-
-internal fun shouldPrewarmSteamUrl(
-    scheme: String,
-    hostname: String,
-    port: Int,
-): Boolean =
-    isSteamSecureScheme(scheme) &&
-        SteamDomainPolicy.supportsEndpoint(hostname, port)
 
 internal fun isSteamSecureScheme(scheme: String?): Boolean =
     scheme.equals("https", ignoreCase = true) || scheme.equals("wss", ignoreCase = true)

@@ -19,48 +19,10 @@ internal object SteamAccessRoutes {
                 ),
         )
 
-    private val seedAddresses =
-        mapOf(
-            "steamcommunity.com" to
-                listOf(
-                    "23.44.248.222",
-                    "23.44.248.223",
-                    "23.52.74.146",
-                    "23.52.74.163",
-                    "104.90.128.70",
-                    "184.25.56.178",
-                ),
-            "api.steampowered.com" to
-                listOf(
-                    "173.222.146.99",
-                    "184.85.112.102",
-                    "23.45.12.51",
-                    "23.45.12.60",
-                    "96.6.190.4",
-                    "96.7.49.34",
-                ),
-            "community.steam-api.com" to
-                listOf(
-                    "173.222.146.99",
-                    "184.85.112.102",
-                    "23.45.12.51",
-                    "23.45.12.60",
-                    "96.6.190.4",
-                    "96.7.49.34",
-                ),
-        )
-
     fun supports(hostname: String): Boolean = SteamDomainPolicy.supports(hostname)
 
     fun aliases(hostname: String): List<String> = aliases[hostname.lowercase().trimEnd('.')].orEmpty()
 
-    fun seeds(hostname: String): List<InetAddress> {
-        val host = hostname.lowercase().trimEnd('.')
-        val seedHost = if (host == "www.steamcommunity.com") "steamcommunity.com" else host
-        return seedAddresses[seedHost]
-            .orEmpty()
-            .mapNotNull { address -> runCatching { InetAddress.getByName(address) }.getOrNull() }
-    }
 }
 
 internal fun steamRouteCacheKey(

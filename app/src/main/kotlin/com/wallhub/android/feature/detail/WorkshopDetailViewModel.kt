@@ -66,6 +66,7 @@ class WorkshopDetailViewModel
         private val mutableState = MutableStateFlow(WorkshopDetailUiState())
         private val effectChannel = Channel<WorkshopDetailEffect>(capacity = Channel.BUFFERED)
         private val inlinePlaybackStartNoticeGate = PlaybackStartNoticeGate()
+        private var detailLoadJob: Job? = null
         private var inlineVideoLoadJob: Job? = null
         private var commentsLoadJob: Job? = null
 
@@ -182,9 +183,10 @@ class WorkshopDetailViewModel
         }
 
         fun reload() {
+            detailLoadJob?.cancel()
             inlineVideoLoadJob?.cancel()
             inlineVideoLoadJob = null
-            viewModelScope.launch {
+            detailLoadJob = viewModelScope.launch {
                 mutableState.value.inlineVideoPlayer?.release()
                 mutableState.value.inlineVideoStream?.close()
                 mutableState.value =
@@ -206,6 +208,7 @@ class WorkshopDetailViewModel
                     )
                 runCatching { workshopRepository.getDetail(workshopId) }
                     .onSuccess { detail ->
+                        ensureActive()
                         val current = mutableState.value
                         mutableState.value =
                             current.copy(
@@ -241,6 +244,8 @@ class WorkshopDetailViewModel
                             }
                         }
                     }.onFailure { error ->
+                        if (error is CancellationException) throw error
+                        ensureActive()
                         mutableState.value =
                             mutableState.value.copy(
                                 isLoading = false,

@@ -131,15 +131,6 @@ class SteamAccessRoutesTest {
     }
 
     @Test
-    fun `ksteam route prewarming covers secure steam and CM URLs only`() {
-        assertTrue(shouldPrewarmSteamUrl("https", "api.steampowered.com", 443))
-        assertTrue(shouldPrewarmSteamUrl("wss", "cmp1-sea1.steamserver.net", 27020))
-        assertFalse(shouldPrewarmSteamUrl("ws", "cmp1-sea1.steamserver.net", 27020))
-        assertFalse(shouldPrewarmSteamUrl("wss", "evil.steamcommunity.com", 27020))
-        assertFalse(shouldPrewarmSteamUrl("wss", "cmp1-sea1.steamserver.net", 8080))
-    }
-
-    @Test
     fun `steam bridge recognizes websocket TLS scheme`() {
         assertTrue(isSteamSecureScheme("https"))
         assertTrue(isSteamSecureScheme("WSS"))

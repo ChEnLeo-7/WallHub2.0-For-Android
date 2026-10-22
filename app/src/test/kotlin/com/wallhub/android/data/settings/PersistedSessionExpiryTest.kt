@@ -48,7 +48,7 @@ class PersistedSessionExpiryTest {
                 ),
             ),
         )
-        assertTrue(
+        assertFalse(
             shouldShowSteamSessionRestoreBanner(
                 SteamSessionState(
                     phase = SteamSessionPhase.RESTORABLE,
@@ -72,6 +72,45 @@ class PersistedSessionExpiryTest {
                 ),
             ),
         )
+    }
+
+    @Test
+    fun `saved disconnected identity stays quiet even with an old failure message`() {
+        for (phase in listOf(SteamSessionPhase.RESTORABLE, SteamSessionPhase.SIGNING_IN, SteamSessionPhase.SIGNED_IN)) {
+            val session =
+                SteamSessionState(
+                    phase = phase,
+                    hasStoredSession = true,
+                    isConnected = false,
+                    message = "Previous restore failed",
+                )
+            assertFalse(shouldShowSteamSessionRestoreBanner(session))
+            assertFalse(shouldOpenSteamSignInFromRestoreBanner(session))
+            assertFalse(shouldReportExpiredPersistedSession(session, alreadyReported = false))
+            assertFalse(session.isConnected)
+        }
+    }
+
+    @Test
+    fun `failed saved restore remains visible with retry rather than forced sign in`() {
+        val session = SteamSessionState(phase = SteamSessionPhase.FAILED, hasStoredSession = true)
+        assertTrue(shouldShowSteamSessionRestoreBanner(session))
+        assertFalse(shouldOpenSteamSignInFromRestoreBanner(session))
+    }
+
+    @Test
+    fun `expiry and Steam challenges stay visible and open sign in regardless of credential storage`() {
+        for (stored in listOf(false, true)) {
+            for (phase in listOf(
+                SteamSessionPhase.EXPIRED,
+                SteamSessionPhase.WAITING_FOR_CODE,
+                SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
+            )) {
+                val session = SteamSessionState(phase = phase, hasStoredSession = stored)
+                assertTrue(shouldShowSteamSessionRestoreBanner(session))
+                assertTrue(shouldOpenSteamSignInFromRestoreBanner(session))
+            }
+        }
     }
 
     @Test

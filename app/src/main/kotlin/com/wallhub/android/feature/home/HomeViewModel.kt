@@ -19,7 +19,6 @@ import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.SettingsRepository
-import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.workshopDetailTagSearch
@@ -56,7 +55,6 @@ class HomeViewModel
         @ApplicationContext private val applicationContext: Context,
         private val workshopRepository: WorkshopRepository,
         private val settingsRepository: SettingsRepository,
-        private val steamAccessRepository: SteamAccessRepository,
         private val downloadTaskRepository: WorkshopDownloads,
         savedStateHandle: SavedStateHandle,
     ) : ViewModel() {
@@ -391,34 +389,17 @@ class HomeViewModel
             scrollToTopOnSuccess: Boolean = false,
         ) {
             val requestState = mutableState.value
-            val shouldPrewarm =
-                shouldPrewarmSteamIp(
-                    steamAccessEnabled = requestState.steamAccessEnabled,
-                    dataSource = requestState.steamWorkshopDataSource,
-                    append = append,
-                    hasItems = requestState.items.isNotEmpty(),
-                )
             loadJob =
                 viewModelScope.launch {
                     mutableState.value =
                         requestState.copy(
                             isInitialLoading = !append && requestState.items.isEmpty(),
-                            isSteamIpPrewarming = shouldPrewarm,
                             isLoadingMore = append,
                             isPageLoading = !append && requestState.items.isNotEmpty(),
                             error = null,
                             errorRes = null,
                         )
                     try {
-                        if (shouldPrewarm) {
-                            requireSteamIpPrewarm(
-                                shouldPrewarm = true,
-                                dataSource = requestState.steamWorkshopDataSource,
-                                steamAccessRepository = steamAccessRepository,
-                                failureMessageRes = R.string.home_steam_ip_prewarm_failed,
-                            )
-                            mutableState.value = mutableState.value.copy(isSteamIpPrewarming = false)
-                        }
                         val response =
                             withTimeout(
                                 if (!append && requestState.items.isEmpty()) HOME_INITIAL_LOAD_TIMEOUT_MS else Long.MAX_VALUE,
@@ -471,7 +452,6 @@ class HomeViewModel
                         mutableState.value =
                             requestState.copy(
                                 isInitialLoading = false,
-                                isSteamIpPrewarming = false,
                                 isLoadingMore = false,
                                 isPageLoading = false,
                                 error = null,
@@ -481,29 +461,14 @@ class HomeViewModel
                         throw error
                     } catch (error: Throwable) {
                         if (version != requestVersion) return@launch
-                        // The error card names no cause, so the stage that failed and the exception's own text
-                        // are on the log: a prewarm refusal happens before the repository is ever called, and
-                        // without this line that reads exactly like a refused read.
-                        Log.w(
-                            HOME_LOG_TAG,
-                            "home load failed stage=" +
-                                (if (shouldPrewarm && mutableState.value.isSteamIpPrewarming) {
-                                    "steam_ip_prewarm"
-                                } else {
-                                    "browse"
-                                }) + " error=${error.message}",
-                            error,
-                        )
+                        Log.w(HOME_LOG_TAG, "home load failed stage=browse", error)
                         mutableState.value =
                             requestState.copy(
                                 isInitialLoading = false,
-                                isSteamIpPrewarming = false,
                                 isLoadingMore = false,
                                 isPageLoading = false,
                                 error = null,
-                                errorRes =
-                                    (error as? HomeResourceMessageException)?.messageRes
-                                        ?: R.string.home_unable_to_load_workshop,
+                                errorRes = R.string.home_unable_to_load_workshop,
                             )
                     }
                 }
@@ -540,7 +505,6 @@ class HomeViewModel
                 hasNextPage = hasNextPage,
                 totalCount = resolvedTotalCount,
                 isInitialLoading = false,
-                isSteamIpPrewarming = false,
                 isLoadingMore = false,
                 isPageLoading = false,
                 error = null,

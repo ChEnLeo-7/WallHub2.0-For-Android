@@ -99,6 +99,38 @@ class CommunityWorkshopRepositoryTest {
         assertEquals("Steam CM is temporarily unavailable; retry this item", failure.message)
     }
 
+    @Test
+    fun `HTML detail and batch only request Community and never API or CM`() = runBlocking {
+        val requests = mutableListOf<String>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            assertEquals("steamcommunity.com", request.url.host)
+            assertEquals("GET", request.method)
+            requests.add(request.url.encodedPath)
+            val html = if (request.url.encodedPath.contains("browse")) {
+                CommunityWorkshopHtmlTest.browseHtml()
+            } else {
+                CommunityWorkshopHtmlTest.DETAIL_HTML
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200)
+                .message("OK").body(html.toResponseBody("text/html".toMediaType())).build()
+        }.build()
+        val settings = object : SettingsRepository by CmSettingsRepository {
+            override val preferences = MutableStateFlow(AppPreferences(
+                steamWorkshopDataSource = SteamWorkshopDataSource.COMMUNITY_HTML,
+                steamApiKey = "must-not-be-used",
+            ))
+        }
+        val unified = object : SteamUnifiedWorkshopRepository by UnavailableCmRepository {
+            override suspend fun getPublicDetail(workshopId: Long): WorkshopDetail? = error("Unexpected CM request")
+            override suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage? = error("Unexpected CM request")
+        }
+        val repository = CommunityWorkshopRepository(settings, unified, client)
+        assertEquals("Title & more", repository.getDetail(42).summary.title)
+        assertEquals(listOf(42L, 43L), repository.getDetails(listOf(42, 43)).map { it.summary.id })
+        assertEquals(3, requests.size)
+    }
+
     private fun repositoryWithPublicResponse(
         status: Int,
         body: String,
@@ -108,6 +140,8 @@ class CommunityWorkshopRepositoryTest {
             OkHttpClient
                 .Builder()
                 .addInterceptor { chain ->
+                    throw AssertionError("CM must not call HTTP: ${chain.request().url.host}")
+                    @Suppress("UNREACHABLE_CODE")
                     Response
                         .Builder()
                         .request(chain.request())

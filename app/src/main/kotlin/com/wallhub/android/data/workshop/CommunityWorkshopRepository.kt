@@ -127,26 +127,7 @@ class CommunityWorkshopRepository internal constructor(
                 val preferences = settingsRepository.preferences.first()
                 val steamApiKey = preferences.steamApiKey.trim()
                 when (preferences.steamWorkshopDataSource) {
-                    SteamWorkshopDataSource.COMMUNITY_HTML -> {
-                        val detail =
-                            getPublishedFileDetails(listOf(workshopId), steamApiKey).firstOrNull()
-                                ?: error("Steam did not return this Workshop item; it may be deleted or not publicly accessible")
-                        val authorName =
-                            runCatching { CommunityWorkshopParser.extractAuthorName(get(buildDetailUrl(workshopId))) }
-                                .getOrNull()
-                        detail.copy(
-                            summary =
-                                detail.summary.copy(
-                                    author = authorName ?: detail.summary.author,
-                                    authorPlaceholder =
-                                        if (authorName == null) {
-                                            detail.summary.authorPlaceholder
-                                        } else {
-                                            WorkshopAuthorPlaceholder.NONE
-                                        },
-                                ),
-                        )
-                    }
+                    SteamWorkshopDataSource.COMMUNITY_HTML -> getCommunityDetail(workshopId)
 
                     SteamWorkshopDataSource.WEB_API -> {
                         val detail =
@@ -221,7 +202,7 @@ class CommunityWorkshopRepository internal constructor(
                 val preferences = settingsRepository.preferences.first()
                 val steamApiKey = preferences.steamApiKey.trim()
                 when (preferences.steamWorkshopDataSource) {
-                    SteamWorkshopDataSource.COMMUNITY_HTML -> getPublishedFileDetails(ids)
+                    SteamWorkshopDataSource.COMMUNITY_HTML -> ids.map(::getCommunityDetail)
                     SteamWorkshopDataSource.WEB_API -> getPublishedFileDetails(ids, steamApiKey).map { enrichDetailAuthor(it, steamApiKey) }
                     SteamWorkshopDataSource.CM_WEBSOCKET -> {
                         val batch = unifiedWorkshopRepository.getPublicDetailsResult(ids)
@@ -244,9 +225,9 @@ class CommunityWorkshopRepository internal constructor(
                         unifiedWorkshopRepository
                             .getPublicDetail(workshopId)
                             ?.creatorId
-                    SteamWorkshopDataSource.COMMUNITY_HTML,
-                    SteamWorkshopDataSource.WEB_API,
-                    -> getPublishedFileDetails(listOf(workshopId), steamApiKey).firstOrNull()?.creatorId
+                    SteamWorkshopDataSource.COMMUNITY_HTML -> getCommunityDetail(workshopId).creatorId
+                    SteamWorkshopDataSource.WEB_API ->
+                        getPublishedFileDetails(listOf(workshopId), steamApiKey).firstOrNull()?.creatorId
                 }
             return creatorId?.filter(Char::isDigit)?.takeIf(String::isNotBlank)
                 ?: error("Failed to determine the author of this Workshop item")
@@ -526,44 +507,8 @@ class CommunityWorkshopRepository internal constructor(
             return validIds.mapNotNull { steamId -> steamProfiles[keys.getValue(steamId)]?.let { steamId to it } }.toMap()
         }
 
-        private fun browseViaCommunity(normalizedQuery: WorkshopBrowseQuery): WorkshopPage {
-            val html = get(buildBrowseUrl(normalizedQuery))
-            val sourcePageSize = normalizedQuery.communityBrowsePageSize()
-            val totalCount = CommunityWorkshopParser.extractTotalCount(html)
-            val totalPages =
-                CommunityWorkshopParser
-                    .extractTotalPages(html)
-                    ?.coerceAtMost(MAX_DIRECT_BROWSE_PAGE)
-                    ?: totalCount?.toMaximumPage(sourcePageSize)
-            val ids =
-                CommunityWorkshopParser
-                    .extractItemIds(html)
-                    .take(sourcePageSize)
-            if (ids.isEmpty()) {
-                return WorkshopPage(
-                    items = emptyList(),
-                    page = normalizedQuery.page,
-                    hasNextPage = false,
-                    totalCount = totalCount,
-                    totalPages = totalPages,
-                )
-            }
-
-            val detailMap = getPublishedFileDetails(ids).associateBy { it.summary.id }
-            val items =
-                ids
-                    .mapNotNull(detailMap::get)
-                    .filter { item -> normalizedQuery.matchesSteamWallpaper(item.summary) }
-            return WorkshopPage(
-                items = items.map(WorkshopDetail::summary),
-                page = normalizedQuery.page,
-                hasNextPage =
-                    ids.size >= sourcePageSize &&
-                        (totalPages == null || normalizedQuery.page < totalPages),
-                totalCount = totalCount,
-                totalPages = totalPages,
-            )
-        }
+        private fun browseViaCommunity(normalizedQuery: WorkshopBrowseQuery): WorkshopPage =
+            parseCommunityHtmlBrowse(get(buildBrowseUrl(normalizedQuery)), normalizedQuery)
 
         private fun browseViaSteamApi(
             normalizedQuery: WorkshopBrowseQuery,
@@ -655,6 +600,9 @@ class CommunityWorkshopRepository internal constructor(
             return CommunityWorkshopParser.parseDetails(body)
         }
 
+        private fun getCommunityDetail(workshopId: Long): WorkshopDetail =
+            parseCommunityHtmlDetail(get(buildDetailUrl(workshopId)), workshopId)
+
         private fun get(url: String): String {
             val request =
                 Request
@@ -668,7 +616,9 @@ class CommunityWorkshopRepository internal constructor(
                 if (!response.isSuccessful) {
                     throw IOException("Steam Workshop browse request failed: HTTP ${response.code}")
                 }
-                response.body.string()
+                response.body.byteStream().use { input ->
+                    input.readBytesBounded(MAX_COMMUNITY_HTML_BYTES).toString(Charsets.UTF_8)
+                }
             }
         }
 

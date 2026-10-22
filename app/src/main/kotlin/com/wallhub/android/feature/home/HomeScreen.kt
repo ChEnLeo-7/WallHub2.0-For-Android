@@ -936,48 +936,26 @@ internal fun HomeResults(
     LaunchedEffect(shouldAutoLoadMore, state.nextPage, state.paginationMode) {
         if (shouldAutoLoadMore) onLoadNextPage()
     }
-    val loadingIndicators = state.loadingIndicatorVisibility()
+    val showPullToRefresh = state.showPullToRefresh()
     val pullToRefreshState = rememberPullToRefreshState()
     PullToRefreshBox(
-        isRefreshing = loadingIndicators.showPullToRefresh,
+        isRefreshing = showPullToRefresh,
         onRefresh = onRetry,
         state = pullToRefreshState,
         indicator = {
-            if (!state.isSteamIpPrewarming) {
-                PullToRefreshDefaults.Indicator(
-                    state = pullToRefreshState,
-                    isRefreshing = loadingIndicators.showPullToRefresh,
-                    modifier =
-                        Modifier
-                            .align(Alignment.TopCenter)
-                            .size(48.dp),
-                )
-            }
+            PullToRefreshDefaults.Indicator(
+                state = pullToRefreshState,
+                isRefreshing = showPullToRefresh,
+                modifier =
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .size(48.dp),
+            )
         },
         modifier = modifier.fillMaxWidth(),
     ) {
         when {
-            state.isInitialLoading -> {
-                if (loadingIndicators.showSteamIpPrewarm) {
-                    Column(
-                        modifier =
-                            Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = WallHubSpacing.lg),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm, Alignment.CenterVertically),
-                    ) {
-                        CircularProgressIndicator()
-                        Text(
-                            text = stringResource(R.string.home_warming_steam_ip),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                } else {
-                    Box(modifier = Modifier.fillMaxSize())
-                }
-            }
+            state.isInitialLoading -> Box(modifier = Modifier.fillMaxSize())
 
             (state.error != null || state.errorRes != null) && state.items.isEmpty() -> {
                 WallHubEmptyState(

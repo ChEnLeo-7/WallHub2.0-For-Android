@@ -113,8 +113,6 @@ interface AppUpdateRepository {
 interface SteamAccessRepository {
     val state: StateFlow<SteamAccessState>
 
-    suspend fun prewarmSteamIp(dataSource: SteamWorkshopDataSource): Boolean = true
-
     fun refresh()
 }
 

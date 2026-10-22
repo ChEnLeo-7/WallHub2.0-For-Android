@@ -25,6 +25,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -145,6 +146,9 @@ fun FormalWallHubApp(
             SteamSessionRestoreBanner(
                 session = steamSession,
                 onRetry = onRetrySteamRestore,
+                onOpenSignIn = {
+                    navController.navigate(SteamLoginDestination) { launchSingleTop = true }
+                },
             )
             Box(modifier = Modifier.weight(1f)) {
                 WallHubAdaptiveNavigationLayout(
@@ -181,6 +185,7 @@ internal fun nextDiscoverRefreshRequest(
 private fun SteamSessionRestoreBanner(
     session: SteamSessionState,
     onRetry: () -> Unit,
+    onOpenSignIn: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val busy =
@@ -216,7 +221,16 @@ private fun SteamSessionRestoreBanner(
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    if (!busy) {
+                    if (shouldOpenSteamSignInFromRestoreBanner(session)) {
+                        TextButton(onClick = onOpenSignIn) {
+                            Text(
+                                stringResource(
+                                    if (busy) R.string.settings_action_view_sign_in_progress
+                                    else R.string.settings_action_sign_in_again_steam,
+                                ),
+                            )
+                        }
+                    } else if (!busy) {
                         IconButton(onClick = onRetry) {
                             Icon(
                                 imageVector = Icons.Outlined.Refresh,
@@ -232,11 +246,16 @@ private fun SteamSessionRestoreBanner(
     }
 }
 
+// Saved identity without a live transport (RESTORABLE), and recovery in progress, are not failures.
+// Keep attention states explicit so normal foreground recovery cannot become a global alarm.
 internal fun shouldShowSteamSessionRestoreBanner(session: SteamSessionState): Boolean =
-    session.hasStoredSession &&
-        session.phase != SteamSessionPhase.SIGNED_IN &&
-        session.phase != SteamSessionPhase.SIGNED_OUT &&
-        session.phase != SteamSessionPhase.SIGNING_IN
+    shouldOpenSteamSignInFromRestoreBanner(session) ||
+        (session.hasStoredSession && session.phase == SteamSessionPhase.FAILED)
+
+internal fun shouldOpenSteamSignInFromRestoreBanner(session: SteamSessionState): Boolean =
+    session.phase == SteamSessionPhase.EXPIRED ||
+        session.phase == SteamSessionPhase.WAITING_FOR_CODE ||
+        session.phase == SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION
 
 internal fun shouldReportExpiredPersistedSession(
     session: SteamSessionState,

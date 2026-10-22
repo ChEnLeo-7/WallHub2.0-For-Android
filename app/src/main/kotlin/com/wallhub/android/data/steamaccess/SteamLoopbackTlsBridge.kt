@@ -168,21 +168,9 @@ internal class SteamLoopbackTlsBridge
                 }
                 val plane = if (SteamDomainPolicy.isCmHost(host)) "cm" else "web"
                 Log.i(LOG_TAG, "SDK bridge plane=$plane mode=enhanced")
-                val route =
-                    if (plane == "web") {
-                        kotlinx.coroutines.runBlocking {
-                            accessManager.acceleratedOrWebCandidateRoute(host, request.port)
-                        }
-                    } else {
-                        runCatching { accessManager.acceleratedRoute(host, request.port) }.getOrElse {
-                            val prepared =
-                                kotlinx.coroutines.runBlocking {
-                                    accessManager.prewarmSteamEndpoint(host, request.port)
-                                }
-                            if (!prepared) throw it
-                            accessManager.acceleratedRoute(host, request.port)
-                        }
-                    }
+                val route = kotlinx.coroutines.runBlocking {
+                    accessManager.acceleratedOrWebCandidateRoute(host, request.port)
+                }
                 selectedRoute = route
                 val recordFailure: (InetAddress, Throwable) -> Unit = { address, error ->
                     accessManager.recordAcceleratedFailure(
@@ -206,32 +194,37 @@ internal class SteamLoopbackTlsBridge
                         noSniTlsDialer.connectWithSni(host, route.addresses, request.port, recordFailure)
                     }
                 upstreamSocket = upstream.socket
-                val committed =
-                    if (plane == "web") {
+                val committed = accessManager.commitAcceleratedRoute(
+                    route = route,
+                    commitTunnel = {
                         writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
-                        true
-                    } else {
-                        accessManager.commitAcceleratedRoute(
-                            route = route,
-                            hostname = host,
-                            port = request.port,
-                            address = upstream.address,
-                            elapsedMs = upstream.elapsedMs,
-                            commitTunnel = {
-                                writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
-                            },
-                        )
-                    }
+                    },
+                )
                 if (!committed) throw IOException("Steam route changed during upstream connection")
 
                 val securedClient =
                     privateCa.createServerSocket(clientSocket, host).apply {
-                        soTimeout = 0
+                        soTimeout = HEADER_TIMEOUT_MS
                         startHandshake()
+                        soTimeout = 0
                     }
                 securedClientSocket = securedClient
                 tunnelEstablished = true
-                relay(securedClient, upstream.socket)
+                val responseStatus = SteamResponseStatusObserver {
+                    upstream.socket.soTimeout = 0
+                    accessManager.recordResponse(route, host, upstream.address, upstream.elapsedMs)
+                }
+                upstream.socket.soTimeout = FIRST_RESPONSE_TIMEOUT_MS
+                relay(securedClient, upstream.socket,
+                    onUpstreamBytes = responseStatus::accept,
+                    onUpstreamEof = {
+                        if (responseStatus.receivedResponse) null else IOException("EOF before HTTP response")
+                    },
+                    onUpstreamReadFailure = { error ->
+                        accessManager.recordAcceleratedFailure(host, route.networkType, route.generation,
+                            request.port, upstream.address, error, phase = "response")
+                    },
+                )
             } catch (error: Throwable) {
                 Log.e(LOG_TAG, "Loopback TLS bridge failed", error)
                 val routeIsCurrent = selectedRoute?.let(accessManager::isRouteCurrent) != false
@@ -304,24 +297,26 @@ internal class SteamLoopbackTlsBridge
         private fun relay(
             client: Socket,
             upstream: Socket,
+            onUpstreamBytes: (ByteArray, Int) -> Unit = { _, _ -> },
+            onUpstreamReadFailure: (IOException) -> Unit = {},
+            onUpstreamEof: () -> IOException? = { null },
         ) {
-            val completion = ExecutorCompletionService<Unit>(executor)
-            val clientToUpstream =
-                completion.submit(
-                    Callable {
-                        client.getInputStream().copyTo(upstream.getOutputStream(), RELAY_BUFFER_BYTES)
-                        upstream.getOutputStream().flush()
-                    },
-                )
-            val upstreamToClient =
-                completion.submit(
-                    Callable {
-                        upstream.getInputStream().copyTo(client.getOutputStream(), RELAY_BUFFER_BYTES)
-                        client.getOutputStream().flush()
-                    },
-                )
+            val clientEnded = java.util.concurrent.atomic.AtomicBoolean(false)
+            val completion = ExecutorCompletionService<IOException?>(executor)
+            val clientToUpstream = completion.submit(Callable<IOException?> {
+                // Client EOF, cancellation and either write failure are not upstream route evidence.
+                try {
+                    forwardSteamBytes(client.getInputStream(), upstream.getOutputStream())
+                } finally { clientEnded.set(true) }
+                null
+            })
+            val upstreamToClient = completion.submit(Callable<IOException?> {
+                forwardSteamBytes(upstream.getInputStream(), client.getOutputStream(), onUpstreamBytes, onUpstreamEof)
+            })
             try {
-                completion.take().get()
+                // Only the first terminating direction can report failure. Closing the other socket
+                // below must never manufacture a route penalty for normal EOF or user cancellation.
+                completion.take().get()?.takeUnless { clientEnded.get() }?.let(onUpstreamReadFailure)
             } finally {
                 client.closeQuietly()
                 upstream.closeQuietly()
@@ -387,7 +382,7 @@ internal class SteamLoopbackTlsBridge
             const val DIRECT_RACE_DELAY_MS = 150L
             const val DIRECT_RACE_BUDGET_MS = 7_000L
             const val MAX_CDN_ADDRESSES = 4
-            const val RELAY_BUFFER_BYTES = 32 * 1024
+            const val FIRST_RESPONSE_TIMEOUT_MS = 20_000
             const val LOG_TAG = "WallHubSteamAccess"
             val HEADER_TERMINATOR = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte(), '\r'.code.toByte(), '\n'.code.toByte())
         }

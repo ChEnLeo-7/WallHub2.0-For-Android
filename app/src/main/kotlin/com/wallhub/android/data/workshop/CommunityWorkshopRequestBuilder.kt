@@ -22,16 +22,10 @@ import org.json.JSONObject
 import javax.inject.Singleton
 
 @Singleton
-internal fun buildDetailUrl(workshopId: Long): String =
-    Uri
-        .Builder()
-        .scheme("https")
-        .authority("steamcommunity.com")
-        .appendPath("sharedfiles")
-        .appendPath("filedetails")
-        .appendQueryParameter("id", workshopId.toString())
-        .build()
-        .toString()
+internal fun buildDetailUrl(workshopId: Long): String {
+    require(workshopId > 0L) { "Invalid Workshop item ID" }
+    return "https://steamcommunity.com/sharedfiles/filedetails/?id=$workshopId"
+}
 
 internal fun buildBrowseUrl(query: WorkshopBrowseQuery): String {
     val normalized = query.normalized()

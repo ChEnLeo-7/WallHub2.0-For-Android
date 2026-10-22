@@ -142,43 +142,6 @@ internal class NoSniTlsDialer internal constructor(
         }
     }
 
-    fun probe(
-        hostname: String,
-        address: InetAddress,
-        port: Int = HTTPS_PORT,
-    ): SteamProbeResult = probeAuthenticated(hostname, address, port, hideSni = true)
-
-    fun probeWithSni(
-        hostname: String,
-        address: InetAddress,
-        port: Int = HTTPS_PORT,
-    ): SteamProbeResult = probeAuthenticated(hostname, address, port, hideSni = false)
-
-    private fun probeAuthenticated(
-        hostname: String,
-        address: InetAddress,
-        port: Int,
-        hideSni: Boolean,
-    ): SteamProbeResult {
-        val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
-        val startedAt = System.nanoTime()
-        val successful =
-            runCatching {
-                authenticate(
-                    hostname = host,
-                    address = address,
-                    port = port,
-                    openedSockets = null,
-                    hideSni = hideSni,
-                ).socket.close()
-            }.isSuccess
-        return SteamProbeResult(
-            address = address,
-            successful = successful,
-            elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt),
-        )
-    }
-
     private fun authenticate(
         hostname: String,
         address: InetAddress,

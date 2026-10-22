@@ -449,7 +449,7 @@ internal object CommunityWorkshopParser {
         }
     }
 
-    private fun cleanHtml(value: String): String =
+    internal fun cleanHtml(value: String): String =
         decodeNumericEntities(
             value
                 .replace(Regex("""(?i)<br\s*/?>"""), "\n")

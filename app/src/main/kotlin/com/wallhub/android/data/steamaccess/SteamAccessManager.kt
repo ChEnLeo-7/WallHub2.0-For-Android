@@ -14,16 +14,12 @@ import com.wallhub.android.core.model.SteamAccessMode
 import com.wallhub.android.core.model.SteamAccessPhase
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamAccessState
-import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.enabledSteamAccessDohEndpoints
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,907 +27,302 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import okhttp3.Call
-import okhttp3.Connection
 import okhttp3.ConnectionPool
 import okhttp3.Dns
-import okhttp3.EventListener
 import okhttp3.OkHttpClient
-import okhttp3.Protocol
-import okhttp3.Response
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.Proxy
-import java.util.concurrent.Callable
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Resolves only actual requests (or an explicit diagnostic refresh), never lifecycle intent. */
 @Singleton
-class SteamAccessManager
-    @Inject
-    internal constructor(
-        @ApplicationContext private val context: Context,
-        settingsRepository: SettingsRepository,
-        private val diagnostics: DiagnosticRepository,
-        private val noSniTlsDialer: NoSniTlsDialer,
-    ) : Dns,
-        SteamAccessRepository {
-        internal data class AcceleratedRoute(
-            val networkType: String,
-            val generation: Long,
-            val port: Int,
-            val addresses: List<InetAddress>,
+class SteamAccessManager @Inject internal constructor(
+    @ApplicationContext private val context: Context,
+    settingsRepository: SettingsRepository,
+    private val diagnostics: DiagnosticRepository,
+) : Dns, SteamAccessRepository {
+    internal data class AcceleratedRoute(
+        val networkType: String,
+        val generation: Long,
+        val port: Int,
+        val addresses: List<InetAddress>,
+    )
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
+    private val routeStore = SteamAccessRouteStore(context)
+    private val candidates = SteamRequestRouteCache()
+    // Bounded single-flight stripes avoid serializing every unrelated hostname behind one DNS query.
+    private val resolutionLocks = Array(16) { Mutex() }
+    private val preferencesReady = CompletableDeferred<Unit>()
+    private val dohResolver = SteamAccessDohResolver(
+        OkHttpClient.Builder()
+            .dns(Dns.SYSTEM)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .connectTimeout(3, TimeUnit.SECONDS)
+            .readTimeout(3, TimeUnit.SECONDS)
+            .callTimeout(3, TimeUnit.SECONDS)
+            .build(),
+        Executors.newFixedThreadPool(6),
+    )
+    internal val connectionPool = ConnectionPool(12, 10, TimeUnit.MINUTES)
+    private val mutableState = MutableStateFlow(SteamAccessState())
+    override val state: StateFlow<SteamAccessState> = mutableState.asStateFlow()
+
+    @Volatile
+    private var preferences = AppPreferences()
+    @Volatile
+    private var preferencesInitialized = false
+    @Volatile
+    private var activeNetwork: Network? = connectivityManager.activeNetwork
+    @Volatile
+    private var networkType = detectNetworkType(activeNetwork)
+    @Volatile
+    private var lastEndpoint: Pair<String, Int>? = null
+
+    init {
+        connectivityManager.registerDefaultNetworkCallback(
+            object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) = networkChanged(network)
+
+                override fun onLost(network: Network) {
+                    if (activeNetwork == network) networkChanged(null)
+                }
+
+                override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                    if (network == activeNetwork) networkChanged(network)
+                }
+            },
         )
-
-        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        private val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
-        private val routeStore = SteamAccessRouteStore(context)
-        private val queryExecutor = Executors.newFixedThreadPool(6)
-        private val directProbeClient =
-            OkHttpClient
-                .Builder()
-                .dns(Dns.SYSTEM)
-                .followRedirects(false)
-                .followSslRedirects(false)
-                .connectTimeout(4, TimeUnit.SECONDS)
-                .readTimeout(5, TimeUnit.SECONDS)
-                .callTimeout(6, TimeUnit.SECONDS)
-                .build()
-        private val dohResolver = SteamAccessDohResolver(directProbeClient, queryExecutor)
-        private val directProbe = SteamAccessProbe(queryExecutor)
-        private val routeSnapshots = SteamRouteSnapshotCache()
-        private val refreshInFlight = ConcurrentHashMap.newKeySet<String>()
-        private val scheduledRefreshes = ConcurrentHashMap<String, Job>()
-        private val routeRefreshMutex = Mutex()
-        private val routeGeneration = AtomicLong()
-        private val routePrewarmTracker = SteamRoutePrewarmTracker()
-        private val preferencesReady = CompletableDeferred<Unit>()
-        private val mutableState = MutableStateFlow(SteamAccessState())
-
-        internal val connectionPool =
-            ConnectionPool(
-                MAX_IDLE_CONNECTIONS,
-                CONNECTION_KEEP_ALIVE_MINUTES,
-                TimeUnit.MINUTES,
-            )
-
-        @Volatile
-        private var preferences = AppPreferences()
-
-        @Volatile
-        private var parsedHosts: Map<String, List<InetAddress>> = emptyMap()
-
-        @Volatile
-        private var activeNetwork: Network? = connectivityManager.activeNetwork
-
-        @Volatile
-        private var networkType: String = detectNetworkType(activeNetwork)
-
-        private var preferencesInitialized = false
-
-        // Route discovery is background-only; ProxySelector reads published snapshots.
-        private val refreshQueue = SteamAccessRefreshQueue(scope, ::performRefresh)
-
-        override val state: StateFlow<SteamAccessState> = mutableState.asStateFlow()
-
-        init {
-            restorePersistedRoutes()
-            connectivityManager.registerDefaultNetworkCallback(
-                object : ConnectivityManager.NetworkCallback() {
-                    override fun onAvailable(network: Network) = handleDefaultNetwork(network)
-
-                    override fun onLost(network: Network) {
-                        if (activeNetwork == network) handleDefaultNetwork(null)
-                    }
-
-                    override fun onCapabilitiesChanged(
-                        network: Network,
-                        capabilities: NetworkCapabilities,
-                    ) {
-                        if (activeNetwork != network) {
-                            handleDefaultNetwork(network)
-                        } else {
-                            val nextType = detectNetworkType(capabilities)
-                            if (nextType != networkType) handleDefaultNetwork(network)
-                        }
-                    }
-                },
-            )
-            scope.launch {
-                settingsRepository.preferences.collectLatest { next ->
-                    val wasInitialized = preferencesInitialized
-                    val accessEnabledChanged =
-                        wasInitialized &&
-                            preferences.steamAccessEnabled != next.steamAccessEnabled
-                    val routeSettingsChanged =
-                        !wasInitialized ||
-                            accessEnabledChanged ||
-                            preferences.steamAccessMode != next.steamAccessMode ||
-                            preferences.steamAccessDohEndpoints != next.steamAccessDohEndpoints ||
-                            preferences.steamAccessDisabledDohEndpoints != next.steamAccessDisabledDohEndpoints ||
-                            preferences.steamAccessHosts != next.steamAccessHosts
+        scope.launch {
+            settingsRepository.preferences.collectLatest { next ->
+                synchronized(this@SteamAccessManager) {
+                    val changed = !preferencesInitialized ||
+                        preferences.steamAccessEnabled != next.steamAccessEnabled ||
+                        preferences.steamAccessMode != next.steamAccessMode ||
+                        preferences.steamAccessHosts != next.steamAccessHosts ||
+                        preferences.steamAccessDohEndpoints != next.steamAccessDohEndpoints ||
+                        preferences.steamAccessDisabledDohEndpoints != next.steamAccessDisabledDohEndpoints
                     preferences = next
                     preferencesInitialized = true
-                    parsedHosts = SteamHostsParser.parse(next.steamAccessHosts)
-                    if (routeSettingsChanged) {
-                        handleRouteSettingsChanged(accessEnabledChanged)
-                    }
-                    preferencesReady.complete(Unit)
+                    if (changed) invalidate()
                 }
+                preferencesReady.complete(Unit)
             }
-        }
-
-        private fun restorePersistedRoutes() {
-            val now = System.currentTimeMillis()
-            CORE_WARMUP_HOSTS.forEach { host ->
-                val candidates =
-                    routeStore
-                        .preferred(networkType, host, STEAM_HTTPS_PORT)
-                        .take(MAX_NO_SNI_PROBE_ADDRESSES)
-                if (candidates.isNotEmpty()) {
-                    routeSnapshots.publish(
-                        steamRouteCacheKey(networkType, host, STEAM_HTTPS_PORT),
-                        SteamCachedRoute(
-                            available = true,
-                            accelerated = true,
-                            addresses = candidates,
-                            freshUntil = 0L,
-                            staleUntil = now + BOOTSTRAP_ROUTE_STALE_MS,
-                        ),
-                    )
-                }
-            }
-        }
-
-        @Synchronized
-        private fun handleRouteSettingsChanged(accessEnabledChanged: Boolean) {
-            val generation = routeGeneration.incrementAndGet()
-            routePrewarmTracker.invalidate(generation)
-            routeSnapshots.markAllStale()
-            cancelScheduledRefreshes()
-            if (accessEnabledChanged) connectionPool.evictAll()
-            refresh()
-        }
-
-        override fun lookup(hostname: String): List<InetAddress> = systemEndpointLookup(hostname)
-
-        override suspend fun prewarmSteamIp(dataSource: SteamWorkshopDataSource): Boolean {
-            val host =
-                when (dataSource) {
-                    SteamWorkshopDataSource.COMMUNITY_HTML -> "steamcommunity.com"
-                    SteamWorkshopDataSource.WEB_API -> "api.steampowered.com"
-                    SteamWorkshopDataSource.CM_WEBSOCKET -> return true
-                }
-            return prewarmSteamEndpoint(host, STEAM_HTTPS_PORT)
-        }
-
-        internal fun enhancedConnectionEnabled(): Boolean =
-            preferencesInitialized && preferences.steamAccessEnabled
-
-        /**
-         * Resolves one authenticated SDK CDN endpoint through the same enhanced resolver policy.
-         * The caller still performs strict TLS and hostname validation; no token or URL enters this module.
-         */
-        internal suspend fun enhancedWebAddresses(
-            hostname: String,
-            port: Int,
-        ): List<InetAddress> {
-            val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
-            preferencesReady.await()
-            val systemAddresses = systemEndpointLookup(host)
-            if (!preferences.steamAccessEnabled) return systemAddresses
-            val resolved =
-                when (preferences.steamAccessMode) {
-                    SteamAccessMode.HOSTS -> parsedHosts[host].orEmpty()
-                    SteamAccessMode.SMART_DOH ->
-                        dohResolver.resolve(
-                            hostnames = listOf(host) + SteamAccessRoutes.aliases(host),
-                            endpoints = preferences.enabledSteamAccessDohEndpoints(),
-                            includeIpv6 = currentNetworkSupportsIpv6(),
-                        )
-                }
-            return buildList {
-                addAll(routeStore.preferred(networkType, host, port))
-                addAll(systemAddresses)
-                addAll(resolved)
-                addAll(SteamAccessRoutes.seeds(host))
-            }.filter(::isAuthenticatedCdnAddress)
-                .distinctBy(InetAddress::getHostAddress)
-                .take(MAX_ENHANCED_ROUTE_CANDIDATES)
-        }
-
-        internal suspend fun enhancedAddresses(hostname: String): List<InetAddress> {
-            val host = SteamDomainPolicy.requireAuthenticatedCdnEndpoint(hostname, STEAM_HTTPS_PORT)
-            preferencesReady.await()
-            val systemAddresses = systemEndpointLookup(host)
-            if (!preferences.steamAccessEnabled) return systemAddresses
-            val resolved =
-                when (preferences.steamAccessMode) {
-                    SteamAccessMode.HOSTS -> parsedHosts[host].orEmpty()
-                    SteamAccessMode.SMART_DOH ->
-                        dohResolver.resolve(
-                            hostnames = listOf(host),
-                            endpoints = preferences.enabledSteamAccessDohEndpoints(),
-                            includeIpv6 = currentNetworkSupportsIpv6(),
-                        )
-                }
-            // SteamPipe provider authorities are geo-steered: the active carrier's resolver commonly returns
-            // the certificate-compatible local edge, while a public DoH answer may point at another provider
-            // edge whose certificate does not cover this authority. Keep DoH as a bounded fallback rather than
-            // overriding the carrier-local answer; the SDK still performs end-to-end TLS verification.
-            return (systemAddresses + resolved)
-                .distinctBy(InetAddress::getHostAddress)
-                .take(MAX_NO_SNI_PROBE_ADDRESSES)
-        }
-
-        internal suspend fun prewarmSteamEndpoint(
-            hostname: String,
-            port: Int,
-        ): Boolean {
-            val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
-            preferencesReady.await()
-            val requiresEnhancedRoute = SteamDomainPolicy.accelerates(host) && preferences.steamAccessEnabled
-            if (!requiresEnhancedRoute && !isAcceleratedRouteExpected(host, port)) return true
-            while (true) {
-                if (!preferences.steamAccessEnabled) return true
-                val selectedNetworkType = networkType
-                val generation = routeGeneration.get()
-                val key = SteamRoutePrewarmKey(selectedNetworkType, generation, host, port)
-                val lookup = routeSnapshots.lookup(steamRouteCacheKey(selectedNetworkType, host, port))
-                val ready =
-                    if (requiresEnhancedRoute) {
-                        lookup.route?.accelerated == true
-                    } else {
-                        lookup.route?.available == true
-                    }
-                if (ready && !lookup.shouldRefresh) return true
-                val result =
-                    routePrewarmTracker.awaitCompletionOrInvalidation(key) {
-                        requestRouteRefresh(host, port)
-                    }
-                if (
-                    result != null &&
-                    routeGeneration.get() == generation &&
-                    networkType == selectedNetworkType
-                ) {
-                    return result
-                }
-            }
-        }
-
-        internal fun isAcceleratedRouteExpected(
-            hostname: String,
-            port: Int,
-        ): Boolean {
-            val host = hostname.lowercase().trimEnd('.')
-            if (!preferences.steamAccessEnabled || !SteamDomainPolicy.accelerates(host)) return false
-            if (!SteamDomainPolicy.supportsEndpoint(host, port)) return false
-            return routeSnapshots
-                .lookup(steamRouteCacheKey(networkType, host, port))
-                .route
-                ?.accelerated == true
-        }
-
-        internal fun shouldAccelerate(
-            hostname: String,
-            port: Int,
-        ): Boolean {
-            val host = hostname.lowercase().trimEnd('.')
-            if (!preferences.steamAccessEnabled || !SteamDomainPolicy.accelerates(host)) return false
-            if (!SteamDomainPolicy.supportsEndpoint(host, port)) return false
-            val lookup = routeSnapshots.lookup(steamRouteCacheKey(networkType, host, port))
-            if (lookup.shouldRefresh) requestRouteRefresh(host, port)
-            return lookup.route?.accelerated == true
-        }
-
-        internal suspend fun acceleratedOrWebCandidateRoute(
-            hostname: String,
-            port: Int,
-        ): AcceleratedRoute =
-            runCatching { acceleratedRoute(hostname, port) }.getOrElse {
-                val addresses = enhancedWebAddresses(hostname, port)
-                if (addresses.isEmpty()) throw IOException("No enhanced candidates for $hostname")
-                AcceleratedRoute(
-                    networkType = networkType,
-                    generation = routeGeneration.get(),
-                    port = port,
-                    addresses = addresses,
-                )
-            }
-
-        internal fun acceleratedRoute(
-            hostname: String,
-            port: Int,
-        ): AcceleratedRoute {
-            val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
-            val selectedNetworkType = networkType
-            val selectedGeneration = routeGeneration.get()
-            val lookup = routeSnapshots.lookup(steamRouteCacheKey(selectedNetworkType, host, port))
-            if (lookup.shouldRefresh) requestRouteRefresh(host, port)
-            val route = lookup.route
-            if (
-                route == null ||
-                !route.accelerated ||
-                route.addresses.isEmpty() ||
-                routeGeneration.get() != selectedGeneration ||
-                networkType != selectedNetworkType
-            ) {
-                throw IOException("No accelerated route for $host")
-            }
-            return AcceleratedRoute(
-                networkType = selectedNetworkType,
-                generation = selectedGeneration,
-                port = port,
-                addresses = route.addresses,
-            )
-        }
-
-        internal fun isRouteCurrent(route: AcceleratedRoute): Boolean =
-            routeGeneration.get() == route.generation && networkType == route.networkType
-
-        internal fun eventListener(): EventListener = SteamAccessEventListener()
-
-        @Synchronized
-        internal fun commitAcceleratedRoute(
-            route: AcceleratedRoute,
-            hostname: String,
-            port: Int,
-            address: InetAddress,
-            elapsedMs: Long,
-            commitTunnel: () -> Unit,
-        ): Boolean {
-            if (
-                routeGeneration.get() != route.generation ||
-                networkType != route.networkType ||
-                route.port != port
-            ) return false
-            commitTunnel()
-            val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
-            routeStore.recordSuccess(route.networkType, host, port, address, elapsedMs)
-            mutableState.value =
-                mutableState.value.copy(
-                    phase = SteamAccessPhase.READY,
-                    networkType = route.networkType,
-                    activeHost = host,
-                    selectedAddress = address.hostAddress,
-                    message = context.getString(R.string.backend_steam_access_accelerated_connected),
-                    updatedAt = System.currentTimeMillis(),
-                )
-            return true
-        }
-
-        internal fun recordAcceleratedFailure(
-            hostname: String,
-            selectedNetworkType: String,
-            generation: Long,
-            port: Int,
-            address: InetAddress,
-            error: Throwable,
-        ) {
-            if (routeGeneration.get() != generation || networkType != selectedNetworkType) return
-            val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
-            routeStore.recordFailure(selectedNetworkType, host, port, address)
-            val key = steamRouteCacheKey(selectedNetworkType, host, port)
-            if (routeSnapshots.removeAddress(key, address)) requestRouteRefresh(host, port)
-            recordDiagnostic(
-                level = DiagnosticLevel.WARNING,
-                message = "Steam no-SNI candidate failed",
-                attributes =
-                    mapOf(
-                        "host" to host,
-                        "address" to address.hostAddress.orEmpty(),
-                        "error" to error.javaClass.simpleName,
-                    ),
-            )
-        }
-
-        internal fun recordBridgeFailure(error: Throwable) {
-            mutableState.value =
-                mutableState.value.copy(
-                    phase = SteamAccessPhase.DEGRADED,
-                    message = context.getString(R.string.backend_steam_access_route_failed, error.javaClass.simpleName),
-                    updatedAt = System.currentTimeMillis(),
-                )
-            recordDiagnostic(
-                level = DiagnosticLevel.WARNING,
-                message = "Steam loopback bridge failed",
-                attributes = mapOf("error" to error.javaClass.simpleName),
-            )
-        }
-
-        override fun refresh() {
-            refreshQueue.request()
-        }
-
-        private fun performRefresh() {
-            runCatching {
-                routeSnapshots.markAllStale()
-                val settings = preferences
-                if (!settings.steamAccessEnabled) {
-                    mutableState.value = SteamAccessState(phase = SteamAccessPhase.DISABLED)
-                    return
-                }
-                mutableState.value =
-                    SteamAccessState(
-                        phase = SteamAccessPhase.RESOLVING,
-                        networkType = networkType,
-                        message = context.getString(R.string.backend_steam_access_checking_routes),
-                    )
-                CORE_WARMUP_HOSTS.forEach { host -> requestRouteRefresh(host, STEAM_HTTPS_PORT) }
-            }.onFailure { error ->
-                mutableState.value =
-                    mutableState.value.copy(
-                        phase = SteamAccessPhase.FAILED,
-                        message = context.getString(R.string.backend_steam_access_check_failed, error.javaClass.simpleName),
-                        updatedAt = System.currentTimeMillis(),
-                    )
-                recordDiagnostic(
-                    level = DiagnosticLevel.WARNING,
-                    message = "Steam route refresh failed",
-                    attributes = mapOf("error" to error.javaClass.simpleName),
-                )
-            }
-        }
-
-        private fun requestRouteRefresh(
-            hostname: String,
-            port: Int,
-        ) {
-            val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
-            if (!SteamDomainPolicy.accelerates(host)) return
-            val settings = preferences
-            if (!settings.steamAccessEnabled) return
-            val selectedNetworkType = networkType
-            val generation = routeGeneration.get()
-            val cacheKey = steamRouteCacheKey(selectedNetworkType, host, port)
-            val refreshKey = "$generation|$cacheKey"
-            if (!refreshInFlight.add(refreshKey)) return
-            val hostsSnapshot = parsedHosts
-            val fallbackAvailable = routeSnapshots.lookup(cacheKey).route?.available == true
-            scope.launch {
-                try {
-                    val route =
-                        routeRefreshMutex.withLock {
-                            if (routeGeneration.get() != generation || networkType != selectedNetworkType) {
-                                return@withLock null
-                            }
-                            buildRoute(
-                                hostname = host,
-                                port = port,
-                                selectedNetworkType = selectedNetworkType,
-                                settings = settings,
-                                hostsSnapshot = hostsSnapshot,
-                                generation = generation,
-                                fallbackAvailable = fallbackAvailable,
-                            )
-                        } ?: return@launch
-                    val selected =
-                        commitRouteRefresh(
-                            cacheKey = cacheKey,
-                            hostname = host,
-                            port = port,
-                            selectedNetworkType = selectedNetworkType,
-                            generation = generation,
-                            route = route,
-                        ) ?: return@launch
-                    val nextRefreshAt =
-                        if (selected == route) {
-                            route.freshUntil
-                        } else {
-                            System.currentTimeMillis() + FAILED_REFRESH_RETRY_MS
-                        }
-                    scheduleBackgroundRefresh(
-                        hostname = host,
-                        port = port,
-                        selectedNetworkType = selectedNetworkType,
-                        generation = generation,
-                        freshUntil = nextRefreshAt,
-                    )
-                } catch (error: Throwable) {
-                    completeFailedRouteRefresh(
-                        cacheKey = cacheKey,
-                        hostname = host,
-                        port = port,
-                        selectedNetworkType = selectedNetworkType,
-                        generation = generation,
-                    )
-                    recordDiagnostic(
-                        level = DiagnosticLevel.WARNING,
-                        message = "Steam route background refresh failed",
-                        attributes =
-                            mapOf(
-                                "host" to host,
-                                "error" to error.javaClass.simpleName,
-                            ),
-                    )
-                } finally {
-                    refreshInFlight.remove(refreshKey)
-                }
-            }
-        }
-
-        @Synchronized
-        private fun commitRouteRefresh(
-            cacheKey: String,
-            hostname: String,
-            port: Int,
-            selectedNetworkType: String,
-            generation: Long,
-            route: SteamCachedRoute,
-        ): SteamCachedRoute? {
-            if (routeGeneration.get() != generation || networkType != selectedNetworkType) return null
-            val selected = routeSnapshots.publishKeepingUsable(cacheKey, route)
-            routePrewarmTracker.complete(
-                SteamRoutePrewarmKey(selectedNetworkType, generation, hostname, port),
-                if (preferences.steamAccessEnabled && SteamDomainPolicy.accelerates(hostname)) {
-                    selected.accelerated
-                } else {
-                    selected.available
-                },
-            )
-            return selected
-        }
-
-        @Synchronized
-        private fun completeFailedRouteRefresh(
-            cacheKey: String,
-            hostname: String,
-            port: Int,
-            selectedNetworkType: String,
-            generation: Long,
-        ) {
-            if (routeGeneration.get() != generation || networkType != selectedNetworkType) return
-            val fallbackRoute = routeSnapshots.lookup(cacheKey).route
-            val fallbackAvailable =
-                if (preferences.steamAccessEnabled && SteamDomainPolicy.accelerates(hostname)) {
-                    fallbackRoute?.accelerated == true
-                } else {
-                    fallbackRoute?.available == true
-                }
-            routePrewarmTracker.complete(
-                SteamRoutePrewarmKey(selectedNetworkType, generation, hostname, port),
-                fallbackAvailable,
-            )
-        }
-
-        private fun scheduleBackgroundRefresh(
-            hostname: String,
-            port: Int,
-            selectedNetworkType: String,
-            generation: Long,
-            freshUntil: Long,
-        ) {
-            val cacheKey = steamRouteCacheKey(selectedNetworkType, hostname, port)
-            val job =
-                scope.launch(start = CoroutineStart.LAZY) {
-                    delay((freshUntil - System.currentTimeMillis()).coerceAtLeast(MIN_REFRESH_DELAY_MS))
-                    if (routeGeneration.get() == generation && preferences.steamAccessEnabled) {
-                        val lookup = routeSnapshots.lookup(cacheKey)
-                        if (lookup.shouldRefresh) requestRouteRefresh(hostname, port)
-                    }
-                }
-            scheduledRefreshes.put(cacheKey, job)?.cancel()
-            job.invokeOnCompletion { scheduledRefreshes.remove(cacheKey, job) }
-            job.start()
-        }
-
-        private fun cancelScheduledRefreshes() {
-            scheduledRefreshes.values.forEach { job -> job.cancel() }
-            scheduledRefreshes.clear()
-        }
-
-        private fun buildRoute(
-            hostname: String,
-            port: Int,
-            selectedNetworkType: String,
-            settings: AppPreferences,
-            hostsSnapshot: Map<String, List<InetAddress>>,
-            generation: Long,
-            fallbackAvailable: Boolean,
-        ): SteamCachedRoute {
-            val startedAt = System.currentTimeMillis()
-            mutableState.value =
-                mutableState.value.copy(
-                    phase = SteamAccessPhase.RESOLVING,
-                    networkType = selectedNetworkType,
-                    activeHost = hostname,
-                    message = context.getString(R.string.backend_steam_access_checking_host, hostname),
-                    updatedAt = startedAt,
-                )
-            val systemAddresses = systemEndpointLookup(hostname)
-            // A short CM probe cannot prove a long-lived authenticated channel: mainland mobile networks can
-            // complete TLS and then repeatedly close Steam CM after logon. When enhancement is enabled CM is
-            // therefore always routed through the authenticated bridge; Web/Community keep direct-first policy.
-            val directHealthy =
-                !SteamDomainPolicy.isCmHost(hostname) &&
-                    directProbe.rank(hostname, systemAddresses, port).any(SteamProbeResult::successful)
-            if (directHealthy) {
-                val now = System.currentTimeMillis()
-                val route =
-                    SteamCachedRoute(
-                        available = true,
-                        accelerated = false,
-                        addresses = emptyList(),
-                        freshUntil = now + DIRECT_ROUTE_FRESH_MS,
-                        staleUntil = now + DIRECT_ROUTE_STALE_MS,
-                    )
-                if (routeGeneration.get() == generation) {
-                    mutableState.value =
-                        mutableState.value.copy(
-                            phase = SteamAccessPhase.READY,
-                            networkType = selectedNetworkType,
-                            activeHost = hostname,
-                            selectedAddress = systemAddresses.firstOrNull()?.hostAddress,
-                            candidateCount = systemAddresses.size,
-                            message = context.getString(R.string.backend_steam_access_direct_ready),
-                            updatedAt = System.currentTimeMillis(),
-                        )
-                }
-                return route
-            }
-
-            val resolvedAddresses =
-                when (settings.steamAccessMode) {
-                    SteamAccessMode.HOSTS -> hostsSnapshot[hostname].orEmpty()
-                    SteamAccessMode.SMART_DOH ->
-                        dohResolver.resolve(
-                            hostnames = listOf(hostname) + SteamAccessRoutes.aliases(hostname),
-                            endpoints = settings.enabledSteamAccessDohEndpoints(),
-                            includeIpv6 = currentNetworkSupportsIpv6(),
-                        )
-                }
-            val coolingDown = routeStore.coolingDownAddresses(selectedNetworkType, hostname, port)
-            val candidates =
-                buildList {
-                    if (SteamDomainPolicy.isCmHost(hostname)) {
-                        addAll(routeStore.preferred(selectedNetworkType, hostname, port))
-                        addAll(resolvedAddresses)
-                        addAll(systemAddresses)
-                    } else {
-                        // Akamai/Steam Web routes are carrier-local. Prefer the mobile carrier's currently
-                        // reachable edge; DoH and remembered routes remain bounded fallbacks.
-                        addAll(systemAddresses)
-                        addAll(routeStore.preferred(selectedNetworkType, hostname, port))
-                        addAll(resolvedAddresses)
-                    }
-                    addAll(SteamAccessRoutes.seeds(hostname))
-                }.distinctBy(InetAddress::getHostAddress)
-                    .filterNot { address ->
-                        address.hostAddress.orEmpty() in coolingDown &&
-                            (SteamDomainPolicy.isCmHost(hostname) || address !in systemAddresses)
-                    }.take(MAX_ENHANCED_ROUTE_CANDIDATES)
-            val probeResults =
-                if (SteamDomainPolicy.isCmHost(hostname)) {
-                    // CM route validity is established by the bridge's real authority-preserving TLS handshake.
-                    // A separate probe is both redundant and observably less reliable on mobile networks; the
-                    // selected candidates remain bounded and every failed real connect feeds route health back.
-                    candidates.map { address -> SteamProbeResult(address, true, 0L) }
-                } else {
-                    val tasks =
-                        candidates.map { address ->
-                            Callable {
-                                noSniTlsDialer
-                                    .probe(hostname, address, port)
-                                    .takeIf(SteamProbeResult::successful)
-                                    ?: noSniTlsDialer.probeWithSni(hostname, address, port)
-                            }
-                        }
-                    if (tasks.isEmpty()) {
-                        emptyList()
-                    } else {
-                        queryExecutor
-                            .invokeAll(tasks, NO_SNI_PROBE_BUDGET_MS, TimeUnit.MILLISECONDS)
-                            .mapIndexed { index, future ->
-                                runCatching { future.get() }.getOrElse {
-                                    SteamProbeResult(candidates[index], false, NO_SNI_PROBE_BUDGET_MS)
-                                }
-                            }.sortedWith(compareByDescending<SteamProbeResult> { it.successful }.thenBy { it.elapsedMs })
-                    }
-                }
-            probeResults.forEach { result ->
-                if (result.successful) {
-                    routeStore.recordSuccess(selectedNetworkType, hostname, port, result.address, result.elapsedMs)
-                } else {
-                    routeStore.recordFailure(selectedNetworkType, hostname, port, result.address)
-                }
-            }
-            val successfulAddresses = probeResults.filter(SteamProbeResult::successful).map(SteamProbeResult::address)
-            val accelerated = successfulAddresses.isNotEmpty()
-            val now = System.currentTimeMillis()
-            val route =
-                SteamCachedRoute(
-                    available = accelerated,
-                    accelerated = accelerated,
-                    addresses = successfulAddresses,
-                    freshUntil = now + if (accelerated) ACCELERATED_ROUTE_FRESH_MS else FAILED_ROUTE_TTL_MS,
-                    staleUntil = now + if (accelerated) ACCELERATED_ROUTE_STALE_MS else FAILED_ROUTE_TTL_MS,
-                )
-            if (routeGeneration.get() == generation) {
-                mutableState.value =
-                    mutableState.value.copy(
-                        phase =
-                            when {
-                                accelerated -> SteamAccessPhase.READY
-                                fallbackAvailable -> SteamAccessPhase.DEGRADED
-                                else -> SteamAccessPhase.FAILED
-                            },
-                        networkType = selectedNetworkType,
-                        activeHost = hostname,
-                        selectedAddress = successfulAddresses.firstOrNull()?.hostAddress,
-                        candidateCount = successfulAddresses.size,
-                        message =
-                            when {
-                                accelerated -> context.getString(R.string.backend_steam_access_accelerated_selected)
-                                fallbackAvailable -> context.getString(R.string.backend_steam_access_using_recent_route)
-                                else -> context.getString(R.string.backend_steam_access_unavailable)
-                            },
-                        updatedAt = System.currentTimeMillis(),
-                    )
-            }
-            recordDiagnostic(
-                level = if (accelerated) DiagnosticLevel.INFO else DiagnosticLevel.WARNING,
-                message = if (accelerated) "Steam no-SNI route selected" else "Steam routes unavailable",
-                attributes =
-                    mapOf(
-                        "host" to hostname,
-                        "candidateCount" to successfulAddresses.size.toString(),
-                    ),
-            )
-            return route
-        }
-
-        @Synchronized
-        private fun handleDefaultNetwork(nextNetwork: Network?) {
-            val nextType = detectNetworkType(nextNetwork)
-            if (activeNetwork == nextNetwork && networkType == nextType) return
-            activeNetwork = nextNetwork
-            networkType = nextType
-            val generation = routeGeneration.incrementAndGet()
-            routePrewarmTracker.invalidate(generation)
-            routeSnapshots.clear()
-            cancelScheduledRefreshes()
-            connectionPool.evictAll()
-            refresh()
-        }
-
-        private fun detectNetworkType(network: Network?): String {
-            if (network == null) return "offline"
-            val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return "unknown"
-            return detectNetworkType(capabilities)
-        }
-
-        private fun detectNetworkType(capabilities: NetworkCapabilities): String =
-            when {
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "vpn"
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
-                else -> "other"
-            }
-
-        private fun currentNetworkSupportsIpv6(): Boolean {
-            val network = connectivityManager.activeNetwork ?: return false
-            return connectivityManager
-                .getLinkProperties(network)
-                ?.linkAddresses
-                ?.any { linkAddress -> linkAddress.address.address.size == 16 }
-                ?: false
-        }
-
-        private fun systemEndpointLookup(hostname: String): List<InetAddress> {
-            val addresses = runCatching { Dns.SYSTEM.lookup(hostname) }.getOrDefault(emptyList())
-            return if (SteamDomainPolicy.isCmHost(hostname)) preferIpv4Addresses(addresses) else addresses
-        }
-
-        private inner class SteamAccessEventListener : EventListener() {
-            private var connectedAddress: InetAddress? = null
-
-            override fun connectionAcquired(
-                call: Call,
-                connection: Connection,
-            ) {
-                connectedAddress = connection.route().socketAddress.address
-            }
-
-            override fun connectEnd(
-                call: Call,
-                inetSocketAddress: InetSocketAddress,
-                proxy: Proxy,
-                protocol: Protocol?,
-            ) {
-                connectedAddress = inetSocketAddress.address
-            }
-
-            override fun responseHeadersEnd(
-                call: Call,
-                response: Response,
-            ) {
-                val host = response.request.url.host
-                if (!preferences.steamAccessEnabled || !SteamDomainPolicy.accelerates(host)) return
-                val address = connectedAddress ?: return
-                if (address.isLoopbackAddress) return
-                mutableState.value =
-                    mutableState.value.copy(
-                        phase = SteamAccessPhase.READY,
-                        networkType = networkType,
-                        activeHost = host,
-                        selectedAddress = address.hostAddress,
-                        message = context.getString(R.string.backend_steam_access_direct_ready),
-                        updatedAt = System.currentTimeMillis(),
-                    )
-            }
-
-            override fun connectFailed(
-                call: Call,
-                inetSocketAddress: InetSocketAddress,
-                proxy: Proxy,
-                protocol: Protocol?,
-                ioe: IOException,
-            ) {
-                val host = call.request().url.host
-                val port = call.request().url.port
-                if (!SteamDomainPolicy.supportsEndpoint(host, port)) return
-                if (!SteamDomainPolicy.accelerates(host)) return
-                if (!preferences.steamAccessEnabled) return
-                val cacheKey = steamRouteCacheKey(networkType, host, port)
-                routeSnapshots.remove(cacheKey)
-                requestRouteRefresh(host, port)
-                mutableState.value =
-                    mutableState.value.copy(
-                        phase = SteamAccessPhase.DEGRADED,
-                        activeHost = host,
-                        message = context.getString(R.string.backend_steam_access_direct_degraded),
-                        updatedAt = System.currentTimeMillis(),
-                    )
-            }
-        }
-
-        private fun recordDiagnostic(
-            level: DiagnosticLevel,
-            message: String,
-            attributes: Map<String, String>,
-        ) {
-            scope.launch {
-                diagnostics.record(
-                    DiagnosticEvent(
-                        source = "steam-access",
-                        level = level,
-                        message = message,
-                        attributes = attributes,
-                    ),
-                )
-            }
-        }
-
-        private companion object {
-            val CORE_WARMUP_HOSTS =
-                listOf(
-                    "steamcommunity.com",
-                    "api.steampowered.com",
-                    "community.steam-api.com",
-                )
-            const val DIRECT_ROUTE_FRESH_MS = 5 * 60_000L
-            const val DIRECT_ROUTE_STALE_MS = 30 * 60_000L
-            const val ACCELERATED_ROUTE_FRESH_MS = 10 * 60_000L
-            const val ACCELERATED_ROUTE_STALE_MS = 2 * 60 * 60_000L
-            const val FAILED_ROUTE_TTL_MS = 60_000L
-            const val BOOTSTRAP_ROUTE_STALE_MS = 5 * 60_000L
-            const val MAX_IDLE_CONNECTIONS = 12
-            const val CONNECTION_KEEP_ALIVE_MINUTES = 10L
-            const val MIN_REFRESH_DELAY_MS = 30_000L
-            const val FAILED_REFRESH_RETRY_MS = 60_000L
-            const val MAX_NO_SNI_PROBE_ADDRESSES = 4
-            /** Preserve room for built-in Akamai seeds after system, history, and DoH candidates. */
-            const val MAX_ENHANCED_ROUTE_CANDIDATES = 8
-            const val NO_SNI_PROBE_BUDGET_MS = 6_000L
         }
     }
+
+    internal fun enhancedConnectionEnabled(): Boolean = preferencesInitialized && preferences.steamAccessEnabled
+
+    override fun lookup(hostname: String): List<InetAddress> = Dns.SYSTEM.lookup(hostname)
+
+    internal suspend fun acceleratedOrWebCandidateRoute(hostname: String, port: Int): AcceleratedRoute {
+        val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
+        lastEndpoint = host to port
+        return resolve(host, port, web = true)
+    }
+
+    internal suspend fun enhancedWebAddresses(hostname: String, port: Int): List<InetAddress> =
+        acceleratedOrWebCandidateRoute(hostname, port).addresses
+
+    internal suspend fun enhancedAddresses(hostname: String): List<InetAddress> {
+        val host = SteamDomainPolicy.requireAuthenticatedCdnEndpoint(hostname, STEAM_HTTPS_PORT)
+        return resolve(host, STEAM_HTTPS_PORT, web = false).addresses
+    }
+
+    private suspend fun resolve(host: String, port: Int, web: Boolean): AcceleratedRoute {
+        preferencesReady.await()
+        val lock = resolutionLocks[(host.hashCode() and Int.MAX_VALUE) % resolutionLocks.size]
+        return lock.withLock {
+            val generation: Long
+            val selectedNetwork: String
+            val settings: AppPreferences
+            synchronized(this) {
+                generation = candidates.generation
+                selectedNetwork = networkType
+                settings = preferences
+            }
+            val key = steamRouteCacheKey(selectedNetwork, host, port)
+            candidates.get(key, generation)?.let {
+                return@withLock AcceleratedRoute(selectedNetwork, generation, port, it)
+            }
+            val system = runCatching { Dns.SYSTEM.lookup(host) }.getOrDefault(emptyList())
+            val resolved = if (!settings.steamAccessEnabled) {
+                emptyList()
+            } else {
+                when (settings.steamAccessMode) {
+                    SteamAccessMode.HOSTS -> SteamHostsParser.parse(settings.steamAccessHosts)[host].orEmpty()
+                    SteamAccessMode.SMART_DOH -> dohResolver.resolve(
+                        listOf(host) + if (web) SteamAccessRoutes.aliases(host) else emptyList(),
+                        settings.enabledSteamAccessDohEndpoints(),
+                        currentNetworkSupportsIpv6(),
+                    )
+                }
+            }
+            val cooling = routeStore.coolingDownAddresses(selectedNetwork, host, port)
+            // History ranks only currently resolved addresses; old built-in seeds cannot survive via persistence.
+            val preferred = routeStore.preferred(selectedNetwork, host, port).mapNotNull { it.hostAddress }.toSet()
+            val allAddresses = if (SteamDomainPolicy.isCmHost(host)) {
+                preferIpv4Addresses(system + resolved)
+            } else {
+                system + resolved
+            }
+            val addresses = selectSteamCandidates(allAddresses, emptyList(), preferred, cooling)
+            if (!candidates.put(key, generation, addresses)) {
+                throw IOException("Steam route changed during resolution")
+            }
+            if (addresses.isEmpty()) throw IOException("No enhanced candidates for $host")
+            AcceleratedRoute(selectedNetwork, generation, port, addresses)
+        }
+    }
+
+    internal fun isRouteCurrent(route: AcceleratedRoute): Boolean =
+        candidates.generation == route.generation && networkType == route.networkType
+
+    @Synchronized
+    internal fun commitAcceleratedRoute(
+        route: AcceleratedRoute,
+        commitTunnel: () -> Unit,
+    ): Boolean {
+        if (!isRouteCurrent(route)) return false
+        commitTunnel()
+        return true // TLS success is not evidence that the HTTP response worked.
+    }
+
+    @Synchronized
+    internal fun recordResponse(
+        route: AcceleratedRoute,
+        hostname: String,
+        address: InetAddress,
+        elapsedMs: Long,
+    ) {
+        if (!isRouteCurrent(route)) return
+        routeStore.recordSuccess(route.networkType, hostname, route.port, address, elapsedMs)
+        mutableState.value = mutableState.value.copy(
+            phase = SteamAccessPhase.READY,
+            networkType = route.networkType,
+            activeHost = hostname,
+            selectedAddress = address.hostAddress,
+            candidateCount = route.addresses.size,
+            message = context.getString(R.string.backend_steam_access_accelerated_connected),
+            updatedAt = System.currentTimeMillis(),
+        )
+    }
+
+    @Synchronized
+    internal fun recordAcceleratedFailure(
+        hostname: String,
+        selectedNetworkType: String,
+        generation: Long,
+        port: Int,
+        address: InetAddress,
+        error: Throwable,
+        phase: String = "connect",
+    ) {
+        if (candidates.generation != generation || networkType != selectedNetworkType) return
+        routeStore.recordFailure(selectedNetworkType, hostname, port, address)
+        candidates.removeAddress(steamRouteCacheKey(selectedNetworkType, hostname, port), generation, address)
+        recordDiagnostic(
+            "Steam upstream failed",
+            mapOf(
+                "host" to hostname,
+                "address" to address.hostAddress.orEmpty(),
+                "phase" to phase,
+                "error" to error.javaClass.simpleName,
+            ),
+        )
+    }
+
+    internal fun recordBridgeFailure(error: Throwable) {
+        mutableState.value = mutableState.value.copy(
+            phase = SteamAccessPhase.DEGRADED,
+            message = context.getString(R.string.backend_steam_access_route_failed, error.javaClass.simpleName),
+            updatedAt = System.currentTimeMillis(),
+        )
+        recordDiagnostic("Steam loopback bridge failed", mapOf("error" to error.javaClass.simpleName))
+    }
+
+    /** Explicit UI action: discard stale state and resolve the last requested endpoint, not guessed hosts. */
+    override fun refresh() {
+        synchronized(this) { invalidate() }
+        val endpoint = lastEndpoint ?: return
+        scope.launch {
+            preferencesReady.await()
+            if (!preferences.steamAccessEnabled) return@launch
+            val generation = candidates.generation
+            try {
+                val route = acceleratedOrWebCandidateRoute(endpoint.first, endpoint.second)
+                synchronized(this@SteamAccessManager) {
+                    if (isRouteCurrent(route)) {
+                        mutableState.value = mutableState.value.copy(
+                            phase = SteamAccessPhase.READY,
+                            activeHost = endpoint.first,
+                            candidateCount = route.addresses.size,
+                            updatedAt = System.currentTimeMillis(),
+                        )
+                    }
+                }
+            } catch (error: IOException) {
+                synchronized(this@SteamAccessManager) {
+                    if (candidates.generation == generation) recordBridgeFailure(error)
+                }
+            }
+        }
+    }
+
+    @Synchronized
+    private fun invalidate() {
+        candidates.invalidate()
+        connectionPool.evictAll()
+        // READY here means enabled, not a measured successful route: no selected address or connected message.
+        mutableState.value = SteamAccessState(
+            phase = if (preferences.steamAccessEnabled) SteamAccessPhase.READY else SteamAccessPhase.DISABLED,
+        )
+    }
+
+    @Synchronized
+    private fun networkChanged(network: Network?) {
+        val type = detectNetworkType(network)
+        if (network == activeNetwork && type == networkType) return
+        activeNetwork = network
+        networkType = type
+        invalidate()
+    }
+
+    private fun detectNetworkType(network: Network?): String {
+        if (network == null) return "offline"
+        val caps = connectivityManager.getNetworkCapabilities(network) ?: return "unknown"
+        return when {
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "vpn"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+            else -> "other"
+        }
+    }
+
+    private fun currentNetworkSupportsIpv6(): Boolean = activeNetwork?.let {
+        connectivityManager.getLinkProperties(it)?.linkAddresses?.any { link -> link.address.address.size == 16 }
+    } == true
+
+    private fun recordDiagnostic(message: String, attributes: Map<String, String>) {
+        scope.launch {
+            diagnostics.record(
+                DiagnosticEvent(
+                    source = "steam-access",
+                    level = DiagnosticLevel.WARNING,
+                    message = message,
+                    attributes = attributes,
+                ),
+            )
+        }
+    }
+}
 
 internal fun preferIpv4Addresses(addresses: List<InetAddress>): List<InetAddress> {
     val ipv4 = addresses.filterIsInstance<Inet4Address>()

@@ -8,7 +8,6 @@ import androidx.compose.runtime.Immutable
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.DEFAULT_HOME_PAGE_SIZE
-import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.WorkshopFilterCatalog
 import com.wallhub.android.core.model.WorkshopRating
@@ -152,7 +151,6 @@ data class HomeUiState(
     val hasNextPage: Boolean = false,
     val totalCount: Int? = null,
     val isInitialLoading: Boolean = true,
-    val isSteamIpPrewarming: Boolean = false,
     val isLoadingMore: Boolean = false,
     val isPageLoading: Boolean = false,
     val error: String? = null,
@@ -259,16 +257,7 @@ sealed interface HomeEffect {
     ) : HomeEffect
 }
 
-internal data class HomeLoadingIndicatorVisibility(
-    val showPullToRefresh: Boolean,
-    val showSteamIpPrewarm: Boolean,
-)
-
-internal fun HomeUiState.loadingIndicatorVisibility(): HomeLoadingIndicatorVisibility =
-    HomeLoadingIndicatorVisibility(
-        showPullToRefresh = (isInitialLoading || isPageLoading) && !isSteamIpPrewarming,
-        showSteamIpPrewarm = isInitialLoading && isSteamIpPrewarming,
-    )
+internal fun HomeUiState.showPullToRefresh(): Boolean = isInitialLoading || isPageLoading
 
 internal fun String.creatorIdOrNull(): String? {
     val query = trim()
@@ -344,29 +333,3 @@ internal fun initialHomeUiState(
         ?.let { HomeUiState().asTagSearchState(it) }
         ?: HomeUiState()
 }
-
-internal fun shouldPrewarmSteamIp(
-    steamAccessEnabled: Boolean,
-    dataSource: SteamWorkshopDataSource,
-    append: Boolean,
-    hasItems: Boolean,
-): Boolean =
-    steamAccessEnabled &&
-        !append &&
-        !hasItems &&
-        dataSource != SteamWorkshopDataSource.CM_WEBSOCKET
-
-internal suspend fun requireSteamIpPrewarm(
-    shouldPrewarm: Boolean,
-    dataSource: SteamWorkshopDataSource,
-    steamAccessRepository: SteamAccessRepository,
-    @StringRes failureMessageRes: Int,
-) {
-    if (shouldPrewarm && !steamAccessRepository.prewarmSteamIp(dataSource)) {
-        throw HomeResourceMessageException(failureMessageRes)
-    }
-}
-
-internal class HomeResourceMessageException(
-    @StringRes val messageRes: Int,
-) : IllegalStateException()
