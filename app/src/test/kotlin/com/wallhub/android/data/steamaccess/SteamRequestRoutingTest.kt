@@ -49,6 +49,19 @@ class SteamRequestRoutingTest {
         assertTrue(selectSteamCandidates(listOf(InetAddress.getLoopbackAddress()), emptyList(), emptySet(), emptySet()).isEmpty())
     }
 
+    @Test
+    fun `candidate selection preserves success ranking and cooldown stays short`() {
+        val first = InetAddress.getByName("8.8.8.8")
+        val second = InetAddress.getByName("1.1.1.1")
+        assertEquals(
+            listOf(second, first),
+            selectSteamCandidates(listOf(first, second), emptyList(), linkedSetOf("1.1.1.1", "8.8.8.8"), emptySet()),
+        )
+        assertEquals(10_000L, SteamAccessRouteStore.failureCooldown(1))
+        assertEquals(30_000L, SteamAccessRouteStore.failureCooldown(2))
+        assertEquals(60_000L, SteamAccessRouteStore.failureCooldown(100))
+    }
+
     @Test fun `relay flushes each chunk before waiting for more input`() {
         val destination = ByteArrayOutputStream()
         var reads = 0

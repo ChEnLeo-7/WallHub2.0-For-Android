@@ -67,6 +67,6 @@ internal fun selectSteamCandidates(
 ): List<InetAddress> = (system + resolved)
     .filter(::isAuthenticatedCdnAddress)
     .distinctBy(InetAddress::getHostAddress)
-    .filterNot { it.hostAddress in cooling }
-    .sortedBy { it.hostAddress !in preferred }
+    .filterNot { it.hostAddress.orEmpty() in cooling }
+    .sortedBy { preferred.indexOf(it.hostAddress.orEmpty()).takeIf { rank -> rank >= 0 } ?: Int.MAX_VALUE }
     .take(4)

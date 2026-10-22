@@ -62,7 +62,7 @@ internal fun parseCommunityHtmlBrowse(html: String, query: WorkshopBrowseQuery):
     val items = CommunityWorkshopParser.parseDetails(
         JSONObject().put("response", JSONObject().put("publishedfiledetails", adaptedRows)).toString(),
     ).map { it.summary }.map { summary ->
-        names[summary.creatorId]?.let { name ->
+        summary.creatorId?.let(names::get)?.let { name ->
             summary.copy(author = name, authorPlaceholder = WorkshopAuthorPlaceholder.NONE)
         } ?: summary
     }.filter { query.matchesSteamWallpaper(it) }.take(query.communityBrowsePageSize())

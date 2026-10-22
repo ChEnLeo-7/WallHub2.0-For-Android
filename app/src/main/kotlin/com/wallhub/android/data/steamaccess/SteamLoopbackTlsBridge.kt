@@ -182,16 +182,23 @@ internal class SteamLoopbackTlsBridge
                         error = error,
                     )
                 }
+                // Hidden-SNI failure alone is not address failure: this edge may require SNI.
+                // Only failures observed again in the original-SNI pass enter route cooldown.
+                val hiddenSniFailures = mutableSetOf<InetAddress>()
                 val upstream =
                     runCatching {
-                        noSniTlsDialer.connect(host, route.addresses, request.port, recordFailure)
+                        noSniTlsDialer.connect(host, route.addresses, request.port) { address, _ ->
+                            hiddenSniFailures += address
+                        }
                     }.getOrElse { noSniFailure ->
                         Log.i(
                             LOG_TAG,
                             "SDK bridge plane=$plane upstream_sni=original_fallback " +
                                 "failure=${sanitizedFailure(noSniFailure)}",
                         )
-                        noSniTlsDialer.connectWithSni(host, route.addresses, request.port, recordFailure)
+                        noSniTlsDialer.connectWithSni(host, route.addresses, request.port) { address, error ->
+                            if (address in hiddenSniFailures) recordFailure(address, error)
+                        }
                     }
                 upstreamSocket = upstream.socket
                 val committed = accessManager.commitAcceleratedRoute(

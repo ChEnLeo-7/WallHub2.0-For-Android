@@ -20,7 +20,7 @@ internal class SteamAccessRouteStore(
         return buildList {
             repeat(array.length()) { index ->
                 val record = array.optJSONObject(index) ?: return@repeat
-                if (record.optLong("cooldownUntil") > now) return@repeat
+                if (record.optLong("cooldownUntil") > now || record.optLong("lastSuccessAt") <= 0L) return@repeat
                 val address =
                     runCatching { InetAddress.getByName(record.optString("ip")) }.getOrNull()
                         ?: return@repeat
@@ -132,9 +132,9 @@ internal class SteamAccessRouteStore(
 
         internal fun failureCooldown(consecutiveFailures: Int): Long =
             when {
-                consecutiveFailures >= 3 -> 30 * 60_000L
-                consecutiveFailures == 2 -> 10 * 60_000L
-                else -> 3 * 60_000L
+                consecutiveFailures >= 3 -> 60_000L
+                consecutiveFailures == 2 -> 30_000L
+                else -> 10_000L
             }
 
         internal fun score(
