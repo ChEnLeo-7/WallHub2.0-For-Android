@@ -1,5 +1,11 @@
 # Development Log
 
+## 2026-10-22 — SAF document deletion uses the document contract
+
+Local deletion previously evaluated `ContentResolver.delete(documentUri) || DocumentFile.delete()`. ColorOS `DocumentsProvider.delete` throws `UnsupportedOperationException` for the ordinary ContentProvider CRUD route, so short-circuit fallback was never reached. Deletion now classifies each URI once: `file://` uses `File.delete`, SAF document URIs use `DocumentFile.delete`/the document contract directly, and ordinary MediaStore/content URIs use `ContentResolver.delete`. The ViewModel now surfaces the Repository's concrete failure message instead of discarding it for a generic error.
+
+LAN-Windows build `20261022T073815Z-2333720883` from commit `95860f9` passed. The narrow `LocalWallpaperDeleteStrategyTest` ran on the Windows worker: 3 tests, 0 failures/errors/skips in 0.031 seconds, including proof that the document branch never calls an unsupported content deletion; reports/temp output were removed and the Gradle daemon stopped. On the remote device, a 16-byte valid `wallhub-delete-probe.mpkg` was indexed and scanned beside the two real packages. The pre-fix UI delete left it present and logged `UnsupportedOperationException: Delete not supported`; the final APK removed it through the same UI flow, refreshed it out of the list, emitted no provider exception, and left both real MPKG files byte-sized and present.
+
 ## 2026-10-22 — Setup-owned Workshop save-directory authorization
 
 The initial setup wizard now contains a dedicated **保存位置 / Save location** step between network and Steam. Its default is `Download/WallHub`; on Android 10+ pressing Next without an existing directory grant launches `OpenDocumentTree` at `primary:Download/WallHub` and requires a persisted read/write SAF grant before continuing. The selected tree is saved through the same `SettingsRepository.setOutputDirectory` interface used by **Settings → Downloads**, so download export and local-wallpaper scanning share one stable directory and users can change or restore it later. Android 9 and earlier retain the manifest-scoped `WRITE_EXTERNAL_STORAGE` request; modern Android deliberately does not request ineffective `READ_EXTERNAL_STORAGE`, media-only permissions that exclude MPKG, or high-risk all-files access.
