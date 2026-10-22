@@ -343,7 +343,7 @@ class FormalTaskDatabaseMigrationTest {
                 )
                 assertEquals(1, dao.deleteTerminalWithCommands("task"))
                 assertEquals(null, dao.find("task"))
-                assertTrue(database.downloadCommandDao().pending(10).isEmpty())
+                assertTrue(database.downloadCommandDao().pendingTaskIds(10).isEmpty())
             }
         } finally {
             database.close()

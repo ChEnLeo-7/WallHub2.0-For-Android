@@ -1,5 +1,13 @@
 # Development Log
 
+## 2026-10-23 — Controlled HTTP vote authentication probe (partial live success)
+
+A debug-only Hilt entry point and explicitly selected instrumentation test reused the existing app account owner. No host-side credential getter, browser-cookie import, vote mutation, or second login was added. SDK source 3524e35's default-off probe feature exchanged an operation-local access token and queried fixed first-party HTTPS known-ID vote summaries. Windows built diagnostic app/instrumentation APKs; an existing stale migration fixture call was corrected to the current pendingTaskIds DAO name so instrumentation could compile (that migration test was not executed).
+
+On PJZ110 with Wi-Fi off/NR_SA, initial HTTP read timed out at 8 seconds. Following user wake/reconnect, one bounded rerun returned UP=1 for the known-upvoted item, then timed out for the known-downvoted item. The single instrumentation case failed overall; only the first authenticated HTTP read is live-proven. No complete list enumeration or downvote/lifecycle success is claimed. The test required no Help Cookie or second user login. Further network-dependent verification stopped rather than dense retry.
+
+Diagnostic app SHA256 5541511bb257fcc0fd970184e7730984df0fd159065479dd632043396bb495df; instrumentation SHA256 d12a455e06427a0673525752c0cfe97e3f2c159d5c3d6f2ee33598d011afd5a9. Production SDK dependency/lock were restored to 0.1.146 and verified. Normal APK was reinstalled preserving user data; only com.wallhub.android.test was uninstalled. Debug tests require explicit IDs and emit only fixed stages/numeric outcomes, not tokens, URLs or account records.
+
 ## 2026-10-22 — Explicit Support-site vote discovery and CM current-state classification
 
 Personal Votes now has one explicit, user-authorized Steam Support WebView source for candidate IDs. It reads the observed MyUGCVotes first-page table and bounded AjaxLoadMoreData HTML fragments with memory-only opaque cursors; it is not an implicit fallback for a failed CM enumeration. The view verifies the Support page account against the current authenticated CM SteamID using the public help application's data-userinfo schema before reading any rows. Cookies remain in WebView, no JavaScript interface or credential export is introduced, and TLS errors always cancel. Account changes and stale read callbacks discard candidate data.
