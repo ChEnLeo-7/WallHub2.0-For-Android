@@ -171,7 +171,7 @@ internal class SteamContentSdkSessionBackend(
                     .get()
                     ?.let { session -> runCatching { session.state() }.getOrNull() }
                     .let { it == SteamContentSdkSessionState.AUTHENTICATED }
-            if (!authenticated && mutableSession.value.hasStoredSession) {
+            if (!authenticated) {
                 preserveSignedInDuringRestore.set(mutableSession.value.phase == SteamSessionPhase.SIGNED_IN)
                 try {
                     restoreStoredSession()
