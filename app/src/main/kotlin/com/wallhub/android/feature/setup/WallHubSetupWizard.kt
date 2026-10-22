@@ -16,7 +16,15 @@
 
 package com.wallhub.android.feature.setup
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.DocumentsContract
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -54,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -93,6 +102,7 @@ import javax.inject.Inject
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Visibility
@@ -101,6 +111,7 @@ import androidx.compose.material.icons.outlined.VisibilityOff
 private enum class WallHubSetupPage {
     Welcome,
     Network,
+    Storage,
     Steam,
     Finish,
 }
@@ -162,6 +173,10 @@ class WallHubSetupViewModel
             }
         }
 
+        fun saveOutputDirectory(treeUri: String, label: String) {
+            viewModelScope.launch { settingsRepository.setOutputDirectory(treeUri, label) }
+        }
+
         fun saveDohEndpoints(endpoints: List<String>, disabledEndpoints: Set<String>) {
             viewModelScope.launch {
                 settingsRepository.setSteamAccessDohEndpoints(endpoints, disabledEndpoints)
@@ -176,7 +191,36 @@ fun WallHubSetupWizard(
 ) {
     val preferences by viewModel.preferences.collectAsStateWithLifecycle()
     val session by viewModel.session.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var page by rememberSaveable { mutableStateOf(WallHubSetupPage.Welcome) }
+    var continueAfterDirectorySelection by rememberSaveable { mutableStateOf(false) }
+    var storageError by rememberSaveable { mutableStateOf<String?>(null) }
+    val legacyStoragePermissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) storageError = context.getString(R.string.setup_storage_legacy_permission_denied)
+        }
+    val outputDirectoryLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { treeUri ->
+            if (treeUri != null) {
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                runCatching { context.contentResolver.takePersistableUriPermission(treeUri, flags) }
+                    .onSuccess {
+                        val label =
+                            treeUri.lastPathSegment
+                                ?.substringAfterLast(':')
+                                ?.ifBlank { null }
+                                ?: context.getString(R.string.settings_default_export_directory)
+                        viewModel.saveOutputDirectory(treeUri.toString(), label)
+                        storageError = null
+                        if (continueAfterDirectorySelection) page = WallHubSetupPage.Steam
+                    }.onFailure {
+                        storageError = context.getString(R.string.setup_storage_authorization_failed)
+                    }
+            } else if (continueAfterDirectorySelection) {
+                storageError = context.getString(R.string.setup_storage_authorization_required)
+            }
+            continueAfterDirectorySelection = false
+        }
     val pageIndex = WallHubSetupPage.entries.indexOf(page)
     val navigateBack = {
         if (
@@ -206,6 +250,14 @@ fun WallHubSetupWizard(
         ) { target ->
             when (target) {
                 WallHubSetupPage.Welcome -> WelcomePage()
+                WallHubSetupPage.Storage ->
+                    StoragePage(
+                        preferences = preferences,
+                        errorMessage = storageError,
+                        onSelectDirectory = {
+                            outputDirectoryLauncher.launch(defaultDownloadsTreeUri())
+                        },
+                    )
                 WallHubSetupPage.Steam -> SteamPage(session = session, viewModel = viewModel)
                 WallHubSetupPage.Network ->
                     NetworkPage(
@@ -213,7 +265,7 @@ fun WallHubSetupWizard(
                         onSaveDohEndpoints = viewModel::saveDohEndpoints,
                         onContinue = { proxyUrl, proxyEnabled, accessEnabled, source, apiKey ->
                             viewModel.saveNetwork(proxyUrl, proxyEnabled, accessEnabled, source, apiKey)
-                            page = WallHubSetupPage.Steam
+                            page = WallHubSetupPage.Storage
                         },
                     )
                 WallHubSetupPage.Finish -> FinishPage()
@@ -225,7 +277,7 @@ fun WallHubSetupWizard(
         val primaryLabel =
             when (page) {
                 WallHubSetupPage.Welcome -> stringResource(R.string.setup_action_start)
-                WallHubSetupPage.Steam, WallHubSetupPage.Network -> stringResource(R.string.setup_action_next)
+                WallHubSetupPage.Steam, WallHubSetupPage.Network, WallHubSetupPage.Storage -> stringResource(R.string.setup_action_next)
                 WallHubSetupPage.Finish -> stringResource(R.string.setup_action_finish)
             }
         WizardActions(
@@ -235,6 +287,20 @@ fun WallHubSetupWizard(
             onPrimaryClick = {
                 when (page) {
                     WallHubSetupPage.Welcome -> page = WallHubSetupPage.Network
+                    WallHubSetupPage.Storage -> {
+                        when {
+                            Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+                                context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED -> {
+                                legacyStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                                page = WallHubSetupPage.Steam
+                            }
+                            preferences.outputTreeUri.isNullOrBlank() -> {
+                                continueAfterDirectorySelection = true
+                                outputDirectoryLauncher.launch(defaultDownloadsTreeUri())
+                            }
+                            else -> page = WallHubSetupPage.Steam
+                        }
+                    }
                     WallHubSetupPage.Steam -> page = WallHubSetupPage.Finish
                     WallHubSetupPage.Network -> Unit
                     WallHubSetupPage.Finish -> onComplete()
@@ -295,6 +361,88 @@ private fun WelcomePage() {
         },
     )
 }
+
+@Composable
+private fun StoragePage(
+    preferences: AppPreferences,
+    errorMessage: String?,
+    onSelectDirectory: () -> Unit,
+) {
+    val bottomPadding = wizardActionContentPadding(
+        visible = true,
+        expanded = false,
+        showPrimary = true,
+        showSecondary = false,
+    )
+    WizardPageScaffold(
+        config = WizardPageConfig(
+            title = stringResource(R.string.setup_storage_title),
+            description = stringResource(R.string.setup_storage_description),
+        ),
+        headerIcon = { WizardIcon(Icons.Outlined.FolderOpen) },
+        bottomContentPadding = bottomPadding,
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(WallHubSpacing.md),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+            ) {
+                Text(stringResource(R.string.setup_storage_current_location), style = MaterialTheme.typography.labelLarge)
+                Text(
+                    preferences.outputDirectoryLabel ?: stringResource(R.string.settings_default_export_directory),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    if (preferences.outputTreeUri == null) {
+                        stringResource(R.string.setup_storage_default_detail)
+                    } else {
+                        stringResource(R.string.setup_storage_authorized_detail)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Button(
+            onClick = onSelectDirectory,
+            modifier = Modifier.fillMaxWidth().padding(top = WallHubSpacing.md).heightIn(min = 48.dp),
+        ) {
+            Icon(Icons.Outlined.FolderOpen, contentDescription = null)
+            Text(
+                stringResource(R.string.setup_storage_choose_directory),
+                modifier = Modifier.padding(start = WallHubSpacing.xs),
+            )
+        }
+        Text(
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                stringResource(R.string.setup_storage_legacy_permission_detail)
+            } else {
+                stringResource(R.string.setup_storage_saf_detail)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(top = WallHubSpacing.sm),
+        )
+        errorMessage?.let { message ->
+            Text(
+                message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.fillMaxWidth().padding(top = WallHubSpacing.sm),
+            )
+        }
+    }
+}
+
+private fun defaultDownloadsTreeUri(): Uri =
+    DocumentsContract.buildDocumentUri(
+        "com.android.externalstorage.documents",
+        "primary:Download/WallHub",
+    )
 
 @Composable
 private fun SteamPage(session: SteamSessionState, viewModel: WallHubSetupViewModel) {

@@ -9,6 +9,17 @@
     <string name='setup_steam_description'>Connect your Steam account to access your library, comments, and authenticated Workshop features.</string>
     <string name='setup_network_title'>Network settings</string>
     <string name='setup_network_description'>Set the proxy, Steam service access route, Workshop data source, and Web API key.</string>
+    <string name='setup_storage_title'>Save location</string>
+    <string name='setup_storage_description'>Choose the directory used for Workshop downloads, MPKG exports, and local wallpaper scanning.</string>
+    <string name='setup_storage_current_location'>Current save location</string>
+    <string name='setup_storage_default_detail'>Select Next to open Download/WallHub, then confirm “Use this folder” so both exports and local scanning can access it.</string>
+    <string name='setup_storage_authorized_detail'>WallHub has persistent read and write access to this directory and will use it for both exports and local scanning.</string>
+    <string name='setup_storage_choose_directory'>Choose and authorize directory</string>
+    <string name='setup_storage_saf_detail'>Android 10 and later use secure system directory access; all-files access is not requested. You can change this later in Settings → Downloads.</string>
+    <string name='setup_storage_legacy_permission_detail'>Android 9 and earlier request storage write access when you continue. You can change the directory later in Settings → Downloads.</string>
+    <string name='setup_storage_authorization_failed'>The directory authorization could not be saved. Select it again and allow read and write access.</string>
+    <string name='setup_storage_authorization_required'>Directory authorization is required to continue; Download/WallHub is selected by default.</string>
+    <string name='setup_storage_legacy_permission_denied'>Storage access was not granted. Android 9 and earlier may be unable to export to Download/WallHub.</string>
     <string name='setup_finish_title'>Setup complete</string>
     <string name='setup_finish_description'>WallHub is ready. You can change these options later in Settings.</string>
     <string name='setup_action_start'>Start setup</string>
@@ -17,7 +28,7 @@
     <string name='setup_action_finish'>Start using WallHub</string>
     <string name='setup_action_save_and_continue'>Save and continue</string>
     <string name='settings_restart_setup_wizard'>Run setup wizard again</string>
-    <string name='settings_restart_setup_wizard_description'>Return to the welcome page and review Steam and network setup</string>
+    <string name='settings_restart_setup_wizard_description'>Return to the welcome page and review network, save location, and Steam setup</string>
     <string name='settings_title'>Settings</string>
     <string name='settings_wallhub_project_title'>WallHub For Android</string>
     <string name='settings_category_basic'>General</string>

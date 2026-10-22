@@ -9,6 +9,17 @@
     <string name='setup_steam_description'>连接 Steam 账户，以访问资料库、评论和需要登录的创意工坊功能。</string>
     <string name='setup_network_title'>网络设置</string>
     <string name='setup_network_description'>设置网络代理、Steam 服务访问线路、创意工坊数据源和 Web API Key。</string>
+    <string name='setup_storage_title'>保存位置</string>
+    <string name='setup_storage_description'>设置创意工坊文件下载、MPKG 导出和本地扫描使用的目录。</string>
+    <string name='setup_storage_current_location'>当前保存位置</string>
+    <string name='setup_storage_default_detail'>点击“下一步”会默认打开 Download/WallHub，请在系统界面确认“使用此文件夹”，以便下载导出和本地扫描都能访问该目录。</string>
+    <string name='setup_storage_authorized_detail'>WallHub 已获得此目录的持久读写权限，并会同时用于下载导出和本地壁纸扫描。</string>
+    <string name='setup_storage_choose_directory'>选择并授权目录</string>
+    <string name='setup_storage_saf_detail'>Android 10 及以上通过系统目录授权安全读写，无需申请所有文件访问权限。之后可随时在“设置 → 下载”中更改。</string>
+    <string name='setup_storage_legacy_permission_detail'>Android 9 及以下将在继续时申请存储写入权限。之后可随时在“设置 → 下载”中更改目录。</string>
+    <string name='setup_storage_authorization_failed'>无法保存目录授权，请重新选择并允许读写。</string>
+    <string name='setup_storage_authorization_required'>需要确认目录授权后才能继续；默认选择 Download/WallHub。</string>
+    <string name='setup_storage_legacy_permission_denied'>未授予存储权限，Android 9 及以下可能无法导出到 Download/WallHub。</string>
     <string name='setup_finish_title'>设置完成</string>
     <string name='setup_finish_description'>WallHub 已准备就绪。之后仍可在设置中修改这些选项。</string>
     <string name='setup_action_start'>开始设置</string>
@@ -17,7 +28,7 @@
     <string name='setup_action_finish'>开始使用 WallHub</string>
     <string name='setup_action_save_and_continue'>保存并继续</string>
     <string name='settings_restart_setup_wizard'>重新开始设置向导</string>
-    <string name='settings_restart_setup_wizard_description'>返回欢迎页，重新检查 Steam 与网络配置</string>
+    <string name='settings_restart_setup_wizard_description'>返回欢迎页，重新检查网络、保存位置与 Steam 配置</string>
     <string name='settings_title'>设置</string>
     <string name='settings_wallhub_project_title'>WallHub For Android</string>
     <string name='settings_category_basic'>通用</string>
