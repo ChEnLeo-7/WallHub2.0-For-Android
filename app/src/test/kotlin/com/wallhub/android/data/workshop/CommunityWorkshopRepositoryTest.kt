@@ -141,15 +141,6 @@ class CommunityWorkshopRepositoryTest {
                 .Builder()
                 .addInterceptor { chain ->
                     throw AssertionError("CM must not call HTTP: ${chain.request().url.host}")
-                    @Suppress("UNREACHABLE_CODE")
-                    Response
-                        .Builder()
-                        .request(chain.request())
-                        .protocol(Protocol.HTTP_1_1)
-                        .code(status)
-                        .message("test response")
-                        .body(body.toResponseBody("application/json".toMediaType()))
-                        .build()
                 }.build()
         return CommunityWorkshopRepository(
             settingsRepository = CmSettingsRepository,
