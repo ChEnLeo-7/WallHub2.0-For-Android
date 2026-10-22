@@ -12,6 +12,8 @@ import java.io.File
 import java.nio.file.Files
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.json.JSONObject
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,6 +45,28 @@ class ConversionPolicyV2Test {
 
             assertEquals(ResourceStrategy.PASSTHROUGH_WITH_WARNING, resource.strategy)
             assertEquals("tex_passthrough_resource_budget_exceeded", resource.reason)
+        }
+    }
+
+    @Test
+    fun `large scene document is rewritten without being mislabeled passthrough`() {
+        val padding = "x".repeat(3 * MIB.toInt())
+        val scene = """{"general":{"texturereduction":4},"padding":"$padding"}""".toByteArray()
+        val marker = byteArrayOf(9, 7, 5, 3, 1)
+        withSceneEntries(linkedMapOf("scene.json" to scene, "marker.bin" to marker)) { root ->
+            val plan = WorkshopConverter.plan(root, MpkgConversionPreset.EXTREME_QUALITY, DEVICE)
+            val scenePlan = plan.resources.single { it.path == "scene.json" }
+
+            assertEquals("REWRITE_SCENE_SETTINGS", scenePlan.strategy.name)
+            val output = root.resolve("large-scene.mpkg")
+            WorkshopConverter.execute(plan, root, output)
+
+            val archive = PkgReader.readIndex(output)
+            val rewritten = archive.readBytes(archive.entries.single { it.path == "scene.json" }, scene.size.toLong() + 64 * 1024)
+            val parsed = JSONObject(rewritten.toString(Charsets.UTF_8))
+            assertFalse(parsed.getJSONObject("general").has("texturereduction"))
+            assertEquals(padding.length, parsed.getString("padding").length)
+            assertArrayEquals(marker, archive.readBytes(archive.entries.single { it.path == "marker.bin" }, marker.size.toLong()))
         }
     }
 
@@ -139,6 +163,18 @@ class ConversionPolicyV2Test {
         }
     }
 
+    private fun withSceneEntries(entries: LinkedHashMap<String, ByteArray>, block: (File) -> Unit) {
+        val root = Files.createTempDirectory("wallhub-large-scene").toFile()
+        try {
+            root.resolve("project.json").writeText("""{"type":"scene","file":"scene.pkg"}""")
+            root.resolve("preview.png").writeBytes(PNG_SIGNATURE)
+            writeDesktopPkg(root.resolve("scene.pkg"), entries)
+            block(root)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     private fun staticImageTex(width: Int, height: Int): ByteArray =
         ByteArrayOutputStream().use { output ->
             output.writeCString("TEXV0005")
@@ -161,18 +197,27 @@ class ConversionPolicyV2Test {
             output.toByteArray()
         }
 
-    private fun writeDesktopPkg(file: File, path: String, payload: ByteArray) {
+    private fun writeDesktopPkg(file: File, path: String, payload: ByteArray) =
+        writeDesktopPkg(file, linkedMapOf(path to payload))
+
+    private fun writeDesktopPkg(file: File, entries: LinkedHashMap<String, ByteArray>) {
         val magic = "PKGV0001".toByteArray(Charsets.US_ASCII)
-        val encodedPath = path.toByteArray(Charsets.UTF_8)
+        val indexBytes =
+            entries.keys.map { path -> path.toByteArray(Charsets.UTF_8) }.sumOf { path -> 4 + path.size + 4 + 4 }
+        var offset = 4 + magic.size + 4 + indexBytes
         file.outputStream().use { output ->
             output.writeIntLe(magic.size)
             output.write(magic)
-            output.writeIntLe(1)
-            output.writeIntLe(encodedPath.size)
-            output.write(encodedPath)
-            output.writeIntLe(0)
-            output.writeIntLe(payload.size)
-            output.write(payload)
+            output.writeIntLe(entries.size)
+            entries.forEach { (path, payload) ->
+                val encodedPath = path.toByteArray(Charsets.UTF_8)
+                output.writeIntLe(encodedPath.size)
+                output.write(encodedPath)
+                output.writeIntLe(offset)
+                output.writeIntLe(payload.size)
+                offset += payload.size
+            }
+            entries.values.forEach(output::write)
         }
     }
 
