@@ -1,5 +1,9 @@
 # Development Log
 
+## 2026-10-23 — LAN HTTP vote up/down comparison passed
+
+After the user moved PJZ110 to LAN Wi-Fi, the exact previously built HTTP diagnostic app and instrumentation APK were reinstalled without clearing data. The single explicitly selected read-only test returned current upvote=1 and downvote=2 for the user-confirmed examples, reporting OK (1 test) in 11.875 seconds. No Help-site Cookie or second user login was used; access credentials remained inside the existing SDK account operation. This closes that narrow up/down HTTP interoperability check, not full-history enumeration, none-state/lifecycle coverage or general network stability. The normal release APK was then restored and the diagnostic test package removed. Production dependency remains SDK0.1.146; no automatic transport switch was made.
+
 ## 2026-10-23 — Controlled HTTP vote authentication probe (partial live success)
 
 A debug-only Hilt entry point and explicitly selected instrumentation test reused the existing app account owner. No host-side credential getter, browser-cookie import, vote mutation, or second login was added. SDK source 3524e35's default-off probe feature exchanged an operation-local access token and queried fixed first-party HTTPS known-ID vote summaries. Windows built diagnostic app/instrumentation APKs; an existing stale migration fixture call was corrected to the current pendingTaskIds DAO name so instrumentation could compile (that migration test was not executed).
