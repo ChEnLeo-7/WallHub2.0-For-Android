@@ -28,7 +28,8 @@ class SteamHttpClientFactory
                     val useBridge =
                         isSteamSecureScheme(uri.scheme) &&
                             SteamDomainPolicy.supportsEndpoint(host, port) &&
-                            manager.shouldAccelerate(host, port)
+                            SteamDomainPolicy.accelerates(host) &&
+                            manager.enhancedConnectionEnabled()
                     return if (useBridge) listOf(bridge.proxy) else systemProxies(uri)
                 }
 
