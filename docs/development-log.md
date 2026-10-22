@@ -1,5 +1,13 @@
 # Development Log
 
+## 2026-10-22 — Explicit Support-site vote discovery and CM current-state classification
+
+Personal Votes now has one explicit, user-authorized Steam Support WebView source for candidate IDs. It reads the observed MyUGCVotes first-page table and bounded AjaxLoadMoreData HTML fragments with memory-only opaque cursors; it is not an implicit fallback for a failed CM enumeration. The view verifies the Support page account against the current authenticated CM SteamID using the public help application's data-userinfo schema before reading any rows. Cookies remain in WebView, no JavaScript interface or credential export is introduced, and TLS errors always cancel. Account changes and stale read callbacks discard candidate data.
+
+The existing anonymous CM details path filters known consumer AppID 431960, then SDK current-account GetUserVoteSummary classifies each known ID as up/down/none. Raw localized Support flags are not used to guess current vote direction. The SDK retains the sole account CM owner. Default tab is upvotes, switching downvotes filters the same accumulated verified records without another scan. Additional Support pages load only on explicit request; unavailable details/states remain unresolved. Profile totals stay unknown until all candidate pages and relevant states are verified; process-only counts are not background-prefetched or persisted as authoritative totals. The earlier cover enlargement fix is included in this verification candidate.
+
+SDK artifact 0.1.146 is bound to source commit 6e6e3ce with exact AAR/native hashes. SDK Windows scoped build/conformance results are recorded in its progress.md. Android Windows tests/build and remote device/live authorization evidence are pending; source implementation alone does not establish a working authenticated mobile flow.
+
 ## 2026-10-22 — Demand-only Steam routing and independent Community HTML
 
 Removed built-in Steam/Akamai IP seeds, startup/periodic TLS probes, prewarm completion trackers and Home prewarm gates. The existing manager now resolves actual requests through current DNS/configured DoH or user hosts, with a bounded 60-second, 64-key, four-address generation-fenced cache. History ranks only currently resolved addresses; failure-only records cannot become preferred routes. Hidden-SNI failure alone does not penalize an address that works with original SNI. Response-stage read failure/initial EOF is attributed to the actual upstream address before client closure; normal post-response EOF and client cancellation are not treated as route failures. Certificate-chain/original-hostname checks remain unchanged. There is no generic HTTP downgrade, account owner or background probe service.

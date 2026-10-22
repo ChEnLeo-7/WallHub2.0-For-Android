@@ -286,6 +286,25 @@ internal class SteamContentSdkWorkshopRepository
         override suspend fun browseCollection(query: AccountWorkshopQuery): WorkshopPage =
             accountReader.browseCollection(query)
 
+        override suspend fun currentAccountSteamId(): String? = withContext(Dispatchers.IO) {
+            gateway.awaitSignedInSession()
+            gateway.signedInAccountId()?.toString()
+        }
+
+        override suspend fun getUserVote(workshopId: Long): Int = withContext(Dispatchers.IO) {
+            require(workshopId > 0L) { "Invalid Workshop item ID" }
+            gateway.awaitSignedInSession()
+            val accountId = checkNotNull(gateway.signedInAccountId())
+            gateway.read(
+                key = "vote:$accountId:$workshopId",
+                kind = WorkshopReadKind.ACCOUNT_COLLECTION,
+                priority = WorkshopReadPriority.FOREGROUND,
+            ) {
+                check(gateway.signedInAccountId() == accountId) { "Steam account changed during vote read" }
+                engine.workshopUserVote(workshopId)
+            }
+        }
+
         /**
          * Resolves the creator's public display name through the player family (ADR 0032).
          *

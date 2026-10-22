@@ -64,6 +64,42 @@ class CommunityWorkshopHtmlTest {
         }
     }
 
+    @Test
+    fun `cover uses its enlargement without letterboxing and bounds requested dimensions`() {
+        val base = "https://images.steamusercontent.com/ugc/123/ABC/"
+        val html = """
+            <div class="workshopItemTitle">Cover</div>
+            <a onclick="ShowEnlargedImagePreview( '$base?imw=5000&amp;imh=5000&amp;ima=fit&amp;letterbox=false' );">
+                <img id="previewImage" src="$base?imw=637&amp;imh=358&amp;letterbox=true">
+            </a>
+        """.trimIndent()
+        val detail = parseCommunityHtmlDetail(html, 42)
+        assertEquals("${base}?imw=1920&imh=1920&ima=fit&letterbox=false", detail.summary.previewUrl)
+        assertEquals(detail.summary.previewUrl, detail.previewMediaUrl)
+        assertEquals(WorkshopContentIdentity(), detail.contentIdentity)
+    }
+
+    @Test
+    fun `cover ignores unrelated unsafe or malformed enlargement links`() {
+        val thumbnail = "https://images.steamusercontent.com/ugc/123/ABC/?imw=637"
+        val actions = listOf(
+            "ShowEnlargedImagePreview( 'http://images.steamusercontent.com/ugc/123/ABC/' );",
+            "ShowEnlargedImagePreview( 'https://other.example/ugc/123/ABC/' );",
+            "ShowEnlargedImagePreview( 'https://images.steamusercontent.com/ugc/999/OTHER/' );",
+            "ShowEnlargedImagePreview( '$thumbnail' ); otherFunction();",
+        )
+        actions.forEach { action ->
+            val html = """<div class="workshopItemTitle">Cover</div><a onclick="$action"><img id="previewImage" src="$thumbnail"></a>"""
+            assertEquals(thumbnail, parseCommunityHtmlDetail(html, 42).summary.previewUrl)
+        }
+        val unrelated = """
+            <div class="workshopItemTitle">Cover</div>
+            <a onclick="ShowEnlargedImagePreview( '$thumbnail' );"><img id="otherImage" src="$thumbnail"></a>
+            <img id="previewImage" src="$thumbnail">
+        """
+        assertEquals(thumbnail, parseCommunityHtmlDetail(unrelated, 42).summary.previewUrl)
+    }
+
     companion object {
         // Reduced, synthetic text/URLs; structural selectors match the public 3804689861 page.
         val DETAIL_HTML = """

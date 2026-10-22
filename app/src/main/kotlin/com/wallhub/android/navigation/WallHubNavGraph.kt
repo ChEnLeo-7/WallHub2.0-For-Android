@@ -190,7 +190,13 @@ internal fun WallHubNavHost(
         }
         composable<LibraryCollectionDestination> { entry ->
             val route = entry.toRoute<LibraryCollectionDestination>()
-            LibraryRoute(
+            if (route.collection == "VOTED") {
+                com.wallhub.android.feature.votes.PersonalVotesRoute(
+                    onBack = { navController.popBackStack() },
+                    onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
+                    onOpenLogin = { navController.navigate(SteamLoginDestination) },
+                )
+            } else LibraryRoute(
                 initialCollection = route.collection,
                 onBack = { navController.popBackStack() },
                 onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },

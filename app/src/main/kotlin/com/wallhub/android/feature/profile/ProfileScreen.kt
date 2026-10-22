@@ -51,24 +51,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.wallhub.android.feature.votes.VoteCountsStore
 
 data class ProfileCounts(
     val subscriptions: Int? = null,
     val favorites: Int? = null,
     val voted: Int = 0,
-    /**
-     * Whether the voted-items list is unavailable rather than empty.
-     *
-     * Steam has no selector that lists the files an account voted on - `GetUserFiles` accepts `myfiles`,
-     * `myfavorites`, and `mysubscriptions`, and every spelling of a votes selector answers `EResult 8`
-     * (`InvalidParam`) - so a count here would be a claim no read could make. The card shows a dash instead,
-     * and the collection says why.
-     */
-    val votedUnavailable: Boolean = false,
+    /** Exact only after explicit vote sync finishes and every relevant record is verified. */
+    val votedUnavailable: Boolean = true,
 )
 
 @HiltViewModel
-class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionRepository, private val accountRepository: AccountWorkshopRepository, private val playtimeRepository: SteamPlaytimeRepository) : ViewModel() {
+class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionRepository, private val accountRepository: AccountWorkshopRepository, private val playtimeRepository: SteamPlaytimeRepository, private val voteCountsStore: VoteCountsStore) : ViewModel() {
     val session: StateFlow<SteamSessionState> = sessionRepository.session
     private val _counts = MutableStateFlow(ProfileCounts())
     val counts: StateFlow<ProfileCounts> = _counts
@@ -76,8 +70,18 @@ class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionReposi
     val runtimeHours: StateFlow<Int?> = _runtimeHours
     init {
         viewModelScope.launch {
+            voteCountsStore.countsByAccountName.collectLatest { values ->
+                val votes = session.value.accountName?.let(values::get)
+                _counts.value = _counts.value.copy(
+                    voted = votes?.let { it.up + it.down } ?: 0,
+                    votedUnavailable = votes?.complete != true,
+                )
+            }
+        }
+        viewModelScope.launch {
             var loadedAccount: String? = null
             session.collectLatest { current ->
+                voteCountsStore.bindAccount(current.accountName)
                 when {
                     current.phase == SteamSessionPhase.SIGNED_IN && current.accountName != loadedAccount -> {
                         coroutineScope {
@@ -112,7 +116,9 @@ class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionReposi
                                 ProfileCounts(
                                     subscriptions = subscriptionCount,
                                     favorites = favoriteCount,
-                                    votedUnavailable = true,
+                                    voted = voteCountsStore.countsByAccountName.value[current.accountName]
+                                        ?.let { it.up + it.down } ?: 0,
+                                    votedUnavailable = voteCountsStore.countsByAccountName.value[current.accountName]?.complete != true,
                                 )
                             loadedAccount = current.accountName.takeIf {
                                 subscriptionCount != null && favoriteCount != null

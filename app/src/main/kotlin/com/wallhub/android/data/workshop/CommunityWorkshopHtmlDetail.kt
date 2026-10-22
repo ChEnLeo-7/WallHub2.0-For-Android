@@ -4,6 +4,7 @@ import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 internal const val MAX_COMMUNITY_HTML_BYTES = 2 * 1024 * 1024
 
@@ -39,8 +40,7 @@ internal fun parseCommunityHtmlDetail(html: String, workshopId: Long): WorkshopD
             }
         }.toList()
     }.filter(String::isNotBlank).distinct().take(128)
-    val preview = HTML_IMAGE.findAll(markup).firstOrNull { detailAttribute(it.value, "id") == "previewImage" }
-        ?.value?.let { detailAttribute(it, "src") }?.let(::detailHttpsUrl)
+    val preview = detailPreviewUrl(markup)
     val avatar = detailBlocks(creators, "playerAvatar").firstOrNull()
         ?.let { HTML_IMAGE.find(it)?.value }?.let { detailAttribute(it, "src") }?.let(::detailHttpsUrl)
     return WorkshopDetail(
@@ -65,6 +65,40 @@ internal fun parseCommunityHtmlDetail(html: String, workshopId: Long): WorkshopD
         creatorId = creatorId,
     )
 }
+
+/** The webpage thumbnail may contain baked-in black borders; use its own enlargement link. */
+private fun detailPreviewUrl(markup: String): String? {
+    val image = HTML_IMAGE.findAll(markup)
+        .firstOrNull { detailAttribute(it.value, "id") == "previewImage" } ?: return null
+    val thumbnail = detailHttpsUrl(detailAttribute(image.value, "src")) ?: return null
+    val thumbnailUrl = thumbnail.toHttpUrlOrNull() ?: return null
+    val anchor = HTML_ANCHOR.findAll(markup).firstOrNull {
+        image.range.first in it.range && image.range.last in it.range
+    } ?: return thumbnail
+    val openingTag = HTML_ANCHOR_OPEN.find(anchor.value)?.value ?: return thumbnail
+    val action = detailAttribute(openingTag, "onclick")
+        .replace("&quot;", "\"").replace("&#39;", "'")
+    // Extract a literal URL only. Never execute page JavaScript or accept another image/host.
+    val enlarged = ENLARGED_PREVIEW.matchEntire(action)?.let {
+        it.groupValues[1].ifEmpty { it.groupValues[2] }
+    }?.let(::detailHttpsUrl)?.toHttpUrlOrNull() ?: return thumbnail
+    if (enlarged.host != thumbnailUrl.host || enlarged.port != thumbnailUrl.port ||
+        enlarged.encodedPath != thumbnailUrl.encodedPath ||
+        enlarged.username.isNotEmpty() || enlarged.password.isNotEmpty()
+    ) return thumbnail
+    if (enlarged.host != "images.steamusercontent.com" || !enlarged.encodedPath.startsWith("/ugc/")) {
+        return thumbnail
+    }
+    return enlarged.newBuilder()
+        .setQueryParameter("imw", "1920")
+        .setQueryParameter("imh", "1920")
+        .setQueryParameter("ima", "fit")
+        .setQueryParameter("letterbox", "false")
+        .build().toString()
+}
+
+private val HTML_ANCHOR_OPEN = Regex("""(?is)<a\b(?:"[^"]*"|'[^']*'|[^'">]++)*+>""")
+private val ENLARGED_PREVIEW = Regex("""\s*ShowEnlargedImagePreview\(\s*(?:'([^'\\]*)'|"([^"\\]*)")\s*\)\s*;?\s*""")
 
 /** Match exact class tokens and balance nested divs; never stop at a description's first child. */
 private fun detailBlocks(html: String, className: String): List<String> {
