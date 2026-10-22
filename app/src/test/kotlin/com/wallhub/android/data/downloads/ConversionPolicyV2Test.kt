@@ -201,9 +201,7 @@ class ConversionPolicyV2Test {
 
     private fun writeDesktopPkg(file: File, entries: LinkedHashMap<String, ByteArray>) {
         val magic = "PKGV0001".toByteArray(Charsets.US_ASCII)
-        val indexBytes =
-            entries.keys.map { path -> path.toByteArray(Charsets.UTF_8) }.sumOf { path -> 4 + path.size + 4 + 4 }
-        var offset = 4 + magic.size + 4 + indexBytes
+        var offset = 0
         file.outputStream().use { output ->
             output.writeIntLe(magic.size)
             output.write(magic)

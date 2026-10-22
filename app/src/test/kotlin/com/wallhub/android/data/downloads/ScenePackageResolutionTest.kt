@@ -651,7 +651,7 @@ class ScenePackageResolutionTest {
     ) =
         com.wallhub.prototype.mpkg.ConversionPlan(
             presetId = MpkgConversionPreset.BALANCED.stableId,
-            policyVersion = 4,
+            policyVersion = 5,
             device = DeviceCapabilityProfile(256L * 1024L * 1024L),
             sourceIdentity = com.wallhub.prototype.mpkg.ScenePackageIdentity(packageLength = 123L, indexDigest = "a".repeat(64)),
             resources =
@@ -668,7 +668,7 @@ class ScenePackageResolutionTest {
     private fun conversionPlan(digest: String) =
         com.wallhub.prototype.mpkg.ConversionPlan(
             presetId = MpkgConversionPreset.BALANCED.stableId,
-            policyVersion = 4,
+            policyVersion = 5,
             device = DeviceCapabilityProfile(256L * 1024L * 1024L),
             sourceIdentity = com.wallhub.prototype.mpkg.ScenePackageIdentity(packageLength = 1L, indexDigest = digest),
             resources = emptyList(),
