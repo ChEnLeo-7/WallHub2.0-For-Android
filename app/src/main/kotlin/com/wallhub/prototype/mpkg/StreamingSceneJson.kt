@@ -154,7 +154,7 @@ internal object StreamingSceneJson {
                     expect(',')
                     skipWhitespace()
                 }
-                val key = readString(MAX_KEY_BYTES)
+                val key = requireNotNull(readString(MAX_KEY_BYTES)) { "Scene JSON key exceeds limit" }
                 if (depth == 0) rootObjectEmpty = false
                 if (depth == 1 && objectName == "general") generalObjectEmpty = false
                 skipWhitespace()
