@@ -2,8 +2,6 @@ package com.wallhub.prototype.mpkg
 
 import com.wallhub.android.core.model.MpkgConversionPreset
 import java.io.File
-import java.nio.ByteBuffer
-import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
@@ -22,7 +20,7 @@ data class ConversionPolicy(
     val textureReduction: Int,
     val retentionNotice: String,
     val losslessVisuals: Boolean = false,
-    val version: Int = 4,
+    val version: Int = 5,
 ) {
     init {
         require(textureReduction in setOf(1, 2, 4)) { "Unsupported official texture reduction: $textureReduction" }
@@ -49,6 +47,7 @@ enum class ResourceStrategy {
     DOWNSAMPLE_TO_ETC2,
     CONVERT_TO_RGBA8888_LZ4,
     REWRITE_SHADER,
+    REWRITE_SCENE_SETTINGS,
     REMOVE_AUDIO,
     PASSTHROUGH,
     PASSTHROUGH_WITH_WARNING,
@@ -83,7 +82,7 @@ data class ConversionResourcePlan(
 }
 
 data class ConversionPlan(
-    val version: Int = 4,
+    val version: Int = 5,
     val presetId: String,
     val policyVersion: Int,
     val preserveAudio: Boolean = false,
@@ -92,8 +91,8 @@ data class ConversionPlan(
     val resources: List<ConversionResourcePlan>,
 ) {
     init {
-        require(version == 4) { "Unsupported conversion plan version: $version" }
-        require(policyVersion == 4) { "Unsupported conversion policy version: $policyVersion" }
+        require(version == 5) { "Unsupported conversion plan version: $version" }
+        require(policyVersion == 5) { "Unsupported conversion policy version: $policyVersion" }
         require(MpkgConversionPreset.fromStableId(presetId).stableId == presetId) { "Unknown conversion preset: $presetId" }
         val paths = HashSet<String>()
         resources.forEach { resource ->
@@ -338,8 +337,9 @@ internal object WorkshopConversionPlanner {
         val graphEntries = archive.entries.filter(::isDeclarativeGraphDocument).sortedBy(IndexedPkgEntry::path)
         val texturePaths = archive.entries.filter { it.path.endsWith(".tex", ignoreCase = true) }.mapTo(mutableSetOf(), IndexedPkgEntry::path)
         val materialGraph =
-            DeclarativeMaterialGraph.analyzeDocuments(
-                documents = boundedGraphDocuments(archive, graphEntries),
+            StreamingSceneJson.analyzeDocuments(
+                source = scenePackage,
+                entries = graphEntries,
                 texturePaths = texturePaths,
             )
         val resources =
@@ -382,7 +382,9 @@ internal object WorkshopConversionPlanner {
     ): ConversionResourcePlan {
         val extension = entry.path.substringAfterLast('.', "").lowercase()
         val (strategy, reason) =
-            when (extension) {
+            if (entry.path.equals("scene.json", ignoreCase = true)) {
+                ResourceStrategy.REWRITE_SCENE_SETTINGS to "apply_texture_reduction_policy"
+            } else when (extension) {
                 "mp3", "wav", "ogg", "flac", "aac", "m4a" ->
                     if (preserveAudio) {
                         ResourceStrategy.COPY to "audio_preserved_by_user_preference"
@@ -511,32 +513,6 @@ internal object WorkshopConversionPlanner {
             parentSegments.any { it == "material" || it == "materials" }
     }
 
-    private fun boundedGraphDocuments(
-        archive: PkgArchive,
-        entries: List<IndexedPkgEntry>,
-    ): Sequence<Pair<String, Result<String>>> = sequence {
-        var totalBytes = 0L
-        entries.forEach { entry ->
-            val nextTotal = runCatching { Math.addExact(totalBytes, entry.length) }.getOrDefault(Long.MAX_VALUE)
-            if (entry.length > MAX_GRAPH_DOCUMENT_BYTES || nextTotal > MAX_GRAPH_TOTAL_BYTES) {
-                yield(entry.path to Result.failure<String>(IllegalArgumentException("material graph JSON byte limit exceeded")))
-            } else {
-                totalBytes = nextTotal
-                val json =
-                    runCatching {
-                        val bytes = archive.readBytes(entry, MAX_GRAPH_DOCUMENT_BYTES)
-                        Charsets.UTF_8
-                            .newDecoder()
-                            .onMalformedInput(CodingErrorAction.REPORT)
-                            .onUnmappableCharacter(CodingErrorAction.REPORT)
-                            .decode(ByteBuffer.wrap(bytes))
-                            .toString()
-                    }
-                yield(entry.path to json)
-            }
-        }
-    }
-
     private fun isOfficialVisualTexturePath(path: String): Boolean {
         val normalized = path.replace('\\', '/').lowercase()
         return normalized.startsWith("materials/") && normalized.count { it == '/' } == 1
@@ -562,8 +538,6 @@ private fun String.isAbsolutePlanPath(): Boolean =
     startsWith('/') || startsWith('\\') || Regex("^[A-Za-z]:[/\\\\]").containsMatchIn(this)
 
 private const val IDENTITY_BUFFER_BYTES = 64 * 1024
-private const val MAX_GRAPH_DOCUMENT_BYTES = 2L * 1024L * 1024L
-private const val MAX_GRAPH_TOTAL_BYTES = 8L * 1024L * 1024L
 private const val LEGACY_BALANCED_TEXTURE_INPUT_BYTES = 32L * 1024L * 1024L
 private const val MIB = 1024L * 1024L
 private const val GIB = 1024L * MIB

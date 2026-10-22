@@ -499,9 +499,25 @@ object WorkshopConverter {
                     }
                     else -> {
                         if (entry.path.equals("scene.json", ignoreCase = true) && plan != null) {
-                            val source = archive.readBytes(entry, MAX_SCENE_JSON_BYTES)
+                            val planned = plan.resources.getOrNull(index)
+                            require(planned?.path == entry.path && planned.sourceLength == entry.length) {
+                                "Conversion plan resource order does not match scene package"
+                            }
+                            require(planned.strategy == ResourceStrategy.REWRITE_SCENE_SETTINGS) {
+                                "Scene settings require an explicit rewrite strategy"
+                            }
+                            val transformed = File(transformedDirectory, "$index-scene.json")
                             val reduction = MpkgConversionPreset.fromStableId(plan.presetId).policy().textureReduction
-                            putEntry(MpkgInputEntry(entry.path, ByteArrayPayload(rewriteSceneTextureReduction(source, reduction))))
+                            StreamingSceneJson.rewriteTextureReduction(
+                                source = scenePackage,
+                                entry = entry,
+                                textureReduction = reduction,
+                                output = transformed,
+                                checkCancellation = checkCancellation,
+                            )
+                            putEntry(MpkgInputEntry(entry.path, FilePayload(transformed)))
+                            actualOutcomes[entry.path] =
+                                ConversionResourceOutcome(entry.path, ResourceStrategy.REWRITE_SCENE_SETTINGS, planned.reason)
                         } else {
                             putEntry(
                                 MpkgInputEntry(
@@ -862,21 +878,6 @@ object WorkshopConverter {
         }.toByteArray(Charsets.UTF_8)
     }
 
-    private fun rewriteSceneTextureReduction(
-        source: ByteArray,
-        textureReduction: Int,
-    ): ByteArray {
-        require(textureReduction in setOf(1, 2, 4)) { "Unsupported official texture reduction" }
-        val scene = JSONObject(source.toString(Charsets.UTF_8))
-        val general = scene.optJSONObject("general") ?: JSONObject().also { scene.put("general", it) }
-        if (textureReduction == 1) {
-            general.remove("texturereduction")
-        } else {
-            general.put("texturereduction", textureReduction)
-        }
-        return scene.toString(2).toByteArray(Charsets.UTF_8)
-    }
-
     private class WorkshopProject(
         private val source: String,
     ) {
@@ -1151,6 +1152,5 @@ private const val TEX_CONVERSION_HEAP_DIVISOR = 24L
 private const val MIN_TEX_CONVERSION_INPUT_BYTES = 2L * 1024L * 1024L
 private const val MAX_TEX_CONVERSION_INPUT_BYTES = 8L * 1024L * 1024L
 internal const val MAX_SHADER_SOURCE_BYTES = 8L * 1024L * 1024L
-private const val MAX_SCENE_JSON_BYTES = 8L * 1024L * 1024L
 private const val COPY_BUFFER_SIZE = 1024 * 1024
 private const val MAX_WARNING_DETAILS = 100

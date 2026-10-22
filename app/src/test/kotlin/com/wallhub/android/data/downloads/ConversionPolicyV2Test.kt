@@ -13,7 +13,6 @@ import java.nio.file.Files
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.json.JSONObject
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -24,8 +23,8 @@ class ConversionPolicyV2Test {
         withScene("materials/number.am.tex", "not-a-recognized-tex-shape".toByteArray()) { root, source ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE)
 
-            assertEquals(4, plan.version)
-            assertEquals(4, plan.policyVersion)
+            assertEquals(5, plan.version)
+            assertEquals(5, plan.policyVersion)
             assertEquals(ResourceStrategy.PASSTHROUGH_WITH_WARNING, plan.resources.single().strategy)
             assertEquals("tex_passthrough_unknown_profile", plan.resources.single().reason)
 
@@ -64,7 +63,7 @@ class ConversionPolicyV2Test {
             val archive = PkgReader.readIndex(output)
             val rewritten = archive.readBytes(archive.entries.single { it.path == "scene.json" }, scene.size.toLong() + 64 * 1024)
             val parsed = JSONObject(rewritten.toString(Charsets.UTF_8))
-            assertFalse(parsed.getJSONObject("general").has("texturereduction"))
+            assertEquals(1, parsed.getJSONObject("general").getInt("texturereduction"))
             assertEquals(padding.length, parsed.getString("padding").length)
             assertArrayEquals(marker, archive.readBytes(archive.entries.single { it.path == "marker.bin" }, marker.size.toLong()))
         }
@@ -77,7 +76,7 @@ class ConversionPolicyV2Test {
         assertEquals(1, MpkgConversionPreset.HIGH_QUALITY.policy().textureReduction)
         assertEquals(1, MpkgConversionPreset.EXTREME_QUALITY.policy().textureReduction)
         assertTrue(MpkgConversionPreset.EXTREME_QUALITY.policy().losslessVisuals)
-        assertEquals(4, MpkgConversionPreset.COMPATIBILITY.policy().version)
+        assertEquals(5, MpkgConversionPreset.COMPATIBILITY.policy().version)
     }
 
     @Test
@@ -130,7 +129,7 @@ class ConversionPolicyV2Test {
     }
 
     @Test
-    fun `plan codec v4 preserves audio preference and equality`() {
+    fun `plan codec v5 preserves audio preference and equality`() {
         withScene("audio/theme.mp3", byteArrayOf(1, 2, 3)) { root, _ ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE, preserveAudio = true)
             val decoded = ConversionPlanJsonCodec.decode(ConversionPlanJsonCodec.encode(plan))
@@ -142,12 +141,12 @@ class ConversionPolicyV2Test {
     }
 
     @Test
-    fun `plan codec v4 rejects v3 JSON`() {
+    fun `plan codec v5 rejects v4 JSON`() {
         withScene("scripts/demo.txt", byteArrayOf(1, 2, 3)) { root, _ ->
             val encoded = ConversionPlanJsonCodec.encode(WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE))
-            val v3 = encoded.replaceFirst("\"version\":4", "\"version\":3")
+            val v4 = encoded.replaceFirst("\"version\":5", "\"version\":4")
 
-            assertThrows(IllegalArgumentException::class.java) { ConversionPlanJsonCodec.decode(v3) }
+            assertThrows(IllegalArgumentException::class.java) { ConversionPlanJsonCodec.decode(v4) }
         }
     }
 
