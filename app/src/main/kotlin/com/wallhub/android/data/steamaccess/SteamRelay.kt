@@ -4,7 +4,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 
-/** Returns only input-side I/O failure; EOF and destination cancellation are not route failures. */
+/** Returns only input-side I/O failure; destination cancellation is not a route failure. */
 internal fun forwardSteamBytes(
     input: InputStream,
     output: OutputStream,
@@ -13,7 +13,11 @@ internal fun forwardSteamBytes(
 ): IOException? {
     val buffer = ByteArray(32 * 1024)
     while (true) {
-        val count = try { input.read(buffer) } catch (error: IOException) { return error }
+        val count = try {
+            input.read(buffer)
+        } catch (error: IOException) {
+            return error
+        }
         if (count < 0) return onEof()
         if (count == 0) continue
         try {
@@ -21,7 +25,9 @@ internal fun forwardSteamBytes(
             // copyTo already writes each chunk. Explicit flushing avoids depending on a TLS
             // provider's buffering; it is not a claim that Conscrypt caused the observed stall.
             output.flush()
-        } catch (_: IOException) { return null }
+        } catch (_: IOException) {
+            return null
+        }
         onBytes(buffer, count)
     }
 }
@@ -30,8 +36,11 @@ internal fun forwardSteamBytes(
 internal class SteamResponseStatusObserver(private val onResponse: () -> Unit) {
     private val line = StringBuilder()
     private var done = false
-    @Volatile var receivedResponse = false
+
+    @Volatile
+    var receivedResponse = false
         private set
+
     fun accept(bytes: ByteArray, count: Int) {
         if (done) return
         for (index in 0 until count) {
@@ -45,7 +54,11 @@ internal class SteamResponseStatusObserver(private val onResponse: () -> Unit) {
                 line.clear()
                 return
             }
-            if (line.length >= 1024) { done = true; line.clear(); return }
+            if (line.length >= 1024) {
+                done = true
+                line.clear()
+                return
+            }
             line.append(char)
         }
     }

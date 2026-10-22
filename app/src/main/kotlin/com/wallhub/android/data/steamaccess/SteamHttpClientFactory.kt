@@ -54,6 +54,7 @@ class SteamHttpClientFactory
                 .dns(manager)
                 .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
                 .retryOnConnectionFailure(false)
+                .addInterceptor(SteamAnonymousReadRetry(manager::enhancedConnectionEnabled))
                 .followSslRedirects(false)
                 .connectionPool(manager.connectionPool)
                 .proxySelector(proxySelector)
