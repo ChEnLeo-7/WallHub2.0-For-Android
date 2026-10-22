@@ -167,7 +167,8 @@
     <string name='settings_steam_account_description'>Manage the sign-in session used by Library</string>
     <string name='settings_steam_sign_in_status'>Sign-in status</string>
     <string name='settings_steam_signed_in_as'>Signed in: %1$s</string>
-    <string name='settings_steam_saved_sign_in'>Saved sign-in available</string>
+    <string name='settings_steam_saved_sign_in'>Steam account saved, currently disconnected</string>
+    <string name='settings_steam_saved_offline_detail'>Your Steam account is saved; subscriptions, favorites, and downloads connect when needed.</string>
     <string name='settings_steam_signing_in'>Signing in to Steam</string>
     <string name='settings_steam_sign_in_needs_verification'>Steam sign-in needs verification</string>
     <string name='settings_steam_not_signed_in'>Not signed in</string>

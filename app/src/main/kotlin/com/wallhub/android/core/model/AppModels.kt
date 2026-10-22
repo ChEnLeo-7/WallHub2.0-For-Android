@@ -108,6 +108,8 @@ data class SteamSessionState(
     val awaitingDeviceConfirmation: Boolean = false,
     val verificationMethod: SteamVerificationMethod? = null,
     val hasStoredSession: Boolean = false,
+    /** True only while the sole account CM generation is authenticated and published as usable. */
+    val isConnected: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
 )
 

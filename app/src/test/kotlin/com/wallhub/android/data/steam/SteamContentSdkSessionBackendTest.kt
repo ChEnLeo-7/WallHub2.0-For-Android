@@ -55,6 +55,7 @@ class SteamContentSdkSessionBackendTest {
             assertEquals(credential.accountName, restore.accountName)
             assertContentEquals(credential.refreshToken.toByteArray(Charsets.UTF_8), restore.refreshToken)
             assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+            assertTrue(backend.session.value.isConnected)
             assertEquals(0, fixture.session.closeCalls)
         }
 
@@ -668,6 +669,7 @@ class SteamContentSdkSessionBackendTest {
             )
             assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
             assertTrue(backend.session.value.hasStoredSession)
+            assertFalse(backend.session.value.isConnected)
         }
 
     @Test

@@ -1084,6 +1084,7 @@ internal class SteamContentSdkSessionBackend(
             messages.signedIn,
             accountName = accountName,
             hasStoredSession = hasStoredSession || persisted,
+            isConnected = true,
         )
         val authenticatedSession = activeSession.get()
         authenticatedSession?.let(::startMaintenance)
@@ -1327,6 +1328,7 @@ internal class SteamContentSdkSessionBackend(
         awaitingDeviceConfirmation: Boolean = phase == SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION,
         verificationMethod: SteamVerificationMethod? = null,
         hasStoredSession: Boolean? = null,
+        isConnected: Boolean = false,
         personaName: String? = null,
         avatarUrl: String? = null,
     ) {
@@ -1358,6 +1360,7 @@ internal class SteamContentSdkSessionBackend(
                 awaitingDeviceConfirmation = awaitingDeviceConfirmation,
                 verificationMethod = verificationMethod,
                 hasStoredSession = hasStoredSession ?: previous.hasStoredSession,
+                isConnected = isConnected,
             )
         record("phase_${projectedPhase.name.lowercase()}")
     }

@@ -53,8 +53,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class ProfileCounts(
-    val subscriptions: Int = 0,
-    val favorites: Int = 0,
+    val subscriptions: Int? = null,
+    val favorites: Int? = null,
     val voted: Int = 0,
     /**
      * Whether the voted-items list is unavailable rather than empty.
@@ -90,7 +90,7 @@ class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionReposi
                                             resolveTotalCount = true,
                                         ),
                                     ).totalCount ?: 0
-                                }.getOrDefault(0)
+                                }.getOrNull()
                             }
                             val favorites = async {
                                 runCatching {
@@ -101,18 +101,22 @@ class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionReposi
                                             resolveTotalCount = true,
                                         ),
                                     ).totalCount ?: 0
-                                }.getOrDefault(0)
+                                }.getOrNull()
                             }
                             // Counts are the profile's primary content. Publish them before starting the
                             // optional playtime read so a slow player-service RPC cannot hold both collection
                             // requests behind the single serialized CM lane.
+                            val subscriptionCount = subscriptions.await()
+                            val favoriteCount = favorites.await()
                             _counts.value =
                                 ProfileCounts(
-                                    subscriptions = subscriptions.await(),
-                                    favorites = favorites.await(),
+                                    subscriptions = subscriptionCount,
+                                    favorites = favoriteCount,
                                     votedUnavailable = true,
                                 )
-                            loadedAccount = current.accountName
+                            loadedAccount = current.accountName.takeIf {
+                                subscriptionCount != null && favoriteCount != null
+                            }
                             _runtimeHours.value =
                                 runCatching {
                                     playtimeRepository.getAppPlaytime(WALLPAPER_ENGINE_APP_ID)
@@ -175,8 +179,8 @@ fun ProfileRoute(onOpenSettings: () -> Unit, onOpenSubscriptions: () -> Unit, on
             }
             item {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ProfileStatCard(stringResource(R.string.profile_subscriptions), counts.subscriptions.toString(), onOpenSubscriptions, Modifier.weight(1f))
-                    ProfileStatCard(stringResource(R.string.profile_favorites), counts.favorites.toString(), onOpenFavorites, Modifier.weight(1f))
+                    ProfileStatCard(stringResource(R.string.profile_subscriptions), counts.subscriptions?.toString() ?: "—", onOpenSubscriptions, Modifier.weight(1f))
+                    ProfileStatCard(stringResource(R.string.profile_favorites), counts.favorites?.toString() ?: "—", onOpenFavorites, Modifier.weight(1f))
                     ProfileStatCard(
                         stringResource(R.string.profile_voted),
                         if (counts.votedUnavailable) "—" else counts.voted.toString(),

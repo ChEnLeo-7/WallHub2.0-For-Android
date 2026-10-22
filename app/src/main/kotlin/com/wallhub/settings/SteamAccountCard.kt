@@ -148,11 +148,17 @@ internal fun SteamAccountCard(
                         )
                     }
 
+                    val displayedMessage =
+                        if (profileCard && session.hasStoredSession && !session.isConnected) {
+                            stringResource(R.string.settings_steam_saved_offline_detail)
+                        } else {
+                            session.message
+                        }
                     val showMessage =
-                        session.message != null && session.phase != SteamSessionPhase.SIGNED_OUT
+                        displayedMessage != null && session.phase != SteamSessionPhase.SIGNED_OUT
                     if (showMessage) {
                         Text(
-                            text = session.message.orEmpty(),
+                            text = displayedMessage.orEmpty(),
                             style = MaterialTheme.typography.bodyMedium,
                             color =
                                 if (

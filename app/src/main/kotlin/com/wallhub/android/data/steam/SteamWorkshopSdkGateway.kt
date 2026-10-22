@@ -15,7 +15,7 @@ import kotlinx.coroutines.sync.withLock
  */
 internal class SteamWorkshopSdkGateway(
     private val engine: SteamContentSdkEngine,
-    accountSessions: SteamContentSdkAuthenticatedSessionRegistry? = null,
+    private val accountSessions: SteamContentSdkAuthenticatedSessionRegistry? = null,
 ) {
     private val mutex = Mutex()
     private val reads =
@@ -68,11 +68,23 @@ internal class SteamWorkshopSdkGateway(
     }
 
     suspend fun awaitSignedInSession() {
-        if (signedInAccountId() != null) return
-        repeat(SESSION_READY_ATTEMPTS) {
-            delay(SESSION_READY_DELAY_MS)
+        val sessions = accountSessions
+        if (sessions == null) {
             if (signedInAccountId() != null) return
+            repeat(SESSION_READY_ATTEMPTS) {
+                delay(SESSION_READY_DELAY_MS)
+                if (signedInAccountId() != null) return
+            }
+            error("No signed-in Steam account session is available")
         }
+        val snapshot =
+            sessions.awaitCurrentUsable(timeoutMs = ACCOUNT_SESSION_RECOVERY_TIMEOUT_MS)
+                ?: error("No signed-in Steam account session is available")
+        check(snapshot.engine === engine) { "The authenticated Steam engine changed during account recovery" }
+        check(engine.currentSessionGeneration() == snapshot.generation) {
+            "The authenticated Steam session generation changed during account recovery"
+        }
+        check(signedInAccountId() != null) { "No signed-in Steam account is available" }
     }
 
     private class AccountRecoverableSteamSession(
@@ -117,6 +129,6 @@ internal class SteamWorkshopSdkGateway(
         const val SESSION_READY_ATTEMPTS = 20
         const val PUBLIC_SESSION_READY_ATTEMPTS = 32
         const val SESSION_READY_DELAY_MS = 250L
-        const val ACCOUNT_SESSION_RECOVERY_TIMEOUT_MS = 15_000L
+        const val ACCOUNT_SESSION_RECOVERY_TIMEOUT_MS = 75_000L
     }
 }

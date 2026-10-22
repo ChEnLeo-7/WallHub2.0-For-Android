@@ -155,7 +155,8 @@
     <string name='settings_steam_account_description'>管理资料库使用的登录会话</string>
     <string name='settings_steam_sign_in_status'>登录状态</string>
     <string name='settings_steam_signed_in_as'>已登录：%1$s</string>
-    <string name='settings_steam_saved_sign_in'>已保存登录状态</string>
+    <string name='settings_steam_saved_sign_in'>已保存 Steam 账号，当前未连接</string>
+    <string name='settings_steam_saved_offline_detail'>Steam 账号已保存；订阅、收藏或下载需要时将自动连接。</string>
     <string name='settings_steam_signing_in'>正在登录 Steam</string>
     <string name='settings_steam_sign_in_needs_verification'>Steam 登录需要重新验证</string>
     <string name='settings_steam_not_signed_in'>未登录</string>
