@@ -77,7 +77,8 @@ internal class SteamContentSdkSessionBroker private constructor(
     }
 
     private companion object {
-        // A cold mobile restore can spend one Directory timeout plus one live-candidate retry before success.
-        const val ACCOUNT_SESSION_WAIT_MS = 30_000L
+        // Covers the 60 s bounded recovery backoff plus one Directory/live-candidate pass. WebView likewise
+        // tolerates roughly 60-75 s of control-plane silence instead of failing a durable download immediately.
+        const val ACCOUNT_SESSION_WAIT_MS = 75_000L
     }
 }

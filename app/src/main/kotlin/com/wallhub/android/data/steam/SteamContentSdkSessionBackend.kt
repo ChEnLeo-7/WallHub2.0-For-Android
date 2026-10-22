@@ -35,6 +35,19 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 internal const val STEAM_SESSION_MAINTENANCE_INTERVAL_MS = 5_000L
 
+/** SteamHelper-style bounded reconnect debt: 1, 2, 4, 8, 16, 32, then 60 seconds. */
+internal fun steamAccountRecoveryDelayMs(shortSessionFailures: Long): Long {
+    if (shortSessionFailures <= 0L) return 0L
+    val exponent = (shortSessionFailures - 1L).coerceAtMost(MAX_RECOVERY_BACKOFF_EXPONENT).toInt()
+    return (FIRST_RECOVERY_BACKOFF_MS shl exponent).coerceAtMost(MAX_RECOVERY_BACKOFF_MS)
+}
+
+private const val FIRST_RECOVERY_BACKOFF_MS = 1_000L
+private const val MAX_RECOVERY_BACKOFF_MS = 60_000L
+private const val MAX_RECOVERY_BACKOFF_EXPONENT = 6L
+private const val STABLE_ACCOUNT_SESSION_MS = 60_000L
+private const val NANOS_PER_MILLISECOND = 1_000_000L
+
 /**
  * The Steam Content SDK as this app's session owner.
  *
@@ -115,6 +128,10 @@ internal class SteamContentSdkSessionBackend(
 
     /** The failure class of the attempt that just finished, so a transport failure earns one retry. */
     private val lastAttemptFailure = AtomicReference(SteamContentSdkSessionFailure.NONE)
+    /** Consecutive account CM generations that died before the stability window. */
+    private val shortSessionFailures = AtomicLong(0L)
+    /** Monotonic start of the authenticated generation, used only to decide whether retry debt resets. */
+    private val authenticatedAtNanos = AtomicLong(0L)
     private val sessionMutex = Mutex()
 
     init {
@@ -125,7 +142,7 @@ internal class SteamContentSdkSessionBackend(
                     generation: Long,
                 ) = retireAccountSession(accountName, generation)
 
-                override fun recoverStoredSession() = restorePersistedSession()
+                override fun recoverStoredSession() = requestOnDemandRecovery()
             },
         )
     }
@@ -149,7 +166,20 @@ internal class SteamContentSdkSessionBackend(
             val current = activeSession.get() ?: return@launchAttempt
             if (!accountName.equals(mutableSession.value.accountName, ignoreCase = true)) return@launchAttempt
             if (current.authorizationGeneration() != generation) return@launchAttempt
-            record("content_session_retired generation=$generation")
+            val authenticatedAt = authenticatedAtNanos.getAndSet(0L)
+            val livedMs =
+                authenticatedAt
+                    .takeIf { it > 0L }
+                    ?.let { started -> (System.nanoTime() - started).coerceAtLeast(0L) / NANOS_PER_MILLISECOND }
+                    ?: 0L
+            val failures =
+                if (livedMs >= STABLE_ACCOUNT_SESSION_MS) {
+                    shortSessionFailures.getAndSet(0L)
+                    0L
+                } else {
+                    shortSessionFailures.updateAndGet { count -> (count + 1L).coerceAtMost(MAX_RECOVERY_BACKOFF_EXPONENT + 1L) }
+                }
+            record("content_session_retired generation=$generation livedMs=$livedMs retryDebt=$failures")
             if (!releaseSessionIfCurrent(current)) return@launchAttempt
             // Match the WebView experience: remembered identity survives, while the expensive account CM is
             // reopened only when a foreground account/content operation asks the sole Backend owner for it.
@@ -159,6 +189,22 @@ internal class SteamContentSdkSessionBackend(
                 accountName = accountName,
                 hasStoredSession = true,
             )
+        }
+    }
+
+    private fun requestOnDemandRecovery() {
+        val delayMs = steamAccountRecoveryDelayMs(shortSessionFailures.get())
+        launchAttempt {
+            if (delayMs > 0L) {
+                record("content_session_recovery_backoff delayMs=$delayMs")
+                delay(delayMs)
+            }
+            val authenticated =
+                activeSession
+                    .get()
+                    ?.let { session -> runCatching { session.state() }.getOrNull() }
+                    .let { it == SteamContentSdkSessionState.AUTHENTICATED }
+            if (!authenticated) restoreStoredSession()
         }
     }
 
@@ -326,6 +372,8 @@ internal class SteamContentSdkSessionBackend(
                     runCatching { session.close() }
                 }
                 pendingChallenge.set(null)
+                authenticatedAtNanos.set(0L)
+                shortSessionFailures.set(0L)
                 // The claim the UI shows is about the store, so it is the store's answer that is published:
                 // telling the user the saved sign-in is gone when it could not be removed is what let a
                 // "signed out" app sign itself back in on the next launch.
@@ -1033,6 +1081,7 @@ internal class SteamContentSdkSessionBackend(
             return
         }
         pendingChallenge.set(null)
+        authenticatedAtNanos.set(System.nanoTime())
         // The authentication edge is the one moment the app can keep a session across a restart, so the token
         // the SDK retained is stored here on every path that reaches this state - logon, a Guard answer, and a
         // restore alike. The store write happens only when the SDK's retained token differs from the stored

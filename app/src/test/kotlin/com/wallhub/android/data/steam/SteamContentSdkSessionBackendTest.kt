@@ -27,6 +27,17 @@ import kotlinx.coroutines.test.runTest
  */
 class SteamContentSdkSessionBackendTest {
     @Test
+    fun `short account sessions accrue bounded exponential recovery debt`() {
+        assertEquals(0L, steamAccountRecoveryDelayMs(0))
+        assertEquals(1_000L, steamAccountRecoveryDelayMs(1))
+        assertEquals(2_000L, steamAccountRecoveryDelayMs(2))
+        assertEquals(4_000L, steamAccountRecoveryDelayMs(3))
+        assertEquals(32_000L, steamAccountRecoveryDelayMs(6))
+        assertEquals(60_000L, steamAccountRecoveryDelayMs(7))
+        assertEquals(60_000L, steamAccountRecoveryDelayMs(Long.MAX_VALUE))
+    }
+
+    @Test
     fun aStoredTokenIsPassedToTheSdkExactlyOnce() =
         runTest {
             val fixture = Fixture()
