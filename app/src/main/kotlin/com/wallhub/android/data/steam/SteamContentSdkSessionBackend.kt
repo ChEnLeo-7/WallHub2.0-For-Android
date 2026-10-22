@@ -119,7 +119,14 @@ internal class SteamContentSdkSessionBackend(
 
     init {
         authenticatedSessions.installRecoveryOwner(
-            SteamContentSdkAccountSessionRecoveryOwner(::requestAccountSessionRecovery),
+            object : SteamContentSdkAccountSessionRecoveryOwner {
+                override fun recoverIfCurrent(
+                    accountName: String,
+                    generation: Long,
+                ) = retireAccountSession(accountName, generation)
+
+                override fun recoverStoredSession() = restorePersistedSession()
+            },
         )
     }
 
@@ -134,7 +141,7 @@ internal class SteamContentSdkSessionBackend(
     // Session transitions
     // ------------------------------------------------------------------
 
-    private fun requestAccountSessionRecovery(
+    private fun retireAccountSession(
         accountName: String,
         generation: Long,
     ) {
@@ -142,24 +149,16 @@ internal class SteamContentSdkSessionBackend(
             val current = activeSession.get() ?: return@launchAttempt
             if (!accountName.equals(mutableSession.value.accountName, ignoreCase = true)) return@launchAttempt
             if (current.authorizationGeneration() != generation) return@launchAttempt
-            record("content_session_recovery_requested generation=$generation")
+            record("content_session_retired generation=$generation")
             if (!releaseSessionIfCurrent(current)) return@launchAttempt
-            preserveSignedInDuringRestore.set(true)
+            // Match the WebView experience: remembered identity survives, while the expensive account CM is
+            // reopened only when a foreground account/content operation asks the sole Backend owner for it.
             publish(
                 SteamSessionPhase.SIGNED_IN,
-                messages.restoringSession,
+                messages.restoreFailed,
                 accountName = accountName,
                 hasStoredSession = true,
             )
-            try {
-                restoreStoredSession()
-            } finally {
-                preserveSignedInDuringRestore.set(false)
-            }
-            // A bounded background restore that exhausts transport routes does not revoke the persisted
-            // account identity. Account operations still see no authenticated activeSession and therefore
-            // return WAIT_FOR_ACCOUNT_SESSION; only Steam's explicit credential/session rejection may move
-            // the identity to EXPIRED or SIGNED_OUT.
         }
     }
 
@@ -167,7 +166,19 @@ internal class SteamContentSdkSessionBackend(
         // The check is inside the block so it is re-read when the attempt actually runs: a queued restore
         // that was overtaken by a successful sign-in has nothing left to do.
         launchAttempt {
-            if (mutableSession.value.phase != SteamSessionPhase.SIGNED_IN) restoreStoredSession()
+            val authenticated =
+                activeSession
+                    .get()
+                    ?.let { session -> runCatching { session.state() }.getOrNull() }
+                    .let { it == SteamContentSdkSessionState.AUTHENTICATED }
+            if (!authenticated && mutableSession.value.hasStoredSession) {
+                preserveSignedInDuringRestore.set(mutableSession.value.phase == SteamSessionPhase.SIGNED_IN)
+                try {
+                    restoreStoredSession()
+                } finally {
+                    preserveSignedInDuringRestore.set(false)
+                }
+            }
         }
     }
 
@@ -716,7 +727,7 @@ internal class SteamContentSdkSessionBackend(
         val accountName = mutableSession.value.accountName ?: return
         val generation = session.authorizationGeneration() ?: return
         if (!authenticatedSessions.reportUnavailable(accountName, generation)) {
-            requestAccountSessionRecovery(accountName, generation)
+            retireAccountSession(accountName, generation)
         }
     }
 

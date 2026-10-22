@@ -14,11 +14,14 @@ internal data class SteamContentSdkAuthenticatedSession(
 )
 
 /** The one non-blocking recovery signal content callers may send to the account-session owner. */
-internal fun interface SteamContentSdkAccountSessionRecoveryOwner {
+internal interface SteamContentSdkAccountSessionRecoveryOwner {
     fun recoverIfCurrent(
         accountName: String,
         generation: Long,
     )
+
+    /** Opens the one persisted account Session when an operation actually needs it. */
+    fun recoverStoredSession()
 }
 
 /**
@@ -114,6 +117,7 @@ internal class SteamContentSdkAuthenticatedSessionRegistry
             currentUsable()?.takeIf { afterGeneration == null || it.generation > afterGeneration }?.let {
                 return it
             }
+            synchronized(lock) { recoveryOwner }?.recoverStoredSession()
             return withTimeoutOrNull(timeoutMs) {
                 published.first { value ->
                     value != null &&
@@ -132,6 +136,7 @@ internal class SteamContentSdkAuthenticatedSessionRegistry
             currentUsable(accountName)?.takeIf { afterGeneration == null || it.generation > afterGeneration }?.let {
                 return it
             }
+            synchronized(lock) { recoveryOwner }?.recoverStoredSession()
             return withTimeoutOrNull(timeoutMs) {
                 published.first { value ->
                     value != null &&

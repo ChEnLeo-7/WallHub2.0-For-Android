@@ -77,6 +77,7 @@ internal class SteamContentSdkSessionBroker private constructor(
     }
 
     private companion object {
-        const val ACCOUNT_SESSION_WAIT_MS = 15_000L
+        // A cold mobile restore can spend one Directory timeout plus one live-candidate retry before success.
+        const val ACCOUNT_SESSION_WAIT_MS = 30_000L
     }
 }
