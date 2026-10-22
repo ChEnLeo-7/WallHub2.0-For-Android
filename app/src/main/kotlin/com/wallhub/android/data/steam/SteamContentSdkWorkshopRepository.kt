@@ -257,13 +257,14 @@ internal class SteamContentSdkWorkshopRepository
                 // own details before it reads the thread. kSteam had to be handed the same value by the
                 // caller; both end up sending the item's author as the thread key.
                 runCatchingUnavailable {
-                    sdkPublicRead(
+                    awaitWorkshopSession(WorkshopSessionAccess.AUTHENTICATED_ACCOUNT, gateway::awaitSignedInSession)
+                    sdkRead(
                         key = "comments:$workshopId:$pageStart:$pageCount",
                         kind = WorkshopReadKind.COMMENTS,
                         priority = WorkshopReadPriority.FOREGROUND,
-                    ) { publicEngine ->
+                    ) {
                         val page =
-                            publicEngine.workshopComments(
+                            engine.workshopComments(
                                 itemId = workshopId,
                                 // kSteam's request carries no ordering field, so the service's newest-first
                                 // default answered it. The SDK names that ordering explicitly instead -

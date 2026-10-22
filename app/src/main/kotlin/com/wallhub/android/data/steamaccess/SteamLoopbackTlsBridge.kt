@@ -166,23 +166,8 @@ internal class SteamLoopbackTlsBridge
                     relay(clientSocket, upstream)
                     return
                 }
-                if (!SteamDomainPolicy.isCmHost(host)) {
-                    val addresses = kotlinx.coroutines.runBlocking { accessManager.enhancedAddresses(host) }
-                    val upstream = connectDirect(host, request.port, addresses)
-                    Log.i(
-                        LOG_TAG,
-                        "SDK bridge plane=web mode=transparent host=$host " +
-                            "address=${upstream.inetAddress.hostAddress.orEmpty()}",
-                    )
-                    upstreamSocket = upstream
-                    writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
-                    clientSocket.soTimeout = 0
-                    tunnelEstablished = true
-                    // TLS remains end-to-end in OkHttp, including SNI, hostname verification and ALPN.
-                    relay(clientSocket, upstream)
-                    return
-                }
-                Log.i(LOG_TAG, "SDK bridge plane=cm mode=enhanced")
+                val plane = if (SteamDomainPolicy.isCmHost(host)) "cm" else "web"
+                Log.i(LOG_TAG, "SDK bridge plane=$plane mode=enhanced")
                 val route =
                     runCatching { accessManager.acceleratedRoute(host, request.port) }.getOrElse {
                         val prepared =
@@ -204,20 +189,15 @@ internal class SteamLoopbackTlsBridge
                     )
                 }
                 val upstream =
-                    if (SteamDomainPolicy.isCmHost(host)) {
-                        runCatching {
-                            noSniTlsDialer.connect(host, route.addresses, request.port, recordFailure)
-                        }.getOrElse {
-                            Log.i(LOG_TAG, "SDK bridge plane=cm upstream_sni=fallback")
-                            noSniTlsDialer.connectWithSni(host, route.addresses, request.port, recordFailure)
-                        }
-                    } else {
-                        runCatching {
-                            noSniTlsDialer.connect(host, route.addresses, request.port, recordFailure)
-                        }.getOrElse {
-                            Log.i(LOG_TAG, "SDK bridge plane=web upstream_sni=fallback host=$host")
-                            noSniTlsDialer.connectWithSni(host, route.addresses, request.port, recordFailure)
-                        }
+                    runCatching {
+                        noSniTlsDialer.connect(host, route.addresses, request.port, recordFailure)
+                    }.getOrElse { noSniFailure ->
+                        Log.i(
+                            LOG_TAG,
+                            "SDK bridge plane=$plane upstream_sni=original_fallback " +
+                                "failure=${sanitizedFailure(noSniFailure)}",
+                        )
+                        noSniTlsDialer.connectWithSni(host, route.addresses, request.port, recordFailure)
                     }
                 upstreamSocket = upstream.socket
                 val committed =
