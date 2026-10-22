@@ -116,6 +116,7 @@ object WorkshopConverter {
                             ResourceStrategy.DOWNSAMPLE_TO_ETC2 -> "downsampled_to_etc2_rgba8_lz4"
                             ResourceStrategy.CONVERT_TO_RGBA8888_LZ4 -> "converted_to_rgba8888_lz4"
                             ResourceStrategy.REWRITE_SHADER -> "rewritten_for_mobile_glsl"
+                            ResourceStrategy.REWRITE_SCENE_SETTINGS -> "rewritten_scene_settings"
                             ResourceStrategy.REMOVE_AUDIO -> "removed"
                             ResourceStrategy.PASSTHROUGH -> "passed_through"
                             ResourceStrategy.PASSTHROUGH_WITH_WARNING -> resource.reason
