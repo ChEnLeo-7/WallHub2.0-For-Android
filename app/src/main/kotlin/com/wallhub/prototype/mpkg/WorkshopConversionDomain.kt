@@ -189,7 +189,7 @@ object ConversionReportJsonCodec {
                 JSONObject()
                     .put("version", 2)
                     .put("planVersion", report.planVersion ?: 1)
-                    .put("presetId", report.presetId ?: MpkgConversionPreset.BALANCED.stableId)
+                    .put("presetId", report.presetId ?: MpkgConversionPreset.HIGH_QUALITY.stableId)
                     .put("kind", report.kind.name)
                     .put("outputBytes", report.outputFile.length())
                     .put("resourceCount", report.outcomes.size)

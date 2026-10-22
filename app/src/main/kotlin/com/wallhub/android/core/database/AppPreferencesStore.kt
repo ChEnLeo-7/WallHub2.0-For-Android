@@ -351,12 +351,7 @@ class AppPreferencesStore(
             mpkgConversionPreset =
                 preferences[Keys.mpkgConversionPreset]
                     ?.let(MpkgConversionPreset::fromStableId)
-                    ?: if (preferences.asMap().isEmpty()) {
-                        // A pristine store is a new install; existing stores without the old key retain v3's default.
-                        MpkgConversionPreset.HIGH_QUALITY
-                    } else {
-                        MpkgConversionPreset.BALANCED
-                    },
+                    ?: MpkgConversionPreset.HIGH_QUALITY,
             preserveAudio = preferences[Keys.preserveAudio] ?: false,
             workshopSourceCacheEnabled = preferences[Keys.workshopSourceCacheEnabled] ?: true,
             workshopSourceCacheBudgetGiB = (preferences[Keys.workshopSourceCacheBudgetGiB] ?: 5).coerceAtLeast(0),

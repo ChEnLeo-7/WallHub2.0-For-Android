@@ -48,7 +48,7 @@ enum class MpkgConversionPreset(
         fun fromStableId(stableId: String): MpkgConversionPreset =
             when (stableId) {
                 "source_fidelity" -> HIGH_QUALITY
-                else -> entries.firstOrNull { preset -> preset.stableId == stableId } ?: BALANCED
+                else -> entries.firstOrNull { preset -> preset.stableId == stableId } ?: HIGH_QUALITY
             }
     }
 }
