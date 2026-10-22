@@ -698,9 +698,7 @@ class LocalWallpaperViewModel
             viewModelScope.launch {
                 val results = resources.map { resource -> repository.delete(resource) }
                 val failures = results.filterNot { it.deleted }
-                if (failures.isNotEmpty()) {
-                    showMessage(R.string.backend_local_delete_failed)
-                }
+                failures.firstOrNull()?.let { failure -> showMessage(failure.message) }
                 clearSelection()
                 scan()
             }

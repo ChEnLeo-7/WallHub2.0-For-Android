@@ -2,6 +2,7 @@ package com.wallhub.android.data.downloads
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import com.wallhub.android.R
 import com.wallhub.android.core.database.FormalTaskRecordDao
@@ -27,6 +28,24 @@ import kotlinx.coroutines.flow.flowOn
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
+
+internal enum class LocalWallpaperDeleteKind {
+    FILE,
+    DOCUMENT,
+    CONTENT,
+}
+
+internal fun deleteLocalWallpaperUri(
+    kind: LocalWallpaperDeleteKind,
+    deleteFile: () -> Boolean,
+    deleteDocument: () -> Boolean,
+    deleteContent: () -> Boolean,
+): Boolean =
+    when (kind) {
+        LocalWallpaperDeleteKind.FILE -> deleteFile()
+        LocalWallpaperDeleteKind.DOCUMENT -> deleteDocument()
+        LocalWallpaperDeleteKind.CONTENT -> deleteContent()
+    }
 
 class LocalWallpaperFileRepository
     @Inject
@@ -224,13 +243,19 @@ class LocalWallpaperFileRepository
                 var deletedCount = 0
                 uris.asReversed().forEach { rawUri ->
                     val target = Uri.parse(rawUri)
-                    val deleted =
-                        when (target.scheme) {
-                            "file" -> File(requireNotNull(target.path)).delete()
-                            else ->
-                                resolver.delete(target, null, null) > 0 ||
-                                    DocumentFile.fromSingleUri(applicationContext, target)?.delete() == true
+                    val kind =
+                        when {
+                            target.scheme == "file" -> LocalWallpaperDeleteKind.FILE
+                            DocumentsContract.isDocumentUri(applicationContext, target) -> LocalWallpaperDeleteKind.DOCUMENT
+                            else -> LocalWallpaperDeleteKind.CONTENT
                         }
+                    val deleted =
+                        deleteLocalWallpaperUri(
+                            kind = kind,
+                            deleteFile = { target.path?.let(::File)?.delete() == true },
+                            deleteDocument = { DocumentFile.fromSingleUri(applicationContext, target)?.delete() == true },
+                            deleteContent = { resolver.delete(target, null, null) > 0 },
+                        )
                     if (deleted) deletedCount += 1
                 }
                 if (deletedCount == uris.size) {
