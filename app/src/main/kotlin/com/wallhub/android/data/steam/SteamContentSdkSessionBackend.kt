@@ -193,25 +193,12 @@ internal class SteamContentSdkSessionBackend(
     }
 
     private fun requestOnDemandRecovery() {
-        val delayMs = steamAccountRecoveryDelayMs(shortSessionFailures.get())
         launchAttempt {
+            val delayMs = steamAccountRecoveryDelayMs(shortSessionFailures.get())
             if (delayMs > 0L) {
                 record("content_session_recovery_backoff delayMs=$delayMs")
                 delay(delayMs)
             }
-            val authenticated =
-                activeSession
-                    .get()
-                    ?.let { session -> runCatching { session.state() }.getOrNull() }
-                    .let { it == SteamContentSdkSessionState.AUTHENTICATED }
-            if (!authenticated) restoreStoredSession()
-        }
-    }
-
-    override fun restorePersistedSession() {
-        // The check is inside the block so it is re-read when the attempt actually runs: a queued restore
-        // that was overtaken by a successful sign-in has nothing left to do.
-        launchAttempt {
             val authenticated =
                 activeSession
                     .get()
@@ -227,6 +214,8 @@ internal class SteamContentSdkSessionBackend(
             }
         }
     }
+
+    override fun restorePersistedSession() = requestOnDemandRecovery()
 
     override fun login(
         accountName: String,
