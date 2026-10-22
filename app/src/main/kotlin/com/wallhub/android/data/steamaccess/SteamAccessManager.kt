@@ -662,7 +662,7 @@ class SteamAccessManager
                     .filterNot { address ->
                         address.hostAddress.orEmpty() in coolingDown &&
                             (SteamDomainPolicy.isCmHost(hostname) || address !in systemAddresses)
-                    }.take(MAX_NO_SNI_PROBE_ADDRESSES)
+                    }.take(MAX_ENHANCED_ROUTE_CANDIDATES)
             val probeResults =
                 if (SteamDomainPolicy.isCmHost(hostname)) {
                     // CM route validity is established by the bridge's real authority-preserving TLS handshake.
@@ -884,6 +884,8 @@ class SteamAccessManager
             const val MIN_REFRESH_DELAY_MS = 30_000L
             const val FAILED_REFRESH_RETRY_MS = 60_000L
             const val MAX_NO_SNI_PROBE_ADDRESSES = 4
+            /** Preserve room for built-in Akamai seeds after system, history, and DoH candidates. */
+            const val MAX_ENHANCED_ROUTE_CANDIDATES = 8
             const val NO_SNI_PROBE_BUDGET_MS = 6_000L
         }
     }
