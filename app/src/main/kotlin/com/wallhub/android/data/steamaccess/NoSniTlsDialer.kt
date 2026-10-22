@@ -239,7 +239,7 @@ internal class NoSniTlsDialer internal constructor(
 
     private companion object {
         const val HTTPS_PORT = 443
-        const val MAX_RACE_ADDRESSES = 2
+        const val MAX_RACE_ADDRESSES = 4
         const val RACE_DELAY_MS = 200L
         const val CONNECT_RACE_BUDGET_MS = 6_000L
         const val CONNECT_TIMEOUT_MS = 4_000

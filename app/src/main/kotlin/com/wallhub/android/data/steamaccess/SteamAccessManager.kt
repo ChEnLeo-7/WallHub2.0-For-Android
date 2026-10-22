@@ -218,6 +218,34 @@ class SteamAccessManager
          * Resolves one authenticated SDK CDN endpoint through the same enhanced resolver policy.
          * The caller still performs strict TLS and hostname validation; no token or URL enters this module.
          */
+        internal suspend fun enhancedWebAddresses(
+            hostname: String,
+            port: Int,
+        ): List<InetAddress> {
+            val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
+            preferencesReady.await()
+            val systemAddresses = systemEndpointLookup(host)
+            if (!preferences.steamAccessEnabled) return systemAddresses
+            val resolved =
+                when (preferences.steamAccessMode) {
+                    SteamAccessMode.HOSTS -> parsedHosts[host].orEmpty()
+                    SteamAccessMode.SMART_DOH ->
+                        dohResolver.resolve(
+                            hostnames = listOf(host) + SteamAccessRoutes.aliases(host),
+                            endpoints = preferences.enabledSteamAccessDohEndpoints(),
+                            includeIpv6 = currentNetworkSupportsIpv6(),
+                        )
+                }
+            return buildList {
+                addAll(routeStore.preferred(networkType, host, port))
+                addAll(systemAddresses)
+                addAll(resolved)
+                addAll(SteamAccessRoutes.seeds(host))
+            }.filter(::isAuthenticatedCdnAddress)
+                .distinctBy(InetAddress::getHostAddress)
+                .take(MAX_ENHANCED_ROUTE_CANDIDATES)
+        }
+
         internal suspend fun enhancedAddresses(hostname: String): List<InetAddress> {
             val host = SteamDomainPolicy.requireAuthenticatedCdnEndpoint(hostname, STEAM_HTTPS_PORT)
             preferencesReady.await()
@@ -301,6 +329,21 @@ class SteamAccessManager
             if (lookup.shouldRefresh) requestRouteRefresh(host, port)
             return lookup.route?.accelerated == true
         }
+
+        internal suspend fun acceleratedOrWebCandidateRoute(
+            hostname: String,
+            port: Int,
+        ): AcceleratedRoute =
+            runCatching { acceleratedRoute(hostname, port) }.getOrElse {
+                val addresses = enhancedWebAddresses(hostname, port)
+                if (addresses.isEmpty()) throw IOException("No enhanced candidates for $hostname")
+                AcceleratedRoute(
+                    networkType = networkType,
+                    generation = routeGeneration.get(),
+                    port = port,
+                    addresses = addresses,
+                )
+            }
 
         internal fun acceleratedRoute(
             hostname: String,

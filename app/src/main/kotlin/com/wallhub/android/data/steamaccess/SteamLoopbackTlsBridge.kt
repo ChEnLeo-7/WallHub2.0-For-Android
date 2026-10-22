@@ -169,13 +169,19 @@ internal class SteamLoopbackTlsBridge
                 val plane = if (SteamDomainPolicy.isCmHost(host)) "cm" else "web"
                 Log.i(LOG_TAG, "SDK bridge plane=$plane mode=enhanced")
                 val route =
-                    runCatching { accessManager.acceleratedRoute(host, request.port) }.getOrElse {
-                        val prepared =
-                            kotlinx.coroutines.runBlocking {
-                                accessManager.prewarmSteamEndpoint(host, request.port)
-                            }
-                        if (!prepared) throw it
-                        accessManager.acceleratedRoute(host, request.port)
+                    if (plane == "web") {
+                        kotlinx.coroutines.runBlocking {
+                            accessManager.acceleratedOrWebCandidateRoute(host, request.port)
+                        }
+                    } else {
+                        runCatching { accessManager.acceleratedRoute(host, request.port) }.getOrElse {
+                            val prepared =
+                                kotlinx.coroutines.runBlocking {
+                                    accessManager.prewarmSteamEndpoint(host, request.port)
+                                }
+                            if (!prepared) throw it
+                            accessManager.acceleratedRoute(host, request.port)
+                        }
                     }
                 selectedRoute = route
                 val recordFailure: (InetAddress, Throwable) -> Unit = { address, error ->
@@ -201,16 +207,21 @@ internal class SteamLoopbackTlsBridge
                     }
                 upstreamSocket = upstream.socket
                 val committed =
-                    accessManager.commitAcceleratedRoute(
-                        route = route,
-                        hostname = host,
-                        port = request.port,
-                        address = upstream.address,
-                        elapsedMs = upstream.elapsedMs,
-                        commitTunnel = {
-                            writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
-                        },
-                    )
+                    if (plane == "web") {
+                        writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
+                        true
+                    } else {
+                        accessManager.commitAcceleratedRoute(
+                            route = route,
+                            hostname = host,
+                            port = request.port,
+                            address = upstream.address,
+                            elapsedMs = upstream.elapsedMs,
+                            commitTunnel = {
+                                writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
+                            },
+                        )
+                    }
                 if (!committed) throw IOException("Steam route changed during upstream connection")
 
                 val securedClient =
