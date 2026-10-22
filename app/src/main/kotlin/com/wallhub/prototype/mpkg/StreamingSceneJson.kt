@@ -214,7 +214,11 @@ internal object StreamingSceneJson {
         private fun recordReference(key: String, value: String?) {
             if (value == null || budget.exhausted) return
             val normalized = normalizeReference(value)
-            val canonical = textures[normalized] ?: return
+            val documentParent = normalizeReference(entry.path).substringBeforeLast('/', "")
+            val canonical =
+                textures[normalized]
+                    ?: documentParent.takeIf(String::isNotEmpty)?.let { textures["$it/$normalized"] }
+                    ?: return
             val incoming = semanticForKey(key)
             semantics[canonical] = merge(semantics[canonical], incoming)
         }
