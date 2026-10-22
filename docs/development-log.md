@@ -1,5 +1,11 @@
 # Development Log
 
+## 2026-10-22 — Setup-owned Workshop save-directory authorization
+
+The initial setup wizard now contains a dedicated **保存位置 / Save location** step between network and Steam. Its default is `Download/WallHub`; on Android 10+ pressing Next without an existing directory grant launches `OpenDocumentTree` at `primary:Download/WallHub` and requires a persisted read/write SAF grant before continuing. The selected tree is saved through the same `SettingsRepository.setOutputDirectory` interface used by **Settings → Downloads**, so download export and local-wallpaper scanning share one stable directory and users can change or restore it later. Android 9 and earlier retain the manifest-scoped `WRITE_EXTERNAL_STORAGE` request; modern Android deliberately does not request ineffective `READ_EXTERNAL_STORAGE`, media-only permissions that exclude MPKG, or high-risk all-files access.
+
+LAN-Windows build `20261022T070748Z-167795622` from commit `2970166` passed and was installed without clearing device data. Restarting the wizard showed `默认：Download/WallHub`; pressing Next opened the ColorOS system picker directly inside the existing `Download/WallHub` folder with both MPKG files visible and **使用此文件夹** available. Granting it advanced to Steam, persisted the tree, and finishing setup restored the app. The local page then immediately discovered both existing packages (`94.9 MB` and `22.9 MB`) through the authorized tree, closing the prior MediaStore-owner visibility failure.
+
 ## 2026-10-22 — Memory-bounded large scene JSON conversion
 
 Workshop `3798688689` exposed a plan/execution contradiction rather than a corrupt download: its 2,508,971-byte `scene.json` exceeded the old 2 MiB material-graph admission cap, was planned as `PASSTHROUGH_WITH_WARNING/material_graph_document_invalid`, then was unconditionally rewritten for texture reduction and correctly rejected by the final passthrough length check. The conversion policy and plan are now v5. Root `scene.json` has an explicit `REWRITE_SCENE_SETTINGS` strategy independent from material-analysis completeness, while genuine passthrough resources retain exact length and digest verification.
