@@ -769,5 +769,5 @@ private data class SteamProfileCacheKey(
 private const val MAX_PUBLIC_DETAILS_BYTES = 1024 * 1024
 private const val COMMUNITY_COMMENT_CALL_TIMEOUT_MS = 1_500L
 private const val MAX_DETAIL_SEEDS = 256
-private val DETAIL_SEED_TTL_NANOS = TimeUnit.SECONDS.toNanos(30)
+private val DETAIL_SEED_TTL_NANOS = TimeUnit.MINUTES.toNanos(5)
 private const val LOG_TAG = "WallHubWorkshop"
