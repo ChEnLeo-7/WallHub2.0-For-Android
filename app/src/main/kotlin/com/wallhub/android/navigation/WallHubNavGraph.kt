@@ -145,7 +145,6 @@ internal fun WallHubNavHost(
                 onOpenSettings = openSettings,
                 onOpenSubscriptions = { navController.navigate(LibraryCollectionDestination("SUBSCRIPTIONS")) },
                 onOpenFavorites = { navController.navigate(LibraryCollectionDestination("FAVORITES")) },
-                onOpenVoted = { navController.navigate(LibraryCollectionDestination("VOTED")) },
                 onOpenDownloads = { navController.navigate(DownloadsDestination) },
                 onOpenLocal = { navController.navigate(LocalDestination) },
                 onOpenLogin = { navController.navigate(SteamLoginDestination) },
@@ -190,13 +189,7 @@ internal fun WallHubNavHost(
         }
         composable<LibraryCollectionDestination> { entry ->
             val route = entry.toRoute<LibraryCollectionDestination>()
-            if (route.collection == "VOTED") {
-                com.wallhub.android.feature.votes.PersonalVotesRoute(
-                    onBack = { navController.popBackStack() },
-                    onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
-                    onOpenLogin = { navController.navigate(SteamLoginDestination) },
-                )
-            } else LibraryRoute(
+            LibraryRoute(
                 initialCollection = route.collection,
                 onBack = { navController.popBackStack() },
                 onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },

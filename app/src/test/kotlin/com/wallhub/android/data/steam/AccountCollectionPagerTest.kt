@@ -82,7 +82,7 @@ class AccountCollectionPagerTest {
 
         pager.page(scope, query(collection = AccountWorkshopCollection.FAVORITES), loader)
         pager.page(scope, query(collection = AccountWorkshopCollection.SUBSCRIPTIONS), loader)
-        pager.page(scope, query(collection = AccountWorkshopCollection.VOTED), loader)
+        pager.page(scope.copy(sessionGeneration = 8L), query(collection = AccountWorkshopCollection.FAVORITES), loader)
         pager.page(scope, query(collection = AccountWorkshopCollection.FAVORITES), loader)
 
         assertEquals(listOf(1, 2, 1, 2, 1, 2, 1, 2), calls)

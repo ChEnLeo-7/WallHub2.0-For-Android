@@ -2,23 +2,6 @@
 <resources xmlns:tools='http://schemas.android.com/tools'>
     <string name='app_name'>WallHub</string>
     <string name='app_starting'>Starting WallHub…</string>
-    <string name='votes_title'>My votes</string>
-    <string name='votes_up'>Upvoted</string>
-    <string name='votes_down'>Downvoted</string>
-    <string name='votes_sync'>Read vote records</string>
-    <string name='votes_next_page'>Load more records</string>
-    <string name='votes_sign_in'>Sign in to Steam</string>
-    <string name='votes_sync_hint'>Authorize Steam Support with the same account to read your vote records. Current votes are verified through your Steam session.</string>
-    <string name='votes_empty'>No matching votes in the records loaded so far.</string>
-    <string name='votes_loaded_count'>Loaded %1$d items</string>
-    <string name='votes_complete_count'>%1$d items · all records checked</string>
-    <string name='votes_incomplete'>Some records could not be verified. Counts are incomplete; refresh to retry.</string>
-    <string name='votes_account_unverified'>Steam Support did not provide a verifiable account identity. Sign in on the authorization page and retry.</string>
-    <string name='votes_account_mismatch'>The Steam Support account could not be matched to the current Steam account. Sign in with the same account.</string>
-    <string name='votes_read_failed'>Could not read vote records. Check the connection and Steam Support sign-in, then retry.</string>
-    <string name='votes_back'>Back</string>
-    <string name='votes_authorization'>Authorize Steam Support</string>
-    <string name='votes_dismiss'>Close authorization</string>
     <string name='app_saved_steam_session_expired'>Your saved Steam sign-in has expired. Sign in again to continue.</string>
     <string name='setup_welcome_title'>Welcome to WallHub</string>
     <string name='setup_welcome_description'>Browse, download, and manage Wallpaper Engine Workshop content on Android.</string>
@@ -403,7 +386,6 @@
     <string name='profile_runtime_unknown'>--</string>
     <string name='profile_hours_format'>%1$d hours</string>
     <string name='profile_runtime_summary'>Recorded Wallpaper runtime %1$s</string>
-    <string name='profile_voted'>My votes</string>
     <string name='profile_downloads'>Downloads</string>
     <string name='profile_download_hint'>Manage download tasks</string>
     <string name='profile_local'>Local wallpapers</string>
@@ -466,7 +448,6 @@
     <string name='management_web'>Web</string>
     <string name='management_subscriptions'>Subscriptions</string>
     <string name='management_favorites'>Favorites</string>
-    <string name='management_voted'>Voted</string>
     <string name='management_infinite_scroll'>Infinite scroll</string>
     <string name='management_page_controls'>Page controls</string>
     <string name='home_back'>Back</string>
@@ -825,7 +806,6 @@
     <string name='library_empty_search'>No matching wallpaper in this library</string>
     <string name='library_empty_subscriptions'>No matching subscriptions</string>
     <string name='library_empty_favorites'>No matching favorites</string>
-    <string name='library_empty_voted'>Steam does not provide a voted-items list</string>
     <string name='library_refresh'>Refresh</string>
     <string name='library_current_page_description'>Page %1$d; known last page %2$d; tap to enter a page</string>
     <string name='library_preview'>%1$s preview</string>
@@ -833,7 +813,6 @@
     <string name='library_favorites_count'>Favorites</string>
     <string name='library_collection_subscriptions'>My subscriptions</string>
     <string name='library_collection_favorites'>My favorites</string>
-    <string name='library_collection_voted'>My votes</string>
     <string name='library_loaded_items'>%1$d loaded</string>
     <string name='library_unsubscribe'>Unsubscribe</string>
     <string name='library_remove_favorite'>Remove from favorites</string>

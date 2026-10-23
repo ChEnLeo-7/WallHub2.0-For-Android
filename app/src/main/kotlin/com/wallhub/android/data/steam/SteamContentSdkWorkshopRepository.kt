@@ -72,8 +72,7 @@ import kotlinx.coroutines.withContext
  *
  * `RepositoryModule` binds all three contracts to this class, so the Workshop reads the product performs are
  * served by the SDK rather than by kSteam; the last adapter-level capability gaps it inherited (the thread
- * owner, the comment ordering, and the Voted collection) are now recorded as parity rather than as gaps at
- * their call sites.
+ * owner and comment ordering) are now recorded as parity rather than as gaps at their call sites.
  */
 @Singleton
 internal class SteamContentSdkWorkshopRepository
@@ -285,25 +284,6 @@ internal class SteamContentSdkWorkshopRepository
 
         override suspend fun browseCollection(query: AccountWorkshopQuery): WorkshopPage =
             accountReader.browseCollection(query)
-
-        override suspend fun currentAccountSteamId(): String? = withContext(Dispatchers.IO) {
-            gateway.awaitSignedInSession()
-            gateway.signedInAccountId()?.toString()
-        }
-
-        override suspend fun getUserVote(workshopId: Long): Int = withContext(Dispatchers.IO) {
-            require(workshopId > 0L) { "Invalid Workshop item ID" }
-            gateway.awaitSignedInSession()
-            val accountId = checkNotNull(gateway.signedInAccountId())
-            gateway.read(
-                key = "vote:$accountId:$workshopId",
-                kind = WorkshopReadKind.ACCOUNT_COLLECTION,
-                priority = WorkshopReadPriority.FOREGROUND,
-            ) {
-                check(gateway.signedInAccountId() == accountId) { "Steam account changed during vote read" }
-                engine.workshopUserVote(workshopId)
-            }
-        }
 
         /**
          * Resolves the creator's public display name through the player family (ADR 0032).

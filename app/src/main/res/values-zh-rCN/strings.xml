@@ -3,23 +3,6 @@
     <string name='app_name'>WallHub</string>
     <string name='app_saved_steam_session_expired'>已保存的 Steam 登录已失效，请重新登录。</string>
     <string name='app_starting'>正在启动 WallHub…</string>
-    <string name='votes_title'>我的投票</string>
-    <string name='votes_up'>点赞</string>
-    <string name='votes_down'>点踩</string>
-    <string name='votes_sync'>读取投票记录</string>
-    <string name='votes_next_page'>加载更多记录</string>
-    <string name='votes_sign_in'>登录 Steam</string>
-    <string name='votes_sync_hint'>请使用同一账号授权 Steam 客服页面读取投票记录；当前赞踩状态将通过 Steam 会话核实。</string>
-    <string name='votes_empty'>目前已加载的记录中没有这一类投票。</string>
-    <string name='votes_loaded_count'>已加载 %1$d 项</string>
-    <string name='votes_complete_count'>共 %1$d 项 · 已核实全部记录</string>
-    <string name='votes_incomplete'>部分记录未能核实，数量尚不完整；可刷新后重试。</string>
-    <string name='votes_account_unverified'>Steam 客服页面未提供可验证的账号身份，请在授权页面登录后重试。</string>
-    <string name='votes_account_mismatch'>无法确认客服页面与当前 Steam 为同一账号，请使用同一账号登录。</string>
-    <string name='votes_read_failed'>无法读取投票记录，请检查网络及 Steam 客服登录状态后重试。</string>
-    <string name='votes_back'>返回</string>
-    <string name='votes_authorization'>授权 Steam 客服页面</string>
-    <string name='votes_dismiss'>关闭授权页面</string>
     <string name='setup_welcome_title'>欢迎使用 WallHub</string>
     <string name='setup_welcome_description'>在 Android 上浏览、下载与管理 Wallpaper Engine 创意工坊内容。</string>
     <string name='setup_steam_title'>登录 Steam</string>
@@ -382,7 +365,6 @@
     <string name='profile_runtime_unknown'>--</string>
     <string name='profile_hours_format'>%1$d 小时</string>
     <string name='profile_runtime_summary'>已记录的 Wallpaper 运行时长 %1$s</string>
-    <string name='profile_voted'>我的投票</string>
     <string name='profile_downloads'>下载管理</string>
     <string name='profile_download_hint'>管理下载任务</string>
     <string name='profile_local'>本地壁纸</string>
@@ -444,7 +426,6 @@
     <string name='management_web'>网站</string>
     <string name='management_subscriptions'>个人订阅</string>
     <string name='management_favorites'>我的收藏</string>
-    <string name='management_voted'>我的投票</string>
     <string name='management_infinite_scroll'>瀑布流拼接</string>
     <string name='management_page_controls'>页数组件</string>
     <string name='home_back'>返回</string>
@@ -798,7 +779,6 @@
     <string name='library_empty_search'>资料库中没有匹配的壁纸</string>
     <string name='library_empty_subscriptions'>没有符合条件的个人订阅</string>
     <string name='library_empty_favorites'>没有符合条件的收藏</string>
-    <string name='library_empty_voted'>Steam 不提供已投票列表</string>
     <string name='library_refresh'>刷新</string>
     <string name='library_current_page_description'>当前第 %1$d 页；当前已知最大页码为 %2$d；点击输入页码</string>
     <string name='library_preview'>%1$s 预览图</string>
@@ -806,7 +786,6 @@
     <string name='library_favorites_count'>收藏数</string>
     <string name='library_collection_subscriptions'>我的订阅</string>
     <string name='library_collection_favorites'>我的收藏</string>
-    <string name='library_collection_voted'>我的投票</string>
     <string name='library_loaded_items'>已加载 %1$d 项</string>
     <string name='library_unsubscribe'>取消订阅</string>
     <string name='library_remove_favorite'>移出收藏</string>

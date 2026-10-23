@@ -167,7 +167,6 @@ import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.HowToVote
 import androidx.compose.material.icons.outlined.ImageNotSupported
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
@@ -178,7 +177,6 @@ enum class LibraryCollectionTab(
 ) {
     SUBSCRIPTIONS(AccountWorkshopCollection.SUBSCRIPTIONS),
     FAVORITES(AccountWorkshopCollection.FAVORITES),
-    VOTED(AccountWorkshopCollection.VOTED),
 }
 
 data class LibraryUiState(
@@ -501,13 +499,12 @@ class LibraryViewModel
 
         private fun removeFromCollection(item: WorkshopSummary) {
             val collection = mutableState.value.collection
-            if (collection == LibraryCollectionTab.VOTED || !collectionMutationIds.add(item.id)) return
+            if (!collectionMutationIds.add(item.id)) return
             viewModelScope.launch {
                 try {
                     when (collection) {
                         LibraryCollectionTab.SUBSCRIPTIONS -> accountWorkshopRepository.setSubscribed(item.id, false)
                         LibraryCollectionTab.FAVORITES -> accountWorkshopRepository.setFavorited(item.id, false)
-                        LibraryCollectionTab.VOTED -> return@launch
                     }
                     cachedPages.keys
                         .filter { key -> key.collection == collection }
@@ -1588,12 +1585,8 @@ private fun LibraryResultsContent(
                         stringResource(R.string.library_empty_search)
                     } else if (state.collection == LibraryCollectionTab.SUBSCRIPTIONS) {
                         stringResource(R.string.library_empty_subscriptions)
-                    } else if (state.collection == LibraryCollectionTab.FAVORITES) {
-                        stringResource(R.string.library_empty_favorites)
                     } else {
-                        // Steam has no request that lists the files an account voted on, so this tab must not
-                        // read as "you have none": an unanswerable list is not an empty one.
-                        stringResource(R.string.library_empty_voted)
+                        stringResource(R.string.library_empty_favorites)
                     },
                 actionLabel = stringResource(R.string.library_refresh),
                 onAction = onRefresh,
@@ -1952,14 +1945,12 @@ private fun LibraryCollectionTab.label(): String =
     when (this) {
         LibraryCollectionTab.SUBSCRIPTIONS -> stringResource(R.string.library_collection_subscriptions)
         LibraryCollectionTab.FAVORITES -> stringResource(R.string.library_collection_favorites)
-        LibraryCollectionTab.VOTED -> stringResource(R.string.library_collection_voted)
     }
 
 private fun LibraryCollectionTab.icon() =
     when (this) {
         LibraryCollectionTab.SUBSCRIPTIONS -> Icons.Outlined.BookmarkBorder
         LibraryCollectionTab.FAVORITES -> Icons.Outlined.StarBorder
-        LibraryCollectionTab.VOTED -> Icons.Outlined.HowToVote
     }
 
 @Composable
@@ -1967,7 +1958,6 @@ private fun LibraryCollectionTab.removeActionLabelOrNull(): String? =
     when (this) {
         LibraryCollectionTab.SUBSCRIPTIONS -> stringResource(R.string.library_unsubscribe)
         LibraryCollectionTab.FAVORITES -> stringResource(R.string.library_remove_favorite)
-        LibraryCollectionTab.VOTED -> null
     }
 
 @Composable
@@ -1979,7 +1969,6 @@ private fun LibraryCollectionTab.removeDialogTitle(): String =
     when (this) {
         LibraryCollectionTab.SUBSCRIPTIONS -> stringResource(R.string.library_unsubscribe_title)
         LibraryCollectionTab.FAVORITES -> stringResource(R.string.library_remove_favorite_title)
-        LibraryCollectionTab.VOTED -> stringResource(R.string.library_collection_voted)
     }
 
 @Composable

@@ -9,20 +9,9 @@ internal object SteamDomainPolicy {
             "community.steam-api.com",
         )
 
-    // Exact first-party origins returned by Valve's official finalizelogin transfer flow.
-    // They use a direct CONNECT tunnel because hidden-SNI acceleration breaks their TLS handshake.
-    private val webSessionHosts =
-        setOf(
-            // The authenticated transfer and final voted-page GET both use this exact origin.
-            "steamcommunity.com",
-            "login.steampowered.com",
-            "store.steampowered.com",
-            "help.steampowered.com",
-        )
-
     fun supports(hostname: String): Boolean {
         val host = normalize(hostname)
-        return host in coreHosts || host in webSessionHosts ||
+        return host in coreHosts ||
             (host.length > STEAM_CM_HOST_SUFFIX.length && host.endsWith(STEAM_CM_HOST_SUFFIX))
     }
 
@@ -30,8 +19,6 @@ internal object SteamDomainPolicy {
         val host = normalize(hostname)
         return host in coreHosts || isCmHost(host)
     }
-
-    fun usesDirectWebSessionTunnel(hostname: String): Boolean = normalize(hostname) in webSessionHosts
 
     fun requireSupported(hostname: String): String =
         normalize(hostname).also { host ->
@@ -45,7 +32,7 @@ internal object SteamDomainPolicy {
         if (port !in 1..MAX_TCP_PORT) return false
         val host = normalize(hostname)
         return when {
-            host in coreHosts || host in webSessionHosts -> port == STEAM_HTTPS_PORT
+            host in coreHosts -> port == STEAM_HTTPS_PORT
             isCmHost(host) -> port == STEAM_HTTPS_PORT || port in STEAM_CM_MIN_PORT..STEAM_CM_MAX_PORT
             else -> false
         }

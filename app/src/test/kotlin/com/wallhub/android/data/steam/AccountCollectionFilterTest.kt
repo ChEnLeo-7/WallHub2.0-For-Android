@@ -56,13 +56,13 @@ class AccountCollectionFilterTest {
     fun `type and rating filters reject mismatched items`() {
         assertFalse(
             AccountWorkshopQuery(
-                collection = AccountWorkshopCollection.VOTED,
+                collection = AccountWorkshopCollection.FAVORITES,
                 types = setOf(WorkshopType.SCENE),
             ).matchesAccountCollectionItem(wallpaper),
         )
         assertFalse(
             AccountWorkshopQuery(
-                collection = AccountWorkshopCollection.VOTED,
+                collection = AccountWorkshopCollection.FAVORITES,
                 ratings = setOf(WorkshopRating.MATURE),
             ).matchesAccountCollectionItem(wallpaper),
         )

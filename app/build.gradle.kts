@@ -232,10 +232,7 @@ dependencies {
     implementation(libs.markdown.renderer.m3)
     implementation(libs.material)
     implementation(libs.okhttp.android)
-    implementation(libs.spongycastle.prov) {
-        // The provider POM leaks its own JUnit 4.12 test dependency into app runtime.
-        exclude(group = "junit", module = "junit")
-    }
+    implementation(libs.spongycastle.prov)
     implementation("com.github.luben:zstd-jni:${libs.versions.zstd.get()}@aar")
 
     kapt(libs.hilt.compiler)
@@ -245,7 +242,6 @@ dependencies {
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlinx.coroutines.test)
 
-    androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.room.testing)

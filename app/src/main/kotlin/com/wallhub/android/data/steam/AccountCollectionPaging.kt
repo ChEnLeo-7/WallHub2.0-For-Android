@@ -1,6 +1,5 @@
 package com.wallhub.android.data.steam
 
-import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopFilterCatalog
@@ -32,13 +31,6 @@ internal fun AccountWorkshopQuery.normalized(): AccountWorkshopQuery =
         excludedOfficialTags = excludedOfficialTags.intersect(WorkshopFilterCatalog.officialTags.toSet()),
         resolutions = resolutions.intersect(WorkshopFilterCatalog.resolutions.toSet()),
     )
-
-internal fun AccountWorkshopCollection.steamListType(): String =
-    when (this) {
-        AccountWorkshopCollection.SUBSCRIPTIONS -> "mysubscriptions"
-        AccountWorkshopCollection.FAVORITES -> "myfavorites"
-        AccountWorkshopCollection.VOTED -> "myvotes"
-    }
 
 /**
  * Slices already-matched Steam collection entries into the page requested by the UI. The source

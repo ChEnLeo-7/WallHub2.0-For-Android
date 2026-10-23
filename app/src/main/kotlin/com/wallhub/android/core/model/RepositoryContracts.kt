@@ -344,12 +344,6 @@ interface WorkshopRepository {
 interface AccountWorkshopRepository {
     suspend fun browseCollection(query: AccountWorkshopQuery): WorkshopPage
 
-    /** Current authenticated account identity, never a credential; null if unavailable. */
-    suspend fun currentAccountSteamId(): String? = null
-
-    /** Current user's vote: 0 none, 1 up, 2 down. Failures must throw, never become none. */
-    suspend fun getUserVote(workshopId: Long): Int = error("User vote reads are unavailable")
-
     /** Resolves the public Steam display name for a Workshop item's creator on demand. */
     suspend fun resolveAuthorDisplayName(workshopId: Long): String?
 

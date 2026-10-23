@@ -156,16 +156,6 @@ internal class SteamLoopbackTlsBridge
                     return
                 }
                 val host = SteamDomainPolicy.requireSupportedEndpoint(request.host, request.port)
-                if (SteamDomainPolicy.usesDirectWebSessionTunnel(host)) {
-                    Log.i(LOG_TAG, "SDK bridge plane=web-session mode=direct")
-                    val upstream = connectDirect(host, request.port)
-                    upstreamSocket = upstream
-                    writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
-                    clientSocket.soTimeout = 0
-                    tunnelEstablished = true
-                    relay(clientSocket, upstream)
-                    return
-                }
                 if (SteamDomainPolicy.isCmHost(host) && !accessManager.enhancedConnectionEnabled()) {
                     Log.i(LOG_TAG, "SDK bridge plane=cm mode=direct")
                     val upstream = connectDirect(host, request.port)

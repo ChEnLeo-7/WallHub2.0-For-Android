@@ -31,124 +31,124 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
-import com.wallhub.android.core.model.SteamSessionPhase
-import com.wallhub.android.core.model.SteamSessionRepository
-import com.wallhub.android.core.model.SteamSessionState
-import com.wallhub.android.core.model.SteamPlaytimeRepository
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
+import com.wallhub.android.core.model.SteamPlaytimeRepository
+import com.wallhub.android.core.model.SteamSessionPhase
+import com.wallhub.android.core.model.SteamSessionRepository
+import com.wallhub.android.core.model.SteamSessionState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import com.wallhub.android.feature.votes.VoteCountsStore
 
 data class ProfileCounts(
     val subscriptions: Int? = null,
     val favorites: Int? = null,
-    val voted: Int = 0,
-    /** Exact only after explicit vote sync finishes and every relevant record is verified. */
-    val votedUnavailable: Boolean = true,
 )
 
 @HiltViewModel
-class ProfileViewModel @Inject constructor(sessionRepository: SteamSessionRepository, private val accountRepository: AccountWorkshopRepository, private val playtimeRepository: SteamPlaytimeRepository, private val voteCountsStore: VoteCountsStore) : ViewModel() {
-    val session: StateFlow<SteamSessionState> = sessionRepository.session
-    private val _counts = MutableStateFlow(ProfileCounts())
-    val counts: StateFlow<ProfileCounts> = _counts
-    private val _runtimeHours = MutableStateFlow<Int?>(null)
-    val runtimeHours: StateFlow<Int?> = _runtimeHours
-    init {
-        viewModelScope.launch {
-            voteCountsStore.countsByAccountName.collectLatest { values ->
-                val votes = session.value.accountName?.let(values::get)
-                _counts.value = _counts.value.copy(
-                    voted = votes?.let { it.up + it.down } ?: 0,
-                    votedUnavailable = votes?.complete != true,
-                )
-            }
-        }
-        viewModelScope.launch {
-            var loadedAccount: String? = null
-            session.collectLatest { current ->
-                voteCountsStore.bindAccount(current.accountName)
-                when {
-                    current.phase == SteamSessionPhase.SIGNED_IN && current.accountName != loadedAccount -> {
-                        coroutineScope {
-                            val subscriptions = async {
-                                runCatching {
-                                    accountRepository.browseCollection(
-                                        AccountWorkshopQuery(
-                                            AccountWorkshopCollection.SUBSCRIPTIONS,
-                                            pageSize = 1,
-                                            resolveTotalCount = true,
-                                        ),
-                                    ).totalCount ?: 0
-                                }.getOrNull()
+class ProfileViewModel
+    @Inject
+    constructor(
+        sessionRepository: SteamSessionRepository,
+        private val accountRepository: AccountWorkshopRepository,
+        private val playtimeRepository: SteamPlaytimeRepository,
+    ) : ViewModel() {
+        val session: StateFlow<SteamSessionState> = sessionRepository.session
+        private val _counts = MutableStateFlow(ProfileCounts())
+        val counts: StateFlow<ProfileCounts> = _counts
+        private val _runtimeHours = MutableStateFlow<Int?>(null)
+        val runtimeHours: StateFlow<Int?> = _runtimeHours
+
+        init {
+            viewModelScope.launch {
+                var loadedAccount: String? = null
+                session.collectLatest { current ->
+                    when {
+                        current.phase == SteamSessionPhase.SIGNED_IN && current.accountName != loadedAccount -> {
+                            coroutineScope {
+                                val subscriptions =
+                                    async {
+                                        runCatching {
+                                            accountRepository.browseCollection(
+                                                AccountWorkshopQuery(
+                                                    AccountWorkshopCollection.SUBSCRIPTIONS,
+                                                    pageSize = 1,
+                                                    resolveTotalCount = true,
+                                                ),
+                                            ).totalCount ?: 0
+                                        }.getOrNull()
+                                    }
+                                val favorites =
+                                    async {
+                                        runCatching {
+                                            accountRepository.browseCollection(
+                                                AccountWorkshopQuery(
+                                                    AccountWorkshopCollection.FAVORITES,
+                                                    pageSize = 1,
+                                                    resolveTotalCount = true,
+                                                ),
+                                            ).totalCount ?: 0
+                                        }.getOrNull()
+                                    }
+                                // Counts are the profile's primary content. Publish them before starting the
+                                // optional playtime read so a slow player-service RPC cannot hold both collection
+                                // requests behind the single serialized CM lane.
+                                val subscriptionCount = subscriptions.await()
+                                val favoriteCount = favorites.await()
+                                _counts.value =
+                                    ProfileCounts(
+                                        subscriptions = subscriptionCount,
+                                        favorites = favoriteCount,
+                                    )
+                                loadedAccount = current.accountName.takeIf {
+                                    subscriptionCount != null && favoriteCount != null
+                                }
+                                _runtimeHours.value =
+                                    runCatching {
+                                        playtimeRepository.getAppPlaytime(WALLPAPER_ENGINE_APP_ID)
+                                            ?.totalMinutes
+                                            ?.div(60)
+                                    }.getOrNull()
                             }
-                            val favorites = async {
-                                runCatching {
-                                    accountRepository.browseCollection(
-                                        AccountWorkshopQuery(
-                                            AccountWorkshopCollection.FAVORITES,
-                                            pageSize = 1,
-                                            resolveTotalCount = true,
-                                        ),
-                                    ).totalCount ?: 0
-                                }.getOrNull()
-                            }
-                            // Counts are the profile's primary content. Publish them before starting the
-                            // optional playtime read so a slow player-service RPC cannot hold both collection
-                            // requests behind the single serialized CM lane.
-                            val subscriptionCount = subscriptions.await()
-                            val favoriteCount = favorites.await()
-                            _counts.value =
-                                ProfileCounts(
-                                    subscriptions = subscriptionCount,
-                                    favorites = favoriteCount,
-                                    voted = voteCountsStore.countsByAccountName.value[current.accountName]
-                                        ?.let { it.up + it.down } ?: 0,
-                                    votedUnavailable = voteCountsStore.countsByAccountName.value[current.accountName]?.complete != true,
-                                )
-                            loadedAccount = current.accountName.takeIf {
-                                subscriptionCount != null && favoriteCount != null
-                            }
-                            _runtimeHours.value =
-                                runCatching {
-                                    playtimeRepository.getAppPlaytime(WALLPAPER_ENGINE_APP_ID)
-                                        ?.totalMinutes
-                                        ?.div(60)
-                                }.getOrNull()
                         }
-                    }
-                    current.phase == SteamSessionPhase.SIGNING_IN && current.hasStoredSession -> {
-                        loadedAccount = null
-                    }
-                    current.phase != SteamSessionPhase.SIGNED_IN -> {
-                        loadedAccount = null
-                        _counts.value = ProfileCounts()
-                        _runtimeHours.value = null
+                        current.phase == SteamSessionPhase.SIGNING_IN && current.hasStoredSession -> {
+                            loadedAccount = null
+                        }
+                        current.phase != SteamSessionPhase.SIGNED_IN -> {
+                            loadedAccount = null
+                            _counts.value = ProfileCounts()
+                            _runtimeHours.value = null
+                        }
                     }
                 }
             }
         }
     }
-}
 
 private const val WALLPAPER_ENGINE_APP_ID = 431960
 
 @Composable
-fun ProfileRoute(onOpenSettings: () -> Unit, onOpenSubscriptions: () -> Unit, onOpenFavorites: () -> Unit, onOpenVoted: () -> Unit, onOpenDownloads: () -> Unit, onOpenLocal: () -> Unit, onOpenLogin: () -> Unit, viewModel: ProfileViewModel = hiltViewModel()) {
+fun ProfileRoute(
+    onOpenSettings: () -> Unit,
+    onOpenSubscriptions: () -> Unit,
+    onOpenFavorites: () -> Unit,
+    onOpenDownloads: () -> Unit,
+    onOpenLocal: () -> Unit,
+    onOpenLogin: () -> Unit,
+    viewModel: ProfileViewModel = hiltViewModel(),
+) {
     val session by viewModel.session.collectAsStateWithLifecycle()
     val counts by viewModel.counts.collectAsStateWithLifecycle()
     val runtimeHours by viewModel.runtimeHours.collectAsStateWithLifecycle()
@@ -187,12 +187,6 @@ fun ProfileRoute(onOpenSettings: () -> Unit, onOpenSubscriptions: () -> Unit, on
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ProfileStatCard(stringResource(R.string.profile_subscriptions), counts.subscriptions?.toString() ?: "—", onOpenSubscriptions, Modifier.weight(1f))
                     ProfileStatCard(stringResource(R.string.profile_favorites), counts.favorites?.toString() ?: "—", onOpenFavorites, Modifier.weight(1f))
-                    ProfileStatCard(
-                        stringResource(R.string.profile_voted),
-                        if (counts.votedUnavailable) "—" else counts.voted.toString(),
-                        onOpenVoted,
-                        Modifier.weight(1f),
-                    )
                 }
             }
             item { ProfileEntryCard(stringResource(R.string.profile_downloads), stringResource(R.string.profile_download_hint), onOpenDownloads, Icons.Outlined.Download) }

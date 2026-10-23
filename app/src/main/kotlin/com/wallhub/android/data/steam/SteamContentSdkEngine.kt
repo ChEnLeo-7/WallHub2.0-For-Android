@@ -471,10 +471,6 @@ class SteamContentSdkEngine
             )
         }
 
-        @Synchronized
-        fun workshopUserVote(workshopId: Long): Int =
-            openEngine(WorkshopOperation.PERSONAL_ITEMS).workshopUserVote(workshopId)
-
         /**
          * Resolves one page of one item's comments, read through [WorkshopPage].
          *

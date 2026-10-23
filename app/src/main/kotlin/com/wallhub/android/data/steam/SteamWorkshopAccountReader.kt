@@ -99,7 +99,6 @@ internal class SteamWorkshopAccountReader(
         when (this) {
             AccountWorkshopCollection.SUBSCRIPTIONS -> WorkshopPersonalList.SUBSCRIBED
             AccountWorkshopCollection.FAVORITES -> WorkshopPersonalList.FAVORITED
-            AccountWorkshopCollection.VOTED -> WorkshopPersonalList.VOTED
         }
 
     private fun pageOffsetOf(page: Int, pageSize: Int): Int {

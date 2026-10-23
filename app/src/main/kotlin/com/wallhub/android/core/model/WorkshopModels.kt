@@ -39,7 +39,6 @@ enum class FavoriteState {
 enum class AccountWorkshopCollection {
     SUBSCRIPTIONS,
     FAVORITES,
-    VOTED,
 }
 
 enum class WorkshopSort {
