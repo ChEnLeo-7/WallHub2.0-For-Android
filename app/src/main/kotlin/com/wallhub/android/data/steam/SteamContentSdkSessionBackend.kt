@@ -29,11 +29,11 @@ import kotlinx.coroutines.withTimeoutOrNull
 /**
  * The cadence of the host-scheduled session maintenance loop.
  *
- * Well under the SDK's own 30 s heartbeat interval, so a due heartbeat is never late by more than one tick,
- * and frequent enough that a connection the peer closed is noticed within seconds rather than when the next
- * read happens to fail.
+ * Well under the SDK's negotiated heartbeat interval (which can be capped at 10 s), so ordinary service writes
+ * cannot postpone the next due-heartbeat check until the peer's close boundary. It also notices a genuinely
+ * closed connection within seconds rather than when the next business read happens to fail.
  */
-internal const val STEAM_SESSION_MAINTENANCE_INTERVAL_MS = 5_000L
+internal const val STEAM_SESSION_MAINTENANCE_INTERVAL_MS = 2_000L
 
 /** SteamHelper-style bounded reconnect debt: 1, 2, 4, 8, 16, 32, then 60 seconds. */
 internal fun steamAccountRecoveryDelayMs(shortSessionFailures: Long): Long {
