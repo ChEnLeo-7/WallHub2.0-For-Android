@@ -1,9 +1,12 @@
 package com.wallhub.android.data.steam
 
 import android.content.Context
-import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.SecureRandom
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -30,13 +33,7 @@ internal class SteamDeviceSeedStore
 
         private val lock = Any()
 
-        /**
-         * The seed this process is using, kept so a write failure cannot change it.
-         *
-         * [seed] runs once per engine creation. Regenerating a seed that could not be persisted would present
-         * a different `machine_id` to Steam Guard within one run of the app, so the value is remembered here
-         * whether or not the write succeeded.
-         */
+        /** The seed this process may use after its exact bytes are durable at [seedFile]. */
         private var remembered: ByteArray? = null
 
         /**
@@ -55,22 +52,42 @@ internal class SteamDeviceSeedStore
                     return existing
                 }
                 val created = ByteArray(SEED_BYTES).also { SecureRandom().nextBytes(it) }
+                persistAtomically(created)
                 remembered = created
-                runCatching {
-                    seedFile.parentFile?.mkdirs()
-                    seedFile.writeBytes(created)
-                }.onFailure { error ->
-                    Log.w(
-                        TAG,
-                        "device seed could not be persisted; this install will look like a new device",
-                        error,
-                    )
-                }
                 created
             }
 
+        @Throws(IOException::class)
+        private fun persistAtomically(seed: ByteArray) {
+            val parent = seedFile.parentFile ?: throw IOException("Device seed has no parent directory")
+            if (!parent.isDirectory && !parent.mkdirs()) {
+                throw IOException("Cannot create device seed directory")
+            }
+            val temp = File(parent, "${seedFile.name}.tmp")
+            try {
+                FileOutputStream(temp).use { output ->
+                    output.write(seed)
+                    output.fd.sync()
+                }
+                Files.move(
+                    temp.toPath(),
+                    seedFile.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+                if (!seedFile.isFile || !seed.contentEquals(seedFile.readBytes())) {
+                    throw IOException("Persisted device seed verification failed")
+                }
+            } catch (error: IOException) {
+                temp.delete()
+                throw error
+            } catch (error: RuntimeException) {
+                temp.delete()
+                throw IOException("Cannot persist device seed", error)
+            }
+        }
+
         private companion object {
-            const val TAG = "WallHubSteamDeviceSeed"
             const val SEED_BYTES = 32
             const val SEED_FILE_NAME = "steam-content-sdk/device-seed"
         }

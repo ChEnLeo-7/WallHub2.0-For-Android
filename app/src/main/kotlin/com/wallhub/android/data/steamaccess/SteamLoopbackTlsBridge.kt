@@ -15,6 +15,9 @@ import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,7 +30,11 @@ internal class SteamLoopbackTlsBridge
         private val accessManager: SteamAccessManager,
         private val noSniTlsDialer: NoSniTlsDialer,
     ) {
-        private val executor = Executors.newCachedThreadPool()
+        private val acceptExecutor = Executors.newSingleThreadExecutor()
+        private val connectionExecutor = newBridgeConnectionExecutor()
+        // Relays and upstream address races use a separate pool: connection handlers synchronously wait for
+        // them, so sharing the bounded admission pool would deadlock when every admitted connection relays.
+        private val ioExecutor = Executors.newCachedThreadPool()
         private val authorization = createAuthorization()
         private val cdnAuthorization = createAuthorization()
         private val serverSocket =
@@ -59,13 +66,17 @@ internal class SteamLoopbackTlsBridge
         }
 
         init {
-            executor.execute(::acceptLoop)
+            acceptExecutor.execute(::acceptLoop)
         }
 
         private fun acceptLoop() {
             while (!serverSocket.isClosed) {
                 val socket = runCatching { serverSocket.accept() }.getOrNull() ?: break
-                executor.execute { handle(socket) }
+                try {
+                    connectionExecutor.execute { handle(socket) }
+                } catch (_: RejectedExecutionException) {
+                    socket.closeQuietly()
+                }
             }
         }
 
@@ -265,7 +276,7 @@ internal class SteamLoopbackTlsBridge
                     .toList()
             if (addresses.isEmpty()) throw IOException("No public route for $hostname")
             val opened = ConcurrentLinkedQueue<Socket>()
-            val completion = ExecutorCompletionService<Result<Socket>>(executor)
+            val completion = ExecutorCompletionService<Result<Socket>>(ioExecutor)
             val futures =
                 addresses.mapIndexed { index, address ->
                     completion.submit(
@@ -309,7 +320,7 @@ internal class SteamLoopbackTlsBridge
             onUpstreamEof: () -> IOException? = { null },
         ) {
             val clientEnded = java.util.concurrent.atomic.AtomicBoolean(false)
-            val completion = ExecutorCompletionService<IOException?>(executor)
+            val completion = ExecutorCompletionService<IOException?>(ioExecutor)
             val clientToUpstream = completion.submit(Callable<IOException?> {
                 // Client EOF, cancellation and either write failure are not upstream route evidence.
                 try {
@@ -394,6 +405,18 @@ internal class SteamLoopbackTlsBridge
             val HEADER_TERMINATOR = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte(), '\r'.code.toByte(), '\n'.code.toByte())
         }
     }
+
+internal fun newBridgeConnectionExecutor(): ThreadPoolExecutor =
+    ThreadPoolExecutor(
+        MAX_ACTIVE_BRIDGE_CONNECTIONS,
+        MAX_ACTIVE_BRIDGE_CONNECTIONS,
+        0L,
+        TimeUnit.MILLISECONDS,
+        SynchronousQueue(),
+        ThreadPoolExecutor.AbortPolicy(),
+    )
+
+private const val MAX_ACTIVE_BRIDGE_CONNECTIONS = 16
 
 internal fun isAuthenticatedCdnAddress(address: InetAddress): Boolean {
     if (

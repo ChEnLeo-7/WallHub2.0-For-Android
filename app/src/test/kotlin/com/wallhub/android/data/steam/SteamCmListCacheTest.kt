@@ -1,7 +1,10 @@
 package com.wallhub.android.data.steam
 
+import java.nio.file.Files
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import okhttp3.Request
 
@@ -56,4 +59,33 @@ class SteamCmListCacheTest {
         assertFalse(looksLikeCmListJson(""))
         assertFalse(looksLikeCmListJson("binary-gzip-garbage"))
     }
+
+    @Test
+    fun `cache refuses to save a directory body over its byte bound`() {
+        val file = cacheFile()
+        val cache = SteamCmListCache(file)
+
+        cache.save("small", "ok")
+        cache.save("oversize", "x".repeat(MAX_CM_LIST_CACHE_BYTES.toInt() + 1))
+
+        assertEquals("ok", cache.load("small")?.body)
+        assertNull(cache.load("oversize"))
+    }
+
+    @Test
+    fun `cache refuses to load an on-disk entry over its byte bound`() {
+        val file = cacheFile()
+        file.parentFile?.mkdirs()
+        file.writeBytes(ByteArray(MAX_CM_LIST_CACHE_BYTES.toInt() + 1) { '{'.code.toByte() })
+
+        val cache = SteamCmListCache(file)
+
+        assertNull(cache.load("any"))
+        assertNull(cache.loadMostRecent())
+    }
+
+    private fun cacheFile() =
+        Files.createTempDirectory("wallhub-cm-cache-test")
+            .toFile()
+            .resolve("ksteam/cm-list-cache.json")
 }

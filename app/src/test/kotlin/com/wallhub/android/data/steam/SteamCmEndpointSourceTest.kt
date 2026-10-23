@@ -1,5 +1,8 @@
 package com.wallhub.android.data.steam
 
+import kotlin.test.assertNull
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -78,5 +81,27 @@ class SteamCmEndpointSourceTest {
     fun aBodyWithNoUsableEndpointYieldsNothing() {
         assertEquals("", cmCandidatesFromBody("""{"response":{"serverlist":[]}}"""))
         assertEquals("", cmCandidatesFromBody(""))
+    }
+
+    @Test
+    fun `normal selection is live then cache and refresh is live or null`() {
+        val cached = "cached.steamserver.net:443"
+        val live = "live.steamserver.net:443"
+
+        assertEquals(live, selectCmCandidates(live, cached, refreshLive = false))
+        assertEquals(cached, selectCmCandidates("", cached, refreshLive = false))
+        assertEquals(live, selectCmCandidates(live, cached, refreshLive = true))
+        assertNull(selectCmCandidates("", cached, refreshLive = true))
+        assertNull(selectCmCandidates("", "", refreshLive = false))
+    }
+
+    @Test
+    fun `directory body read rejects declared and streamed data over the byte bound`() {
+        val mediaType = "application/json".toMediaType()
+        val exact = ByteArray(MAX_CM_LIST_CACHE_BYTES.toInt()) { 'x'.code.toByte() }.toResponseBody(mediaType)
+        val over = ByteArray(MAX_CM_LIST_CACHE_BYTES.toInt() + 1) { 'x'.code.toByte() }.toResponseBody(mediaType)
+
+        assertEquals(MAX_CM_LIST_CACHE_BYTES.toInt(), readBoundedCmDirectoryBody(exact)?.length)
+        assertNull(readBoundedCmDirectoryBody(over))
     }
 }

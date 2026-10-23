@@ -3,6 +3,7 @@ package com.wallhub.android.data.steam
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 import javax.inject.Singleton
 import okhttp3.Request
@@ -37,18 +38,17 @@ internal fun looksLikeCmListJson(body: String): Boolean =
 
 @Singleton
 class SteamCmListCache
-    @Inject
-    constructor(
-        @ApplicationContext context: Context,
+    internal constructor(
+        private val cacheFile: File,
     ) {
-        private val cacheFile = File(context.filesDir, "ksteam/cm-list-cache.json")
+        @Inject
+        constructor(
+            @ApplicationContext context: Context,
+        ) : this(File(context.filesDir, "ksteam/cm-list-cache.json"))
 
         @Synchronized
         fun load(key: String): CachedCmList? {
-            val entry =
-                runCatching {
-                    JSONObject(cacheFile.readText())
-                }.getOrNull() ?: return null
+            val entry = loadEntry() ?: return null
             if (entry.optString(KEY_QUERY).takeIf(String::isNotEmpty) != key.takeIf(String::isNotEmpty)) return null
             val savedAt = entry.optLong(KEY_SAVED_AT, 0L)
             val body = entry.optString(KEY_BODY).takeIf(String::isNotEmpty) ?: return null
@@ -58,6 +58,7 @@ class SteamCmListCache
 
         @Synchronized
         fun save(key: String, body: String) {
+            if (body.toByteArray(StandardCharsets.UTF_8).size.toLong() > MAX_CM_LIST_CACHE_BYTES) return
             runCatching {
                 cacheFile.parentFile?.mkdirs()
                 val entry =
@@ -65,10 +66,14 @@ class SteamCmListCache
                         .put(KEY_QUERY, key)
                         .put(KEY_SAVED_AT, System.currentTimeMillis())
                         .put(KEY_BODY, body)
+                        .toString()
+                val encoded = entry.toByteArray(StandardCharsets.UTF_8)
+                if (encoded.size.toLong() > MAX_CM_LIST_CACHE_BYTES) return@runCatching
                 val temp = File(cacheFile.parentFile, "${cacheFile.name}.tmp")
-                temp.writeText(entry.toString())
+                temp.writeBytes(encoded)
                 if (!temp.renameTo(cacheFile)) {
-                    cacheFile.writeText(entry.toString())
+                    cacheFile.writeBytes(encoded)
+                    temp.delete()
                 }
             }
         }
@@ -82,14 +87,18 @@ class SteamCmListCache
          */
         @Synchronized
         fun loadMostRecent(): CachedCmList? {
-            val entry =
-                runCatching {
-                    JSONObject(cacheFile.readText())
-                }.getOrNull() ?: return null
+            val entry = loadEntry() ?: return null
             val savedAt = entry.optLong(KEY_SAVED_AT, 0L)
             val body = entry.optString(KEY_BODY).takeIf(String::isNotEmpty) ?: return null
             if (savedAt <= 0L) return null
             return CachedCmList(body = body, savedAt = savedAt)
+        }
+
+        private fun loadEntry(): JSONObject? {
+            if (!cacheFile.isFile || cacheFile.length() > MAX_CM_LIST_CACHE_BYTES) return null
+            return runCatching {
+                JSONObject(cacheFile.readBytes().toString(StandardCharsets.UTF_8))
+            }.getOrNull()
         }
 
         data class CachedCmList(

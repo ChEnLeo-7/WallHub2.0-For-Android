@@ -3,6 +3,7 @@ package com.wallhub.android.data.steam
 import android.util.Log
 import com.wallhub.android.data.steamaccess.SteamDomainPolicy
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -10,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Protocol
 import okhttp3.Request
+import okhttp3.ResponseBody
 
 /** The directory the platform reads its own CM endpoint set from. */
 internal const val CM_DIRECTORY_URL =
@@ -24,13 +26,6 @@ internal const val MAX_CM_CANDIDATES = 4
 private const val CM_FETCH_TIMEOUT_MS = 6_000L
 
 private const val TAG = "WallHubSdkRoute"
-private val CM_BOOTSTRAP_CANDIDATES =
-    listOf(
-        "cmp1-hkg1.steamserver.net:443",
-        "cmp2-hkg1.steamserver.net:443",
-        "cmp1-tyo3.steamserver.net:443",
-        "cmp1-sgp1.steamserver.net:443",
-    ).joinToString("\n")
 private val CM_ENDPOINT_REGEX = Regex("([A-Za-z0-9][A-Za-z0-9.-]*\\.steamserver\\.net):(\\d{2,5})")
 
 /**
@@ -62,37 +57,33 @@ internal class SteamCmEndpointSource
          */
         suspend fun candidates(refreshLive: Boolean = false): String? =
             withContext(Dispatchers.IO) {
-                val cached =
-                    cmListCache
-                        .loadMostRecent()
-                        ?.takeIf { cmListCacheStaleUsable(it.ageMs) }
-                val cachedCandidates = cached?.body?.let(::cmCandidatesFromBody).orEmpty()
                 val live =
                     runCatching { fetchDirectory() }
                         .getOrNull()
                         ?.let(::cmCandidatesFromBody)
                         .orEmpty()
+                val cachedCandidates =
+                    if (live.isEmpty() && !refreshLive) {
+                        cmListCache
+                            .loadMostRecent()
+                            ?.takeIf { cmListCacheStaleUsable(it.ageMs) }
+                            ?.body
+                            ?.let(::cmCandidatesFromBody)
+                            .orEmpty()
+                    } else {
+                        ""
+                    }
                 Log.i(
                     TAG,
                     "cm candidates=${cmCandidateCount(live)} source=live" + if (refreshLive) " retry=true" else "",
                 )
-                if (live.isNotEmpty()) {
-                    val selected =
-                        if (refreshLive) rotateCmCandidateWindow(mergeCmCandidateWindows(live, cachedCandidates)) else live
-                    Log.i(TAG, "cm candidates=${cmCandidateCount(selected)} source=selected")
-                    return@withContext selected
+                selectCmCandidates(live, cachedCandidates, refreshLive)?.also { selected ->
+                    Log.i(
+                        TAG,
+                        "cm candidates=${cmCandidateCount(selected)} source=" +
+                            if (live.isNotEmpty()) "live" else "cache_fallback",
+                    )
                 }
-                // The first cold-start attempt may recover from a Directory outage with the bounded persisted
-                // response. A transport retry deliberately refuses that same input: it already failed to make a
-                // usable session, so presenting it again would not be a new attempt.
-                cachedCandidates
-                    .takeIf {
-                        it.isNotEmpty() && cmCandidatesMayFallBack(cached?.ageMs, refreshLive)
-                    }?.also {
-                        Log.i(TAG, "cm candidates=${cmCandidateCount(it)} source=cache_fallback")
-                    } ?: CM_BOOTSTRAP_CANDIDATES.also {
-                        Log.i(TAG, "cm candidates=${cmCandidateCount(it)} source=bootstrap")
-                    }
             }
 
         private suspend fun fetchDirectory(): String? {
@@ -112,9 +103,10 @@ internal class SteamCmEndpointSource
                     .build()
             return client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return null
-                response.body.string().also { body ->
-                    if (cmCandidatesFromBody(body).isNotEmpty()) {
-                        cmListCache.save(CM_DIRECTORY_URL.substringAfter('?'), body)
+                val body = readBoundedCmDirectoryBody(response.body) ?: return null
+                body.also {
+                    if (cmCandidatesFromBody(it).isNotEmpty()) {
+                        cmListCache.save(CM_DIRECTORY_URL.substringAfter('?'), it)
                     }
                 }
             }
@@ -122,6 +114,30 @@ internal class SteamCmEndpointSource
     }
 
 internal fun cmCandidateCount(candidates: String): Int = candidates.lineSequence().count { it.isNotBlank() }
+
+internal fun selectCmCandidates(
+    live: String,
+    cached: String,
+    refreshLive: Boolean,
+): String? = live.takeIf(String::isNotEmpty) ?: cached.takeIf { !refreshLive && it.isNotEmpty() }
+
+internal fun readBoundedCmDirectoryBody(body: ResponseBody): String? {
+    val declaredLength = body.contentLength()
+    if (declaredLength > MAX_CM_LIST_CACHE_BYTES) return null
+    val output = java.io.ByteArrayOutputStream()
+    val chunk = ByteArray(8 * 1024)
+    val input = body.byteStream()
+    while (true) {
+        val remaining = MAX_CM_LIST_CACHE_BYTES + 1L - output.size().toLong()
+        if (remaining <= 0L) return null
+        val read = input.read(chunk, 0, minOf(chunk.size.toLong(), remaining).toInt())
+        if (read < 0) break
+        output.write(chunk, 0, read)
+    }
+    val bytes = output.toByteArray()
+    if (bytes.size.toLong() > MAX_CM_LIST_CACHE_BYTES) return null
+    return bytes.toString(StandardCharsets.UTF_8)
+}
 
 /** Merges a refreshed CM window with still-fresh prior candidates, keeping fresh order and one bounded cap. */
 internal fun mergeCmCandidateWindows(live: String, previous: String): String =

@@ -8,6 +8,8 @@ import java.net.Proxy
 import java.net.ProxySelector
 import java.net.SocketAddress
 import java.net.URI
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.RejectedExecutionException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -155,6 +157,20 @@ class SteamAccessRoutesTest {
         )
         assertEquals(listOf<InetAddress>(ipv6), preferIpv4Addresses(listOf(ipv6)))
         assertTrue(preferIpv4Addresses(emptyList()).isEmpty())
+    }
+
+    @Test
+    fun `loopback connection admission is bounded without queueing slow clients`() {
+        val executor = newBridgeConnectionExecutor()
+        val release = CountDownLatch(1)
+        try {
+            repeat(executor.maximumPoolSize) { executor.execute { release.await() } }
+            assertFailsWith<RejectedExecutionException> { executor.execute {} }
+            assertEquals(0, executor.queue.size)
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
     }
 
     @Test
