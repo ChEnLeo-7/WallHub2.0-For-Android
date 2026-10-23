@@ -727,6 +727,11 @@ class SteamContentSdkSessionBackendTest {
             advanceTimeBy(1_001L)
             assertTrue(fixture.session.pumps.isNotEmpty())
             assertTrue(fixture.session.maintenanceSteps.isNotEmpty())
+            assertEquals(
+                listOf("maintain", "pump"),
+                fixture.session.maintenanceActions.take(2),
+                "a due heartbeat must be written before waiting for an inbound frame at the peer deadline",
+            )
             assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
 
             // The connection is gone and an in-place rebuild is refused. The loss is reported and recovery is
@@ -1288,6 +1293,7 @@ class SteamContentSdkSessionBackendTest {
         /** Every maintenance tick the host asked for, so a test can assert the schedule is really driven. */
         val maintenanceSteps = mutableListOf<SteamContentSdkMaintenanceStep>()
         val pumps = mutableListOf<SteamContentSdkPumpOutcome>()
+        val maintenanceActions = mutableListOf<String>()
         var reconnects = 0
             private set
 
@@ -1296,11 +1302,15 @@ class SteamContentSdkSessionBackendTest {
 
         override fun maintain(autoReconnect: Boolean): SteamContentSdkMaintenance =
             SteamContentSdkMaintenance(SteamContentSdkMaintenanceStep.HEARTBEAT_SENT).also {
+                maintenanceActions += "maintain"
                 maintenanceSteps += it.step
             }
 
         override fun pump(): SteamContentSdkPump =
-            SteamContentSdkPump(SteamContentSdkPumpOutcome.IDLE).also { pumps += it.outcome }
+            SteamContentSdkPump(SteamContentSdkPumpOutcome.IDLE).also {
+                maintenanceActions += "pump"
+                pumps += it.outcome
+            }
 
         override fun reconnect(): SteamContentSdkReconnect {
             reconnects += 1

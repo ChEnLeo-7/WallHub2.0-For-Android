@@ -752,7 +752,7 @@ internal class SteamContentSdkSessionBackend(
     }
 
     /**
-     * One drain, one maintenance step, and the state they left behind.
+     * One maintenance step, one bounded drain, and the state they left behind.
      *
      * Shared by the scheduled loop and the foreground check. The foreground one exists because a link that
      * died while the app was in the background is otherwise not noticed for up to a whole interval - and the
@@ -766,8 +766,11 @@ internal class SteamContentSdkSessionBackend(
         session: SteamContentSdkPlatformSession,
     ): Result<SteamContentSdkSessionState> =
         runCatching {
-            val drained = runCatching { session.pump() }
+            // Write a heartbeat before entering even the bounded passive read. Some CMs negotiate a short
+            // heartbeat window; draining first at that exact boundary lets the peer close the otherwise healthy
+            // generation before maintain() gets a chance to send what is due.
             val step = runCatching { session.maintain(autoReconnect = true) }
+            val drained = runCatching { session.pump() }
             record(
                 "session_maintenance",
                 detail =
@@ -790,8 +793,9 @@ internal class SteamContentSdkSessionBackend(
      * looking, which is why a dropped CM left every Workshop read answering `temporarily_unavailable` until
      * the process was restarted.
      *
-     * One tick is one drain and one maintenance step: the drain reads whatever the peer already sent, and a
-     * socket nobody reads is one the peer closes, while the step writes the heartbeat that is due. A tick
+     * One tick writes the maintenance heartbeat first, then drains whatever the peer sent. A socket nobody
+     * reads is one the peer closes, but waiting to read before writing at the negotiated heartbeat boundary
+     * also lets the peer close an otherwise healthy generation. A tick
      * that finds the session no longer authenticated reports the loss and stops. The next foreground request
      * owns the single reconnect attempt through SteamSessionRequestRecovery, so maintenance and request handling
      * can never race as two independent recovery authorities.
