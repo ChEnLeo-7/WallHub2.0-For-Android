@@ -318,6 +318,9 @@ interface WorkshopRepository {
     /** Drops process-local enrichment data before a realtime Discover generation. */
     suspend fun invalidateDiscoverCache() = Unit
 
+    /** Returns a recent browse/detail value synchronously so detail UI can render before refresh. */
+    fun peekDetailSeed(workshopId: Long): WorkshopDetail? = null
+
     /** Reads a public Wallpaper Engine Workshop page without requiring a Steam Web API key. */
     suspend fun browse(query: WorkshopBrowseQuery): WorkshopPage
 

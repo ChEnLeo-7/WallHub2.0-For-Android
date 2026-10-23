@@ -3,6 +3,8 @@
 package com.wallhub.android.feature.detail
 
 import android.content.Context
+import android.os.SystemClock
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.SavedStateHandle
@@ -105,6 +107,9 @@ class WorkshopDetailViewModel
         }
 
         init {
+            workshopRepository.peekDetailSeed(workshopId)?.let { seed ->
+                mutableState.value = applyDetailSeed(mutableState.value, seed)
+            }
             viewModelScope.launch {
                 steamSessionRepository.session.collect { session ->
                     mutableState.value =
@@ -190,9 +195,7 @@ class WorkshopDetailViewModel
                 mutableState.value.inlineVideoPlayer?.release()
                 mutableState.value.inlineVideoStream?.close()
                 mutableState.value =
-                    mutableState.value.copy(
-                        isLoading = true,
-                        error = null,
+                    beginDetailRefresh(mutableState.value).copy(
                         comments = emptyList(),
                         commentsTotal = null,
                         commentsNextStart = 0,
@@ -357,12 +360,10 @@ class WorkshopDetailViewModel
         fun onCommentsVisible() {
             val current = mutableState.value
             if (current.commentsRequested || current.detail == null) return
-            mutableState.value = current.copy(commentsRequested = true)
             loadComments(refresh = true)
         }
 
         fun retryComments() {
-            mutableState.value = mutableState.value.copy(commentsRequested = true)
             loadComments(refresh = true)
         }
 
@@ -430,57 +431,61 @@ class WorkshopDetailViewModel
                 return
             }
             val start = if (refresh) 0 else current.commentsNextStart
+            mutableState.value = beginCommentsRequest(current, refresh)
             commentsLoadJob =
                 viewModelScope.launch {
-                    mutableState.value =
-                        mutableState.value.copy(
-                            isLoadingComments = refresh,
-                            isLoadingMoreComments = !refresh,
-                            commentsError = null,
-                        )
-                    runCatching {
-                        withTimeout(COMMENTS_LOAD_TIMEOUT_MS) {
-                            workshopRepository.getComments(
-                            workshopId = workshopId,
-                            start = start,
-                            count = COMMENTS_PAGE_SIZE,
-                            ownerId = current.commentsOwnerId ?: detail.creatorId,
-                        )
-                        }
-                    }.onSuccess { page ->
-                        val latest = mutableState.value
-                        val comments =
-                            if (refresh) {
-                                page.comments
-                            } else {
-                                (latest.comments + page.comments).distinctBy { comment ->
-                                    listOf(comment.author, comment.timestamp, comment.text).joinToString("\u001f")
-                                }
+                    val startedAtMs = SystemClock.elapsedRealtime()
+                    Log.d(COMMENTS_LOG_TAG, "comments begin workshopId=$workshopId start=$start refresh=$refresh")
+                    try {
+                        runCatching {
+                            withTimeout(COMMENTS_LOAD_TIMEOUT_MS) {
+                                workshopRepository.getComments(
+                                    workshopId = workshopId,
+                                    start = start,
+                                    count = COMMENTS_PAGE_SIZE,
+                                    ownerId = current.commentsOwnerId ?: detail.creatorId,
+                                )
                             }
-                        mutableState.value =
-                            latest.copy(
-                                comments = comments,
-                                commentsTotal = page.total,
-                                commentsNextStart = page.nextStart,
-                                commentsHasMore = page.hasMore,
-                                commentsOwnerId = page.ownerId ?: latest.commentsOwnerId ?: detail.creatorId,
-                                isLoadingComments = false,
-                                isLoadingMoreComments = false,
-                                commentsError = null,
-                            )
-                    }.onFailure { error ->
-                        if (error is CancellationException && error !is TimeoutCancellationException) throw error
-                        mutableState.value =
-                            mutableState.value.copy(
-                                isLoadingComments = false,
-                                isLoadingMoreComments = false,
-                                commentsError =
-                                    if (error is TimeoutCancellationException) {
-                                        DetailUiText.Resource(R.string.detail_comments_load_failed)
-                                    } else {
-                                        error.toDetailUiText(R.string.detail_comments_load_failed)
-                                    },
-                            )
+                        }.onSuccess { page ->
+                            val latest = mutableState.value
+                            val comments =
+                                if (refresh) {
+                                    page.comments
+                                } else {
+                                    (latest.comments + page.comments).distinctBy { comment ->
+                                        listOf(comment.author, comment.timestamp, comment.text).joinToString("\u001f")
+                                    }
+                                }
+                            mutableState.value =
+                                latest.copy(
+                                    comments = comments,
+                                    commentsTotal = page.total,
+                                    commentsNextStart = page.nextStart,
+                                    commentsHasMore = page.hasMore,
+                                    commentsOwnerId = page.ownerId ?: latest.commentsOwnerId ?: detail.creatorId,
+                                    isLoadingComments = false,
+                                    isLoadingMoreComments = false,
+                                    commentsError = null,
+                                )
+                        }.onFailure { error ->
+                            if (error is CancellationException && error !is TimeoutCancellationException) throw error
+                            mutableState.value =
+                                mutableState.value.copy(
+                                    isLoadingComments = false,
+                                    isLoadingMoreComments = false,
+                                    commentsError =
+                                        if (error is TimeoutCancellationException) {
+                                            DetailUiText.Resource(R.string.detail_comments_load_failed)
+                                        } else {
+                                            error.toDetailUiText(R.string.detail_comments_load_failed)
+                                        },
+                                )
+                        }
+                    } finally {
+                        Log.d(
+                            COMMENTS_LOG_TAG,
+                            "comments complete workshopId=$workshopId start=$start ms=${SystemClock.elapsedRealtime() - startedAtMs}",
+                        )
                     }
                 }
         }

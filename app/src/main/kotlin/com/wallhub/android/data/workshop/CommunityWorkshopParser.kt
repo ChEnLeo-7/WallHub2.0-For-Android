@@ -13,6 +13,7 @@ import com.wallhub.android.core.model.WorkshopType
 import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 
 internal data class SteamWebProfile(
     val displayName: String,
@@ -66,6 +67,9 @@ internal fun parsePublicCommentsPage(
             ?.toString()
             ?.toIntOrNull()
             ?.coerceAtLeast(0)
+    if (comments.isEmpty() && total != null && total > start) {
+        throw IOException("Steam public comments schema returned no rows for total=$total")
+    }
     val nextStart = start + pageCount
     return WorkshopCommentPage(
         comments = comments,

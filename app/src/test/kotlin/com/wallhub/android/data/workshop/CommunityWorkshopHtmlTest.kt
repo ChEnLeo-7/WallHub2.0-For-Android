@@ -18,7 +18,7 @@ class CommunityWorkshopHtmlTest {
         assertEquals("76561197960265851", detail.creatorId)
         assertEquals(WorkshopType.VIDEO, detail.summary.type)
         assertEquals("First\nNested\nLast", detail.description)
-        assertEquals("https://images.example/ugc/999/preview?a=1&b=2", detail.previewMediaUrl)
+        assertEquals("https://images.steamusercontent.com/ugc/999/preview?a=1&b=2", detail.previewMediaUrl)
         assertEquals(WorkshopContentIdentity(), detail.contentIdentity)
         assertNull(detail.fileSizeBytes)
         assertNull(detail.updatedAt)
@@ -98,13 +98,18 @@ class CommunityWorkshopHtmlTest {
             <img id="previewImage" src="$thumbnail">
         """
         assertEquals(thumbnail, parseCommunityHtmlDetail(unrelated, 42).summary.previewUrl)
+        val lookalike = """
+            <div class="workshopItemTitle">Cover</div>
+            <img id="previewImageMain" src="https://images.steamusercontent.com.evil.example/ugc/123/ABC/">
+        """.trimIndent()
+        assertNull(parseCommunityHtmlDetail(lookalike, 42).summary.previewUrl)
     }
 
     companion object {
         // Reduced, synthetic text/URLs; structural selectors match the public 3804689861 page.
         val DETAIL_HTML = """
             <div class="workshopItemTitle">Title &amp; more</div>
-            <img id="previewImage" src="https://images.example/ugc/999/preview?a=1&amp;b=2">
+            <img id="previewImageMain" src="https://images.steamusercontent.com/ugc/999/preview?a=1&amp;b=2">
             <div class="workshopTags"><span>Type:</span><a href="/workshop/browse/?appid=431960&amp;requiredtags%5B%5D=Video">视频</a></div>
             <div class="creatorsBlock"><div class="friendBlock persona" data-miniprofile="123">
               <div class="playerAvatar"><img src="https://avatars.example/avatar.jpg"></div>

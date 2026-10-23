@@ -23,6 +23,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CommunityWorkshopRepositoryTest {
@@ -60,6 +61,78 @@ class CommunityWorkshopRepositoryTest {
             assertEquals(emptyList<Long>(), page.items.map { it.id })
             assertEquals(emptyList<String>(), requests)
         }
+
+    @Test
+    fun `community comments prefer canonical owner POST and fall back after positive total schema failure`() =
+        runBlocking {
+            val requests = mutableListOf<Pair<String, String>>()
+            val settings =
+                object : SettingsRepository by CmSettingsRepository {
+                    override val preferences =
+                        MutableStateFlow(AppPreferences(steamWorkshopDataSource = SteamWorkshopDataSource.COMMUNITY_HTML))
+                }
+            val client =
+                OkHttpClient.Builder().addInterceptor { chain ->
+                    val request = chain.request()
+                    requests += request.method to request.url.encodedPath
+                    val body =
+                        if (requests.size == 1) {
+                            """{"success":1,"total_count":2,"comments_html":"<div>changed schema</div>"}"""
+                        } else {
+                            """{"success":1,"total_count":0,"comments_html":""}"""
+                        }
+                    Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200)
+                        .message("OK").body(body.toResponseBody("application/json".toMediaType())).build()
+                }.build()
+
+            val page = CommunityWorkshopRepository(settings, UnavailableCmRepository, client).getComments(
+                workshopId = WORKSHOP_ID,
+                start = 0,
+                count = 10,
+                ownerId = "76561198000000000",
+            )
+
+            assertEquals(0, page.total)
+            assertTrue(page.comments.isEmpty())
+            assertEquals("POST", requests.first().first)
+            assertEquals("/comment/PublishedFile_Public/render/76561198000000000/$WORKSHOP_ID/", requests.first().second)
+            assertTrue(requests.size >= 2)
+        }
+
+    @Test
+    fun `public comments positive total with no parsed rows is schema failure`() {
+        val payload = org.json.JSONObject("""{"total_count":3,"comments":[]}""")
+
+        assertThrows(java.io.IOException::class.java) {
+            parsePublicCommentsPage(payload, 0, 10, "76561198000000000")
+        }
+    }
+
+    @Test
+    fun `community merge keeps HTML prose and fills JSON metrics identity and size in both models`() {
+        val html = parseCommunityHtmlDetail(CommunityWorkshopHtmlTest.DETAIL_HTML, 42)
+        val json = CommunityWorkshopParser.parseDetails(
+            """{"response":{"publishedfiledetails":[{"result":1,"publishedfileid":"42",
+            "title":"JSON title","creator":"76561198000000000","creator_name":"JSON author",
+            "short_description":"JSON description","preview_url":"https://images.steamusercontent.com/ugc/42/P/",
+            "subscriptions":"7","favorited":"8","views":"9","file_size":"123",
+            "time_created":"10","time_updated":"11","consumer_app_id":"431960","hcontent_file":"999","tags":[]}]}}""",
+        ).single()
+
+        val merged = mergeCommunityDetail(html, json)
+
+        assertEquals("Title & more", merged.summary.title)
+        assertEquals("Creator", merged.summary.author)
+        assertEquals("First\nNested\nLast", merged.description)
+        assertEquals(7L, merged.summary.subscriptions)
+        assertEquals(8L, merged.summary.favorites)
+        assertEquals(9L, merged.summary.views)
+        assertEquals(123L, merged.fileSizeBytes)
+        assertEquals(123L, merged.summary.fileSizeBytes)
+        assertEquals(10L, merged.createdAt)
+        assertEquals(11L, merged.updatedAt)
+        assertEquals(999L, merged.contentIdentity.manifestId)
+    }
 
     @Test
     fun `public detail retains video content identity for the play request`() {
@@ -136,20 +209,22 @@ class CommunityWorkshopRepositoryTest {
     }
 
     @Test
-    fun `HTML detail and batch only request Community and never API or CM`() = runBlocking {
+    fun `HTML detail combines Community page with keyless public JSON and never uses CM`() = runBlocking {
         val requests = mutableListOf<String>()
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
-            assertEquals("steamcommunity.com", request.url.host)
-            assertEquals("GET", request.method)
-            requests.add(request.url.encodedPath)
-            val html = if (request.url.encodedPath.contains("browse")) {
-                CommunityWorkshopHtmlTest.browseHtml()
+            requests.add("${request.method} ${request.url.host}${request.url.encodedPath}")
+            val (body, mediaType) = if (request.url.host == "api.steampowered.com") {
+                val apiRequestNumber = requests.count { it.startsWith("POST api.steampowered.com") }
+                val id = if (apiRequestNumber <= 2) 42L else 43L
+                PUBLIC_DETAIL_JSON.replace(WORKSHOP_ID.toString(), id.toString()) to "application/json"
             } else {
-                CommunityWorkshopHtmlTest.DETAIL_HTML
+                assertEquals("steamcommunity.com", request.url.host)
+                assertEquals("GET", request.method)
+                CommunityWorkshopHtmlTest.DETAIL_HTML to "text/html"
             }
             Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200)
-                .message("OK").body(html.toResponseBody("text/html".toMediaType())).build()
+                .message("OK").body(body.toResponseBody(mediaType.toMediaType())).build()
         }.build()
         val settings = object : SettingsRepository by CmSettingsRepository {
             override val preferences = MutableStateFlow(AppPreferences(
@@ -163,8 +238,13 @@ class CommunityWorkshopRepositoryTest {
         }
         val repository = CommunityWorkshopRepository(settings, unified, client)
         assertEquals("Title & more", repository.getDetail(42).summary.title)
+        assertEquals("Title & more", repository.peekDetailSeed(42)?.summary?.title)
         assertEquals(listOf(42L, 43L), repository.getDetails(listOf(42, 43)).map { it.summary.id })
-        assertEquals(3, requests.size)
+        assertEquals(6, requests.size)
+        assertEquals(3, requests.count { it.startsWith("GET steamcommunity.com") })
+        assertEquals(3, requests.count { it.startsWith("POST api.steampowered.com") })
+        repository.invalidateDiscoverCache()
+        assertEquals(null, repository.peekDetailSeed(42))
     }
 
     private fun repositoryWithPublicResponse(

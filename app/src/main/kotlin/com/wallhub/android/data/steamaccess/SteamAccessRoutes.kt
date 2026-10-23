@@ -17,6 +17,7 @@ internal object SteamAccessRoutes {
                     "community.steam-api.com.edgekey.net",
                     "community.steam-api.com.edgesuite.net",
                 ),
+            "images.steamusercontent.com" to emptyList(),
         )
 
     fun supports(hostname: String): Boolean = SteamDomainPolicy.supports(hostname)

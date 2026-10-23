@@ -56,6 +56,30 @@ data class WorkshopDetailUiState(
     val inlineVideoError: DetailUiText? = null,
 )
 
+internal fun applyDetailSeed(
+    state: WorkshopDetailUiState,
+    seed: WorkshopDetail,
+): WorkshopDetailUiState =
+    state.copy(
+        detail = seed,
+        isLoading = false,
+        exportFormat = seed.summary.type.defaultExportFormat(),
+    )
+
+internal fun beginDetailRefresh(state: WorkshopDetailUiState): WorkshopDetailUiState =
+    state.copy(isLoading = state.detail == null, error = null)
+
+internal fun beginCommentsRequest(
+    state: WorkshopDetailUiState,
+    refresh: Boolean,
+): WorkshopDetailUiState =
+    state.copy(
+        commentsRequested = true,
+        isLoadingComments = refresh,
+        isLoadingMoreComments = !refresh,
+        commentsError = null,
+    )
+
 sealed interface DetailUiText {
     data class Resource(
         @StringRes val resourceId: Int,

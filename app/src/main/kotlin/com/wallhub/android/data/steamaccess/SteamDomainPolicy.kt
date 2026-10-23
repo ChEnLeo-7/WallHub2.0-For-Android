@@ -7,6 +7,7 @@ internal object SteamDomainPolicy {
             "www.steamcommunity.com",
             "api.steampowered.com",
             "community.steam-api.com",
+            "images.steamusercontent.com",
         )
 
     fun supports(hostname: String): Boolean {
@@ -74,6 +75,7 @@ internal object SteamDomainPolicy {
         return when (host) {
             "api.steampowered.com", "community.steam-api.com" ->
                 "/ISteamWebAPIUtil/GetSupportedAPIList/v1/?format=json"
+            "images.steamusercontent.com" -> "/"
 
             else ->
                 if (isCmHost(host)) {

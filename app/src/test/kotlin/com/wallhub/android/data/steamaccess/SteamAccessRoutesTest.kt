@@ -23,6 +23,8 @@ class SteamAccessRoutesTest {
         assertTrue(SteamAccessRoutes.supports("www.steamcommunity.com"))
         assertTrue(SteamAccessRoutes.supports("api.steampowered.com"))
         assertTrue(SteamAccessRoutes.supports("community.steam-api.com"))
+        assertTrue(SteamAccessRoutes.supports("images.steamusercontent.com"))
+        assertFalse(SteamAccessRoutes.supports("images.steamusercontent.com.evil.example"))
         assertFalse(SteamAccessRoutes.supports("evil.steamcommunity.com"))
         assertFalse(SteamAccessRoutes.supports("steamuserimages-a.akamaihd.net"))
         assertFalse(SteamAccessRoutes.supports("cache1.steamcontent.com"))

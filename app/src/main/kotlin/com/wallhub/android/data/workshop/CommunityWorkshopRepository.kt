@@ -21,6 +21,8 @@ import com.wallhub.android.core.model.workshopAuthorSearchOrNull
 import com.wallhub.android.data.downloads.readBytesBounded
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
@@ -58,18 +60,60 @@ class CommunityWorkshopRepository internal constructor(
                 .build(),
     )
 
+        private val commentsClient =
+            client.newBuilder()
+                .callTimeout(COMMUNITY_COMMENT_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .build()
         private val steamProfiles = ConcurrentHashMap<SteamProfileCacheKey, SteamWebProfile>()
         private val steamProfileGeneration = AtomicLong()
+        private val detailSeeds = ConcurrentHashMap<DetailSeedKey, DetailSeed>()
+        private val dataSourceEpoch = AtomicLong()
+        @Volatile private var activeDataSource: SteamWorkshopDataSource? = null
+
+        override fun peekDetailSeed(workshopId: Long): WorkshopDetail? {
+            val source = activeDataSource ?: return null
+            val key = DetailSeedKey(dataSourceEpoch.get(), source, workshopId)
+            return detailSeeds[key]
+                ?.takeIf { System.nanoTime() - it.storedAtNanos <= DETAIL_SEED_TTL_NANOS }
+                ?.detail
+        }
 
         override suspend fun invalidateDiscoverCache() {
             steamProfileGeneration.incrementAndGet()
+            dataSourceEpoch.incrementAndGet()
             steamProfiles.clear()
+            detailSeeds.clear()
+        }
+
+        private fun selectDataSource(source: SteamWorkshopDataSource): Long = synchronized(detailSeeds) {
+            if (activeDataSource != source) {
+                activeDataSource = source
+                dataSourceEpoch.incrementAndGet()
+                detailSeeds.clear()
+            }
+            dataSourceEpoch.get()
+        }
+
+        private fun rememberDetail(source: SteamWorkshopDataSource, epoch: Long, detail: WorkshopDetail) {
+            if (activeDataSource != source || dataSourceEpoch.get() != epoch) return
+            detailSeeds[DetailSeedKey(epoch, source, detail.summary.id)] = DetailSeed(detail, System.nanoTime())
+            if (detailSeeds.size > MAX_DETAIL_SEEDS) {
+                detailSeeds.entries.minByOrNull { it.value.storedAtNanos }?.let { detailSeeds.remove(it.key, it.value) }
+            }
+        }
+
+        private fun rememberPage(source: SteamWorkshopDataSource, epoch: Long, page: WorkshopPage) {
+            page.items.forEach { summary ->
+                rememberDetail(source, epoch, WorkshopDetail(summary = summary, fileSizeBytes = summary.fileSizeBytes))
+            }
         }
 
         override suspend fun browse(query: WorkshopBrowseQuery): WorkshopPage =
             withContext(Dispatchers.IO) {
                 val normalizedQuery = query.normalized()
                 val preferences = settingsRepository.preferences.first()
+                val source = preferences.steamWorkshopDataSource
+                val epoch = selectDataSource(source)
                 if (
                     normalizedQuery.sort == WorkshopSort.FRIENDS_FAVORITES ||
                     normalizedQuery.sort == WorkshopSort.FRIENDS_CREATED
@@ -85,7 +129,7 @@ class CommunityWorkshopRepository internal constructor(
                     "Community HTML does not support created-date Workshop queries"
                 }
                 val steamApiKey = preferences.steamApiKey.trim()
-                when (preferences.steamWorkshopDataSource) {
+                val page = when (source) {
                     SteamWorkshopDataSource.COMMUNITY_HTML -> browseViaCommunity(normalizedQuery)
                     SteamWorkshopDataSource.WEB_API -> {
                         val workshopId = normalizedQuery.searchText.workshopSearchIdOrNull()
@@ -95,45 +139,54 @@ class CommunityWorkshopRepository internal constructor(
                         if (workshopId != null) {
                             val detail = getPublishedFileDetails(listOf(workshopId), steamApiKey).firstOrNull()
                                 ?: error("Steam Web API did not return this Workshop item")
-                            return@withContext WorkshopPage(
+                            WorkshopPage(
                                 items = listOf(enrichDetailAuthor(detail, steamApiKey).summary),
                                 page = normalizedQuery.page,
                                 hasNextPage = false,
                                 totalCount = 1,
                                 totalPages = 1,
                             )
+                        } else {
+                            enrichPageAuthors(
+                                if (normalizedQuery.creatorId != null) {
+                                    browseViaSteamApiAuthor(normalizedQuery, steamApiKey)
+                                } else {
+                                    browseViaSteamApi(normalizedQuery, steamApiKey)
+                                },
+                                steamApiKey,
+                            )
                         }
-                        enrichPageAuthors(
-                            if (normalizedQuery.creatorId != null) {
-                                browseViaSteamApiAuthor(normalizedQuery, steamApiKey)
-                            } else {
-                                browseViaSteamApi(normalizedQuery, steamApiKey)
-                            },
-                            steamApiKey,
-                        )
                     }
 
-                    SteamWorkshopDataSource.CM_WEBSOCKET -> {
-                        val first = unifiedWorkshopRepository.browsePublic(normalizedQuery)
+                    SteamWorkshopDataSource.CM_WEBSOCKET ->
+                        unifiedWorkshopRepository.browsePublic(normalizedQuery)
                             ?: error("Failed to establish a Steam CM WebSocket session")
-                        first
-                    }
                 }
+                rememberPage(source, epoch, page)
+                page
             }
 
         override suspend fun getDetail(workshopId: Long): WorkshopDetail =
             withContext(Dispatchers.IO) {
                 require(workshopId > 0L) { "Invalid Workshop item ID" }
+                val startedAt = System.nanoTime()
                 val preferences = settingsRepository.preferences.first()
+                val source = preferences.steamWorkshopDataSource
+                val epoch = selectDataSource(source)
+                val seed = peekDetailSeed(workshopId)
+                Log.d(LOG_TAG, "detail begin id=$workshopId source=$source seed=${seed != null}")
+                if (seed != null) {
+                    Log.d(LOG_TAG, "detail seed id=$workshopId ms=${elapsedMs(startedAt)}")
+                }
                 val steamApiKey = preferences.steamApiKey.trim()
-                when (preferences.steamWorkshopDataSource) {
+                val detail = when (source) {
                     SteamWorkshopDataSource.COMMUNITY_HTML -> getCommunityDetail(workshopId)
 
                     SteamWorkshopDataSource.WEB_API -> {
-                        val detail =
+                        val loaded =
                             getPublishedFileDetails(listOf(workshopId), steamApiKey).firstOrNull()
                                 ?: error("Steam Web API did not return this Workshop item")
-                        enrichDetailAuthor(detail, steamApiKey)
+                        enrichDetailAuthor(loaded, steamApiKey)
                     }
 
                     SteamWorkshopDataSource.CM_WEBSOCKET ->
@@ -145,6 +198,9 @@ class CommunityWorkshopRepository internal constructor(
                                 error("Steam CM is temporarily unavailable; retry this item")
                         }
                 }
+                rememberDetail(source, epoch, detail)
+                Log.d(LOG_TAG, "detail fresh id=$workshopId ms=${elapsedMs(startedAt)}")
+                detail
             }
 
         override suspend fun getComments(
@@ -200,18 +256,22 @@ class CommunityWorkshopRepository internal constructor(
                 val ids = workshopIds.filter { it > 0L }.distinct()
                 if (ids.isEmpty()) return@withContext emptyList()
                 val preferences = settingsRepository.preferences.first()
+                val source = preferences.steamWorkshopDataSource
+                val epoch = selectDataSource(source)
                 val steamApiKey = preferences.steamApiKey.trim()
-                when (preferences.steamWorkshopDataSource) {
-                    SteamWorkshopDataSource.COMMUNITY_HTML -> ids.map(::getCommunityDetail)
+                val details = when (source) {
+                    SteamWorkshopDataSource.COMMUNITY_HTML -> ids.map { getCommunityDetail(it) }
                     SteamWorkshopDataSource.WEB_API -> getPublishedFileDetails(ids, steamApiKey).map { enrichDetailAuthor(it, steamApiKey) }
                     SteamWorkshopDataSource.CM_WEBSOCKET -> {
                         val batch = unifiedWorkshopRepository.getPublicDetailsResult(ids)
                         if (batch.missingCount > 0) {
-                            Log.w("WallHubWorkshop", "Steam CM batch returned partial details missing=${batch.missingCount}")
+                            Log.w(LOG_TAG, "Steam CM batch returned partial details missing=${batch.missingCount}")
                         }
                         batch.available
                     }
                 }
+                details.forEach { rememberDetail(source, epoch, it) }
+                details
             }
 
         private suspend fun resolveWorkshopOwnerId(
@@ -311,7 +371,7 @@ class CommunityWorkshopRepository internal constructor(
                     .header("X-Requested-With", "XMLHttpRequest")
                     .build()
             val payload =
-                client.newCall(request).execute().use { response ->
+                commentsClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         throw IOException("Steam Community comment request failed: HTTP ${response.code}")
                     }
@@ -336,6 +396,9 @@ class CommunityWorkshopRepository internal constructor(
                     .mapNotNull { key -> payload.opt(key)?.toString()?.toIntOrNull() }
                     .firstOrNull()
                     ?.coerceAtLeast(0)
+            if (comments.isEmpty() && total != 0) {
+                throw IOException("Steam Community comments schema returned no rows for total=${total ?: "unknown"}")
+            }
             val nextStart = start + maxOf(comments.size, count)
             return WorkshopCommentPage(
                 comments = comments,
@@ -370,7 +433,7 @@ class CommunityWorkshopRepository internal constructor(
                     .post(FormBody.Builder().add("input_json", input.toString()).build())
                     .build()
             val payload =
-                client.newCall(request).execute().use { response ->
+                commentsClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         throw IOException("Steam public comment request failed: HTTP ${response.code}")
                     }
@@ -600,8 +663,23 @@ class CommunityWorkshopRepository internal constructor(
             return CommunityWorkshopParser.parseDetails(body)
         }
 
-        private fun getCommunityDetail(workshopId: Long): WorkshopDetail =
-            parseCommunityHtmlDetail(get(buildDetailUrl(workshopId)), workshopId)
+        private suspend fun getCommunityDetail(workshopId: Long): WorkshopDetail = coroutineScope {
+            val html = async { runCatching { parseCommunityHtmlDetail(get(buildDetailUrl(workshopId)), workshopId) } }
+            val json = async { runCatching { getPublishedFileDetails(listOf(workshopId)).firstOrNull() } }
+            val htmlResult = html.await()
+            val jsonResult = json.await()
+            val htmlDetail = htmlResult.getOrNull()
+            val jsonDetail = jsonResult.getOrNull()
+            when {
+                htmlDetail != null && jsonDetail != null -> mergeCommunityDetail(htmlDetail, jsonDetail)
+                htmlDetail != null -> htmlDetail
+                jsonDetail != null -> jsonDetail
+                else -> throw IOException(
+                    "Steam Community detail HTML and JSON requests failed",
+                    htmlResult.exceptionOrNull() ?: jsonResult.exceptionOrNull(),
+                )
+            }
+        }
 
         private fun get(url: String): String {
             val request =
@@ -643,9 +721,53 @@ class CommunityWorkshopRepository internal constructor(
         }
     }
 
+internal fun mergeCommunityDetail(html: WorkshopDetail, json: WorkshopDetail): WorkshopDetail {
+    require(html.summary.id == json.summary.id) { "Workshop detail IDs do not match" }
+    val fileSize = json.fileSizeBytes ?: json.summary.fileSizeBytes ?: html.fileSizeBytes ?: html.summary.fileSizeBytes
+    val preview = json.previewMediaUrl ?: json.summary.previewUrl ?: html.previewMediaUrl ?: html.summary.previewUrl
+    val htmlSummary = html.summary
+    val jsonSummary = json.summary
+    return json.copy(
+        summary = jsonSummary.copy(
+            title = htmlSummary.title.ifBlank { jsonSummary.title },
+            author = htmlSummary.author.ifBlank { jsonSummary.author },
+            creatorId = htmlSummary.creatorId ?: jsonSummary.creatorId,
+            authorAvatarUrl = htmlSummary.authorAvatarUrl ?: jsonSummary.authorAvatarUrl,
+            previewUrl = preview,
+            type = if (htmlSummary.type != com.wallhub.android.core.model.WorkshopType.UNKNOWN) htmlSummary.type else jsonSummary.type,
+            tags = htmlSummary.tags.ifEmpty { jsonSummary.tags },
+            fileSizeBytes = fileSize,
+            isTitlePlaceholder = htmlSummary.title.isBlank() && jsonSummary.isTitlePlaceholder,
+            authorPlaceholder = if (htmlSummary.author.isNotBlank()) htmlSummary.authorPlaceholder else jsonSummary.authorPlaceholder,
+        ),
+        description = html.description.ifBlank { json.description },
+        fileSizeBytes = fileSize,
+        previewMediaUrl = preview,
+        creatorId = html.creatorId ?: json.creatorId,
+    )
+}
+
+private fun elapsedMs(startedAtNanos: Long): Long =
+    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos)
+
+private data class DetailSeedKey(
+    val epoch: Long,
+    val source: SteamWorkshopDataSource,
+    val workshopId: Long,
+)
+
+private data class DetailSeed(
+    val detail: WorkshopDetail,
+    val storedAtNanos: Long,
+)
+
 private data class SteamProfileCacheKey(
     val generation: Long,
     val steamId: String,
 )
 
 private const val MAX_PUBLIC_DETAILS_BYTES = 1024 * 1024
+private const val COMMUNITY_COMMENT_CALL_TIMEOUT_MS = 1_500L
+private const val MAX_DETAIL_SEEDS = 256
+private val DETAIL_SEED_TTL_NANOS = TimeUnit.SECONDS.toNanos(30)
+private const val LOG_TAG = "WallHubWorkshop"

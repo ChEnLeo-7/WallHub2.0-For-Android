@@ -69,9 +69,13 @@ internal fun parseCommunityHtmlDetail(html: String, workshopId: Long): WorkshopD
 /** The webpage thumbnail may contain baked-in black borders; use its own enlargement link. */
 private fun detailPreviewUrl(markup: String): String? {
     val image = HTML_IMAGE.findAll(markup)
-        .firstOrNull { detailAttribute(it.value, "id") == "previewImage" } ?: return null
+        .firstOrNull {
+            detailAttribute(it.value, "id") in setOf("previewImageMain", "previewImage")
+        } ?: return null
     val thumbnail = detailHttpsUrl(detailAttribute(image.value, "src")) ?: return null
-    val thumbnailUrl = thumbnail.toHttpUrlOrNull() ?: return null
+    val thumbnailUrl = thumbnail.toHttpUrlOrNull()
+        ?.takeIf(::isSteamPreviewUrl)
+        ?: return null
     val anchor = HTML_ANCHOR.findAll(markup).firstOrNull {
         image.range.first in it.range && image.range.last in it.range
     } ?: return thumbnail
@@ -86,9 +90,7 @@ private fun detailPreviewUrl(markup: String): String? {
         enlarged.encodedPath != thumbnailUrl.encodedPath ||
         enlarged.username.isNotEmpty() || enlarged.password.isNotEmpty()
     ) return thumbnail
-    if (enlarged.host != "images.steamusercontent.com" || !enlarged.encodedPath.startsWith("/ugc/")) {
-        return thumbnail
-    }
+    if (!isSteamPreviewUrl(enlarged)) return thumbnail
     return enlarged.newBuilder()
         .setQueryParameter("imw", "1920")
         .setQueryParameter("imh", "1920")
@@ -96,6 +98,14 @@ private fun detailPreviewUrl(markup: String): String? {
         .setQueryParameter("letterbox", "false")
         .build().toString()
 }
+
+private fun isSteamPreviewUrl(url: okhttp3.HttpUrl): Boolean =
+    url.scheme == "https" &&
+        url.host == "images.steamusercontent.com" &&
+        url.port == 443 &&
+        url.username.isEmpty() &&
+        url.password.isEmpty() &&
+        url.encodedPath.startsWith("/ugc/")
 
 private val HTML_ANCHOR_OPEN = Regex("""(?is)<a\b(?:"[^"]*"|'[^']*'|[^'">]++)*+>""")
 private val ENLARGED_PREVIEW = Regex("""\s*ShowEnlargedImagePreview\(\s*(?:'([^'\\]*)'|"([^"\\]*)")\s*\)\s*;?\s*""")
