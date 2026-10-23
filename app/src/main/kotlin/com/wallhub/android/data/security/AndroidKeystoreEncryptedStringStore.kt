@@ -103,6 +103,13 @@ internal class AndroidKeystoreEncryptedStringStore
     override fun write(value: String) {
         val existing = keys.existing()
         if (existing != null) {
+            // A stale/unusable alias can survive after its preferences record has already disappeared. Probe the
+            // key itself before relying on record readability, otherwise that empty-store case can never heal.
+            if (records.ciphertext() == null && records.initializationVector() == null && !canEncrypt(existing)) {
+                keys.delete()
+                encryptAndStore(value, keys.create())
+                return
+            }
             val failure = runCatching { encryptAndStore(value, existing) }.exceptionOrNull()
             if (failure == null) return
             // Two failures wear the same shape here and only one of them may replace the key. A key the cipher
@@ -124,6 +131,11 @@ internal class AndroidKeystoreEncryptedStringStore
     override fun clear() {
         records.clear()
     }
+
+    private fun canEncrypt(key: SecretKey): Boolean =
+        runCatching {
+            Cipher.getInstance(TRANSFORMATION).init(Cipher.ENCRYPT_MODE, key)
+        }.isSuccess
 
     private fun isStoredRecordReadable(key: SecretKey): Boolean {
         val ciphertext = records.ciphertext() ?: return true

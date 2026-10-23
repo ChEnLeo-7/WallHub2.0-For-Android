@@ -107,6 +107,29 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
+    fun aRetainedTokenWriteThatReadsBackDifferentlyIsNotReportedAsStored() =
+        runTest {
+            val fixture = Fixture()
+            val retained = opaqueValue(seed = 91)
+            fixture.session.retainedToken = retained.toByteArray(Charsets.UTF_8)
+            fixture.store.writeReplacement =
+                encodeSteamCredential(
+                    PersistedSteamCredential(accountName = "other", refreshToken = opaqueValue(seed = 93)),
+                )
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            val backend = fixture.backend(this)
+
+            backend.login("account", opaqueValue(seed = 95))
+            advanceUntilIdle()
+
+            assertEquals(1, fixture.store.writeCalls)
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+            assertFalse(backend.session.value.hasStoredSession)
+            val roundTrip = fixture.diagnostics.events.mapNotNull { it.attributes["stage"] }
+            assertTrue(roundTrip.contains("credential_roundtrip match=false unchanged=false"), roundTrip.toString())
+        }
+
+    @Test
     fun aRestoreThatRetainsNoTokenDoesNotOverwriteTheStoredOne() =
         runTest {
             val fixture = Fixture()
@@ -322,6 +345,31 @@ class SteamContentSdkSessionBackendTest {
 
             assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
             assertEquals(0, fixture.session.answers.size)
+        }
+
+    @Test
+    fun aManualGuardFallbackCannotReachTheSessionAfterANewerLoginStarts() =
+        runTest {
+            val fixture = Fixture()
+            fixture.session.guardChoices = SteamContentSdkGuardChoice.EMAIL_CODE_BIT
+            fixture.session.events +=
+                SteamContentSdkSessionEvent.AuthenticationChallenge(SteamContentSdkChallengeKind.DEVICE_CONFIRMATION)
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            val backend = fixture.backend(this)
+            fixture.session.beforePoll = { poll ->
+                if (poll == 2) {
+                    backend.useManualSteamGuardFallback()
+                    backend.login("new-account", opaqueValue(seed = 27))
+                }
+            }
+
+            backend.login("old-account", opaqueValue(seed = 25))
+            advanceUntilIdle()
+
+            assertTrue(fixture.session.chosenGuards.isEmpty())
+            assertEquals("new-account", fixture.session.logons.last().accountName)
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
         }
 
     @Test
@@ -588,6 +636,41 @@ class SteamContentSdkSessionBackendTest {
             assertEquals(1, fixture.session.closeCalls)
             assertEquals(1, fixture.store.clearCalls)
             assertEquals(SteamSessionPhase.SIGNED_OUT, backend.session.value.phase)
+        }
+
+    @Test
+    fun onDemandRecoveryRequestedDuringLogoutDoesNotRestoreAfterClearFailure() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 301)))
+            fixture.store.clearFailure = IllegalStateException("commit failed")
+            val backend = fixture.backend(this)
+
+            backend.logout()
+            backend.restorePersistedSession()
+            advanceUntilIdle()
+
+            assertEquals(0, fixture.platform.openCalls)
+            assertEquals(0, fixture.session.restores.size)
+            assertEquals(SteamSessionPhase.SIGNED_OUT, backend.session.value.phase)
+            assertTrue(backend.session.value.hasStoredSession)
+        }
+
+    @Test
+    fun explicitLoginRequestedDuringLogoutStillRunsAfterTeardown() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(PersistedSteamCredential(accountName = "old", refreshToken = opaqueValue(seed = 303)))
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            val backend = fixture.backend(this)
+
+            backend.logout()
+            backend.login("new", opaqueValue(seed = 305))
+            advanceUntilIdle()
+
+            assertEquals(1, fixture.session.logons.size)
+            assertEquals("new", fixture.session.logons.single().accountName)
+            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
         }
 
     @Test
@@ -1112,12 +1195,14 @@ class SteamContentSdkSessionBackendTest {
 
         /** Stands for a preferences commit that failed: the record is still there afterwards. */
         var clearFailure: Throwable? = null
+        /** Lets a fake durable store acknowledge a write but expose a different read-back. */
+        var writeReplacement: String? = null
 
         override fun read(): EncryptedStringReadResult = payload
 
         override fun write(value: String) {
             writeCalls += 1
-            payload = EncryptedStringReadResult.Value(value)
+            payload = EncryptedStringReadResult.Value(writeReplacement ?: value)
         }
 
         override fun clear() {
@@ -1191,7 +1276,14 @@ class SteamContentSdkSessionBackendTest {
             return stateAfterEvents
         }
 
-        override fun pollEvent(timeoutMs: Int): SteamContentSdkSessionEvent? = events.removeFirstOrNull()
+        var beforePoll: ((Int) -> Unit)? = null
+        private var pollCalls = 0
+
+        override fun pollEvent(timeoutMs: Int): SteamContentSdkSessionEvent? {
+            pollCalls += 1
+            beforePoll?.invoke(pollCalls)
+            return events.removeFirstOrNull()
+        }
 
         /** Every maintenance tick the host asked for, so a test can assert the schedule is really driven. */
         val maintenanceSteps = mutableListOf<SteamContentSdkMaintenanceStep>()

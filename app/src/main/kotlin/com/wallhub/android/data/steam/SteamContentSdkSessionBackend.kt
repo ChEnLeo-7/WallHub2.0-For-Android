@@ -94,9 +94,11 @@ internal class SteamContentSdkSessionBackend(
 
     private val attemptInProgress = AtomicBoolean(false)
     private val logoutInProgress = AtomicBoolean(false)
+    private val attemptLock = Any()
     /** Keeps the persisted account identity stable while the one bounded background CM replacement runs. */
     private val preserveSignedInDuringRestore = AtomicBoolean(false)
     private val attemptJob = AtomicReference<Job?>(null)
+    private val manualGuardFallbackJob = AtomicReference<Job?>(null)
     private val activeSession = AtomicReference<SteamContentSdkPlatformSession?>(null)
     private val pendingChallenge = AtomicReference<PendingChallenge?>(null)
 
@@ -107,7 +109,14 @@ internal class SteamContentSdkSessionBackend(
      * that runs. Dropping it instead is what made a tap on sign-in do nothing at all while a background
      * restore held the gate for up to its whole five-minute deadline.
      */
-    private val pendingAttempt = AtomicReference<(suspend () -> Unit)?>(null)
+    private enum class AttemptIntent { RECOVERY, USER }
+
+    private class PendingAttempt(
+        val intent: AttemptIntent,
+        val block: suspend () -> Unit,
+    )
+
+    private val pendingAttempt = AtomicReference<PendingAttempt?>(null)
 
     /**
      * The credential-store generation the running attempt read its stored credential at, or
@@ -232,7 +241,7 @@ internal class SteamContentSdkSessionBackend(
         }
         // A sign-in the user asked for takes precedence over whatever attempt is running: it supersedes it
         // rather than waiting behind it, because waiting means a tap that does nothing for up to five minutes.
-        launchAttempt(supersedes = true) { logon(trimmed, password) }
+        launchAttempt(intent = AttemptIntent.USER, supersedes = true) { logon(trimmed, password) }
     }
 
     override fun submitSteamGuardCode(code: String) {
@@ -246,7 +255,7 @@ internal class SteamContentSdkSessionBackend(
         // The answer runs as an attempt like every other flow. It used to run in a coroutine of its own, which
         // no sign-out cancelled and which could release the session a newer attempt had since opened; a typed
         // code is also a user action, so it supersedes whatever attempt collided with it.
-        launchAttempt(supersedes = true) {
+        launchAttempt(intent = AttemptIntent.USER, supersedes = true) {
             val session = activeSession.get()
             if (session == null || session !== challenge.session) {
                 // The challenge belongs to a session that is no longer the live one: answering it would either
@@ -318,34 +327,52 @@ internal class SteamContentSdkSessionBackend(
             publish(SteamSessionPhase.FAILED, messages.noManualLogin)
             return
         }
-        scope.launch {
-            // Off the caller's thread: both calls cross into the SDK, and the caller is a ViewModel.
-            val session = activeSession.get()
-            val choices = session?.guardChoices() ?: 0L
-            // Only a confirmation the service allows for this account can be selected: the authenticator's code
-            // when the account has one, otherwise the code Steam emailed. The SDK publishes the challenge again
-            // as that code, and the poll this attempt is already running picks it up and shows the code field.
-            val code =
-                when {
-                    choices and SteamContentSdkGuardChoice.DEVICE_CODE_BIT != 0L -> SteamContentSdkGuardChoice.DEVICE_CODE
-                    choices and SteamContentSdkGuardChoice.EMAIL_CODE_BIT != 0L -> SteamContentSdkGuardChoice.EMAIL_CODE
-                    else -> null
-                }
-            if (session == null || code == null) {
-                // Nothing to switch to, so this account has no code to type for this logon.
-                record("manual_guard_fallback_unavailable choices=$choices")
-                publish(SteamSessionPhase.FAILED, messages.noManualLogin)
-                return@launch
-            }
-            record("manual_guard_fallback choice=$code")
-            runCatching { session.chooseGuard(code) }
-                .onFailure { record("manual_guard_fallback_failed", error = it) }
+        val session = activeSession.get()
+        val generation = session?.let { runCatching { it.authorizationGeneration() }.getOrNull() }
+        if (session == null || generation == null || logoutInProgress.get()) {
+            publish(SteamSessionPhase.FAILED, messages.noManualLogin)
+            return
         }
+        val job =
+            scope.launch(start = CoroutineStart.LAZY) {
+                // Both calls belong to the exact session generation that displayed this confirmation page.
+                val choices = withSession { session.guardChoices() }
+                val code =
+                    when {
+                        choices and SteamContentSdkGuardChoice.DEVICE_CODE_BIT != 0L -> SteamContentSdkGuardChoice.DEVICE_CODE
+                        choices and SteamContentSdkGuardChoice.EMAIL_CODE_BIT != 0L -> SteamContentSdkGuardChoice.EMAIL_CODE
+                        else -> null
+                    }
+                if (
+                    activeSession.get() !== session ||
+                    runCatching { session.authorizationGeneration() }.getOrNull() != generation ||
+                    logoutInProgress.get() ||
+                    mutableSession.value.phase != SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION
+                ) {
+                    record("manual_guard_fallback_stale")
+                    return@launch
+                }
+                if (code == null) {
+                    record("manual_guard_fallback_unavailable choices=$choices")
+                    publish(SteamSessionPhase.FAILED, messages.noManualLogin)
+                    return@launch
+                }
+                record("manual_guard_fallback choice=$code")
+                withSession { session.chooseGuard(code) }
+            }
+        manualGuardFallbackJob.getAndSet(job)?.cancel()
+        job.invokeOnCompletion { manualGuardFallbackJob.compareAndSet(job, null) }
+        job.start()
     }
 
     override fun logout() {
-        if (!logoutInProgress.compareAndSet(false, true)) return
-        val job = attemptJob.getAndSet(null)
+        val job =
+            synchronized(attemptLock) {
+                if (!logoutInProgress.compareAndSet(false, true)) return
+                pendingAttempt.getAndUpdate { pending -> pending?.takeIf { it.intent == AttemptIntent.USER } }
+                attemptJob.getAndSet(null)
+            }
+        manualGuardFallbackJob.getAndSet(null)?.cancel()
         scope.launch {
             try {
                 job?.cancelAndJoin()
@@ -427,6 +454,7 @@ internal class SteamContentSdkSessionBackend(
     /** Releases the live SDK session. The interface has no shutdown hook, so this is the explicit close path. */
     internal fun close() {
         attemptJob.getAndSet(null)?.cancel()
+        manualGuardFallbackJob.getAndSet(null)?.cancel()
         // A scheduled recovery retry is a live plan to reopen a session, so it does not outlive the shutdown
         // that closed one: without this it would fire up to eight minutes later against a backend that is gone
         // and open the very thing close() just released. It is cancelled before the gate is opened so a retry
@@ -459,28 +487,36 @@ internal class SteamContentSdkSessionBackend(
      * the attempt it collided with instead of waiting for its deadline.
      */
     private fun launchAttempt(
+        intent: AttemptIntent = AttemptIntent.RECOVERY,
         supersedes: Boolean = false,
         block: suspend () -> Unit,
     ) {
-        if (logoutInProgress.get()) {
-            // A sign-in that arrived during a sign-out runs after the teardown, which is what the user asked
-            // for; it is not run inside the teardown, where the session it needs is being closed.
-            pendingAttempt.set(block)
-            record("attempt_held_by_logout")
-            return
-        }
-        if (attemptInProgress.compareAndSet(false, true)) {
-            startAttempt(block)
-            return
-        }
-        pendingAttempt.set(block)
-        if (supersedes) {
-            record("attempt_superseded")
-            // Cancelled rather than cleared from [attemptJob]: the completion handler below is the single place
-            // the gate opens, so a superseded attempt still hands it to the request that replaced it.
-            attemptJob.get()?.cancel()
-        } else {
-            record("attempt_queued")
+        if (intent == AttemptIntent.USER) manualGuardFallbackJob.getAndSet(null)?.cancel()
+        val pending = PendingAttempt(intent, block)
+        synchronized(attemptLock) {
+            if (logoutInProgress.get()) {
+                if (intent == AttemptIntent.USER) {
+                    // Explicit user sign-in survives teardown; background/registry recovery never does.
+                    pendingAttempt.set(pending)
+                    record("attempt_held_by_logout")
+                } else {
+                    record("recovery_ignored_during_logout")
+                }
+                return
+            }
+            if (attemptInProgress.compareAndSet(false, true)) {
+                startAttempt(block)
+                return
+            }
+            pendingAttempt.set(pending)
+            if (supersedes) {
+                record("attempt_superseded")
+                // Cancelled rather than cleared from [attemptJob]: the completion handler below is the single place
+                // the gate opens, so a superseded attempt still hands it to the request that replaced it.
+                attemptJob.get()?.cancel()
+            } else {
+                record("attempt_queued")
+            }
         }
     }
 
@@ -507,7 +543,7 @@ internal class SteamContentSdkSessionBackend(
             pendingAttempt.set(next)
             return
         }
-        if (attemptInProgress.compareAndSet(false, true)) startAttempt(next) else pendingAttempt.set(next)
+        if (attemptInProgress.compareAndSet(false, true)) startAttempt(next.block) else pendingAttempt.set(next)
     }
 
     private suspend fun restoreStoredSession() {
@@ -1176,7 +1212,7 @@ internal class SteamContentSdkSessionBackend(
                     readBack?.fill(0)
                 }
             record("credential_roundtrip match=$restoredExactly unchanged=$unchanged")
-            true
+            restoredExactly
         } catch (error: Throwable) {
             record("token_persist_failure", error)
             false

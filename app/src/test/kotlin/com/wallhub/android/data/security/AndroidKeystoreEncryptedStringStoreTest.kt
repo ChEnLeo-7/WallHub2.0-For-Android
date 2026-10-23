@@ -80,6 +80,18 @@ class AndroidKeystoreEncryptedStringStoreTest {
     }
 
     @Test
+    fun `an unusable key without a stored record is replaced on first write`() {
+        val records = FakeRecords()
+        val keys = FakeKeys(desKey())
+        val store = AndroidKeystoreEncryptedStringStore(records, keys)
+
+        store.write("recovered-value")
+
+        assertEquals(1, keys.deleted)
+        assertEquals(EncryptedStringReadResult.Value("recovered-value"), store.read())
+    }
+
+    @Test
     fun `an unusable key is replaced when the stored record is already unreadable`() {
         val records = FakeRecords()
         val writer = AndroidKeystoreEncryptedStringStore(records, FakeKeys())
