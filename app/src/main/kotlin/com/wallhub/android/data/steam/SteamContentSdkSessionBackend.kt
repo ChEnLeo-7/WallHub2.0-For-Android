@@ -752,7 +752,7 @@ internal class SteamContentSdkSessionBackend(
     }
 
     /**
-     * One maintenance step, one bounded drain, and the state they left behind.
+     * One maintenance step, its optional heartbeat drain, and the state they left behind.
      *
      * Shared by the scheduled loop and the foreground check. The foreground one exists because a link that
      * died while the app was in the background is otherwise not noticed for up to a whole interval - and the
@@ -766,16 +766,21 @@ internal class SteamContentSdkSessionBackend(
         session: SteamContentSdkPlatformSession,
     ): Result<SteamContentSdkSessionState> =
         runCatching {
-            // Write a heartbeat before entering even the bounded passive read. Some CMs negotiate a short
-            // heartbeat window; draining first at that exact boundary lets the peer close the otherwise healthy
-            // generation before maintain() gets a chance to send what is due.
+            // Decide and write first. A passive drain is needed after a heartbeat so its reply/server pushes are
+            // consumed, but repeatedly reading a quiet CM socket on every host tick has proven destructive on
+            // the Android route: the second idle drain reported transport failure on an otherwise usable link.
             val step = runCatching { session.maintain(autoReconnect = true) }
-            val drained = runCatching { session.pump() }
+            val pumpDetail =
+                if (step.getOrNull()?.step == SteamContentSdkMaintenanceStep.HEARTBEAT_SENT) {
+                    runCatching { session.pump() }
+                        .fold({ it.outcome.name.lowercase() }, ::maintenanceFailure)
+                } else {
+                    "skipped"
+                }
             record(
                 "session_maintenance",
                 detail =
-                    "pump=" +
-                        drained.fold({ it.outcome.name.lowercase() }, ::maintenanceFailure) +
+                    "pump=$pumpDetail" +
                         " step=" +
                         step.fold({ it.step.name.lowercase() }, ::maintenanceFailure) +
                         " error=" +
@@ -793,9 +798,9 @@ internal class SteamContentSdkSessionBackend(
      * looking, which is why a dropped CM left every Workshop read answering `temporarily_unavailable` until
      * the process was restarted.
      *
-     * One tick writes the maintenance heartbeat first, then drains whatever the peer sent. A socket nobody
-     * reads is one the peer closes, but waiting to read before writing at the negotiated heartbeat boundary
-     * also lets the peer close an otherwise healthy generation. A tick
+     * One tick asks the SDK what is due. A sent heartbeat is followed by one bounded drain; an idle decision
+     * does not repeatedly read a quiet socket. Business operations drain their own replies, while heartbeat
+     * ticks consume their reply and any queued server pushes. A tick
      * that finds the session no longer authenticated reports the loss and stops. The next foreground request
      * owns the single reconnect attempt through SteamSessionRequestRecovery, so maintenance and request handling
      * can never race as two independent recovery authorities.

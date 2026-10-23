@@ -734,6 +734,15 @@ class SteamContentSdkSessionBackendTest {
             )
             assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
 
+            fixture.session.maintenanceStep = SteamContentSdkMaintenanceStep.IDLE
+            val pumpsBeforeIdleTick = fixture.session.pumps.size
+            advanceTimeBy(1_001L)
+            assertEquals(
+                pumpsBeforeIdleTick,
+                fixture.session.pumps.size,
+                "an idle maintenance decision must not repeatedly read and disturb a quiet CM socket",
+            )
+
             // The connection is gone and an in-place rebuild is refused. The loss is reported and recovery is
             // handed to the attempt path, which re-opens the session rather than leaving a signed-in claim
             // over a dead socket. CLOSED is the state a re-opened session that cannot authenticate reports, so
@@ -1299,9 +1308,10 @@ class SteamContentSdkSessionBackendTest {
 
         /** Typed failure returned by reconnect; NONE stands for a usable replacement connection. */
         var reconnectFailure = SteamContentSdkSessionFailure.NONE
+        var maintenanceStep = SteamContentSdkMaintenanceStep.HEARTBEAT_SENT
 
         override fun maintain(autoReconnect: Boolean): SteamContentSdkMaintenance =
-            SteamContentSdkMaintenance(SteamContentSdkMaintenanceStep.HEARTBEAT_SENT).also {
+            SteamContentSdkMaintenance(maintenanceStep).also {
                 maintenanceActions += "maintain"
                 maintenanceSteps += it.step
             }
