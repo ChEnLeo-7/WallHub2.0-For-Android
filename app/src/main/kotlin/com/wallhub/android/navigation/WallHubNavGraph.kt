@@ -188,10 +188,8 @@ internal fun WallHubNavHost(
                 onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
             )
         }
-        composable<LibraryCollectionDestination> { entry ->
-            val route = entry.toRoute<LibraryCollectionDestination>()
+        composable<LibraryCollectionDestination> {
             LibraryRoute(
-                initialCollection = route.collection,
                 onBack = { navController.popBackStack() },
                 onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
                 onPlayVideo = { navController.navigate(OnlineVideoPlayerDestination(it)) },

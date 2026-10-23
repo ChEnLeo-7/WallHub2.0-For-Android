@@ -56,4 +56,24 @@ class SteamSessionRestoreRetryTest {
 
         assertFalse(signedIn.shouldAutoRestore(nowMs = Long.MAX_VALUE))
     }
+
+    @Test
+    fun `explicit refresh restores immediately inside the automatic retry floor`() {
+        assertTrue(
+            failedWithStoredSession.shouldRestoreSession(
+                explicit = true,
+                nowMs = failedWithStoredSession.updatedAt,
+            ),
+        )
+    }
+
+    @Test
+    fun `automatic refresh remains throttled inside the retry floor`() {
+        assertFalse(
+            failedWithStoredSession.shouldRestoreSession(
+                explicit = false,
+                nowMs = failedWithStoredSession.updatedAt,
+            ),
+        )
+    }
 }

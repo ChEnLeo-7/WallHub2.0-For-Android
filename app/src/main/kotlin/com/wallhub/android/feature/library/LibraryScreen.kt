@@ -656,7 +656,7 @@ class LibraryViewModel
             val session = mutableState.value.session
             if (session.phase != SteamSessionPhase.SIGNED_IN) {
                 refreshWhenSignedIn = true
-                if (session.shouldAutoRestore(System.currentTimeMillis())) {
+                if (session.shouldRestoreSession(explicit = true, nowMs = System.currentTimeMillis())) {
                     steamSessionRepository.restorePersistedSession()
                 }
                 return
@@ -918,9 +918,13 @@ class LibraryViewModel
         }
     }
 
-private fun SavedStateHandle.libraryState(): LibraryUiState =
+internal fun SavedStateHandle.libraryState(): LibraryUiState =
     LibraryUiState(
-        collection = libraryEnumValueOrDefault(get(LIBRARY_COLLECTION_KEY), LibraryCollectionTab.SUBSCRIPTIONS),
+        collection =
+            resolveInitialLibraryCollection(
+                navigationCollection = get(LIBRARY_NAV_COLLECTION_KEY),
+                persistedCollection = get(LIBRARY_COLLECTION_KEY),
+            ),
         selectedTypes = savedWorkshopTypes(LIBRARY_TYPE_FILTER_KEY),
         selectedRatings = savedEnumSet(LIBRARY_RATING_FILTER_KEY, DEFAULT_HOME_RATING_SELECTION),
         selectedGenres = savedStringSet(LIBRARY_GENRE_FILTER_KEY, DEFAULT_HOME_GENRE_SELECTION),
@@ -946,6 +950,15 @@ private fun SavedStateHandle.saveLibraryState(state: LibraryUiState) {
     this[LIBRARY_PAGINATION_MODE_KEY] = state.paginationMode.name
     this[LIBRARY_CURRENT_PAGE_KEY] = state.currentPage
 }
+
+internal fun resolveInitialLibraryCollection(
+    navigationCollection: String?,
+    persistedCollection: String?,
+): LibraryCollectionTab =
+    libraryEnumValueOrDefault(
+        navigationCollection ?: persistedCollection,
+        LibraryCollectionTab.SUBSCRIPTIONS,
+    )
 
 private inline fun <reified T : Enum<T>> libraryEnumValueOrDefault(
     value: String?,
@@ -977,6 +990,7 @@ private fun SavedStateHandle.savedStringSet(
     default: Set<String> = emptySet(),
 ): Set<String> = get<ArrayList<String>>(key)?.toSet() ?: default
 
+private const val LIBRARY_NAV_COLLECTION_KEY = "collection"
 private const val LIBRARY_COLLECTION_KEY = "library.collection"
 private const val LIBRARY_TYPE_FILTER_KEY = "library.typeFilter"
 private const val LIBRARY_RATING_FILTER_KEY = "library.ratingFilter"
@@ -1016,7 +1030,6 @@ private const val LIBRARY_PAGE_SIZE = 16
 
 @Composable
 fun LibraryRoute(
-    initialCollection: String? = null,
     onOpenSettings: () -> Unit = {},
     onBack: () -> Unit = {},
     onOpenDetail: (Long) -> Unit,
@@ -1028,11 +1041,6 @@ fun LibraryRoute(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    LaunchedEffect(initialCollection) {
-        initialCollection
-            ?.let { value -> LibraryCollectionTab.entries.firstOrNull { it.name == value } }
-            ?.let { viewModel.onAction(LibraryAction.SelectCollection(it)) }
-    }
     Box(modifier = Modifier.fillMaxSize()) {
         LibraryEffectHandler(
             viewModel = viewModel,
@@ -2011,7 +2019,17 @@ internal const val RESTORE_RETRY_MIN_INTERVAL_MS = 10_000L
  * retry-eligible: a state younger than the floor is one that was just attempted.
  */
 internal fun SteamSessionState.shouldAutoRestore(nowMs: Long): Boolean =
-    isRestoreRetryable && nowMs - updatedAt >= RESTORE_RETRY_MIN_INTERVAL_MS
+    shouldRestoreSession(explicit = false, nowMs = nowMs)
+
+internal fun SteamSessionState.shouldRestoreSession(
+    explicit: Boolean,
+    nowMs: Long,
+): Boolean =
+    if (explicit) {
+        hasStoredSession && phase != SteamSessionPhase.SIGNED_IN
+    } else {
+        isRestoreRetryable && nowMs - updatedAt >= RESTORE_RETRY_MIN_INTERVAL_MS
+    }
 
 @Composable
 private fun WorkshopType.label(): String =
