@@ -9,34 +9,33 @@ import kotlin.test.assertTrue
 
 class SteamContentSdkRouteFactoryTest {
     @Test
-    fun `an HTTP proxy URI maps structurally to the SDK authority`() {
-        assertEquals("proxy.example:8080", sdkHttpProxyAuthority(" http://proxy.example:8080/ "))
-        assertEquals("proxy.example:80", sdkHttpProxyAuthority("http://proxy.example"))
+    fun `supported proxy URIs retain their scheme and receive scheme defaults`() {
+        assertEquals("http://proxy.example:80", sdkProxyUri(" HTTP://Proxy.Example/ "))
+        assertEquals("https://proxy.example:443", sdkProxyUri("https://proxy.example"))
+        assertEquals("socks://proxy.example:1080", sdkProxyUri("socks://proxy.example/"))
+        assertEquals("socks5://proxy.example:1080", sdkProxyUri("socks5://proxy.example"))
+        assertEquals("https://proxy.example:8443", sdkProxyUri("https://proxy.example:8443"))
     }
 
     @Test
-    fun `HTTPS and SOCKS proxy URIs are rejected rather than downgraded`() {
-        listOf(
-            "https://proxy.example:8443",
-            "socks://proxy.example:1080",
-            "socks5://proxy.example:1080",
-        ).forEach { proxyUri ->
-            assertFailsWith<IllegalArgumentException>(proxyUri) {
-                sdkHttpProxyAuthority(proxyUri)
-            }
-        }
+    fun `IPv6 proxy URIs stay bracketed and keep explicit or default ports`() {
+        assertEquals("http://[2001:db8::1]:8080", sdkProxyUri("http://[2001:DB8::1]:8080/"))
+        assertEquals("https://[2001:db8::2]:443", sdkProxyUri("https://[2001:DB8::2]"))
+        assertEquals("socks5://[2001:db8::3]:1080", sdkProxyUri("socks5://[2001:DB8::3]"))
     }
 
     @Test
-    fun `a malformed or credentialed proxy URI is rejected`() {
+    fun `a malformed credentialed or decorated proxy URI is rejected`() {
         listOf(
             "proxy.example:8080",
+            "ftp://proxy.example:21",
             "http://user:password@proxy.example:8080",
-            "http://proxy.example:8080/path",
-            "http://proxy.example:8080?token=secret",
+            "https://proxy.example:8443/path",
+            "socks://proxy.example:1080?token=secret",
+            "socks5://proxy.example:1080#fragment",
         ).forEach { proxyUri ->
             assertFailsWith<IllegalArgumentException>(proxyUri) {
-                sdkHttpProxyAuthority(proxyUri)
+                sdkProxyUri(proxyUri)
             }
         }
     }
@@ -105,16 +104,46 @@ class SteamContentSdkRouteFactoryTest {
     }
 
     @Test
-    fun `the supported HTTP proxy applies to both CDN and CM traffic without credentials`() {
+    fun `the configured proxy URI applies intact to both CDN and CM without bridge credentials`() {
         val route =
             sdkPlatformRoute(
                 cmCandidates = "cm1.steamserver.net:443",
-                configuredProxyUri = "http://proxy.example:3128",
+                configuredProxyUri = "socks5://[2001:db8::4]",
+                authenticatedCdnProxy = "127.0.0.1:32123",
+                authenticatedCdnProxyAuthorization = "Basic cdn",
+                enhancedCmProxy = "http://127.0.0.1:32123",
+                enhancedCmProxyAuthorization = "Basic cm",
+                enhancedTrustRootPem = "-----BEGIN CERTIFICATE-----\nroute\n-----END CERTIFICATE-----\n",
             )
 
-        assertEquals("proxy.example:3128", route.cdnProxy)
-        assertEquals("proxy.example:3128", route.cmProxy)
+        assertEquals("socks5://[2001:db8::4]:1080", route.cdnProxy)
+        assertEquals("socks5://[2001:db8::4]:1080", route.cmProxy)
+        assertNull(route.cdnProxyAuthorization)
         assertNull(route.cmProxyAuthorization)
+        assertNull(route.extraTrustRootPem)
+    }
+
+    @Test
+    fun `legacy internal bridge routes remain authority or explicit HTTP URI`() {
+        val authorityRoute =
+            sdkPlatformRoute(
+                cmCandidates = "cm1.steamserver.net:443",
+                configuredProxyUri = null,
+                authenticatedCdnProxy = "127.0.0.1:32123",
+                enhancedCmProxy = "127.0.0.1:32123",
+            )
+        val uriRoute =
+            sdkPlatformRoute(
+                cmCandidates = "cm1.steamserver.net:443",
+                configuredProxyUri = null,
+                authenticatedCdnProxy = "http://127.0.0.1:32123",
+                enhancedCmProxy = "http://127.0.0.1:32123",
+            )
+
+        assertEquals("127.0.0.1:32123", authorityRoute.cdnProxy)
+        assertEquals("127.0.0.1:32123", authorityRoute.cmProxy)
+        assertEquals("http://127.0.0.1:32123", uriRoute.cdnProxy)
+        assertEquals("http://127.0.0.1:32123", uriRoute.cmProxy)
     }
 
     @Test

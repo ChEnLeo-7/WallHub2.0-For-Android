@@ -36,7 +36,7 @@ internal class SteamContentSdkRouteFactory
          *
          * Directory discovery uses the platform-enhanced Web API route. Account CM uses direct WSS and public
          * CM uses Steam3, matching WebView/SteamKit. SteamPipe content follows the Directory-advertised scheme
-         * directly; an explicit user HTTP proxy still takes precedence for the SDK content route.
+         * directly; an explicit user proxy still takes precedence for the SDK content route.
          *
          * Returns null when the platform has no endpoint set to offer, which means the platform route is
          * unavailable rather than "connect directly": the caller must not silently fall back to the engine's
@@ -90,9 +90,10 @@ internal class SteamContentSdkRouteFactory
 /**
  * Maps the platform route into the SDK route at the Android/AAR seam.
  *
- * The SDK accepts only an HTTP proxy authority. Parsing the URI structurally prevents another proxy kind from
- * being silently stripped to a plausible-looking `host:port`. The same authority serves both SDK traffic
- * planes, and this platform supplies no proxy credential.
+ * User-configured HTTP(S) and SOCKS proxy URIs are validated and normalized without discarding their scheme;
+ * the newer SDK parses the complete URI itself. The same URI serves both SDK traffic planes, and this platform
+ * supplies no user-proxy credential. Legacy internal bridge values remain unchanged as `host:port` authorities
+ * or explicit HTTP URIs.
  */
 internal fun sdkPlatformRoute(
     cmCandidates: String,
@@ -104,7 +105,7 @@ internal fun sdkPlatformRoute(
     enhancedTrustRootPem: String? = null,
     cmTransport: Int = SessionTransportKind.WEBSOCKET,
 ): SteamContentSdkEngine.Route {
-    val configuredProxy = configuredProxyUri?.let(::sdkHttpProxyAuthority)
+    val configuredProxy = configuredProxyUri?.let(::sdkProxyUri)
     return SteamContentSdkEngine.Route(
         cmCandidates = cmCandidates,
         connectAttempts = cmCandidates.lineSequence().count { it.isNotBlank() }.coerceAtMost(MAX_CM_CANDIDATES),
@@ -129,20 +130,29 @@ private fun parseCmEndpoint(candidate: String): Pair<String, Int>? {
     return host to port
 }
 
-/** Returns the `host:port` accepted by the SDK, rejecting every non-HTTP or credentialed proxy URI. */
-internal fun sdkHttpProxyAuthority(raw: String): String {
+/** Validates and normalizes the complete proxy URI consumed by the SDK. */
+internal fun sdkProxyUri(raw: String): String {
     val uri =
         runCatching { URI(raw.trim()) }
             .getOrElse { throw IllegalArgumentException("Invalid SDK proxy URI", it) }
-    require(uri.scheme?.lowercase() == "http") { "The Steam Content SDK supports only an HTTP proxy" }
+    val scheme = uri.scheme?.lowercase()
+    require(scheme in SDK_PROXY_DEFAULT_PORTS) { "The Steam Content SDK proxy scheme is unsupported" }
     require(!uri.host.isNullOrBlank()) { "The Steam Content SDK proxy URI has no host" }
     require(uri.userInfo == null) { "The Steam Content SDK route does not accept proxy credentials" }
     require(uri.query == null && uri.fragment == null) { "The Steam Content SDK proxy URI cannot carry query or fragment data" }
     require(uri.path.isNullOrEmpty() || uri.path == "/") { "The Steam Content SDK proxy URI cannot carry a path" }
     require(uri.port == -1 || uri.port in 1..65_535) { "The Steam Content SDK proxy port is invalid" }
-    val port = uri.port.takeIf { it != -1 } ?: DEFAULT_HTTP_PROXY_PORT
-    val host = uri.host.let { if (':' in it) "[$it]" else it }
-    return "$host:$port"
+    val normalizedScheme = requireNotNull(scheme)
+    val port = uri.port.takeIf { it != -1 } ?: requireNotNull(SDK_PROXY_DEFAULT_PORTS[normalizedScheme])
+    val rawHost = requireNotNull(uri.host).removePrefix("[").removeSuffix("]").lowercase()
+    val host = if (':' in rawHost) "[$rawHost]" else rawHost
+    return "$normalizedScheme://$host:$port"
 }
 
-private const val DEFAULT_HTTP_PROXY_PORT = 80
+private val SDK_PROXY_DEFAULT_PORTS =
+    mapOf(
+        "http" to 80,
+        "https" to 443,
+        "socks" to 1080,
+        "socks5" to 1080,
+    )
