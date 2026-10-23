@@ -97,6 +97,12 @@ class SteamAccessRoutesTest {
     @Test
     fun `private route policy rejects lookalike hosts and normalizes exact hosts`() {
         assertEquals("steamcommunity.com", SteamDomainPolicy.requireSupported("STEAMCOMMUNITY.COM."))
+        listOf("steamcommunity.com", "login.steampowered.com", "store.steampowered.com", "help.steampowered.com").forEach { host ->
+            assertTrue(SteamDomainPolicy.supportsEndpoint(host, 443), host)
+            assertFalse(SteamDomainPolicy.supportsEndpoint(host, 80), host)
+            assertTrue(SteamDomainPolicy.usesDirectWebSessionTunnel(host), host)
+            if (host != "steamcommunity.com") assertFalse(SteamDomainPolicy.accelerates(host), host)
+        }
         assertEquals(
             "cmp1-sea1.steamserver.net",
             SteamDomainPolicy.requireSupported("CMP1-SEA1.STEAMSERVER.NET."),
