@@ -142,9 +142,9 @@ internal class SteamContentSdkWorkshopRepository
                 if (cacheable) cache.publicPages.getFresh(normalized)?.let { return@withContext it }
                 val readEpoch = cache.publicEpoch.get()
                 val loaded = runCatchingUnavailable {
-                    awaitWorkshopSession(WorkshopSessionAccess.PUBLIC, gateway::awaitSignedInSession)
                     val creatorId = normalized.creatorId?.toLongOrNull()?.takeIf { it > 0L }
-                    sdkPublicRead(
+                    sdkBrowseRead(
+                        access = workshopSessionAccessForSort(normalized.sort),
                         key = publicWorkshopReadKey(readEpoch, "browse:$normalized"),
                         kind = WorkshopReadKind.SEARCH,
                         priority =
@@ -663,6 +663,20 @@ internal class SteamContentSdkWorkshopRepository
             val anonymous = publicSessionRouter.acquire()
             return anonymousGateway.read(key, kind, priority) { operation(anonymous) }
         }
+
+        private suspend fun <T> sdkBrowseRead(
+            access: WorkshopSessionAccess,
+            key: String,
+            kind: WorkshopReadKind,
+            priority: WorkshopReadPriority,
+            operation: suspend (SteamContentSdkEngine) -> T,
+        ): T =
+            if (access == WorkshopSessionAccess.AUTHENTICATED_ACCOUNT) {
+                gateway.awaitSignedInSession()
+                gateway.read(key, kind, priority) { operation(engine) }
+            } else {
+                sdkPublicRead(key, kind, priority, operation)
+            }
 
         private suspend fun <T> sdkRead(
             key: String,

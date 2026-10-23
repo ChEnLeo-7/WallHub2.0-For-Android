@@ -98,6 +98,9 @@ import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.core.model.SteamSessionPhase
+import com.wallhub.android.core.model.SteamSessionRepository
+import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.WorkshopRepository
 import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopSort
@@ -153,6 +156,8 @@ data class DiscoverResultsState(
     val page: Int = 0,
     val hasMore: Boolean = true,
     val error: String? = null,
+    val requiresSteamLogin: Boolean = false,
+    val isRestoringSteamSession: Boolean = false,
 )
 
 internal data class DiscoverResultsRequest(
@@ -181,6 +186,7 @@ class DiscoverResultsViewModel
         private val pageSource: DiscoverPageSource,
         private val downloadTaskRepository: WorkshopDownloads,
         private val settingsRepository: SettingsRepository,
+        private val steamSessionRepository: SteamSessionRepository,
     ) : ViewModel() {
         internal val destination = savedStateHandle.toRoute<DiscoverResultsDestination>()
         private val mutableState = MutableStateFlow(DiscoverResultsState())
@@ -208,7 +214,37 @@ class DiscoverResultsViewModel
                         matureContentEnabled = preferences.matureContentEnabled,
                         initialized = true,
                     )
-                loadNextPage()
+                if (!destination.usesPcFriendActivitySemantics()) {
+                    loadNextPage()
+                    return@launch
+                }
+                var restoreRequested = false
+                steamSessionRepository.session.collect { session ->
+                    when (val access = friendDiscoverAccess(mutableState.value.filterSelection.sort, session)) {
+                        FriendDiscoverAccess.LOGIN_REQUIRED -> {
+                            loadJob?.cancel()
+                            mutableState.value = mutableState.value.withFriendAccess(access)
+                        }
+                        FriendDiscoverAccess.RESTORE_ACCOUNT -> {
+                            loadJob?.cancel()
+                            mutableState.value = mutableState.value.withFriendAccess(access)
+                            if (!restoreRequested) {
+                                restoreRequested = true
+                                steamSessionRepository.restorePersistedSession()
+                            }
+                        }
+                        FriendDiscoverAccess.ACCOUNT_READY -> {
+                            restoreRequested = false
+                            val shouldLoad =
+                                mutableState.value.requiresSteamLogin ||
+                                    mutableState.value.isRestoringSteamSession ||
+                                    mutableState.value.page == 0
+                            mutableState.value = mutableState.value.withFriendAccess(access)
+                            if (shouldLoad) loadNextPage()
+                        }
+                        FriendDiscoverAccess.PUBLIC -> Unit
+                    }
+                }
             }
         }
 
@@ -261,7 +297,10 @@ class DiscoverResultsViewModel
 
         fun loadNextPage() {
             val current = mutableState.value
-            if (!current.initialized || current.isLoading || !current.hasMore) return
+            if (
+                !current.initialized || current.isLoading || !current.hasMore ||
+                current.requiresSteamLogin || current.isRestoringSteamSession
+            ) return
             val nextPage = current.page + 1
             val request = DiscoverResultsRequest(requestGeneration, destination)
             loadJob =
@@ -355,6 +394,7 @@ fun DiscoverResultsRoute(
     onOpenDetail: (Long) -> Unit,
     onSearchAuthor: (String) -> Unit,
     onOpenDownloads: () -> Unit = {},
+    onOpenLogin: () -> Unit = {},
     viewModel: DiscoverResultsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -470,6 +510,20 @@ fun DiscoverResultsRoute(
                     },
                 ) { padding ->
                     when {
+                        state.items.isEmpty() && state.requiresSteamLogin ->
+                            WallHubEmptyState(
+                                icon = Icons.Outlined.PersonOutline,
+                                title = stringResource(R.string.discover_friend_sign_in_required),
+                                actionLabel = stringResource(R.string.discover_friend_sign_in_action),
+                                onAction = onOpenLogin,
+                                modifier = Modifier.fillMaxSize().padding(padding),
+                            )
+                        state.items.isEmpty() && state.isRestoringSteamSession ->
+                            WallHubEmptyState(
+                                icon = Icons.Outlined.PersonOutline,
+                                title = stringResource(R.string.discover_friend_restoring_sign_in),
+                                modifier = Modifier.fillMaxSize().padding(padding),
+                            )
                         state.items.isEmpty() && state.isLoading ->
                             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator()
@@ -825,6 +879,59 @@ internal fun DiscoverResultsDestination.toWorkshopQuery(
         createdBeforeEpochSeconds = createdBeforeEpochSeconds,
     )
 }
+
+internal enum class FriendDiscoverAccess {
+    PUBLIC,
+    LOGIN_REQUIRED,
+    RESTORE_ACCOUNT,
+    ACCOUNT_READY,
+}
+
+internal fun friendDiscoverAccess(
+    sort: WorkshopSort,
+    session: SteamSessionState,
+): FriendDiscoverAccess {
+    if (sort != WorkshopSort.FRIENDS_FAVORITES && sort != WorkshopSort.FRIENDS_CREATED) {
+        return FriendDiscoverAccess.PUBLIC
+    }
+    return when {
+        session.phase == SteamSessionPhase.SIGNED_IN && session.isConnected -> FriendDiscoverAccess.ACCOUNT_READY
+        session.hasStoredSession || session.phase == SteamSessionPhase.RESTORABLE ||
+            session.phase == SteamSessionPhase.SIGNING_IN -> FriendDiscoverAccess.RESTORE_ACCOUNT
+        else -> FriendDiscoverAccess.LOGIN_REQUIRED
+    }
+}
+
+internal fun DiscoverResultsState.withFriendAccess(access: FriendDiscoverAccess): DiscoverResultsState =
+    when (access) {
+        FriendDiscoverAccess.PUBLIC -> copy(
+            requiresSteamLogin = false,
+            isRestoringSteamSession = false,
+        )
+        FriendDiscoverAccess.ACCOUNT_READY -> copy(
+            requiresSteamLogin = false,
+            isRestoringSteamSession = false,
+            hasMore = hasMore || requiresSteamLogin || isRestoringSteamSession,
+        )
+        FriendDiscoverAccess.LOGIN_REQUIRED -> copy(
+            items = emptyList(),
+            isLoading = false,
+            page = 0,
+            hasMore = false,
+            error = null,
+            requiresSteamLogin = true,
+            isRestoringSteamSession = false,
+        )
+        FriendDiscoverAccess.RESTORE_ACCOUNT -> copy(
+            items = emptyList(),
+            isLoading = false,
+            page = 0,
+            hasMore = false,
+            error = null,
+            requiresSteamLogin = false,
+            isRestoringSteamSession = true,
+        )
+    }
 
 internal fun DiscoverResultsDestination.usesPcFriendActivitySemantics(): Boolean =
     sort == WorkshopSort.FRIENDS_FAVORITES.name || sort == WorkshopSort.FRIENDS_CREATED.name

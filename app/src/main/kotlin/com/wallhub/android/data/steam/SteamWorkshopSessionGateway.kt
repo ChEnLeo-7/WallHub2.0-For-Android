@@ -1,6 +1,7 @@
 package com.wallhub.android.data.steam
 
 import android.util.Log
+import com.wallhub.android.core.model.WorkshopSort
 import java.util.concurrent.CancellationException
 
 /** Public reads never wait for authentication; account-scoped reads require the signed-in CM session. */
@@ -8,6 +9,14 @@ internal enum class WorkshopSessionAccess {
     PUBLIC,
     AUTHENTICATED_ACCOUNT,
 }
+
+internal fun workshopSessionAccessForSort(sort: WorkshopSort): WorkshopSessionAccess =
+    when (sort) {
+        WorkshopSort.FRIENDS_FAVORITES,
+        WorkshopSort.FRIENDS_CREATED,
+        -> WorkshopSessionAccess.AUTHENTICATED_ACCOUNT
+        else -> WorkshopSessionAccess.PUBLIC
+    }
 
 internal suspend fun awaitWorkshopSession(
     access: WorkshopSessionAccess,

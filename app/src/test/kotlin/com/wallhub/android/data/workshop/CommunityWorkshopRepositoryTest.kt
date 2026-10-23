@@ -11,6 +11,7 @@ import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopCommentPage
 import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopPage
+import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopVideoOpenRequest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +26,41 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class CommunityWorkshopRepositoryTest {
+    @Test
+    fun `friend activity bypasses Community and Web API settings and uses only unified account route`() =
+        runBlocking {
+            val requests = mutableListOf<String>()
+            val unified =
+                object : SteamUnifiedWorkshopRepository by UnavailableCmRepository {
+                    override suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage {
+                        assertEquals(WorkshopSort.FRIENDS_FAVORITES, query.sort)
+                        return WorkshopPage(emptyList(), page = 1, hasNextPage = false)
+                    }
+                }
+            val settings =
+                object : SettingsRepository by CmSettingsRepository {
+                    override val preferences =
+                        MutableStateFlow(
+                            AppPreferences(
+                                steamWorkshopDataSource = SteamWorkshopDataSource.WEB_API,
+                                steamApiKey = "must-not-be-used",
+                            ),
+                        )
+                }
+            val client =
+                OkHttpClient.Builder().addInterceptor { chain ->
+                    requests += chain.request().url.toString()
+                    throw AssertionError("Friend activity must not use HTTP")
+                }.build()
+
+            val page = CommunityWorkshopRepository(settings, unified, client).browse(
+                WorkshopBrowseQuery(sort = WorkshopSort.FRIENDS_FAVORITES),
+            )
+
+            assertEquals(emptyList<Long>(), page.items.map { it.id })
+            assertEquals(emptyList<String>(), requests)
+        }
+
     @Test
     fun `public detail retains video content identity for the play request`() {
         val detail =

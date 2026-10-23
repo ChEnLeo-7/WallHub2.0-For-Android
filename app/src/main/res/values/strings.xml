@@ -829,6 +829,9 @@
     <string name='library_type_scene'>Scene</string>
     <string name='library_type_web'>Web</string>
     <string name='library_type_wallpaper'>Wallpaper</string>
+    <string name='discover_friend_sign_in_required'>This feature requires signing in to a Steam account</string>
+    <string name='discover_friend_sign_in_action'>Sign in to Steam</string>
+    <string name='discover_friend_restoring_sign_in'>Restoring the saved Steam account…</string>
     <string name='library_sign_in_required'>Sign in to Steam to view subscriptions and favorites</string>
     <string name='library_restoring_sign_in'>Restoring Steam sign-in</string>
     <string name='library_sign_in_verification_required'>Steam sign-in needs verification</string>

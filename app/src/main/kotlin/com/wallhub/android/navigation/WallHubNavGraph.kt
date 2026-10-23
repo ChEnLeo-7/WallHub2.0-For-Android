@@ -138,6 +138,7 @@ internal fun WallHubNavHost(
                 onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
                 onSearchAuthor = navigateToAuthorSearch,
                 onOpenDownloads = openDownloads,
+                onOpenLogin = { navController.navigate(SteamLoginDestination) },
             )
         }
         composable<ProfileDestination> {
