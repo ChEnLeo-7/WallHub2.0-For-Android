@@ -690,6 +690,7 @@ class WorkshopDetailViewModel
         }
 
         private companion object {
+            const val COMMENTS_LOG_TAG = "WallHubWorkshop"
             const val COMMENTS_PAGE_SIZE = 20
             const val COMMENTS_LOAD_TIMEOUT_MS = 5_000L
         }
