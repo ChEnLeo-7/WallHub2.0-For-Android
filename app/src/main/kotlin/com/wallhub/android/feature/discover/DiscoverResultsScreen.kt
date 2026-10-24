@@ -94,9 +94,8 @@ import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.DownloadEnqueueResult
-import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.WorkshopDownloads
-import com.wallhub.android.core.model.ExportFormat
+import com.wallhub.android.core.model.toQuickDownloadRequest
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
@@ -359,15 +358,9 @@ class DiscoverResultsViewModel
                 runCatching {
                     val preferences = settingsRepository.preferences.first()
                     downloadTaskRepository.enqueue(
-                        DownloadRequest(
-                            workshopId = item.id,
-                            title = applicationContext.localizedTitle(item),
-                            type = item.type,
-                            previewUrl = item.previewUrl,
-                            expectedTotalBytes = item.fileSizeBytes ?: 0L,
-                            outputTreeUri = preferences.outputTreeUri,
-                            exportFormat = ExportFormat.AUTO,
-                            mpkgConversionPreset = preferences.mpkgConversionPreset,
+                        item.toQuickDownloadRequest(
+                            preferences = preferences,
+                            localizedTitle = applicationContext.localizedTitle(item),
                         ),
                     )
                 }.onSuccess { result ->

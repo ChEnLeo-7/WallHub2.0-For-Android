@@ -125,9 +125,8 @@ import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.DownloadEnqueueResult
-import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.WorkshopDownloads
-import com.wallhub.android.core.model.ExportFormat
+import com.wallhub.android.core.model.toQuickDownloadRequest
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionPhase
@@ -549,15 +548,9 @@ class LibraryViewModel
                 runCatching {
                     val preferences = settingsRepository.preferences.first()
                     downloadTaskRepository.enqueue(
-                        DownloadRequest(
-                            workshopId = item.id,
-                            title = applicationContext.localizedTitle(item),
-                            type = item.type,
-                            previewUrl = item.previewUrl,
-                            expectedTotalBytes = item.fileSizeBytes ?: 0L,
-                            outputTreeUri = preferences.outputTreeUri,
-                            exportFormat = ExportFormat.AUTO,
-                            mpkgConversionPreset = preferences.mpkgConversionPreset,
+                        item.toQuickDownloadRequest(
+                            preferences = preferences,
+                            localizedTitle = applicationContext.localizedTitle(item),
                         ),
                     )
                 }.onSuccess { result ->

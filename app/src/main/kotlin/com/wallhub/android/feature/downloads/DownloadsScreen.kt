@@ -31,10 +31,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,7 +43,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.PrimaryTabRow
@@ -88,7 +87,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.wallhub.android.R
+import com.wallhub.android.core.designsystem.MpkgConversionOptions
 import com.wallhub.android.core.designsystem.WallHubEmptyState
+import com.wallhub.android.core.designsystem.label
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
@@ -102,7 +103,6 @@ import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermiss
 import com.wallhub.android.core.model.DownloadAction
 import com.wallhub.android.core.model.DownloadEnqueueResult
 import com.wallhub.android.core.model.DownloadLiveActivity
-import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.android.core.model.DownloadTask
 import com.wallhub.android.core.model.WorkshopDownloads
@@ -110,6 +110,7 @@ import com.wallhub.android.core.model.ExportFormat
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.android.core.model.toQuickDownloadRequest
 import com.wallhub.android.data.downloads.DownloadTimingContext
 import com.wallhub.android.data.downloads.DownloadTimingTelemetry
 import com.wallhub.android.data.downloads.hasCompleteStagingDownload
@@ -408,17 +409,10 @@ class DownloadsViewModel
             viewModelScope.launch {
                 runCatching {
                     val preferences = settingsRepository.preferences.first()
-                    val outputTreeUri = preferences.outputTreeUri
                     workshopDownloads.enqueue(
-                        DownloadRequest(
-                            workshopId = item.id,
-                            title = applicationContext.localizedTitle(item),
-                            type = item.type,
-                            previewUrl = item.previewUrl,
-                            expectedTotalBytes = item.fileSizeBytes ?: 0L,
-                            outputTreeUri = outputTreeUri,
-                            exportFormat = ExportFormat.AUTO,
-                            mpkgConversionPreset = preferences.mpkgConversionPreset,
+                        item.toQuickDownloadRequest(
+                            preferences = preferences,
+                            localizedTitle = applicationContext.localizedTitle(item),
                         ),
                     )
                 }.onSuccess { result ->
@@ -973,7 +967,7 @@ private fun DownloadTaskCard(
                 }
                 if (task.shouldShowConversionPresetLabel()) {
                     Text(
-                        text = task.mpkgConversionPreset.downloadQualityLabel(),
+                        text = task.mpkgConversionPreset.label(),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1120,49 +1114,26 @@ private fun ReconvertSheet(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            MpkgConversionPreset.entries.forEach { option ->
-                FilterChip(
-                    selected = preset == option,
-                    onClick = { preset = option },
-                    label = { Text(option.downloadQualityLabel()) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            if (preset == MpkgConversionPreset.EXTREME_QUALITY) {
-                Text(
-                    text = stringResource(R.string.mpkg_preset_extreme_quality_preview),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.detail_preserve_audio), style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        stringResource(R.string.detail_preserve_audio_description),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(checked = preserveAudio, onCheckedChange = { preserveAudio = it })
-            }
+            MpkgConversionOptions(
+                preset = preset,
+                onPresetSelected = { preset = it },
+                preserveAudio = preserveAudio,
+                onPreserveAudioChanged = { preserveAudio = it },
+            )
             Text(
                 stringResource(R.string.downloads_reconversion_cache_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm, Alignment.End),
+            Button(
+                onClick = { onConfirm(preset, preserveAudio) },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(50),
             ) {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.downloads_reconversion_cancel)) }
-                Button(onClick = { onConfirm(preset, preserveAudio) }) {
-                    Text(stringResource(R.string.downloads_reconversion_confirm))
-                }
+                Text(stringResource(R.string.downloads_reconversion_confirm))
+            }
+            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.downloads_reconversion_cancel))
             }
         }
     }
@@ -1408,15 +1379,6 @@ private fun DownloadTask.statusDescription(): String {
         ?.let { "$phaseLabel · ${formatByteSize(it)}/s" }
         ?: phaseLabel
 }
-
-@Composable
-private fun MpkgConversionPreset.downloadQualityLabel(): String =
-    when (this) {
-        MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard)
-        MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility)
-        MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality)
-        MpkgConversionPreset.EXTREME_QUALITY -> stringResource(R.string.mpkg_preset_extreme_quality)
-    }
 
 internal fun DownloadTask.shouldShowConversionPresetLabel(): Boolean =
     type == WorkshopType.SCENE && exportFormat != ExportFormat.ZIP

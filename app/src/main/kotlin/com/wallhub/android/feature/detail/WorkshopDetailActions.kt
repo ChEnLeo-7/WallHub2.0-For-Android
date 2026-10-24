@@ -14,8 +14,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,7 +36,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -56,6 +53,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wallhub.android.R
+import com.wallhub.android.core.designsystem.MpkgConversionOptions
 import com.wallhub.android.core.designsystem.WallHubSecondaryButton
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.ExportFormat
@@ -365,75 +363,18 @@ private fun MpkgQualityPage(
             IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBack, contentDescription = stringResource(R.string.detail_back_to_download_type)) }
             Text(stringResource(R.string.detail_mpkg_conversion_quality), style = MaterialTheme.typography.titleLarge)
         }
-        Column(modifier = Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs)) {
-            MpkgConversionPreset.entries.chunked(2).forEach { rowPresets ->
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs)) {
-                    rowPresets.forEach { option ->
-                        QualityPresetCard(
-                            preset = option,
-                            selected = option == preset,
-                            onClick = { onPreset(option) },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    if (rowPresets.size == 1) Spacer(modifier = Modifier.weight(1f))
-                }
-            }
-        }
-        Text(
-            text = preset.estimatedPolicyPreview(),
-            style = MaterialTheme.typography.bodySmall,
-            color = if (preset == MpkgConversionPreset.EXTREME_QUALITY) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        MpkgConversionOptions(
+            preset = preset,
+            onPresetSelected = onPreset,
+            preserveAudio = preserveAudio,
+            onPreserveAudioChanged = onPreserveAudio,
         )
-        Row(
-            modifier = Modifier.fillMaxWidth().clickable { onPreserveAudio(!preserveAudio) }.padding(vertical = WallHubSpacing.xs),
-            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.detail_preserve_audio), style = MaterialTheme.typography.bodyLarge)
-                Text(stringResource(R.string.detail_preserve_audio_compact), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Switch(checked = preserveAudio, onCheckedChange = onPreserveAudio)
-        }
         Button(onClick = onDownload, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(50)) {
             Text(stringResource(R.string.detail_start_download_mpkg))
         }
         Spacer(modifier = Modifier.height(WallHubSpacing.sm))
     }
 }
-
-@Composable
-private fun QualityPresetCard(
-    preset: MpkgConversionPreset,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier.height(88.dp).selectable(selected = selected, onClick = onClick),
-        shape = MaterialTheme.shapes.large,
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-        tonalElevation = if (selected) 2.dp else 0.dp,
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = WallHubSpacing.sm, vertical = WallHubSpacing.xs),
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(preset.label(), style = MaterialTheme.typography.titleMedium, color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
-            Text(preset.compactDescription(), style = MaterialTheme.typography.bodySmall, color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun MpkgConversionPreset.compactDescription(): String =
-    when (this) {
-        MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compact_compatibility)
-        MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_compact_balanced)
-        MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_compact_high_quality)
-        MpkgConversionPreset.EXTREME_QUALITY -> stringResource(R.string.mpkg_preset_compact_extreme_quality)
-    }
 
 @Composable
 internal fun WorkshopType.label(): String =
@@ -473,22 +414,4 @@ internal fun ExportFormat.label(): String =
         ExportFormat.AUTO -> stringResource(R.string.detail_export_format_automatic)
         ExportFormat.MPKG -> stringResource(R.string.detail_export_format_mpkg)
         ExportFormat.ZIP -> stringResource(R.string.detail_export_format_zip)
-    }
-
-@Composable
-internal fun MpkgConversionPreset.label(): String =
-    when (this) {
-        MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard)
-        MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility)
-        MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality)
-        MpkgConversionPreset.EXTREME_QUALITY -> stringResource(R.string.mpkg_preset_extreme_quality)
-    }
-
-@Composable
-private fun MpkgConversionPreset.estimatedPolicyPreview(): String =
-    when (this) {
-        MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard_preview)
-        MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility_preview)
-        MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality_preview)
-        MpkgConversionPreset.EXTREME_QUALITY -> stringResource(R.string.mpkg_preset_extreme_quality_preview)
     }

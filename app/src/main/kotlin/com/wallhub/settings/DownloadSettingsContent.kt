@@ -28,6 +28,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSpacing
+import com.wallhub.android.core.designsystem.label
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.MAX_CONCURRENT_DOWNLOAD_OPTIONS
 import com.wallhub.android.core.model.MpkgConversionPreset
@@ -348,12 +349,3 @@ private fun WorkshopSourceCacheSettings(
         )
     }
 }
-
-@Composable
-private fun MpkgConversionPreset.label(): String =
-    when (this) {
-        MpkgConversionPreset.BALANCED -> stringResource(R.string.mpkg_preset_standard)
-        MpkgConversionPreset.COMPATIBILITY -> stringResource(R.string.mpkg_preset_compatibility)
-        MpkgConversionPreset.HIGH_QUALITY -> stringResource(R.string.mpkg_preset_high_quality)
-        MpkgConversionPreset.EXTREME_QUALITY -> stringResource(R.string.mpkg_preset_extreme_quality)
-    }

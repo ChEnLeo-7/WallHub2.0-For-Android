@@ -14,9 +14,8 @@ import androidx.lifecycle.viewModelScope
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.DownloadEnqueueResult
-import com.wallhub.android.core.model.DownloadRequest
 import com.wallhub.android.core.model.WorkshopDownloads
-import com.wallhub.android.core.model.ExportFormat
+import com.wallhub.android.core.model.toQuickDownloadRequest
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
@@ -344,16 +343,11 @@ class HomeViewModel
                 runCatching {
                     val preferences = settingsRepository.preferences.first()
                     downloadTaskRepository.enqueue(
-                        DownloadRequest(
-                            workshopId = item.id,
-                            title = applicationContext.localizedTitle(item),
-                            type = item.type,
+                        item.toQuickDownloadRequest(
+                            preferences = preferences,
+                            localizedTitle = applicationContext.localizedTitle(item),
                             taskId = request.taskId,
-                            previewUrl = item.previewUrl,
-                            expectedTotalBytes = item.fileSizeBytes ?: 0L,
                             outputTreeUri = mutableState.value.outputTreeUri,
-                            exportFormat = ExportFormat.AUTO,
-                            mpkgConversionPreset = preferences.mpkgConversionPreset,
                         ),
                     )
                 }.onSuccess { result ->
