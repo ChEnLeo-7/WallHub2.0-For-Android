@@ -420,13 +420,13 @@ class ScenePackageResolutionTest {
     }
 
     @Test
-    fun conversionPresetPoliciesMatchV4Golden() {
+    fun conversionPresetPoliciesMatchV6Golden() {
         assertEquals(
             listOf(
-                "balanced|v4|static=official_better_performance|unknown=passthrough_with_warning|texture_reduction=2|lossless_visuals=false",
-                "compatibility|v4|static=official_high_performance|unknown=passthrough_with_warning|texture_reduction=4|lossless_visuals=false",
-                "high_quality|v4|static=official_high_quality|unknown=passthrough_with_warning|texture_reduction=1|lossless_visuals=false",
-                "extreme_quality|v4|static=extreme_lossless_visuals|unknown=passthrough_with_warning|texture_reduction=1|lossless_visuals=true",
+                "balanced|v6|static=official_better_performance|unknown=passthrough_with_warning|texture_reduction=2|lossless_visuals=false",
+                "compatibility|v6|static=official_high_performance|unknown=passthrough_with_warning|texture_reduction=4|lossless_visuals=false",
+                "high_quality|v6|static=official_high_quality|unknown=passthrough_with_warning|texture_reduction=1|lossless_visuals=false",
+                "extreme_quality|v6|static=extreme_lossless_visuals|unknown=passthrough_with_warning|texture_reduction=1|lossless_visuals=true",
             ),
             MpkgConversionPreset.entries.map { it.policy().stableDescription() },
         )
@@ -651,7 +651,7 @@ class ScenePackageResolutionTest {
     ) =
         com.wallhub.prototype.mpkg.ConversionPlan(
             presetId = MpkgConversionPreset.BALANCED.stableId,
-            policyVersion = 5,
+            policyVersion = 6,
             device = DeviceCapabilityProfile(256L * 1024L * 1024L),
             sourceIdentity = com.wallhub.prototype.mpkg.ScenePackageIdentity(packageLength = 123L, indexDigest = "a".repeat(64)),
             resources =
@@ -668,7 +668,7 @@ class ScenePackageResolutionTest {
     private fun conversionPlan(digest: String) =
         com.wallhub.prototype.mpkg.ConversionPlan(
             presetId = MpkgConversionPreset.BALANCED.stableId,
-            policyVersion = 5,
+            policyVersion = 6,
             device = DeviceCapabilityProfile(256L * 1024L * 1024L),
             sourceIdentity = com.wallhub.prototype.mpkg.ScenePackageIdentity(packageLength = 1L, indexDigest = digest),
             resources = emptyList(),

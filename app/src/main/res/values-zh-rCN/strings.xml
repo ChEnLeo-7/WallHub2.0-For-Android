@@ -616,7 +616,7 @@
     <string name='mpkg_preset_compact_compatibility'>1/4 分辨率</string>
     <string name='mpkg_preset_compact_balanced'>1/2 分辨率</string>
     <string name='mpkg_preset_compact_high_quality'>原分辨率</string>
-    <string name='mpkg_preset_compact_extreme_quality'>无损 RGBA</string>
+    <string name='mpkg_preset_compact_extreme_quality'>原分辨率 · 保真优先</string>
     <string name='mpkg_preset_standard'>更佳性能</string>
     <string name='mpkg_preset_compatibility'>高性能</string>
     <string name='mpkg_preset_high_quality'>高质量（默认）</string>
@@ -624,7 +624,7 @@
     <string name='mpkg_preset_standard_preview'>纹理分辨率降低至原始的一半，与 Wallpaper Engine“更佳性能”一致。</string>
     <string name='mpkg_preset_compatibility_preview'>纹理分辨率降低至原始的四分之一，与 Wallpaper Engine“高性能”一致。</string>
     <string name='mpkg_preset_high_quality_preview'>不降低纹理分辨率，与 Wallpaper Engine“高质量”一致。</string>
-    <string name='mpkg_preset_extreme_quality_preview'>极致清晰度；文件和内存占用可能显著增加，失败时不会自动降级。</string>
+    <string name='mpkg_preset_extreme_quality_preview'>保持原始分辨率且不进行有损降级；文件和存储占用可能显著增加，兼容性未验证的资源会原样保留并提示。</string>
     <string name='downloads_conversion_report_summary'>纹理转换 %1$d · 保留 %2$d · Shader %3$d · 移除音频 %4$d</string>
     <string name='downloads_status_completed_with_warnings'>已完成（有警告）·%1$d项原样保留</string>
     <string name='downloads_conversion_warning_message'>已生成 MPKG；部分资源原样保留，兼容性未验证</string>

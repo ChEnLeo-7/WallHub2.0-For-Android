@@ -20,7 +20,7 @@ data class ConversionPolicy(
     val textureReduction: Int,
     val retentionNotice: String,
     val losslessVisuals: Boolean = false,
-    val version: Int = 5,
+    val version: Int = 6,
 ) {
     init {
         require(textureReduction in setOf(1, 2, 4)) { "Unsupported official texture reduction: $textureReduction" }
@@ -82,7 +82,7 @@ data class ConversionResourcePlan(
 }
 
 data class ConversionPlan(
-    val version: Int = 5,
+    val version: Int = 6,
     val presetId: String,
     val policyVersion: Int,
     val preserveAudio: Boolean = false,
@@ -91,8 +91,8 @@ data class ConversionPlan(
     val resources: List<ConversionResourcePlan>,
 ) {
     init {
-        require(version == 5) { "Unsupported conversion plan version: $version" }
-        require(policyVersion == 5) { "Unsupported conversion policy version: $policyVersion" }
+        require(version == 6) { "Unsupported conversion plan version: $version" }
+        require(policyVersion == 6) { "Unsupported conversion policy version: $policyVersion" }
         require(MpkgConversionPreset.fromStableId(presetId).stableId == presetId) { "Unknown conversion preset: $presetId" }
         val paths = HashSet<String>()
         resources.forEach { resource ->
@@ -237,41 +237,20 @@ private fun String.safeRelativeWarningPath(): String {
 }
 
 object ConversionPlanJsonCodec {
-    fun encode(plan: ConversionPlan): String {
-        val root = JSONObject()
-        root.put("version", plan.version)
-        root.put("presetId", plan.presetId)
-        root.put("policyVersion", plan.policyVersion)
-        root.put("preserveAudio", plan.preserveAudio)
-        root.put(
-            "device",
-            JSONObject()
-                .put("maxHeapBytes", plan.device.maxHeapBytes)
-                .put("supportsEtc2", plan.device.supportsEtc2),
-        )
-        root.put(
-            "sourceIdentity",
-            JSONObject()
-                .put("version", plan.sourceIdentity.version)
-                .put("packageLength", plan.sourceIdentity.packageLength)
-                .put("indexDigest", plan.sourceIdentity.indexDigest),
-        )
-        root.put(
-            "resources",
-            JSONArray().also { resources ->
-                plan.resources.forEach { resource ->
-                    resources.put(
-                        JSONObject()
-                            .put("path", resource.path)
-                            .put("sourceLength", resource.sourceLength)
-                            .put("strategy", resource.strategy.name)
-                            .put("reason", resource.reason),
-                    )
-                }
-            },
-        )
-        return root.toString()
-    }
+    fun encode(plan: ConversionPlan): String =
+        buildString {
+            append("{\"version\":${plan.version},\"presetId\":${JSONObject.quote(plan.presetId)},\"policyVersion\":${plan.policyVersion}")
+            append(",\"preserveAudio\":${plan.preserveAudio},\"device\":{\"maxHeapBytes\":${plan.device.maxHeapBytes}")
+            append(",\"supportsEtc2\":${plan.device.supportsEtc2}},\"sourceIdentity\":{\"version\":${plan.sourceIdentity.version}")
+            append(",\"packageLength\":${plan.sourceIdentity.packageLength},\"indexDigest\":${JSONObject.quote(plan.sourceIdentity.indexDigest)}}")
+            append(",\"resources\":[")
+            plan.resources.forEachIndexed { index, resource ->
+                if (index > 0) append(',')
+                append("{\"path\":${JSONObject.quote(resource.path)},\"sourceLength\":${resource.sourceLength}")
+                append(",\"strategy\":${JSONObject.quote(resource.strategy.name)},\"reason\":${JSONObject.quote(resource.reason)}}")
+            }
+            append("]}")
+        }
 
     fun decode(json: String): ConversionPlan {
         val root = JSONObject(json)
@@ -419,33 +398,6 @@ internal object WorkshopConversionPlanner {
                 declaredSemantic != null -> declaredSemantic
                 else -> TextureSemantic.UNKNOWN
             }
-        if (policy.losslessVisuals && semantic == TextureSemantic.COLOR) {
-            if (decision.verifiedLosslessRgba) {
-                return ResourceStrategy.RETAIN_VERIFIED_MOBILE to "verified_lossless_rgba_retained"
-            }
-            if (
-                decision.route !in
-                    setOf(
-                        TexEntryRoute.CONVERT_IMAGE_TO_ETC2,
-                        TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA,
-                        TexEntryRoute.CONVERT_IN_MEMORY,
-                    )
-            ) {
-                return ResourceStrategy.REJECT to "extreme_quality_visual_not_provably_lossless"
-            }
-        }
-        if (policy.losslessVisuals && semantic == TextureSemantic.UNKNOWN && !decision.verifiedLosslessRgba) {
-            if (
-                decision.route !in
-                    setOf(
-                        TexEntryRoute.CONVERT_IMAGE_TO_ETC2,
-                        TexEntryRoute.CONVERT_ANIMATED_IMAGE_TO_RGBA,
-                        TexEntryRoute.CONVERT_IN_MEMORY,
-                    )
-            ) {
-                return ResourceStrategy.REJECT to "extreme_quality_unknown_visual_not_provably_lossless"
-            }
-        }
         if (semantic != TextureSemantic.COLOR) {
             return when {
                 decision.verifiedLosslessRgba -> ResourceStrategy.RETAIN_VERIFIED_MOBILE to "verified_lossless_rgba_retained"

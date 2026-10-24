@@ -53,20 +53,27 @@ class WorkshopConverterExecutionFallbackTest {
     }
 
     @Test
-    fun `extreme quality static image uses chunked RGBA path and publishes verified output`() {
-        withScene(listOf("materials/effects/color.tex" to staticImageTex(2, 2))) { root ->
+    fun `extreme quality chunked decoder failure retains exact source with a warning`() {
+        val source = staticImageTex(2, 2)
+        withScene(listOf("materials/effects/color.tex" to source)) { root ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.EXTREME_QUALITY, DEVICE)
-            val output = root.resolve("extreme-chunked.mpkg")
+            assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, plan.resources.single().strategy)
+            val output = root.resolve("extreme-chunked-retained.mpkg")
+
             val report = WorkshopConverter.execute(plan, root, output)
-            assertTrue(output.isFile)
-            assertEquals(1, report.convertedTextures)
-            assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, report.outcomes.single().strategy)
+
+            val archive = PkgReader.readIndex(output)
+            val retained = archive.entries.single { it.path == "materials/effects/color.tex" }
+            assertArrayEquals(source, archive.readBytes(retained, source.size.toLong()))
+            assertEquals(0, report.convertedTextures)
+            assertEquals(ResourceStrategy.PASSTHROUGH_WITH_WARNING, report.outcomes.single().strategy)
+            assertEquals(mapOf("texture_conversion_failed" to 1), report.warningCounts)
         }
     }
 
     @Test
     fun `large static texture accepted by the plan executes without the legacy eight MiB gate`() {
-        val source = uncompressedR8Tex(width = 3072, height = 3072)
+        val source = largeEntryR8Tex()
         assertTrue(source.size > 8 * 1024 * 1024)
         withScene(listOf("materials/flowmask.tex" to source)) { root ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.EXTREME_QUALITY, DEVICE)
@@ -82,21 +89,26 @@ class WorkshopConverterExecutionFallbackTest {
     }
 
     @Test
-    fun `extreme quality decoder failure is fatal and never publishes a downgraded MPKG`() {
-        withScene(listOf("materials/effects/color.tex" to staticImageTex(2, 2))) { root ->
+    fun `extreme quality decoder failure retains exact source with a compatibility warning`() {
+        val source = staticImageTex(2, 2)
+        withScene(listOf("materials/effects/color.tex" to source)) { root ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.EXTREME_QUALITY, DEVICE)
             assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, plan.resources.single().strategy)
-            val output = root.resolve("extreme-failed.mpkg")
+            val output = root.resolve("extreme-retained.mpkg")
 
-            assertThrows(IllegalStateException::class.java) {
+            val report =
                 WorkshopConverter.execute(
                     plan = plan,
                     inputDir = root,
                     outputFile = output,
                     staticImageDecoder = { _, _, _, _ -> error("decoder detail") },
                 )
-            }
-            assertFalse(output.exists())
+
+            val archive = PkgReader.readIndex(output)
+            val retained = archive.entries.single { it.path == "materials/effects/color.tex" }
+            assertArrayEquals(source, archive.readBytes(retained, source.size.toLong()))
+            assertEquals(ResourceStrategy.PASSTHROUGH_WITH_WARNING, report.outcomes.single().strategy)
+            assertEquals(mapOf("texture_conversion_failed" to 1), report.warningCounts)
         }
     }
 
@@ -215,9 +227,9 @@ class WorkshopConverterExecutionFallbackTest {
             assertEquals(100, persisted.getJSONArray("warningDetails").length())
             assertEquals(105, persisted.getJSONObject("warningCounts").getInt("shader_rewrite_failed"))
             assertEquals(105, persisted.getInt("warningCount"))
-            assertEquals("rewrite_shader", persisted.getJSONArray("warningDetails").getJSONObject(0).getString("strategy"))
+            assertEquals("passthrough_with_warning", persisted.getJSONArray("warningDetails").getJSONObject(0).getString("strategy"))
             assertEquals(
-                "rewrite_shader",
+                "passthrough_with_warning",
                 ConversionReportJsonCodec.decodeSummary(persisted.toString())?.warningDetails?.first()?.strategy,
             )
         }
@@ -260,15 +272,17 @@ class WorkshopConverterExecutionFallbackTest {
         }
     }
 
-    private fun uncompressedR8Tex(width: Int, height: Int): ByteArray =
+    private fun largeEntryR8Tex(): ByteArray =
         ByteArrayOutputStream().use { output ->
+            val width = 4096
+            val height = 2048
+            val payloadBytes = width * height
             output.writeCString("TEXV0005")
             output.writeCString("TEXI0001")
             listOf(9, 0, width, height, width, height, 0).forEach { value -> output.writeIntLe(value) }
             output.writeCString("TEXB0004")
-            val payloadBytes = Math.multiplyExact(width, height)
             listOf(1, -1, 0, 1, width, height, 0, payloadBytes, payloadBytes).forEach { value -> output.writeIntLe(value) }
-            output.write(ByteArray(payloadBytes) { index -> (index * 31).toByte() })
+            output.write(ByteArray(payloadBytes))
             output.toByteArray()
         }
 

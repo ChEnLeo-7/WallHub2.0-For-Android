@@ -206,6 +206,112 @@ object TexMobileConverter {
         }
     }
 
+    internal fun convertStaticToRgbaFile(
+        sourceFile: File,
+        offset: Long,
+        length: Long,
+        outputFile: File,
+        maxDecodedRgbaBytes: Long = STANDARD_MAX_RGBA_BYTES,
+        checkCancellation: () -> Unit = {},
+    ): TexFileConversionResult =
+        runCatching {
+            checkCancellation()
+            val metadata = readTexEntryMetadata(sourceFile, offset, length)
+            require(metadata.flags and (TEX_FLAG_GIF or TEX_FLAG_VIDEO) == 0 && !metadata.isMp4) {
+                "TEX is not a static texture"
+            }
+            require(metadata.imageFormat < 0 && metadata.animationTailLength == 0L) {
+                "TEX is not a static native texture"
+            }
+            require(metadata.format in CONVERTIBLE_STATIC_FORMATS) { "Unsupported static TEX format ${metadata.format}" }
+            require(metadata.baseWidth == metadata.textureWidth && metadata.baseHeight == metadata.textureHeight) {
+                "TEX base mipmap does not match texture dimensions"
+            }
+            val rgbaBytes = checkedPayloadSizeLong(metadata.imageWidth, metadata.imageHeight, 4)
+            require(rgbaBytes <= maxDecodedRgbaBytes && rgbaBytes <= Int.MAX_VALUE.toLong()) {
+                "Static TEX exceeds the configured RGBA conversion limit"
+            }
+            val expectedPayload =
+                requireNotNull(
+                    expectedPayloadSize(
+                        metadata.format,
+                        metadata.imageFormat,
+                        metadata.baseWidth,
+                        metadata.baseHeight,
+                    ),
+                )
+            val stored = readStaticPayload(sourceFile, metadata, checkCancellation)
+            val payload =
+                if (metadata.baseCompressed) {
+                    require(metadata.baseDecompressedSize == expectedPayload) { "TEX payload size does not match mipmap dimensions" }
+                    ByteArray(metadata.baseDecompressedSize).also { decoded ->
+                        val decodedBytes =
+                            LZ4Factory.fastestJavaInstance().safeDecompressor()
+                                .decompress(stored, 0, stored.size, decoded, 0, decoded.size)
+                        require(decodedBytes == decoded.size) { "Incomplete LZ4 TEX payload" }
+                    }
+                } else {
+                    require(stored.size == expectedPayload) { "TEX payload size does not match mipmap dimensions" }
+                    stored
+                }
+            checkCancellation()
+            val rgba =
+                when (metadata.format) {
+                    TEX_FORMAT_RGBA8888 ->
+                        cropRgba(
+                            payload,
+                            metadata.baseWidth,
+                            metadata.baseHeight,
+                            metadata.imageWidth,
+                            metadata.imageHeight,
+                            checkCancellation,
+                        )
+                    TEX_FORMAT_DXT1, TEX_FORMAT_DXT3, TEX_FORMAT_DXT5 ->
+                        cropRgba(
+                            decodeDxt(metadata.baseWidth, metadata.baseHeight, payload, metadata.format, checkCancellation),
+                            metadata.baseWidth,
+                            metadata.baseHeight,
+                            metadata.imageWidth,
+                            metadata.imageHeight,
+                            checkCancellation,
+                        )
+                    TEX_FORMAT_R8 ->
+                        convertR8(
+                            payload,
+                            metadata.baseWidth,
+                            metadata.baseHeight,
+                            metadata.imageWidth,
+                            metadata.imageHeight,
+                            checkCancellation,
+                        )
+                    TEX_FORMAT_RG88 ->
+                        convertRg88(
+                            payload,
+                            metadata.baseWidth,
+                            metadata.baseHeight,
+                            metadata.imageWidth,
+                            metadata.imageHeight,
+                            checkCancellation,
+                        )
+                    else -> error("Unsupported static TEX format ${metadata.format}")
+                }
+            checkCancellation()
+            writeMobileRgba(
+                outputFile = outputFile,
+                flags = metadata.flags,
+                width = metadata.imageWidth,
+                height = metadata.imageHeight,
+                unknown = metadata.unknown,
+                rgba = rgba,
+            )
+            checkCancellation()
+            TexFileConversionResult(true, "RGBA8888 + bounded source slice")
+        }.getOrElse { error ->
+            outputFile.delete()
+            if (error is Error || error is CancellationException || error is IOException) throw error
+            TexFileConversionResult(false, error.message ?: error.javaClass.simpleName)
+        }
+
     internal fun convertAnimatedImageToRgbaFile(
         sourceFile: File,
         offset: Long,
@@ -1657,6 +1763,23 @@ object TexMobileConverter {
         }
     }
 
+    private fun readStaticPayload(
+        sourceFile: File,
+        metadata: TexEntryMetadata,
+        checkCancellation: () -> Unit,
+    ): ByteArray {
+        val storedSize = metadata.baseStoredSize.toLong()
+        require(storedSize in 1..Int.MAX_VALUE.toLong()) { "Static TEX payload is too large to decode" }
+        require(metadata.payloadStart >= 0L && metadata.payloadStart <= sourceFile.length() - storedSize) {
+            "Invalid static TEX payload range"
+        }
+        checkCancellation()
+        return RandomAccessFile(sourceFile, "r").use { input ->
+            input.seek(metadata.payloadStart)
+            ByteArray(storedSize.toInt()).also(input::readFully)
+        }
+    }
+
     private fun readFileRange(
         sourceFile: File,
         offset: Long,
@@ -2117,6 +2240,7 @@ object TexMobileConverter {
         sourceHeight: Int,
         targetWidth: Int,
         targetHeight: Int,
+        checkCancellation: () -> Unit = {},
     ): ByteArray {
         require(source.size == checkedPayloadSize(sourceWidth, sourceHeight, 4)) {
             "RGBA TEX payload size does not match mipmap dimensions"
@@ -2127,6 +2251,7 @@ object TexMobileConverter {
         val output = ByteArray(checkedPayloadSize(targetWidth, targetHeight, 4))
         val rowBytes = min(sourceWidth, targetWidth) * 4
         repeat(min(sourceHeight, targetHeight)) { row ->
+            checkCancellation()
             source.copyInto(
                 output,
                 destinationOffset = row * targetWidth * 4,
@@ -2143,19 +2268,21 @@ object TexMobileConverter {
         sourceHeight: Int,
         targetWidth: Int,
         targetHeight: Int,
+        checkCancellation: () -> Unit = {},
     ): ByteArray {
         require(source.size == checkedPayloadSize(sourceWidth, sourceHeight, 1)) {
             "R8 TEX payload size does not match mipmap dimensions"
         }
         val output = ByteArray(checkedPayloadSize(sourceWidth, sourceHeight, 4))
         repeat(sourceWidth * sourceHeight) { index ->
+            if (index % sourceWidth == 0) checkCancellation()
             val position = index * 4
             output[position] = source[index]
             output[position + 1] = source[index]
             output[position + 2] = source[index]
             output[position + 3] = 0xff.toByte()
         }
-        return cropRgba(output, sourceWidth, sourceHeight, targetWidth, targetHeight)
+        return cropRgba(output, sourceWidth, sourceHeight, targetWidth, targetHeight, checkCancellation)
     }
 
     private fun convertRg88(
@@ -2164,12 +2291,14 @@ object TexMobileConverter {
         sourceHeight: Int,
         targetWidth: Int,
         targetHeight: Int,
+        checkCancellation: () -> Unit = {},
     ): ByteArray {
         require(source.size == checkedPayloadSize(sourceWidth, sourceHeight, 2)) {
             "RG88 TEX payload size does not match mipmap dimensions"
         }
         val output = ByteArray(checkedPayloadSize(sourceWidth, sourceHeight, 4))
         repeat(sourceWidth * sourceHeight) { index ->
+            if (index % sourceWidth == 0) checkCancellation()
             val position = index * 4
             val r = source[index * 2]
             val g = source[index * 2 + 1]
@@ -2178,7 +2307,7 @@ object TexMobileConverter {
             output[position + 2] = g
             output[position + 3] = r
         }
-        return cropRgba(output, sourceWidth, sourceHeight, targetWidth, targetHeight)
+        return cropRgba(output, sourceWidth, sourceHeight, targetWidth, targetHeight, checkCancellation)
     }
 
     private fun decodeDxt(
@@ -2186,6 +2315,7 @@ object TexMobileConverter {
         height: Int,
         source: ByteArray,
         format: Int,
+        checkCancellation: () -> Unit = {},
     ): ByteArray {
         val blockSize = if (format == TEX_FORMAT_DXT1) 8 else 16
         val expectedSize = ((width + 3L) / 4L) * ((height + 3L) / 4L) * blockSize
@@ -2195,6 +2325,7 @@ object TexMobileConverter {
         val output = ByteArray(checkedPayloadSize(width, height, 4))
         var offset = 0
         for (blockY in 0 until height step 4) {
+            checkCancellation()
             for (blockX in 0 until width step 4) {
                 val colorOffset = if (format == TEX_FORMAT_DXT1) offset else offset + 8
                 val colors = decodeDxtColors(source, colorOffset, format == TEX_FORMAT_DXT1)

@@ -4,6 +4,7 @@ import com.wallhub.android.core.database.FormalTaskRecordEntity
 import com.wallhub.android.core.model.DownloadStatus
 import com.wallhub.prototype.mpkg.MpkgFormatLimitException
 import com.wallhub.prototype.mpkg.MpkgInsufficientSpaceException
+import com.wallhub.prototype.mpkg.StaleConversionSourceException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -14,6 +15,10 @@ class FormalWorkshopExportRecoveryTest {
     fun `fatal conversion failures map to stable bounded reason codes`() {
         assertEquals("format_limit", classifyConversionFailure(MpkgFormatLimitException("private details")).reasonCode)
         assertEquals("physical_disk", classifyConversionFailure(MpkgInsufficientSpaceException("private details")).reasonCode)
+        assertEquals(
+            "conversion_failed",
+            classifyConversionFailure(StaleConversionSourceException("resource_strategy_changed")).reasonCode,
+        )
         val nested = classifyConversionFailure(IllegalStateException("wrapper", MpkgFormatLimitException("detail")))
         assertEquals("format_limit", nested.reasonCode)
         assertTrue(nested.fallbackMessage.contains("MpkgFormatLimitException: detail"))

@@ -641,7 +641,7 @@
     <string name='mpkg_preset_compact_compatibility'>1/4 resolution</string>
     <string name='mpkg_preset_compact_balanced'>1/2 resolution</string>
     <string name='mpkg_preset_compact_high_quality'>Original resolution</string>
-    <string name='mpkg_preset_compact_extreme_quality'>Lossless RGBA</string>
+    <string name='mpkg_preset_compact_extreme_quality'>Full resolution · fidelity first</string>
     <string name='mpkg_preset_standard'>Better performance</string>
     <string name='mpkg_preset_compatibility'>High performance</string>
     <string name='mpkg_preset_high_quality'>High quality (default)</string>
@@ -649,7 +649,7 @@
     <string name='mpkg_preset_standard_preview'>Reduces texture resolution by half, matching Wallpaper Engine Better Performance.</string>
     <string name='mpkg_preset_compatibility_preview'>Reduces texture resolution to one quarter, matching Wallpaper Engine High Performance.</string>
     <string name='mpkg_preset_high_quality_preview'>Keeps full texture resolution, matching Wallpaper Engine High Quality.</string>
-    <string name='mpkg_preset_extreme_quality_preview'>Maximum clarity. File and memory use may increase significantly, and failures never silently downgrade.</string>
+    <string name='mpkg_preset_extreme_quality_preview'>Keeps original resolution without a lossy downgrade. File and storage use may increase significantly; resources with unverified compatibility are retained unchanged with a warning.</string>
     <string name='downloads_conversion_report_summary'>Textures converted %1$d · retained %2$d · shaders %3$d · audio removed %4$d</string>
     <string name='downloads_status_completed_with_warnings'>Completed (with warnings) · %1$d retained unchanged</string>
     <string name='downloads_conversion_warning_message'>MPKG generated; some resources were retained unchanged and compatibility is unverified</string>

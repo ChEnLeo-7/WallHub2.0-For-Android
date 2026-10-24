@@ -436,10 +436,15 @@ object WorkshopConverter {
                                                         )
                                                     }
                                                 }
-                                                TexEntryRoute.CONVERT_IN_MEMORY -> {
-                                                    require(entry.length <= texConversionInputLimit()) { "Static texture ${entry.path} exceeds the bounded in-memory conversion limit" }
-                                                    TexMobileConverter.convertToFile(archive.readBytes(entry, texConversionInputLimit()), transformed, checkCancellation)
-                                                }
+                                                TexEntryRoute.CONVERT_IN_MEMORY ->
+                                                    TexMobileConverter.convertStaticToRgbaFile(
+                                                        sourceFile = scenePackage,
+                                                        offset = entry.offset,
+                                                        length = entry.length,
+                                                        outputFile = transformed,
+                                                        maxDecodedRgbaBytes = WORKSHOP_STANDARD_MAX_RGBA_BYTES,
+                                                        checkCancellation = checkCancellation,
+                                                    )
                                                 else -> error("Planned RGBA strategy is incompatible with ${entry.path}")
                                             }
                                         transformed.takeIf { result.converted && isVerifiedTexture(it) }
@@ -449,9 +454,6 @@ object WorkshopConverter {
                                     convertedTextures += 1
                                     putEntry(MpkgInputEntry(entry.path, FilePayload(product)))
                                 } else {
-                                    if (MpkgConversionPreset.fromStableId(requireNotNull(plan).presetId).policy().losslessVisuals) {
-                                        error("Extreme quality texture conversion failed: ${entry.path}")
-                                    }
                                     fallbackToSource(entry, transformed, "texture_conversion_failed")
                                 }
                             }
@@ -577,9 +579,6 @@ object WorkshopConverter {
                 }
                 writeCandidate()
                 val failedOutputTextures = failedConvertedTextures()
-                if (failedOutputTextures.isNotEmpty() && MpkgConversionPreset.fromStableId(requireNotNull(plan).presetId).policy().losslessVisuals) {
-                    error("Extreme quality output texture verification failed: ${failedOutputTextures.first().path}")
-                }
                 failedOutputTextures.forEach { failedOutput ->
                     val sourceEntry = archive.entries.single { it.path == failedOutput.path }
                     entriesByPath[failedOutput.path] =
@@ -1136,9 +1135,6 @@ object ShaderCompatibility {
     }
 }
 
-internal fun texConversionInputLimit(maxHeapBytes: Long = Runtime.getRuntime().maxMemory()): Long =
-    (maxHeapBytes / TEX_CONVERSION_HEAP_DIVISOR).coerceIn(MIN_TEX_CONVERSION_INPUT_BYTES, MAX_TEX_CONVERSION_INPUT_BYTES)
-
 private const val WORKSHOP_STANDARD_MAX_RGBA_BYTES = 64L * 1024L * 1024L
 private const val EXTREME_MAX_RGBA_BYTES = 256L * 1024L * 1024L
 
@@ -1149,9 +1145,6 @@ private fun rgbaLimitForPreset(plan: ConversionPlan?): Long =
         WORKSHOP_STANDARD_MAX_RGBA_BYTES
     }
 
-private const val TEX_CONVERSION_HEAP_DIVISOR = 24L
-private const val MIN_TEX_CONVERSION_INPUT_BYTES = 2L * 1024L * 1024L
-private const val MAX_TEX_CONVERSION_INPUT_BYTES = 8L * 1024L * 1024L
 internal const val MAX_SHADER_SOURCE_BYTES = 8L * 1024L * 1024L
 private const val COPY_BUFFER_SIZE = 1024 * 1024
 private const val MAX_WARNING_DETAILS = 100

@@ -23,8 +23,8 @@ class ConversionPolicyV2Test {
         withScene("materials/number.am.tex", "not-a-recognized-tex-shape".toByteArray()) { root, source ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE)
 
-            assertEquals(5, plan.version)
-            assertEquals(5, plan.policyVersion)
+            assertEquals(6, plan.version)
+            assertEquals(6, plan.policyVersion)
             assertEquals(ResourceStrategy.PASSTHROUGH_WITH_WARNING, plan.resources.single().strategy)
             assertEquals("tex_passthrough_unknown_profile", plan.resources.single().reason)
 
@@ -76,7 +76,7 @@ class ConversionPolicyV2Test {
         assertEquals(1, MpkgConversionPreset.HIGH_QUALITY.policy().textureReduction)
         assertEquals(1, MpkgConversionPreset.EXTREME_QUALITY.policy().textureReduction)
         assertTrue(MpkgConversionPreset.EXTREME_QUALITY.policy().losslessVisuals)
-        assertEquals(5, MpkgConversionPreset.COMPATIBILITY.policy().version)
+        assertEquals(6, MpkgConversionPreset.COMPATIBILITY.policy().version)
     }
 
     @Test
@@ -140,7 +140,7 @@ class ConversionPolicyV2Test {
     }
 
     @Test
-    fun `plan codec v5 preserves audio preference and equality`() {
+    fun `plan codec v6 preserves audio preference and equality`() {
         withScene("audio/theme.mp3", byteArrayOf(1, 2, 3)) { root, _ ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE, preserveAudio = true)
             val decoded = ConversionPlanJsonCodec.decode(ConversionPlanJsonCodec.encode(plan))
@@ -152,12 +152,14 @@ class ConversionPolicyV2Test {
     }
 
     @Test
-    fun `plan codec v5 rejects v4 JSON`() {
+    fun `plan codec v6 rejects stale plan and policy versions`() {
         withScene("scripts/demo.txt", byteArrayOf(1, 2, 3)) { root, _ ->
             val encoded = ConversionPlanJsonCodec.encode(WorkshopConverter.plan(root, MpkgConversionPreset.BALANCED, DEVICE))
-            val v4 = encoded.replaceFirst("\"version\":5", "\"version\":4")
+            val stalePlan = encoded.replaceFirst("\"version\":6", "\"version\":5")
+            val stalePolicy = encoded.replaceFirst("\"policyVersion\":6", "\"policyVersion\":5")
 
-            assertThrows(IllegalArgumentException::class.java) { ConversionPlanJsonCodec.decode(v4) }
+            assertThrows(IllegalArgumentException::class.java) { ConversionPlanJsonCodec.decode(stalePlan) }
+            assertThrows(IllegalArgumentException::class.java) { ConversionPlanJsonCodec.decode(stalePolicy) }
         }
     }
 

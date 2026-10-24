@@ -812,6 +812,7 @@ internal fun classifyConversionFailure(error: Throwable): ConversionFailure {
             causes.any { it is MpkgInsufficientSpaceException } -> "physical_disk"
             causes.any { it is PkgFormatException } -> "scene_package_invalid"
             causes.any { it is PkgSourceException } -> "source_container_invalid"
+            causes.any { it is StaleConversionSourceException } -> "conversion_failed"
             causes.any { it is IOException } -> "physical_disk"
             causes.any { throwable ->
                 throwable is IllegalArgumentException || throwable is IllegalStateException
