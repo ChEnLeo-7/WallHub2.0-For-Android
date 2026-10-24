@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBars
@@ -86,8 +87,11 @@ import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
 import com.wallhub.settings.SteamAccessDohEndpointsSetting
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.uwuaosp.compose.wizard.WizardActions
@@ -122,7 +126,11 @@ class WallHubSetupViewModel
     constructor(
         private val settingsRepository: SettingsRepository,
         private val steamSessionRepository: SteamSessionRepository,
+        private val networkPreflight: SetupNetworkPreflight,
     ) : ViewModel() {
+        private val _networkPreflightResult = MutableStateFlow<SetupNetworkPreflightResult?>(null)
+        val networkPreflightResult: StateFlow<SetupNetworkPreflightResult?> = _networkPreflightResult.asStateFlow()
+        private var networkPreflightJob: Job? = null
         val preferences: StateFlow<AppPreferences> =
             settingsRepository.preferences.stateIn(
                 scope = viewModelScope,
@@ -151,14 +159,15 @@ class WallHubSetupViewModel
             steamSessionRepository.logout()
         }
 
-        fun saveNetwork(
+        fun saveNetworkAndCheck(
             proxyUrl: String,
             proxyEnabled: Boolean,
             steamAccessEnabled: Boolean,
             dataSource: SteamWorkshopDataSource,
             apiKey: String,
         ) {
-            viewModelScope.launch {
+            networkPreflightJob?.cancel()
+            networkPreflightJob = viewModelScope.launch {
                 val current = preferences.value
                 settingsRepository.setDownloadPreferences(
                     maxConcurrentDownloads = current.maxConcurrentDownloads,
@@ -170,7 +179,19 @@ class WallHubSetupViewModel
                 settingsRepository.setSteamAccessEnabled(steamAccessEnabled)
                 settingsRepository.setSteamWorkshopDataSource(dataSource)
                 settingsRepository.setSteamApiKey(apiKey)
+                if (!steamAccessEnabled) {
+                    _networkPreflightResult.value = networkPreflight.run(SetupNetworkPreflightInput(false))
+                    return@launch
+                }
+                _networkPreflightResult.value = SetupNetworkPreflightResult.checking()
+                _networkPreflightResult.value = networkPreflight.run(SetupNetworkPreflightInput(true))
             }
+        }
+
+        fun clearNetworkCheck() {
+            networkPreflightJob?.cancel()
+            networkPreflightJob = null
+            _networkPreflightResult.value = null
         }
 
         fun saveOutputDirectory(treeUri: String, label: String) {
@@ -191,6 +212,7 @@ fun WallHubSetupWizard(
 ) {
     val preferences by viewModel.preferences.collectAsStateWithLifecycle()
     val session by viewModel.session.collectAsStateWithLifecycle()
+    val networkPreflightResult by viewModel.networkPreflightResult.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var page by rememberSaveable { mutableStateOf(WallHubSetupPage.Welcome) }
     var continueAfterDirectorySelection by rememberSaveable { mutableStateOf(false) }
@@ -262,11 +284,11 @@ fun WallHubSetupWizard(
                 WallHubSetupPage.Network ->
                     NetworkPage(
                         preferences = preferences,
+                        preflightResult = networkPreflightResult,
                         onSaveDohEndpoints = viewModel::saveDohEndpoints,
-                        onContinue = { proxyUrl, proxyEnabled, accessEnabled, source, apiKey ->
-                            viewModel.saveNetwork(proxyUrl, proxyEnabled, accessEnabled, source, apiKey)
-                            page = WallHubSetupPage.Storage
-                        },
+                        onCheck = viewModel::saveNetworkAndCheck,
+                        onConfigurationChanged = viewModel::clearNetworkCheck,
+                        onContinue = { page = WallHubSetupPage.Storage },
                     )
                 WallHubSetupPage.Finish -> FinishPage()
             }
@@ -477,8 +499,11 @@ private fun SteamPage(session: SteamSessionState, viewModel: WallHubSetupViewMod
 @Composable
 private fun NetworkPage(
     preferences: AppPreferences,
+    preflightResult: SetupNetworkPreflightResult?,
     onSaveDohEndpoints: (List<String>, Set<String>) -> Unit,
-    onContinue: (String, Boolean, Boolean, SteamWorkshopDataSource, String) -> Unit,
+    onCheck: (String, Boolean, Boolean, SteamWorkshopDataSource, String) -> Unit,
+    onConfigurationChanged: () -> Unit,
+    onContinue: () -> Unit,
 ) {
     val bottomPadding = wizardActionContentPadding(
         visible = true,
@@ -507,13 +532,14 @@ private fun NetworkPage(
                 description = stringResource(R.string.settings_use_network_proxy_description),
                 checked = proxyEnabled,
                 enabled = isSupportedDownloadProxyUrl(proxyUrl),
-                onCheckedChange = { proxyEnabled = it },
+                onCheckedChange = { proxyEnabled = it; onConfigurationChanged() },
             )
             TextField(
                 value = proxyUrl,
                 onValueChange = {
                     proxyUrl = it
                     if (!isSupportedDownloadProxyUrl(it)) proxyEnabled = false
+                    onConfigurationChanged()
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 singleLine = true,
@@ -523,13 +549,16 @@ private fun NetworkPage(
                 title = stringResource(R.string.settings_steam_automatic_anti_blocking),
                 description = stringResource(R.string.settings_steam_service_access_description),
                 checked = accessEnabled,
-                onCheckedChange = { accessEnabled = it },
+                onCheckedChange = { accessEnabled = it; onConfigurationChanged() },
                 modifier = Modifier.padding(top = 16.dp),
             )
             SteamAccessDohEndpointsSetting(
                 endpoints = preferences.steamAccessDohEndpoints,
                 disabledEndpoints = preferences.steamAccessDisabledDohEndpoints,
-                onSave = onSaveDohEndpoints,
+                onSave = { endpoints, disabledEndpoints ->
+                    onSaveDohEndpoints(endpoints, disabledEndpoints)
+                    onConfigurationChanged()
+                },
             )
             ExposedDropdownMenuBox(
                 expanded = sourceMenuExpanded,
@@ -551,14 +580,14 @@ private fun NetworkPage(
                     SteamWorkshopDataSource.entries.forEach { item ->
                         DropdownMenuItem(
                             text = { Text(item.label()) },
-                            onClick = { source = item; sourceMenuExpanded = false },
+                            onClick = { source = item; sourceMenuExpanded = false; onConfigurationChanged() },
                         )
                     }
                 }
             }
             TextField(
                 value = apiKey,
-                onValueChange = { apiKey = it },
+                onValueChange = { apiKey = it; onConfigurationChanged() },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 singleLine = true,
                 label = { Text(stringResource(R.string.settings_steam_api_key)) },
@@ -572,14 +601,98 @@ private fun NetworkPage(
                     }
                 },
             )
+            preflightResult?.let {
+                SetupNetworkPreflightCard(it) {
+                    onCheck(proxyUrl, proxyEnabled, accessEnabled, source, apiKey)
+                }
+            }
         }
         WizardActions(
             visible = true,
             expanded = false,
-            primaryLabel = stringResource(R.string.setup_action_next),
-            onPrimaryClick = { onContinue(proxyUrl, proxyEnabled, accessEnabled, source, apiKey) },
+            primaryLabel = when (preflightResult?.overallStatus) {
+                null -> stringResource(R.string.setup_network_check)
+                SetupNetworkOverallStatus.CHECKING -> stringResource(R.string.setup_network_status_checking)
+                else -> stringResource(R.string.setup_action_continue)
+            },
+            onPrimaryClick = {
+                when (preflightResult?.overallStatus) {
+                    null -> onCheck(proxyUrl, proxyEnabled, accessEnabled, source, apiKey)
+                    SetupNetworkOverallStatus.CHECKING -> Unit
+                    else -> onContinue()
+                }
+            },
         )
     }
+}
+
+@Composable
+private fun SetupNetworkPreflightCard(
+    result: SetupNetworkPreflightResult,
+    onRetry: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(top = WallHubSpacing.md),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(WallHubSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+        ) {
+            Text(
+                when (result.overallStatus) {
+                    SetupNetworkOverallStatus.CHECKING -> stringResource(R.string.setup_network_status_checking)
+                    SetupNetworkOverallStatus.PASSED -> stringResource(R.string.setup_network_status_passed)
+                    SetupNetworkOverallStatus.WARNING -> stringResource(R.string.setup_network_status_warning)
+                    SetupNetworkOverallStatus.SKIPPED -> stringResource(R.string.setup_network_status_skipped)
+                },
+                style = MaterialTheme.typography.titleMedium,
+            )
+            result.items.forEach { item ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(item.check.label(), style = MaterialTheme.typography.bodyMedium)
+                        if (item.reason.isNotBlank()) {
+                            Text(item.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Text(
+                        item.status.label(item.durationMillis),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (item.status == SetupNetworkCheckStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (result.overallStatus != SetupNetworkOverallStatus.CHECKING) {
+                Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.setup_network_retry))
+                }
+            }
+            Text(
+                stringResource(R.string.setup_network_warning_non_blocking),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SetupNetworkCheck.label(): String = when (this) {
+    SetupNetworkCheck.DIRECTORY -> stringResource(R.string.setup_network_item_directory)
+    SetupNetworkCheck.PUBLIC_DETAILS_JSON -> stringResource(R.string.setup_network_item_public_details)
+    SetupNetworkCheck.COMMUNITY_HTML -> stringResource(R.string.setup_network_item_community_html)
+    SetupNetworkCheck.WORKSHOP_IMAGE -> stringResource(R.string.setup_network_item_workshop_image)
+    SetupNetworkCheck.CM_TRANSPORT -> stringResource(R.string.setup_network_item_cm_transport)
+}
+
+@Composable
+private fun SetupNetworkCheckStatus.label(durationMillis: Long): String = when (this) {
+    SetupNetworkCheckStatus.CHECKING -> stringResource(R.string.setup_network_checking)
+    SetupNetworkCheckStatus.PASSED -> stringResource(R.string.setup_network_passed_ms, durationMillis)
+    SetupNetworkCheckStatus.FAILED -> stringResource(R.string.setup_network_failed_ms, durationMillis)
+    SetupNetworkCheckStatus.SKIPPED -> stringResource(R.string.setup_network_skipped)
 }
 
 @Composable

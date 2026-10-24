@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -120,6 +122,12 @@ class SteamAccessManager @Inject internal constructor(
     }
 
     internal fun enhancedConnectionEnabled(): Boolean = preferencesInitialized && preferences.steamAccessEnabled
+
+    internal suspend fun awaitEnhancedConnectionEnabled(expected: Boolean) {
+        withTimeout(1_000L) {
+            while (!preferencesInitialized || preferences.steamAccessEnabled != expected) delay(10L)
+        }
+    }
 
     override fun lookup(hostname: String): List<InetAddress> = Dns.SYSTEM.lookup(hostname)
 

@@ -1,4 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="detail_no_comments">暂时没有评论</string>
+    <string name="setup_action_continue">继续</string>
+    <string name="setup_network_check">保存并检测</string>
+    <string name="setup_network_retry">重新检测</string>
+    <string name="setup_network_status_checking">正在检测连接…</string>
+    <string name="setup_network_status_passed">连接检测通过</string>
+    <string name="setup_network_status_warning">部分连接检测失败</string>
+    <string name="setup_network_status_skipped">已跳过连接检测</string>
+    <string name="setup_network_warning_non_blocking">失败仅作为警告，不会阻止继续；之后可在设置中修改。</string>
+    <string name="setup_network_checking">检测中</string>
+    <string name="setup_network_passed_ms">通过 · %1$d 毫秒</string>
+    <string name="setup_network_failed_ms">失败 · %1$d 毫秒</string>
+    <string name="setup_network_skipped">未检测</string>
+    <string name="setup_network_item_directory">Directory（CM 发现）</string>
+    <string name="setup_network_item_public_details">公开详情 JSON</string>
+    <string name="setup_network_item_community_html">社区 HTML</string>
+    <string name="setup_network_item_workshop_image">创意工坊图片</string>
+    <string name="setup_network_item_cm_transport">CM 传输</string>
 </resources>
