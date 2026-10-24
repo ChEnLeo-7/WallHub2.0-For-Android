@@ -717,7 +717,7 @@ private fun SetupNetworkPreflightCard(
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(WallHubSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
         ) {
             Row(
                 modifier =
@@ -792,7 +792,7 @@ private fun ConnectivityCheckRow(
     reduceMotion: Boolean,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = WallHubSpacing.sm),
+        modifier = Modifier.fillMaxWidth().padding(vertical = WallHubSpacing.xs),
         horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
