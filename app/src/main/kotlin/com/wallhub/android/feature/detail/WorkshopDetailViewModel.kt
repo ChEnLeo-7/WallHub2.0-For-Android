@@ -69,8 +69,10 @@ class WorkshopDetailViewModel
         private val effectChannel = Channel<WorkshopDetailEffect>(capacity = Channel.BUFFERED)
         private val inlinePlaybackStartNoticeGate = PlaybackStartNoticeGate()
         private var detailLoadJob: Job? = null
+        private var interactionLoadJob: Job? = null
         private var inlineVideoLoadJob: Job? = null
         private var commentsLoadJob: Job? = null
+        private var interactionRequestVersion = 0L
 
         val uiState: StateFlow<WorkshopDetailUiState> = mutableState.asStateFlow()
         val effects: Flow<WorkshopDetailEffect> = effectChannel.receiveAsFlow()
@@ -191,6 +193,7 @@ class WorkshopDetailViewModel
             detailLoadJob?.cancel()
             inlineVideoLoadJob?.cancel()
             inlineVideoLoadJob = null
+            refreshInteraction()
             detailLoadJob = viewModelScope.launch {
                 mutableState.value.inlineVideoPlayer?.release()
                 mutableState.value.inlineVideoStream?.close()
@@ -220,7 +223,6 @@ class WorkshopDetailViewModel
                                 error = null,
                                 exportFormat = detail.summary.type.defaultExportFormat(),
                             )
-                        refreshInteraction()
                         viewModelScope.launch {
                             val author =
                                 runCatching {
@@ -491,9 +493,17 @@ class WorkshopDetailViewModel
         }
 
         fun toggleSubscription() {
+            val current = mutableState.value
+            if (
+                !current.interaction.canToggleSubscription(
+                    current.isLoadingInteraction,
+                    current.isUpdatingInteraction,
+                )
+            ) {
+                return
+            }
             val currentlySubscribed =
-                mutableState.value.interaction.subscriptionState ==
-                    SubscriptionState.SUBSCRIBED
+                current.interaction.subscriptionState == SubscriptionState.SUBSCRIBED
             updateInteraction(
                 successMessage =
                     if (currentlySubscribed) {
@@ -507,7 +517,16 @@ class WorkshopDetailViewModel
         }
 
         fun toggleFavorite() {
-            val currentlyFavorited = mutableState.value.interaction.favoriteState == FavoriteState.FAVORITED
+            val current = mutableState.value
+            if (
+                !current.interaction.canToggleFavorite(
+                    current.isLoadingInteraction,
+                    current.isUpdatingInteraction,
+                )
+            ) {
+                return
+            }
+            val currentlyFavorited = current.interaction.favoriteState == FavoriteState.FAVORITED
             updateInteraction(
                 successMessage =
                     if (currentlyFavorited) {
@@ -639,42 +658,60 @@ class WorkshopDetailViewModel
         }
 
         private fun refreshInteraction() {
-            viewModelScope.launch {
-                val current = mutableState.value
-                if (current.detail == null) return@launch
-                mutableState.value = current.copy(isLoadingInteraction = true, interactionMessage = null)
-                runCatching { accountWorkshopRepository.getInteraction(workshopId) }
-                    .onSuccess { interaction ->
-                        mutableState.value =
-                            mutableState.value.copy(
-                                interaction = interaction,
-                                isLoadingInteraction = false,
-                            )
-                    }.onFailure {
-                        mutableState.value = mutableState.value.copy(isLoadingInteraction = false)
-                    }
-            }
+            if (mutableState.value.isUpdatingInteraction) return
+            val requestVersion = ++interactionRequestVersion
+            interactionLoadJob?.cancel()
+            mutableState.value =
+                mutableState.value.copy(
+                    isLoadingInteraction = true,
+                    interactionMessage = null,
+                )
+            interactionLoadJob =
+                viewModelScope.launch {
+                    runCatching { accountWorkshopRepository.getInteraction(workshopId) }
+                        .onSuccess { interaction ->
+                            if (requestVersion != interactionRequestVersion) return@onSuccess
+                            val current = mutableState.value
+                            mutableState.value =
+                                current.copy(
+                                    interaction = current.interaction.mergeKnownFields(interaction),
+                                    isLoadingInteraction = false,
+                                )
+                        }.onFailure { error ->
+                            if (error is CancellationException) return@onFailure
+                            if (requestVersion != interactionRequestVersion) return@onFailure
+                            mutableState.value = mutableState.value.copy(isLoadingInteraction = false)
+                        }
+                }
         }
 
         private fun updateInteraction(
             @androidx.annotation.StringRes successMessage: Int,
             operation: suspend () -> WorkshopInteraction,
         ) {
+            val requestVersion = ++interactionRequestVersion
+            interactionLoadJob?.cancel()
+            interactionLoadJob = null
+            mutableState.value =
+                mutableState.value.copy(
+                    isLoadingInteraction = false,
+                    isUpdatingInteraction = true,
+                    interactionMessage = null,
+                )
             viewModelScope.launch {
-                mutableState.value =
-                    mutableState.value.copy(
-                        isUpdatingInteraction = true,
-                        interactionMessage = null,
-                    )
                 runCatching { operation() }
                     .onSuccess { interaction ->
+                        if (requestVersion != interactionRequestVersion) return@onSuccess
+                        val current = mutableState.value
                         mutableState.value =
-                            mutableState.value.copy(
-                                interaction = interaction,
+                            current.copy(
+                                interaction = current.interaction.mergeKnownFields(interaction),
                                 isUpdatingInteraction = false,
                                 interactionMessage = DetailUiText.Resource(successMessage),
                             )
                     }.onFailure { error ->
+                        if (error is CancellationException) throw error
+                        if (requestVersion != interactionRequestVersion) return@onFailure
                         mutableState.value =
                             mutableState.value.copy(
                                 isUpdatingInteraction = false,

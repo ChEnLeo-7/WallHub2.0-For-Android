@@ -87,7 +87,8 @@ internal fun DetailActionBar(
     onDownload: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interactionEnabled = !isLoadingInteraction && !isUpdatingInteraction
+    val subscriptionEnabled = interaction.canToggleSubscription(isLoadingInteraction, isUpdatingInteraction)
+    val favoriteEnabled = interaction.canToggleFavorite(isLoadingInteraction, isUpdatingInteraction)
     val subscribed = interaction.subscriptionState == SubscriptionState.SUBSCRIBED
     val favorited = interaction.favoriteState == FavoriteState.FAVORITED
     Row(
@@ -109,7 +110,7 @@ internal fun DetailActionBar(
                 },
             selected = subscribed,
             onClick = onToggleSubscription,
-            enabled = interactionEnabled,
+            enabled = subscriptionEnabled,
         )
         DetailToggleActionButton(
             icon = Icons.Outlined.StarBorder,
@@ -121,7 +122,7 @@ internal fun DetailActionBar(
                 },
             selected = favorited,
             onClick = onToggleFavorite,
-            enabled = interactionEnabled,
+            enabled = favoriteEnabled,
         )
         val downloadContentDescription =
             if (isEnqueuingDownload) {
