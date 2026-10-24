@@ -22,10 +22,18 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,15 +49,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -62,10 +74,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -75,6 +92,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.wallhub.android.R
+import com.wallhub.android.core.designsystem.WallHubColorTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.SettingsRepository
@@ -106,9 +124,14 @@ import javax.inject.Inject
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.RemoveCircleOutline
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 
@@ -635,34 +658,34 @@ private fun ConnectivityPage(
     onRetry: () -> Unit,
     onContinue: () -> Unit,
 ) {
-    val checking = result.overallStatus == SetupNetworkOverallStatus.CHECKING
-    val bottomPadding = wizardActionContentPadding(
-        visible = true,
-        expanded = false,
-        showPrimary = true,
-        showSecondary = false,
-    )
+    val showContinue = result.overallStatus.showsContinueAction()
+    val bottomPadding =
+        wizardActionContentPadding(
+            visible = showContinue,
+            expanded = false,
+            showPrimary = showContinue,
+            showSecondary = false,
+        )
     Box(modifier = Modifier.fillMaxSize()) {
         WizardPageScaffold(
-            config = WizardPageConfig(
-                title = stringResource(R.string.setup_connectivity_title),
-                description = stringResource(R.string.setup_connectivity_description),
-            ),
+            config =
+                WizardPageConfig(
+                    title = stringResource(R.string.setup_connectivity_title),
+                    description = stringResource(R.string.setup_connectivity_description),
+                ),
             headerIcon = { WizardIcon(Icons.Outlined.Language) },
             bottomContentPadding = bottomPadding,
         ) {
             SetupNetworkPreflightCard(result, onRetry)
         }
-        WizardActions(
-            visible = true,
-            expanded = false,
-            primaryLabel = if (checking) {
-                stringResource(R.string.setup_network_status_checking)
-            } else {
-                stringResource(R.string.setup_action_continue)
-            },
-            onPrimaryClick = { if (!checking) onContinue() },
-        )
+        if (showContinue) {
+            WizardActions(
+                visible = true,
+                expanded = false,
+                primaryLabel = stringResource(R.string.setup_action_continue),
+                onPrimaryClick = onContinue,
+            )
+        }
     }
 }
 
@@ -671,69 +694,259 @@ private fun SetupNetworkPreflightCard(
     result: SetupNetworkPreflightResult,
     onRetry: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val reduceMotion =
+        remember(context) {
+            Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f,
+            ) == 0f
+        }
+    val successColor =
+        if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+            WallHubColorTokens.statusSuccessOnDark
+        } else {
+            WallHubColorTokens.statusSuccessOnLight
+        }
     Surface(
         modifier = Modifier.fillMaxWidth().padding(top = WallHubSpacing.md),
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp,
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(WallHubSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
         ) {
-            Text(
-                when (result.overallStatus) {
-                    SetupNetworkOverallStatus.CHECKING -> stringResource(R.string.setup_network_status_checking)
-                    SetupNetworkOverallStatus.PASSED -> stringResource(R.string.setup_network_status_passed)
-                    SetupNetworkOverallStatus.WARNING -> stringResource(R.string.setup_network_status_warning)
-                    SetupNetworkOverallStatus.SKIPPED -> stringResource(R.string.setup_network_status_skipped)
-                },
-                style = MaterialTheme.typography.titleMedium,
-            )
-            result.items.forEach { item ->
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(item.check.label(), style = MaterialTheme.typography.bodyMedium)
-                        if (item.reason.isNotBlank()) {
-                            Text(item.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    modifier = Modifier.size(40.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        AnimatedContent(
+                            targetState = result.overallStatus,
+                            transitionSpec = { connectivityStatusTransition(reduceMotion) },
+                            label = "connectivity-overall-status",
+                        ) { status ->
+                            ConnectivityOverallStatusIcon(status, successColor)
                         }
                     }
+                }
+                AnimatedContent(
+                    targetState = result.overallStatus,
+                    transitionSpec = { connectivityStatusTransition(reduceMotion) },
+                    label = "connectivity-overall-title",
+                ) { status ->
+                    Text(status.label(), style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            Column {
+                result.items.forEachIndexed { index, item ->
+                    ConnectivityCheckRow(
+                        item = item,
+                        successColor = successColor,
+                        reduceMotion = reduceMotion,
+                    )
+                    if (index != result.items.lastIndex) {
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            modifier = Modifier.padding(start = 36.dp),
+                        )
+                    }
+                }
+            }
+            if (result.overallStatus.showsRetryAction()) {
+                OutlinedButton(
+                    onClick = onRetry,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
                     Text(
-                        item.status.label(item.durationMillis),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (item.status == SetupNetworkCheckStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = stringResource(R.string.setup_network_retry),
+                        modifier = Modifier.padding(start = WallHubSpacing.xs),
                     )
                 }
             }
-            if (result.overallStatus != SetupNetworkOverallStatus.CHECKING) {
-                Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.setup_network_retry))
-                }
+        }
+    }
+}
+
+@Composable
+private fun ConnectivityCheckRow(
+    item: SetupNetworkCheckResult,
+    successColor: Color,
+    reduceMotion: Boolean,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = WallHubSpacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AnimatedContent(
+            targetState = item.status,
+            transitionSpec = { connectivityStatusTransition(reduceMotion) },
+            label = "connectivity-row-icon",
+        ) { status ->
+            ConnectivityCheckStatusIcon(status, successColor)
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(item.check.label(), style = MaterialTheme.typography.bodyLarge)
+            if (
+                item.reason.isNotBlank() &&
+                item.status != SetupNetworkCheckStatus.PASSED &&
+                item.status != SetupNetworkCheckStatus.CHECKING
+            ) {
+                Text(
+                    text = item.reason,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
+        }
+        AnimatedContent(
+            targetState = item,
+            transitionSpec = { connectivityStatusTransition(reduceMotion) },
+            label = "connectivity-row-result",
+        ) { animatedItem ->
             Text(
-                stringResource(R.string.setup_network_warning_non_blocking),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = animatedItem.statusLabel(),
+                style = MaterialTheme.typography.labelLarge,
+                color =
+                    when (animatedItem.status) {
+                        SetupNetworkCheckStatus.PASSED -> successColor
+                        SetupNetworkCheckStatus.FAILED -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
             )
         }
     }
 }
 
 @Composable
-private fun SetupNetworkCheck.label(): String = when (this) {
-    SetupNetworkCheck.DIRECTORY -> stringResource(R.string.setup_network_item_directory)
-    SetupNetworkCheck.PUBLIC_DETAILS_JSON -> stringResource(R.string.setup_network_item_public_details)
-    SetupNetworkCheck.COMMUNITY_HTML -> stringResource(R.string.setup_network_item_community_html)
-    SetupNetworkCheck.WORKSHOP_IMAGE -> stringResource(R.string.setup_network_item_workshop_image)
-    SetupNetworkCheck.CM_TRANSPORT -> stringResource(R.string.setup_network_item_cm_transport)
+private fun ConnectivityOverallStatusIcon(
+    status: SetupNetworkOverallStatus,
+    successColor: Color,
+) {
+    when (status) {
+        SetupNetworkOverallStatus.CHECKING ->
+            CircularProgressIndicator(
+                modifier = Modifier.size(22.dp),
+                strokeWidth = 2.5.dp,
+            )
+        SetupNetworkOverallStatus.PASSED ->
+            Icon(
+                imageVector = Icons.Outlined.CheckCircle,
+                contentDescription = null,
+                tint = successColor,
+                modifier = Modifier.size(24.dp),
+            )
+        SetupNetworkOverallStatus.WARNING ->
+            Icon(
+                imageVector = Icons.Outlined.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(24.dp),
+            )
+        SetupNetworkOverallStatus.SKIPPED ->
+            Icon(
+                imageVector = Icons.Outlined.RemoveCircleOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+    }
 }
 
 @Composable
-private fun SetupNetworkCheckStatus.label(durationMillis: Long): String = when (this) {
-    SetupNetworkCheckStatus.CHECKING -> stringResource(R.string.setup_network_checking)
-    SetupNetworkCheckStatus.PASSED -> stringResource(R.string.setup_network_passed_ms, durationMillis)
-    SetupNetworkCheckStatus.FAILED -> stringResource(R.string.setup_network_failed_ms, durationMillis)
-    SetupNetworkCheckStatus.SKIPPED -> stringResource(R.string.setup_network_skipped)
+private fun ConnectivityCheckStatusIcon(
+    status: SetupNetworkCheckStatus,
+    successColor: Color,
+) {
+    when (status) {
+        SetupNetworkCheckStatus.CHECKING ->
+            Icon(
+                imageVector = Icons.Outlined.Schedule,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp),
+            )
+        SetupNetworkCheckStatus.PASSED ->
+            Icon(
+                imageVector = Icons.Outlined.CheckCircle,
+                contentDescription = null,
+                tint = successColor,
+                modifier = Modifier.size(22.dp),
+            )
+        SetupNetworkCheckStatus.FAILED ->
+            Icon(
+                imageVector = Icons.Outlined.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(22.dp),
+            )
+        SetupNetworkCheckStatus.SKIPPED ->
+            Icon(
+                imageVector = Icons.Outlined.RemoveCircleOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
+            )
+    }
 }
+
+private fun connectivityStatusTransition(reduceMotion: Boolean): ContentTransform =
+    if (reduceMotion) {
+        fadeIn(tween(durationMillis = 120)).togetherWith(fadeOut(tween(durationMillis = 90)))
+    } else {
+        (fadeIn(tween(durationMillis = 200)) +
+            scaleIn(initialScale = 0.94f, animationSpec = tween(durationMillis = 200)))
+            .togetherWith(
+                fadeOut(tween(durationMillis = 120)) +
+                    scaleOut(targetScale = 0.98f, animationSpec = tween(durationMillis = 120)),
+            )
+    }
+
+@Composable
+private fun SetupNetworkOverallStatus.label(): String =
+    when (this) {
+        SetupNetworkOverallStatus.CHECKING -> stringResource(R.string.setup_network_status_checking)
+        SetupNetworkOverallStatus.PASSED -> stringResource(R.string.setup_network_status_passed)
+        SetupNetworkOverallStatus.WARNING -> stringResource(R.string.setup_network_status_warning)
+        SetupNetworkOverallStatus.SKIPPED -> stringResource(R.string.setup_network_status_skipped)
+    }
+
+@Composable
+private fun SetupNetworkCheck.label(): String =
+    when (this) {
+        SetupNetworkCheck.DIRECTORY -> stringResource(R.string.setup_network_item_directory)
+        SetupNetworkCheck.PUBLIC_DETAILS_JSON -> stringResource(R.string.setup_network_item_public_details)
+        SetupNetworkCheck.COMMUNITY_HTML -> stringResource(R.string.setup_network_item_community_html)
+        SetupNetworkCheck.WORKSHOP_IMAGE -> stringResource(R.string.setup_network_item_workshop_image)
+        SetupNetworkCheck.CM_TRANSPORT -> stringResource(R.string.setup_network_item_cm_transport)
+    }
+
+@Composable
+private fun SetupNetworkCheckResult.statusLabel(): String =
+    when (status) {
+        SetupNetworkCheckStatus.CHECKING -> stringResource(R.string.setup_network_checking)
+        SetupNetworkCheckStatus.PASSED -> requireNotNull(compactLatencyLabel())
+        SetupNetworkCheckStatus.FAILED -> stringResource(R.string.setup_network_failed)
+        SetupNetworkCheckStatus.SKIPPED -> stringResource(R.string.setup_network_skipped)
+    }
 
 @Composable
 private fun FinishPage() {

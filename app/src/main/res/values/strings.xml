@@ -33,13 +33,11 @@
     <string name='setup_network_check'>Save and check</string>
     <string name='setup_network_retry'>Retry checks</string>
     <string name='setup_network_status_checking'>Checking connectivity…</string>
-    <string name='setup_network_status_passed'>Connectivity checks passed</string>
+    <string name='setup_network_status_passed'>Connectivity looks good</string>
     <string name='setup_network_status_warning'>Some connectivity checks failed</string>
     <string name='setup_network_status_skipped'>Connectivity checks skipped</string>
-    <string name='setup_network_warning_non_blocking'>Failures are warnings only. You can continue and change these settings later.</string>
     <string name='setup_network_checking'>Checking</string>
-    <string name='setup_network_passed_ms'>Passed · %1$d ms</string>
-    <string name='setup_network_failed_ms'>Failed · %1$d ms</string>
+    <string name='setup_network_failed'>Failed</string>
     <string name='setup_network_skipped'>Skipped</string>
     <string name='setup_network_item_directory'>Directory (CM discovery)</string>
     <string name='setup_network_item_public_details'>Public Details JSON</string>

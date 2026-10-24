@@ -55,6 +55,13 @@ internal data class SetupNetworkCheckResult(
     val reason: String = "",
 )
 
+internal fun SetupNetworkCheckResult.compactLatencyLabel(): String? =
+    durationMillis.takeIf { status == SetupNetworkCheckStatus.PASSED }?.let { "$it ms" }
+
+internal fun SetupNetworkOverallStatus.showsContinueAction(): Boolean = this != SetupNetworkOverallStatus.CHECKING
+
+internal fun SetupNetworkOverallStatus.showsRetryAction(): Boolean = this != SetupNetworkOverallStatus.CHECKING
+
 internal data class SetupNetworkPreflightResult(
     val overallStatus: SetupNetworkOverallStatus,
     val items: List<SetupNetworkCheckResult>,

@@ -10,4 +10,6 @@ object WallHubColorTokens {
     val mediaOverlayContent: Color = Color.White
     val customAccentPreviewOnLight: Color = Color(0xFF171C19)
     val customAccentPreviewOnDark: Color = Color.White
+    val statusSuccessOnLight: Color = Color(0xFF176B3A)
+    val statusSuccessOnDark: Color = Color(0xFF7AD99A)
 }

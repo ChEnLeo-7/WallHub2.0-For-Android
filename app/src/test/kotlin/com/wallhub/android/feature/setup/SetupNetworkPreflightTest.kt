@@ -70,6 +70,30 @@ class SetupNetworkPreflightTest {
     }
 
     @Test
+    fun `successful result exposes compact millisecond latency`() {
+        val result =
+            SetupNetworkCheckResult(
+                check = SetupNetworkCheck.DIRECTORY,
+                status = SetupNetworkCheckStatus.PASSED,
+                durationMillis = 240L,
+            )
+
+        assertEquals("240 ms", result.compactLatencyLabel())
+        assertEquals(
+            null,
+            result.copy(status = SetupNetworkCheckStatus.FAILED).compactLatencyLabel(),
+        )
+    }
+
+    @Test
+    fun `checking hides primary and retry actions`() {
+        assertEquals(false, SetupNetworkOverallStatus.CHECKING.showsContinueAction())
+        assertEquals(false, SetupNetworkOverallStatus.CHECKING.showsRetryAction())
+        assertEquals(true, SetupNetworkOverallStatus.PASSED.showsContinueAction())
+        assertEquals(true, SetupNetworkOverallStatus.WARNING.showsRetryAction())
+    }
+
+    @Test
     fun `runner preserves cancellation`() = runTest {
         val cancelling = SetupNetworkProbe { throw CancellationException("left page") }
         val runner = SetupNetworkPreflightRunner(
