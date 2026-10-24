@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -18,6 +19,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.Call
 import okhttp3.Callback
@@ -30,7 +32,7 @@ import kotlin.coroutines.resumeWithException
 
 internal const val SETUP_PROBE_TIMEOUT_MS = 5_000L
 private const val SETUP_PROBE_BODY_LIMIT = 512L * 1024L
-private const val SETUP_PROBE_WORKSHOP_ID = 1293168343L
+private const val SETUP_PROBE_WORKSHOP_ID = 3799142774L
 
 internal enum class SetupNetworkCheck {
     DIRECTORY,
@@ -191,13 +193,17 @@ class SetupNetworkPreflight
         val imageUrl = detail.optString("preview_url").takeIf { it.startsWith("https://") }
             ?: throw IOException("No HTTPS Workshop image")
         val imageRequest = Request.Builder().url(imageUrl).header("Accept", "image/*").build()
-        client.newCall(imageRequest).await().use { response ->
-            if (!response.isSuccessful) throw IOException("Image HTTP ${response.code}")
-            val type = response.header("Content-Type").orEmpty().substringBefore(';')
-            if (!type.startsWith("image/")) throw IOException("Unexpected image response")
-            if (response.body.byteStream().read() < 0) throw IOException("Empty image response")
-            return SetupProbeOutcome.Passed(type)
-        }
+        val type =
+            withContext(Dispatchers.IO) {
+                client.newCall(imageRequest).await().use { response ->
+                    if (!response.isSuccessful) throw IOException("Image HTTP ${response.code}")
+                    val contentType = response.header("Content-Type").orEmpty().substringBefore(';')
+                    if (!contentType.startsWith("image/")) throw IOException("Unexpected image response")
+                    if (response.body.byteStream().read() < 0) throw IOException("Empty image response")
+                    contentType
+                }
+            }
+        return SetupProbeOutcome.Passed(type)
     }
 
     private suspend fun probeCommunity(): SetupProbeOutcome {
@@ -214,23 +220,26 @@ class SetupNetworkPreflight
     private suspend fun getBounded(url: String, accept: String): String =
         executeBounded(Request.Builder().url(url).header("Accept", accept).build())
 
-    private suspend fun executeBounded(request: Request): String = client.newCall(request).await().use { response ->
-        if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-        val body = response.body
-        if (body.contentLength() > SETUP_PROBE_BODY_LIMIT) throw IOException("Response too large")
-        val output = ByteArrayOutputStream()
-        val buffer = ByteArray(8 * 1024)
-        body.byteStream().use { input ->
-            while (true) {
-                val remaining = SETUP_PROBE_BODY_LIMIT + 1L - output.size()
-                if (remaining <= 0L) throw IOException("Response too large")
-                val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
-                if (read < 0) break
-                output.write(buffer, 0, read)
+    private suspend fun executeBounded(request: Request): String =
+        withContext(Dispatchers.IO) {
+            client.newCall(request).await().use { response ->
+                if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+                val body = response.body
+                if (body.contentLength() > SETUP_PROBE_BODY_LIMIT) throw IOException("Response too large")
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(8 * 1024)
+                body.byteStream().use { input ->
+                    while (true) {
+                        val remaining = SETUP_PROBE_BODY_LIMIT + 1L - output.size()
+                        if (remaining <= 0L) throw IOException("Response too large")
+                        val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                        if (read < 0) break
+                        output.write(buffer, 0, read)
+                    }
+                }
+                output.toString(Charsets.UTF_8.name())
             }
         }
-        output.toString(Charsets.UTF_8.name())
-    }
 }
 
 private suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
