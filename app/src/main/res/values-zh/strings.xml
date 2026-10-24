@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="detail_no_comments">暂时没有评论</string>
+    <string name="setup_connectivity_title">连接检测</string>
+    <string name="setup_connectivity_description">WallHub 正在使用已保存的网络设置进行检测。失败仅作为警告，不会阻止完成设置。</string>
     <string name="setup_action_continue">继续</string>
     <string name="setup_network_check">保存并检测</string>
     <string name="setup_network_retry">重新检测</string>

@@ -9,6 +9,8 @@
     <string name='setup_steam_description'>连接 Steam 账户，以访问资料库、评论和需要登录的创意工坊功能。</string>
     <string name='setup_network_title'>网络设置</string>
     <string name='setup_network_description'>设置网络代理、Steam 服务访问线路、创意工坊数据源和 Web API Key。</string>
+    <string name='setup_connectivity_title'>连接检测</string>
+    <string name='setup_connectivity_description'>WallHub 正在使用已保存的网络设置进行检测。失败仅作为警告，不会阻止完成设置。</string>
     <string name='setup_storage_title'>保存位置</string>
     <string name='setup_storage_description'>设置创意工坊文件下载、MPKG 导出和本地扫描使用的目录。</string>
     <string name='setup_storage_current_location'>当前保存位置</string>

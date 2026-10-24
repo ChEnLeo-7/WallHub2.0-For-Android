@@ -9,6 +9,8 @@
     <string name='setup_steam_description'>Connect your Steam account to access your library, comments, and authenticated Workshop features.</string>
     <string name='setup_network_title'>Network settings</string>
     <string name='setup_network_description'>Set the proxy, Steam service access route, Workshop data source, and Web API key.</string>
+    <string name='setup_connectivity_title'>Connectivity check</string>
+    <string name='setup_connectivity_description'>WallHub is checking the saved network settings. Failures are warnings and do not block setup.</string>
     <string name='setup_storage_title'>Save location</string>
     <string name='setup_storage_description'>Choose the directory used for Workshop downloads, MPKG exports, and local wallpaper scanning.</string>
     <string name='setup_storage_current_location'>Current save location</string>

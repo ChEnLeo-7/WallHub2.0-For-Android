@@ -112,13 +112,20 @@ import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 
-private enum class WallHubSetupPage {
+internal enum class WallHubSetupPage {
     Welcome,
     Network,
+    Connectivity,
     Storage,
     Steam,
     Finish,
 }
+
+internal fun nextSetupPage(page: WallHubSetupPage): WallHubSetupPage =
+    WallHubSetupPage.entries[WallHubSetupPage.entries.indexOf(page) + 1]
+
+internal fun previousSetupPage(page: WallHubSetupPage): WallHubSetupPage =
+    WallHubSetupPage.entries[WallHubSetupPage.entries.indexOf(page) - 1]
 
 @HiltViewModel
 class WallHubSetupViewModel
@@ -188,6 +195,17 @@ class WallHubSetupViewModel
             }
         }
 
+        fun retryNetworkCheck() {
+            val current = preferences.value
+            saveNetworkAndCheck(
+                proxyUrl = current.downloadProxyUrl,
+                proxyEnabled = current.downloadProxyEnabled,
+                steamAccessEnabled = current.steamAccessEnabled,
+                dataSource = current.steamWorkshopDataSource,
+                apiKey = current.steamApiKey,
+            )
+        }
+
         fun clearNetworkCheck() {
             networkPreflightJob?.cancel()
             networkPreflightJob = null
@@ -255,7 +273,8 @@ fun WallHubSetupWizard(
         ) {
             viewModel.logoutSteam()
         }
-        page = WallHubSetupPage.entries[pageIndex - 1]
+        if (page == WallHubSetupPage.Connectivity) viewModel.clearNetworkCheck()
+        page = previousSetupPage(page)
     }
     BackHandler(enabled = pageIndex > 0, onBack = navigateBack)
     MaterialTheme(typography = rememberSettingsTypography()) {
@@ -284,10 +303,16 @@ fun WallHubSetupWizard(
                 WallHubSetupPage.Network ->
                     NetworkPage(
                         preferences = preferences,
-                        preflightResult = networkPreflightResult,
                         onSaveDohEndpoints = viewModel::saveDohEndpoints,
-                        onCheck = viewModel::saveNetworkAndCheck,
-                        onConfigurationChanged = viewModel::clearNetworkCheck,
+                        onContinue = { proxyUrl, proxyEnabled, accessEnabled, source, apiKey ->
+                            viewModel.saveNetworkAndCheck(proxyUrl, proxyEnabled, accessEnabled, source, apiKey)
+                            page = WallHubSetupPage.Connectivity
+                        },
+                    )
+                WallHubSetupPage.Connectivity ->
+                    ConnectivityPage(
+                        result = networkPreflightResult ?: SetupNetworkPreflightResult.checking(),
+                        onRetry = viewModel::retryNetworkCheck,
                         onContinue = { page = WallHubSetupPage.Storage },
                     )
                 WallHubSetupPage.Finish -> FinishPage()
@@ -299,11 +324,11 @@ fun WallHubSetupWizard(
         val primaryLabel =
             when (page) {
                 WallHubSetupPage.Welcome -> stringResource(R.string.setup_action_start)
-                WallHubSetupPage.Steam, WallHubSetupPage.Network, WallHubSetupPage.Storage -> stringResource(R.string.setup_action_next)
+                WallHubSetupPage.Steam, WallHubSetupPage.Network, WallHubSetupPage.Connectivity, WallHubSetupPage.Storage -> stringResource(R.string.setup_action_next)
                 WallHubSetupPage.Finish -> stringResource(R.string.setup_action_finish)
             }
         WizardActions(
-            visible = page != WallHubSetupPage.Network,
+            visible = page != WallHubSetupPage.Network && page != WallHubSetupPage.Connectivity,
             expanded = page == WallHubSetupPage.Welcome || page == WallHubSetupPage.Finish,
             primaryLabel = primaryLabel,
             onPrimaryClick = {
@@ -324,7 +349,7 @@ fun WallHubSetupWizard(
                         }
                     }
                     WallHubSetupPage.Steam -> page = WallHubSetupPage.Finish
-                    WallHubSetupPage.Network -> Unit
+                    WallHubSetupPage.Network, WallHubSetupPage.Connectivity -> Unit
                     WallHubSetupPage.Finish -> onComplete()
                 }
             },
@@ -499,11 +524,8 @@ private fun SteamPage(session: SteamSessionState, viewModel: WallHubSetupViewMod
 @Composable
 private fun NetworkPage(
     preferences: AppPreferences,
-    preflightResult: SetupNetworkPreflightResult?,
     onSaveDohEndpoints: (List<String>, Set<String>) -> Unit,
-    onCheck: (String, Boolean, Boolean, SteamWorkshopDataSource, String) -> Unit,
-    onConfigurationChanged: () -> Unit,
-    onContinue: () -> Unit,
+    onContinue: (String, Boolean, Boolean, SteamWorkshopDataSource, String) -> Unit,
 ) {
     val bottomPadding = wizardActionContentPadding(
         visible = true,
@@ -532,14 +554,13 @@ private fun NetworkPage(
                 description = stringResource(R.string.settings_use_network_proxy_description),
                 checked = proxyEnabled,
                 enabled = isSupportedDownloadProxyUrl(proxyUrl),
-                onCheckedChange = { proxyEnabled = it; onConfigurationChanged() },
+                onCheckedChange = { proxyEnabled = it },
             )
             TextField(
                 value = proxyUrl,
                 onValueChange = {
                     proxyUrl = it
                     if (!isSupportedDownloadProxyUrl(it)) proxyEnabled = false
-                    onConfigurationChanged()
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 singleLine = true,
@@ -549,16 +570,13 @@ private fun NetworkPage(
                 title = stringResource(R.string.settings_steam_automatic_anti_blocking),
                 description = stringResource(R.string.settings_steam_service_access_description),
                 checked = accessEnabled,
-                onCheckedChange = { accessEnabled = it; onConfigurationChanged() },
+                onCheckedChange = { accessEnabled = it },
                 modifier = Modifier.padding(top = 16.dp),
             )
             SteamAccessDohEndpointsSetting(
                 endpoints = preferences.steamAccessDohEndpoints,
                 disabledEndpoints = preferences.steamAccessDisabledDohEndpoints,
-                onSave = { endpoints, disabledEndpoints ->
-                    onSaveDohEndpoints(endpoints, disabledEndpoints)
-                    onConfigurationChanged()
-                },
+                onSave = onSaveDohEndpoints,
             )
             ExposedDropdownMenuBox(
                 expanded = sourceMenuExpanded,
@@ -580,14 +598,14 @@ private fun NetworkPage(
                     SteamWorkshopDataSource.entries.forEach { item ->
                         DropdownMenuItem(
                             text = { Text(item.label()) },
-                            onClick = { source = item; sourceMenuExpanded = false; onConfigurationChanged() },
+                            onClick = { source = item; sourceMenuExpanded = false },
                         )
                     }
                 }
             }
             TextField(
                 value = apiKey,
-                onValueChange = { apiKey = it; onConfigurationChanged() },
+                onValueChange = { apiKey = it },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 singleLine = true,
                 label = { Text(stringResource(R.string.settings_steam_api_key)) },
@@ -601,27 +619,49 @@ private fun NetworkPage(
                     }
                 },
             )
-            preflightResult?.let {
-                SetupNetworkPreflightCard(it) {
-                    onCheck(proxyUrl, proxyEnabled, accessEnabled, source, apiKey)
-                }
-            }
         }
         WizardActions(
             visible = true,
             expanded = false,
-            primaryLabel = when (preflightResult?.overallStatus) {
-                null -> stringResource(R.string.setup_network_check)
-                SetupNetworkOverallStatus.CHECKING -> stringResource(R.string.setup_network_status_checking)
-                else -> stringResource(R.string.setup_action_continue)
+            primaryLabel = stringResource(R.string.setup_action_next),
+            onPrimaryClick = { onContinue(proxyUrl, proxyEnabled, accessEnabled, source, apiKey) },
+        )
+    }
+}
+
+@Composable
+private fun ConnectivityPage(
+    result: SetupNetworkPreflightResult,
+    onRetry: () -> Unit,
+    onContinue: () -> Unit,
+) {
+    val checking = result.overallStatus == SetupNetworkOverallStatus.CHECKING
+    val bottomPadding = wizardActionContentPadding(
+        visible = true,
+        expanded = false,
+        showPrimary = true,
+        showSecondary = false,
+    )
+    Box(modifier = Modifier.fillMaxSize()) {
+        WizardPageScaffold(
+            config = WizardPageConfig(
+                title = stringResource(R.string.setup_connectivity_title),
+                description = stringResource(R.string.setup_connectivity_description),
+            ),
+            headerIcon = { WizardIcon(Icons.Outlined.Language) },
+            bottomContentPadding = bottomPadding,
+        ) {
+            SetupNetworkPreflightCard(result, onRetry)
+        }
+        WizardActions(
+            visible = true,
+            expanded = false,
+            primaryLabel = if (checking) {
+                stringResource(R.string.setup_network_status_checking)
+            } else {
+                stringResource(R.string.setup_action_continue)
             },
-            onPrimaryClick = {
-                when (preflightResult?.overallStatus) {
-                    null -> onCheck(proxyUrl, proxyEnabled, accessEnabled, source, apiKey)
-                    SetupNetworkOverallStatus.CHECKING -> Unit
-                    else -> onContinue()
-                }
-            },
+            onPrimaryClick = { if (!checking) onContinue() },
         )
     }
 }
