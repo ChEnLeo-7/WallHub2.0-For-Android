@@ -16,6 +16,7 @@ import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamAccessState
 import com.wallhub.android.core.model.enabledSteamAccessDohEndpoints
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -72,6 +73,7 @@ class SteamAccessManager @Inject internal constructor(
     )
     internal val connectionPool = ConnectionPool(12, 10, TimeUnit.MINUTES)
     private val mutableState = MutableStateFlow(SteamAccessState())
+    private val refreshGate = SteamAccessRefreshGate()
     override val state: StateFlow<SteamAccessState> = mutableState.asStateFlow()
 
     @Volatile
@@ -247,15 +249,44 @@ class SteamAccessManager @Inject internal constructor(
         recordDiagnostic("Steam loopback bridge failed", mapOf("error" to error.javaClass.simpleName))
     }
 
-    /** Explicit UI action: discard stale state and resolve the last requested endpoint, not guessed hosts. */
+    private fun recordRefreshFailure(error: Throwable, hadUsableRoute: Boolean) {
+        mutableState.value = mutableState.value.copy(
+            phase = steamAccessRefreshFailurePhase(error, hadUsableRoute),
+            message = context.getString(R.string.backend_steam_access_route_failed, error.javaClass.simpleName),
+            updatedAt = System.currentTimeMillis(),
+        )
+        recordDiagnostic("Steam route refresh failed", mapOf("error" to error.javaClass.simpleName))
+    }
+
+    /** Explicit UI action: publish intent only; all cleanup and resolution run on the manager IO scope. */
     override fun refresh() {
-        synchronized(this) { invalidate() }
-        val endpoint = lastEndpoint ?: return
+        val enabled = preferencesInitialized && preferences.steamAccessEnabled
+        if (!enabled) {
+            mutableState.value = SteamAccessState(phase = SteamAccessPhase.DISABLED)
+            return
+        }
+        if (!refreshGate.tryStart()) return
+        val hadUsableRoute = mutableState.value.run {
+            phase == SteamAccessPhase.READY && selectedAddress != null
+        }
+        mutableState.value = mutableState.value.copy(
+            phase = steamAccessRefreshStartPhase(enabled = true),
+            message = null,
+            updatedAt = System.currentTimeMillis(),
+        )
         scope.launch {
-            preferencesReady.await()
-            if (!preferences.steamAccessEnabled) return@launch
-            val generation = candidates.generation
+            var refreshGeneration: Long? = null
             try {
+                preferencesReady.await()
+                val endpoint = lastEndpoint
+                refreshGeneration = synchronized(this@SteamAccessManager) {
+                    invalidate(phase = SteamAccessPhase.RESOLVING, schedulePoolEviction = false)
+                    candidates.generation
+                }
+                connectionPool.evictAll()
+                if (endpoint == null) {
+                    throw IOException("No Steam endpoint has been requested")
+                }
                 val route = acceleratedOrWebCandidateRoute(endpoint.first, endpoint.second)
                 synchronized(this@SteamAccessManager) {
                     if (isRouteCurrent(route)) {
@@ -267,22 +298,34 @@ class SteamAccessManager @Inject internal constructor(
                         )
                     }
                 }
-            } catch (error: IOException) {
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
                 synchronized(this@SteamAccessManager) {
-                    if (candidates.generation == generation) recordBridgeFailure(error)
+                    if (refreshGeneration == null || candidates.generation == refreshGeneration) {
+                        recordRefreshFailure(error, hadUsableRoute)
+                    }
                 }
+            } finally {
+                refreshGate.finish()
             }
         }
     }
 
     @Synchronized
-    private fun invalidate() {
+    private fun invalidate(
+        phase: SteamAccessPhase = invalidatedSteamAccessPhase(),
+        schedulePoolEviction: Boolean = true,
+    ) {
         candidates.invalidate()
-        connectionPool.evictAll()
-        // READY here means enabled, not a measured successful route: no selected address or connected message.
-        mutableState.value = SteamAccessState(
-            phase = if (preferences.steamAccessEnabled) SteamAccessPhase.READY else SteamAccessPhase.DISABLED,
-        )
+        mutableState.value = SteamAccessState(phase = phase, networkType = networkType)
+        if (schedulePoolEviction) scope.launch { connectionPool.evictAll() }
+    }
+
+    private fun invalidatedSteamAccessPhase(): SteamAccessPhase = when {
+        !preferences.steamAccessEnabled -> SteamAccessPhase.DISABLED
+        lastEndpoint == null -> SteamAccessPhase.FAILED
+        else -> SteamAccessPhase.DEGRADED
     }
 
     @Synchronized
@@ -312,14 +355,20 @@ class SteamAccessManager @Inject internal constructor(
 
     private fun recordDiagnostic(message: String, attributes: Map<String, String>) {
         scope.launch {
-            diagnostics.record(
-                DiagnosticEvent(
-                    source = "steam-access",
-                    level = DiagnosticLevel.WARNING,
-                    message = message,
-                    attributes = attributes,
-                ),
-            )
+            try {
+                diagnostics.record(
+                    DiagnosticEvent(
+                        source = "steam-access",
+                        level = DiagnosticLevel.WARNING,
+                        message = message,
+                        attributes = attributes,
+                    ),
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                // Diagnostics are best-effort and must never become a second process-fatal failure.
+            }
         }
     }
 }
