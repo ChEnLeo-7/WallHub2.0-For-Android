@@ -21,6 +21,10 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -135,6 +139,60 @@ class CommunityWorkshopRepositoryTest {
     }
 
     @Test
+    fun `slow JSON cannot hold successful HTML to the shared client timeout`() =
+        runBlocking {
+            MockWebServer().use { server ->
+                server.dispatcher = detailDispatcher(
+                    html = MockResponse().setBody(CommunityWorkshopHtmlTest.DETAIL_HTML),
+                    json =
+                        MockResponse()
+                            .setBody(PUBLIC_DETAIL_JSON)
+                            .setBodyDelay(5, java.util.concurrent.TimeUnit.SECONDS),
+                )
+                val repository = communityRepositoryFor(server, detailCallTimeoutMs = 300)
+
+                val startedAt = System.nanoTime()
+                val detail = repository.getDetail(WORKSHOP_ID)
+                val elapsedMs = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
+
+                assertEquals("Title & more", detail.summary.title)
+                assertTrue("successful HTML should return without waiting for the slow JSON", elapsedMs < 1_000)
+            }
+        }
+
+    @Test
+    fun `failed HTML degrades to successful public JSON`() =
+        runBlocking {
+            MockWebServer().use { server ->
+                server.dispatcher = detailDispatcher(
+                    html = MockResponse().setResponseCode(503),
+                    json = MockResponse().setBody(PUBLIC_DETAIL_JSON),
+                )
+
+                val detail = communityRepositoryFor(server).getDetail(WORKSHOP_ID)
+
+                assertEquals("Fallback item", detail.summary.title)
+                assertEquals("Loaded from public details", detail.description)
+            }
+        }
+
+    @Test
+    fun `failed public JSON degrades to successful HTML`() =
+        runBlocking {
+            MockWebServer().use { server ->
+                server.dispatcher = detailDispatcher(
+                    html = MockResponse().setBody(CommunityWorkshopHtmlTest.DETAIL_HTML),
+                    json = MockResponse().setResponseCode(503),
+                )
+
+                val detail = communityRepositoryFor(server).getDetail(WORKSHOP_ID)
+
+                assertEquals("Title & more", detail.summary.title)
+                assertEquals("First\nNested\nLast", detail.description)
+            }
+        }
+
+    @Test
     fun `public detail retains video content identity for the play request`() {
         val detail =
             CommunityWorkshopParser.parseDetails(
@@ -246,6 +304,56 @@ class CommunityWorkshopRepositoryTest {
         repository.invalidateDiscoverCache()
         assertEquals(null, repository.peekDetailSeed(42))
     }
+
+    private fun communityRepositoryFor(
+        server: MockWebServer,
+        detailCallTimeoutMs: Long = 3_000L,
+    ): CommunityWorkshopRepository {
+        val serverUrl = server.url("/")
+        val client =
+            OkHttpClient
+                .Builder()
+                .addInterceptor { chain ->
+                    val original = chain.request()
+                    val redirected =
+                        original
+                            .newBuilder()
+                            .url(
+                                original.url
+                                    .newBuilder()
+                                    .scheme(serverUrl.scheme)
+                                    .host(serverUrl.host)
+                                    .port(serverUrl.port)
+                                    .build(),
+                            ).header("X-Test-Origin", original.url.host)
+                            .build()
+                    chain.proceed(redirected)
+                }.build()
+        val settings =
+            object : SettingsRepository by CmSettingsRepository {
+                override val preferences =
+                    MutableStateFlow(AppPreferences(steamWorkshopDataSource = SteamWorkshopDataSource.COMMUNITY_HTML))
+            }
+        return CommunityWorkshopRepository(
+            settingsRepository = settings,
+            unifiedWorkshopRepository = UnavailableCmRepository,
+            client = client,
+            detailCallTimeoutMs = detailCallTimeoutMs,
+        )
+    }
+
+    private fun detailDispatcher(
+        html: MockResponse,
+        json: MockResponse,
+    ): Dispatcher =
+        object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                when (request.getHeader("X-Test-Origin")) {
+                    "steamcommunity.com" -> html
+                    "api.steampowered.com" -> json
+                    else -> MockResponse().setResponseCode(404)
+                }
+        }
 
     private fun repositoryWithPublicResponse(
         status: Int,

@@ -20,14 +20,20 @@ import com.wallhub.android.core.model.workshopSearchIdOrNull
 import com.wallhub.android.core.model.workshopAuthorSearchOrNull
 import com.wallhub.android.data.downloads.readBytesBounded
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -42,6 +48,7 @@ class CommunityWorkshopRepository internal constructor(
     private val settingsRepository: SettingsRepository,
     private val unifiedWorkshopRepository: SteamUnifiedWorkshopRepository,
     private val client: OkHttpClient,
+    detailCallTimeoutMs: Long = COMMUNITY_DETAIL_CALL_TIMEOUT_MS,
 ) : WorkshopRepository {
     @Inject
     constructor(
@@ -63,6 +70,14 @@ class CommunityWorkshopRepository internal constructor(
         private val commentsClient =
             client.newBuilder()
                 .callTimeout(COMMUNITY_COMMENT_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .build()
+        private val communityDetailClient =
+            client.newBuilder()
+                .callTimeout(detailCallTimeoutMs, TimeUnit.MILLISECONDS)
+                .build()
+        private val publicDetailClient =
+            client.newBuilder()
+                .callTimeout(detailCallTimeoutMs, TimeUnit.MILLISECONDS)
                 .build()
         private val steamProfiles = ConcurrentHashMap<SteamProfileCacheKey, SteamWebProfile>()
         private val steamProfileGeneration = AtomicLong()
@@ -631,6 +646,7 @@ class CommunityWorkshopRepository internal constructor(
         private fun getPublishedFileDetails(
             ids: List<Long>,
             steamApiKey: String = "",
+            requestClient: OkHttpClient = client,
         ): List<WorkshopDetail> {
             val form =
                 FormBody
@@ -652,7 +668,7 @@ class CommunityWorkshopRepository internal constructor(
                         steamApiKey.takeIf(String::isNotBlank)?.let { header("x-webapi-key", it) }
                     }.build()
             val body =
-                client.newCall(request).execute().use { response ->
+                requestClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         throw IOException("Steam public details request failed: HTTP ${response.code}")
                     }
@@ -664,24 +680,113 @@ class CommunityWorkshopRepository internal constructor(
         }
 
         private suspend fun getCommunityDetail(workshopId: Long): WorkshopDetail = coroutineScope {
-            val html = async { runCatching { parseCommunityHtmlDetail(get(buildDetailUrl(workshopId)), workshopId) } }
-            val json = async { runCatching { getPublishedFileDetails(listOf(workshopId)).firstOrNull() } }
-            val htmlResult = html.await()
-            val jsonResult = json.await()
-            val htmlDetail = htmlResult.getOrNull()
-            val jsonDetail = jsonResult.getOrNull()
-            when {
-                htmlDetail != null && jsonDetail != null -> mergeCommunityDetail(htmlDetail, jsonDetail)
-                htmlDetail != null -> htmlDetail
-                jsonDetail != null -> jsonDetail
-                else -> throw IOException(
-                    "Steam Community detail HTML and JSON requests failed",
-                    htmlResult.exceptionOrNull() ?: jsonResult.exceptionOrNull(),
+            val html = async {
+                timedDetailBranch(workshopId, "html") {
+                    requestCommunityHtmlDetail(workshopId)
+                }
+            }
+            val json = async {
+                timedDetailBranch(workshopId, "json") {
+                    requestPublicJsonDetail(workshopId)
+                }
+            }
+            val first = select<DetailBranchResult> {
+                html.onAwait { DetailBranchResult(DetailBranch.HTML, it) }
+                json.onAwait { DetailBranchResult(DetailBranch.JSON, it) }
+            }
+            val second = if (first.branch == DetailBranch.HTML) json else html
+            val firstDetail = first.result.getOrNull()
+            if (firstDetail != null) {
+                val secondResult = if (second.isCompleted) second.await() else null
+                val secondDetail = secondResult?.getOrNull()
+                if (secondDetail == null) {
+                    second.cancel(CancellationException("Community detail already has a successful branch"))
+                    return@coroutineScope firstDetail
+                }
+                return@coroutineScope if (first.branch == DetailBranch.HTML) {
+                    mergeCommunityDetail(firstDetail, secondDetail)
+                } else {
+                    mergeCommunityDetail(secondDetail, firstDetail)
+                }
+            }
+
+            val secondResult = second.await()
+            val secondDetail = secondResult.getOrNull()
+            if (secondDetail != null) return@coroutineScope secondDetail
+            throw IOException(
+                "Steam Community detail HTML and JSON requests failed",
+                first.result.exceptionOrNull() ?: secondResult.exceptionOrNull(),
+            )
+        }
+
+        private suspend fun requestCommunityHtmlDetail(workshopId: Long): WorkshopDetail {
+            val request =
+                Request
+                    .Builder()
+                    .url(buildDetailUrl(workshopId))
+                    .header("Accept", "text/html,application/xhtml+xml")
+                    .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.7")
+                    .header("User-Agent", USER_AGENT)
+                    .build()
+            val body = communityDetailClient.newCall(request).awaitBoundedBody(
+                failureMessage = "Steam Community detail request failed",
+                maxBytes = MAX_COMMUNITY_HTML_BYTES,
+            )
+            return parseCommunityHtmlDetail(body, workshopId)
+        }
+
+        private suspend fun requestPublicJsonDetail(workshopId: Long): WorkshopDetail {
+            val form =
+                FormBody
+                    .Builder()
+                    .add("itemcount", "1")
+                    .add("includetags", "true")
+                    .add("short_description", "true")
+                    .add("publishedfileids[0]", workshopId.toString())
+                    .build()
+            val request =
+                Request
+                    .Builder()
+                    .url(PUBLISHED_FILE_DETAILS_URL)
+                    .post(form)
+                    .header("Accept", "application/json")
+                    .header("User-Agent", USER_AGENT)
+                    .build()
+            val body = publicDetailClient.newCall(request).awaitBoundedBody(
+                failureMessage = "Steam public details request failed",
+                maxBytes = MAX_PUBLIC_DETAILS_BYTES,
+            )
+            return CommunityWorkshopParser.parseDetails(body).firstOrNull()
+                ?: throw IOException("Steam public details returned no usable detail")
+        }
+
+        private suspend inline fun <T> timedDetailBranch(
+            workshopId: Long,
+            branch: String,
+            crossinline request: suspend () -> T,
+        ): Result<T> {
+            val startedAt = System.nanoTime()
+            return try {
+                request().also {
+                    Log.d(LOG_TAG, "detail $branch id=$workshopId ms=${elapsedMs(startedAt)} outcome=success")
+                }.let(Result.Companion::success)
+            } catch (error: CancellationException) {
+                Log.d(LOG_TAG, "detail $branch id=$workshopId ms=${elapsedMs(startedAt)} outcome=cancelled")
+                throw error
+            } catch (error: Throwable) {
+                Log.w(
+                    LOG_TAG,
+                    "detail $branch id=$workshopId ms=${elapsedMs(startedAt)} " +
+                        "outcome=failure error=${error.javaClass.simpleName}",
                 )
+                Result.failure(error)
             }
         }
 
-        private fun get(url: String): String {
+        private fun get(
+            url: String,
+            requestClient: OkHttpClient = client,
+        ): String {
             val request =
                 Request
                     .Builder()
@@ -690,7 +795,7 @@ class CommunityWorkshopRepository internal constructor(
                     .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.7")
                     .header("User-Agent", USER_AGENT)
                     .build()
-            return client.newCall(request).execute().use { response ->
+            return requestClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     throw IOException("Steam Workshop browse request failed: HTTP ${response.code}")
                 }
@@ -719,6 +824,46 @@ class CommunityWorkshopRepository internal constructor(
                 response.body.string()
             }
         }
+    }
+
+private suspend fun Call.awaitBoundedBody(
+    failureMessage: String,
+    maxBytes: Int,
+): String =
+    suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { cancel() }
+        enqueue(
+            object : Callback {
+                override fun onFailure(
+                    call: Call,
+                    error: IOException,
+                ) {
+                    if (continuation.isActive) continuation.resumeWith(Result.failure(error))
+                }
+
+                override fun onResponse(
+                    call: Call,
+                    response: Response,
+                ) {
+                    try {
+                        response.use {
+                            if (!it.isSuccessful) {
+                                throw IOException("$failureMessage: HTTP ${it.code}")
+                            }
+                            val body =
+                                it.body.byteStream().use { input ->
+                                    input.readBytesBounded(maxBytes).toString(Charsets.UTF_8)
+                                }
+                            if (continuation.isActive) {
+                                continuation.resumeWith(Result.success(body))
+                            }
+                        }
+                    } catch (error: Throwable) {
+                        if (continuation.isActive) continuation.resumeWith(Result.failure(error))
+                    }
+                }
+            },
+        )
     }
 
 internal fun mergeCommunityDetail(html: WorkshopDetail, json: WorkshopDetail): WorkshopDetail {
@@ -750,6 +895,16 @@ internal fun mergeCommunityDetail(html: WorkshopDetail, json: WorkshopDetail): W
 private fun elapsedMs(startedAtNanos: Long): Long =
     TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos)
 
+private enum class DetailBranch {
+    HTML,
+    JSON,
+}
+
+private data class DetailBranchResult(
+    val branch: DetailBranch,
+    val result: Result<WorkshopDetail>,
+)
+
 private data class DetailSeedKey(
     val epoch: Long,
     val source: SteamWorkshopDataSource,
@@ -768,6 +923,7 @@ private data class SteamProfileCacheKey(
 
 private const val MAX_PUBLIC_DETAILS_BYTES = 1024 * 1024
 private const val COMMUNITY_COMMENT_CALL_TIMEOUT_MS = 1_500L
+private const val COMMUNITY_DETAIL_CALL_TIMEOUT_MS = 3_000L
 private const val MAX_DETAIL_SEEDS = 256
-private val DETAIL_SEED_TTL_NANOS = TimeUnit.MINUTES.toNanos(5)
+private val DETAIL_SEED_TTL_NANOS = TimeUnit.MINUTES.toNanos(30)
 private const val LOG_TAG = "WallHubWorkshop"
