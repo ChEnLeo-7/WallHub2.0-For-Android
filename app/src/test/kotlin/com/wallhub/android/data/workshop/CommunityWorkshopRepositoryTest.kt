@@ -2,10 +2,12 @@ package com.wallhub.android.data.workshop
 
 import com.wallhub.android.core.model.AccentPreference
 import com.wallhub.android.core.model.AppPreferences
+import com.wallhub.android.core.model.FavoriteState
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.SteamWorkshopDataSource
+import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.ThemePreference
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopCommentPage
@@ -136,6 +138,42 @@ class CommunityWorkshopRepositoryTest {
         assertEquals(10L, merged.createdAt)
         assertEquals(11L, merged.updatedAt)
         assertEquals(999L, merged.contentIdentity.manifestId)
+    }
+
+    @Test
+    fun `fast HTML refresh preserves precise fields from the visible seed`() {
+        val fresh = parseCommunityHtmlDetail(CommunityWorkshopHtmlTest.DETAIL_HTML, 42)
+        val seed =
+            CommunityWorkshopParser.parseDetails(
+                """{"response":{"publishedfiledetails":[{"result":1,"publishedfileid":"42",
+                "title":"Seed title","creator":"76561198000000000","creator_name":"Seed author",
+                "preview_url":"https://images.steamusercontent.com/ugc/42/P/","subscriptions":"7",
+                "favorited":"8","views":"9","file_size":"123","time_created":"10",
+                "time_updated":"11","consumer_app_id":"431960","hcontent_file":"999","tags":[]}]}}""",
+            ).single().let { detail ->
+                detail.copy(
+                    summary =
+                        detail.summary.copy(
+                            subscriptionState = SubscriptionState.SUBSCRIBED,
+                            favoriteState = FavoriteState.FAVORITED,
+                        ),
+                )
+            }
+
+        val merged = mergeFreshDetailWithSeed(fresh, seed)
+
+        assertEquals("Title & more", merged.summary.title)
+        assertEquals("First\nNested\nLast", merged.description)
+        assertEquals(7L, merged.summary.subscriptions)
+        assertEquals(8L, merged.summary.favorites)
+        assertEquals(9L, merged.summary.views)
+        assertEquals(123L, merged.summary.fileSizeBytes)
+        assertEquals(123L, merged.fileSizeBytes)
+        assertEquals(10L, merged.createdAt)
+        assertEquals(11L, merged.updatedAt)
+        assertEquals(999L, merged.contentIdentity.manifestId)
+        assertEquals(SubscriptionState.SUBSCRIBED, merged.summary.subscriptionState)
+        assertEquals(FavoriteState.FAVORITED, merged.summary.favoriteState)
     }
 
     @Test

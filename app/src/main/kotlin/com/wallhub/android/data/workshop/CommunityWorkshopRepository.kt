@@ -2,9 +2,11 @@ package com.wallhub.android.data.workshop
 
 import android.net.Uri
 import android.util.Log
-import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.CmPublicDetailResult
+import com.wallhub.android.core.model.FavoriteState
+import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
+import com.wallhub.android.core.model.SubscriptionState
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
@@ -194,7 +196,7 @@ class CommunityWorkshopRepository internal constructor(
                     Log.d(LOG_TAG, "detail seed id=$workshopId ms=${elapsedMs(startedAt)}")
                 }
                 val steamApiKey = preferences.steamApiKey.trim()
-                val detail = when (source) {
+                val freshDetail = when (source) {
                     SteamWorkshopDataSource.COMMUNITY_HTML -> getCommunityDetail(workshopId)
 
                     SteamWorkshopDataSource.WEB_API -> {
@@ -213,6 +215,7 @@ class CommunityWorkshopRepository internal constructor(
                                 error("Steam CM is temporarily unavailable; retry this item")
                         }
                 }
+                val detail = seed?.let { mergeFreshDetailWithSeed(freshDetail, it) } ?: freshDetail
                 rememberDetail(source, epoch, detail)
                 Log.d(LOG_TAG, "detail fresh id=$workshopId ms=${elapsedMs(startedAt)}")
                 detail
@@ -865,6 +868,72 @@ private suspend fun Call.awaitBoundedBody(
             },
         )
     }
+
+internal fun mergeFreshDetailWithSeed(
+    fresh: WorkshopDetail,
+    seed: WorkshopDetail,
+): WorkshopDetail {
+    require(fresh.summary.id == seed.summary.id) { "Workshop detail IDs do not match" }
+    val freshSummary = fresh.summary
+    val seedSummary = seed.summary
+    val freshIdentity = fresh.contentIdentity
+    val seedIdentity = seed.contentIdentity
+    return fresh.copy(
+        summary =
+            freshSummary.copy(
+                title = freshSummary.title.ifBlank { seedSummary.title },
+                author = freshSummary.author.ifBlank { seedSummary.author },
+                creatorId = freshSummary.creatorId ?: seedSummary.creatorId,
+                authorAvatarUrl = freshSummary.authorAvatarUrl ?: seedSummary.authorAvatarUrl,
+                previewUrl = freshSummary.previewUrl ?: seedSummary.previewUrl,
+                type =
+                    if (freshSummary.type != com.wallhub.android.core.model.WorkshopType.UNKNOWN) {
+                        freshSummary.type
+                    } else {
+                        seedSummary.type
+                    },
+                tags = freshSummary.tags.ifEmpty { seedSummary.tags },
+                subscriptions = freshSummary.subscriptions ?: seedSummary.subscriptions,
+                favorites = freshSummary.favorites ?: seedSummary.favorites,
+                views = freshSummary.views ?: seedSummary.views,
+                fileSizeBytes = freshSummary.fileSizeBytes ?: seedSummary.fileSizeBytes,
+                subscriptionState =
+                    freshSummary.subscriptionState.takeUnless { it == SubscriptionState.UNKNOWN }
+                        ?: seedSummary.subscriptionState,
+                favoriteState =
+                    freshSummary.favoriteState.takeUnless { it == FavoriteState.UNKNOWN }
+                        ?: seedSummary.favoriteState,
+                isTitlePlaceholder =
+                    if (freshSummary.title.isNotBlank()) {
+                        freshSummary.isTitlePlaceholder
+                    } else {
+                        seedSummary.isTitlePlaceholder
+                    },
+                authorPlaceholder =
+                    if (freshSummary.author.isNotBlank()) {
+                        freshSummary.authorPlaceholder
+                    } else {
+                        seedSummary.authorPlaceholder
+                    },
+            ),
+        description = fresh.description.ifBlank { seed.description },
+        fileSizeBytes = fresh.fileSizeBytes ?: seed.fileSizeBytes,
+        previewMediaUrl = fresh.previewMediaUrl ?: seed.previewMediaUrl,
+        canPlay = fresh.canPlay || seed.canPlay,
+        createdAt = fresh.createdAt ?: seed.createdAt,
+        updatedAt = fresh.updatedAt ?: seed.updatedAt,
+        subscriptions = fresh.subscriptions ?: seed.subscriptions,
+        creatorId = fresh.creatorId ?: seed.creatorId,
+        contentIdentity =
+            freshIdentity.copy(
+                consumerAppId = freshIdentity.consumerAppId ?: seedIdentity.consumerAppId,
+                depotId = freshIdentity.depotId ?: seedIdentity.depotId,
+                manifestId = freshIdentity.manifestId ?: seedIdentity.manifestId,
+                fileName = freshIdentity.fileName ?: seedIdentity.fileName,
+                directUrl = freshIdentity.directUrl ?: seedIdentity.directUrl,
+            ),
+    )
+}
 
 internal fun mergeCommunityDetail(html: WorkshopDetail, json: WorkshopDetail): WorkshopDetail {
     require(html.summary.id == json.summary.id) { "Workshop detail IDs do not match" }
