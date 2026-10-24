@@ -95,11 +95,22 @@ class ConversionPolicyV2Test {
     }
 
     @Test
-    fun `extreme quality rejects an unrecognized visual texture instead of warning passthrough`() {
-        withScene("materials/unknown.tex", "not-a-recognized-tex-shape".toByteArray()) { root, _ ->
-            val resource = WorkshopConverter.plan(root, MpkgConversionPreset.EXTREME_QUALITY, DEVICE).resources.single()
-            assertEquals(ResourceStrategy.REJECT, resource.strategy)
-            assertEquals("extreme_quality_visual_not_provably_lossless", resource.reason)
+    fun `extreme quality retains a structurally safe unknown texture with a compatibility warning`() {
+        withScene(
+            "materials/workshop/3002995798/number.am.tex",
+            "not-a-recognized-tex-shape".toByteArray(),
+        ) { root, source ->
+            val plan = WorkshopConverter.plan(root, MpkgConversionPreset.EXTREME_QUALITY, DEVICE)
+            val resource = plan.resources.single()
+            assertEquals(ResourceStrategy.PASSTHROUGH_WITH_WARNING, resource.strategy)
+            assertEquals("tex_passthrough_unknown_profile", resource.reason)
+
+            val output = root.resolve("extreme-unknown.mpkg")
+            val report = WorkshopConverter.execute(plan, root, output)
+            val archive = PkgReader.readIndex(output)
+            val retained = archive.entries.single { it.path.endsWith("number.am.tex") }
+            assertArrayEquals(source, archive.readBytes(retained, source.size.toLong()))
+            assertEquals(mapOf("tex_passthrough_unknown_profile" to 1), report.warningCounts)
         }
     }
 

@@ -65,6 +65,23 @@ class WorkshopConverterExecutionFallbackTest {
     }
 
     @Test
+    fun `large static texture accepted by the plan executes without the legacy eight MiB gate`() {
+        val source = uncompressedR8Tex(width = 3072, height = 3072)
+        assertTrue(source.size > 8 * 1024 * 1024)
+        withScene(listOf("materials/flowmask.tex" to source)) { root ->
+            val plan = WorkshopConverter.plan(root, MpkgConversionPreset.EXTREME_QUALITY, DEVICE)
+            assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, plan.resources.single().strategy)
+
+            val output = root.resolve("large-static.mpkg")
+            val report = WorkshopConverter.execute(plan, root, output)
+
+            assertTrue(output.isFile)
+            assertEquals(1, report.convertedTextures)
+            assertEquals(ResourceStrategy.CONVERT_TO_RGBA8888_LZ4, report.outcomes.single().strategy)
+        }
+    }
+
+    @Test
     fun `extreme quality decoder failure is fatal and never publishes a downgraded MPKG`() {
         withScene(listOf("materials/effects/color.tex" to staticImageTex(2, 2))) { root ->
             val plan = WorkshopConverter.plan(root, MpkgConversionPreset.EXTREME_QUALITY, DEVICE)
@@ -242,6 +259,18 @@ class WorkshopConverterExecutionFallbackTest {
             root.deleteRecursively()
         }
     }
+
+    private fun uncompressedR8Tex(width: Int, height: Int): ByteArray =
+        ByteArrayOutputStream().use { output ->
+            output.writeCString("TEXV0005")
+            output.writeCString("TEXI0001")
+            listOf(9, 0, width, height, width, height, 0).forEach { value -> output.writeIntLe(value) }
+            output.writeCString("TEXB0004")
+            val payloadBytes = Math.multiplyExact(width, height)
+            listOf(1, -1, 0, 1, width, height, 0, payloadBytes, payloadBytes).forEach { value -> output.writeIntLe(value) }
+            output.write(ByteArray(payloadBytes) { index -> (index * 31).toByte() })
+            output.toByteArray()
+        }
 
     private fun staticImageTex(width: Int, height: Int): ByteArray =
         ByteArrayOutputStream().use { output ->
