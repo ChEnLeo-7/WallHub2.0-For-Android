@@ -895,6 +895,11 @@
     <string name='local_source'>来源</string>
     <string name='local_location'>位置</string>
     <string name='local_workshop_id'>Workshop ID</string>
+    <string name='local_copy_workshop_id'>复制 Workshop ID</string>
+    <string name='local_workshop_id_copied'>Workshop ID 已复制</string>
+    <string name='local_view_workshop_detail'>查看壁纸详情</string>
+    <string name='local_conversion_preset'>转换档位</string>
+    <string name='local_conversion_preset_unknown_external'>未知（外部文件）</string>
     <string name='local_import_state'>导入状态</string>
     <string name='local_tags'>标签</string>
     <string name='local_remove_tag'>移除标签</string>

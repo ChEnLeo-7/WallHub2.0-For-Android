@@ -34,6 +34,7 @@ data class LocalWallpaperResource(
     val mimeType: String? = null,
     val thumbnailUri: String? = null,
     val workshopId: Long? = null,
+    val mpkgConversionPreset: MpkgConversionPreset? = null,
     val detectionReason: String,
     val isDirectoryProject: Boolean = false,
     val isFavorite: Boolean = false,

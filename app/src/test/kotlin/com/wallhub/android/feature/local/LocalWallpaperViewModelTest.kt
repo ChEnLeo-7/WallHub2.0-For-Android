@@ -58,6 +58,32 @@ class LocalWallpaperViewModelTest {
         }
 
     @Test
+    fun `open Workshop detail action emits its navigation effect`() =
+        runTest {
+            withViewModel { viewModel, effects, _ ->
+                viewModel.onAction(LocalWallpaperAction.OpenWorkshopDetail(2902406982L))
+
+                assertEquals(
+                    2902406982L,
+                    assertIs<LocalWallpaperEffect.OpenWorkshopDetail>(effects.single()).workshopId,
+                )
+            }
+        }
+
+    @Test
+    fun `copy Workshop ID action emits its clipboard effect`() =
+        runTest {
+            withViewModel { viewModel, effects, _ ->
+                viewModel.onAction(LocalWallpaperAction.CopyWorkshopId(2902406982L))
+
+                assertEquals(
+                    2902406982L,
+                    assertIs<LocalWallpaperEffect.CopyWorkshopId>(effects.single()).workshopId,
+                )
+            }
+        }
+
+    @Test
     fun `successful external import callback persists requested state`() =
         runTest {
             withViewModel { viewModel, _, repository ->

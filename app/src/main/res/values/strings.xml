@@ -929,6 +929,11 @@
     <string name='local_source'>Source</string>
     <string name='local_location'>Location</string>
     <string name='local_workshop_id'>Workshop ID</string>
+    <string name='local_copy_workshop_id'>Copy Workshop ID</string>
+    <string name='local_workshop_id_copied'>Workshop ID copied</string>
+    <string name='local_view_workshop_detail'>View wallpaper details</string>
+    <string name='local_conversion_preset'>Conversion tier</string>
+    <string name='local_conversion_preset_unknown_external'>Unknown (external file)</string>
     <string name='local_import_state'>Import state</string>
     <string name='local_tags'>Tags</string>
     <string name='local_remove_tag'>Remove tag</string>

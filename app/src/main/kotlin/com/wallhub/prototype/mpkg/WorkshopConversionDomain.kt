@@ -118,6 +118,7 @@ data class PersistedConversionWarningDetail(
 )
 
 data class PersistedConversionReport(
+    val presetId: String?,
     val convertedTextures: Int,
     val copiedTextures: Int,
     val removedAudio: Int,
@@ -159,6 +160,10 @@ object ConversionReportJsonCodec {
             val warningTotal = root.optInt("warningTotal", root.optInt("warningCount", summarizedCounts.values.sum()))
             require(warningTotal >= 0)
             PersistedConversionReport(
+                presetId =
+                    root.optString("presetId")
+                        .takeIf(String::isNotBlank)
+                        ?.also { require(it.isSafeWarningToken()) },
                 convertedTextures = root.optInt("convertedTextures").also { require(it >= 0) },
                 copiedTextures = root.optInt("copiedTextures").also { require(it >= 0) },
                 removedAudio = root.optInt("removedAudio").also { require(it >= 0) },

@@ -59,6 +59,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -92,6 +93,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubEmptyState
+import com.wallhub.android.core.designsystem.label
 import com.wallhub.android.core.designsystem.WallHubSingleChoiceSegmentedControl
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
@@ -134,13 +136,14 @@ import androidx.compose.material.icons.outlined.Settings
 @Composable
 fun LocalWallpaperRoute(
     onOpenSettings: () -> Unit = {},
+    onOpenWorkshopDetail: (Long) -> Unit = {},
     onBack: () -> Unit = {},
     onScrollChromeCollapsedChanged: (Boolean) -> Unit = {},
     isPageActive: Boolean = true,
     viewModel: LocalWallpaperViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    LocalWallpaperEffectHandler(viewModel)
+    LocalWallpaperEffectHandler(viewModel, onOpenWorkshopDetail)
 
     LaunchedEffect(isPageActive) {
         if (isPageActive) viewModel.onAction(LocalWallpaperAction.EnterPage)
@@ -160,7 +163,10 @@ fun LocalWallpaperRoute(
 }
 
 @Composable
-private fun LocalWallpaperEffectHandler(viewModel: LocalWallpaperViewModel) {
+private fun LocalWallpaperEffectHandler(
+    viewModel: LocalWallpaperViewModel,
+    onOpenWorkshopDetail: (Long) -> Unit,
+) {
     val context = LocalContext.current
     val resources = LocalResources.current
     val selectedDirectoryLabel = stringResource(R.string.local_selected_directory)
@@ -168,6 +174,7 @@ private fun LocalWallpaperEffectHandler(viewModel: LocalWallpaperViewModel) {
     val openResourceFailed = stringResource(R.string.local_open_resource_failed)
     val shareResourcesFailed = stringResource(R.string.local_share_resources_failed)
     val locationCopied = stringResource(R.string.local_location_copied)
+    val workshopIdCopied = stringResource(R.string.local_workshop_id_copied)
     val importFailed = stringResource(R.string.local_import_failed)
     val readResourceFailed = stringResource(R.string.local_read_resource_failed)
     val wallpaperEngineNotInstalled = stringResource(R.string.local_wallpaper_engine_not_installed)
@@ -204,7 +211,9 @@ private fun LocalWallpaperEffectHandler(viewModel: LocalWallpaperViewModel) {
         openResourceFailed,
         shareResourcesFailed,
         locationCopied,
+        workshopIdCopied,
         importFailed,
+        onOpenWorkshopDetail,
         readResourceFailed,
         wallpaperEngineNotInstalled,
     ) {
@@ -233,6 +242,11 @@ private fun LocalWallpaperEffectHandler(viewModel: LocalWallpaperViewModel) {
                     copyLocalResourceLocation(context, effect.resource)
                     Toast.makeText(context.applicationContext, locationCopied, Toast.LENGTH_SHORT).show()
                 }
+                is LocalWallpaperEffect.CopyWorkshopId -> {
+                    copyWorkshopId(context, effect.workshopId)
+                    Toast.makeText(context.applicationContext, workshopIdCopied, Toast.LENGTH_SHORT).show()
+                }
+                is LocalWallpaperEffect.OpenWorkshopDetail -> onOpenWorkshopDetail(effect.workshopId)
                 is LocalWallpaperEffect.ImportToWallpaperEngine -> {
                     launchWallpaperEngineImport(
                         context = context,
@@ -1324,6 +1338,21 @@ private fun LocalWallpaperDetail(
                 onDeleteResource = onDeleteResource,
                 onSystemAction = onSystemAction,
             )
+            resource.workshopId?.let { workshopId ->
+                OutlinedButton(
+                    onClick = {
+                        onSystemAction(LocalWallpaperAction.OpenWorkshopDetail(workshopId))
+                    },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
+                        contentDescription = null,
+                    )
+                    Spacer(modifier = Modifier.width(WallHubSpacing.xs))
+                    Text(stringResource(R.string.local_view_workshop_detail))
+                }
+            }
             HorizontalDivider(color = DividerDefaults.color)
             Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs)) {
                 Text(stringResource(R.string.local_file_information), style = MaterialTheme.typography.titleMedium)
@@ -1332,8 +1361,21 @@ private fun LocalWallpaperDetail(
                 DetailLine(stringResource(R.string.local_size), formatLocalSize(resource.sizeBytes))
                 DetailLine(stringResource(R.string.local_source), resource.sourceLabel)
                 DetailLine(stringResource(R.string.local_location), resource.relativePath)
+                if (resource.format == LocalWallpaperFormat.MPKG) {
+                    DetailLine(
+                        stringResource(R.string.local_conversion_preset),
+                        resource.mpkgConversionPreset?.label()
+                            ?: stringResource(R.string.local_conversion_preset_unknown_external),
+                    )
+                }
                 resource.workshopId?.let { id ->
-                    DetailLine(stringResource(R.string.local_workshop_id), id.toString())
+                    CopyableDetailLine(
+                        label = stringResource(R.string.local_workshop_id),
+                        value = id.toString(),
+                        onClick = {
+                            onSystemAction(LocalWallpaperAction.CopyWorkshopId(id))
+                        },
+                    )
                 }
                 DetailLine(
                     stringResource(R.string.local_import_state),
@@ -1631,6 +1673,44 @@ private fun DetailLine(
     }
 }
 
+@Composable
+private fun CopyableDetailLine(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        shape = MaterialTheme.shapes.small,
+        color = Color.Transparent,
+    ) {
+        Row(
+            modifier = Modifier.padding(vertical = WallHubSpacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(88.dp),
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = Icons.Outlined.ContentCopy,
+                contentDescription = stringResource(R.string.local_copy_workshop_id),
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(WallHubSizeTokens.compactIcon),
+            )
+        }
+    }
+}
+
 private fun openLocalResource(
     context: android.content.Context,
     resource: LocalWallpaperResource,
@@ -1686,6 +1766,14 @@ private fun copyLocalResourceLocation(
     val location = "${resource.sourceLabel}/${resource.relativePath}".replace("//", "/")
     val clipboard = context.getSystemService(ClipboardManager::class.java)
     clipboard?.setPrimaryClip(ClipData.newPlainText(resource.title, location))
+}
+
+private fun copyWorkshopId(
+    context: android.content.Context,
+    workshopId: Long,
+) {
+    val clipboard = context.getSystemService(ClipboardManager::class.java)
+    clipboard?.setPrimaryClip(ClipData.newPlainText("Workshop ID", workshopId.toString()))
 }
 
 private fun launchWallpaperEngineImport(

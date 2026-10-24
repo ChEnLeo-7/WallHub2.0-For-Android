@@ -277,6 +277,14 @@ sealed interface LocalWallpaperAction {
         val resource: LocalWallpaperResource,
     ) : LocalWallpaperAction
 
+    data class CopyWorkshopId(
+        val workshopId: Long,
+    ) : LocalWallpaperAction
+
+    data class OpenWorkshopDetail(
+        val workshopId: Long,
+    ) : LocalWallpaperAction
+
     data class ImportToWallpaperEngine(
         val resource: LocalWallpaperResource,
     ) : LocalWallpaperAction
@@ -303,6 +311,14 @@ sealed interface LocalWallpaperEffect {
 
     data class CopyLocation(
         val resource: LocalWallpaperResource,
+    ) : LocalWallpaperEffect
+
+    data class CopyWorkshopId(
+        val workshopId: Long,
+    ) : LocalWallpaperEffect
+
+    data class OpenWorkshopDetail(
+        val workshopId: Long,
     ) : LocalWallpaperEffect
 
     data class ImportToWallpaperEngine(
@@ -778,6 +794,14 @@ class LocalWallpaperViewModel
                 is LocalWallpaperAction.CopyLocation ->
                     emitEffect(
                         LocalWallpaperEffect.CopyLocation(action.resource),
+                    )
+                is LocalWallpaperAction.CopyWorkshopId ->
+                    emitEffect(
+                        LocalWallpaperEffect.CopyWorkshopId(action.workshopId),
+                    )
+                is LocalWallpaperAction.OpenWorkshopDetail ->
+                    emitEffect(
+                        LocalWallpaperEffect.OpenWorkshopDetail(action.workshopId),
                     )
                 is LocalWallpaperAction.ImportToWallpaperEngine ->
                     emitEffect(

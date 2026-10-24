@@ -198,7 +198,12 @@ internal fun WallHubNavHost(
                 onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
             )
         }
-        composable<LocalDestination> { LocalWallpaperRoute(onBack = { navController.popBackStack() }) }
+        composable<LocalDestination> {
+            LocalWallpaperRoute(
+                onOpenWorkshopDetail = { navController.navigate(WorkshopDetailDestination(it)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
         composable<SettingsDestination> {
             SettingsRoute(
                 onBack = { navController.popBackStack() },

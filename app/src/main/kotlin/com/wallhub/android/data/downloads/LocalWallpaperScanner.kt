@@ -19,7 +19,9 @@ import com.wallhub.android.core.model.LocalWallpaperResource
 import com.wallhub.android.core.model.LocalWallpaperScanIssue
 import com.wallhub.android.core.model.LocalWallpaperScanSnapshot
 import com.wallhub.android.core.model.LocalWallpaperSource
+import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.prototype.mpkg.ConversionReportJsonCodec
 import com.wallhub.prototype.mpkg.SCENE_MPKG_MAGIC
 import com.wallhub.prototype.mpkg.VIDEO_MPKG_MAGIC
 import kotlinx.coroutines.currentCoroutineContext
@@ -407,6 +409,12 @@ internal fun LocalWallpaperFileRepository.inspectStandalone(
         modifiedAt = node.modifiedAt,
         mimeType = node.mimeType,
         workshopId = workshopId ?: task?.workshopId,
+        mpkgConversionPreset =
+            if (format == LocalWallpaperFormat.MPKG) {
+                wallHubConversionPresetFor(node.uri.toString(), tasks)
+            } else {
+                null
+            },
         detectionReason =
             packageInspection?.reason ?: when (format) {
                 LocalWallpaperFormat.MPKG -> applicationContext.getString(R.string.backend_local_reason_mpkg_extension)
@@ -540,6 +548,24 @@ internal fun LocalWallpaperFileRepository.parseProjectMetadata(json: String): Pr
                 },
         )
     }.getOrNull()
+
+internal fun wallHubConversionPresetFor(
+    contentUri: String,
+    tasks: List<FormalTaskRecordEntity>,
+): MpkgConversionPreset? {
+    val task = tasks.firstOrNull { candidate -> candidate.outputUri == contentUri } ?: return null
+    val presetId =
+        if (task.successfulConversionReportJson != null) {
+            ConversionReportJsonCodec.decodeSummary(task.successfulConversionReportJson)?.presetId
+        } else {
+            task.conversionPreset.takeIf { task.status == "COMPLETED" }
+        }
+    return when (presetId) {
+        "source_fidelity" -> MpkgConversionPreset.HIGH_QUALITY
+        null -> null
+        else -> MpkgConversionPreset.entries.firstOrNull { preset -> preset.stableId == presetId }
+    }
+}
 
 internal fun LocalWallpaperFileRepository.matchTask(
     node: ScanNode,
