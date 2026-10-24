@@ -38,6 +38,25 @@ class SteamAccessRoutesTest {
     }
 
     @Test
+    fun `Workshop image routes retain original Host and authenticate the image upstream`() {
+        assertEquals(
+            listOf(
+                SteamWebUpstreamRule(
+                    resolveAuthority = "images.steamusercontent.com",
+                    tlsAuthority = "images.steamusercontent.com",
+                    httpAuthority = "images.steamusercontent.com",
+                ),
+                SteamWebUpstreamRule(
+                    resolveAuthority = "steamuserimages-a.akamaihd.net",
+                    tlsAuthority = "steamuserimages-a.akamaihd.net",
+                    httpAuthority = "images.steamusercontent.com",
+                ),
+            ),
+            SteamAccessRoutes.webUpstreams("IMAGES.STEAMUSERCONTENT.COM."),
+        )
+    }
+
+    @Test
     fun `gateway supports exact core services and CM subdomains only`() {
         assertTrue(SteamAccessRoutes.supports("steamcommunity.com"))
         assertTrue(SteamAccessRoutes.supports("www.steamcommunity.com"))

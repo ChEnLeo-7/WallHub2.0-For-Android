@@ -215,7 +215,7 @@ class SetupNetworkPreflight
         val imageRequest = Request.Builder().url(imageUrl).header("Accept", "image/*").build()
         val type =
             withContext(Dispatchers.IO) {
-                client.newCall(imageRequest).await().use { response ->
+                anonymousWebClient.newCall(imageRequest).await().use { response ->
                     if (!response.isSuccessful) throw IOException("Image HTTP ${response.code}")
                     val contentType = response.header("Content-Type").orEmpty().substringBefore(';')
                     if (!contentType.startsWith("image/")) throw IOException("Unexpected image response")

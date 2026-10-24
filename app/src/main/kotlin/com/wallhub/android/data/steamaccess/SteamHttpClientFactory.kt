@@ -53,9 +53,14 @@ class SteamHttpClientFactory
         fun newAnonymousReadBuilder(): OkHttpClient.Builder =
             newBuilder(bridge.anonymousWebProxyAuthorization)
                 .addInterceptor { chain ->
-                    chain.proceed(
-                        chain.request().newBuilder().header("Connection", "close").build(),
-                    )
+                    val request = chain.request()
+                    val routedRequest =
+                        if (SteamAccessRoutes.webUpstreams(request.url.host).size > 1) {
+                            request.newBuilder().header("Connection", "close").build()
+                        } else {
+                            request
+                        }
+                    chain.proceed(routedRequest)
                 }
 
         private fun newBuilder(proxyAuthorization: String): OkHttpClient.Builder =

@@ -128,7 +128,7 @@ class WallHubApplication :
     override fun newImageLoader(): ImageLoader =
         ImageLoader
             .Builder(this)
-            .okHttpClient(steamHttpClientFactory.newBuilder().build())
+            .okHttpClient(steamHttpClientFactory.newAnonymousReadBuilder().build())
             .components {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     add(ImageDecoderDecoder.Factory())

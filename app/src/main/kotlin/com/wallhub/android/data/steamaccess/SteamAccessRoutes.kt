@@ -65,7 +65,7 @@ internal object SteamAccessRoutes {
             "www.steamcommunity.com" to listOf(VERIFIED_WEB_UPSTREAM),
             "api.steampowered.com" to listOf(VERIFIED_WEB_UPSTREAM),
             "community.steam-api.com" to listOf(VERIFIED_WEB_UPSTREAM),
-            "images.steamusercontent.com" to emptyList(),
+            "images.steamusercontent.com" to listOf("steamuserimages-a.akamaihd.net"),
         )
 
     fun supports(hostname: String): Boolean = SteamDomainPolicy.supports(hostname)

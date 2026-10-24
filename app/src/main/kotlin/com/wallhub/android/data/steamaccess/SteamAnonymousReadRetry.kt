@@ -89,12 +89,17 @@ internal fun mayUseSteamWebAlias(
     if (connectionTokens.none { token -> token.equals("close", ignoreCase = true) }) return false
     if (headers.any { (name, _) -> name in ALIAS_UNSUPPORTED_REQUEST_HEADERS }) return false
     val path = target.substringBefore('?')
-    val queryNames = aliasQueryNames(target) ?: return false
+    val queryParameters = aliasQueryParameters(target) ?: return false
+    val queryNames = queryParameters.mapTo(linkedSetOf()) { (name, _) -> name }
     return when (expectedHost) {
         "steamcommunity.com", "www.steamcommunity.com" ->
             requestLine[0] == "GET" &&
                 path in ANONYMOUS_COMMUNITY_PATHS &&
                 queryNames.all { name -> name in ANONYMOUS_COMMUNITY_PARAMETERS }
+        "images.steamusercontent.com" ->
+            requestLine[0] == "GET" &&
+                WORKSHOP_IMAGE_PATH.matches(path) &&
+                validWorkshopImageQuery(queryParameters)
         "api.steampowered.com", "community.steam-api.com" ->
             when {
                 requestLine[0] == "GET" && path == "/ISteamWebAPIUtil/GetSupportedAPIList/v1/" ->
@@ -118,23 +123,39 @@ internal fun mayUseSteamWebAlias(
     }
 }
 
-private fun aliasQueryNames(target: String): Set<String>? {
+private fun aliasQueryParameters(target: String): List<Pair<String, String>>? {
     val query = target.substringAfter('?', missingDelimiterValue = "")
-    if (query.isEmpty()) return emptySet()
+    if (query.isEmpty()) return emptyList()
     return runCatching {
         query.split('&').map { parameter ->
             val rawName = parameter.substringBefore('=')
             require(rawName.isNotEmpty())
-            java.net.URLDecoder.decode(rawName, Charsets.UTF_8.name()).lowercase()
-        }.toSet()
+            val rawValue = parameter.substringAfter('=', missingDelimiterValue = "")
+            java.net.URLDecoder.decode(rawName, Charsets.UTF_8.name()).lowercase() to
+                java.net.URLDecoder.decode(rawValue, Charsets.UTF_8.name())
+        }
     }.getOrNull()
+}
+
+private fun validWorkshopImageQuery(parameters: List<Pair<String, String>>): Boolean {
+    if (parameters.map { (name, _) -> name }.distinct().size != parameters.size) return false
+    return parameters.all { (name, value) ->
+        when (name) {
+            "imw", "imh" -> value.toIntOrNull()?.let { it in 1..MAX_WORKSHOP_IMAGE_DIMENSION } == true
+            "ima" -> value == "fit"
+            "letterbox" -> value == "false" || value == "true"
+            else -> false
+        }
+    }
 }
 
 private const val MAX_ALIAS_REQUEST_HEAD_CHARS = 16 * 1024
 private const val MAX_ALIAS_FORM_BYTES = 8L * 1024L
+private const val MAX_WORKSHOP_IMAGE_DIMENSION = 5_000
 private val ALIAS_SECRET_HEADERS = setOf("authorization", "cookie", "proxy-authorization", "x-webapi-key")
 private val ALIAS_UNSUPPORTED_REQUEST_HEADERS = setOf("expect", "transfer-encoding", "upgrade")
 private val ANONYMOUS_COMMUNITY_PATHS = setOf("/sharedfiles/filedetails/", "/workshop/browse/")
+private val WORKSHOP_IMAGE_PATH = Regex("^/ugc/[0-9]+/[0-9A-Fa-f]+/$")
 
 private val ANONYMOUS_COMMUNITY_PARAMETERS = setOf(
     "id", "appid", "searchtext", "browsesort", "section", "actualsort", "p", "numperpage",

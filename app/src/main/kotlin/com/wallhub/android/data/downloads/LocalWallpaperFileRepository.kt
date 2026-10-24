@@ -58,7 +58,8 @@ class LocalWallpaperFileRepository
     ) : LocalWallpaperRepository {
         internal val applicationContext = context.applicationContext
         internal val resolver = applicationContext.contentResolver
-        internal val thumbnailCache = SteamWorkshopThumbnailCache(applicationContext, clientFactory.newBuilder())
+        internal val thumbnailCache =
+            SteamWorkshopThumbnailCache(applicationContext, clientFactory.newAnonymousReadBuilder())
         internal val projectContentUris = ConcurrentHashMap<String, List<String>>()
 
         override fun scan(): Flow<LocalWallpaperScanSnapshot> =

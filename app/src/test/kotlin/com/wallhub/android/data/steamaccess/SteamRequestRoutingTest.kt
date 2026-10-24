@@ -39,6 +39,23 @@ class SteamRequestRoutingTest {
                         "Content-Length: 52\r\nConnection: close\r\n\r\n",
             ),
         )
+        assertTrue(
+            mayUseSteamWebAlias(
+                connectAuthority = "images.steamusercontent.com",
+                requestHead =
+                    "GET /ugc/9540179765161089476/4DE4889B4F31581DD70DA81AC75C79BF6B9927F9/ HTTP/1.1\r\n" +
+                        "Host: images.steamusercontent.com\r\n" +
+                        "Accept: image/*\r\nConnection: close\r\n\r\n",
+            ),
+        )
+        assertTrue(
+            mayUseSteamWebAlias(
+                connectAuthority = "images.steamusercontent.com",
+                requestHead =
+                    "GET /ugc/123/ABC/?imw=1920&imh=1920&ima=fit&letterbox=false HTTP/1.1\r\n" +
+                        "Host: images.steamusercontent.com\r\nConnection: close\r\n\r\n",
+            ),
+        )
         listOf(
             "GET /sharedfiles/filedetails/?id=3799142774&sessionid=secret HTTP/1.1\r\nHost: steamcommunity.com\r\nConnection: close\r\n\r\n",
             "GET /sharedfiles/filedetails/?id=3799142774 HTTP/1.1\r\nHost: steamcommunity.com\r\n\r\n",
@@ -50,6 +67,16 @@ class SteamRequestRoutingTest {
             "POST /sharedfiles/filedetails/ HTTP/1.1\r\nHost: steamcommunity.com\r\nContent-Length: 0\r\n\r\n",
         ).forEach { head ->
             assertFalse(mayUseSteamWebAlias("steamcommunity.com", head), head)
+        }
+        listOf(
+            "GET /ugc/123/ABC/?token=secret HTTP/1.1\r\nHost: images.steamusercontent.com\r\nConnection: close\r\n\r\n",
+            "GET /ugc/123/ABC/?imw=1920&imw=640 HTTP/1.1\r\nHost: images.steamusercontent.com\r\nConnection: close\r\n\r\n",
+            "GET /profiles/123/avatar.jpg HTTP/1.1\r\nHost: images.steamusercontent.com\r\nConnection: close\r\n\r\n",
+            "GET /ugc/123/ABC/ HTTP/1.1\r\nHost: images.steamusercontent.com\r\nCookie: secret=value\r\nConnection: close\r\n\r\n",
+            "GET /ugc/123/ABC/ HTTP/1.1\r\nHost: images.steamusercontent.com\r\nAuthorization: Bearer secret\r\nConnection: close\r\n\r\n",
+            "GET /ugc/123/ABC/ HTTP/1.1\r\nHost: images.steamusercontent.com\r\nx-webapi-key: secret\r\nConnection: close\r\n\r\n",
+        ).forEach { head ->
+            assertFalse(mayUseSteamWebAlias("images.steamusercontent.com", head), head)
         }
     }
 
