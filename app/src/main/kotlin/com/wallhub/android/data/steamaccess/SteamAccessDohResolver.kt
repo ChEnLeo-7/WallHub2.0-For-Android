@@ -24,16 +24,27 @@ internal class SteamAccessDohResolver(
         hostnames: List<String>,
         endpoints: List<String>,
         includeIpv6: Boolean,
-    ): List<InetAddress> {
+    ): List<InetAddress> =
+        resolveByHostname(hostnames, endpoints, includeIpv6)
+            .values
+            .flatten()
+            .distinctBy(InetAddress::getHostAddress)
+
+    fun resolveByHostname(
+        hostnames: List<String>,
+        endpoints: List<String>,
+        includeIpv6: Boolean,
+    ): Map<String, List<InetAddress>> {
         val tasks =
             queryPlan(hostnames, endpoints, includeIpv6).map { query ->
-                Callable { resolveOne(query.hostname, query.endpoint, query.recordType) }
+                Callable { query.hostname to resolveOne(query.hostname, query.endpoint, query.recordType) }
             }
-        if (tasks.isEmpty()) return emptyList()
+        if (tasks.isEmpty()) return emptyMap()
         return executor
             .invokeAll(tasks, QUERY_BUDGET_MS, TimeUnit.MILLISECONDS)
-            .flatMap { future -> runCatching { future.get() }.getOrDefault(emptyList()) }
-            .distinctBy(InetAddress::getHostAddress)
+            .mapNotNull { future -> runCatching { future.get() }.getOrNull() }
+            .groupBy(Pair<String, List<InetAddress>>::first, Pair<String, List<InetAddress>>::second)
+            .mapValues { (_, answers) -> answers.flatten().distinctBy(InetAddress::getHostAddress) }
     }
 
     private fun resolveOne(

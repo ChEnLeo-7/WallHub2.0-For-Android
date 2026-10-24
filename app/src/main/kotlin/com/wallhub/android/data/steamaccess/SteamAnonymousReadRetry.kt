@@ -56,6 +56,86 @@ internal fun mayRetryAnonymousSteamRead(request: Request, error: IOException, ca
     }
 }
 
+internal fun mayUseSteamWebAlias(
+    connectAuthority: String,
+    requestHead: String,
+): Boolean {
+    if (requestHead.length > MAX_ALIAS_REQUEST_HEAD_CHARS || !requestHead.endsWith("\r\n\r\n")) return false
+    val lines = requestHead.removeSuffix("\r\n\r\n").split("\r\n")
+    val requestLine = lines.firstOrNull()?.split(' ') ?: return false
+    if (
+        requestLine.size != 3 ||
+        requestLine[0] !in setOf("GET", "POST") ||
+        requestLine[2] != "HTTP/1.1"
+    ) return false
+    val target = requestLine[1]
+    if (!target.startsWith('/') || target.startsWith("//") || "://" in target) return false
+
+    val headers = lines.drop(1).mapNotNull { line ->
+        val separator = line.indexOf(':')
+        if (separator <= 0) return false
+        line.substring(0, separator).trim().lowercase() to line.substring(separator + 1).trim()
+    }
+    val hosts = headers.filter { (name, _) -> name == "host" }.map(Pair<String, String>::second)
+    if (hosts.size != 1) return false
+    val expectedHost = connectAuthority.lowercase().trimEnd('.')
+    val actualHost = hosts.single().lowercase().removeSuffix(":443").trimEnd('.')
+    if (actualHost != expectedHost || SteamAccessRoutes.webUpstreams(expectedHost).size < 2) return false
+    if (headers.any { (name, _) -> name in ALIAS_SECRET_HEADERS }) return false
+    val connectionTokens =
+        headers
+            .filter { (name, _) -> name == "connection" }
+            .flatMap { (_, value) -> value.split(',').map(String::trim) }
+    if (connectionTokens.none { token -> token.equals("close", ignoreCase = true) }) return false
+    if (headers.any { (name, _) -> name in ALIAS_UNSUPPORTED_REQUEST_HEADERS }) return false
+    val path = target.substringBefore('?')
+    val queryNames = aliasQueryNames(target) ?: return false
+    return when (expectedHost) {
+        "steamcommunity.com", "www.steamcommunity.com" ->
+            requestLine[0] == "GET" &&
+                path in ANONYMOUS_COMMUNITY_PATHS &&
+                queryNames.all { name -> name in ANONYMOUS_COMMUNITY_PARAMETERS }
+        "api.steampowered.com", "community.steam-api.com" ->
+            when {
+                requestLine[0] == "GET" && path == "/ISteamWebAPIUtil/GetSupportedAPIList/v1/" ->
+                    queryNames.all { name -> name == "format" }
+                requestLine[0] == "POST" && path == "/ISteamRemoteStorage/GetPublishedFileDetails/v1/" -> {
+                    val contentType = headers.singleOrNull { (name, _) -> name == "content-type" }?.second.orEmpty()
+                    val contentLength =
+                        headers.singleOrNull { (name, _) -> name == "content-length" }
+                            ?.second
+                            ?.toLongOrNull()
+                    queryNames.isEmpty() &&
+                        contentType.substringBefore(';').trim().equals(
+                            "application/x-www-form-urlencoded",
+                            ignoreCase = true,
+                        ) &&
+                        contentLength != null && contentLength in 1..MAX_ALIAS_FORM_BYTES
+                }
+                else -> false
+            }
+        else -> false
+    }
+}
+
+private fun aliasQueryNames(target: String): Set<String>? {
+    val query = target.substringAfter('?', missingDelimiterValue = "")
+    if (query.isEmpty()) return emptySet()
+    return runCatching {
+        query.split('&').map { parameter ->
+            val rawName = parameter.substringBefore('=')
+            require(rawName.isNotEmpty())
+            java.net.URLDecoder.decode(rawName, Charsets.UTF_8.name()).lowercase()
+        }.toSet()
+    }.getOrNull()
+}
+
+private const val MAX_ALIAS_REQUEST_HEAD_CHARS = 16 * 1024
+private const val MAX_ALIAS_FORM_BYTES = 8L * 1024L
+private val ALIAS_SECRET_HEADERS = setOf("authorization", "cookie", "proxy-authorization", "x-webapi-key")
+private val ALIAS_UNSUPPORTED_REQUEST_HEADERS = setOf("expect", "transfer-encoding", "upgrade")
+private val ANONYMOUS_COMMUNITY_PATHS = setOf("/sharedfiles/filedetails/", "/workshop/browse/")
+
 private val ANONYMOUS_COMMUNITY_PARAMETERS = setOf(
     "id", "appid", "searchtext", "browsesort", "section", "actualsort", "p", "numperpage",
     "days", "requiredtags[]", "excludedtags[]", "l", "insideModal", "childpublishedfileid",

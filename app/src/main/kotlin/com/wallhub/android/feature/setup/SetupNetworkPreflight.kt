@@ -24,6 +24,7 @@ import kotlinx.coroutines.withTimeout
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.FormBody
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.json.JSONObject
@@ -31,6 +32,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 internal const val SETUP_PROBE_TIMEOUT_MS = 5_000L
+internal const val SETUP_WEB_PROBE_TIMEOUT_MS = 12_000L
 private const val SETUP_PROBE_BODY_LIMIT = 512L * 1024L
 private const val SETUP_PROBE_WORKSHOP_ID = 3799142774L
 
@@ -106,7 +108,13 @@ internal class SetupNetworkPreflightRunner(
                     permits.withPermit {
                         val started = nowMillis()
                         try {
-                            when (val outcome = withTimeout(SETUP_PROBE_TIMEOUT_MS) { probes.getValue(check).run() }) {
+                            val timeoutMillis =
+                                if (check == SetupNetworkCheck.COMMUNITY_HTML) {
+                                    SETUP_WEB_PROBE_TIMEOUT_MS
+                                } else {
+                                    SETUP_PROBE_TIMEOUT_MS
+                                }
+                            when (val outcome = withTimeout(timeoutMillis) { probes.getValue(check).run() }) {
                                 is SetupProbeOutcome.Passed -> SetupNetworkCheckResult(
                                     check,
                                     SetupNetworkCheckStatus.PASSED,
@@ -161,6 +169,11 @@ class SetupNetworkPreflight
         .readTimeout(SETUP_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .callTimeout(SETUP_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .build()
+    private val anonymousWebClient = httpClientFactory.newAnonymousReadBuilder()
+        .connectTimeout(SETUP_WEB_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .readTimeout(SETUP_WEB_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .callTimeout(SETUP_WEB_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .build()
 
     private val runner = SetupNetworkPreflightRunner(
         mapOf(
@@ -192,7 +205,7 @@ class SetupNetworkPreflight
             .post(FormBody.Builder().add("itemcount", "1").add("publishedfileids[0]", SETUP_PROBE_WORKSHOP_ID.toString()).build())
             .header("Accept", "application/json")
             .build()
-        val body = executeBounded(request)
+        val body = executeBounded(request, anonymousWebClient)
         val detail = JSONObject(body).optJSONObject("response")?.optJSONArray("publishedfiledetails")?.optJSONObject(0)
             ?: throw IOException("Invalid public details JSON")
         if (detail.optInt("result") != 1) throw IOException("Public details rejected")
@@ -217,6 +230,7 @@ class SetupNetworkPreflight
         val body = getBounded(
             "https://steamcommunity.com/sharedfiles/filedetails/?id=$SETUP_PROBE_WORKSHOP_ID",
             "text/html",
+            anonymousWebClient,
         )
         if (!body.contains("workshopItemTitle", ignoreCase = true) && !body.contains("PublishedFile", ignoreCase = true)) {
             throw IOException("Unexpected Community HTML")
@@ -224,12 +238,19 @@ class SetupNetworkPreflight
         return SetupProbeOutcome.Passed("Workshop page")
     }
 
-    private suspend fun getBounded(url: String, accept: String): String =
-        executeBounded(Request.Builder().url(url).header("Accept", accept).build())
+    private suspend fun getBounded(
+        url: String,
+        accept: String,
+        httpClient: OkHttpClient = client,
+    ): String =
+        executeBounded(Request.Builder().url(url).header("Accept", accept).build(), httpClient)
 
-    private suspend fun executeBounded(request: Request): String =
+    private suspend fun executeBounded(
+        request: Request,
+        httpClient: OkHttpClient = client,
+    ): String =
         withContext(Dispatchers.IO) {
-            client.newCall(request).await().use { response ->
+            httpClient.newCall(request).await().use { response ->
                 if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
                 val body = response.body
                 if (body.contentLength() > SETUP_PROBE_BODY_LIMIT) throw IOException("Response too large")

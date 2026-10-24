@@ -18,6 +18,26 @@ import kotlin.test.assertTrue
 
 class SteamAccessRoutesTest {
     @Test
+    fun `community web routes preserve HTTP authority while authenticating each upstream authority`() {
+        assertEquals(
+            listOf(
+                SteamWebUpstreamRule(
+                    resolveAuthority = "steamcommunity.com",
+                    tlsAuthority = "steamcommunity.com",
+                    httpAuthority = "steamcommunity.com",
+                ),
+                SteamWebUpstreamRule(
+                    resolveAuthority = "steamcommunity-a.akamaihd.net",
+                    tlsAuthority = "steamcommunity-a.akamaihd.net",
+                    httpAuthority = "steamcommunity.com",
+                ),
+            ),
+            SteamAccessRoutes.webUpstreams("STEAMCOMMUNITY.COM."),
+        )
+        assertTrue(SteamAccessRoutes.webUpstreams("evil.steamcommunity.com").isEmpty())
+    }
+
+    @Test
     fun `gateway supports exact core services and CM subdomains only`() {
         assertTrue(SteamAccessRoutes.supports("steamcommunity.com"))
         assertTrue(SteamAccessRoutes.supports("www.steamcommunity.com"))

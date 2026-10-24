@@ -50,6 +50,7 @@ class CommunityWorkshopRepository internal constructor(
     private val settingsRepository: SettingsRepository,
     private val unifiedWorkshopRepository: SteamUnifiedWorkshopRepository,
     private val client: OkHttpClient,
+    private val anonymousReadClient: OkHttpClient = client,
     detailCallTimeoutMs: Long = COMMUNITY_DETAIL_CALL_TIMEOUT_MS,
 ) : WorkshopRepository {
     @Inject
@@ -67,6 +68,13 @@ class CommunityWorkshopRepository internal constructor(
                 .readTimeout(30, TimeUnit.SECONDS)
                 .callTimeout(45, TimeUnit.SECONDS)
                 .build(),
+        anonymousReadClient =
+            clientFactory
+                .newAnonymousReadBuilder()
+                .connectTimeout(20, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .callTimeout(45, TimeUnit.SECONDS)
+                .build(),
     )
 
         private val commentsClient =
@@ -74,11 +82,11 @@ class CommunityWorkshopRepository internal constructor(
                 .callTimeout(COMMUNITY_COMMENT_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .build()
         private val communityDetailClient =
-            client.newBuilder()
+            anonymousReadClient.newBuilder()
                 .callTimeout(detailCallTimeoutMs, TimeUnit.MILLISECONDS)
                 .build()
         private val publicDetailClient =
-            client.newBuilder()
+            anonymousReadClient.newBuilder()
                 .callTimeout(detailCallTimeoutMs, TimeUnit.MILLISECONDS)
                 .build()
         private val steamProfiles = ConcurrentHashMap<SteamProfileCacheKey, SteamWebProfile>()

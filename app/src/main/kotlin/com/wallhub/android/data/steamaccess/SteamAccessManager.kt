@@ -55,6 +55,14 @@ class SteamAccessManager @Inject internal constructor(
         val addresses: List<InetAddress>,
     )
 
+    internal data class WebAcceleratedRoute(
+        val originalAuthority: String,
+        val networkType: String,
+        val generation: Long,
+        val port: Int,
+        val targets: List<SteamWebDialTarget>,
+    )
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
     private val routeStore = SteamAccessRouteStore(context)
@@ -137,8 +145,80 @@ class SteamAccessManager @Inject internal constructor(
         return resolve(host, port, web = true)
     }
 
+    internal suspend fun acceleratedWebRoute(
+        hostname: String,
+        port: Int,
+    ): WebAcceleratedRoute {
+        val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
+        require(port == STEAM_HTTPS_PORT && !SteamDomainPolicy.isCmHost(host)) {
+            "Authority-separated routes are restricted to Steam Web HTTPS"
+        }
+        val rules = SteamAccessRoutes.webUpstreams(host)
+        require(rules.isNotEmpty()) { "No Steam Web route rules for $host" }
+        lastEndpoint = host to port
+        preferencesReady.await()
+        val lock = resolutionLocks[(host.hashCode() and Int.MAX_VALUE) % resolutionLocks.size]
+        return lock.withLock {
+            val generation: Long
+            val selectedNetwork: String
+            val settings: AppPreferences
+            synchronized(this) {
+                generation = candidates.generation
+                selectedNetwork = networkType
+                settings = preferences
+            }
+            val authorities = rules.map(SteamWebUpstreamRule::resolveAuthority)
+            val systemByAuthority =
+                authorities.associateWith { authority ->
+                    runCatching { Dns.SYSTEM.lookup(authority) }.getOrDefault(emptyList())
+                }
+            val resolvedByAuthority =
+                if (!settings.steamAccessEnabled) {
+                    emptyMap()
+                } else {
+                    when (settings.steamAccessMode) {
+                        SteamAccessMode.HOSTS ->
+                            mapOf(host to SteamHostsParser.parse(settings.steamAccessHosts)[host].orEmpty())
+                        SteamAccessMode.SMART_DOH ->
+                            dohResolver.resolveByHostname(
+                                authorities,
+                                settings.enabledSteamAccessDohEndpoints(),
+                                currentNetworkSupportsIpv6(),
+                            )
+                    }
+                }
+            val selectedByAuthority =
+                rules.associate { rule ->
+                    val healthHost = steamWebRouteHealthHost(host, rule.tlsAuthority)
+                    val cacheKey = steamWebRouteCacheKey(selectedNetwork, host, rule.tlsAuthority, port)
+                    val addresses =
+                        candidates.get(cacheKey, generation) ?: run {
+                            val cooling = routeStore.coolingDownAddresses(selectedNetwork, healthHost, port)
+                            val preferred =
+                                routeStore.preferred(selectedNetwork, healthHost, port)
+                                    .mapNotNull { address -> address.hostAddress }
+                                    .toSet()
+                            selectSteamCandidates(
+                                systemByAuthority[rule.resolveAuthority].orEmpty(),
+                                resolvedByAuthority[rule.resolveAuthority].orEmpty(),
+                                preferred,
+                                cooling,
+                            ).also { resolved ->
+                                if (!candidates.put(cacheKey, generation, resolved)) {
+                                    throw IOException("Steam route changed during Web resolution")
+                                }
+                            }
+                        }
+                    rule.resolveAuthority to addresses
+                }
+            val targets = bindSteamWebTargets(rules, selectedByAuthority)
+            if (targets.isEmpty()) throw IOException("No enhanced Web targets for $host")
+            WebAcceleratedRoute(host, selectedNetwork, generation, port, targets)
+        }
+    }
+
     internal suspend fun enhancedWebAddresses(hostname: String, port: Int): List<InetAddress> =
-        acceleratedOrWebCandidateRoute(hostname, port).addresses
+        acceleratedWebRoute(hostname, port).targets.map(SteamWebDialTarget::address)
 
     internal suspend fun enhancedAddresses(hostname: String): List<InetAddress> {
         val host = SteamDomainPolicy.requireAuthenticatedCdnEndpoint(hostname, STEAM_HTTPS_PORT)
@@ -194,6 +274,19 @@ class SteamAccessManager @Inject internal constructor(
     internal fun isRouteCurrent(route: AcceleratedRoute): Boolean =
         candidates.generation == route.generation && networkType == route.networkType
 
+    internal fun isRouteCurrent(route: WebAcceleratedRoute): Boolean =
+        candidates.generation == route.generation && networkType == route.networkType
+
+    @Synchronized
+    internal fun commitWebRoute(
+        route: WebAcceleratedRoute,
+        commitTunnel: () -> Unit,
+    ): Boolean {
+        if (!isRouteCurrent(route)) return false
+        commitTunnel()
+        return true
+    }
+
     @Synchronized
     internal fun commitAcceleratedRoute(
         route: AcceleratedRoute,
@@ -221,6 +314,53 @@ class SteamAccessManager @Inject internal constructor(
             candidateCount = route.addresses.size,
             message = context.getString(R.string.backend_steam_access_accelerated_connected),
             updatedAt = System.currentTimeMillis(),
+        )
+    }
+
+    @Synchronized
+    internal fun recordWebResponse(
+        route: WebAcceleratedRoute,
+        target: SteamWebDialTarget,
+        elapsedMs: Long,
+    ) {
+        if (!isRouteCurrent(route)) return
+        val healthHost = steamWebRouteHealthHost(route.originalAuthority, target.rule.tlsAuthority)
+        routeStore.recordSuccess(route.networkType, healthHost, route.port, target.address, elapsedMs)
+        mutableState.value = mutableState.value.copy(
+            phase = SteamAccessPhase.READY,
+            networkType = route.networkType,
+            activeHost = route.originalAuthority,
+            selectedAddress = target.address.hostAddress,
+            candidateCount = route.targets.size,
+            message = context.getString(R.string.backend_steam_access_accelerated_connected),
+            updatedAt = System.currentTimeMillis(),
+        )
+    }
+
+    @Synchronized
+    internal fun recordWebFailure(
+        route: WebAcceleratedRoute,
+        target: SteamWebDialTarget,
+        error: Throwable,
+        phase: String = "connect",
+    ) {
+        if (!isRouteCurrent(route)) return
+        val healthHost = steamWebRouteHealthHost(route.originalAuthority, target.rule.tlsAuthority)
+        routeStore.recordFailure(route.networkType, healthHost, route.port, target.address)
+        candidates.removeAddress(
+            steamWebRouteCacheKey(route.networkType, route.originalAuthority, target.rule.tlsAuthority, route.port),
+            route.generation,
+            target.address,
+        )
+        recordDiagnostic(
+            "Steam Web upstream failed",
+            mapOf(
+                "host" to route.originalAuthority,
+                "tlsAuthority" to target.rule.tlsAuthority,
+                "address" to target.address.hostAddress.orEmpty(),
+                "phase" to phase,
+                "error" to error.javaClass.simpleName,
+            ),
         )
     }
 

@@ -36,6 +36,7 @@ internal class SteamLoopbackTlsBridge
         // them, so sharing the bounded admission pool would deadlock when every admitted connection relays.
         private val ioExecutor = Executors.newCachedThreadPool()
         private val authorization = createAuthorization()
+        private val anonymousWebAuthorization = createAuthorization()
         private val cdnAuthorization = createAuthorization()
         private val serverSocket =
             ServerSocket().apply {
@@ -51,6 +52,9 @@ internal class SteamLoopbackTlsBridge
 
         val proxyAuthorization: String
             get() = authorization
+
+        val anonymousWebProxyAuthorization: String
+            get() = anonymousWebAuthorization
 
         val cdnProxyAuthorization: String
             get() = cdnAuthorization
@@ -84,6 +88,7 @@ internal class SteamLoopbackTlsBridge
             var upstreamSocket: Socket? = null
             var securedClientSocket: Socket? = null
             var selectedRoute: SteamAccessManager.AcceleratedRoute? = null
+            var selectedWebRoute: SteamAccessManager.WebAcceleratedRoute? = null
             var tunnelEstablished = false
             try {
                 clientSocket.soTimeout = HEADER_TIMEOUT_MS
@@ -155,6 +160,66 @@ internal class SteamLoopbackTlsBridge
                     securedClientSocket = securedClient
                     tunnelEstablished = true
                     relay(securedClient, upstream.socket)
+                    return
+                }
+                if (request.authorization == anonymousWebAuthorization) {
+                    val host = SteamDomainPolicy.requireSupportedEndpoint(request.host, request.port)
+                    require(request.port == STEAM_HTTPS_PORT && !SteamDomainPolicy.isCmHost(host)) {
+                        "Anonymous alias route is restricted to Steam Web HTTPS"
+                    }
+                    writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
+                    val securedClient =
+                        privateCa.createServerSocket(clientSocket, host).apply {
+                            soTimeout = HEADER_TIMEOUT_MS
+                            startHandshake()
+                        }
+                    securedClientSocket = securedClient
+                    val requestHead = readHttpRequestHead(securedClient)
+                    val requestHeadText = String(requestHead, StandardCharsets.ISO_8859_1)
+                    val route = kotlinx.coroutines.runBlocking { accessManager.acceleratedWebRoute(host, request.port) }
+                    selectedWebRoute = route
+                    val eligibleTargets = steamWebTargetsForRequest(host, requestHeadText, route.targets)
+                    if (eligibleTargets.isEmpty()) throw IOException("No eligible Steam Web authority target")
+                    Log.i(
+                        LOG_TAG,
+                        "SDK bridge plane=web mode=authority_separated aliases=${eligibleTargets.count { it.rule.tlsAuthority != host }}",
+                    )
+                    val upstream =
+                        noSniTlsDialer.connectWebAuthorities(eligibleTargets, request.port) { target, error ->
+                            accessManager.recordWebFailure(route, target, error)
+                        }
+                    val target = requireNotNull(upstream.webTarget)
+                    Log.i(
+                        LOG_TAG,
+                        "SDK bridge plane=web selected_tls_authority=${target.rule.tlsAuthority} " +
+                            "http_authority=${target.rule.httpAuthority} address=${target.address.hostAddress.orEmpty()}",
+                    )
+                    upstreamSocket = upstream.socket
+                    if (!accessManager.commitWebRoute(route) {}) {
+                        throw IOException("Steam Web route changed during upstream connection")
+                    }
+                    upstream.socket.getOutputStream().apply {
+                        write(requestHead)
+                        flush()
+                    }
+                    securedClient.soTimeout = 0
+                    tunnelEstablished = true
+                    val responseStatus = SteamResponseStatusObserver {
+                        upstream.socket.soTimeout = 0
+                        accessManager.recordWebResponse(route, target, upstream.elapsedMs)
+                    }
+                    upstream.socket.soTimeout = FIRST_RESPONSE_TIMEOUT_MS
+                    relay(
+                        securedClient,
+                        upstream.socket,
+                        onUpstreamBytes = responseStatus::accept,
+                        onUpstreamEof = {
+                            if (responseStatus.receivedResponse) null else IOException("EOF before HTTP response")
+                        },
+                        onUpstreamReadFailure = { error ->
+                            accessManager.recordWebFailure(route, target, error, phase = "response")
+                        },
+                    )
                     return
                 }
                 if (request.authorization != authorization) {
@@ -245,7 +310,9 @@ internal class SteamLoopbackTlsBridge
                 )
             } catch (error: Throwable) {
                 Log.e(LOG_TAG, "Loopback TLS bridge failed", error)
-                val routeIsCurrent = selectedRoute?.let(accessManager::isRouteCurrent) != false
+                val routeIsCurrent =
+                    selectedRoute?.let(accessManager::isRouteCurrent) != false &&
+                        selectedWebRoute?.let(accessManager::isRouteCurrent) != false
                 if (!tunnelEstablished && routeIsCurrent) runCatching { accessManager.recordBridgeFailure(error) }
                 if (securedClientSocket == null && !clientSocket.isClosed) {
                     runCatching {
@@ -341,6 +408,27 @@ internal class SteamLoopbackTlsBridge
                 clientToUpstream.cancel(true)
                 upstreamToClient.cancel(true)
             }
+        }
+
+        private fun readHttpRequestHead(socket: Socket): ByteArray {
+            val output = ByteArrayOutputStream()
+            val input = socket.getInputStream()
+            var matched = 0
+            while (output.size() < MAX_HEADER_BYTES && matched < HEADER_TERMINATOR.size) {
+                val value = input.read()
+                if (value < 0) throw IOException("Proxy client closed before HTTP request headers")
+                output.write(value)
+                matched =
+                    if (value.toByte() == HEADER_TERMINATOR[matched]) {
+                        matched + 1
+                    } else if (value == '\r'.code) {
+                        1
+                    } else {
+                        0
+                    }
+            }
+            if (matched != HEADER_TERMINATOR.size) throw IOException("HTTP request headers exceed limit")
+            return output.toByteArray()
         }
 
         private fun readConnectRequest(socket: Socket): ConnectRequest {

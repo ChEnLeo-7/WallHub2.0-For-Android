@@ -48,7 +48,17 @@ class SteamHttpClientFactory
 
         private fun systemProxies(uri: URI?): List<Proxy> = systemProxySelector.safeSelect(uri)
 
-        fun newBuilder(): OkHttpClient.Builder =
+        fun newBuilder(): OkHttpClient.Builder = newBuilder(bridge.proxyAuthorization)
+
+        fun newAnonymousReadBuilder(): OkHttpClient.Builder =
+            newBuilder(bridge.anonymousWebProxyAuthorization)
+                .addInterceptor { chain ->
+                    chain.proceed(
+                        chain.request().newBuilder().header("Connection", "close").build(),
+                    )
+                }
+
+        private fun newBuilder(proxyAuthorization: String): OkHttpClient.Builder =
             OkHttpClient
                 .Builder()
                 .dns(manager)
@@ -66,7 +76,7 @@ class SteamHttpClientFactory
                     } else {
                         response.request
                             .newBuilder()
-                            .header("Proxy-Authorization", bridge.proxyAuthorization)
+                            .header("Proxy-Authorization", proxyAuthorization)
                             .build()
                     }
                 }.sslSocketFactory(privateCa.clientSocketFactory, privateCa.clientTrustManager)

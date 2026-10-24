@@ -7,6 +7,10 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
+import java.lang.reflect.Proxy
+import javax.net.ssl.HostnameVerifier
+import javax.net.ssl.SNIHostName
+import javax.net.ssl.SSLSession
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -15,6 +19,131 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class SteamRequestRoutingTest {
+    @Test
+    fun `alias upstream is limited to anonymous public reads with the CONNECT authority`() {
+        assertTrue(
+            mayUseSteamWebAlias(
+                connectAuthority = "steamcommunity.com",
+                requestHead =
+                    "GET /sharedfiles/filedetails/?id=3799142774 HTTP/1.1\r\n" +
+                        "Host: steamcommunity.com\r\nAccept: text/html\r\nConnection: close\r\n\r\n",
+            ),
+        )
+        assertTrue(
+            mayUseSteamWebAlias(
+                connectAuthority = "api.steampowered.com",
+                requestHead =
+                    "POST /ISteamRemoteStorage/GetPublishedFileDetails/v1/ HTTP/1.1\r\n" +
+                        "Host: api.steampowered.com\r\n" +
+                        "Content-Type: application/x-www-form-urlencoded\r\n" +
+                        "Content-Length: 52\r\nConnection: close\r\n\r\n",
+            ),
+        )
+        listOf(
+            "GET /sharedfiles/filedetails/?id=3799142774&sessionid=secret HTTP/1.1\r\nHost: steamcommunity.com\r\nConnection: close\r\n\r\n",
+            "GET /sharedfiles/filedetails/?id=3799142774 HTTP/1.1\r\nHost: steamcommunity.com\r\n\r\n",
+            "GET /sharedfiles/filedetails/?id=3799142774 HTTP/1.1\r\nHost: steamcommunity.com\r\nCookie: sessionid=secret\r\nConnection: close\r\n\r\n",
+            "GET /sharedfiles/filedetails/?id=3799142774 HTTP/1.1\r\nHost: steamcommunity.com\r\nAuthorization: Bearer secret\r\nConnection: close\r\n\r\n",
+            "GET /sharedfiles/filedetails/?id=3799142774 HTTP/1.1\r\nHost: steamcommunity.com\r\nx-webapi-key: secret\r\nConnection: close\r\n\r\n",
+            "GET /sharedfiles/filedetails/?id=3799142774 HTTP/1.1\r\nHost: steamcommunity.com\r\nHost: api.steampowered.com\r\n\r\n",
+            "GET https://api.steampowered.com/path HTTP/1.1\r\nHost: steamcommunity.com\r\n\r\n",
+            "POST /sharedfiles/filedetails/ HTTP/1.1\r\nHost: steamcommunity.com\r\nContent-Length: 0\r\n\r\n",
+        ).forEach { head ->
+            assertFalse(mayUseSteamWebAlias("steamcommunity.com", head), head)
+        }
+    }
+
+    @Test
+    fun `web target binding preserves TLS authority when original and alias share an address`() {
+        val shared = InetAddress.getByName("8.8.8.8")
+        val rules = SteamAccessRoutes.webUpstreams("steamcommunity.com")
+
+        val targets =
+            bindSteamWebTargets(
+                rules = rules,
+                addressesByAuthority =
+                    mapOf(
+                        "steamcommunity.com" to listOf(shared, InetAddress.getLoopbackAddress()),
+                        "steamcommunity-a.akamaihd.net" to listOf(shared),
+                    ),
+            )
+
+        assertEquals(2, targets.size)
+        assertEquals(
+            listOf("steamcommunity.com", "steamcommunity-a.akamaihd.net"),
+            targets.map { it.rule.tlsAuthority },
+        )
+        assertTrue(targets.all { it.address == shared })
+        assertFalse(targets[0].healthKey == targets[1].healthKey)
+    }
+
+    @Test
+    fun `bridge exposes alias targets only to classified anonymous requests`() {
+        val address = InetAddress.getByName("8.8.8.8")
+        val targets =
+            bindSteamWebTargets(
+                SteamAccessRoutes.webUpstreams("steamcommunity.com"),
+                mapOf(
+                    "steamcommunity.com" to listOf(address),
+                    "steamcommunity-a.akamaihd.net" to listOf(address),
+                ),
+            )
+        val anonymousHead =
+            "GET /sharedfiles/filedetails/?id=3799142774 HTTP/1.1\r\n" +
+                "Host: steamcommunity.com\r\nConnection: close\r\n\r\n"
+        val authenticatedHead =
+            "GET /sharedfiles/filedetails/?id=3799142774 HTTP/1.1\r\n" +
+                "Host: steamcommunity.com\r\nCookie: sessionid=secret\r\nConnection: close\r\n\r\n"
+
+        assertEquals(2, steamWebTargetsForRequest("steamcommunity.com", anonymousHead, targets).size)
+        assertEquals(
+            listOf("steamcommunity.com"),
+            steamWebTargetsForRequest("steamcommunity.com", authenticatedHead, targets)
+                .map { it.rule.tlsAuthority },
+        )
+    }
+
+    @Test
+    fun `visible TLS uses and verifies the selected upstream authority rather than the HTTP authority`() {
+        val target =
+            SteamWebDialTarget(
+                rule =
+                    SteamWebUpstreamRule(
+                        resolveAuthority = "steamcommunity-a.akamaihd.net",
+                        tlsAuthority = "steamcommunity-a.akamaihd.net",
+                        httpAuthority = "steamcommunity.com",
+                    ),
+                address = InetAddress.getByName("8.8.8.8"),
+            )
+        val parameters = visibleSteamTlsParameters(target)
+        assertEquals(
+            "steamcommunity-a.akamaihd.net",
+            (parameters.serverNames.single() as SNIHostName).asciiName,
+        )
+
+        var verifiedAuthority: String? = null
+        val verifier = HostnameVerifier { hostname, _ ->
+            verifiedAuthority = hostname
+            true
+        }
+        val session =
+            Proxy.newProxyInstance(
+                SSLSession::class.java.classLoader,
+                arrayOf(SSLSession::class.java),
+            ) { _, method, _ ->
+                when (method.returnType) {
+                    Boolean::class.javaPrimitiveType -> false
+                    Int::class.javaPrimitiveType -> 0
+                    Long::class.javaPrimitiveType -> 0L
+                    else -> null
+                }
+            } as SSLSession
+
+        assertTrue(verifySteamTlsPeer(target, verifier, session))
+        assertEquals("steamcommunity-a.akamaihd.net", verifiedAuthority)
+        assertFalse(verifySteamTlsPeer(target, HostnameVerifier { _, _ -> false }, session))
+    }
+
     @Test fun `cache expires on demand and rejects obsolete generation`() {
         var now = 0L
         val cache = SteamRequestRouteCache { now }

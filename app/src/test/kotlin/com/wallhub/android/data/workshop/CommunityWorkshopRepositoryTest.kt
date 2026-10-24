@@ -311,6 +311,7 @@ class CommunityWorkshopRepositoryTest {
             val request = chain.request()
             requests.add("${request.method} ${request.url.host}${request.url.encodedPath}")
             val (body, mediaType) = if (request.url.host == "api.steampowered.com") {
+                Thread.sleep(25L)
                 val apiRequestNumber = requests.count { it.startsWith("POST api.steampowered.com") }
                 val id = if (apiRequestNumber <= 2) 42L else 43L
                 PUBLIC_DETAIL_JSON.replace(WORKSHOP_ID.toString(), id.toString()) to "application/json"
