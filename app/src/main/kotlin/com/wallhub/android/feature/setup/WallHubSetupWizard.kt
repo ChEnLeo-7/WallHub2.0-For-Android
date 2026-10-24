@@ -129,7 +129,7 @@ class WallHubSetupViewModel
         private val networkPreflight: SetupNetworkPreflight,
     ) : ViewModel() {
         private val _networkPreflightResult = MutableStateFlow<SetupNetworkPreflightResult?>(null)
-        val networkPreflightResult: StateFlow<SetupNetworkPreflightResult?> = _networkPreflightResult.asStateFlow()
+        internal val networkPreflightResult: StateFlow<SetupNetworkPreflightResult?> = _networkPreflightResult.asStateFlow()
         private var networkPreflightJob: Job? = null
         val preferences: StateFlow<AppPreferences> =
             settingsRepository.preferences.stateIn(
