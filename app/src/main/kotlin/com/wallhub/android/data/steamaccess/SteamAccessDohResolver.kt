@@ -21,7 +21,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
-private const val MIN_FOREGROUND_ADDRESSES_PER_AUTHORITY = 2
+private const val MIN_FOREGROUND_ADDRESSES_PER_AUTHORITY = 1
 
 internal data class SteamDohQuery(
     val hostname: String,

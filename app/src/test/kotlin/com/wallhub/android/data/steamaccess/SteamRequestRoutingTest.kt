@@ -151,7 +151,11 @@ class SteamRequestRoutingTest {
             "GET /sharedfiles/filedetails/?id=3799142774 HTTP/1.1\r\n" +
                 "Host: steamcommunity.com\r\nCookie: sessionid=secret\r\nConnection: close\r\n\r\n"
 
-        assertEquals(2, steamWebTargetsForRequest("steamcommunity.com", anonymousHead, targets).size)
+        assertEquals(
+            listOf("steamcommunity-a.akamaihd.net", "steamcommunity.com"),
+            steamWebTargetsForRequest("steamcommunity.com", anonymousHead, targets)
+                .map { it.rule.tlsAuthority },
+        )
         assertEquals(
             listOf("steamcommunity.com"),
             steamWebTargetsForRequest("steamcommunity.com", authenticatedHead, targets)

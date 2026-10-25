@@ -24,8 +24,8 @@ class SteamAccessDohResolverTest {
 
     @Test
     fun `foreground resolution completes after every authority has one address`() {
-        val canonical = listOf(InetAddress.getByName("23.1.1.1"), InetAddress.getByName("23.1.1.2"))
-        val alias = listOf(InetAddress.getByName("23.2.2.1"), InetAddress.getByName("23.2.2.2"))
+        val canonical = listOf(InetAddress.getByName("23.1.1.1"))
+        val alias = listOf(InetAddress.getByName("23.2.2.1"))
 
         assertTrue(
             foregroundResolutionComplete(
