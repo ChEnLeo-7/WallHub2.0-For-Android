@@ -5,6 +5,7 @@ package com.wallhub.settings
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.wallhub.android.R
+import org.uwuaosp.compose.settingslib.PreferenceGroupSpacer
 import org.uwuaosp.compose.settingslib.PreferencePosition
 import org.uwuaosp.compose.settingslib.PreferenceRow
 import org.uwuaosp.compose.settingslib.SwitchPreferenceRow
@@ -34,12 +35,19 @@ internal fun BasicSettingsContent(
                     ?: stringResource(R.string.settings_diagnostic_log_description)
             },
         enabled = !diagnosticExportState.isExporting,
-        position = PreferencePosition.Single,
+        position =
+            if (diagnosticExportState.message == null) {
+                PreferencePosition.Single
+            } else {
+                PreferencePosition.Top
+            },
         iconContent = { SettingsPreferenceIcon(Icons.Outlined.FileUpload) },
         onClick = onExportDiagnostics,
     )
     diagnosticExportState.message?.let { message ->
+        PreferenceGroupSpacer()
         SettingsStatusMessage(
+            position = PreferencePosition.Bottom,
             message = message,
             isFailure = diagnosticExportState.isFailure,
         )

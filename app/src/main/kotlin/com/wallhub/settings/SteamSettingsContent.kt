@@ -55,7 +55,6 @@ import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.WallHubSurfaceCard
-import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
 import com.wallhub.android.core.model.STEAM_ACCESS_DOH_ENDPOINT_LIMIT
 import com.wallhub.android.core.model.SteamAccessPhase
@@ -74,6 +73,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Language
@@ -118,7 +118,7 @@ internal fun SteamSettingsContent(
             summary = steamAccessState.summary(),
             checked = steamAccessEnabled,
             iconContent = { SettingsPreferenceIcon(Icons.Outlined.Language) },
-            position = PreferencePosition.Single,
+            position = PreferencePosition.Top,
             onCheckedChange = onSteamAccessEnabledChange,
         )
         PreferenceGroupSpacer()
@@ -126,38 +126,31 @@ internal fun SteamSettingsContent(
             endpoints = steamAccessDohEndpoints,
             disabledEndpoints = steamAccessDisabledDohEndpoints,
             endpointStatuses = steamAccessState.dohEndpointStatuses,
+            position = PreferencePosition.Middle,
             onSave = onSteamAccessDohEndpointsChange,
         )
-        SettingsActionArea {
-            FilledTonalButton(
-                onClick = onRefreshSteamAccess,
-                enabled = steamAccessEnabled && steamAccessState.phase != SteamAccessPhase.RESOLVING,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Refresh,
-                    contentDescription = null,
-                )
-                Text(
-                    text = stringResource(R.string.settings_action_check_routes_again),
-                    modifier = Modifier.padding(start = WallHubSpacing.xs),
-                )
-            }
-        }
+        PreferenceGroupSpacer()
+        SettingsActionPreference(
+            title = stringResource(R.string.settings_action_check_routes_again),
+            icon = Icons.Outlined.Refresh,
+            onClick = onRefreshSteamAccess,
+            enabled = steamAccessEnabled && steamAccessState.phase != SteamAccessPhase.RESOLVING,
+            position = PreferencePosition.Bottom,
+        )
     }
 
-    SettingsSectionSurface(
-        modifier = Modifier.padding(vertical = WallHubSpacing.xs),
-    ) {
-        SteamAccountCard(
-            session = session,
-            onLogin = onLoginSteam,
-            onSubmitCode = onSubmitSteamGuardCode,
-            onUseManualCodeFallback = onUseManualSteamGuardFallback,
-            onRestore = onRestoreSteamSession,
-            onLogout = onLogoutSteam,
-            containerColor = Color.Transparent,
-        )
+    SettingsSection(title = stringResource(R.string.settings_steam_account_title)) {
+        SettingsSectionSurface {
+            SteamAccountCard(
+                session = session,
+                onLogin = onLoginSteam,
+                onSubmitCode = onSubmitSteamGuardCode,
+                onUseManualCodeFallback = onUseManualSteamGuardFallback,
+                onRestore = onRestoreSteamSession,
+                onLogout = onLogoutSteam,
+                containerColor = Color.Transparent,
+            )
+        }
     }
 
     SettingsSection(
@@ -176,16 +169,11 @@ internal fun SteamSettingsContent(
             },
             onSelected = onSteamWorkshopDataSourceChange,
             icon = Icons.Outlined.Language,
-            position =
-                if (steamWorkshopDataSource == SteamWorkshopDataSource.WEB_API) {
-                    PreferencePosition.Top
-                } else {
-                    PreferencePosition.Single
-                },
+            position = PreferencePosition.Top,
         )
         if (steamWorkshopDataSource == SteamWorkshopDataSource.WEB_API) {
             PreferenceGroupSpacer()
-            CustomPreferenceRow(position = PreferencePosition.Bottom) {
+            CustomPreferenceRow(position = PreferencePosition.Middle) {
                 Column(
                     modifier = Modifier.weight(1f).padding(vertical = WallHubSpacing.md),
                     verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
@@ -255,12 +243,15 @@ internal fun SteamSettingsContent(
                 }
             }
         }
-        Text(
-            text = stringResource(R.string.settings_workshop_data_source_account_note),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xs),
-        )
+        PreferenceGroupSpacer()
+        CustomPreferenceRow(position = PreferencePosition.Bottom) {
+            Text(
+                text = stringResource(R.string.settings_workshop_data_source_account_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f).padding(vertical = WallHubSpacing.sm),
+            )
+        }
     }
 }
 
@@ -270,6 +261,7 @@ internal fun SteamAccessDohEndpointsSetting(
     endpoints: List<String>,
     disabledEndpoints: Set<String>,
     endpointStatuses: List<com.wallhub.android.core.model.SteamDohEndpointStatus> = emptyList(),
+    position: PreferencePosition = PreferencePosition.Single,
     onSave: (List<String>, Set<String>) -> Unit,
 ) {
     val invalidEndpointError = stringResource(R.string.settings_error_invalid_doh_url)
@@ -331,7 +323,7 @@ internal fun SteamAccessDohEndpointsSetting(
     PreferenceRow(
         title = stringResource(R.string.settings_doh_routes),
         summary = stringResource(R.string.settings_doh_enabled_summary, enabledCount, endpoints.size),
-        position = PreferencePosition.Single,
+        position = position,
         iconContent = { SettingsPreferenceIcon(Icons.Outlined.Tune) },
         onClick = ::openEditor,
     )
@@ -430,6 +422,14 @@ internal fun SteamAccessDohEndpointsSetting(
         )
     }
 }
+
+private fun List<*>.preferencePosition(index: Int): PreferencePosition =
+    when {
+        size == 1 -> PreferencePosition.Single
+        index == 0 -> PreferencePosition.Top
+        index == lastIndex -> PreferencePosition.Bottom
+        else -> PreferencePosition.Middle
+    }
 
 @Composable
 internal fun SteamAccessDohEditor(
@@ -586,15 +586,11 @@ internal fun SteamAccessDohEditor(
                     }
                     if (groupEndpoints.isNotEmpty()) {
                         item(key = "group-$region") {
-                            WallHubSurfaceCard(
-                                modifier = Modifier.fillMaxWidth(),
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                shape = MaterialTheme.shapes.large,
-                            ) {
-                                Column {
-                                    groupEndpoints.forEachIndexed { index, endpoint ->
-                                        val catalogEndpoint = com.wallhub.android.core.model.SteamDohCatalog.endpointFor(endpoint)
-                                        val status = statusByEndpoint[endpoint]
+                            Column {
+                                groupEndpoints.forEachIndexed { index, endpoint ->
+                                    val catalogEndpoint = com.wallhub.android.core.model.SteamDohCatalog.endpointFor(endpoint)
+                                    val status = statusByEndpoint[endpoint]
+                                    CustomPreferenceRow(position = groupEndpoints.preferencePosition(index)) {
                                         SteamAccessDohEndpointItem(
                                             endpoint = endpoint,
                                             displayName = catalogEndpoint.provider,
@@ -611,12 +607,8 @@ internal fun SteamAccessDohEditor(
                                             onMoveUp = { moveWithinRegion(endpoint, -1) },
                                             onMoveDown = { moveWithinRegion(endpoint, 1) },
                                         )
-                                        if (index < groupEndpoints.lastIndex) {
-                                            androidx.compose.material3.HorizontalDivider(
-                                                color = MaterialTheme.colorScheme.outlineVariant,
-                                            )
-                                        }
                                     }
+                                    if (index < groupEndpoints.lastIndex) PreferenceGroupSpacer()
                                 }
                             }
                         }
@@ -811,45 +803,33 @@ internal fun SteamAccessDohEndpointItem(
 }
 
 @Composable
-internal fun SettingsActionArea(content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier = Modifier.padding(start = WallHubSpacing.md, end = WallHubSpacing.md, bottom = WallHubSpacing.md),
-        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
-        content = content,
-    )
+internal fun SettingsActionArea(
+    position: PreferencePosition = PreferencePosition.Single,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    CustomPreferenceRow(position = position) {
+        Column(
+            modifier = Modifier.weight(1f).padding(vertical = WallHubSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+            content = content,
+        )
+    }
 }
 
 @Composable
 internal fun SettingsStatusMessage(
     message: String,
     isFailure: Boolean,
+    position: PreferencePosition = PreferencePosition.Single,
 ) {
-    val containerColor =
-        if (isFailure) {
-            MaterialTheme.colorScheme.errorContainer
-        } else {
-            MaterialTheme.colorScheme.secondaryContainer
-        }
-    val contentColor =
-        if (isFailure) {
-            MaterialTheme.colorScheme.onErrorContainer
-        } else {
-            MaterialTheme.colorScheme.onSecondaryContainer
-        }
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = containerColor,
-        contentColor = contentColor,
-    ) {
+    CustomPreferenceRow(position = position) {
         Row(
-            modifier = Modifier.padding(WallHubSpacing.sm),
+            modifier = Modifier.weight(1f).padding(vertical = WallHubSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
+            horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
         ) {
-            Icon(
-                imageVector = Icons.Outlined.Info,
-                contentDescription = null,
+            SettingsPreferenceIcon(
+                if (isFailure) Icons.Outlined.ErrorOutline else Icons.Outlined.Info,
             )
             Text(
                 text = message,
@@ -864,23 +844,15 @@ internal fun SettingsStatusMessage(
 internal fun SettingsNotice(
     title: String,
     message: String,
+    position: PreferencePosition = PreferencePosition.Single,
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.tertiaryContainer,
-        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-    ) {
+    CustomPreferenceRow(position = position) {
         Row(
-            modifier = Modifier.padding(WallHubSpacing.md),
+            modifier = Modifier.weight(1f).padding(vertical = WallHubSpacing.sm),
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
         ) {
-            Icon(
-                imageVector = Icons.Outlined.Info,
-                contentDescription = null,
-                modifier = Modifier.size(22.dp),
-            )
+            SettingsPreferenceIcon(Icons.Outlined.Info)
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),

@@ -16,12 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -252,24 +249,6 @@ internal fun AboutWallHubPreferences(
         position = PreferencePosition.Single,
         onClick = onRestartSetupWizard,
     )
-    if (appUpdateState.phase == AppUpdatePhase.DOWNLOADING) {
-        Column(
-            modifier = Modifier.padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.xs),
-            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.dense),
-        ) {
-            LinearProgressIndicator(
-                progress = { appUpdateState.progress },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                text =
-                    "${formatAboutUpdateSize(appUpdateState.downloadedBytes)} / " +
-                        formatAboutUpdateSize(appUpdateState.totalBytes),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
     AboutUpdateActions(
         appUpdateState = appUpdateState,
         onDownloadLatestRelease = onDownloadLatestRelease,
@@ -409,52 +388,56 @@ private fun AboutUpdateActions(
             appUpdateState.message != null
     if (!hasActions) return
 
-    Column(
-        modifier = Modifier.padding(start = WallHubSpacing.md, end = WallHubSpacing.md, bottom = WallHubSpacing.md),
-        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
-    ) {
-        when {
-            appUpdateState.phase == AppUpdatePhase.DOWNLOADING ->
-                OutlinedButton(
-                    onClick = onCancelAppUpdateDownload,
-                    modifier = Modifier.fillMaxWidth(),
+    Spacer(modifier = Modifier.height(WallHubSpacing.sm))
+    when {
+        appUpdateState.phase == AppUpdatePhase.DOWNLOADING -> {
+            SettingsSectionSurface(position = PreferencePosition.Top) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = WallHubSpacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(WallHubSpacing.dense),
                 ) {
-                    Text(stringResource(R.string.settings_action_cancel_download))
-                }
-
-            downloadedPath != null ->
-                Button(
-                    onClick = { onInstallDownloadedRelease(downloadedPath) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(imageVector = Icons.Outlined.Download, contentDescription = null)
-                    Text(
-                        text = stringResource(R.string.settings_action_install_with_android_installer),
-                        modifier = Modifier.padding(start = WallHubSpacing.xs),
+                    LinearProgressIndicator(
+                        progress = { appUpdateState.progress },
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                }
-
-            appUpdateState.canDownloadRelease ->
-                FilledTonalButton(
-                    onClick = onDownloadLatestRelease,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(imageVector = Icons.Outlined.Download, contentDescription = null)
                     Text(
                         text =
-                            stringResource(R.string.settings_action_download_latest_apk),
-                        modifier = Modifier.padding(start = WallHubSpacing.xs),
+                            "${formatAboutUpdateSize(appUpdateState.downloadedBytes)} / " +
+                                formatAboutUpdateSize(appUpdateState.totalBytes),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-        }
-        appUpdateState.message?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(horizontal = WallHubSpacing.xxs, vertical = WallHubSpacing.xxs),
+            }
+            PreferenceGroupSpacer()
+            SettingsActionPreference(
+                title = stringResource(R.string.settings_action_cancel_download),
+                icon = Icons.Outlined.Download,
+                onClick = onCancelAppUpdateDownload,
+                position = PreferencePosition.Bottom,
             )
         }
+
+        downloadedPath != null ->
+            SettingsActionPreference(
+                title = stringResource(R.string.settings_action_install_with_android_installer),
+                icon = Icons.Outlined.Download,
+                onClick = { onInstallDownloadedRelease(downloadedPath) },
+            )
+
+        appUpdateState.canDownloadRelease ->
+            SettingsActionPreference(
+                title = stringResource(R.string.settings_action_download_latest_apk),
+                icon = Icons.Outlined.Download,
+                onClick = onDownloadLatestRelease,
+            )
+    }
+    appUpdateState.message?.let { message ->
+        PreferenceGroupSpacer()
+        SettingsStatusMessage(
+            message = message,
+            isFailure = true,
+        )
     }
 }
 

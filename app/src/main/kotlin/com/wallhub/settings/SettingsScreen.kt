@@ -10,10 +10,12 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -29,10 +31,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.VisualTransformation
 import com.wallhub.android.R
-import com.wallhub.android.core.designsystem.WallHubSurfaceCard
 import com.wallhub.android.core.model.AccentPreference
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.HomeCardAction
@@ -42,6 +44,9 @@ import com.wallhub.android.core.model.SteamAccessState
 import com.wallhub.android.core.model.SteamSessionState
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
+import org.uwuaosp.compose.settingslib.CustomPreferenceRow
+import org.uwuaosp.compose.settingslib.PreferencePosition
+import org.uwuaosp.compose.settingslib.PreferenceRow
 import org.uwuaosp.compose.settingslib.SettingsScaffold
 import org.uwuaosp.compose.settingslib.rememberSettingsTypography
 import org.uwuaosp.compose.settingslib.SettingsCategory as UwuSettingsCategory
@@ -463,13 +468,30 @@ private const val SETTINGS_ABOUT_PAGE_KEY = "about_wallhub"
 @Composable
 internal fun SettingsSectionSurface(
     modifier: Modifier = Modifier,
+    position: PreferencePosition = PreferencePosition.Single,
     content: @Composable () -> Unit,
 ) {
-    WallHubSurfaceCard(
-        modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.shapes.large,
-        content = content,
+    CustomPreferenceRow(position = position) {
+        Box(modifier = modifier.weight(1f)) {
+            content()
+        }
+    }
+}
+
+@Composable
+internal fun SettingsActionPreference(
+    title: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    position: PreferencePosition = PreferencePosition.Single,
+) {
+    PreferenceRow(
+        title = title,
+        enabled = enabled,
+        position = position,
+        iconContent = { SettingsPreferenceIcon(icon) },
+        onClick = onClick,
     )
 }
 

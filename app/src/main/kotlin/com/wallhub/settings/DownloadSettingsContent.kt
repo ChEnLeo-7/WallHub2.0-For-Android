@@ -7,12 +7,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,6 +31,8 @@ import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.MAX_CONCURRENT_DOWNLOAD_OPTIONS
 import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
+import org.uwuaosp.compose.settingslib.CustomPreferenceRow
+import org.uwuaosp.compose.settingslib.PreferenceGroupSpacer
 import org.uwuaosp.compose.settingslib.PreferencePosition
 import org.uwuaosp.compose.settingslib.PreferenceRow
 import org.uwuaosp.compose.settingslib.SwitchPreferenceRow
@@ -79,37 +79,35 @@ internal fun DownloadSettingsContent(
     PreferenceRow(
         title = stringResource(R.string.settings_current_export_directory),
         summary = preferences.outputDirectoryLabel ?: stringResource(R.string.settings_default_export_directory),
-        position = PreferencePosition.Single,
+        position = PreferencePosition.Top,
         iconContent = { SettingsPreferenceIcon(Icons.Outlined.FolderOpen) },
         onClick = null,
     )
-    SettingsActionArea {
-            FilledTonalButton(
-                onClick = onSelectOutputDirectory,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.FolderOpen,
-                    contentDescription = null,
-                )
-                Text(
-                    text =
-                        if (preferences.outputTreeUri == null) {
-                            stringResource(R.string.settings_action_choose_custom_directory)
-                        } else {
-                            stringResource(R.string.settings_action_change_custom_directory)
-                        },
-                    modifier = Modifier.padding(start = WallHubSpacing.xs),
-                )
-            }
-            if (preferences.outputTreeUri != null) {
-                TextButton(
-                    onClick = onClearOutputDirectory,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.settings_action_restore_default_directory))
-                }
-            }
+    PreferenceGroupSpacer()
+    SettingsActionPreference(
+        title =
+            if (preferences.outputTreeUri == null) {
+                stringResource(R.string.settings_action_choose_custom_directory)
+            } else {
+                stringResource(R.string.settings_action_change_custom_directory)
+            },
+        icon = Icons.Outlined.FolderOpen,
+        onClick = onSelectOutputDirectory,
+        position =
+            if (preferences.outputTreeUri == null) {
+                PreferencePosition.Bottom
+            } else {
+                PreferencePosition.Middle
+            },
+    )
+    if (preferences.outputTreeUri != null) {
+        PreferenceGroupSpacer()
+        SettingsActionPreference(
+            title = stringResource(R.string.settings_action_restore_default_directory),
+            icon = Icons.Outlined.DeleteSweep,
+            onClick = onClearOutputDirectory,
+            position = PreferencePosition.Bottom,
+        )
     }
 
     UwuSettingsCategory(title = stringResource(R.string.settings_mpkg_conversion_title))
@@ -142,7 +140,7 @@ internal fun DownloadSettingsContent(
         position = PreferencePosition.Top,
         icon = Icons.Outlined.Download,
     )
-    org.uwuaosp.compose.settingslib.PreferenceGroupSpacer()
+    PreferenceGroupSpacer()
     SettingChoiceRow(
         title = stringResource(R.string.settings_chunks_per_download),
         selectedValue = preferences.chunkDownloadConcurrency,
@@ -164,33 +162,28 @@ internal fun DownloadSettingsContent(
         position = PreferencePosition.Top,
         onCheckedChange = onOnlineChunkPlaybackEnabledChange,
     )
-    org.uwuaosp.compose.settingslib.PreferenceGroupSpacer()
+    PreferenceGroupSpacer()
     SteamStreamCacheSetting(
         cacheLimitMb = preferences.mediaCacheLimitMb,
         onCacheLimitChange = onOnlineStreamCacheLimitChange,
+        position = PreferencePosition.Middle,
     )
-    SettingsActionArea {
-        FilledTonalButton(
-            onClick = onClearOnlineStreamCache,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.DeleteSweep,
-                contentDescription = null,
-            )
-            Text(
-                text = stringResource(R.string.settings_clear_streaming_cache),
-                modifier = Modifier.padding(start = WallHubSpacing.xs),
-            )
-        }
-    }
+    PreferenceGroupSpacer()
+    SettingsActionPreference(
+        title = stringResource(R.string.settings_clear_streaming_cache),
+        icon = Icons.Outlined.DeleteSweep,
+        onClick = onClearOnlineStreamCache,
+        position = PreferencePosition.Bottom,
+    )
 
     UwuSettingsCategory(title = stringResource(R.string.settings_network_proxy_title))
         if (preferences.downloadProxyRequiresConfirmation) {
             SettingsNotice(
                 title = stringResource(R.string.settings_legacy_proxy_confirmation_title),
                 message = stringResource(R.string.settings_legacy_proxy_confirmation_description),
+                position = PreferencePosition.Top,
             )
+            PreferenceGroupSpacer()
         }
         SwitchPreferenceRow(
             title = stringResource(R.string.settings_use_network_proxy),
@@ -203,27 +196,35 @@ internal fun DownloadSettingsContent(
             checked = preferences.downloadProxyEnabled,
             enabled = isSupportedDownloadProxyUrl(preferences.downloadProxyUrl),
             onCheckedChange = onDownloadProxyEnabledChange,
-            position = PreferencePosition.Single,
+            position =
+                if (preferences.downloadProxyRequiresConfirmation) {
+                    PreferencePosition.Middle
+                } else {
+                    PreferencePosition.Top
+                },
             iconContent = { SettingsPreferenceIcon(Icons.Outlined.Tune) },
         )
-        Column(
-            modifier = Modifier.padding(WallHubSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
-        ) {
-            SettingsFilledTextField(
-                value = proxyUrl,
-                onValueChange = onProxyUrlChanged,
-                label = { Text(stringResource(R.string.settings_proxy_field_label)) },
-                placeholder = { Text("socks5://127.0.0.1:1080") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Button(
-                onClick = { saveDownloadPreferences(nextProxyUrl = proxyUrl) },
-                enabled = proxyUrl != preferences.downloadProxyUrl,
-                modifier = Modifier.fillMaxWidth(),
+        PreferenceGroupSpacer()
+        CustomPreferenceRow(position = PreferencePosition.Bottom) {
+            Column(
+                modifier = Modifier.weight(1f).padding(vertical = WallHubSpacing.sm),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
             ) {
-                Text(stringResource(R.string.settings_action_save_proxy_settings))
+                SettingsFilledTextField(
+                    value = proxyUrl,
+                    onValueChange = onProxyUrlChanged,
+                    label = { Text(stringResource(R.string.settings_proxy_field_label)) },
+                    placeholder = { Text("socks5://127.0.0.1:1080") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Button(
+                    onClick = { saveDownloadPreferences(nextProxyUrl = proxyUrl) },
+                    enabled = proxyUrl != preferences.downloadProxyUrl,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.settings_action_save_proxy_settings))
+                }
             }
         }
 }
@@ -252,7 +253,7 @@ private fun WorkshopSourceCacheSettings(
         position = PreferencePosition.Top,
         onCheckedChange = onEnabledChange,
     )
-    org.uwuaosp.compose.settingslib.PreferenceGroupSpacer()
+    PreferenceGroupSpacer()
     SettingChoiceRow(
         title = stringResource(R.string.settings_source_cache_budget),
         selectedValue = selectedPreset,
@@ -264,33 +265,31 @@ private fun WorkshopSourceCacheSettings(
         onSelected = { preset ->
             preset.budgetGiB?.let(onBudgetChange) ?: run { showCustomDialog = true }
         },
-        position = PreferencePosition.Bottom,
+        position = PreferencePosition.Middle,
         icon = Icons.Outlined.Tune,
     )
+    PreferenceGroupSpacer()
     PreferenceRow(
         title = stringResource(R.string.settings_source_cache_retained),
         summary = Formatter.formatFileSize(context, state.retainedBytes),
-        position = PreferencePosition.Single,
+        position = PreferencePosition.Middle,
         iconContent = { SettingsPreferenceIcon(Icons.Outlined.Download) },
         onClick = null,
     )
+    PreferenceGroupSpacer()
     SettingsNotice(
         title = stringResource(R.string.settings_source_cache_effective_limit_title),
         message = stringResource(R.string.settings_source_cache_effective_limit_description),
+        position = PreferencePosition.Middle,
     )
-    SettingsActionArea {
-        OutlinedButton(
-            onClick = { showClearDialog = true },
-            enabled = !state.isClearing,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(Icons.Outlined.DeleteSweep, contentDescription = null)
-            Text(
-                text = stringResource(R.string.settings_source_cache_clear_now),
-                modifier = Modifier.padding(start = WallHubSpacing.xs),
-            )
-        }
-    }
+    PreferenceGroupSpacer()
+    SettingsActionPreference(
+        title = stringResource(R.string.settings_source_cache_clear_now),
+        icon = Icons.Outlined.DeleteSweep,
+        onClick = { showClearDialog = true },
+        enabled = !state.isClearing,
+        position = PreferencePosition.Bottom,
+    )
 
     if (showCustomDialog) {
         val parsedBudget = parsePositiveGiB(customBudget)

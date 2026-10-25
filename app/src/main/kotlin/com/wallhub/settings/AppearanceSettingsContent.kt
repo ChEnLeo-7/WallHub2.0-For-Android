@@ -575,6 +575,7 @@ internal fun SettingsPreferenceIcon(icon: ImageVector) {
 internal fun SteamStreamCacheSetting(
     cacheLimitMb: Int,
     onCacheLimitChange: (Int) -> Unit,
+    position: PreferencePosition = PreferencePosition.Single,
 ) {
     val cacheSizeError = stringResource(R.string.settings_error_cache_size)
     var customSheetVisible by rememberSaveable { mutableStateOf(false) }
@@ -600,6 +601,7 @@ internal fun SteamStreamCacheSetting(
                 customSheetVisible = true
             }
         },
+        position = position,
     )
 
     if (customSheetVisible) {
