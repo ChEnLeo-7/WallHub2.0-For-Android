@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.ConnectionPool
@@ -211,16 +212,22 @@ class SteamAccessManager @Inject internal constructor(
         )
     }
 
-    override fun lookup(hostname: String): List<InetAddress> {
-        val protectedSteamHost = SteamDomainPolicy.supports(hostname)
-        val systemDnsAllowed =
-            synchronized(this) {
-                preferencesReady.isCompleted && !preferences.steamAccessEnabled
-            }
-        if (protectedSteamHost && !systemDnsAllowed) {
-            throw UnknownHostException("System DNS is disabled for protected Steam services")
+    override fun lookup(hostname: String): List<InetAddress> =
+        if (SteamDomainPolicy.supports(hostname)) {
+            systemDnsLookupWhenDisabled(hostname)
+        } else {
+            Dns.SYSTEM.lookup(hostname)
         }
-        return Dns.SYSTEM.lookup(hostname)
+
+    internal fun systemDnsLookupWhenDisabled(hostname: String): List<InetAddress> {
+        val host = SteamDomainPolicy.requireSupported(hostname)
+        runBlocking { preferencesReady.await() }
+        return synchronized(this) {
+            if (preferences.steamAccessEnabled) {
+                throw UnknownHostException("System DNS is disabled for protected Steam services")
+            }
+            Dns.SYSTEM.lookup(host)
+        }
     }
 
     internal suspend fun acceleratedOrWebCandidateRoute(hostname: String, port: Int): AcceleratedRoute {

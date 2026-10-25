@@ -111,7 +111,12 @@ internal class SteamLoopbackTlsBridge
                     val host = SteamDomainPolicy.requireAuthenticatedCdnEndpoint(request.host, request.port)
                     if (!accessManager.enhancedConnectionEnabled()) {
                         Log.i(LOG_TAG, "SDK bridge plane=cdn mode=direct")
-                        val upstream = connectDirect(host, request.port)
+                        val upstream =
+                            connectDirect(
+                                host,
+                                request.port,
+                                accessManager.systemDnsLookupWhenDisabled(host),
+                            )
                         upstreamSocket = upstream
                         writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
                         clientSocket.soTimeout = 0
@@ -255,7 +260,12 @@ internal class SteamLoopbackTlsBridge
                 val host = SteamDomainPolicy.requireSupportedEndpoint(request.host, request.port)
                 if (SteamDomainPolicy.isCmHost(host) && !accessManager.enhancedConnectionEnabled()) {
                     Log.i(LOG_TAG, "SDK bridge plane=cm mode=direct")
-                    val upstream = connectDirect(host, request.port)
+                    val upstream =
+                        connectDirect(
+                            host,
+                            request.port,
+                            accessManager.systemDnsLookupWhenDisabled(host),
+                        )
                     upstreamSocket = upstream
                     writeResponse(clientSocket, "HTTP/1.1 200 Connection Established\r\n\r\n")
                     clientSocket.soTimeout = 0
@@ -353,10 +363,10 @@ internal class SteamLoopbackTlsBridge
         private fun connectDirect(
             hostname: String,
             port: Int,
-            preparedAddresses: List<InetAddress>? = null,
+            preparedAddresses: List<InetAddress>,
         ): Socket {
             val addresses =
-                (preparedAddresses ?: InetAddress.getAllByName(hostname).toList())
+                preparedAddresses
                     .asSequence()
                     .filter(::isAuthenticatedCdnAddress)
                     .distinctBy(InetAddress::getHostAddress)
