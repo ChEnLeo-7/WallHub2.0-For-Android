@@ -25,7 +25,7 @@ class SteamRequestRoutingTest {
             mayUseSteamWebAlias(
                 connectAuthority = "steamcommunity.com",
                 requestHead =
-                    "GET /sharedfiles/filedetails/?id=3799142774 HTTP/1.1\r\n" +
+                    "GET /workshop/browse/?appid=431960&p=1&num_per_page=30 HTTP/1.1\r\n" +
                         "Host: steamcommunity.com\r\nAccept: text/html\r\nConnection: close\r\n\r\n",
             ),
         )

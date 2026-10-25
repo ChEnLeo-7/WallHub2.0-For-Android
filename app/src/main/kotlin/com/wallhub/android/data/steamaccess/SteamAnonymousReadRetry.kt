@@ -230,6 +230,6 @@ private val ANONYMOUS_COMMUNITY_COMMENT_PATH =
 private val WORKSHOP_IMAGE_PATH = Regex("^/ugc/[0-9]+/[0-9A-Fa-f]+/$")
 
 private val ANONYMOUS_COMMUNITY_PARAMETERS = setOf(
-    "id", "appid", "searchtext", "browsesort", "section", "actualsort", "p", "numperpage",
+    "id", "appid", "searchtext", "browsesort", "section", "actualsort", "p", "numperpage", "num_per_page",
     "days", "requiredtags[]", "excludedtags[]", "l", "insideModal", "childpublishedfileid",
 )
