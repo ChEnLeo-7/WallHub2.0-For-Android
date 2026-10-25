@@ -40,12 +40,18 @@ import okhttp3.OkHttpClient
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.net.UnknownHostException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val DOH_BENCHMARK_RETRY_MS = 60_000L
+
+internal inline fun systemDnsCandidates(
+    steamAccessEnabled: Boolean,
+    lookup: () -> List<InetAddress>,
+): List<InetAddress> = if (steamAccessEnabled) emptyList() else lookup()
 
 internal data class SteamDohWarmupResult(
     val domesticRoutes: Int,
@@ -205,7 +211,17 @@ class SteamAccessManager @Inject internal constructor(
         )
     }
 
-    override fun lookup(hostname: String): List<InetAddress> = Dns.SYSTEM.lookup(hostname)
+    override fun lookup(hostname: String): List<InetAddress> {
+        val protectedSteamHost = SteamDomainPolicy.supports(hostname)
+        val systemDnsAllowed =
+            synchronized(this) {
+                preferencesReady.isCompleted && !preferences.steamAccessEnabled
+            }
+        if (protectedSteamHost && !systemDnsAllowed) {
+            throw UnknownHostException("System DNS is disabled for protected Steam services")
+        }
+        return Dns.SYSTEM.lookup(hostname)
+    }
 
     internal suspend fun acceleratedOrWebCandidateRoute(hostname: String, port: Int): AcceleratedRoute {
         val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
@@ -249,10 +265,8 @@ class SteamAccessManager @Inject internal constructor(
                 }
             }
             val systemByAuthority =
-                if (reuseCachedTargets) {
-                    authorities.associateWith { emptyList() }
-                } else {
-                    authorities.associateWith { authority ->
+                authorities.associateWith { authority ->
+                    systemDnsCandidates(settings.steamAccessEnabled) {
                         runCatching { Dns.SYSTEM.lookup(authority) }.getOrDefault(emptyList())
                     }
                 }
@@ -325,7 +339,10 @@ class SteamAccessManager @Inject internal constructor(
             candidates.get(key, generation)?.let {
                 return@withLock AcceleratedRoute(selectedNetwork, generation, port, it)
             }
-            val system = runCatching { Dns.SYSTEM.lookup(host) }.getOrDefault(emptyList())
+            val system =
+                systemDnsCandidates(settings.steamAccessEnabled) {
+                    runCatching { Dns.SYSTEM.lookup(host) }.getOrDefault(emptyList())
+                }
             val resolved = if (!settings.steamAccessEnabled) {
                 emptyList()
             } else {

@@ -201,6 +201,21 @@ class SteamAccessRoutesTest {
     }
 
     @Test
+    fun `system DNS candidates are used only when automatic anti blocking is disabled`() {
+        val system = listOf(InetAddress.getByName("104.244.43.208"))
+        var lookups = 0
+        val lookup = {
+            lookups++
+            system
+        }
+
+        assertTrue(systemDnsCandidates(steamAccessEnabled = true, lookup).isEmpty())
+        assertEquals(0, lookups)
+        assertEquals(system, systemDnsCandidates(steamAccessEnabled = false, lookup))
+        assertEquals(1, lookups)
+    }
+
+    @Test
     fun `selected DoH answers cannot be crowded out by four system DNS addresses`() {
         val system = (1..4).map { suffix -> InetAddress.getByName("31.13.94.$suffix") }
         val doh = InetAddress.getByName("23.60.96.245")
