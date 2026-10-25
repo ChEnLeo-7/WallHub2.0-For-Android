@@ -104,7 +104,8 @@ class SteamAccessManager @Inject internal constructor(
             .readTimeout(3, TimeUnit.SECONDS)
             .callTimeout(3, TimeUnit.SECONDS)
             .build(),
-        Executors.newFixedThreadPool(10),
+        foregroundExecutor = Executors.newFixedThreadPool(10),
+        benchmarkExecutor = Executors.newFixedThreadPool(10),
     )
     internal val connectionPool = ConnectionPool(12, 10, TimeUnit.MINUTES)
     private val mutableState = MutableStateFlow(SteamAccessState())

@@ -15,6 +15,7 @@ import java.net.InetAddress
 import java.util.Base64
 import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -33,9 +34,18 @@ internal data class SteamDohProbeResult(
     val available: Boolean get() = addresses.isNotEmpty() && latencyMs != null
 }
 
+internal fun foregroundResolutionComplete(
+    hostnames: List<String>,
+    answers: Map<String, List<InetAddress>>,
+): Boolean = hostnames.distinct().all { hostname -> answers[hostname].orEmpty().isNotEmpty() }
+
+private fun Map<String, List<InetAddress>>.normalizedDohAnswers(): Map<String, List<InetAddress>> =
+    mapValues { (_, addresses) -> addresses.distinctBy(InetAddress::getHostAddress) }
+
 internal class SteamAccessDohResolver(
     private val client: OkHttpClient,
-    private val executor: ExecutorService,
+    private val foregroundExecutor: ExecutorService,
+    private val benchmarkExecutor: ExecutorService,
 ) {
     private val bootstrapClients = ConcurrentHashMap<String, OkHttpClient>()
 
@@ -66,11 +76,27 @@ internal class SteamAccessDohResolver(
                 }
             }
         if (tasks.isEmpty()) return emptyMap()
-        return executor
-            .invokeAll(tasks, QUERY_BUDGET_MS, TimeUnit.MILLISECONDS)
-            .mapNotNull { future -> runCatching { future.get() }.getOrNull() }
-            .groupBy(Pair<String, List<InetAddress>>::first, Pair<String, List<InetAddress>>::second)
-            .mapValues { (_, answers) -> answers.flatten().distinctBy(InetAddress::getHostAddress) }
+        val completion = ExecutorCompletionService<Pair<String, List<InetAddress>>>(foregroundExecutor)
+        val futures = tasks.map(completion::submit)
+        val answers = linkedMapOf<String, MutableList<InetAddress>>()
+        val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(QUERY_BUDGET_MS)
+        try {
+            repeat(tasks.size) {
+                val remainingNanos = deadlineNanos - System.nanoTime()
+                if (remainingNanos <= 0L) return@repeat
+                val completed = completion.poll(remainingNanos, TimeUnit.NANOSECONDS) ?: return@repeat
+                val (hostname, addresses) = runCatching { completed.get() }.getOrNull() ?: return@repeat
+                if (addresses.isNotEmpty()) {
+                    answers.getOrPut(hostname) { mutableListOf() }.addAll(addresses)
+                    if (foregroundResolutionComplete(hostnames, answers)) {
+                        return answers.normalizedDohAnswers()
+                    }
+                }
+            }
+            return answers.normalizedDohAnswers()
+        } finally {
+            futures.forEach { future -> if (!future.isDone) future.cancel(true) }
+        }
     }
 
     fun benchmark(endpoints: List<SteamDohEndpoint>): List<SteamDohProbeResult> {
@@ -83,7 +109,7 @@ internal class SteamAccessDohResolver(
             }
         }
         if (tasks.isEmpty()) return emptyList()
-        return executor
+        return benchmarkExecutor
             .invokeAll(tasks, BENCHMARK_BUDGET_MS, TimeUnit.MILLISECONDS)
             .mapIndexed { index, future ->
                 runCatching { future.get() }.getOrNull()
@@ -180,7 +206,7 @@ internal class SteamAccessDohResolver(
         private const val TYPE_AAAA = 28
         private const val DNS_MESSAGE_MEDIA_TYPE = "application/dns-message"
         private const val BENCHMARK_HOST = "steamcommunity-a.akamaihd.net"
-        private const val QUERY_BUDGET_MS = 8_000L
+        private const val QUERY_BUDGET_MS = 2_500L
         private const val BENCHMARK_BUDGET_MS = 30_000L
         private const val MAX_RESPONSE_BYTES = 64L * 1024L
         private const val DNS_HEADER_BYTES = 12
@@ -194,9 +220,9 @@ internal class SteamAccessDohResolver(
         ): List<SteamDohQuery> {
             val recordTypes = if (includeIpv6) listOf(TYPE_A, TYPE_AAAA) else listOf(TYPE_A)
             val boundedEndpoints = endpoints.take(STEAM_ACCESS_DOH_ENDPOINT_LIMIT)
-            return hostnames.flatMap { hostname ->
-                recordTypes.flatMap { type ->
-                    boundedEndpoints.map { endpoint -> SteamDohQuery(hostname, endpoint, type) }
+            return recordTypes.flatMap { type ->
+                boundedEndpoints.flatMap { endpoint ->
+                    hostnames.map { hostname -> SteamDohQuery(hostname, endpoint, type) }
                 }
             }
         }

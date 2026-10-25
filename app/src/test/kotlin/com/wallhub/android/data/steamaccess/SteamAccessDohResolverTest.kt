@@ -7,15 +7,38 @@ import kotlin.test.assertTrue
 
 class SteamAccessDohResolverTest {
     @Test
-    fun `query plan gives every endpoint a slot before secondary work`() {
+    fun `query plan gives every authority an IPv4 slot before secondary work`() {
         val plan = SteamAccessDohResolver.queryPlan(
-            hostnames = listOf("first.example", "second.example"),
+            hostnames = listOf("canonical.example", "alias.example"),
             endpoints = listOf("domestic", "foreign", "backup"),
             includeIpv6 = true,
         )
 
-        assertEquals(listOf("domestic", "foreign", "backup"), plan.take(3).map { it.endpoint })
-        assertTrue(plan.take(3).all { it.hostname == "first.example" && it.recordType == 1 })
+        assertEquals(
+            listOf("canonical.example", "alias.example", "canonical.example", "alias.example"),
+            plan.take(4).map { it.hostname },
+        )
+        assertEquals(listOf("domestic", "domestic", "foreign", "foreign"), plan.take(4).map { it.endpoint })
+        assertTrue(plan.take(4).all { it.recordType == 1 })
+    }
+
+    @Test
+    fun `foreground resolution completes after every authority has one address`() {
+        val canonical = InetAddress.getByName("23.1.1.1")
+        val alias = InetAddress.getByName("23.2.2.2")
+
+        assertTrue(
+            foregroundResolutionComplete(
+                hostnames = listOf("canonical.example", "alias.example"),
+                answers = mapOf("canonical.example" to listOf(canonical), "alias.example" to listOf(alias)),
+            ),
+        )
+        assertTrue(
+            !foregroundResolutionComplete(
+                hostnames = listOf("canonical.example", "alias.example"),
+                answers = mapOf("canonical.example" to listOf(canonical)),
+            ),
+        )
     }
 
     @Test
