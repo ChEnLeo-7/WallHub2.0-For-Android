@@ -23,7 +23,7 @@ internal const val CM_WEBSOCKET_PORT = 443
 /** How many endpoints are handed to the engine. A short list is enough; the engine tries them in order. */
 internal const val MAX_CM_CANDIDATES = 4
 
-private const val CM_FETCH_TIMEOUT_MS = 6_000L
+private const val CM_FETCH_TIMEOUT_MS = 12_000L
 
 private const val TAG = "WallHubSdkRoute"
 private val CM_ENDPOINT_REGEX = Regex("([A-Za-z0-9][A-Za-z0-9.-]*\\.steamserver\\.net):(\\d{2,5})")
@@ -89,7 +89,7 @@ internal class SteamCmEndpointSource
         private suspend fun fetchDirectory(): String? {
             val client =
                 httpClientFactory
-                    .builderForSteamEndpoint("api.steampowered.com", CM_WEBSOCKET_PORT)
+                    .newAnonymousReadBuilder()
                     .protocols(listOf(Protocol.HTTP_1_1))
                     .connectTimeout(CM_FETCH_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                     .readTimeout(CM_FETCH_TIMEOUT_MS, TimeUnit.MILLISECONDS)

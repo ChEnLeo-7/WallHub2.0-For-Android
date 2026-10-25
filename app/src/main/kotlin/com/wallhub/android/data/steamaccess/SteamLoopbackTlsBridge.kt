@@ -23,7 +23,20 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-internal class SteamLoopbackTlsBridge
+internal internal fun steamWebFirstResponseTimeoutMillis(
+    connectAuthority: String,
+    requestHead: String,
+): Int =
+    if (isAnonymousSteamDirectoryRequest(connectAuthority, requestHead)) {
+        DIRECTORY_FIRST_RESPONSE_TIMEOUT_MS
+    } else {
+        DEFAULT_FIRST_RESPONSE_TIMEOUT_MS
+    }
+
+private const val DIRECTORY_FIRST_RESPONSE_TIMEOUT_MS = 2_500
+private const val DEFAULT_FIRST_RESPONSE_TIMEOUT_MS = 20_000
+
+class SteamLoopbackTlsBridge
     @Inject
     constructor(
         private val privateCa: WallHubPrivateCa,
@@ -208,7 +221,7 @@ internal class SteamLoopbackTlsBridge
                         upstream.socket.soTimeout = 0
                         accessManager.recordWebResponse(route, target, upstream.elapsedMs)
                     }
-                    upstream.socket.soTimeout = FIRST_RESPONSE_TIMEOUT_MS
+                    upstream.socket.soTimeout = steamWebFirstResponseTimeoutMillis(host, requestHeadText)
                     relay(
                         securedClient,
                         upstream.socket,

@@ -109,7 +109,10 @@ internal class SetupNetworkPreflightRunner(
                         val started = nowMillis()
                         try {
                             val timeoutMillis =
-                                if (check == SetupNetworkCheck.COMMUNITY_HTML) {
+                                if (
+                                    check == SetupNetworkCheck.DIRECTORY ||
+                                    check == SetupNetworkCheck.COMMUNITY_HTML
+                                ) {
                                     SETUP_WEB_PROBE_TIMEOUT_MS
                                 } else {
                                     SETUP_PROBE_TIMEOUT_MS
@@ -193,7 +196,7 @@ class SetupNetworkPreflight
     }
 
     private suspend fun probeDirectory(): SetupProbeOutcome {
-        val body = getBounded(CM_DIRECTORY_URL, "application/json")
+        val body = getBounded(CM_DIRECTORY_URL, "application/json", anonymousWebClient)
         val count = cmCandidateCount(cmCandidatesFromBody(body))
         if (count == 0) throw IOException("No supported CM endpoints")
         return SetupProbeOutcome.Passed("$count CM endpoints")
