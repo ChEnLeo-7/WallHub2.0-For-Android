@@ -69,7 +69,7 @@ class CommunityWorkshopRepositoryTest {
         }
 
     @Test
-    fun `community comments prefer canonical owner POST and fall back after positive total schema failure`() =
+    fun `community comments hedge one canonical POST with one bounded backup`() =
         runBlocking {
             val requests = mutableListOf<Pair<String, String>>()
             val settings =
@@ -102,7 +102,8 @@ class CommunityWorkshopRepositoryTest {
             assertTrue(page.comments.isEmpty())
             assertEquals("POST", requests.first().first)
             assertEquals("/comment/PublishedFile_Public/render/76561198000000000/$WORKSHOP_ID/", requests.first().second)
-            assertTrue(requests.size >= 2)
+            assertEquals(2, requests.size)
+            assertTrue(requests.all { it.first == "POST" })
         }
 
     @Test

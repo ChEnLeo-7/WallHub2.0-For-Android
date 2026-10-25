@@ -1,6 +1,5 @@
 package com.wallhub.android.data.workshop
 
-import android.net.Uri
 import android.util.Log
 import com.wallhub.android.core.model.CmPublicDetailResult
 import com.wallhub.android.core.model.FavoriteState
@@ -26,6 +25,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -78,7 +78,7 @@ class CommunityWorkshopRepository internal constructor(
     )
 
         private val commentsClient =
-            client.newBuilder()
+            anonymousReadClient.newBuilder()
                 .callTimeout(COMMUNITY_COMMENT_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .build()
         private val communityDetailClient =
@@ -319,46 +319,65 @@ class CommunityWorkshopRepository internal constructor(
                 ?: error("Failed to determine the author of this Workshop item")
         }
 
-        private fun requestCommunityCommentsPage(
+        private suspend fun requestCommunityCommentsPage(
             workshopId: Long,
             start: Int,
             count: Int,
             ownerId: String,
-        ): WorkshopCommentPage {
-            val routes =
-                listOf(
-                    ownerId to "$COMMUNITY_COMMENTS_HTML_URL/$ownerId/$workshopId/",
-                    "" to "$COMMUNITY_COMMENTS_HTML_URL/$workshopId/-1/",
-                )
-            var lastFailure: Throwable? = null
-            routes.forEach { (routeOwnerId, url) ->
-                listOf(true, false).forEach { usePost ->
-                    try {
-                        requestCommunityCommentsRoute(
-                            url = url,
-                            workshopId = workshopId,
-                            start = start,
-                            count = count,
-                            ownerId = routeOwnerId,
-                            creatorId = ownerId,
-                            usePost = usePost,
-                        )?.let { return it }
-                    } catch (error: Throwable) {
-                        lastFailure = error
-                    }
+        ): WorkshopCommentPage = coroutineScope {
+            suspend fun request(routeOwnerId: String, url: String): WorkshopCommentPage =
+                requestCommunityCommentsRoute(
+                    url = url,
+                    workshopId = workshopId,
+                    start = start,
+                    count = count,
+                    ownerId = routeOwnerId,
+                    creatorId = ownerId,
+                ) ?: throw IOException("Steam Community returned no comment data")
+
+            suspend fun attempt(block: suspend () -> WorkshopCommentPage): Result<WorkshopCommentPage> =
+                try {
+                    Result.success(block())
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    Result.failure(error)
+                }
+
+            val primary = async {
+                attempt {
+                    request(ownerId, "$COMMUNITY_COMMENTS_HTML_URL/$ownerId/$workshopId/")
                 }
             }
-            throw lastFailure ?: IOException("Steam Community returned no comment data")
+            delay(COMMUNITY_COMMENT_HEDGE_DELAY_MS)
+            if (primary.isCompleted) {
+                primary.await().getOrNull()?.let { return@coroutineScope it }
+            }
+            val backup = async {
+                attempt {
+                    request("", "$COMMUNITY_COMMENTS_HTML_URL/$workshopId/-1/")
+                }
+            }
+            if (primary.isCompleted) return@coroutineScope backup.await().getOrThrow()
+
+            val first = select<Pair<Boolean, Result<WorkshopCommentPage>>> {
+                primary.onAwait { true to it }
+                backup.onAwait { false to it }
+            }
+            first.second.getOrNull()?.let { page ->
+                if (first.first) backup.cancel() else primary.cancel()
+                return@coroutineScope page
+            }
+            if (first.first) backup.await().getOrThrow() else primary.await().getOrThrow()
         }
 
-        private fun requestCommunityCommentsRoute(
+        private suspend fun requestCommunityCommentsRoute(
             url: String,
             workshopId: Long,
             start: Int,
             count: Int,
             ownerId: String,
             creatorId: String,
-            usePost: Boolean,
         ): WorkshopCommentPage? {
             val form =
                 FormBody
@@ -369,26 +388,11 @@ class CommunityWorkshopRepository internal constructor(
                     .add("l", "schinese")
                     .add("userreview_offset", "-1")
                     .build()
-            val requestUrl =
-                if (usePost) {
-                    url
-                } else {
-                    Uri
-                        .parse(url)
-                        .buildUpon()
-                        .appendQueryParameter("start", start.toString())
-                        .appendQueryParameter("count", count.toString())
-                        .appendQueryParameter("feature2", "-1")
-                        .appendQueryParameter("l", "schinese")
-                        .appendQueryParameter("userreview_offset", "-1")
-                        .build()
-                        .toString()
-                }
             val request =
                 Request
                     .Builder()
-                    .url(requestUrl)
-                    .apply { if (usePost) post(form) else get() }
+                    .url(url)
+                    .post(form)
                     .header("Accept", "application/json,text/javascript,*/*;q=0.01")
                     .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.7")
                     .header("Origin", "https://steamcommunity.com")
@@ -397,12 +401,12 @@ class CommunityWorkshopRepository internal constructor(
                     .header("X-Requested-With", "XMLHttpRequest")
                     .build()
             val payload =
-                commentsClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        throw IOException("Steam Community comment request failed: HTTP ${response.code}")
-                    }
-                    JSONObject(response.body.string())
-                }
+                JSONObject(
+                    commentsClient.newCall(request).awaitBoundedBody(
+                        failureMessage = "Steam Community comment request failed",
+                        maxBytes = MAX_COMMUNITY_COMMENT_BYTES,
+                    ),
+                )
             val html =
                 sequenceOf("comments_html", "html", "comments")
                     .map(payload::optString)
@@ -999,8 +1003,10 @@ private data class SteamProfileCacheKey(
 )
 
 private const val MAX_PUBLIC_DETAILS_BYTES = 1024 * 1024
-private const val COMMUNITY_COMMENT_CALL_TIMEOUT_MS = 1_500L
-private const val COMMUNITY_DETAIL_CALL_TIMEOUT_MS = 3_000L
+private const val MAX_COMMUNITY_COMMENT_BYTES = 2 * 1024 * 1024
+private const val COMMUNITY_COMMENT_HEDGE_DELAY_MS = 400L
+private const val COMMUNITY_COMMENT_CALL_TIMEOUT_MS = 6_000L
+private const val COMMUNITY_DETAIL_CALL_TIMEOUT_MS = 6_000L
 private const val MAX_DETAIL_SEEDS = 256
 private val DETAIL_SEED_TTL_NANOS = TimeUnit.MINUTES.toNanos(30)
 private const val LOG_TAG = "WallHubWorkshop"

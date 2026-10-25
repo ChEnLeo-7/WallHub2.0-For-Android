@@ -31,6 +31,16 @@ class SteamRequestRoutingTest {
         )
         assertTrue(
             mayUseSteamWebAlias(
+                connectAuthority = "steamcommunity.com",
+                requestHead =
+                    "POST /comment/PublishedFile_Public/render/76561198000000000/3799142774/ HTTP/1.1\r\n" +
+                        "Host: steamcommunity.com\r\n" +
+                        "Content-Type: application/x-www-form-urlencoded\r\n" +
+                        "Content-Length: 72\r\nConnection: close\r\n\r\n",
+            ),
+        )
+        assertTrue(
+            mayUseSteamWebAlias(
                 connectAuthority = "api.steampowered.com",
                 requestHead =
                     "POST /ISteamRemoteStorage/GetPublishedFileDetails/v1/ HTTP/1.1\r\n" +

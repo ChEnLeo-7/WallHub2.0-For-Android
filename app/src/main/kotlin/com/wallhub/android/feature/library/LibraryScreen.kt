@@ -159,6 +159,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import java.util.Locale
 import javax.inject.Inject
 import androidx.compose.material.icons.Icons
@@ -790,7 +791,10 @@ class LibraryViewModel
                                 excludedOfficialTags = snapshot.selectedExcludedOfficialTags,
                                 resolutions = snapshot.selectedResolutions,
                             )
-                        val result = browseWithInitialSessionRetry(query, retry = !append && page == 1)
+                        val result =
+                            withTimeout(LIBRARY_FOREGROUND_LOAD_TIMEOUT_MS) {
+                                browseWithInitialSessionRetry(query, retry = !append && page == 1)
+                            }
                         if (version != requestVersion) return@launch
                         val merged = result.mergeInto(snapshot, append)
                         cachedPages[key] =
@@ -1020,6 +1024,7 @@ private fun resolveLibraryTotalPages(
     } ?: if (hasNextPage) page.nextLibraryPageOrLast() else page.coerceAtLeast(1)
 
 private const val LIBRARY_PAGE_SIZE = 16
+private const val LIBRARY_FOREGROUND_LOAD_TIMEOUT_MS = 12_000L
 
 @Composable
 fun LibraryRoute(

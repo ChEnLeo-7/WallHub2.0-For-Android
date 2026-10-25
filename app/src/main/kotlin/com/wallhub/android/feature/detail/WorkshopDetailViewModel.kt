@@ -212,6 +212,9 @@ class WorkshopDetailViewModel
                         isLoadingInlineVideo = false,
                         inlineVideoError = null,
                     )
+                if (shouldAutoLoadComments(mutableState.value)) {
+                    loadComments(refresh = true)
+                }
                 runCatching { workshopRepository.getDetail(workshopId) }
                     .onSuccess { detail ->
                         ensureActive()
@@ -223,6 +226,9 @@ class WorkshopDetailViewModel
                                 error = null,
                                 exportFormat = detail.summary.type.defaultExportFormat(),
                             )
+                        if (shouldAutoLoadComments(mutableState.value)) {
+                            loadComments(refresh = true)
+                        }
                         viewModelScope.launch {
                             val author =
                                 runCatching {
@@ -251,10 +257,16 @@ class WorkshopDetailViewModel
                     }.onFailure { error ->
                         if (error is CancellationException) throw error
                         ensureActive()
+                        val current = mutableState.value
                         mutableState.value =
-                            mutableState.value.copy(
+                            current.copy(
                                 isLoading = false,
-                                error = error.toDetailUiText(R.string.detail_workshop_load_failed),
+                                error =
+                                    if (current.detail == null) {
+                                        error.toDetailUiText(R.string.detail_workshop_load_failed)
+                                    } else {
+                                        null
+                                    },
                             )
                     }
             }
@@ -729,7 +741,7 @@ class WorkshopDetailViewModel
         private companion object {
             const val COMMENTS_LOG_TAG = "WallHubWorkshop"
             const val COMMENTS_PAGE_SIZE = 20
-            const val COMMENTS_LOAD_TIMEOUT_MS = 5_000L
+            const val COMMENTS_LOAD_TIMEOUT_MS = 6_000L
         }
     }
 

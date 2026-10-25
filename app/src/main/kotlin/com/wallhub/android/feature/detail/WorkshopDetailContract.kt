@@ -69,6 +69,10 @@ internal fun applyDetailSeed(
 internal fun beginDetailRefresh(state: WorkshopDetailUiState): WorkshopDetailUiState =
     state.copy(isLoading = state.detail == null, error = null)
 
+internal fun shouldAutoLoadComments(state: WorkshopDetailUiState): Boolean =
+    !state.commentsRequested &&
+        state.detail?.summary?.creatorId?.isNotBlank() == true
+
 internal fun beginCommentsRequest(
     state: WorkshopDetailUiState,
     refresh: Boolean,
