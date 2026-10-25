@@ -41,6 +41,14 @@ class SteamRequestRoutingTest {
         )
         assertTrue(
             mayUseSteamWebAlias(
+                connectAuthority = "api.steampowered.com",
+                requestHead =
+                    "GET /ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=0 HTTP/1.1\r\n" +
+                        "Host: api.steampowered.com\r\nAccept: application/json\r\nConnection: close\r\n\r\n",
+            ),
+        )
+        assertTrue(
+            mayUseSteamWebAlias(
                 connectAuthority = "images.steamusercontent.com",
                 requestHead =
                     "GET /ugc/9540179765161089476/4DE4889B4F31581DD70DA81AC75C79BF6B9927F9/ HTTP/1.1\r\n" +
@@ -67,6 +75,13 @@ class SteamRequestRoutingTest {
             "POST /sharedfiles/filedetails/ HTTP/1.1\r\nHost: steamcommunity.com\r\nContent-Length: 0\r\n\r\n",
         ).forEach { head ->
             assertFalse(mayUseSteamWebAlias("steamcommunity.com", head), head)
+        }
+        listOf(
+            "GET /ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=0&key=secret HTTP/1.1\r\nHost: api.steampowered.com\r\nConnection: close\r\n\r\n",
+            "GET /ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=bad HTTP/1.1\r\nHost: api.steampowered.com\r\nConnection: close\r\n\r\n",
+            "GET /ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=0 HTTP/1.1\r\nHost: api.steampowered.com\r\nCookie: sessionid=secret\r\nConnection: close\r\n\r\n",
+        ).forEach { head ->
+            assertFalse(mayUseSteamWebAlias("api.steampowered.com", head), head)
         }
         listOf(
             "GET /ugc/123/ABC/?token=secret HTTP/1.1\r\nHost: images.steamusercontent.com\r\nConnection: close\r\n\r\n",
@@ -127,6 +142,28 @@ class SteamRequestRoutingTest {
             listOf("steamcommunity.com"),
             steamWebTargetsForRequest("steamcommunity.com", authenticatedHead, targets)
                 .map { it.rule.tlsAuthority },
+        )
+    }
+
+    @Test
+    fun `Directory prefers strict compatibility authority while retaining canonical fallback`() {
+        val original = InetAddress.getByName("8.8.8.8")
+        val alias = InetAddress.getByName("1.1.1.1")
+        val targets =
+            bindSteamWebTargets(
+                SteamAccessRoutes.webUpstreams("api.steampowered.com"),
+                mapOf(
+                    "api.steampowered.com" to listOf(original),
+                    "steamcommunity-a.akamaihd.net" to listOf(alias),
+                ),
+            )
+        val head =
+            "GET /ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=0 HTTP/1.1\r\n" +
+                "Host: api.steampowered.com\r\nConnection: close\r\n\r\n"
+
+        assertEquals(
+            listOf("steamcommunity-a.akamaihd.net", "api.steampowered.com"),
+            steamWebTargetsForRequest("api.steampowered.com", head, targets).map { it.rule.tlsAuthority },
         )
     }
 

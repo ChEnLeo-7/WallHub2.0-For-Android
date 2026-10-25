@@ -21,10 +21,25 @@ class SteamAnonymousReadRetryTest {
         .post(FormBody.Builder().add("itemcount", "1").add("publishedfileids[0]", "123").build())
         .build()
 
+    private fun directory() = Request.Builder()
+        .url("https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=0")
+        .build()
+
     @Test
     fun `only explicitly anonymous read requests qualify`() {
         val error = IOException("EOF")
         assertTrue(mayRetryAnonymousSteamRead(details(), error, false))
+        assertTrue(mayRetryAnonymousSteamRead(directory(), error, false))
+        assertFalse(mayRetryAnonymousSteamRead(directory().newBuilder().header("Cookie", "secret").build(), error, false))
+        assertFalse(
+            mayRetryAnonymousSteamRead(
+                directory().newBuilder()
+                    .url("https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=0&key=secret")
+                    .build(),
+                error,
+                false,
+            ),
+        )
         assertTrue(mayRetryAnonymousSteamRead(Request.Builder()
             .url("https://steamcommunity.com/sharedfiles/filedetails/?id=123").build(), error, false))
         assertFalse(mayRetryAnonymousSteamRead(details().newBuilder()
