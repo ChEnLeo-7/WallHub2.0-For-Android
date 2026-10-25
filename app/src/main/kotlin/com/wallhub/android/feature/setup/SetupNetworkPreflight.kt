@@ -34,7 +34,7 @@ import kotlin.coroutines.resumeWithException
 
 internal const val SETUP_PROBE_TIMEOUT_MS = 5_000L
 internal const val SETUP_WEB_PROBE_TIMEOUT_MS = 12_000L
-internal const val SETUP_DIRECTORY_PROBE_TIMEOUT_MS = 16_000L
+internal const val SETUP_DIRECTORY_PROBE_TIMEOUT_MS = 24_000L
 private const val SETUP_PROBE_BODY_LIMIT = 512L * 1024L
 private const val SETUP_PROBE_WORKSHOP_ID = 3799142774L
 

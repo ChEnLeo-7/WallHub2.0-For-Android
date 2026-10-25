@@ -189,7 +189,15 @@ internal class SteamLoopbackTlsBridge
                     securedClientSocket = securedClient
                     val requestHead = readHttpRequestHead(securedClient)
                     val requestHeadText = String(requestHead, StandardCharsets.ISO_8859_1)
-                    val route = kotlinx.coroutines.runBlocking { accessManager.acceleratedWebRoute(host, request.port) }
+                    val directoryRequest = isAnonymousSteamDirectoryRequest(host, requestHeadText)
+                    val route =
+                        kotlinx.coroutines.runBlocking {
+                            accessManager.acceleratedWebRoute(
+                                host,
+                                request.port,
+                                reuseCachedTargets = directoryRequest,
+                            )
+                        }
                     selectedWebRoute = route
                     val eligibleTargets = steamWebTargetsForRequest(host, requestHeadText, route.targets)
                     if (eligibleTargets.isEmpty()) throw IOException("No eligible Steam Web authority target")

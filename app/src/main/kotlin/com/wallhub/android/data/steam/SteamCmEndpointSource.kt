@@ -24,7 +24,7 @@ internal const val CM_WEBSOCKET_PORT = 443
 internal const val MAX_CM_CANDIDATES = 4
 
 private const val CM_DIRECT_FETCH_TIMEOUT_MS = 6_000L
-private const val CM_ENHANCED_FETCH_TIMEOUT_MS = 16_000L
+private const val CM_ENHANCED_FETCH_TIMEOUT_MS = 24_000L
 
 private const val TAG = "WallHubSdkRoute"
 private val CM_ENDPOINT_REGEX = Regex("([A-Za-z0-9][A-Za-z0-9.-]*\\.steamserver\\.net):(\\d{2,5})")

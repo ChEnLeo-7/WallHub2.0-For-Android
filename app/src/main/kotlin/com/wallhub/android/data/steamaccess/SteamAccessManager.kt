@@ -216,6 +216,7 @@ class SteamAccessManager @Inject internal constructor(
     internal suspend fun acceleratedWebRoute(
         hostname: String,
         port: Int,
+        reuseCachedTargets: Boolean = false,
     ): WebAcceleratedRoute {
         val host = SteamDomainPolicy.requireSupportedEndpoint(hostname, port)
         require(port == STEAM_HTTPS_PORT && !SteamDomainPolicy.isCmHost(host)) {
@@ -236,6 +237,17 @@ class SteamAccessManager @Inject internal constructor(
                 settings = preferences
             }
             val authorities = rules.map(SteamWebUpstreamRule::resolveAuthority)
+            if (reuseCachedTargets) {
+                val cachedByAuthority =
+                    rules.associate { rule ->
+                        val cacheKey = steamWebRouteCacheKey(selectedNetwork, host, rule.tlsAuthority, port)
+                        rule.resolveAuthority to candidates.get(cacheKey, generation).orEmpty()
+                    }
+                val cachedTargets = bindSteamWebTargets(rules, cachedByAuthority)
+                if (cachedTargets.isNotEmpty()) {
+                    return@withLock WebAcceleratedRoute(host, selectedNetwork, generation, port, cachedTargets)
+                }
+            }
             val systemByAuthority =
                 authorities.associateWith { authority ->
                     runCatching { Dns.SYSTEM.lookup(authority) }.getOrDefault(emptyList())
