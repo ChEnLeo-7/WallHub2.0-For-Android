@@ -457,7 +457,8 @@ class WorkshopDetailViewModel
                                     workshopId = workshopId,
                                     start = start,
                                     count = COMMENTS_PAGE_SIZE,
-                                    ownerId = current.commentsOwnerId ?: detail.creatorId,
+                                    ownerId =
+                                        current.commentsOwnerId ?: detail.creatorId ?: detail.summary.creatorId,
                                 )
                             }
                         }.onSuccess { page ->
