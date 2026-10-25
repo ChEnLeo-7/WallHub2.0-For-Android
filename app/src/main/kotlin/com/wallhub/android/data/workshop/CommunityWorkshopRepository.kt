@@ -1,5 +1,6 @@
 package com.wallhub.android.data.workshop
 
+import android.net.Uri
 import android.util.Log
 import com.wallhub.android.core.model.CmPublicDetailResult
 import com.wallhub.android.core.model.FavoriteState
