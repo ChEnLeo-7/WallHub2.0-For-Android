@@ -6,6 +6,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import com.wallhub.android.R
 import com.wallhub.android.core.model.AppPreferences
+import com.wallhub.android.core.model.STEAM_ACCESS_DOH_BUILT_IN_LIMIT_PER_REGION
 import com.wallhub.android.core.model.DiagnosticEvent
 import com.wallhub.android.core.model.DiagnosticLevel
 import com.wallhub.android.core.model.DiagnosticRepository
@@ -16,6 +17,7 @@ import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamAccessState
 import com.wallhub.android.core.model.SteamDohCatalog
 import com.wallhub.android.core.model.SteamDohEndpointStatus
+import com.wallhub.android.core.model.SteamDohRegion
 import com.wallhub.android.core.model.enabledSteamAccessDohEndpoints
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -44,6 +46,18 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val DOH_BENCHMARK_RETRY_MS = 60_000L
+
+internal data class SteamDohWarmupResult(
+    val domesticRoutes: Int,
+    val foreignRoutes: Int,
+    val measuredRoutes: Int,
+    val elapsedMillis: Long,
+) {
+    val ready: Boolean
+        get() =
+            domesticRoutes >= STEAM_ACCESS_DOH_BUILT_IN_LIMIT_PER_REGION &&
+                foreignRoutes >= STEAM_ACCESS_DOH_BUILT_IN_LIMIT_PER_REGION
+}
 
 /** Keeps Steam routing demand-only while asynchronously benchmarking the configured DoH catalog per network. */
 @Singleton
@@ -152,6 +166,43 @@ class SteamAccessManager @Inject internal constructor(
         withTimeout(1_000L) {
             while (!preferencesInitialized || preferences.steamAccessEnabled != expected) delay(10L)
         }
+    }
+
+    internal suspend fun awaitDohConfiguration(expectedEnabledEndpoints: List<String>) {
+        withTimeout(2_000L) {
+            while (true) {
+                val matches =
+                    synchronized(this@SteamAccessManager) {
+                        preferencesInitialized &&
+                            preferences.steamAccessEnabled &&
+                            preferences.steamAccessMode == SteamAccessMode.SMART_DOH &&
+                            preferences.enabledSteamAccessDohEndpoints() == expectedEnabledEndpoints
+                    }
+                if (matches) return@withTimeout
+                delay(10L)
+            }
+        }
+    }
+
+    internal suspend fun warmUpDohRoutes(force: Boolean = false): SteamDohWarmupResult {
+        preferencesReady.await()
+        val settings = synchronized(this) { preferences }
+        require(settings.steamAccessEnabled && settings.steamAccessMode == SteamAccessMode.SMART_DOH) {
+            "Automatic anti-blocking is not enabled"
+        }
+        val startedAt = System.nanoTime()
+        ensureDohSelection(settings, force = force)
+        val statuses = mutableState.value.dohEndpointStatuses
+        fun selectedAvailable(region: SteamDohRegion): Int =
+            statuses.count { status ->
+                status.selected && status.available && SteamDohCatalog.endpointFor(status.endpoint).region == region
+            }
+        return SteamDohWarmupResult(
+            domesticRoutes = selectedAvailable(SteamDohRegion.DOMESTIC),
+            foreignRoutes = selectedAvailable(SteamDohRegion.FOREIGN),
+            measuredRoutes = statuses.count { status -> status.available },
+            elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt),
+        )
     }
 
     override fun lookup(hostname: String): List<InetAddress> = Dns.SYSTEM.lookup(hostname)
@@ -433,11 +484,15 @@ class SteamAccessManager @Inject internal constructor(
         }
     }
 
-    private suspend fun ensureDohSelection(settings: AppPreferences): List<String> {
+    private suspend fun ensureDohSelection(
+        settings: AppPreferences,
+        force: Boolean = false,
+    ): List<String> {
         val enabledUrls = settings.enabledSteamAccessDohEndpoints()
         val fingerprint = enabledUrls.joinToString("\u0000")
         val generation = candidates.generation
         if (
+            !force &&
             dohSelectionGeneration == generation &&
             dohSelectionFingerprint == fingerprint
         ) {
@@ -446,6 +501,7 @@ class SteamAccessManager @Inject internal constructor(
         return dohSelectionLock.withLock {
             val currentGeneration = candidates.generation
             if (
+                !force &&
                 dohSelectionGeneration == currentGeneration &&
                 dohSelectionFingerprint == fingerprint
             ) {

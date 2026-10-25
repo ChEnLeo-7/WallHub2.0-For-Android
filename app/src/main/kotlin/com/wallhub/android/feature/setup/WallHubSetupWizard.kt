@@ -23,6 +23,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.Settings
+import android.view.accessibility.AccessibilityManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -67,6 +68,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -96,16 +98,20 @@ import com.wallhub.android.core.designsystem.WallHubColorTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.core.model.SteamAccessMode
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
+import com.wallhub.android.data.steamaccess.SteamAccessManager
 import com.wallhub.settings.SETTINGS_CONTENT_MAX_WIDTH
 import com.wallhub.settings.SteamAccountCard
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
 import com.wallhub.settings.SteamAccessDohEndpointsSetting
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -138,6 +144,7 @@ import androidx.compose.material.icons.outlined.VisibilityOff
 internal enum class WallHubSetupPage {
     Welcome,
     Network,
+    Warmup,
     Connectivity,
     Storage,
     Steam,
@@ -148,7 +155,10 @@ internal fun nextSetupPage(page: WallHubSetupPage): WallHubSetupPage =
     WallHubSetupPage.entries[WallHubSetupPage.entries.indexOf(page) + 1]
 
 internal fun previousSetupPage(page: WallHubSetupPage): WallHubSetupPage =
-    WallHubSetupPage.entries[WallHubSetupPage.entries.indexOf(page) - 1]
+    when (page) {
+        WallHubSetupPage.Warmup, WallHubSetupPage.Connectivity -> WallHubSetupPage.Network
+        else -> WallHubSetupPage.entries[WallHubSetupPage.entries.indexOf(page) - 1]
+    }
 
 @HiltViewModel
 class WallHubSetupViewModel
@@ -157,10 +167,15 @@ class WallHubSetupViewModel
         private val settingsRepository: SettingsRepository,
         private val steamSessionRepository: SteamSessionRepository,
         private val networkPreflight: SetupNetworkPreflight,
+        private val steamAccessManager: SteamAccessManager,
     ) : ViewModel() {
         private val _networkPreflightResult = MutableStateFlow<SetupNetworkPreflightResult?>(null)
         internal val networkPreflightResult: StateFlow<SetupNetworkPreflightResult?> = _networkPreflightResult.asStateFlow()
-        private var networkPreflightJob: Job? = null
+        private val _antiBlockingWarmup = MutableStateFlow(SetupAntiBlockingWarmupState())
+        internal val antiBlockingWarmup: StateFlow<SetupAntiBlockingWarmupState> = _antiBlockingWarmup.asStateFlow()
+        private var networkPreparationJob: Job? = null
+        private var pendingDohConfiguration: Pair<List<String>, Set<String>>? = null
+        private var expectedEnabledDohEndpoints: List<String> = emptyList()
         val preferences: StateFlow<AppPreferences> =
             settingsRepository.preferences.stateIn(
                 scope = viewModelScope,
@@ -189,16 +204,32 @@ class WallHubSetupViewModel
             steamSessionRepository.logout()
         }
 
-        fun saveNetworkAndCheck(
+        fun saveNetworkAndPrepare(
             proxyUrl: String,
             proxyEnabled: Boolean,
             steamAccessEnabled: Boolean,
             dataSource: SteamWorkshopDataSource,
             apiKey: String,
         ) {
-            networkPreflightJob?.cancel()
-            networkPreflightJob = viewModelScope.launch {
+            networkPreparationJob?.cancel()
+            _networkPreflightResult.value = null
+            _antiBlockingWarmup.value =
+                if (steamAccessEnabled) {
+                    SetupAntiBlockingWarmupState.warming()
+                } else {
+                    SetupAntiBlockingWarmupState()
+                }
+            networkPreparationJob = viewModelScope.launch {
                 val current = preferences.value
+                val dohConfiguration =
+                    pendingDohConfiguration
+                        ?: (current.steamAccessDohEndpoints to current.steamAccessDisabledDohEndpoints)
+                settingsRepository.setSteamAccessDohEndpoints(
+                    dohConfiguration.first,
+                    dohConfiguration.second,
+                )
+                expectedEnabledDohEndpoints =
+                    dohConfiguration.first.filterNot(dohConfiguration.second::contains)
                 settingsRepository.setDownloadPreferences(
                     maxConcurrentDownloads = current.maxConcurrentDownloads,
                     chunkDownloadConcurrency = current.chunkDownloadConcurrency,
@@ -206,6 +237,7 @@ class WallHubSetupViewModel
                     mediaCacheLimitMb = current.mediaCacheLimitMb,
                 )
                 settingsRepository.setDownloadProxyEnabled(proxyEnabled)
+                if (steamAccessEnabled) settingsRepository.setSteamAccessMode(SteamAccessMode.SMART_DOH)
                 settingsRepository.setSteamAccessEnabled(steamAccessEnabled)
                 settingsRepository.setSteamWorkshopDataSource(dataSource)
                 settingsRepository.setSteamApiKey(apiKey)
@@ -213,25 +245,46 @@ class WallHubSetupViewModel
                     _networkPreflightResult.value = networkPreflight.run(SetupNetworkPreflightInput(false))
                     return@launch
                 }
-                _networkPreflightResult.value = SetupNetworkPreflightResult.checking()
-                _networkPreflightResult.value = networkPreflight.run(SetupNetworkPreflightInput(true))
+                runWarmup(force = false)
             }
         }
 
-        fun retryNetworkCheck() {
-            val current = preferences.value
-            saveNetworkAndCheck(
-                proxyUrl = current.downloadProxyUrl,
-                proxyEnabled = current.downloadProxyEnabled,
-                steamAccessEnabled = current.steamAccessEnabled,
-                dataSource = current.steamWorkshopDataSource,
-                apiKey = current.steamApiKey,
-            )
+        fun retryWarmup() {
+            networkPreparationJob?.cancel()
+            _antiBlockingWarmup.value = SetupAntiBlockingWarmupState.warming()
+            networkPreparationJob = viewModelScope.launch { runWarmup(force = true) }
         }
 
-        fun clearNetworkCheck() {
-            networkPreflightJob?.cancel()
-            networkPreflightJob = null
+        private suspend fun runWarmup(force: Boolean) {
+            try {
+                steamAccessManager.awaitDohConfiguration(expectedEnabledDohEndpoints)
+                _antiBlockingWarmup.value = steamAccessManager.warmUpDohRoutes(force).toSetupState()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _antiBlockingWarmup.value =
+                    SetupAntiBlockingWarmupState(
+                        phase = SetupAntiBlockingWarmupPhase.DEGRADED,
+                        reason = (error.message ?: error.javaClass.simpleName).replace(Regex("\\s+"), " ").take(96),
+                    )
+            }
+        }
+
+        fun runNetworkCheck() {
+            networkPreparationJob?.cancel()
+            networkPreparationJob = viewModelScope.launch {
+                val enabled = preferences.value.steamAccessEnabled
+                _networkPreflightResult.value = SetupNetworkPreflightResult.checking()
+                _networkPreflightResult.value = networkPreflight.run(SetupNetworkPreflightInput(enabled))
+            }
+        }
+
+        fun retryNetworkCheck() = runNetworkCheck()
+
+        fun clearNetworkPreparation() {
+            networkPreparationJob?.cancel()
+            networkPreparationJob = null
+            _antiBlockingWarmup.value = SetupAntiBlockingWarmupState()
             _networkPreflightResult.value = null
         }
 
@@ -240,6 +293,7 @@ class WallHubSetupViewModel
         }
 
         fun saveDohEndpoints(endpoints: List<String>, disabledEndpoints: Set<String>) {
+            pendingDohConfiguration = endpoints.toList() to disabledEndpoints.toSet()
             viewModelScope.launch {
                 settingsRepository.setSteamAccessDohEndpoints(endpoints, disabledEndpoints)
             }
@@ -254,7 +308,12 @@ fun WallHubSetupWizard(
     val preferences by viewModel.preferences.collectAsStateWithLifecycle()
     val session by viewModel.session.collectAsStateWithLifecycle()
     val networkPreflightResult by viewModel.networkPreflightResult.collectAsStateWithLifecycle()
+    val antiBlockingWarmup by viewModel.antiBlockingWarmup.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val accessibilityEnabled =
+        remember(context) {
+            (context.getSystemService(AccessibilityManager::class.java))?.isEnabled == true
+        }
     var page by rememberSaveable { mutableStateOf(WallHubSetupPage.Welcome) }
     var continueAfterDirectorySelection by rememberSaveable { mutableStateOf(false) }
     var storageError by rememberSaveable { mutableStateOf<String?>(null) }
@@ -296,10 +355,23 @@ fun WallHubSetupWizard(
         ) {
             viewModel.logoutSteam()
         }
-        if (page == WallHubSetupPage.Connectivity) viewModel.clearNetworkCheck()
+        if (page == WallHubSetupPage.Warmup || page == WallHubSetupPage.Connectivity) {
+            viewModel.clearNetworkPreparation()
+        }
         page = previousSetupPage(page)
     }
     BackHandler(enabled = pageIndex > 0, onBack = navigateBack)
+    LaunchedEffect(page, antiBlockingWarmup.phase) {
+        if (
+            page == WallHubSetupPage.Warmup &&
+            antiBlockingWarmup.phase == SetupAntiBlockingWarmupPhase.READY &&
+            !accessibilityEnabled
+        ) {
+            delay(1_000L)
+            viewModel.runNetworkCheck()
+            page = WallHubSetupPage.Connectivity
+        }
+    }
     MaterialTheme(typography = rememberSettingsTypography()) {
     Box(modifier = Modifier.fillMaxSize()) {
         AnimatedContent(
@@ -328,7 +400,22 @@ fun WallHubSetupWizard(
                         preferences = preferences,
                         onSaveDohEndpoints = viewModel::saveDohEndpoints,
                         onContinue = { proxyUrl, proxyEnabled, accessEnabled, source, apiKey ->
-                            viewModel.saveNetworkAndCheck(proxyUrl, proxyEnabled, accessEnabled, source, apiKey)
+                            viewModel.saveNetworkAndPrepare(proxyUrl, proxyEnabled, accessEnabled, source, apiKey)
+                            page =
+                                if (accessEnabled) {
+                                    WallHubSetupPage.Warmup
+                                } else {
+                                    WallHubSetupPage.Connectivity
+                                }
+                        },
+                    )
+                WallHubSetupPage.Warmup ->
+                    AntiBlockingWarmupPage(
+                        state = antiBlockingWarmup,
+                        showReadyContinue = accessibilityEnabled,
+                        onRetry = viewModel::retryWarmup,
+                        onReadyContinue = {
+                            viewModel.runNetworkCheck()
                             page = WallHubSetupPage.Connectivity
                         },
                     )
@@ -347,11 +434,16 @@ fun WallHubSetupWizard(
         val primaryLabel =
             when (page) {
                 WallHubSetupPage.Welcome -> stringResource(R.string.setup_action_start)
-                WallHubSetupPage.Steam, WallHubSetupPage.Network, WallHubSetupPage.Connectivity, WallHubSetupPage.Storage -> stringResource(R.string.setup_action_next)
+                WallHubSetupPage.Steam, WallHubSetupPage.Network, WallHubSetupPage.Warmup,
+                WallHubSetupPage.Connectivity, WallHubSetupPage.Storage,
+                -> stringResource(R.string.setup_action_next)
                 WallHubSetupPage.Finish -> stringResource(R.string.setup_action_finish)
             }
         WizardActions(
-            visible = page != WallHubSetupPage.Network && page != WallHubSetupPage.Connectivity,
+            visible =
+                page != WallHubSetupPage.Network &&
+                    page != WallHubSetupPage.Warmup &&
+                    page != WallHubSetupPage.Connectivity,
             expanded = page == WallHubSetupPage.Welcome || page == WallHubSetupPage.Finish,
             primaryLabel = primaryLabel,
             onPrimaryClick = {
@@ -372,7 +464,7 @@ fun WallHubSetupWizard(
                         }
                     }
                     WallHubSetupPage.Steam -> page = WallHubSetupPage.Finish
-                    WallHubSetupPage.Network, WallHubSetupPage.Connectivity -> Unit
+                    WallHubSetupPage.Network, WallHubSetupPage.Warmup, WallHubSetupPage.Connectivity -> Unit
                     WallHubSetupPage.Finish -> onComplete()
                 }
             },
@@ -649,6 +741,174 @@ private fun NetworkPage(
             primaryLabel = stringResource(R.string.setup_action_next),
             onPrimaryClick = { onContinue(proxyUrl, proxyEnabled, accessEnabled, source, apiKey) },
         )
+    }
+}
+
+@Composable
+private fun AntiBlockingWarmupPage(
+    state: SetupAntiBlockingWarmupState,
+    showReadyContinue: Boolean,
+    onRetry: () -> Unit,
+    onReadyContinue: () -> Unit,
+) {
+    val context = LocalContext.current
+    val reduceMotion =
+        remember(context) {
+            Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f,
+            ) == 0f
+        }
+    val successColor =
+        if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+            WallHubColorTokens.statusSuccessOnDark
+        } else {
+            WallHubColorTokens.statusSuccessOnLight
+        }
+    WizardPageScaffold(
+        config =
+            WizardPageConfig(
+                title = stringResource(R.string.setup_warmup_title),
+                description = stringResource(R.string.setup_warmup_description),
+            ),
+        headerIcon = { WizardIcon(Icons.Outlined.Language) },
+    ) {
+        Surface(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = WallHubSpacing.md)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            tonalElevation = 1.dp,
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(WallHubSpacing.lg),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
+            ) {
+                Surface(
+                    modifier = Modifier.size(128.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        AnimatedContent(
+                            targetState = state.phase,
+                            transitionSpec = { connectivityStatusTransition(reduceMotion) },
+                            label = "anti-blocking-warmup-status",
+                        ) { phase ->
+                            when (phase) {
+                                SetupAntiBlockingWarmupPhase.IDLE,
+                                SetupAntiBlockingWarmupPhase.WARMING,
+                                -> Box(contentAlignment = Alignment.Center) {
+                                    if (!reduceMotion) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(92.dp),
+                                            strokeWidth = 5.dp,
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Outlined.Language,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(42.dp),
+                                    )
+                                }
+                                SetupAntiBlockingWarmupPhase.READY ->
+                                    Icon(
+                                        imageVector = Icons.Outlined.CheckCircle,
+                                        contentDescription = null,
+                                        tint = successColor,
+                                        modifier = Modifier.size(72.dp),
+                                    )
+                                SetupAntiBlockingWarmupPhase.DEGRADED ->
+                                    Icon(
+                                        imageVector = Icons.Outlined.ErrorOutline,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(72.dp),
+                                    )
+                            }
+                        }
+                    }
+                }
+                AnimatedContent(
+                    targetState = state.phase,
+                    transitionSpec = { connectivityStatusTransition(reduceMotion) },
+                    label = "anti-blocking-warmup-copy",
+                ) { phase ->
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                    ) {
+                        Text(
+                            text =
+                                when (phase) {
+                                    SetupAntiBlockingWarmupPhase.IDLE,
+                                    SetupAntiBlockingWarmupPhase.WARMING,
+                                    -> stringResource(R.string.setup_warmup_working)
+                                    SetupAntiBlockingWarmupPhase.READY -> stringResource(R.string.setup_warmup_ready)
+                                    SetupAntiBlockingWarmupPhase.DEGRADED -> stringResource(R.string.setup_warmup_degraded)
+                                },
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                        Text(
+                            text =
+                                when (phase) {
+                                    SetupAntiBlockingWarmupPhase.IDLE,
+                                    SetupAntiBlockingWarmupPhase.WARMING,
+                                    -> stringResource(R.string.setup_warmup_working_detail)
+                                    SetupAntiBlockingWarmupPhase.READY ->
+                                        stringResource(
+                                            R.string.setup_warmup_ready_detail,
+                                            state.domesticRoutes,
+                                            state.foreignRoutes,
+                                        )
+                                    SetupAntiBlockingWarmupPhase.DEGRADED ->
+                                        if (state.reason.isNotBlank()) {
+                                            state.reason
+                                        } else {
+                                            stringResource(
+                                                R.string.setup_warmup_degraded_detail,
+                                                state.domesticRoutes,
+                                                state.foreignRoutes,
+                                            )
+                                        }
+                                },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (state.phase == SetupAntiBlockingWarmupPhase.DEGRADED) {
+                    OutlinedButton(
+                        onClick = onRetry,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = stringResource(R.string.setup_warmup_retry),
+                            modifier = Modifier.padding(start = WallHubSpacing.xs),
+                        )
+                    }
+                }
+                if (state.phase == SetupAntiBlockingWarmupPhase.READY && showReadyContinue) {
+                    Button(
+                        onClick = onReadyContinue,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(R.string.setup_warmup_continue))
+                    }
+                }
+            }
+        }
     }
 }
 

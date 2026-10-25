@@ -9,6 +9,16 @@
     <string name='setup_steam_description'>Connect your Steam account to access your library, comments, and authenticated Workshop features.</string>
     <string name='setup_network_title'>Network settings</string>
     <string name='setup_network_description'>Set the proxy, Steam service access route, Workshop data source, and Web API key.</string>
+    <string name='setup_warmup_title'>Preparing anti-blocking routes</string>
+    <string name='setup_warmup_description'>WallHub is measuring enabled secure DNS providers before testing Steam services.</string>
+    <string name='setup_warmup_working'>Warming up direct routes…</string>
+    <string name='setup_warmup_working_detail'>Racing enabled providers to prepare the fastest 5 domestic and 5 international routes.</string>
+    <string name='setup_warmup_ready'>Direct routes are ready</string>
+    <string name='setup_warmup_ready_detail'>Prepared %1$d domestic and %2$d international routes. Starting connectivity checks…</string>
+    <string name='setup_warmup_degraded'>Route warm-up was incomplete</string>
+    <string name='setup_warmup_degraded_detail'>Only %1$d domestic and %2$d international measured routes are ready.</string>
+    <string name='setup_warmup_retry'>Retry warm-up</string>
+    <string name='setup_warmup_continue'>Continue to connectivity checks</string>
     <string name='setup_connectivity_title'>Connectivity check</string>
     <string name='setup_connectivity_description'>WallHub is checking the saved network settings. Failures are warnings and do not block setup.</string>
     <string name='setup_storage_title'>Save location</string>

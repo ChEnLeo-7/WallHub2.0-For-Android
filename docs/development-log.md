@@ -1,5 +1,11 @@
 # Development Log
 
+## 2026-10-25 — Setup waits for anti-blocking route warm-up
+
+When a user enables automatic anti-blocking during setup, Network now advances to a dedicated Material 3 preparation page instead of starting Steam service probes immediately. The page waits on the real enabled-provider benchmark, requires five measured domestic/regional and five measured international DoH routes, presents an indeterminate route-preparation state with system reduced-motion support, briefly confirms readiness, and only then starts the existing Directory, Public Details, Community HTML, Workshop image, and CM-transport checks. The disabled path still skips warm-up and preserves the prior skipped-check behavior.
+
+An incomplete 5+5 selection no longer silently flows into service checks: the transition shows measured regional counts and offers an explicit retry, while Back returns to editable Network settings. The exact endpoint order/disabled set is serialized before preparation and `SteamAccessManager` must observe that full SMART_DOH snapshot, preventing an already-enabled stale selection from certifying newly edited settings. After readiness, the result remains visible for one second before automatic navigation; active accessibility services instead receive an explicit Continue action so the polite announcement is not removed prematurely. Back from either warm-up or connectivity cancels the active preparation/check. Regression coverage locks the Network → Warmup → Connectivity ordering and exact 5+5 readiness boundary.
+
 ## 2026-10-25 — Automatic anti-blocking is opt-in on first initialization
 
 Fresh WallHub preferences now initialize **自动防阻断** as disabled. The persisted setting still takes precedence, so existing users who explicitly enabled or disabled it keep their choice across upgrades. The setup wizard and initial home state read the same disabled default, preventing a transient enabled UI before DataStore finishes loading. A model regression test locks the new default.

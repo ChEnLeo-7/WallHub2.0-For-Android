@@ -5,13 +5,15 @@ import kotlin.test.assertEquals
 
 class SetupWizardFlowTest {
     @Test
-    fun `network settings advance to connectivity before storage`() {
-        assertEquals(WallHubSetupPage.Connectivity, nextSetupPage(WallHubSetupPage.Network))
+    fun `network settings advance through warmup and connectivity before storage`() {
+        assertEquals(WallHubSetupPage.Warmup, nextSetupPage(WallHubSetupPage.Network))
+        assertEquals(WallHubSetupPage.Connectivity, nextSetupPage(WallHubSetupPage.Warmup))
         assertEquals(WallHubSetupPage.Storage, nextSetupPage(WallHubSetupPage.Connectivity))
     }
 
     @Test
-    fun `connectivity back returns to network settings`() {
+    fun `transient network pages return to editable network settings`() {
+        assertEquals(WallHubSetupPage.Network, previousSetupPage(WallHubSetupPage.Warmup))
         assertEquals(WallHubSetupPage.Network, previousSetupPage(WallHubSetupPage.Connectivity))
     }
 }
