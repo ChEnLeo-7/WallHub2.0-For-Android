@@ -39,22 +39,41 @@ internal fun mayRetryAnonymousSteamRead(request: Request, error: IOException, ca
     ) return false
     if (request.body?.isOneShot() == true || request.body?.isDuplex() == true) return false
     return when (request.url.host) {
-        "api.steampowered.com" -> {
-            if (request.method != "POST" || request.url.encodedPath != "/ISteamRemoteStorage/GetPublishedFileDetails/v1/" ||
-                request.url.query != null
-            ) return false
-            val body = request.body as? FormBody ?: return false
-            (0 until body.size).all { index ->
-                body.name(index) in setOf("itemcount", "includetags", "short_description") ||
-                    body.name(index).matches(Regex("publishedfileids\\[[0-9]+]"))
+        "api.steampowered.com" ->
+            when {
+                request.method == "GET" &&
+                    request.url.encodedPath == STEAM_DIRECTORY_PATH ->
+                    validSteamDirectoryQuery(
+                        List(request.url.querySize) { index ->
+                            request.url.queryParameterName(index).lowercase() to
+                                request.url.queryParameterValue(index).orEmpty()
+                        },
+                    )
+                request.method == "POST" &&
+                    request.url.encodedPath == "/ISteamRemoteStorage/GetPublishedFileDetails/v1/" &&
+                    request.url.query == null -> {
+                    val body = request.body as? FormBody ?: return false
+                    (0 until body.size).all { index ->
+                        body.name(index) in setOf("itemcount", "includetags", "short_description") ||
+                            body.name(index).matches(Regex("publishedfileids\\[[0-9]+]"))
+                    }
+                }
+                else -> false
             }
-        }
         "steamcommunity.com" -> request.method == "GET" && request.body == null &&
             request.url.encodedPath in setOf("/sharedfiles/filedetails/", "/workshop/browse/") &&
             request.url.queryParameterNames.all { it in ANONYMOUS_COMMUNITY_PARAMETERS }
         else -> false
     }
 }
+
+internal fun isAnonymousSteamDirectoryRequest(
+    connectAuthority: String,
+    requestHead: String,
+): Boolean =
+    connectAuthority.equals("api.steampowered.com", ignoreCase = true) &&
+        requestHead.startsWith("GET $STEAM_DIRECTORY_PATH?", ignoreCase = false) &&
+        mayUseSteamWebAlias(connectAuthority, requestHead)
 
 internal fun mayUseSteamWebAlias(
     connectAuthority: String,
@@ -102,6 +121,8 @@ internal fun mayUseSteamWebAlias(
                 validWorkshopImageQuery(queryParameters)
         "api.steampowered.com", "community.steam-api.com" ->
             when {
+                requestLine[0] == "GET" && path == STEAM_DIRECTORY_PATH ->
+                    expectedHost == "api.steampowered.com" && validSteamDirectoryQuery(queryParameters)
                 requestLine[0] == "GET" && path == "/ISteamWebAPIUtil/GetSupportedAPIList/v1/" ->
                     queryNames.all { name -> name == "format" }
                 requestLine[0] == "POST" && path == "/ISteamRemoteStorage/GetPublishedFileDetails/v1/" -> {
@@ -137,6 +158,14 @@ private fun aliasQueryParameters(target: String): List<Pair<String, String>>? {
     }.getOrNull()
 }
 
+internal fun validSteamDirectoryQuery(parameters: List<Pair<String, String>>): Boolean {
+    if (parameters.map { (name, _) -> name }.toSet() != setOf("format", "cellid")) return false
+    if (parameters.size != 2) return false
+    val values = parameters.toMap()
+    if (values["format"] != "json") return false
+    return values["cellid"]?.toULongOrNull()?.let { value -> value <= UInt.MAX_VALUE.toULong() } == true
+}
+
 private fun validWorkshopImageQuery(parameters: List<Pair<String, String>>): Boolean {
     if (parameters.map { (name, _) -> name }.distinct().size != parameters.size) return false
     return parameters.all { (name, value) ->
@@ -149,6 +178,7 @@ private fun validWorkshopImageQuery(parameters: List<Pair<String, String>>): Boo
     }
 }
 
+internal const val STEAM_DIRECTORY_PATH = "/ISteamDirectory/GetCMListForConnect/v1/"
 private const val MAX_ALIAS_REQUEST_HEAD_CHARS = 16 * 1024
 private const val MAX_ALIAS_FORM_BYTES = 8L * 1024L
 private const val MAX_WORKSHOP_IMAGE_DIMENSION = 5_000

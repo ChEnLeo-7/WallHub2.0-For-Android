@@ -51,7 +51,11 @@ internal fun steamWebTargetsForRequest(
     targets: List<SteamWebDialTarget>,
 ): List<SteamWebDialTarget> =
     if (mayUseSteamWebAlias(connectAuthority, requestHead)) {
-        targets
+        if (isAnonymousSteamDirectoryRequest(connectAuthority, requestHead)) {
+            targets.sortedBy { target -> target.rule.tlsAuthority == target.rule.httpAuthority }
+        } else {
+            targets
+        }
     } else {
         targets.filter { target -> target.rule.tlsAuthority == target.rule.httpAuthority }
     }
