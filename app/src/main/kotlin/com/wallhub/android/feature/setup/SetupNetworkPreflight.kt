@@ -95,14 +95,6 @@ internal class SetupNetworkPreflightRunner(
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
     suspend fun run(input: SetupNetworkPreflightInput): SetupNetworkPreflightResult {
-        if (!input.automaticAntiBlockingEnabled) {
-            return SetupNetworkPreflightResult(
-                SetupNetworkOverallStatus.SKIPPED,
-                SetupNetworkCheck.entries.map {
-                    SetupNetworkCheckResult(it, SetupNetworkCheckStatus.SKIPPED, reason = "Automatic anti-blocking is off")
-                },
-            )
-        }
         val permits = Semaphore(3)
         val items = coroutineScope {
             SetupNetworkCheck.entries.map { check ->

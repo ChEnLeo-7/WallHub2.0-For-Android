@@ -10,20 +10,20 @@ import kotlin.test.assertTrue
 
 class SetupNetworkPreflightTest {
     @Test
-    fun `disabled automatic anti blocking skips every network check`() = runTest {
+    fun `disabled automatic anti blocking still runs every fixed connectivity check`() = runTest {
         var calls = 0
         val runner = SetupNetworkPreflightRunner(
             probes = SetupNetworkCheck.entries.associateWith {
-                SetupNetworkProbe { calls++; SetupProbeOutcome.Passed("unexpected") }
+                SetupNetworkProbe { calls++; SetupProbeOutcome.Passed("reachable") }
             },
             nowMillis = { 10L },
         )
 
         val result = runner.run(SetupNetworkPreflightInput(automaticAntiBlockingEnabled = false))
 
-        assertEquals(0, calls)
-        assertEquals(SetupNetworkOverallStatus.SKIPPED, result.overallStatus)
-        assertTrue(result.items.all { it.status == SetupNetworkCheckStatus.SKIPPED })
+        assertEquals(SetupNetworkCheck.entries.size, calls)
+        assertEquals(SetupNetworkOverallStatus.PASSED, result.overallStatus)
+        assertTrue(result.items.all { it.status == SetupNetworkCheckStatus.PASSED })
     }
 
     @Test
