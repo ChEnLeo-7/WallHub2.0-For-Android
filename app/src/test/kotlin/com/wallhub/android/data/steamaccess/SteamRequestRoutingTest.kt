@@ -79,6 +79,10 @@ class SteamRequestRoutingTest {
         listOf(
             "GET /ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=0&key=secret HTTP/1.1\r\nHost: api.steampowered.com\r\nConnection: close\r\n\r\n",
             "GET /ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=bad HTTP/1.1\r\nHost: api.steampowered.com\r\nConnection: close\r\n\r\n",
+            "GET /ISteamDirectory/GetCMListForConnect/v1/?cellid=0&format=json HTTP/1.1\r\nHost: api.steampowered.com\r\nConnection: close\r\n\r\n",
+            "GET /ISteamDirectory/GetCMListForConnect/v1/?%66ormat=json&cellid=0 HTTP/1.1\r\nHost: api.steampowered.com\r\nConnection: close\r\n\r\n",
+            "GET /ISteamDirectory/GetCMListForConnect/v1/?FORMAT=json&CELLID=0 HTTP/1.1\r\nHost: api.steampowered.com\r\nConnection: close\r\n\r\n",
+            "GET /ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=4294967295 HTTP/1.1\r\nHost: api.steampowered.com\r\nConnection: close\r\n\r\n",
             "GET /ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=0 HTTP/1.1\r\nHost: api.steampowered.com\r\nCookie: sessionid=secret\r\nConnection: close\r\n\r\n",
         ).forEach { head ->
             assertFalse(mayUseSteamWebAlias("api.steampowered.com", head), head)

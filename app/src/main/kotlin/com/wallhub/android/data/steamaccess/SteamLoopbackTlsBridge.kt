@@ -36,7 +36,7 @@ private const val DIRECTORY_FIRST_RESPONSE_TIMEOUT_MS = 2_500
 private const val DEFAULT_FIRST_RESPONSE_TIMEOUT_MS = 20_000
 
 @Singleton
-class SteamLoopbackTlsBridge
+internal class SteamLoopbackTlsBridge
     @Inject
     constructor(
         private val privateCa: WallHubPrivateCa,

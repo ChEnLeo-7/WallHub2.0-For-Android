@@ -3,6 +3,7 @@ package com.wallhub.android.feature.setup
 import com.wallhub.android.data.steam.cmCandidateCount
 import com.wallhub.android.data.steam.cmCandidatesFromBody
 import com.wallhub.android.data.steam.CM_DIRECTORY_URL
+import com.wallhub.android.data.steam.MAX_CM_LIST_CACHE_BYTES
 import com.wallhub.android.data.steamaccess.SteamAccessManager
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
 import java.io.ByteArrayOutputStream
@@ -33,6 +34,7 @@ import kotlin.coroutines.resumeWithException
 
 internal const val SETUP_PROBE_TIMEOUT_MS = 5_000L
 internal const val SETUP_WEB_PROBE_TIMEOUT_MS = 12_000L
+internal const val SETUP_DIRECTORY_PROBE_TIMEOUT_MS = 16_000L
 private const val SETUP_PROBE_BODY_LIMIT = 512L * 1024L
 private const val SETUP_PROBE_WORKSHOP_ID = 3799142774L
 
@@ -109,13 +111,10 @@ internal class SetupNetworkPreflightRunner(
                         val started = nowMillis()
                         try {
                             val timeoutMillis =
-                                if (
-                                    check == SetupNetworkCheck.DIRECTORY ||
-                                    check == SetupNetworkCheck.COMMUNITY_HTML
-                                ) {
-                                    SETUP_WEB_PROBE_TIMEOUT_MS
-                                } else {
-                                    SETUP_PROBE_TIMEOUT_MS
+                                when (check) {
+                                    SetupNetworkCheck.DIRECTORY -> SETUP_DIRECTORY_PROBE_TIMEOUT_MS
+                                    SetupNetworkCheck.COMMUNITY_HTML -> SETUP_WEB_PROBE_TIMEOUT_MS
+                                    else -> SETUP_PROBE_TIMEOUT_MS
                                 }
                             when (val outcome = withTimeout(timeoutMillis) { probes.getValue(check).run() }) {
                                 is SetupProbeOutcome.Passed -> SetupNetworkCheckResult(
@@ -177,6 +176,11 @@ class SetupNetworkPreflight
         .readTimeout(SETUP_WEB_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .callTimeout(SETUP_WEB_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .build()
+    private val directoryClient = httpClientFactory.newAnonymousReadBuilder()
+        .connectTimeout(SETUP_DIRECTORY_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .readTimeout(SETUP_DIRECTORY_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .callTimeout(SETUP_DIRECTORY_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .build()
 
     private val runner = SetupNetworkPreflightRunner(
         mapOf(
@@ -196,7 +200,13 @@ class SetupNetworkPreflight
     }
 
     private suspend fun probeDirectory(): SetupProbeOutcome {
-        val body = getBounded(CM_DIRECTORY_URL, "application/json", anonymousWebClient)
+        val body =
+            getBounded(
+                CM_DIRECTORY_URL,
+                "application/json",
+                directoryClient,
+                MAX_CM_LIST_CACHE_BYTES,
+            )
         val count = cmCandidateCount(cmCandidatesFromBody(body))
         if (count == 0) throw IOException("No supported CM endpoints")
         return SetupProbeOutcome.Passed("$count CM endpoints")
@@ -245,23 +255,25 @@ class SetupNetworkPreflight
         url: String,
         accept: String,
         httpClient: OkHttpClient = client,
+        bodyLimit: Long = SETUP_PROBE_BODY_LIMIT,
     ): String =
-        executeBounded(Request.Builder().url(url).header("Accept", accept).build(), httpClient)
+        executeBounded(Request.Builder().url(url).header("Accept", accept).build(), httpClient, bodyLimit)
 
     private suspend fun executeBounded(
         request: Request,
         httpClient: OkHttpClient = client,
+        bodyLimit: Long = SETUP_PROBE_BODY_LIMIT,
     ): String =
         withContext(Dispatchers.IO) {
             httpClient.newCall(request).await().use { response ->
                 if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
                 val body = response.body
-                if (body.contentLength() > SETUP_PROBE_BODY_LIMIT) throw IOException("Response too large")
+                if (body.contentLength() > bodyLimit) throw IOException("Response too large")
                 val output = ByteArrayOutputStream()
                 val buffer = ByteArray(8 * 1024)
                 body.byteStream().use { input ->
                     while (true) {
-                        val remaining = SETUP_PROBE_BODY_LIMIT + 1L - output.size()
+                        val remaining = bodyLimit + 1L - output.size()
                         if (remaining <= 0L) throw IOException("Response too large")
                         val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
                         if (read < 0) break

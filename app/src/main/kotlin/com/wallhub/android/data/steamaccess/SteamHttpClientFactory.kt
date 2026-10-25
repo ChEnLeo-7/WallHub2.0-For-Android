@@ -50,6 +50,8 @@ class SteamHttpClientFactory
 
         fun newBuilder(): OkHttpClient.Builder = newBuilder(bridge.proxyAuthorization)
 
+        internal fun enhancedConnectionEnabled(): Boolean = manager.enhancedConnectionEnabled()
+
         fun newAnonymousReadBuilder(): OkHttpClient.Builder =
             newBuilder(bridge.anonymousWebProxyAuthorization)
                 .addInterceptor { chain ->

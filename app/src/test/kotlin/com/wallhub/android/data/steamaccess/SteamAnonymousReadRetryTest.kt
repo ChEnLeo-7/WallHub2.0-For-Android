@@ -31,15 +31,17 @@ class SteamAnonymousReadRetryTest {
         assertTrue(mayRetryAnonymousSteamRead(details(), error, false))
         assertTrue(mayRetryAnonymousSteamRead(directory(), error, false))
         assertFalse(mayRetryAnonymousSteamRead(directory().newBuilder().header("Cookie", "secret").build(), error, false))
-        assertFalse(
-            mayRetryAnonymousSteamRead(
-                directory().newBuilder()
-                    .url("https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=0&key=secret")
-                    .build(),
-                error,
-                false,
-            ),
-        )
+        listOf(
+            "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=0&key=secret",
+            "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?cellid=0&format=json",
+            "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?%66ormat=json&cellid=0",
+            "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=4294967295",
+        ).forEach { url ->
+            assertFalse(
+                mayRetryAnonymousSteamRead(directory().newBuilder().url(url).build(), error, false),
+                url,
+            )
+        }
         assertTrue(mayRetryAnonymousSteamRead(Request.Builder()
             .url("https://steamcommunity.com/sharedfiles/filedetails/?id=123").build(), error, false))
         assertFalse(mayRetryAnonymousSteamRead(details().newBuilder()
