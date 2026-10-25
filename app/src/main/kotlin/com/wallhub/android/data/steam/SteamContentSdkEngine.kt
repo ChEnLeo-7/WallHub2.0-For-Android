@@ -8,9 +8,10 @@ import io.steamcontent.sdk.DepotRangeStream
 import io.steamcontent.sdk.EngineCapability
 import io.steamcontent.sdk.ManifestFileList
 import io.steamcontent.sdk.PlayerProfiles
-import io.steamcontent.sdk.SessionEventKind
-import io.steamcontent.sdk.SessionMode
 import io.steamcontent.sdk.SessionCapabilityBits
+import io.steamcontent.sdk.SessionEventKind
+import io.steamcontent.sdk.SessionMaintenanceStep
+import io.steamcontent.sdk.SessionMode
 import io.steamcontent.sdk.SessionState
 import io.steamcontent.sdk.SessionTransportKind
 import io.steamcontent.sdk.SteamContentEngine
@@ -214,14 +215,75 @@ class SteamContentSdkEngine
                 ?.takeIf { it.value === session }
                 ?.let { publishedSessionGeneration }
 
+        /** Admits one business operation only while [expectedGeneration] is still the published session. */
+        @Synchronized
+        internal fun <T> executeIfSessionGeneration(
+            expectedGeneration: Long,
+            operation: () -> T,
+        ): T {
+            val actual = sessions.currentHandle()?.let { publishedSessionGeneration }
+            if (actual != expectedGeneration) {
+                throw SteamSessionGenerationChangedException(
+                    SteamSessionGeneration(expectedGeneration),
+                    actual?.let(::SteamSessionGeneration),
+                )
+            }
+            return operation()
+        }
+
+        /** Runs maintenance for the exact current handle under the same monitor as business admission and open. */
+        @Synchronized
+        internal fun maintainSession(
+            session: SteamSession,
+            autoReconnect: Boolean,
+        ): SteamSession.Maintenance {
+            requireCurrentSession(session)
+            return session.maintain(autoReconnect).also { outcome ->
+                if (outcome.step == SessionMaintenanceStep.RECONNECTED) publishedSessionGeneration += 1L
+            }
+        }
+
+        /** Drains the exact current handle under the same monitor as business admission and open. */
+        @Synchronized
+        internal fun pumpSession(session: SteamSession): SteamSession.Pump {
+            requireCurrentSession(session)
+            return session.pump()
+        }
+
+        /** Logs out the exact current handle without racing a generation-gated business operation. */
+        @Synchronized
+        internal fun logoutSession(session: SteamSession) {
+            requireCurrentSession(session)
+            session.logout()
+        }
+
+        /** Releases even an obsolete owned handle, serialized with current-generation admission and replacement. */
+        @Synchronized
+        internal fun releaseSession(handle: GenerationHandleOwner.Handle<SteamSession>) {
+            handle.close()
+        }
+
+        /** Reconnects the exact current handle and publishes a new generation only after native success. */
+        @Synchronized
+        internal fun reconnectSession(session: SteamSession): SteamSession.Reconnect {
+            requireCurrentSession(session)
+            return session.reconnect().also { outcome ->
+                if (outcome.succeeded) publishedSessionGeneration += 1L
+            }
+        }
+
         /** Reconnects only the session generation that actually refused the foreground request. */
         @Synchronized
         internal fun reconnectSessionIfCurrent(expectedGeneration: Long): Boolean {
             val handle = sessions.currentHandle() ?: return false
             if (publishedSessionGeneration != expectedGeneration) return true
-            val reconnected = runCatching { handle.value.reconnect() }.getOrNull()?.succeeded == true
-            if (reconnected) publishedSessionGeneration += 1L
-            return reconnected
+            return runCatching { reconnectSession(handle.value) }.getOrNull()?.succeeded == true
+        }
+
+        private fun requireCurrentSession(session: SteamSession) {
+            check(sessions.currentHandle()?.value === session) {
+                "The Steam Content SDK session generation changed before session control"
+            }
         }
 
         /** Reports what the SDK says it can do on this device, for diagnostics and negotiation. */

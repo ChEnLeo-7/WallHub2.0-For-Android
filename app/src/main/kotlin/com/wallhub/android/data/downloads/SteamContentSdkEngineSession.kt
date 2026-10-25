@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicReference
 /** Borrowed engine facade with no close authority over the account session. */
 private class SteamContentSdkEngineSession(
     private val engine: SteamContentSdkEngine,
+    private val expectedGeneration: Long,
 ) : SteamContentSdkSession {
     override val storageRoot: File
         get() = engine.storageRoot
@@ -24,7 +25,10 @@ private class SteamContentSdkEngineSession(
         appIdHint: Long,
         contentManifestIdHint: Long,
     ): SteamContentSdkResolvedItem {
-        val response = engine.resolveWorkshop(itemId, appIdHint, contentManifestIdHint)
+        val response =
+            engine.executeIfSessionGeneration(expectedGeneration) {
+                engine.resolveWorkshop(itemId, appIdHint, contentManifestIdHint)
+            }
         return SteamContentSdkResolvedItem(
             itemId = response.itemId,
             appId = response.appId,
@@ -42,13 +46,15 @@ private class SteamContentSdkEngineSession(
         chunkConcurrency: Int,
     ): SteamContentSdkTask {
         val task =
-            engine.startDownload(
-                appId = appId,
-                depotId = depotId,
-                manifestId = manifestId,
-                destination = destination,
-                chunkConcurrency = chunkConcurrency,
-            ) ?: error("The Steam Content SDK did not start a download task")
+            engine.executeIfSessionGeneration(expectedGeneration) {
+                engine.startDownload(
+                    appId = appId,
+                    depotId = depotId,
+                    manifestId = manifestId,
+                    destination = destination,
+                    chunkConcurrency = chunkConcurrency,
+                )
+            } ?: error("The Steam Content SDK did not start a download task")
         return SteamContentSdkEngineTask(task)
     }
 
@@ -57,14 +63,16 @@ private class SteamContentSdkEngineSession(
         depotId: Long,
         manifestId: Long,
     ): List<SteamContentSdkManifestFile> =
-        engine.openManifestFiles(appId, depotId, manifestId).use { list ->
-            (0 until list.size()).map { index ->
-                val file = list.file(index)
-                SteamContentSdkManifestFile(
-                    path = list.path(index),
-                    size = file.size,
-                    flags = file.flags,
-                )
+        engine.executeIfSessionGeneration(expectedGeneration) {
+            engine.openManifestFiles(appId, depotId, manifestId).use { list ->
+                (0 until list.size()).map { index ->
+                    val file = list.file(index)
+                    SteamContentSdkManifestFile(
+                        path = list.path(index),
+                        size = file.size,
+                        flags = file.flags,
+                    )
+                }
             }
         }
 
@@ -76,20 +84,24 @@ private class SteamContentSdkEngineSession(
         cacheCapacityBytes: Long,
     ): SteamContentSdkRangeStream =
         SteamContentSdkEngineRangeStream(
-            engine.openRangeStream(
-                appId = appId,
-                depotId = depotId,
-                filePath = filePath,
-                manifestId = manifestId,
-                cacheCapacityBytes = cacheCapacityBytes,
-            ),
+            engine.executeIfSessionGeneration(expectedGeneration) {
+                engine.openRangeStream(
+                    appId = appId,
+                    depotId = depotId,
+                    filePath = filePath,
+                    manifestId = manifestId,
+                    cacheCapacityBytes = cacheCapacityBytes,
+                )
+            },
         )
 
     override fun close() = Unit
 }
 
-internal fun borrowedSteamContentSdkSession(engine: SteamContentSdkEngine): SteamContentSdkSession =
-    SteamContentSdkEngineSession(engine)
+internal fun borrowedSteamContentSdkSession(
+    engine: SteamContentSdkEngine,
+    expectedGeneration: Long,
+): SteamContentSdkSession = SteamContentSdkEngineSession(engine, expectedGeneration)
 
 /** The SDK range-stream handle as [SteamContentSdkRangeStream]. */
 private class SteamContentSdkEngineRangeStream(

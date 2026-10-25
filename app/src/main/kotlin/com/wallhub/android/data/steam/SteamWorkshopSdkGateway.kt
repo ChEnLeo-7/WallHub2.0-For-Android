@@ -3,8 +3,6 @@ package com.wallhub.android.data.steam
 import android.util.Log
 import io.steamcontent.sdk.SessionState
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 /**
  * The single deep module through which every Workshop SDK read and write crosses.
@@ -17,7 +15,6 @@ internal class SteamWorkshopSdkGateway(
     private val engine: SteamContentSdkEngine,
     private val accountSessions: SteamContentSdkAuthenticatedSessionRegistry? = null,
 ) {
-    private val mutex = Mutex()
     private val reads =
         SteamWorkshopReadCoordinator(
             maxConcurrent = 1,
@@ -43,18 +40,18 @@ internal class SteamWorkshopSdkGateway(
         key: String,
         kind: WorkshopReadKind,
         priority: WorkshopReadPriority,
-        operation: suspend () -> T,
+        operation: () -> T,
     ): T {
         val generation = engine.currentSessionGeneration()?.toString() ?: "none"
         return reads.read("session:$generation:$key", kind, priority) {
-            recovery.execute { mutex.withLock { operation() } }
+            recovery.execute(operation)
         }
     }
 
     suspend fun <T> write(
         kind: WorkshopReadKind,
-        operation: suspend () -> T,
-    ): T = writes.write(kind) { mutex.withLock { operation() } }
+        operation: () -> T,
+    ): T = writes.write(kind, operation)
 
     fun signedInAccountId(): Long? =
         runCatching { engine.currentSession()?.accountId() }.getOrNull()?.takeIf { it > 0L }
@@ -100,6 +97,11 @@ internal class SteamWorkshopSdkGateway(
         override fun isUsable(generation: SteamSessionGeneration): Boolean =
             sessions.currentUsable()?.let { it.engine === engine && it.generation == generation.value } == true
 
+        override fun <T> executeIfCurrent(
+            expected: SteamSessionGeneration,
+            operation: () -> T,
+        ): T = engine.executeIfSessionGeneration(expected.value, operation)
+
         override suspend fun reconnectIfCurrent(expected: SteamSessionGeneration): Boolean {
             val failed = sessions.currentUsable()?.takeIf { it.engine === engine } ?: return false
             if (failed.generation != expected.value) return isUsable(SteamSessionGeneration(failed.generation))
@@ -119,6 +121,11 @@ internal class SteamWorkshopSdkGateway(
 
         override fun isUsable(generation: SteamSessionGeneration): Boolean =
             engine.currentSessionGeneration() == generation.value && engine.state() == SessionState.AUTHENTICATED
+
+        override fun <T> executeIfCurrent(
+            expected: SteamSessionGeneration,
+            operation: () -> T,
+        ): T = engine.executeIfSessionGeneration(expected.value, operation)
 
         override suspend fun reconnectIfCurrent(expected: SteamSessionGeneration): Boolean =
             engine.reconnectSessionIfCurrent(expected.value)

@@ -18,7 +18,7 @@ internal class SteamWorkshopWriteCoordinator(
 
     suspend fun <T> write(
         kind: WorkshopReadKind,
-        operation: suspend () -> T,
+        operation: () -> T,
     ): T {
         require(
             kind == WorkshopReadKind.SET_SUBSCRIBED ||

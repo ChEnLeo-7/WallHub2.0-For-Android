@@ -1,11 +1,16 @@
 package com.wallhub.android.data.steam
 
+import java.util.concurrent.CountDownLatch
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
 
 class SteamWorkshopWriteCoordinatorTest {
@@ -13,14 +18,15 @@ class SteamWorkshopWriteCoordinatorTest {
     fun `two writes for the same item are never coalesced`() =
         runTest {
             val recovery = SteamSessionRequestRecovery(FakeRecoverableSession())
-            val requests = SteamWorkshopReadCoordinator(maxConcurrent = 1, scope = backgroundScope)
+            val requestScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            val requests = SteamWorkshopReadCoordinator(maxConcurrent = 1, scope = requestScope)
             val writes = SteamWorkshopWriteCoordinator(requests, recovery)
             val firstEntered = CompletableDeferred<Unit>()
-            val releaseFirst = CompletableDeferred<Unit>()
+            val releaseFirst = CountDownLatch(1)
             val calls = mutableListOf<Boolean>()
 
             val first =
-                async {
+                async(Dispatchers.Default) {
                     writes.write(WorkshopReadKind.SET_SUBSCRIBED) {
                         calls += true
                         firstEntered.complete(Unit)
@@ -30,16 +36,17 @@ class SteamWorkshopWriteCoordinatorTest {
                 }
             firstEntered.await()
             val second =
-                async {
+                async(Dispatchers.Default) {
                     writes.write(WorkshopReadKind.SET_SUBSCRIBED) {
                         calls += false
                         false
                     }
                 }
-            releaseFirst.complete(Unit)
+            releaseFirst.countDown()
 
             assertEquals(listOf(true, false), listOf(first, second).awaitAll())
             assertEquals(listOf(true, false), calls)
+            requestScope.cancel()
         }
 
     @Test
@@ -88,6 +95,14 @@ class SteamWorkshopWriteCoordinatorTest {
         var reconnectCalls = 0
 
         override fun generation(): SteamSessionGeneration = current
+
+        override fun <T> executeIfCurrent(
+            expected: SteamSessionGeneration,
+            operation: () -> T,
+        ): T {
+            check(current == expected)
+            return operation()
+        }
 
         override suspend fun reconnectIfCurrent(expected: SteamSessionGeneration): Boolean {
             check(current == expected)

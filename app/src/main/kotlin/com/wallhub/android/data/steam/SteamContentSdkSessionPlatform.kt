@@ -508,7 +508,7 @@ private class SteamContentSdkEnginePlatformSession(
         }
 
     override fun maintain(autoReconnect: Boolean): SteamContentSdkMaintenance {
-        val outcome = session.maintain(autoReconnect)
+        val outcome = engine.maintainSession(session, autoReconnect)
         return SteamContentSdkMaintenance(
             step = steamContentSdkMaintenanceStep(outcome.step),
             replayableRequests = outcome.replayableRequests,
@@ -517,7 +517,7 @@ private class SteamContentSdkEnginePlatformSession(
     }
 
     override fun pump(): SteamContentSdkPump {
-        val outcome = session.pump()
+        val outcome = engine.pumpSession(session)
         return SteamContentSdkPump(
             outcome = steamContentSdkPumpOutcome(outcome.outcome),
             messages = outcome.messages,
@@ -525,7 +525,7 @@ private class SteamContentSdkEnginePlatformSession(
     }
 
     override fun reconnect(): SteamContentSdkReconnect {
-        val outcome = session.reconnect()
+        val outcome = engine.reconnectSession(session)
         return SteamContentSdkReconnect(
             replayableRequests = outcome.replayableRequests,
             abandonedRequests = outcome.abandonedRequests,
@@ -586,13 +586,13 @@ private class SteamContentSdkEnginePlatformSession(
         session.respondToChallenge(challengeId, answer)
     }
 
-    override fun logout() = session.logout()
+    override fun logout() = engine.logoutSession(session)
 
     override fun close() {
         authenticatedSessions.clear(engine, publishedGeneration)
         // Only the session. This engine is the process-wide session engine, and a download or a range stream
         // may have borrowed it; closing the engine here is what turned a lost connection into
         // `invalid task handle` on a transfer that was still running.
-        sessionOwner.close()
+        engine.releaseSession(sessionOwner)
     }
 }

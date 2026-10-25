@@ -658,7 +658,7 @@ internal class SteamContentSdkWorkshopRepository
             key: String,
             kind: WorkshopReadKind,
             priority: WorkshopReadPriority,
-            operation: suspend (SteamContentSdkEngine) -> T,
+            operation: (SteamContentSdkEngine) -> T,
         ): T {
             val anonymous = publicSessionRouter.acquire()
             return anonymousGateway.read(key, kind, priority) { operation(anonymous) }
@@ -669,7 +669,7 @@ internal class SteamContentSdkWorkshopRepository
             key: String,
             kind: WorkshopReadKind,
             priority: WorkshopReadPriority,
-            operation: suspend (SteamContentSdkEngine) -> T,
+            operation: (SteamContentSdkEngine) -> T,
         ): T =
             if (access == WorkshopSessionAccess.AUTHENTICATED_ACCOUNT) {
                 gateway.awaitSignedInSession()
@@ -682,7 +682,7 @@ internal class SteamContentSdkWorkshopRepository
             key: String,
             kind: WorkshopReadKind,
             priority: WorkshopReadPriority,
-            operation: suspend () -> T,
+            operation: () -> T,
         ): T = gateway.read(key, kind, priority, operation)
 
     }

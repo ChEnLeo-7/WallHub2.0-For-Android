@@ -66,11 +66,11 @@ private const val NANOS_PER_MILLISECOND = 1_000_000L
  * a refused SDK capability publishes a failure that the UI can render instead of silently answering from
  * another backend, which is what a later parity comparison depends on.
  *
- * A logon or a restore that fails in the transport class - what the SDK reports when its whole candidate
- * pass failed to connect, as "protocol adapter failed" - is retried exactly once against a candidate list
- * read live from the directory. That is the only outcome that can mean the platform's cached endpoint set is
- * the stale input, and one retry is the whole of the policy on either path: there is no retry loop, a second
- * transport failure is reported as it is, and no other failure class is ever retried.
+ * A logon or restore round that fails in the NETWORK class is retried exactly once against a candidate list
+ * read live from the directory. Interactive logon ends after that bounded round. A remembered-session restore
+ * that exhausts both attempts keeps one Backend-owned retry plan with capped exponential delay; foreground,
+ * business, maintenance and timer triggers coalesce through the same attempt gate. No other failure class is
+ * scheduled automatically.
  */
 internal class SteamContentSdkSessionBackend(
     private val platform: SteamContentSdkPlatform,
@@ -88,6 +88,8 @@ internal class SteamContentSdkSessionBackend(
      * forever, and the tests that are about logon and restore have nothing to say about the cadence.
      */
     private val maintenanceIntervalMs: Long = STEAM_SESSION_MAINTENANCE_INTERVAL_MS,
+    private val nowNanos: () -> Long = System::nanoTime,
+    private val beforeRecoveryPlanPublish: () -> Unit = {},
 ) : SteamSessionRepository {
     private val mutableSession = MutableStateFlow(SteamSessionState())
     override val session: StateFlow<SteamSessionState> = mutableSession.asStateFlow()
@@ -95,9 +97,9 @@ internal class SteamContentSdkSessionBackend(
     private val attemptInProgress = AtomicBoolean(false)
     private val logoutInProgress = AtomicBoolean(false)
     private val attemptLock = Any()
-    /** Keeps the persisted account identity stable while the one bounded background CM replacement runs. */
-    private val preserveSignedInDuringRestore = AtomicBoolean(false)
     private val attemptJob = AtomicReference<Job?>(null)
+    /** The sole delayed plan allowed to reopen the remembered account session. */
+    private val recoveryJob = AtomicReference<Job?>(null)
     private val manualGuardFallbackJob = AtomicReference<Job?>(null)
     private val activeSession = AtomicReference<SteamContentSdkPlatformSession?>(null)
     private val pendingChallenge = AtomicReference<PendingChallenge?>(null)
@@ -179,48 +181,73 @@ internal class SteamContentSdkSessionBackend(
             val livedMs =
                 authenticatedAt
                     .takeIf { it > 0L }
-                    ?.let { started -> (System.nanoTime() - started).coerceAtLeast(0L) / NANOS_PER_MILLISECOND }
+                    ?.let { started -> (nowNanos() - started).coerceAtLeast(0L) / NANOS_PER_MILLISECOND }
                     ?: 0L
             val failures =
                 if (livedMs >= STABLE_ACCOUNT_SESSION_MS) {
-                    shortSessionFailures.getAndSet(0L)
-                    0L
+                    // Stability clears old debt; this loss is then the first failure of a new recovery series.
+                    shortSessionFailures.set(1L)
+                    1L
                 } else {
                     shortSessionFailures.updateAndGet { count -> (count + 1L).coerceAtMost(MAX_RECOVERY_BACKOFF_EXPONENT + 1L) }
                 }
             record("content_session_retired generation=$generation livedMs=$livedMs retryDebt=$failures")
             if (!releaseSessionIfCurrent(current)) return@launchAttempt
-            // Match the WebView experience: remembered identity survives, while the expensive account CM is
-            // reopened only when a foreground account/content operation asks the sole Backend owner for it.
             publish(
-                SteamSessionPhase.SIGNED_IN,
+                SteamSessionPhase.RESTORABLE,
                 messages.restoreFailed,
                 accountName = accountName,
                 hasStoredSession = true,
             )
+            scheduleStoredRecovery(failures)
         }
     }
 
-    private fun requestOnDemandRecovery() {
+    private fun requestOnDemandRecovery(fromScheduledPlan: Boolean = false) {
+        // Ordinary signals join the current not-before plan. Only that plan may spend its retry at the deadline.
+        if (!fromScheduledPlan && recoveryJob.get() != null) {
+            record("recovery_backoff_joined")
+            return
+        }
         launchAttempt {
-            val delayMs = steamAccountRecoveryDelayMs(shortSessionFailures.get())
-            if (delayMs > 0L) {
-                record("content_session_recovery_backoff delayMs=$delayMs")
-                delay(delayMs)
-            }
             val authenticated =
                 activeSession
                     .get()
                     ?.let { session -> runCatching { session.state() }.getOrNull() }
                     .let { it == SteamContentSdkSessionState.AUTHENTICATED }
-            if (!authenticated) {
-                preserveSignedInDuringRestore.set(mutableSession.value.phase == SteamSessionPhase.SIGNED_IN)
-                try {
-                    restoreStoredSession()
-                } finally {
-                    preserveSignedInDuringRestore.set(false)
-                }
+            if (!authenticated) restoreStoredSession()
+        }
+    }
+
+    private fun scheduleStoredRecovery(failures: Long) {
+        if (logoutInProgress.get() || !mutableSession.value.hasStoredSession) return
+        val retryDebt = failures.coerceAtLeast(1L)
+        val delayMs = steamAccountRecoveryDelayMs(retryDebt)
+        lateinit var scheduled: Job
+        scheduled =
+            scope.launch(start = CoroutineStart.LAZY) {
+                delay(delayMs)
+                if (!recoveryJob.compareAndSet(scheduled, null)) return@launch
+                if (logoutInProgress.get()) return@launch
+                record("session_recovery_started retryDebt=$retryDebt")
+                requestOnDemandRecovery(fromScheduledPlan = true)
             }
+        beforeRecoveryPlanPublish()
+        if (logoutInProgress.get()) {
+            scheduled.cancel()
+            return
+        }
+        if (recoveryJob.compareAndSet(null, scheduled)) {
+            if (logoutInProgress.get()) {
+                recoveryJob.compareAndSet(scheduled, null)
+                scheduled.cancel()
+                return
+            }
+            record("session_recovery_scheduled delayMs=$delayMs retryDebt=$retryDebt")
+            scheduled.start()
+        } else {
+            scheduled.cancel()
+            record("session_recovery_coalesced")
         }
     }
 
@@ -373,9 +400,13 @@ internal class SteamContentSdkSessionBackend(
                 attemptJob.getAndSet(null)
             }
         manualGuardFallbackJob.getAndSet(null)?.cancel()
+        recoveryJob.getAndSet(null)?.cancel()
         scope.launch {
             try {
                 job?.cancelAndJoin()
+                // The cancelled attempt may have raced far enough to publish a delayed plan. Fence it again
+                // after join, while logoutInProgress still prevents any replacement from being installed.
+                recoveryJob.getAndSet(null)?.cancel()
                 // The maintenance loop must stop before the session it drives is torn down.
                 maintenanceJob.getAndSet(null)?.job?.cancel()
                 // A pending recovery retry is a standing plan to sign this account back in, which is the
@@ -455,10 +486,10 @@ internal class SteamContentSdkSessionBackend(
     internal fun close() {
         attemptJob.getAndSet(null)?.cancel()
         manualGuardFallbackJob.getAndSet(null)?.cancel()
+        recoveryJob.getAndSet(null)?.cancel()
         // A scheduled recovery retry is a live plan to reopen a session, so it does not outlive the shutdown
-        // that closed one: without this it would fire up to eight minutes later against a backend that is gone
-        // and open the very thing close() just released. It is cancelled before the gate is opened so a retry
-        // already inside restorePersistedSession is torn down with the rest.
+        // that closed one. It is cancelled before the gate is opened so a retry already inside
+        // restorePersistedSession is torn down with the rest.
         // The maintenance loop drives the session this is about to close, so it stops first - the same order
         // releaseSession uses. Leaving it running leaves it ticking against a closed session for up to one
         // interval, which is the leak this path had.
@@ -506,6 +537,12 @@ internal class SteamContentSdkSessionBackend(
             }
             if (attemptInProgress.compareAndSet(false, true)) {
                 startAttempt(block)
+                return
+            }
+            if (intent == AttemptIntent.RECOVERY) {
+                // Timer, foreground, maintenance and business signals all describe the same desired state.
+                // The attempt already holding the gate will either publish readiness or schedule its own retry.
+                record("recovery_coalesced")
                 return
             }
             pendingAttempt.set(pending)
@@ -581,8 +618,13 @@ internal class SteamContentSdkSessionBackend(
         // and kSteam is never consulted.
         record("restore_retry_live_candidates")
         restoreOnce(stored, refreshLive = true)
-        // A second transport failure is final for this foreground recovery. The user may retry explicitly;
-        // no background reconnect loop competes with public anonymous reads or another foreground attempt.
+        if (lastAttemptFailure.get() == SteamContentSdkSessionFailure.NETWORK) {
+            val failures =
+                shortSessionFailures.updateAndGet { count ->
+                    (count + 1L).coerceAtMost(MAX_RECOVERY_BACKOFF_EXPONENT + 1L)
+                }
+            scheduleStoredRecovery(failures)
+        }
     }
 
     private suspend fun restoreOnce(
@@ -769,7 +811,7 @@ internal class SteamContentSdkSessionBackend(
             // Decide and write first. A passive drain is needed after a heartbeat so its reply/server pushes are
             // consumed, but repeatedly reading a quiet CM socket on every host tick has proven destructive on
             // the Android route: the second idle drain reported transport failure on an otherwise usable link.
-            val step = runCatching { session.maintain(autoReconnect = true) }
+            val step = runCatching { session.maintain(autoReconnect = false) }
             val pumpDetail =
                 if (step.getOrNull()?.step == SteamContentSdkMaintenanceStep.HEARTBEAT_SENT) {
                     runCatching { session.pump() }
@@ -800,10 +842,10 @@ internal class SteamContentSdkSessionBackend(
      *
      * One tick asks the SDK what is due. A sent heartbeat is followed by one bounded drain; an idle decision
      * does not repeatedly read a quiet socket. Business operations drain their own replies, while heartbeat
-     * ticks consume their reply and any queued server pushes. A tick
-     * that finds the session no longer authenticated reports the loss and stops. The next foreground request
-     * owns the single reconnect attempt through SteamSessionRequestRecovery, so maintenance and request handling
-     * can never race as two independent recovery authorities.
+     * ticks consume their reply and any queued server pushes. A tick uses detection-only maintenance; when it
+     * finds the session no longer authenticated it reports the exact generation and stops. The Backend retires
+     * that generation and owns the one delayed replacement plan, while foreground and request signals join its
+     * not-before deadline or coalesce through the same attempt gate.
      */
     private fun reportSessionUnavailable(session: SteamContentSdkPlatformSession) {
         val accountName = mutableSession.value.accountName ?: return
@@ -841,9 +883,8 @@ internal class SteamContentSdkSessionBackend(
                         if (state == SteamContentSdkSessionState.AUTHENTICATED) continue
                         record("session_lost request_recovery_required")
                         reportSessionUnavailable(session)
-                        // Connection recovery has one owner: the next foreground SDK request retries once
-                        // through SteamSessionRequestRecovery. The background maintenance loop only detects
-                        // loss; it never starts a competing reconnect attempt.
+                        // Maintenance only detects loss. The report below reaches the sole Backend owner, which
+                        // retires this exact generation and schedules the bounded replacement attempt.
                         return@launch
                     }
                 } catch (error: CancellationException) {
@@ -1115,7 +1156,8 @@ internal class SteamContentSdkSessionBackend(
             return
         }
         pendingChallenge.set(null)
-        authenticatedAtNanos.set(System.nanoTime())
+        recoveryJob.getAndSet(null)?.cancel()
+        authenticatedAtNanos.set(nowNanos())
         // The authentication edge is the one moment the app can keep a session across a restart, so the token
         // the SDK retained is stored here on every path that reaches this state - logon, a Guard answer, and a
         // restore alike. The store write happens only when the SDK's retained token differs from the stored
@@ -1245,6 +1287,7 @@ internal class SteamContentSdkSessionBackend(
     ) {
         pendingChallenge.set(null)
         if (revoked) {
+            recoveryJob.getAndSet(null)?.cancel()
             // The service revoked the credential, so this is the one path where clearing it is not a claim
             // but the point: what the UI is told about the store is what the store actually did.
             val cleared = clearStoredCredential()
@@ -1326,6 +1369,7 @@ internal class SteamContentSdkSessionBackend(
                 serviceRefusedCredential(sdkDetail)
         when {
             steamContentSdkFailurePhase(failure) == SteamSessionPhase.EXPIRED || refusedStoredCredential -> {
+                recoveryJob.getAndSet(null)?.cancel()
                 val cleared = clearStoredCredential(attemptCredentialGuard())
                 record("credential_cleared cleared=$cleared refused=$refusedStoredCredential")
                 publish(
@@ -1378,23 +1422,9 @@ internal class SteamContentSdkSessionBackend(
         avatarUrl: String? = null,
     ) {
         val previous = mutableSession.value
-        val projectedPhase =
-            if (
-                preserveSignedInDuringRestore.get() &&
-                phase in
-                    setOf(
-                        SteamSessionPhase.RESTORABLE,
-                        SteamSessionPhase.SIGNING_IN,
-                        SteamSessionPhase.FAILED,
-                    )
-            ) {
-                SteamSessionPhase.SIGNED_IN
-            } else {
-                phase
-            }
         mutableSession.value =
             SteamSessionState(
-                phase = projectedPhase,
+                phase = phase,
                 accountName = accountName ?: previous.accountName,
                 // The profile is read once, on the authenticated edge; every later phase carries it forward so
                 // a state published for a challenge or a failure does not blank the account's own name.
@@ -1407,7 +1437,7 @@ internal class SteamContentSdkSessionBackend(
                 hasStoredSession = hasStoredSession ?: previous.hasStoredSession,
                 isConnected = isConnected,
             )
-        record("phase_${projectedPhase.name.lowercase()}")
+        record("phase_${phase.name.lowercase()}")
     }
 
     private fun clearStoredCredential(guard: Long? = null): Boolean =
@@ -1511,12 +1541,6 @@ internal class SteamContentSdkSessionBackend(
         )
     }
 
-    /**
-     * Schedules one retry of a restore that failed for a reason that can clear.
-     *
-     * Bounded on purpose: a network that is really down should be reported to the user rather than hammered, so
-     * the attempts are counted, spaced out, and dropped as soon as an attempt signs in.
-     */
     /**
      * Names why a maintenance call failed.
      *

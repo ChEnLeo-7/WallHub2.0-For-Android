@@ -71,6 +71,44 @@ class SteamSessionRequestRecoveryTest {
         }
 
     @Test
+    fun `a stale first admission invokes a mutation only on the explicit replacement generation`() =
+        runTest {
+            val session = FakeRecoverableSession().apply { staleAdmissionsRemaining = 1 }
+            val recovery = SteamSessionRequestRecovery(session)
+            var mutations = 0
+
+            val result =
+                recovery.execute {
+                    mutations += 1
+                    "confirmed"
+                }
+
+            assertEquals("confirmed", result)
+            assertEquals(1, mutations)
+            assertEquals(listOf(SteamSessionGeneration(2L)), session.admittedGenerations)
+            assertEquals(0, session.reconnectCalls)
+        }
+
+    @Test
+    fun `a stale second admission returns without invoking the mutation`() =
+        runTest {
+            val session = FakeRecoverableSession().apply { staleAdmissionsRemaining = 2 }
+            val recovery = SteamSessionRequestRecovery(session)
+            var mutations = 0
+
+            assertFailsWith<SteamSessionGenerationChangedException> {
+                recovery.execute {
+                    mutations += 1
+                    "must not run"
+                }
+            }
+
+            assertEquals(0, mutations)
+            assertEquals(emptyList(), session.admittedGenerations)
+            assertEquals(0, session.reconnectCalls)
+        }
+
+    @Test
     fun `a second recoverable failure escapes without another reconnect`() =
         runTest {
             val session = FakeRecoverableSession()
@@ -254,11 +292,26 @@ class SteamSessionRequestRecoveryTest {
         var reconnectSucceeds = true
         var reconnectIsUsable = true
         var beforeReconnect: suspend () -> Unit = {}
+        var staleAdmissionsRemaining = 0
+        val admittedGenerations = mutableListOf<SteamSessionGeneration>()
         private var usable = true
 
         override fun generation(): SteamSessionGeneration = current
 
         override fun isUsable(generation: SteamSessionGeneration): Boolean = current == generation && usable
+
+        override fun <T> executeIfCurrent(
+            expected: SteamSessionGeneration,
+            operation: () -> T,
+        ): T {
+            if (staleAdmissionsRemaining > 0) {
+                staleAdmissionsRemaining -= 1
+                replaceGeneration()
+            }
+            if (current != expected) throw SteamSessionGenerationChangedException(expected, current)
+            admittedGenerations += expected
+            return operation()
+        }
 
         override suspend fun reconnectIfCurrent(expected: SteamSessionGeneration): Boolean {
             check(current == expected)

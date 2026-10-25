@@ -26,7 +26,7 @@ internal class SteamContentSdkSessionBroker private constructor(
                     timeoutMs = ACCOUNT_SESSION_WAIT_MS,
                 ) ?: error("The signed-in Steam account session is not available for content download")
             Borrowed(
-                session = borrowedSteamContentSdkSession(snapshot.engine),
+                session = borrowedSteamContentSdkSession(snapshot.engine, snapshot.generation),
                 generation = snapshot.generation,
                 reportLoss = { sessions.reportUnavailable(snapshot.accountName, snapshot.generation) },
             )

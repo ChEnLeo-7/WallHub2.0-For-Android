@@ -9,6 +9,12 @@ internal data class SteamSessionGeneration(
     val value: Long,
 )
 
+/** The expected generation was replaced before its business operation entered native code. */
+internal class SteamSessionGenerationChangedException(
+    val expected: SteamSessionGeneration,
+    val actual: SteamSessionGeneration?,
+) : IllegalStateException("The Steam session generation changed before operation admission")
+
 /**
  * The narrow session seam required by [SteamSessionRequestRecovery].
  *
@@ -21,6 +27,12 @@ internal interface RecoverableSteamSession {
 
     /** True only when [generation] is still current and authenticated enough to serve the retry. */
     fun isUsable(generation: SteamSessionGeneration): Boolean = generation() == generation
+
+    /** Checks [expected] and invokes the synchronous [operation] as one admission step against the owner. */
+    fun <T> executeIfCurrent(
+        expected: SteamSessionGeneration,
+        operation: () -> T,
+    ): T
 
     suspend fun reconnectIfCurrent(expected: SteamSessionGeneration): Boolean
 }
@@ -65,27 +77,35 @@ internal class SteamSessionRequestRecovery(
 ) {
     private val reconnectMutex = Mutex()
 
-    suspend fun <T> execute(request: suspend () -> T): T {
+    suspend fun <T> execute(request: () -> T): T {
         val attemptedGeneration = session.generation()
         try {
-            return request()
+            return if (attemptedGeneration == null) {
+                request()
+            } else {
+                session.executeIfCurrent(attemptedGeneration, request)
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Throwable) {
-            if (attemptedGeneration == null || classify(failure) == null) throw failure
+            val staleAdmission = failure is SteamSessionGenerationChangedException
+            if (attemptedGeneration == null || (!staleAdmission && classify(failure) == null)) throw failure
 
-            val usable =
+            val retryGeneration =
                 reconnectMutex.withLock {
                     val current = session.generation()
                     when {
-                        current == null -> false
-                        current != attemptedGeneration -> session.isUsable(current)
-                        else -> session.reconnectIfCurrent(attemptedGeneration) &&
-                            session.generation()?.let(session::isUsable) == true
+                        current == null -> null
+                        current != attemptedGeneration -> current.takeIf(session::isUsable)
+                        !session.reconnectIfCurrent(attemptedGeneration) -> null
+                        else ->
+                            session.generation()
+                                ?.takeIf { it != attemptedGeneration }
+                                ?.takeIf(session::isUsable)
                     }
                 }
-            if (!usable) throw failure
-            return request()
+            if (retryGeneration == null) throw failure
+            return session.executeIfCurrent(retryGeneration, request)
         }
     }
 }

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>io.steamcontent.sdk</groupId>
+  <artifactId>sc-content-android-preview</artifactId>
+  <version>0.1.150</version>
+  <packaging>aar</packaging>
+  <description>Local preview of the Steam Content SDK Android AAR (arm64-v8a). Not published.</description>
+  <dependencies>
+    <dependency>
+      <groupId>org.jetbrains.kotlinx</groupId>
+      <artifactId>kotlinx-coroutines-core</artifactId>
+      <version>1.9.0</version>
+      <scope>compile</scope>
+    </dependency>
+  </dependencies>
+</project>

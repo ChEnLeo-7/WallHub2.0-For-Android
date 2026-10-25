@@ -532,8 +532,8 @@ class SteamContentSdkSessionBackendTest {
             assertTrue(
                 fixture.diagnostics.events
                     .mapNotNull { it.attributes["stage"] }
-                    .none { it.startsWith("session_recovery_scheduled") },
-                "the bounded owner must not leave a delayed recovery schedule behind",
+                    .any { it.startsWith("session_recovery_scheduled") },
+                "the sole backend owner must keep a bounded recovery plan after transient failure",
             )
 
             backend.logout()
@@ -548,6 +548,45 @@ class SteamContentSdkSessionBackendTest {
             assertEquals(opensAfterTheFailedRestore, fixture.platform.openCalls)
             assertEquals(SteamSessionPhase.SIGNED_OUT, backend.session.value.phase)
 
+            backend.close()
+        }
+
+    @Test
+    fun logoutWinsWhenAnInFlightRestoreFailsAndCredentialClearAlsoFails() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 273)),
+            )
+            fixture.store.clearFailure = IllegalStateException("the store refused the clear")
+            repeat(2) {
+                fixture.session.events +=
+                    SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.NETWORK)
+            }
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            lateinit var backend: SteamContentSdkSessionBackend
+            var raced = false
+            backend =
+                fixture.backend(this) {
+                    if (!raced) {
+                        raced = true
+                        backend.logout()
+                    }
+                }
+
+            backend.restorePersistedSession()
+            advanceTimeBy(1L)
+            runCurrent()
+
+            val opensAfterLogout = fixture.platform.openCalls
+            assertEquals(SteamSessionPhase.SIGNED_OUT, backend.session.value.phase)
+            assertEquals(FakeMessages.signOutIncomplete, backend.session.value.message)
+            assertTrue(backend.session.value.hasStoredSession)
+
+            advanceTimeBy(600_000L)
+            runCurrent()
+            assertEquals(opensAfterLogout, fixture.platform.openCalls)
+            assertEquals(SteamSessionPhase.SIGNED_OUT, backend.session.value.phase)
             backend.close()
         }
 
@@ -727,6 +766,7 @@ class SteamContentSdkSessionBackendTest {
             advanceTimeBy(1_001L)
             assertTrue(fixture.session.pumps.isNotEmpty())
             assertTrue(fixture.session.maintenanceSteps.isNotEmpty())
+            assertTrue(fixture.session.maintenanceAutoReconnect.none { it })
             assertEquals(
                 listOf("maintain", "pump"),
                 fixture.session.maintenanceActions.take(2),
@@ -750,23 +790,62 @@ class SteamContentSdkSessionBackendTest {
             fixture.diagnostics.events.clear()
             fixture.session.stateAfterEvents = SteamContentSdkSessionState.CLOSED
             fixture.session.reconnectFailure = SteamContentSdkSessionFailure.PROTOCOL_ADAPTER
-            advanceTimeBy(1_001L)
+            advanceTimeBy(997L)
+            runCurrent()
 
             val recoveryPhases =
                 fixture.diagnostics.events
                     .mapNotNull { it.attributes["stage"] }
                     .filter { it.startsWith("phase_") }
-            assertFalse(recoveryPhases.contains("phase_restorable"), recoveryPhases.toString())
-            assertFalse(recoveryPhases.contains("phase_signing_in"), recoveryPhases.toString())
-            assertTrue(recoveryPhases.contains("phase_signed_in"), recoveryPhases.toString())
+            assertTrue(recoveryPhases.contains("phase_restorable"), recoveryPhases.toString())
+            assertFalse(recoveryPhases.contains("phase_signed_in"), recoveryPhases.toString())
             assertEquals(0, fixture.session.reconnects)
-            assertTrue(
-                fixture.platform.openCalls >= 2,
-                "a refused rebuild hands recovery to the attempt path, which re-opens the session",
-            )
-            assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+            assertEquals(SteamSessionPhase.RESTORABLE, backend.session.value.phase)
             assertTrue(backend.session.value.hasStoredSession)
             assertFalse(backend.session.value.isConnected)
+
+            // The owner, not a foreground request, starts the next bounded restore attempt.
+            val opensBeforeRecovery = fixture.platform.openCalls
+            advanceTimeBy(999L)
+            runCurrent()
+            assertEquals(opensBeforeRecovery, fixture.platform.openCalls)
+            advanceTimeBy(1L)
+            runCurrent()
+            assertEquals(opensBeforeRecovery + 1, fixture.platform.openCalls)
+            assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
+            backend.close()
+        }
+
+    @Test
+    fun aStableSessionLossStillSchedulesItsFirstRecoveryAfterOneSecond() =
+        runTest {
+            val fixture = Fixture()
+            fixture.storeCredential(
+                PersistedSteamCredential(accountName = "account", refreshToken = opaqueValue(seed = 271)),
+            )
+            fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+            fixture.session.stateAfterEvents = SteamContentSdkSessionState.AUTHENTICATED
+            var nowNanos = 1_000_000_000L
+            val backend = fixture.backend(this, maintenanceIntervalMs = 1_000L, nowNanos = { nowNanos })
+
+            backend.restorePersistedSession()
+            advanceTimeBy(1L)
+            nowNanos += 61_000_000_000L
+            fixture.session.stateAfterEvents = SteamContentSdkSessionState.CLOSED
+            advanceTimeBy(1_000L)
+            runCurrent()
+
+            assertEquals(SteamSessionPhase.RESTORABLE, backend.session.value.phase)
+            assertTrue(
+                fixture.diagnostics.events
+                    .mapNotNull { it.attributes["stage"] }
+                    .contains("session_recovery_scheduled delayMs=1000 retryDebt=1"),
+            )
+            assertEquals(1, fixture.platform.openCalls)
+            advanceTimeBy(1_000L)
+            runCurrent()
+            assertEquals(2, fixture.platform.openCalls)
+            backend.close()
         }
 
     @Test
@@ -788,17 +867,21 @@ class SteamContentSdkSessionBackendTest {
             fixture.session.stateAfterEvents = SteamContentSdkSessionState.CLOSED
             fixture.session.failStateAfterReconnect = true
             advanceTimeBy(1_001L)
+            runCurrent()
 
             assertEquals(0, fixture.session.reconnects)
+            assertEquals(1, fixture.platform.openCalls)
+            assertEquals(SteamSessionPhase.RESTORABLE, backend.session.value.phase)
+            assertFalse(backend.session.value.isConnected)
+
+            advanceTimeBy(1_000L)
+            runCurrent()
             assertEquals(
                 2,
                 fixture.platform.openCalls,
-                "a state read failure must schedule exactly one restore handoff",
+                "the backend-owned recovery plan must reopen exactly one replacement",
             )
             assertEquals(SteamSessionPhase.FAILED, backend.session.value.phase)
-            // The handed-off restore is bounded and remains failed when the replacement cannot authenticate.
-            // Stop the maintenance scope so runTest does not
-            // correctly keep advancing an intentionally infinite schedule during teardown.
             backend.close()
         }
 
@@ -827,7 +910,7 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
-    fun aTransientRestoreFailureGetsOneBoundedLiveDirectoryRetry() =
+    fun transientRestoreRoundsKeepOneBoundedRecoveryPlanAfterRepeatedFailure() =
         runTest {
             val fixture = Fixture()
             fixture.storeCredential(
@@ -840,30 +923,49 @@ class SteamContentSdkSessionBackendTest {
             val backend = fixture.backend(this)
 
             backend.restorePersistedSession()
-            // Explicit steps expose the initial and one live-directory attempt without inventing a delayed loop.
             advanceTimeBy(1L)
-            runCurrent()
-            val stages = fixture.diagnostics.events.mapNotNull { it.attributes["stage"] }
-            assertTrue(stages.contains("restore_retry_live_candidates"), "the one live-directory retry did not run: $stages")
-            assertEquals(1, fixture.platform.openCalls)
-            assertEquals(1, fixture.platform.liveOpenCalls)
-
-            // Recovery is deliberately bounded: there is no delayed retry schedule that can outlive logout or
-            // overlap another owner. Time passing cannot create another account CM session.
-            advanceTimeBy(660_000L)
             runCurrent()
             assertEquals(1, fixture.platform.openCalls)
             assertEquals(1, fixture.platform.liveOpenCalls)
             assertTrue(
                 fixture.diagnostics.events
                     .mapNotNull { it.attributes["stage"] }
-                    .none { it.startsWith("session_recovery_scheduled") },
-                "the schedule never ended",
+                    .contains("session_recovery_scheduled delayMs=1000 retryDebt=1"),
             )
-            val afterSchedule = fixture.platform.openCalls
-            advanceTimeBy(600_000L)
+
+            // Foreground/business/registry signals join the not-before plan; none may spend the retry early.
+            repeat(3) { backend.restorePersistedSession() }
             runCurrent()
-            assertEquals(afterSchedule, fixture.platform.openCalls)
+            assertEquals(1, fixture.platform.openCalls)
+            assertTrue(
+                fixture.diagnostics.events
+                    .mapNotNull { it.attributes["stage"] }
+                    .contains("recovery_backoff_joined"),
+            )
+
+            // The first delayed round still gets exactly one plain and one live-candidate attempt.
+            advanceTimeBy(999L)
+            runCurrent()
+            assertEquals(1, fixture.platform.openCalls)
+            advanceTimeBy(1L)
+            runCurrent()
+            assertEquals(2, fixture.platform.openCalls)
+            assertEquals(2, fixture.platform.liveOpenCalls)
+            assertTrue(
+                fixture.diagnostics.events
+                    .mapNotNull { it.attributes["stage"] }
+                    .contains("session_recovery_scheduled delayMs=2000 retryDebt=2"),
+            )
+
+            // A second failed round leaves a third plan; it does not wait for another business request.
+            advanceTimeBy(1_999L)
+            runCurrent()
+            assertEquals(2, fixture.platform.openCalls)
+            advanceTimeBy(1L)
+            runCurrent()
+            assertEquals(3, fixture.platform.openCalls)
+            assertEquals(3, fixture.platform.liveOpenCalls)
+            backend.close()
         }
 
     @Test
@@ -1154,7 +1256,7 @@ class SteamContentSdkSessionBackendTest {
         }
 
     @Test
-    fun aRestoreRequestedWhileAnAttemptRunsIsQueuedRatherThanDropped() =
+    fun concurrentRecoveryTriggersCoalesceOntoTheRunningAttempt() =
         runTest {
             val fixture = Fixture()
             fixture.storeCredential(
@@ -1162,15 +1264,15 @@ class SteamContentSdkSessionBackendTest {
             )
             val backend = fixture.backend(this)
 
-            // Neither attempt can authenticate: the fake reports the session closed with no events queued.
+            // Foreground, business and timer signals all enter the same recovery gate.
+            backend.restorePersistedSession()
             backend.restorePersistedSession()
             backend.restorePersistedSession()
             advanceUntilIdle()
 
             val stages = fixture.diagnostics.events.mapNotNull { it.attributes["stage"] }
-            assertTrue(stages.contains("attempt_queued"))
-            // Both ran, which is the whole point: the second request waited for the gate instead of being lost.
-            assertEquals(2, fixture.platform.openCalls)
+            assertTrue(stages.contains("recovery_coalesced"))
+            assertEquals(1, fixture.platform.openCalls)
         }
 
     private class Fixture {
@@ -1183,6 +1285,8 @@ class SteamContentSdkSessionBackendTest {
         fun backend(
             scope: CoroutineScope,
             maintenanceIntervalMs: Long = 0L,
+            nowNanos: () -> Long = System::nanoTime,
+            beforeRecoveryPlanPublish: () -> Unit = {},
         ): SteamContentSdkSessionBackend =
             SteamContentSdkSessionBackend(
                 platform = platform,
@@ -1193,6 +1297,8 @@ class SteamContentSdkSessionBackendTest {
                 // Zero by default: a maintenance loop is never idle, so the tests about logon and restore
                 // leave the schedule to the one test that is about it.
                 maintenanceIntervalMs = maintenanceIntervalMs,
+                nowNanos = nowNanos,
+                beforeRecoveryPlanPublish = beforeRecoveryPlanPublish,
             )
 
         fun storeCredential(credential: PersistedSteamCredential) {
@@ -1301,6 +1407,7 @@ class SteamContentSdkSessionBackendTest {
 
         /** Every maintenance tick the host asked for, so a test can assert the schedule is really driven. */
         val maintenanceSteps = mutableListOf<SteamContentSdkMaintenanceStep>()
+        val maintenanceAutoReconnect = mutableListOf<Boolean>()
         val pumps = mutableListOf<SteamContentSdkPumpOutcome>()
         val maintenanceActions = mutableListOf<String>()
         var reconnects = 0
@@ -1313,6 +1420,7 @@ class SteamContentSdkSessionBackendTest {
         override fun maintain(autoReconnect: Boolean): SteamContentSdkMaintenance =
             SteamContentSdkMaintenance(maintenanceStep).also {
                 maintenanceActions += "maintain"
+                maintenanceAutoReconnect += autoReconnect
                 maintenanceSteps += it.step
             }
 

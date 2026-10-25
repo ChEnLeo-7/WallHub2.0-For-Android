@@ -1,7 +1,14 @@
 package com.wallhub.android.data.downloads
 
+import android.test.mock.MockContext
+import com.wallhub.android.data.steam.SteamContentSdkEngine
+import com.wallhub.android.data.steam.SteamDeviceSeedStore
+import com.wallhub.android.data.steam.SteamSessionGeneration
+import com.wallhub.android.data.steam.SteamSessionGenerationChangedException
+import java.io.File
 import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.test.assertFailsWith
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -29,6 +36,50 @@ class SteamContentSdkSessionBrokerTest {
         first.close()
         second.close()
         assertEquals(2, closes.get())
+    }
+
+    @Test
+    fun `stale borrowed generation never enters account control plane`() {
+        val expected = SteamSessionGeneration(7L)
+        val engine =
+            SteamContentSdkEngine(
+                context = MockContext(),
+                deviceSeed = SteamDeviceSeedStore(File("build/test-generation-seed")),
+            )
+        val borrowed = borrowedSteamContentSdkSession(engine, expected.value)
+
+        val failures =
+            listOf(
+                assertFailsWith<SteamSessionGenerationChangedException> {
+                    borrowed.resolveWorkshop(itemId = 1L)
+                },
+                assertFailsWith<SteamSessionGenerationChangedException> {
+                    borrowed.startDownload(
+                        appId = 1L,
+                        depotId = 2L,
+                        manifestId = 3L,
+                        destination = null,
+                        chunkConcurrency = 1,
+                    )
+                },
+                assertFailsWith<SteamSessionGenerationChangedException> {
+                    borrowed.manifestFiles(appId = 1L, depotId = 2L, manifestId = 3L)
+                },
+                assertFailsWith<SteamSessionGenerationChangedException> {
+                    borrowed.openRangeStream(
+                        appId = 1L,
+                        depotId = 2L,
+                        filePath = "video.mp4",
+                        manifestId = 3L,
+                        cacheCapacityBytes = 1L,
+                    )
+                },
+            )
+
+        failures.forEach { failure ->
+            assertEquals(expected, failure.expected)
+            assertEquals(null, failure.actual)
+        }
     }
 
     @Test
