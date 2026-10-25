@@ -149,6 +149,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -806,6 +807,16 @@ class LibraryViewModel
                                 totalPages = merged.totalPages,
                             )
                         mutableState.value = merged
+                    } catch (error: TimeoutCancellationException) {
+                        if (version != requestVersion) return@launch
+                        mutableState.value =
+                            snapshot.copy(
+                                isLoading = false,
+                                isRefreshing = false,
+                                isLoadingMore = false,
+                                error = null,
+                                errorRes = R.string.library_load_failed,
+                            )
                     } catch (error: CancellationException) {
                         throw error
                     } catch (error: Throwable) {

@@ -6,6 +6,7 @@ import com.wallhub.android.core.model.SteamDohEndpoint
 import com.wallhub.android.core.model.SteamDohProtocol
 import okhttp3.Dns
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -64,24 +65,26 @@ internal class SteamAccessDohResolver(
         endpoints: List<String>,
         includeIpv6: Boolean,
     ): Map<String, List<InetAddress>> {
-        val tasks =
-            queryPlan(hostnames, endpoints, includeIpv6).map { query ->
-                Callable {
+        val queries = queryPlan(hostnames, endpoints, includeIpv6)
+        if (queries.isEmpty()) return emptyMap()
+        val completion = ExecutorCompletionService<Pair<String, List<InetAddress>>>(foregroundExecutor)
+        val activeCalls = ConcurrentHashMap.newKeySet<Call>()
+        val futures =
+            queries.map { query ->
+                completion.submit {
                     query.hostname to
                         resolveOne(
                             query.hostname,
                             SteamDohCatalog.endpointFor(query.endpoint),
                             query.recordType,
+                            activeCalls,
                         )
                 }
             }
-        if (tasks.isEmpty()) return emptyMap()
-        val completion = ExecutorCompletionService<Pair<String, List<InetAddress>>>(foregroundExecutor)
-        val futures = tasks.map(completion::submit)
         val answers = linkedMapOf<String, MutableList<InetAddress>>()
         val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(QUERY_BUDGET_MS)
         try {
-            repeat(tasks.size) {
+            repeat(queries.size) {
                 val remainingNanos = deadlineNanos - System.nanoTime()
                 if (remainingNanos <= 0L) return@repeat
                 val completed = completion.poll(remainingNanos, TimeUnit.NANOSECONDS) ?: return@repeat
@@ -95,6 +98,7 @@ internal class SteamAccessDohResolver(
             }
             return answers.normalizedDohAnswers()
         } finally {
+            activeCalls.forEach(Call::cancel)
             futures.forEach { future -> if (!future.isDone) future.cancel(true) }
         }
     }
@@ -121,15 +125,17 @@ internal class SteamAccessDohResolver(
         hostname: String,
         endpoint: SteamDohEndpoint,
         type: Int,
+        activeCalls: MutableSet<Call>? = null,
     ): List<InetAddress> =
         when (endpoint.protocol) {
-            SteamDohProtocol.JSON -> resolveJson(hostname, endpoint, type)
+            SteamDohProtocol.JSON -> resolveJson(hostname, endpoint, type, activeCalls)
             SteamDohProtocol.WIRE,
             SteamDohProtocol.JSON_AND_WIRE,
-            -> resolveWire(hostname, endpoint, type)
+            -> resolveWire(hostname, endpoint, type, activeCalls)
             SteamDohProtocol.AUTO ->
-                resolveJson(hostname, endpoint, type).ifEmpty {
-                    resolveWire(hostname, endpoint, type)
+                resolveJson(hostname, endpoint, type, activeCalls).ifEmpty {
+                    if (Thread.currentThread().isInterrupted) emptyList()
+                    else resolveWire(hostname, endpoint, type, activeCalls)
                 }
         }
 
@@ -137,6 +143,7 @@ internal class SteamAccessDohResolver(
         hostname: String,
         endpoint: SteamDohEndpoint,
         type: Int,
+        activeCalls: MutableSet<Call>?,
     ): List<InetAddress> {
         val baseUrl = endpoint.url.toHttpUrlOrNull() ?: return emptyList()
         if (!baseUrl.isHttps) return emptyList()
@@ -148,7 +155,7 @@ internal class SteamAccessDohResolver(
             .url(url)
             .header("Accept", "application/dns-json")
             .build()
-        return clientFor(endpoint).newCall(request).execute().use { response ->
+        return execute(request, endpoint, activeCalls).use { response ->
             if (!response.isSuccessful) return@use emptyList()
             val body = response.peekBody(MAX_RESPONSE_BYTES).string()
             val json = runCatching { JSONObject(body) }.getOrNull() ?: return@use emptyList()
@@ -161,6 +168,7 @@ internal class SteamAccessDohResolver(
         hostname: String,
         endpoint: SteamDohEndpoint,
         type: Int,
+        activeCalls: MutableSet<Call>?,
     ): List<InetAddress> {
         val baseUrl = endpoint.url.toHttpUrlOrNull() ?: return emptyList()
         if (!baseUrl.isHttps) return emptyList()
@@ -172,11 +180,26 @@ internal class SteamAccessDohResolver(
             .url(url)
             .header("Accept", DNS_MESSAGE_MEDIA_TYPE)
             .build()
-        return clientFor(endpoint).newCall(request).execute().use { response ->
+        return execute(request, endpoint, activeCalls).use { response ->
             if (!response.isSuccessful) return@use emptyList()
             val declaredLength = response.body.contentLength()
             if (declaredLength > MAX_RESPONSE_BYTES) return@use emptyList()
             parseWireAddresses(response.peekBody(MAX_RESPONSE_BYTES).bytes(), type, id)
+        }
+    }
+
+    private fun execute(
+        request: Request,
+        endpoint: SteamDohEndpoint,
+        activeCalls: MutableSet<Call>?,
+    ): okhttp3.Response {
+        val call = clientFor(endpoint).newCall(request)
+        activeCalls?.add(call)
+        if (Thread.currentThread().isInterrupted) call.cancel()
+        return try {
+            call.execute()
+        } finally {
+            activeCalls?.remove(call)
         }
     }
 
