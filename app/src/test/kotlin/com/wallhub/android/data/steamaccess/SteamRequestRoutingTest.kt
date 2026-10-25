@@ -168,6 +168,20 @@ class SteamRequestRoutingTest {
     }
 
     @Test
+    fun `Directory gets a short first-response hedge window inside the shared call deadline`() {
+        val directoryHead =
+            "GET /ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=0 HTTP/1.1\r\n" +
+                "Host: api.steampowered.com\r\nConnection: close\r\n\r\n"
+        val detailsHead =
+            "POST /ISteamRemoteStorage/GetPublishedFileDetails/v1/ HTTP/1.1\r\n" +
+                "Host: api.steampowered.com\r\nContent-Type: application/x-www-form-urlencoded\r\n" +
+                "Content-Length: 12\r\nConnection: close\r\n\r\n"
+
+        assertEquals(2_500, steamWebFirstResponseTimeoutMillis("api.steampowered.com", directoryHead))
+        assertEquals(20_000, steamWebFirstResponseTimeoutMillis("api.steampowered.com", detailsHead))
+    }
+
+    @Test
     fun `visible TLS uses and verifies the selected upstream authority rather than the HTTP authority`() {
         val target =
             SteamWebDialTarget(

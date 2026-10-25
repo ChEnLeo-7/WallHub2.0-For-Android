@@ -80,6 +80,28 @@ class SteamAnonymousReadRetryTest {
     }
 
     @Test
+    fun `Directory response failure switches route once inside the same call`() {
+        var attempts = 0
+        var firstCall: okhttp3.Call? = null
+        val request = directory()
+        val client = OkHttpClient.Builder()
+            .addInterceptor(SteamAnonymousReadRetry { true })
+            .addInterceptor { chain ->
+                attempts++
+                if (attempts == 1) {
+                    firstCall = chain.call()
+                    throw IOException("Directory first-response timeout")
+                }
+                assertSame(firstCall, chain.call())
+                response(chain.request(), 200)
+            }
+            .build()
+
+        client.newCall(request).execute().use { assertEquals(200, it.code) }
+        assertEquals(2, attempts)
+    }
+
+    @Test
     fun `interceptor never attempts a third request`() {
         var attempts = 0
         val client = OkHttpClient.Builder()
