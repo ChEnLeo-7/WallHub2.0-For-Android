@@ -75,7 +75,7 @@
     <string name='settings_diagnostics_title'>诊断与支持</string>
     <string name='settings_diagnostics_description'>导出经过脱敏处理的运行信息</string>
     <string name='settings_diagnostic_log'>诊断日志</string>
-    <string name='settings_diagnostic_log_description'>包含业务日志与崩溃调用栈，不包含登录凭据</string>
+    <string name='settings_diagnostic_log_description'>包含设备、网络路由、请求耗时与错误链，已移除登录凭据</string>
     <string name='settings_diagnostic_exporting'>正在导出…</string>
     <string name='settings_action_export_diagnostic_log'>导出诊断日志</string>
     <string name='settings_diagnostic_exported'>诊断日志已导出</string>

@@ -574,6 +574,19 @@ class SteamAccessManager @Inject internal constructor(
                 },
                 updatedAt = System.currentTimeMillis(),
             )
+            recordDiagnostic(
+                message = "Steam DoH selection completed",
+                attributes = mapOf(
+                    "networkType" to networkType,
+                    "configuredCount" to endpoints.size.toString(),
+                    "availableCount" to results.count(SteamDohProbeResult::available).toString(),
+                    "selectedCount" to selected.size.toString(),
+                    "fallbackUsed" to selected.isEmpty().toString(),
+                    "latencyRangeMs" to results.mapNotNull(SteamDohProbeResult::latencyMs)
+                        .let { values -> if (values.isEmpty()) "none" else "${values.min()}-${values.max()}" },
+                ),
+                level = if (selected.isEmpty()) DiagnosticLevel.WARNING else DiagnosticLevel.INFO,
+            )
             if (selected.isEmpty() && endpoints.isNotEmpty()) {
                 scope.launch {
                     delay(DOH_BENCHMARK_RETRY_MS)
@@ -673,8 +686,14 @@ class SteamAccessManager @Inject internal constructor(
     private fun networkChanged(network: Network?) {
         val type = detectNetworkType(network)
         if (network == activeNetwork && type == networkType) return
+        val previousType = networkType
         activeNetwork = network
         networkType = type
+        recordDiagnostic(
+            message = "Active network changed",
+            attributes = mapOf("from" to previousType, "to" to type),
+            level = DiagnosticLevel.INFO,
+        )
         invalidate()
         val settings = preferences
         if (preferencesInitialized && settings.steamAccessEnabled && settings.steamAccessMode == SteamAccessMode.SMART_DOH) {
@@ -698,13 +717,31 @@ class SteamAccessManager @Inject internal constructor(
         connectivityManager.getLinkProperties(it)?.linkAddresses?.any { link -> link.address.address.size == 16 }
     } == true
 
-    private fun recordDiagnostic(message: String, attributes: Map<String, String>) {
+    internal fun recordHttpDiagnostic(
+        message: String,
+        attributes: Map<String, String>,
+        warning: Boolean,
+    ) {
+        recordDiagnostic(
+            message = message,
+            attributes = attributes + ("networkType" to networkType),
+            source = "steam-http",
+            level = if (warning) DiagnosticLevel.WARNING else DiagnosticLevel.INFO,
+        )
+    }
+
+    private fun recordDiagnostic(
+        message: String,
+        attributes: Map<String, String>,
+        source: String = "steam-access",
+        level: DiagnosticLevel = DiagnosticLevel.WARNING,
+    ) {
         scope.launch {
             try {
                 diagnostics.record(
                     DiagnosticEvent(
-                        source = "steam-access",
-                        level = DiagnosticLevel.WARNING,
+                        source = source,
+                        level = level,
                         message = message,
                         attributes = attributes,
                     ),

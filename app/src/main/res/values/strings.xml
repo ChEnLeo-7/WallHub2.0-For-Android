@@ -75,7 +75,7 @@
     <string name='settings_diagnostics_title'>Diagnostics &amp; support</string>
     <string name='settings_diagnostics_description'>Export redacted runtime information</string>
     <string name='settings_diagnostic_log'>Diagnostic log</string>
-    <string name='settings_diagnostic_log_description'>Includes app logs and crash traces without sign-in credentials</string>
+    <string name='settings_diagnostic_log_description'>Includes device, network route, request timing, and error-chain details with sign-in credentials removed</string>
     <string name='settings_diagnostic_exporting'>Exporting…</string>
     <string name='settings_action_export_diagnostic_log'>Export diagnostic log</string>
     <string name='settings_diagnostic_exported'>Diagnostic log exported</string>

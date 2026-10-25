@@ -1,6 +1,11 @@
 package com.wallhub.android.data.downloads
 
+import com.wallhub.android.core.model.DiagnosticEvent
+import com.wallhub.android.core.model.DiagnosticLevel
+import com.wallhub.android.core.model.DiagnosticRepository
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
+import com.wallhub.android.data.steamaccess.diagnosticFailureChain
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -36,16 +41,67 @@ internal class FormalSteamWorkshopContentGateway(
     private val httpClientFactory: SteamHttpClientFactory,
     private val sdkTransfer: SteamContentSdkWorkshopTransfer,
     private val playbackCoordinator: PlaybackDownloadCoordinator,
+    private val diagnostics: DiagnosticRepository? = null,
 ) : WorkshopContentGateway {
     override suspend fun fetchContentTarget(
         publishedFileId: Long,
         proxyUrl: String,
     ): WorkshopContentTarget {
-        return SteamWorkshopContentApi(
-            httpClientFactory
-                .newAnonymousReadBuilder()
-                .applyDownloadProxy(proxyUrl),
-        ).fetchContentTarget(publishedFileId)
+        val startedAt = System.nanoTime()
+        return try {
+            SteamWorkshopContentApi(
+                httpClientFactory
+                    .newAnonymousReadBuilder()
+                    .applyDownloadProxy(proxyUrl),
+            ).fetchContentTarget(publishedFileId).also { target ->
+                recordTargetDiagnostic(
+                    publishedFileId = publishedFileId,
+                    startedAt = startedAt,
+                    outcome = "success",
+                    attributes = mapOf(
+                        "delivery" to workshopDelivery(target).javaClass.simpleName,
+                        "expectedSize" to target.expectedSize.toString(),
+                    ),
+                )
+            }
+        } catch (error: Throwable) {
+            recordTargetDiagnostic(
+                publishedFileId = publishedFileId,
+                startedAt = startedAt,
+                outcome = "failure",
+                attributes = mapOf("failureChain" to diagnosticFailureChain(error)),
+                level = DiagnosticLevel.ERROR,
+            )
+            throw error
+        }
+    }
+
+    private suspend fun recordTargetDiagnostic(
+        publishedFileId: Long,
+        startedAt: Long,
+        outcome: String,
+        attributes: Map<String, String>,
+        level: DiagnosticLevel = DiagnosticLevel.INFO,
+    ) {
+        try {
+            diagnostics?.record(
+                DiagnosticEvent(
+                    source = "download-target",
+                    level = level,
+                    message = "Workshop content target resolution completed",
+                    attributes =
+                        attributes + mapOf(
+                            "workshopId" to publishedFileId.toString(),
+                            "outcome" to outcome,
+                            "elapsedMs" to ((System.nanoTime() - startedAt) / 1_000_000L).coerceAtLeast(0L).toString(),
+                        ),
+                ),
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            // Diagnostics are best-effort and never change the download outcome.
+        }
     }
 
     override suspend fun download(
@@ -459,11 +515,13 @@ internal class SteamWorkshopContentClient private constructor(
         httpClientFactory: SteamHttpClientFactory,
         sdkTransfer: SteamContentSdkWorkshopTransfer,
         playbackCoordinator: PlaybackDownloadCoordinator,
+        diagnostics: DiagnosticRepository,
     ) : this(
         FormalSteamWorkshopContentGateway(
             httpClientFactory = httpClientFactory,
             sdkTransfer = sdkTransfer,
             playbackCoordinator = playbackCoordinator,
+            diagnostics = diagnostics,
         ),
         System::currentTimeMillis,
         Unit,

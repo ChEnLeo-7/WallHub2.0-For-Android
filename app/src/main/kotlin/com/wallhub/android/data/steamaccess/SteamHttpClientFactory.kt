@@ -48,30 +48,45 @@ class SteamHttpClientFactory
 
         private fun systemProxies(uri: URI?): List<Proxy> = systemProxySelector.safeSelect(uri)
 
-        fun newBuilder(): OkHttpClient.Builder = newBuilder(bridge.proxyAuthorization)
+        fun newBuilder(): OkHttpClient.Builder =
+            newBuilder(
+                proxyAuthorization = bridge.proxyAuthorization,
+                diagnosticMode = "standard",
+            )
 
         internal fun enhancedConnectionEnabled(): Boolean = manager.enhancedConnectionEnabled()
 
         fun newAnonymousReadBuilder(): OkHttpClient.Builder =
-            newBuilder(bridge.anonymousWebProxyAuthorization)
-                .addInterceptor { chain ->
-                    val request = chain.request()
-                    val routedRequest =
-                        if (SteamAccessRoutes.webUpstreams(request.url.host).size > 1) {
-                            request.newBuilder().header("Connection", "close").build()
-                        } else {
-                            request
-                        }
-                    chain.proceed(routedRequest)
-                }
+            newBuilder(
+                proxyAuthorization = bridge.anonymousWebProxyAuthorization,
+                diagnosticMode = "anonymous_read",
+            ).addInterceptor { chain ->
+                val request = chain.request()
+                val routedRequest =
+                    if (SteamAccessRoutes.webUpstreams(request.url.host).size > 1) {
+                        request.newBuilder().header("Connection", "close").build()
+                    } else {
+                        request
+                    }
+                chain.proceed(routedRequest)
+            }
 
-        private fun newBuilder(proxyAuthorization: String): OkHttpClient.Builder =
+        private fun newBuilder(
+            proxyAuthorization: String,
+            diagnosticMode: String,
+        ): OkHttpClient.Builder =
             OkHttpClient
                 .Builder()
                 .dns(manager)
                 .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
                 .retryOnConnectionFailure(false)
-                .addInterceptor(SteamAnonymousReadRetry(manager::enhancedConnectionEnabled))
+                .addInterceptor(
+                    SteamNetworkDiagnosticInterceptor(
+                        mode = diagnosticMode,
+                        enhancedConnectionEnabled = manager::enhancedConnectionEnabled,
+                        record = manager::recordHttpDiagnostic,
+                    ),
+                ).addInterceptor(SteamAnonymousReadRetry(manager::enhancedConnectionEnabled))
                 .followSslRedirects(false)
                 .connectionPool(manager.connectionPool)
                 .proxySelector(proxySelector)

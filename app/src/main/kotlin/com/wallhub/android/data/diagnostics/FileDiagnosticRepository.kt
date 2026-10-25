@@ -1,6 +1,9 @@
 package com.wallhub.android.data.diagnostics
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.Build
 import com.wallhub.android.core.model.DiagnosticEvent
 import com.wallhub.android.core.model.DiagnosticExportRepository
 import com.wallhub.android.core.model.DiagnosticLevel
@@ -11,6 +14,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.time.Instant
+import java.util.Locale
+import java.util.TimeZone
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -22,6 +28,7 @@ class FileDiagnosticRepository
     ) : DiagnosticRepository,
         DiagnosticExportRepository {
         private val file = File(context.filesDir, "diagnostics/wallhub-formal.log")
+        private val previousFile = File(context.filesDir, "diagnostics/wallhub-formal.previous.log")
         private val crashFile = File(context.filesDir, "diagnostics/wallhub-crash.log")
         private val writeMutex = Mutex()
 
@@ -30,6 +37,7 @@ class FileDiagnosticRepository
                 writeMutex.withLock {
                     val safeEvent = DiagnosticSanitizer.sanitize(event)
                     file.parentFile?.mkdirs()
+                    rotateIfNeeded()
                     file.appendText(safeEvent.toLogLine() + "\n", Charsets.UTF_8)
                 }
             }
@@ -38,10 +46,11 @@ class FileDiagnosticRepository
             withContext(Dispatchers.IO) {
                 val safeLimit = limit.coerceIn(1, MAX_EVENTS)
                 writeMutex.withLock {
-                    if (!file.isFile) return@withLock emptyList()
-                    file
-                        .readLines(Charsets.UTF_8)
-                        .takeLast(safeLimit)
+                    if (!file.isFile && !previousFile.isFile) return@withLock emptyList()
+                    buildList {
+                        if (previousFile.isFile) addAll(previousFile.readLines(Charsets.UTF_8))
+                        if (file.isFile) addAll(file.readLines(Charsets.UTF_8))
+                    }.takeLast(safeLimit)
                         .mapNotNull(::parseLogLine)
                 }
             }
@@ -49,11 +58,19 @@ class FileDiagnosticRepository
         override suspend fun exportRedactedText(): String =
             withContext(Dispatchers.IO) {
                 writeMutex.withLock {
+                    val previousContent = if (previousFile.isFile) previousFile.readText(Charsets.UTF_8) else ""
                     val content = if (file.isFile) file.readText(Charsets.UTF_8) else ""
                     val crashContent = if (crashFile.isFile) crashFile.readText(Charsets.UTF_8) else ""
                     buildString {
-                        append("# WallHub Android diagnostics (redacted)\n")
-                        append(content)
+                        append(diagnosticHeader())
+                        if (previousContent.isNotBlank()) {
+                            append("\n# Previous runtime event segment\n")
+                            append(previousContent)
+                        }
+                        if (content.isNotBlank()) {
+                            append("\n# Current runtime event segment\n")
+                            append(content)
+                        }
                         if (crashContent.isNotBlank()) {
                             append("\n# Uncaught crash stack traces\n")
                             append(crashContent)
@@ -75,9 +92,66 @@ class FileDiagnosticRepository
             withContext(Dispatchers.IO) {
                 writeMutex.withLock {
                     if (file.exists()) file.delete()
+                    if (previousFile.exists()) previousFile.delete()
                     if (crashFile.exists()) crashFile.delete()
                 }
             }
+
+        private fun rotateIfNeeded() {
+            if (!file.isFile || file.length() < MAX_LOG_SEGMENT_BYTES) return
+            if (previousFile.exists()) previousFile.delete()
+            if (!file.renameTo(previousFile)) {
+                previousFile.writeText(file.readText(Charsets.UTF_8), Charsets.UTF_8)
+                file.delete()
+            }
+        }
+
+        private fun diagnosticHeader(): String {
+            val packageInfo = runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
+            val versionCode = packageInfo?.let { info ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    info.longVersionCode
+                } else {
+                    @Suppress("DEPRECATION")
+                    info.versionCode.toLong()
+                }
+            }
+            return buildString {
+                append("# WallHub Android diagnostics (redacted)\n")
+                append("# formatVersion=2\n")
+                append("# exportedAt=").append(Instant.now()).append('\n')
+                append("# appVersionName=").append(packageInfo?.versionName.orEmpty().cleanLogField()).append('\n')
+                append("# appVersionCode=").append(versionCode?.toString().orEmpty()).append('\n')
+                append("# package=").append(context.packageName.cleanLogField()).append('\n')
+                append("# androidSdk=").append(Build.VERSION.SDK_INT).append('\n')
+                append("# androidRelease=").append(Build.VERSION.RELEASE.cleanLogField()).append('\n')
+                append("# device=")
+                    .append("${Build.MANUFACTURER}/${Build.MODEL}".cleanLogField())
+                    .append('\n')
+                append("# locale=").append(Locale.getDefault().toLanguageTag().cleanLogField()).append('\n')
+                append("# timeZone=").append(TimeZone.getDefault().id.cleanLogField()).append('\n')
+                append("# network=").append(activeNetworkSummary()).append('\n')
+                append("# eventColumns=epochMs,level,source,message,attributes\n")
+            }
+        }
+
+        private fun activeNetworkSummary(): String {
+            val connectivity = context.getSystemService(ConnectivityManager::class.java) ?: return "unavailable"
+            val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork) ?: return "offline"
+            val transports =
+                buildList {
+                    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) add("wifi")
+                    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) add("cellular")
+                    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) add("ethernet")
+                    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) add("vpn")
+                }.ifEmpty { listOf("other") }
+            return listOf(
+                "transport=${transports.joinToString("+")}",
+                "validated=${capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)}",
+                "captivePortal=${capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL)}",
+                "metered=${connectivity.isActiveNetworkMetered}",
+            ).joinToString(",")
+        }
 
         private fun DiagnosticEvent.toLogLine(): String =
             listOf(
@@ -110,6 +184,7 @@ class FileDiagnosticRepository
 
         private companion object {
             const val MAX_EVENTS = 500
+            const val MAX_LOG_SEGMENT_BYTES = 4L * 1024L * 1024L
         }
     }
 
