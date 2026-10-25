@@ -70,6 +70,17 @@ class SetupNetworkPreflightTest {
     }
 
     @Test
+    fun `Web probes receive budgets that can complete response failover`() {
+        assertEquals(34_000L, setupProbeTimeoutMillis(SetupNetworkCheck.DIRECTORY, true))
+        assertEquals(34_000L, setupProbeTimeoutMillis(SetupNetworkCheck.PUBLIC_DETAILS_JSON, true))
+        assertEquals(12_000L, setupProbeTimeoutMillis(SetupNetworkCheck.COMMUNITY_HTML, true))
+        assertEquals(68_000L, setupProbeTimeoutMillis(SetupNetworkCheck.WORKSHOP_IMAGE, true))
+        assertEquals(5_000L, setupProbeTimeoutMillis(SetupNetworkCheck.CM_TRANSPORT, true))
+        assertEquals(5_000L, setupProbeTimeoutMillis(SetupNetworkCheck.PUBLIC_DETAILS_JSON, false))
+        assertEquals(5_000L, setupProbeTimeoutMillis(SetupNetworkCheck.WORKSHOP_IMAGE, false))
+    }
+
+    @Test
     fun `successful result exposes compact millisecond latency`() {
         val result =
             SetupNetworkCheckResult(

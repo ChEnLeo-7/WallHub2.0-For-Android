@@ -172,7 +172,7 @@ class SteamRequestRoutingTest {
     }
 
     @Test
-    fun `Directory gets a short first-response hedge window inside the shared call deadline`() {
+    fun `allowlisted Steam reads get a short first-response hedge window`() {
         val directoryHead =
             "GET /ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=0 HTTP/1.1\r\n" +
                 "Host: api.steampowered.com\r\nConnection: close\r\n\r\n"
@@ -180,9 +180,17 @@ class SteamRequestRoutingTest {
             "POST /ISteamRemoteStorage/GetPublishedFileDetails/v1/ HTTP/1.1\r\n" +
                 "Host: api.steampowered.com\r\nContent-Type: application/x-www-form-urlencoded\r\n" +
                 "Content-Length: 12\r\nConnection: close\r\n\r\n"
+        val imageHead =
+            "GET /ugc/123/ABCDEF/ HTTP/1.1\r\n" +
+                "Host: images.steamusercontent.com\r\nConnection: close\r\n\r\n"
+        val unrelatedHead =
+            "GET /ISteamWebAPIUtil/GetSupportedAPIList/v1/?format=json HTTP/1.1\r\n" +
+                "Host: api.steampowered.com\r\nConnection: close\r\n\r\n"
 
         assertEquals(2_500, steamWebFirstResponseTimeoutMillis("api.steampowered.com", directoryHead))
-        assertEquals(20_000, steamWebFirstResponseTimeoutMillis("api.steampowered.com", detailsHead))
+        assertEquals(2_500, steamWebFirstResponseTimeoutMillis("api.steampowered.com", detailsHead))
+        assertEquals(2_500, steamWebFirstResponseTimeoutMillis("images.steamusercontent.com", imageHead))
+        assertEquals(20_000, steamWebFirstResponseTimeoutMillis("api.steampowered.com", unrelatedHead))
     }
 
     @Test

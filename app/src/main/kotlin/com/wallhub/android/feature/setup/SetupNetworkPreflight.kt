@@ -17,6 +17,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -35,6 +36,8 @@ import kotlin.coroutines.resumeWithException
 internal const val SETUP_PROBE_TIMEOUT_MS = 5_000L
 internal const val SETUP_WEB_PROBE_TIMEOUT_MS = 12_000L
 internal const val SETUP_DIRECTORY_PROBE_TIMEOUT_MS = 34_000L
+internal const val SETUP_DETAILS_PROBE_TIMEOUT_MS = 34_000L
+internal const val SETUP_IMAGE_PROBE_TIMEOUT_MS = 68_000L
 private const val SETUP_PROBE_BODY_LIMIT = 512L * 1024L
 private const val SETUP_PROBE_WORKSHOP_ID = 3799142774L
 
@@ -45,6 +48,20 @@ internal enum class SetupNetworkCheck {
     WORKSHOP_IMAGE,
     CM_TRANSPORT,
 }
+
+internal fun setupProbeTimeoutMillis(
+    check: SetupNetworkCheck,
+    automaticAntiBlockingEnabled: Boolean,
+): Long =
+    when (check) {
+        SetupNetworkCheck.DIRECTORY -> SETUP_DIRECTORY_PROBE_TIMEOUT_MS
+        SetupNetworkCheck.PUBLIC_DETAILS_JSON ->
+            if (automaticAntiBlockingEnabled) SETUP_DETAILS_PROBE_TIMEOUT_MS else SETUP_PROBE_TIMEOUT_MS
+        SetupNetworkCheck.COMMUNITY_HTML -> SETUP_WEB_PROBE_TIMEOUT_MS
+        SetupNetworkCheck.WORKSHOP_IMAGE ->
+            if (automaticAntiBlockingEnabled) SETUP_IMAGE_PROBE_TIMEOUT_MS else SETUP_PROBE_TIMEOUT_MS
+        SetupNetworkCheck.CM_TRANSPORT -> SETUP_PROBE_TIMEOUT_MS
+    }
 
 internal enum class SetupNetworkCheckStatus { CHECKING, PASSED, FAILED, SKIPPED }
 
@@ -102,13 +119,14 @@ internal class SetupNetworkPreflightRunner(
                     permits.withPermit {
                         val started = nowMillis()
                         try {
-                            val timeoutMillis =
-                                when (check) {
-                                    SetupNetworkCheck.DIRECTORY -> SETUP_DIRECTORY_PROBE_TIMEOUT_MS
-                                    SetupNetworkCheck.COMMUNITY_HTML -> SETUP_WEB_PROBE_TIMEOUT_MS
-                                    else -> SETUP_PROBE_TIMEOUT_MS
-                                }
-                            when (val outcome = withTimeout(timeoutMillis) { probes.getValue(check).run() }) {
+                            when (
+                                val outcome =
+                                    withTimeout(
+                                        setupProbeTimeoutMillis(check, input.automaticAntiBlockingEnabled),
+                                    ) {
+                                        probes.getValue(check).run()
+                                    }
+                            ) {
                                 is SetupProbeOutcome.Passed -> SetupNetworkCheckResult(
                                     check,
                                     SetupNetworkCheckStatus.PASSED,
@@ -173,22 +191,39 @@ class SetupNetworkPreflight
         .readTimeout(SETUP_DIRECTORY_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .callTimeout(SETUP_DIRECTORY_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .build()
-
-    private val runner = SetupNetworkPreflightRunner(
-        mapOf(
-            SetupNetworkCheck.DIRECTORY to SetupNetworkProbe { probeDirectory() },
-            SetupNetworkCheck.PUBLIC_DETAILS_JSON to SetupNetworkProbe { probeDetails(includeImage = false) },
-            SetupNetworkCheck.COMMUNITY_HTML to SetupNetworkProbe { probeCommunity() },
-            SetupNetworkCheck.WORKSHOP_IMAGE to SetupNetworkProbe { probeDetails(includeImage = true) },
-            SetupNetworkCheck.CM_TRANSPORT to SetupNetworkProbe {
-                SetupProbeOutcome.Skipped("No safe anonymous CM transport probe")
-            },
-        ),
-    )
+    private val detailsImageClient = httpClientFactory.newAnonymousReadBuilder()
+        .connectTimeout(SETUP_DETAILS_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .readTimeout(SETUP_DETAILS_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .callTimeout(SETUP_DETAILS_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .build()
 
     internal suspend fun run(input: SetupNetworkPreflightInput): SetupNetworkPreflightResult {
         accessManager.awaitEnhancedConnectionEnabled(input.automaticAntiBlockingEnabled)
-        return runner.run(input)
+        return supervisorScope {
+            val publicDetail = async { fetchPublicDetail() }
+            val runner =
+                SetupNetworkPreflightRunner(
+                    mapOf(
+                        SetupNetworkCheck.DIRECTORY to SetupNetworkProbe { probeDirectory() },
+                        SetupNetworkCheck.PUBLIC_DETAILS_JSON to SetupNetworkProbe {
+                            publicDetail.await()
+                            SetupProbeOutcome.Passed("Valid public details")
+                        },
+                        SetupNetworkCheck.COMMUNITY_HTML to SetupNetworkProbe { probeCommunity() },
+                        SetupNetworkCheck.WORKSHOP_IMAGE to SetupNetworkProbe {
+                            probeWorkshopImage(publicDetail.await())
+                        },
+                        SetupNetworkCheck.CM_TRANSPORT to SetupNetworkProbe {
+                            SetupProbeOutcome.Skipped("No safe anonymous CM transport probe")
+                        },
+                    ),
+                )
+            try {
+                runner.run(input)
+            } finally {
+                publicDetail.cancel()
+            }
+        }
     }
 
     private suspend fun probeDirectory(): SetupProbeOutcome {
@@ -204,23 +239,25 @@ class SetupNetworkPreflight
         return SetupProbeOutcome.Passed("$count CM endpoints")
     }
 
-    private suspend fun probeDetails(includeImage: Boolean): SetupProbeOutcome {
+    private suspend fun fetchPublicDetail(): JSONObject {
         val request = Request.Builder()
             .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/")
             .post(FormBody.Builder().add("itemcount", "1").add("publishedfileids[0]", SETUP_PROBE_WORKSHOP_ID.toString()).build())
             .header("Accept", "application/json")
             .build()
-        val body = executeBounded(request, anonymousWebClient)
-        val detail = JSONObject(body).optJSONObject("response")?.optJSONArray("publishedfiledetails")?.optJSONObject(0)
-            ?: throw IOException("Invalid public details JSON")
-        if (detail.optInt("result") != 1) throw IOException("Public details rejected")
-        if (!includeImage) return SetupProbeOutcome.Passed("Valid public details")
+        val body = executeBounded(request, detailsImageClient)
+        return JSONObject(body).optJSONObject("response")?.optJSONArray("publishedfiledetails")?.optJSONObject(0)
+            ?.takeIf { detail -> detail.optInt("result") == 1 }
+            ?: throw IOException("Invalid or rejected public details JSON")
+    }
+
+    private suspend fun probeWorkshopImage(detail: JSONObject): SetupProbeOutcome {
         val imageUrl = detail.optString("preview_url").takeIf { it.startsWith("https://") }
             ?: throw IOException("No HTTPS Workshop image")
         val imageRequest = Request.Builder().url(imageUrl).header("Accept", "image/*").build()
         val type =
             withContext(Dispatchers.IO) {
-                anonymousWebClient.newCall(imageRequest).await().use { response ->
+                detailsImageClient.newCall(imageRequest).await().use { response ->
                     if (!response.isSuccessful) throw IOException("Image HTTP ${response.code}")
                     val contentType = response.header("Content-Type").orEmpty().substringBefore(';')
                     if (!contentType.startsWith("image/")) throw IOException("Unexpected image response")

@@ -25,11 +25,30 @@ class SteamAnonymousReadRetryTest {
         .url("https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=0")
         .build()
 
+    private fun image() = Request.Builder()
+        .url("https://images.steamusercontent.com/ugc/123/ABCDEF/?imw=1920&imh=1080&ima=fit&letterbox=false")
+        .build()
+
     @Test
     fun `only explicitly anonymous read requests qualify`() {
         val error = IOException("EOF")
         assertTrue(mayRetryAnonymousSteamRead(details(), error, false))
         assertTrue(mayRetryAnonymousSteamRead(directory(), error, false))
+        assertTrue(mayRetryAnonymousSteamRead(image(), error, false))
+        assertFalse(
+            mayRetryAnonymousSteamRead(
+                image().newBuilder().url("https://images.steamusercontent.com/ugc/123/ABCDEF/?token=secret").build(),
+                error,
+                false,
+            ),
+        )
+        assertFalse(
+            mayRetryAnonymousSteamRead(
+                image().newBuilder().url("https://images.steamusercontent.com/profiles/123/avatar.jpg").build(),
+                error,
+                false,
+            ),
+        )
         assertFalse(mayRetryAnonymousSteamRead(directory().newBuilder().header("Cookie", "secret").build(), error, false))
         listOf(
             "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?format=json&cellid=0&key=secret",

@@ -45,7 +45,7 @@ internal fun mayRetryAnonymousSteamRead(request: Request, error: IOException, ca
                     request.url.encodedPath == STEAM_DIRECTORY_PATH ->
                     request.url.encodedQuery == STEAM_DIRECTORY_QUERY
                 request.method == "POST" &&
-                    request.url.encodedPath == "/ISteamRemoteStorage/GetPublishedFileDetails/v1/" &&
+                    request.url.encodedPath == STEAM_DETAILS_PATH &&
                     request.url.query == null -> {
                     val body = request.body as? FormBody ?: return false
                     (0 until body.size).all { index ->
@@ -58,6 +58,16 @@ internal fun mayRetryAnonymousSteamRead(request: Request, error: IOException, ca
         "steamcommunity.com" -> request.method == "GET" && request.body == null &&
             request.url.encodedPath in setOf("/sharedfiles/filedetails/", "/workshop/browse/") &&
             request.url.queryParameterNames.all { it in ANONYMOUS_COMMUNITY_PARAMETERS }
+        "images.steamusercontent.com" ->
+            request.method == "GET" &&
+                request.body == null &&
+                WORKSHOP_IMAGE_PATH.matches(request.url.encodedPath) &&
+                validWorkshopImageQuery(
+                    List(request.url.querySize) { index ->
+                        request.url.queryParameterName(index).lowercase() to
+                            request.url.queryParameterValue(index).orEmpty()
+                    },
+                )
         else -> false
     }
 }
@@ -69,6 +79,30 @@ internal fun isAnonymousSteamDirectoryRequest(
     connectAuthority.equals("api.steampowered.com", ignoreCase = true) &&
         requestHead.startsWith("GET $STEAM_DIRECTORY_PATH?", ignoreCase = false) &&
         mayUseSteamWebAlias(connectAuthority, requestHead)
+
+internal fun isAnonymousSteamDetailsRequest(
+    connectAuthority: String,
+    requestHead: String,
+): Boolean =
+    connectAuthority.equals("api.steampowered.com", ignoreCase = true) &&
+        requestHead.startsWith("POST $STEAM_DETAILS_PATH HTTP/1.1\r\n", ignoreCase = false) &&
+        mayUseSteamWebAlias(connectAuthority, requestHead)
+
+internal fun isAnonymousWorkshopImageRequest(
+    connectAuthority: String,
+    requestHead: String,
+): Boolean =
+    connectAuthority.equals("images.steamusercontent.com", ignoreCase = true) &&
+        requestHead.startsWith("GET /ugc/", ignoreCase = false) &&
+        mayUseSteamWebAlias(connectAuthority, requestHead)
+
+internal fun usesFastSteamWebFailover(
+    connectAuthority: String,
+    requestHead: String,
+): Boolean =
+    isAnonymousSteamDirectoryRequest(connectAuthority, requestHead) ||
+        isAnonymousSteamDetailsRequest(connectAuthority, requestHead) ||
+        isAnonymousWorkshopImageRequest(connectAuthority, requestHead)
 
 internal fun mayUseSteamWebAlias(
     connectAuthority: String,
@@ -121,7 +155,7 @@ internal fun mayUseSteamWebAlias(
                         target == "$STEAM_DIRECTORY_PATH?$STEAM_DIRECTORY_QUERY"
                 requestLine[0] == "GET" && path == "/ISteamWebAPIUtil/GetSupportedAPIList/v1/" ->
                     queryNames.all { name -> name == "format" }
-                requestLine[0] == "POST" && path == "/ISteamRemoteStorage/GetPublishedFileDetails/v1/" -> {
+                requestLine[0] == "POST" && path == STEAM_DETAILS_PATH -> {
                     val contentType = headers.singleOrNull { (name, _) -> name == "content-type" }?.second.orEmpty()
                     val contentLength =
                         headers.singleOrNull { (name, _) -> name == "content-length" }
@@ -167,6 +201,7 @@ private fun validWorkshopImageQuery(parameters: List<Pair<String, String>>): Boo
 }
 
 internal const val STEAM_DIRECTORY_PATH = "/ISteamDirectory/GetCMListForConnect/v1/"
+internal const val STEAM_DETAILS_PATH = "/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
 internal const val STEAM_DIRECTORY_QUERY = "format=json&cellid=0"
 private const val MAX_ALIAS_REQUEST_HEAD_CHARS = 16 * 1024
 private const val MAX_ALIAS_FORM_BYTES = 8L * 1024L

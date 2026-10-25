@@ -26,7 +26,7 @@ internal fun steamWebFirstResponseTimeoutMillis(
     connectAuthority: String,
     requestHead: String,
 ): Int =
-    if (isAnonymousSteamDirectoryRequest(connectAuthority, requestHead)) {
+    if (usesFastSteamWebFailover(connectAuthority, requestHead)) {
         DIRECTORY_FIRST_RESPONSE_TIMEOUT_MS
     } else {
         DEFAULT_FIRST_RESPONSE_TIMEOUT_MS
@@ -189,13 +189,13 @@ internal class SteamLoopbackTlsBridge
                     securedClientSocket = securedClient
                     val requestHead = readHttpRequestHead(securedClient)
                     val requestHeadText = String(requestHead, StandardCharsets.ISO_8859_1)
-                    val directoryRequest = isAnonymousSteamDirectoryRequest(host, requestHeadText)
+                    val fastFailoverRequest = usesFastSteamWebFailover(host, requestHeadText)
                     val route =
                         kotlinx.coroutines.runBlocking {
                             accessManager.acceleratedWebRoute(
                                 host,
                                 request.port,
-                                reuseCachedTargets = directoryRequest,
+                                reuseCachedTargets = fastFailoverRequest,
                             )
                         }
                     selectedWebRoute = route
