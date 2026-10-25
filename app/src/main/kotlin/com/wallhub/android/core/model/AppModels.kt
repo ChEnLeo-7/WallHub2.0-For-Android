@@ -70,6 +70,13 @@ data class AppReleaseInfo(
     val isNewer: Boolean,
 )
 
+data class SteamDohEndpointStatus(
+    val endpoint: String,
+    val latencyMs: Long? = null,
+    val selected: Boolean = false,
+    val available: Boolean = false,
+)
+
 data class SteamAccessState(
     val phase: SteamAccessPhase = SteamAccessPhase.DISABLED,
     val networkType: String = "unknown",
@@ -78,6 +85,7 @@ data class SteamAccessState(
     val candidateCount: Int = 0,
     val fallbackCount: Long = 0L,
     val message: String? = null,
+    val dohEndpointStatuses: List<SteamDohEndpointStatus> = emptyList(),
     val updatedAt: Long = System.currentTimeMillis(),
 )
 
@@ -225,15 +233,6 @@ const val DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY = 24
 /** Clamps a configured chunk concurrency into the range the SDK is given. */
 fun safeChunkDownloadConcurrency(configured: Int): Int =
     configured.coerceIn(MIN_CHUNK_DOWNLOAD_CONCURRENCY, MAX_CHUNK_DOWNLOAD_CONCURRENCY)
-
-const val STEAM_ACCESS_DOH_ENDPOINT_LIMIT = 8
-
-val DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS =
-    listOf(
-        "https://1.12.12.12/resolve",
-        "https://doh.pub/resolve",
-        "https://dns.alidns.com/resolve",
-    )
 
 fun normalizeSteamAccessDohEndpoint(raw: String): String? {
     val value = raw.trim()

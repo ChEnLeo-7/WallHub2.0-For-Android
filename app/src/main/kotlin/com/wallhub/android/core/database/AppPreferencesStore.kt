@@ -303,6 +303,7 @@ class AppPreferencesStore(
                 ?.lineSequence()
                 ?.toList()
                 ?.let(::normalizeSteamAccessDohEndpoints)
+                ?.let { stored -> normalizeSteamAccessDohEndpoints(stored + DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS) }
                 ?.takeIf { endpoints -> endpoints.isNotEmpty() }
                 ?: DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
         val disabledSteamAccessDohEndpoints =

@@ -201,6 +201,18 @@ class SteamAccessRoutesTest {
     }
 
     @Test
+    fun `selected DoH answers cannot be crowded out by four system DNS addresses`() {
+        val system = (1..4).map { suffix -> InetAddress.getByName("31.13.94.$suffix") }
+        val doh = InetAddress.getByName("23.60.96.245")
+
+        val selected = selectSteamCandidates(system, listOf(doh), emptySet(), emptySet())
+
+        assertEquals(doh.hostAddress, selected.first().hostAddress)
+        assertTrue(selected.any { address -> address.hostAddress == doh.hostAddress })
+        assertEquals(4, selected.size)
+    }
+
+    @Test
     fun `loopback connection admission is bounded without queueing slow clients`() {
         val executor = newBridgeConnectionExecutor()
         val release = CountDownLatch(1)

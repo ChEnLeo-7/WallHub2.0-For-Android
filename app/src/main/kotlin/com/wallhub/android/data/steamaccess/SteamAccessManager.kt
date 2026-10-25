@@ -14,6 +14,8 @@ import com.wallhub.android.core.model.SteamAccessMode
 import com.wallhub.android.core.model.SteamAccessPhase
 import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.SteamAccessState
+import com.wallhub.android.core.model.SteamDohCatalog
+import com.wallhub.android.core.model.SteamDohEndpointStatus
 import com.wallhub.android.core.model.enabledSteamAccessDohEndpoints
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -84,6 +86,14 @@ class SteamAccessManager @Inject internal constructor(
     internal val connectionPool = ConnectionPool(12, 10, TimeUnit.MINUTES)
     private val mutableState = MutableStateFlow(SteamAccessState())
     private val refreshGate = SteamAccessRefreshGate()
+    private val dohSelectionLock = Mutex()
+
+    @Volatile
+    private var dohSelectionGeneration = -1L
+    @Volatile
+    private var dohSelectionFingerprint = ""
+    @Volatile
+    private var selectedDohEndpoints: List<String> = emptyList()
     override val state: StateFlow<SteamAccessState> = mutableState.asStateFlow()
 
     @Volatile
@@ -113,6 +123,7 @@ class SteamAccessManager @Inject internal constructor(
         )
         scope.launch {
             settingsRepository.preferences.collectLatest { next ->
+                var shouldBenchmark = false
                 synchronized(this@SteamAccessManager) {
                     val changed = !preferencesInitialized ||
                         preferences.steamAccessEnabled != next.steamAccessEnabled ||
@@ -122,9 +133,13 @@ class SteamAccessManager @Inject internal constructor(
                         preferences.steamAccessDisabledDohEndpoints != next.steamAccessDisabledDohEndpoints
                     preferences = next
                     preferencesInitialized = true
-                    if (changed) invalidate()
+                    if (changed) {
+                        invalidate()
+                        shouldBenchmark = next.steamAccessEnabled && next.steamAccessMode == SteamAccessMode.SMART_DOH
+                    }
                 }
                 preferencesReady.complete(Unit)
+                if (shouldBenchmark) scope.launch { ensureDohSelection(next) }
             }
         }
     }
@@ -182,7 +197,7 @@ class SteamAccessManager @Inject internal constructor(
                         SteamAccessMode.SMART_DOH ->
                             dohResolver.resolveByHostname(
                                 authorities,
-                                settings.enabledSteamAccessDohEndpoints(),
+                                ensureDohSelection(settings),
                                 currentNetworkSupportsIpv6(),
                             )
                     }
@@ -249,7 +264,7 @@ class SteamAccessManager @Inject internal constructor(
                     SteamAccessMode.HOSTS -> SteamHostsParser.parse(settings.steamAccessHosts)[host].orEmpty()
                     SteamAccessMode.SMART_DOH -> dohResolver.resolve(
                         listOf(host) + if (web) SteamAccessRoutes.aliases(host) else emptyList(),
-                        settings.enabledSteamAccessDohEndpoints(),
+                        ensureDohSelection(settings),
                         currentNetworkSupportsIpv6(),
                     )
                 }
@@ -257,12 +272,17 @@ class SteamAccessManager @Inject internal constructor(
             val cooling = routeStore.coolingDownAddresses(selectedNetwork, host, port)
             // History ranks only currently resolved addresses; old built-in seeds cannot survive via persistence.
             val preferred = routeStore.preferred(selectedNetwork, host, port).mapNotNull { it.hostAddress }.toSet()
-            val allAddresses = if (SteamDomainPolicy.isCmHost(host)) {
-                preferIpv4Addresses(system + resolved)
-            } else {
-                system + resolved
-            }
-            val addresses = selectSteamCandidates(allAddresses, emptyList(), preferred, cooling)
+            val addresses =
+                if (SteamDomainPolicy.isCmHost(host)) {
+                    selectSteamCandidates(
+                        preferIpv4Addresses(system),
+                        preferIpv4Addresses(resolved),
+                        preferred,
+                        cooling,
+                    )
+                } else {
+                    selectSteamCandidates(system, resolved, preferred, cooling)
+                }
             if (!candidates.put(key, generation, addresses)) {
                 throw IOException("Steam route changed during resolution")
             }
@@ -397,6 +417,48 @@ class SteamAccessManager @Inject internal constructor(
         recordDiagnostic("Steam loopback bridge failed", mapOf("error" to error.javaClass.simpleName))
     }
 
+    private suspend fun ensureDohSelection(settings: AppPreferences): List<String> {
+        val enabledUrls = settings.enabledSteamAccessDohEndpoints()
+        val fingerprint = enabledUrls.joinToString("\u0000")
+        val generation = candidates.generation
+        if (
+            dohSelectionGeneration == generation &&
+            dohSelectionFingerprint == fingerprint
+        ) {
+            return selectedDohEndpoints
+        }
+        return dohSelectionLock.withLock {
+            val currentGeneration = candidates.generation
+            if (
+                dohSelectionGeneration == currentGeneration &&
+                dohSelectionFingerprint == fingerprint
+            ) {
+                return@withLock selectedDohEndpoints
+            }
+            val endpoints = enabledUrls.map(SteamDohCatalog::endpointFor)
+            val results = dohResolver.benchmark(endpoints)
+            val resultByUrl = results.associateBy { result -> result.endpoint.url }
+            val selected = selectFastestDohEndpoints(endpoints, results)
+            if (candidates.generation != currentGeneration) return@withLock selected
+            dohSelectionGeneration = currentGeneration
+            dohSelectionFingerprint = fingerprint
+            selectedDohEndpoints = selected
+            mutableState.value = mutableState.value.copy(
+                dohEndpointStatuses = settings.steamAccessDohEndpoints.map { endpoint ->
+                    val result = resultByUrl[endpoint]
+                    SteamDohEndpointStatus(
+                        endpoint = endpoint,
+                        latencyMs = result?.latencyMs,
+                        selected = endpoint in selected,
+                        available = result?.available == true,
+                    )
+                },
+                updatedAt = System.currentTimeMillis(),
+            )
+            selected
+        }
+    }
+
     private fun recordRefreshFailure(error: Throwable, hadUsableRoute: Boolean) {
         mutableState.value = mutableState.value.copy(
             phase = steamAccessRefreshFailurePhase(error, hadUsableRoute),
@@ -466,6 +528,9 @@ class SteamAccessManager @Inject internal constructor(
         schedulePoolEviction: Boolean = true,
     ) {
         candidates.invalidate()
+        dohSelectionGeneration = -1L
+        dohSelectionFingerprint = ""
+        selectedDohEndpoints = emptyList()
         mutableState.value = SteamAccessState(phase = phase, networkType = networkType)
         if (schedulePoolEviction) scope.launch { connectionPool.evictAll() }
     }
@@ -483,6 +548,10 @@ class SteamAccessManager @Inject internal constructor(
         activeNetwork = network
         networkType = type
         invalidate()
+        val settings = preferences
+        if (preferencesInitialized && settings.steamAccessEnabled && settings.steamAccessMode == SteamAccessMode.SMART_DOH) {
+            scope.launch { ensureDohSelection(settings) }
+        }
     }
 
     private fun detectNetworkType(network: Network?): String {

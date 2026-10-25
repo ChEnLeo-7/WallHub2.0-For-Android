@@ -237,7 +237,7 @@
     <string name='settings_error_open_steam_api_key_page'>Unable to open the Steam API key page</string>
     <string name='settings_doh_urls'>DoH URLs</string>
     <string name='settings_doh_routes'>DoH routes</string>
-    <string name='settings_doh_enabled_summary' tools:ignore='PluralsCandidate'>%1$d/%2$d enabled; tap to edit, drag to change priority</string>
+    <string name='settings_doh_enabled_summary' tools:ignore='PluralsCandidate'>%1$d/%2$d enabled; tap to manage automatic selection</string>
     <string name='settings_error_invalid_doh_url'>Enter a valid HTTPS DoH URL</string>
     <string name='settings_error_duplicate_doh_url'>This DoH URL is already in the list</string>
     <string name='settings_error_doh_url_limit'>Up to %1$d DoH URLs are supported</string>
@@ -257,6 +257,20 @@
     <string name='settings_action_save_changes'>Save changes</string>
     <string name='settings_action_drag_doh_url'>Drag %1$s to change priority</string>
     <string name='settings_action_delete_doh_url'>Delete %1$s</string>
+    <string name='settings_doh_unsaved'>Unsaved</string>
+    <string name='settings_doh_auto_explanation'>WallHub measures enabled routes on this network, then temporarily uses the five fastest domestic and five fastest international providers. Custom routes remain eligible.</string>
+    <string name='settings_doh_auto_selection'>Automatic selection</string>
+    <string name='settings_doh_waiting_for_benchmark'>Waiting for the current network benchmark</string>
+    <string name='settings_doh_selected_count'>%1$d routes selected for this network</string>
+    <string name='settings_doh_group_domestic'>Domestic and regional</string>
+    <string name='settings_doh_group_foreign'>International</string>
+    <string name='settings_doh_group_custom'>Custom</string>
+    <string name='settings_doh_selected'>Selected</string>
+    <string name='settings_doh_latency'>DNS response %1$d ms</string>
+    <string name='settings_doh_unavailable'>Unavailable on the last check</string>
+    <string name='settings_doh_not_measured'>Not measured on this network</string>
+    <string name='settings_doh_move_up'>Move %1$s up</string>
+    <string name='settings_doh_move_down'>Move %1$s down</string>
     <string name='settings_experimental_notice_title'>Experimental features may change networking and playback</string>
     <string name='settings_experimental_notice_description'>
          Turn off the related option to return to the default flow if stability

@@ -64,7 +64,7 @@ internal fun selectSteamCandidates(
     resolved: List<InetAddress>,
     preferred: Set<String>,
     cooling: Set<String>,
-): List<InetAddress> = (system + resolved)
+): List<InetAddress> = (resolved + system)
     .filter(::isAuthenticatedCdnAddress)
     .distinctBy(InetAddress::getHostAddress)
     .filterNot { it.hostAddress.orEmpty() in cooling }
