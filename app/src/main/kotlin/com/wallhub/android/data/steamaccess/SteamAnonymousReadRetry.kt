@@ -224,7 +224,8 @@ private const val MAX_ALIAS_FORM_BYTES = 8L * 1024L
 private const val MAX_WORKSHOP_IMAGE_DIMENSION = 5_000
 private val ALIAS_SECRET_HEADERS = setOf("authorization", "cookie", "proxy-authorization", "x-webapi-key")
 private val ALIAS_UNSUPPORTED_REQUEST_HEADERS = setOf("expect", "transfer-encoding", "upgrade")
-private val ANONYMOUS_COMMUNITY_PATHS = setOf("/sharedfiles/filedetails/", "/workshop/browse/")
+private val ANONYMOUS_COMMUNITY_PATHS =
+    setOf("/sharedfiles/filedetails/", "/workshop/browse", "/workshop/browse/")
 private val ANONYMOUS_COMMUNITY_COMMENT_PATH =
     Regex("^/comment/PublishedFile_Public/render/[0-9]+/[0-9]+/$")
 private val WORKSHOP_IMAGE_PATH = Regex("^/ugc/[0-9]+/[0-9A-Fa-f]+/$")
