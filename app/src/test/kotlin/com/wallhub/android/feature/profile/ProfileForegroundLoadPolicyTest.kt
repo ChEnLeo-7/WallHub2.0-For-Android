@@ -6,7 +6,7 @@ import kotlin.test.assertTrue
 
 class ProfileForegroundLoadPolicyTest {
     @Test
-    fun `signed-in profile schedules its non-collection metadata only while visible`() {
+    fun `visible signed-in profile schedules account metadata and collection totals`() {
         assertTrue(
             shouldScheduleProfileLoad(
                 isVisible = true,

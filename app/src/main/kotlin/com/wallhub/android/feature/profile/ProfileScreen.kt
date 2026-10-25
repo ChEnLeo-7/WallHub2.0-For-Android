@@ -37,12 +37,18 @@ import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
+import com.wallhub.android.core.model.AccountWorkshopCollection
+import com.wallhub.android.core.model.AccountWorkshopQuery
+import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.SteamPlaytimeRepository
 import com.wallhub.android.core.model.SteamSessionPhase
 import com.wallhub.android.core.model.SteamSessionRepository
 import com.wallhub.android.core.model.SteamSessionState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,6 +67,7 @@ class ProfileViewModel
     @Inject
     constructor(
         sessionRepository: SteamSessionRepository,
+        private val accountRepository: AccountWorkshopRepository,
         private val playtimeRepository: SteamPlaytimeRepository,
     ) : ViewModel() {
         val session: StateFlow<SteamSessionState> = sessionRepository.session
@@ -82,6 +89,8 @@ class ProfileViewModel
                         current.phase == SteamSessionPhase.SIGNING_IN && current.hasStoredSession -> {
                             cancelProfileLoad()
                             loadedAccount = null
+                            _counts.value = ProfileCounts()
+                            _runtimeHours.value = null
                         }
                         else -> {
                             cancelProfileLoad()
@@ -106,28 +115,58 @@ class ProfileViewModel
         private fun scheduleProfileLoad(accountName: String?) {
             if (!shouldScheduleProfileLoad(isVisible, accountName, loadedAccount) || accountName == loadingAccount) return
             cancelProfileLoad()
+            if (!accountName.equals(loadedAccount, ignoreCase = true)) {
+                _counts.value = ProfileCounts()
+                _runtimeHours.value = null
+            }
             loadingAccount = accountName
             val generation = profileLoadGeneration
             profileLoadJob =
                 viewModelScope.launch {
                     try {
-                        // Leave the serialized Steam lane free for an immediate navigation tap. If Profile exits
-                        // during this idle window, no count RPC starts; once started, disposal cancels both reads.
                         delay(PROFILE_LOAD_IDLE_DELAY_MS)
-                        val hours =
-                            runCatching {
-                                playtimeRepository.getAppPlaytime(WALLPAPER_ENGINE_APP_ID)
-                                    ?.totalMinutes
-                                    ?.div(60)
-                            }.getOrNull()
-                        ensureActive()
-                        _runtimeHours.value = hours
-                        loadedAccount = accountName
+                        coroutineScope {
+                            val subscriptions = async { readCollectionCount(AccountWorkshopCollection.SUBSCRIPTIONS) }
+                            val favorites = async { readCollectionCount(AccountWorkshopCollection.FAVORITES) }
+                            val playtime =
+                                async {
+                                    runCatching {
+                                        playtimeRepository.getAppPlaytime(WALLPAPER_ENGINE_APP_ID)
+                                            ?.totalMinutes
+                                            ?.div(60)
+                                    }.getOrNull()
+                                }
+                            val subscriptionCount = subscriptions.await()
+                            val favoriteCount = favorites.await()
+                            val hours = playtime.await()
+                            ensureActive()
+                            _counts.value = ProfileCounts(subscriptionCount, favoriteCount)
+                            _runtimeHours.value = hours
+                            loadedAccount =
+                                accountName.takeIf {
+                                    subscriptionCount != null && favoriteCount != null
+                                }
+                        }
                     } finally {
                         if (profileLoadGeneration == generation) loadingAccount = null
                     }
                 }
         }
+
+        private suspend fun readCollectionCount(collection: AccountWorkshopCollection): Int? =
+            try {
+                accountRepository.browseCollection(
+                    AccountWorkshopQuery(
+                        collection = collection,
+                        pageSize = 1,
+                        resolveTotalCount = true,
+                    ),
+                ).totalCount ?: 0
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                null
+            }
 
         private fun cancelProfileLoad() {
             profileLoadGeneration += 1L
