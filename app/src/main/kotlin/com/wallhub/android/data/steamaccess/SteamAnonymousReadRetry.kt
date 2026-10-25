@@ -236,7 +236,7 @@ private val ALIAS_UNSUPPORTED_REQUEST_HEADERS = setOf("expect", "transfer-encodi
 private val ANONYMOUS_COMMUNITY_PATHS =
     setOf("/sharedfiles/filedetails/", "/workshop/browse", "/workshop/browse/")
 private val ANONYMOUS_COMMUNITY_COMMENT_PATH =
-    Regex("^/comment/PublishedFile_Public/render/[0-9]+/[0-9]+/$")
+    Regex("^/comment/PublishedFile_Public/render/[0-9]+/(?:[0-9]+|-1)/$")
 private val WORKSHOP_IMAGE_PATH = Regex("^/ugc/[0-9]+/[0-9A-Fa-f]+/$")
 
 private val ANONYMOUS_COMMUNITY_PARAMETERS = setOf(

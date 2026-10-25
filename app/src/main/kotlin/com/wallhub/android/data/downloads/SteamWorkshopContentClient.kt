@@ -16,9 +16,6 @@ import java.util.LinkedHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private const val STEAM_WEB_API_HOST = "api.steampowered.com"
-private const val STEAM_HTTPS_PORT = 443
-
 /** Separates the externally hosted Steam session from WorkManager task orchestration. */
 internal interface WorkshopContentGateway {
     suspend fun fetchContentTarget(
@@ -46,7 +43,7 @@ internal class FormalSteamWorkshopContentGateway(
     ): WorkshopContentTarget {
         return SteamWorkshopContentApi(
             httpClientFactory
-                .builderForSteamEndpoint(STEAM_WEB_API_HOST, STEAM_HTTPS_PORT)
+                .newAnonymousReadBuilder()
                 .applyDownloadProxy(proxyUrl),
         ).fetchContentTarget(publishedFileId)
     }
