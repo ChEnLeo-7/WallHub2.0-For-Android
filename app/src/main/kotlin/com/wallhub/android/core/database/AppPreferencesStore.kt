@@ -21,6 +21,7 @@ import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.LocalWallpaperViewMode
 import com.wallhub.android.core.model.MpkgConversionPreset
 import com.wallhub.android.core.model.SteamAccessMode
+import com.wallhub.android.core.model.SteamDohCatalog
 import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.ThemePreference
 import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
@@ -303,6 +304,7 @@ class AppPreferencesStore(
                 ?.lineSequence()
                 ?.toList()
                 ?.let(::normalizeSteamAccessDohEndpoints)
+                ?.let(SteamDohCatalog::migrateLegacyUrls)
                 ?.let { stored -> normalizeSteamAccessDohEndpoints(stored + DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS) }
                 ?.takeIf { endpoints -> endpoints.isNotEmpty() }
                 ?: DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
@@ -311,6 +313,7 @@ class AppPreferencesStore(
                 ?.lineSequence()
                 ?.toList()
                 ?.let(::normalizeSteamAccessDohEndpoints)
+                ?.let(SteamDohCatalog::migrateLegacyUrls)
                 ?.filterTo(linkedSetOf()) { endpoint -> endpoint in steamAccessDohEndpoints }
                 .orEmpty()
         return AppPreferences(

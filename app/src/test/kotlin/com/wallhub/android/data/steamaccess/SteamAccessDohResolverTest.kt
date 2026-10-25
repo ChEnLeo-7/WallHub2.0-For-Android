@@ -7,6 +7,18 @@ import kotlin.test.assertTrue
 
 class SteamAccessDohResolverTest {
     @Test
+    fun `query plan gives every endpoint a slot before secondary work`() {
+        val plan = SteamAccessDohResolver.queryPlan(
+            hostnames = listOf("first.example", "second.example"),
+            endpoints = listOf("domestic", "foreign", "backup"),
+            includeIpv6 = true,
+        )
+
+        assertEquals(listOf("domestic", "foreign", "backup"), plan.take(3).map { it.endpoint })
+        assertTrue(plan.take(3).all { it.hostname == "first.example" && it.recordType == 1 })
+    }
+
+    @Test
     fun `wire query encodes one standard question`() {
         val query = SteamAccessDohResolver.buildWireQuery("example.com", 1, 0x1234)
 

@@ -193,9 +193,10 @@ internal class SteamAccessDohResolver(
             includeIpv6: Boolean,
         ): List<SteamDohQuery> {
             val recordTypes = if (includeIpv6) listOf(TYPE_A, TYPE_AAAA) else listOf(TYPE_A)
-            return endpoints.take(STEAM_ACCESS_DOH_ENDPOINT_LIMIT).flatMap { endpoint ->
-                hostnames.flatMap { hostname ->
-                    recordTypes.map { type -> SteamDohQuery(hostname, endpoint, type) }
+            val boundedEndpoints = endpoints.take(STEAM_ACCESS_DOH_ENDPOINT_LIMIT)
+            return hostnames.flatMap { hostname ->
+                recordTypes.flatMap { type ->
+                    boundedEndpoints.map { endpoint -> SteamDohQuery(hostname, endpoint, type) }
                 }
             }
         }

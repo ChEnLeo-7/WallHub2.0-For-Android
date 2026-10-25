@@ -70,6 +70,16 @@ object SteamDohCatalog {
     val builtIn: List<SteamDohEndpoint> = foreign + domestic
     val byUrl: Map<String, SteamDohEndpoint> = builtIn.associateBy(SteamDohEndpoint::url)
 
+    private val legacyUrlMigrations =
+        mapOf(
+            "https://dns.alidns.com/resolve" to "https://dns.alidns.com/dns-query",
+            "https://doh.pub/resolve" to "https://sm2.doh.pub/dns-query",
+            "https://1.12.12.12/resolve" to "https://sm2.doh.pub/dns-query",
+        )
+
+    fun migrateLegacyUrls(urls: List<String>): List<String> =
+        urls.map { url -> legacyUrlMigrations[url] ?: url }.distinct()
+
     fun endpointFor(url: String): SteamDohEndpoint =
         byUrl[url] ?: SteamDohEndpoint(
             provider = runCatching { java.net.URI(url).host }.getOrNull().orEmpty().ifBlank { url },

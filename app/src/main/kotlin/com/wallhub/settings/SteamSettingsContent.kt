@@ -43,6 +43,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -758,8 +760,8 @@ internal fun SteamAccessDohEndpointItem(
                     Text(
                         text =
                             when {
-                                latencyMs != null && available -> stringResource(R.string.settings_doh_latency, latencyMs)
                                 !enabled -> stringResource(R.string.settings_disabled)
+                                latencyMs != null && available -> stringResource(R.string.settings_doh_latency, latencyMs)
                                 measured && !available -> stringResource(R.string.settings_doh_unavailable)
                                 else -> stringResource(R.string.settings_doh_not_measured)
                             },
@@ -774,9 +776,18 @@ internal fun SteamAccessDohEndpointItem(
                 }
             },
             trailingContent = {
+                val stateLabel =
+                    if (enabled) {
+                        stringResource(R.string.settings_enabled)
+                    } else {
+                        stringResource(R.string.settings_disabled)
+                    }
                 Switch(
                     checked = enabled,
                     onCheckedChange = onEnabledChange,
+                    modifier = Modifier.semantics {
+                        contentDescription = "$displayName, $stateLabel"
+                    },
                 )
             },
         )

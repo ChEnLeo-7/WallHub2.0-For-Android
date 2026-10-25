@@ -35,9 +35,46 @@ class SteamDohSelectionTest {
         val selected = selectFastestDohEndpoints(endpoints, results)
 
         assertEquals(11, selected.size)
-        assertEquals(domestic.takeLast(5).asReversed().map { it.url }, selected.take(5))
-        assertEquals(foreign.takeLast(5).asReversed().map { it.url }, selected.drop(5).take(5))
+        val fastestDomestic = domestic.takeLast(5).asReversed().map { it.url }
+        val fastestForeign = foreign.takeLast(5).asReversed().map { it.url }
+        assertEquals(
+            fastestDomestic.zip(fastestForeign).flatMap { (domesticUrl, foreignUrl) ->
+                listOf(domesticUrl, foreignUrl)
+            },
+            selected.take(10),
+        )
         assertEquals(custom.url, selected.last())
+    }
+
+    @Test
+    fun `fallback is balanced and bounded while background benchmark warms`() {
+        val domestic = (1..7).map { endpoint("d$it", SteamDohRegion.DOMESTIC) }
+        val foreign = (1..7).map { endpoint("f$it", SteamDohRegion.FOREIGN) }
+
+        val fallback = fallbackDohEndpoints(domestic + foreign)
+
+        assertEquals(10, fallback.size)
+        assertEquals(domestic.first().url, fallback[0])
+        assertEquals(foreign.first().url, fallback[1])
+        assertEquals(domestic[4].url, fallback[8])
+        assertEquals(foreign[4].url, fallback[9])
+    }
+
+    @Test
+    fun `legacy default URLs migrate to replacement built in identities`() {
+        assertEquals(
+            listOf(
+                "https://sm2.doh.pub/dns-query",
+                "https://dns.alidns.com/dns-query",
+            ),
+            SteamDohCatalog.migrateLegacyUrls(
+                listOf(
+                    "https://1.12.12.12/resolve",
+                    "https://doh.pub/resolve",
+                    "https://dns.alidns.com/resolve",
+                ),
+            ),
+        )
     }
 
     @Test

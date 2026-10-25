@@ -43,7 +43,9 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Resolves only actual requests (or an explicit diagnostic refresh), never lifecycle intent. */
+private const val DOH_BENCHMARK_RETRY_MS = 60_000L
+
+/** Keeps Steam routing demand-only while asynchronously benchmarking the configured DoH catalog per network. */
 @Singleton
 class SteamAccessManager @Inject internal constructor(
     @ApplicationContext private val context: Context,
@@ -81,7 +83,7 @@ class SteamAccessManager @Inject internal constructor(
             .readTimeout(3, TimeUnit.SECONDS)
             .callTimeout(3, TimeUnit.SECONDS)
             .build(),
-        Executors.newFixedThreadPool(6),
+        Executors.newFixedThreadPool(10),
     )
     internal val connectionPool = ConnectionPool(12, 10, TimeUnit.MINUTES)
     private val mutableState = MutableStateFlow(SteamAccessState())
@@ -197,7 +199,7 @@ class SteamAccessManager @Inject internal constructor(
                         SteamAccessMode.SMART_DOH ->
                             dohResolver.resolveByHostname(
                                 authorities,
-                                ensureDohSelection(settings),
+                                currentDohEndpoints(settings),
                                 currentNetworkSupportsIpv6(),
                             )
                     }
@@ -417,6 +419,20 @@ class SteamAccessManager @Inject internal constructor(
         recordDiagnostic("Steam loopback bridge failed", mapOf("error" to error.javaClass.simpleName))
     }
 
+    private fun currentDohEndpoints(settings: AppPreferences): List<String> {
+        val enabledUrls = settings.enabledSteamAccessDohEndpoints()
+        val fingerprint = enabledUrls.joinToString("\u0000")
+        return if (
+            dohSelectionGeneration == candidates.generation &&
+            dohSelectionFingerprint == fingerprint &&
+            selectedDohEndpoints.isNotEmpty()
+        ) {
+            selectedDohEndpoints
+        } else {
+            fallbackDohEndpoints(enabledUrls.map(SteamDohCatalog::endpointFor))
+        }
+    }
+
     private suspend fun ensureDohSelection(settings: AppPreferences): List<String> {
         val enabledUrls = settings.enabledSteamAccessDohEndpoints()
         val fingerprint = enabledUrls.joinToString("\u0000")
@@ -439,23 +455,38 @@ class SteamAccessManager @Inject internal constructor(
             val results = dohResolver.benchmark(endpoints)
             val resultByUrl = results.associateBy { result -> result.endpoint.url }
             val selected = selectFastestDohEndpoints(endpoints, results)
-            if (candidates.generation != currentGeneration) return@withLock selected
-            dohSelectionGeneration = currentGeneration
-            dohSelectionFingerprint = fingerprint
-            selectedDohEndpoints = selected
+            val effective = selected.ifEmpty { fallbackDohEndpoints(endpoints) }
+            val latestFingerprint = preferences.enabledSteamAccessDohEndpoints().joinToString("\u0000")
+            if (candidates.generation != currentGeneration || latestFingerprint != fingerprint) {
+                return@withLock effective
+            }
+            if (selected.isNotEmpty()) {
+                dohSelectionGeneration = currentGeneration
+                dohSelectionFingerprint = fingerprint
+                selectedDohEndpoints = selected
+            }
             mutableState.value = mutableState.value.copy(
                 dohEndpointStatuses = settings.steamAccessDohEndpoints.map { endpoint ->
                     val result = resultByUrl[endpoint]
                     SteamDohEndpointStatus(
                         endpoint = endpoint,
                         latencyMs = result?.latencyMs,
-                        selected = endpoint in selected,
+                        selected = endpoint in effective,
                         available = result?.available == true,
                     )
                 },
                 updatedAt = System.currentTimeMillis(),
             )
-            selected
+            if (selected.isEmpty() && endpoints.isNotEmpty()) {
+                scope.launch {
+                    delay(DOH_BENCHMARK_RETRY_MS)
+                    val latest = preferences
+                    if (latest.steamAccessEnabled && latest.steamAccessMode == SteamAccessMode.SMART_DOH) {
+                        ensureDohSelection(latest)
+                    }
+                }
+            }
+            effective
         }
     }
 
