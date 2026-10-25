@@ -16,4 +16,11 @@ class SetupWizardFlowTest {
         assertEquals(WallHubSetupPage.Network, previousSetupPage(WallHubSetupPage.Warmup))
         assertEquals(WallHubSetupPage.Network, previousSetupPage(WallHubSetupPage.Connectivity))
     }
+
+    @Test
+    fun `process restoration never revives a transient network page without its job`() {
+        assertEquals(WallHubSetupPage.Network, durableSetupPage(WallHubSetupPage.Warmup))
+        assertEquals(WallHubSetupPage.Network, durableSetupPage(WallHubSetupPage.Connectivity))
+        assertEquals(WallHubSetupPage.Storage, durableSetupPage(WallHubSetupPage.Storage))
+    }
 }

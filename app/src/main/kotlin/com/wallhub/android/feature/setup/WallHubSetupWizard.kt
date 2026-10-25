@@ -72,6 +72,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -150,6 +151,18 @@ internal enum class WallHubSetupPage {
     Steam,
     Finish,
 }
+
+internal fun durableSetupPage(page: WallHubSetupPage): WallHubSetupPage =
+    when (page) {
+        WallHubSetupPage.Warmup, WallHubSetupPage.Connectivity -> WallHubSetupPage.Network
+        else -> page
+    }
+
+private val WallHubSetupPageSaver =
+    Saver<WallHubSetupPage, String>(
+        save = { page -> durableSetupPage(page).name },
+        restore = { saved -> WallHubSetupPage.valueOf(saved) },
+    )
 
 internal fun nextSetupPage(page: WallHubSetupPage): WallHubSetupPage =
     WallHubSetupPage.entries[WallHubSetupPage.entries.indexOf(page) + 1]
@@ -314,7 +327,9 @@ fun WallHubSetupWizard(
         remember(context) {
             (context.getSystemService(AccessibilityManager::class.java))?.isEnabled == true
         }
-    var page by rememberSaveable { mutableStateOf(WallHubSetupPage.Welcome) }
+    var page by rememberSaveable(stateSaver = WallHubSetupPageSaver) {
+        mutableStateOf(WallHubSetupPage.Welcome)
+    }
     var continueAfterDirectorySelection by rememberSaveable { mutableStateOf(false) }
     var storageError by rememberSaveable { mutableStateOf<String?>(null) }
     val legacyStoragePermissionLauncher =
