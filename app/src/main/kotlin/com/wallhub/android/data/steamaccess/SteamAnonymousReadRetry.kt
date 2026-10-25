@@ -90,6 +90,14 @@ internal fun isAnonymousSteamDetailsRequest(
         requestHead.startsWith("POST $STEAM_DETAILS_PATH HTTP/1.1\r\n", ignoreCase = false) &&
         mayUseSteamWebAlias(connectAuthority, requestHead)
 
+internal fun isAnonymousCommunityBrowseRequest(
+    connectAuthority: String,
+    requestHead: String,
+): Boolean =
+    connectAuthority.equals("steamcommunity.com", ignoreCase = true) &&
+        requestHead.startsWith("GET /workshop/browse", ignoreCase = false) &&
+        mayUseSteamWebAlias(connectAuthority, requestHead)
+
 internal fun isAnonymousWorkshopImageRequest(
     connectAuthority: String,
     requestHead: String,
@@ -103,6 +111,7 @@ internal fun usesFastSteamWebFailover(
     requestHead: String,
 ): Boolean =
     isAnonymousSteamDirectoryRequest(connectAuthority, requestHead) ||
+        isAnonymousCommunityBrowseRequest(connectAuthority, requestHead) ||
         isAnonymousWorkshopImageRequest(connectAuthority, requestHead)
 
 internal fun mayUseSteamWebAlias(

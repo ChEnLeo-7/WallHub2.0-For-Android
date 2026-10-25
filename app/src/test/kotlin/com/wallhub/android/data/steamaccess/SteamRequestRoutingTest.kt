@@ -193,6 +193,9 @@ class SteamRequestRoutingTest {
         val imageHead =
             "GET /ugc/123/ABCDEF/ HTTP/1.1\r\n" +
                 "Host: images.steamusercontent.com\r\nConnection: close\r\n\r\n"
+        val browseHead =
+            "GET /workshop/browse?appid=431960&p=1&num_per_page=30 HTTP/1.1\r\n" +
+                "Host: steamcommunity.com\r\nConnection: close\r\n\r\n"
         val unrelatedHead =
             "GET /ISteamWebAPIUtil/GetSupportedAPIList/v1/?format=json HTTP/1.1\r\n" +
                 "Host: api.steampowered.com\r\nConnection: close\r\n\r\n"
@@ -200,6 +203,7 @@ class SteamRequestRoutingTest {
         assertEquals(2_500, steamWebFirstResponseTimeoutMillis("api.steampowered.com", directoryHead))
         assertEquals(20_000, steamWebFirstResponseTimeoutMillis("api.steampowered.com", detailsHead))
         assertEquals(2_500, steamWebFirstResponseTimeoutMillis("images.steamusercontent.com", imageHead))
+        assertEquals(2_500, steamWebFirstResponseTimeoutMillis("steamcommunity.com", browseHead))
         assertEquals(20_000, steamWebFirstResponseTimeoutMillis("api.steampowered.com", unrelatedHead))
     }
 
