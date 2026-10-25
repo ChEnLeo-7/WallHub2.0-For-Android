@@ -11,6 +11,14 @@ import org.junit.Test
 
 class CommunityWorkshopHtmlTest {
     @Test
+    fun `browse request uses canonical trailing slash endpoint`() {
+        val url = buildBrowseUrl(WorkshopBrowseQuery())
+
+        assertTrue(url.startsWith("https://steamcommunity.com/workshop/browse/?"))
+        assertTrue("num_per_page=" in url)
+    }
+
+    @Test
     fun `detail reads observed markup without treating preview as download metadata`() {
         val detail = parseCommunityHtmlDetail(DETAIL_HTML, 42)
         assertEquals("Title & more", detail.summary.title)

@@ -65,6 +65,7 @@ internal fun buildBrowseUrl(query: WorkshopBrowseQuery): String {
         .authority("steamcommunity.com")
         .appendPath("workshop")
         .appendPath("browse")
+        .appendPath("")
         .appendQueryParameter("appid", WALLPAPER_ENGINE_APP_ID.toString())
         .appendQueryParameter("browsesort", sort)
         .appendQueryParameter("section", "readytouseitems")
