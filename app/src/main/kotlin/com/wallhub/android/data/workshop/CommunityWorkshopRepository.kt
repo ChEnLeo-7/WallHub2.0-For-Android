@@ -602,7 +602,10 @@ class CommunityWorkshopRepository internal constructor(
         }
 
         private fun browseViaCommunity(normalizedQuery: WorkshopBrowseQuery): WorkshopPage =
-            parseCommunityHtmlBrowse(get(buildBrowseUrl(normalizedQuery)), normalizedQuery)
+            parseCommunityHtmlBrowse(
+                get(buildBrowseUrl(normalizedQuery), anonymousReadClient),
+                normalizedQuery,
+            )
 
         private fun browseViaSteamApi(
             normalizedQuery: WorkshopBrowseQuery,
