@@ -249,8 +249,12 @@ class SteamAccessManager @Inject internal constructor(
                 }
             }
             val systemByAuthority =
-                authorities.associateWith { authority ->
-                    runCatching { Dns.SYSTEM.lookup(authority) }.getOrDefault(emptyList())
+                if (reuseCachedTargets) {
+                    authorities.associateWith { emptyList() }
+                } else {
+                    authorities.associateWith { authority ->
+                        runCatching { Dns.SYSTEM.lookup(authority) }.getOrDefault(emptyList())
+                    }
                 }
             val resolvedByAuthority =
                 if (!settings.steamAccessEnabled) {
