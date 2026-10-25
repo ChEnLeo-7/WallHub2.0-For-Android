@@ -199,30 +199,32 @@ class SetupNetworkPreflight
 
     internal suspend fun run(input: SetupNetworkPreflightInput): SetupNetworkPreflightResult {
         accessManager.awaitEnhancedConnectionEnabled(input.automaticAntiBlockingEnabled)
+        if (!input.automaticAntiBlockingEnabled) {
+            return SetupNetworkPreflightRunner(
+                commonProbes(
+                    detailsProbe = {
+                        fetchPublicDetail(client)
+                        SetupProbeOutcome.Passed("Valid public details")
+                    },
+                    imageProbe = {
+                        probeWorkshopImage(fetchPublicDetail(client), client)
+                    },
+                ),
+            ).run(input)
+        }
         return supervisorScope {
-            val detailsTimeout =
-                setupProbeTimeoutMillis(
-                    SetupNetworkCheck.PUBLIC_DETAILS_JSON,
-                    input.automaticAntiBlockingEnabled,
-                )
-            val detailsClient = if (input.automaticAntiBlockingEnabled) detailsImageClient else client
             val publicDetail = async {
-                withTimeout(detailsTimeout) { fetchPublicDetail(detailsClient) }
+                withTimeout(SETUP_DETAILS_PROBE_TIMEOUT_MS) { fetchPublicDetail(detailsImageClient) }
             }
             val runner =
                 SetupNetworkPreflightRunner(
-                    mapOf(
-                        SetupNetworkCheck.DIRECTORY to SetupNetworkProbe { probeDirectory() },
-                        SetupNetworkCheck.PUBLIC_DETAILS_JSON to SetupNetworkProbe {
+                    commonProbes(
+                        detailsProbe = {
                             publicDetail.await()
                             SetupProbeOutcome.Passed("Valid public details")
                         },
-                        SetupNetworkCheck.COMMUNITY_HTML to SetupNetworkProbe { probeCommunity() },
-                        SetupNetworkCheck.WORKSHOP_IMAGE to SetupNetworkProbe {
-                            probeWorkshopImage(publicDetail.await(), detailsClient)
-                        },
-                        SetupNetworkCheck.CM_TRANSPORT to SetupNetworkProbe {
-                            SetupProbeOutcome.Skipped("No safe anonymous CM transport probe")
+                        imageProbe = {
+                            probeWorkshopImage(publicDetail.await(), detailsImageClient)
                         },
                     ),
                 )
@@ -233,6 +235,20 @@ class SetupNetworkPreflight
             }
         }
     }
+
+    private fun commonProbes(
+        detailsProbe: suspend () -> SetupProbeOutcome,
+        imageProbe: suspend () -> SetupProbeOutcome,
+    ): Map<SetupNetworkCheck, SetupNetworkProbe> =
+        mapOf(
+            SetupNetworkCheck.DIRECTORY to SetupNetworkProbe { probeDirectory() },
+            SetupNetworkCheck.PUBLIC_DETAILS_JSON to SetupNetworkProbe { detailsProbe() },
+            SetupNetworkCheck.COMMUNITY_HTML to SetupNetworkProbe { probeCommunity() },
+            SetupNetworkCheck.WORKSHOP_IMAGE to SetupNetworkProbe { imageProbe() },
+            SetupNetworkCheck.CM_TRANSPORT to SetupNetworkProbe {
+                SetupProbeOutcome.Skipped("No safe anonymous CM transport probe")
+            },
+        )
 
     private suspend fun probeDirectory(): SetupProbeOutcome {
         val body =
