@@ -21,6 +21,8 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
+private const val MIN_FOREGROUND_ADDRESSES_PER_AUTHORITY = 2
+
 internal data class SteamDohQuery(
     val hostname: String,
     val endpoint: String,
@@ -38,7 +40,10 @@ internal data class SteamDohProbeResult(
 internal fun foregroundResolutionComplete(
     hostnames: List<String>,
     answers: Map<String, List<InetAddress>>,
-): Boolean = hostnames.distinct().all { hostname -> answers[hostname].orEmpty().isNotEmpty() }
+): Boolean =
+    hostnames.distinct().all { hostname ->
+        answers[hostname].orEmpty().distinctBy(InetAddress::getHostAddress).size >= MIN_FOREGROUND_ADDRESSES_PER_AUTHORITY
+    }
 
 private fun Map<String, List<InetAddress>>.normalizedDohAnswers(): Map<String, List<InetAddress>> =
     mapValues { (_, addresses) -> addresses.distinctBy(InetAddress::getHostAddress) }
