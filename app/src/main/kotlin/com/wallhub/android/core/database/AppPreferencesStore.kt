@@ -364,7 +364,7 @@ class AppPreferencesStore(
             downloadProxyRequiresConfirmation =
                 preferences[Keys.downloadProxyEnabled] == null &&
                     !preferences[Keys.downloadProxyUrl].isNullOrBlank(),
-            steamAccessEnabled = preferences[Keys.steamAccessEnabled] ?: true,
+            steamAccessEnabled = preferences[Keys.steamAccessEnabled] ?: false,
             steamAccessMode = preferences.enumValue(Keys.steamAccessMode, SteamAccessMode.SMART_DOH),
             steamAccessDohEndpoints = steamAccessDohEndpoints,
             steamAccessDisabledDohEndpoints = disabledSteamAccessDohEndpoints,

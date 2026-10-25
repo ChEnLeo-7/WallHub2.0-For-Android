@@ -135,7 +135,7 @@ data class HomeUiState(
     val multiSelect: Boolean = true,
     val matureContentEnabled: Boolean = false,
     val steamApiKey: String = "",
-    val steamAccessEnabled: Boolean = true,
+    val steamAccessEnabled: Boolean = false,
     val steamWorkshopDataSource: SteamWorkshopDataSource = SteamWorkshopDataSource.COMMUNITY_HTML,
     val cardAction: HomeCardAction = HomeCardAction.DOWNLOAD,
     val paginationMode: HomePaginationMode = HomePaginationMode.INFINITE_SCROLL,

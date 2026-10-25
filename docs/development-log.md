@@ -1,5 +1,9 @@
 # Development Log
 
+## 2026-10-25 — Automatic anti-blocking is opt-in on first initialization
+
+Fresh WallHub preferences now initialize **自动防阻断** as disabled. The persisted setting still takes precedence, so existing users who explicitly enabled or disabled it keep their choice across upgrades. The setup wizard and initial home state read the same disabled default, preventing a transient enabled UI before DataStore finishes loading. A model regression test locks the new default.
+
 ## 2026-10-25 — Network-ranked 30-provider DoH catalog and Material 3 route manager
 
 Automatic anti-blocking now ships a typed, deduplicated catalog of 20 international and 10 domestic/regional DoH providers. The resolver supports both DNS JSON and RFC 8484 wire GET, validates DNS transaction IDs/RCODE/record lengths, keeps the 64 KiB response bound, and supports endpoint-specific bootstrap addresses without weakening URL host, TLS SNI, platform trust, or hostname verification. Existing installations conservatively retain user ordering and custom URLs while the former three built-ins migrate to their replacement catalog identities.
