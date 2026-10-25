@@ -188,7 +188,7 @@ class SteamRequestRoutingTest {
                 "Host: api.steampowered.com\r\nConnection: close\r\n\r\n"
 
         assertEquals(2_500, steamWebFirstResponseTimeoutMillis("api.steampowered.com", directoryHead))
-        assertEquals(2_500, steamWebFirstResponseTimeoutMillis("api.steampowered.com", detailsHead))
+        assertEquals(20_000, steamWebFirstResponseTimeoutMillis("api.steampowered.com", detailsHead))
         assertEquals(2_500, steamWebFirstResponseTimeoutMillis("images.steamusercontent.com", imageHead))
         assertEquals(20_000, steamWebFirstResponseTimeoutMillis("api.steampowered.com", unrelatedHead))
     }

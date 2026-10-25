@@ -30,7 +30,9 @@ internal fun mayRetryAnonymousSteamRead(request: Request, error: IOException, ca
     if (request.url.username.isNotEmpty() || request.url.password.isNotEmpty()) return false
     if (request.headers.names().any {
             it.equals("Authorization", true) || it.equals("Cookie", true) ||
-                it.equals("x-webapi-key", true)
+                it.equals("Proxy-Authorization", true) || it.equals("x-webapi-key", true) ||
+                it.equals("Expect", true) || it.equals("Transfer-Encoding", true) ||
+                it.equals("Upgrade", true)
         }
     ) return false
     if (generateSequence<Throwable>(error) { it.cause }.take(16).any {
@@ -101,7 +103,6 @@ internal fun usesFastSteamWebFailover(
     requestHead: String,
 ): Boolean =
     isAnonymousSteamDirectoryRequest(connectAuthority, requestHead) ||
-        isAnonymousSteamDetailsRequest(connectAuthority, requestHead) ||
         isAnonymousWorkshopImageRequest(connectAuthority, requestHead)
 
 internal fun mayUseSteamWebAlias(

@@ -200,7 +200,15 @@ class SetupNetworkPreflight
     internal suspend fun run(input: SetupNetworkPreflightInput): SetupNetworkPreflightResult {
         accessManager.awaitEnhancedConnectionEnabled(input.automaticAntiBlockingEnabled)
         return supervisorScope {
-            val publicDetail = async { fetchPublicDetail() }
+            val detailsTimeout =
+                setupProbeTimeoutMillis(
+                    SetupNetworkCheck.PUBLIC_DETAILS_JSON,
+                    input.automaticAntiBlockingEnabled,
+                )
+            val detailsClient = if (input.automaticAntiBlockingEnabled) detailsImageClient else client
+            val publicDetail = async {
+                withTimeout(detailsTimeout) { fetchPublicDetail(detailsClient) }
+            }
             val runner =
                 SetupNetworkPreflightRunner(
                     mapOf(
@@ -211,7 +219,7 @@ class SetupNetworkPreflight
                         },
                         SetupNetworkCheck.COMMUNITY_HTML to SetupNetworkProbe { probeCommunity() },
                         SetupNetworkCheck.WORKSHOP_IMAGE to SetupNetworkProbe {
-                            probeWorkshopImage(publicDetail.await())
+                            probeWorkshopImage(publicDetail.await(), detailsClient)
                         },
                         SetupNetworkCheck.CM_TRANSPORT to SetupNetworkProbe {
                             SetupProbeOutcome.Skipped("No safe anonymous CM transport probe")
@@ -239,25 +247,28 @@ class SetupNetworkPreflight
         return SetupProbeOutcome.Passed("$count CM endpoints")
     }
 
-    private suspend fun fetchPublicDetail(): JSONObject {
+    private suspend fun fetchPublicDetail(httpClient: OkHttpClient): JSONObject {
         val request = Request.Builder()
             .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/")
             .post(FormBody.Builder().add("itemcount", "1").add("publishedfileids[0]", SETUP_PROBE_WORKSHOP_ID.toString()).build())
             .header("Accept", "application/json")
             .build()
-        val body = executeBounded(request, detailsImageClient)
+        val body = executeBounded(request, httpClient)
         return JSONObject(body).optJSONObject("response")?.optJSONArray("publishedfiledetails")?.optJSONObject(0)
             ?.takeIf { detail -> detail.optInt("result") == 1 }
             ?: throw IOException("Invalid or rejected public details JSON")
     }
 
-    private suspend fun probeWorkshopImage(detail: JSONObject): SetupProbeOutcome {
+    private suspend fun probeWorkshopImage(
+        detail: JSONObject,
+        httpClient: OkHttpClient,
+    ): SetupProbeOutcome {
         val imageUrl = detail.optString("preview_url").takeIf { it.startsWith("https://") }
             ?: throw IOException("No HTTPS Workshop image")
         val imageRequest = Request.Builder().url(imageUrl).header("Accept", "image/*").build()
         val type =
             withContext(Dispatchers.IO) {
-                detailsImageClient.newCall(imageRequest).await().use { response ->
+                httpClient.newCall(imageRequest).await().use { response ->
                     if (!response.isSuccessful) throw IOException("Image HTTP ${response.code}")
                     val contentType = response.header("Content-Type").orEmpty().substringBefore(';')
                     if (!contentType.startsWith("image/")) throw IOException("Unexpected image response")

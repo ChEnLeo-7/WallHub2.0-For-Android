@@ -69,7 +69,15 @@ class SteamAnonymousReadRetryTest {
             .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/?key=secret").build(), error, false))
         assertFalse(mayRetryAnonymousSteamRead(details().newBuilder()
             .post(FormBody.Builder().add("key", "secret").build()).build(), error, false))
-        listOf("Authorization", "Cookie", "x-webapi-key").forEach { header ->
+        listOf(
+            "Authorization",
+            "Cookie",
+            "Proxy-Authorization",
+            "x-webapi-key",
+            "Expect",
+            "Transfer-Encoding",
+            "Upgrade",
+        ).forEach { header ->
             assertFalse(mayRetryAnonymousSteamRead(details().newBuilder().header(header, "secret").build(), error, false))
         }
         listOf("key", "access_token", "token", "sessionid", "unknown").forEach { parameter ->
