@@ -1,6 +1,7 @@
 package com.wallhub.android.data.downloads
 
-import android.test.mock.MockContext
+import android.content.Context
+import android.content.ContextWrapper
 import com.wallhub.android.data.steam.SteamContentSdkEngine
 import com.wallhub.android.data.steam.SteamDeviceSeedStore
 import com.wallhub.android.data.steam.SteamSessionGeneration
@@ -8,6 +9,7 @@ import com.wallhub.android.data.steam.SteamSessionGenerationChangedException
 import java.io.File
 import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicInteger
+import sun.misc.Unsafe
 import kotlin.test.assertFailsWith
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -43,7 +45,7 @@ class SteamContentSdkSessionBrokerTest {
         val expected = SteamSessionGeneration(7L)
         val engine =
             SteamContentSdkEngine(
-                context = MockContext(),
+                context = contextWithoutAndroidRuntime(),
                 deviceSeed = SteamDeviceSeedStore(File("build/test-generation-seed")),
             )
         val borrowed = borrowedSteamContentSdkSession(engine, expected.value)
@@ -105,6 +107,13 @@ class SteamContentSdkSessionBrokerTest {
         assertEquals(8L, replacement.generation)
         failed.close()
         replacement.close()
+    }
+
+    private fun contextWithoutAndroidRuntime(): Context {
+        val field = Unsafe::class.java.getDeclaredField("theUnsafe")
+        field.isAccessible = true
+        val unsafe = field.get(null) as Unsafe
+        return unsafe.allocateInstance(ContextWrapper::class.java) as Context
     }
 
     private fun fakeSession(closes: AtomicInteger): SteamContentSdkSession =

@@ -23,7 +23,7 @@ class WorkshopDetailCommentsReducerTest {
 
     @Test
     fun `opening detail automatically requests first comments page once creator is known`() {
-        val detail = WorkshopDetail(WorkshopSummary(id = 42, title = "Seed", creatorId = "76561198000000000"))
+        val detail = WorkshopDetail(WorkshopSummary(id = 42, title = "Seed", author = "Author", creatorId = "76561198000000000"))
 
         assertTrue(shouldAutoLoadComments(WorkshopDetailUiState(detail = detail)))
         assertFalse(

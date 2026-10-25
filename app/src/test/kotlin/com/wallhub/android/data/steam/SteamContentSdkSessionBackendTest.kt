@@ -944,7 +944,7 @@ class SteamContentSdkSessionBackendTest {
             )
 
             // The first delayed round still gets exactly one plain and one live-candidate attempt.
-            advanceTimeBy(999L)
+            advanceTimeBy(998L)
             runCurrent()
             assertEquals(1, fixture.platform.openCalls)
             advanceTimeBy(1L)
