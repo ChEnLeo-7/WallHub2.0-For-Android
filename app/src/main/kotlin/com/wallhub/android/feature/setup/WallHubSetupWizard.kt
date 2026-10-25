@@ -255,7 +255,11 @@ class WallHubSetupViewModel
                 settingsRepository.setSteamWorkshopDataSource(dataSource)
                 settingsRepository.setSteamApiKey(apiKey)
                 if (!steamAccessEnabled) {
-                    _networkPreflightResult.value = networkPreflight.run(SetupNetworkPreflightInput(false))
+                    _networkPreflightResult.value = SetupNetworkPreflightResult.checking()
+                    _networkPreflightResult.value =
+                        networkPreflight.run(SetupNetworkPreflightInput(false)) { snapshot ->
+                            _networkPreflightResult.value = snapshot
+                        }
                     return@launch
                 }
                 runWarmup(force = false)
@@ -288,7 +292,10 @@ class WallHubSetupViewModel
             networkPreparationJob = viewModelScope.launch {
                 val enabled = preferences.value.steamAccessEnabled
                 _networkPreflightResult.value = SetupNetworkPreflightResult.checking()
-                _networkPreflightResult.value = networkPreflight.run(SetupNetworkPreflightInput(enabled))
+                _networkPreflightResult.value =
+                    networkPreflight.run(SetupNetworkPreflightInput(enabled)) { snapshot ->
+                        _networkPreflightResult.value = snapshot
+                    }
             }
         }
 

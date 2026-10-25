@@ -111,61 +111,96 @@ internal class SetupNetworkPreflightRunner(
     private val probes: Map<SetupNetworkCheck, SetupNetworkProbe>,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
-    suspend fun run(input: SetupNetworkPreflightInput): SetupNetworkPreflightResult {
+    suspend fun run(
+        input: SetupNetworkPreflightInput,
+        onUpdate: (SetupNetworkPreflightResult) -> Unit = {},
+    ): SetupNetworkPreflightResult {
         val permits = Semaphore(3)
+        val completed = linkedMapOf<SetupNetworkCheck, SetupNetworkCheckResult>()
+        val publicationLock = Any()
         val items = coroutineScope {
             SetupNetworkCheck.entries.map { check ->
                 async {
-                    permits.withPermit {
-                        val started = nowMillis()
-                        try {
-                            when (
-                                val outcome =
-                                    withTimeout(
-                                        setupProbeTimeoutMillis(check, input.automaticAntiBlockingEnabled),
-                                    ) {
-                                        probes.getValue(check).run()
-                                    }
-                            ) {
-                                is SetupProbeOutcome.Passed -> SetupNetworkCheckResult(
-                                    check,
-                                    SetupNetworkCheckStatus.PASSED,
-                                    (nowMillis() - started).coerceAtLeast(0L),
-                                    outcome.reason,
-                                )
-                                is SetupProbeOutcome.Skipped -> SetupNetworkCheckResult(
-                                    check,
-                                    SetupNetworkCheckStatus.SKIPPED,
-                                    (nowMillis() - started).coerceAtLeast(0L),
-                                    outcome.reason,
-                                )
-                            }
-                        } catch (timeout: TimeoutCancellationException) {
-                            SetupNetworkCheckResult(
-                                check,
-                                SetupNetworkCheckStatus.FAILED,
-                                (nowMillis() - started).coerceAtLeast(0L),
-                                "Timed out",
-                            )
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (error: Exception) {
-                            SetupNetworkCheckResult(
-                                check,
-                                SetupNetworkCheckStatus.FAILED,
-                                (nowMillis() - started).coerceAtLeast(0L),
-                                error.shortProbeReason(),
-                            )
+                    val item =
+                        permits.withPermit {
+                            runProbe(check, input.automaticAntiBlockingEnabled)
                         }
+                    synchronized(publicationLock) {
+                        completed[check] = item
+                        onUpdate(preflightSnapshot(completed))
                     }
+                    item
                 }
             }.awaitAll()
         }
-        val overall = if (items.any { it.status == SetupNetworkCheckStatus.FAILED }) {
-            SetupNetworkOverallStatus.WARNING
-        } else {
-            SetupNetworkOverallStatus.PASSED
+        return completedPreflightResult(items)
+    }
+
+    private suspend fun runProbe(
+        check: SetupNetworkCheck,
+        automaticAntiBlockingEnabled: Boolean,
+    ): SetupNetworkCheckResult {
+        val started = nowMillis()
+        return try {
+            when (
+                val outcome =
+                    withTimeout(setupProbeTimeoutMillis(check, automaticAntiBlockingEnabled)) {
+                        probes.getValue(check).run()
+                    }
+            ) {
+                is SetupProbeOutcome.Passed -> SetupNetworkCheckResult(
+                    check,
+                    SetupNetworkCheckStatus.PASSED,
+                    (nowMillis() - started).coerceAtLeast(0L),
+                    outcome.reason,
+                )
+                is SetupProbeOutcome.Skipped -> SetupNetworkCheckResult(
+                    check,
+                    SetupNetworkCheckStatus.SKIPPED,
+                    (nowMillis() - started).coerceAtLeast(0L),
+                    outcome.reason,
+                )
+            }
+        } catch (timeout: TimeoutCancellationException) {
+            SetupNetworkCheckResult(
+                check,
+                SetupNetworkCheckStatus.FAILED,
+                (nowMillis() - started).coerceAtLeast(0L),
+                "Timed out",
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            SetupNetworkCheckResult(
+                check,
+                SetupNetworkCheckStatus.FAILED,
+                (nowMillis() - started).coerceAtLeast(0L),
+                error.shortProbeReason(),
+            )
         }
+    }
+
+    private fun preflightSnapshot(
+        completed: Map<SetupNetworkCheck, SetupNetworkCheckResult>,
+    ): SetupNetworkPreflightResult {
+        val items =
+            SetupNetworkCheck.entries.map { check ->
+                completed[check] ?: SetupNetworkCheckResult(check, SetupNetworkCheckStatus.CHECKING)
+            }
+        return if (completed.size == SetupNetworkCheck.entries.size) {
+            completedPreflightResult(items)
+        } else {
+            SetupNetworkPreflightResult(SetupNetworkOverallStatus.CHECKING, items)
+        }
+    }
+
+    private fun completedPreflightResult(items: List<SetupNetworkCheckResult>): SetupNetworkPreflightResult {
+        val overall =
+            if (items.any { it.status == SetupNetworkCheckStatus.FAILED }) {
+                SetupNetworkOverallStatus.WARNING
+            } else {
+                SetupNetworkOverallStatus.PASSED
+            }
         return SetupNetworkPreflightResult(overall, items)
     }
 }
@@ -197,7 +232,10 @@ class SetupNetworkPreflight
         .callTimeout(SETUP_DETAILS_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .build()
 
-    internal suspend fun run(input: SetupNetworkPreflightInput): SetupNetworkPreflightResult {
+    internal suspend fun run(
+        input: SetupNetworkPreflightInput,
+        onUpdate: (SetupNetworkPreflightResult) -> Unit = {},
+    ): SetupNetworkPreflightResult {
         accessManager.awaitEnhancedConnectionEnabled(input.automaticAntiBlockingEnabled)
         if (!input.automaticAntiBlockingEnabled) {
             return SetupNetworkPreflightRunner(
@@ -210,7 +248,7 @@ class SetupNetworkPreflight
                         probeWorkshopImage(fetchPublicDetail(client), client)
                     },
                 ),
-            ).run(input)
+            ).run(input, onUpdate)
         }
         return supervisorScope {
             val publicDetail = async {
@@ -229,7 +267,7 @@ class SetupNetworkPreflight
                     ),
                 )
             try {
-                runner.run(input)
+                runner.run(input, onUpdate)
             } finally {
                 publicDetail.cancel()
             }

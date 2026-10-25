@@ -2,6 +2,9 @@ package com.wallhub.android.feature.setup
 
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,6 +27,45 @@ class SetupNetworkPreflightTest {
         assertEquals(SetupNetworkCheck.entries.size, calls)
         assertEquals(SetupNetworkOverallStatus.PASSED, result.overallStatus)
         assertTrue(result.items.all { it.status == SetupNetworkCheckStatus.PASSED })
+    }
+
+    @Test
+    fun `each completed check publishes immediately while remaining checks stay checking`() = runTest {
+        val gates = SetupNetworkCheck.entries.associateWith { CompletableDeferred<SetupProbeOutcome>() }
+        val emissions = mutableListOf<SetupNetworkPreflightResult>()
+        val runner =
+            SetupNetworkPreflightRunner(
+                probes = gates.mapValues { (_, gate) -> SetupNetworkProbe { gate.await() } },
+                nowMillis = { 10L },
+            )
+
+        val running =
+            async {
+                runner.run(SetupNetworkPreflightInput(automaticAntiBlockingEnabled = true)) {
+                    emissions += it
+                }
+            }
+        runCurrent()
+        gates.getValue(SetupNetworkCheck.DIRECTORY).complete(SetupProbeOutcome.Passed("reachable"))
+        runCurrent()
+
+        val partial = emissions.single()
+        assertEquals(SetupNetworkOverallStatus.CHECKING, partial.overallStatus)
+        assertEquals(
+            SetupNetworkCheckStatus.PASSED,
+            partial.items.single { it.check == SetupNetworkCheck.DIRECTORY }.status,
+        )
+        assertTrue(
+            partial.items.filterNot { it.check == SetupNetworkCheck.DIRECTORY }
+                .all { it.status == SetupNetworkCheckStatus.CHECKING },
+        )
+
+        SetupNetworkCheck.entries.drop(1).forEach { check ->
+            gates.getValue(check).complete(SetupProbeOutcome.Passed("reachable"))
+        }
+        val final = running.await()
+        assertEquals(SetupNetworkOverallStatus.PASSED, final.overallStatus)
+        assertEquals(final, emissions.last())
     }
 
     @Test
