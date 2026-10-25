@@ -22,8 +22,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
-@Singleton
-internal internal fun steamWebFirstResponseTimeoutMillis(
+internal fun steamWebFirstResponseTimeoutMillis(
     connectAuthority: String,
     requestHead: String,
 ): Int =
@@ -36,6 +35,7 @@ internal internal fun steamWebFirstResponseTimeoutMillis(
 private const val DIRECTORY_FIRST_RESPONSE_TIMEOUT_MS = 2_500
 private const val DEFAULT_FIRST_RESPONSE_TIMEOUT_MS = 20_000
 
+@Singleton
 class SteamLoopbackTlsBridge
     @Inject
     constructor(
