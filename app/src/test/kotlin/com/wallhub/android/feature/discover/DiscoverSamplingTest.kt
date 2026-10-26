@@ -70,6 +70,23 @@ class DiscoverSamplingTest {
     }
 
     @Test
+    fun `candidate selection preserves Steam order while filtering invalid items`() {
+        val rail = spec(1).copy(qualityRules = DiscoverQualityRules(targetItemCount = 3))
+        val candidates =
+            listOf(
+                WorkshopSummary(5L, "five", "author", previewUrl = "preview", type = com.wallhub.android.core.model.WorkshopType.SCENE),
+                WorkshopSummary(4L, "excluded", "author", previewUrl = "preview", type = com.wallhub.android.core.model.WorkshopType.SCENE),
+                WorkshopSummary(3L, "missing preview", "author", type = com.wallhub.android.core.model.WorkshopType.SCENE),
+                WorkshopSummary(2L, "two", "author", previewUrl = "preview", type = com.wallhub.android.core.model.WorkshopType.VIDEO),
+                WorkshopSummary(1L, "one", "author", previewUrl = "preview", type = com.wallhub.android.core.model.WorkshopType.WEB),
+            )
+
+        val selected = selectDiscoverCandidates(rail, candidates, excludedIds = setOf(4L))
+
+        assertEquals(listOf(5L, 2L, 1L), selected.map(WorkshopSummary::id))
+    }
+
+    @Test
     fun `expired generation result is ignored`() {
         val state = DiscoverFeedState(generation = 8L, rails = listOf(DiscoverRailState(spec(1))))
 
@@ -102,7 +119,7 @@ class DiscoverSamplingTest {
     @Test
     fun `static refresh queues static matches but leaves metadata rows ready`() {
         val static = DiscoverRailState(spec(1), loadState = DiscoverRailLoadState.READY)
-        val metadataSpec = spec(9).copy(source = DiscoverSpecSource.OFFICIAL_METADATA)
+        val metadataSpec = spec(9).copy(source = DiscoverSpecSource.CURATOR_MANIFEST)
         val metadata = DiscoverRailState(metadataSpec, loadState = DiscoverRailLoadState.READY)
 
         val rows = rowsForStaticRefresh(listOf(spec(1), spec(2)), listOf(static, metadata), initialCount = 2)
@@ -186,7 +203,7 @@ class DiscoverSamplingTest {
             priority = 1f,
             weight = 1,
             sticky = false,
-            source = DiscoverSpecSource.OFFICIAL_METADATA,
+            source = DiscoverSpecSource.CURATOR_MANIFEST,
             drillDown = DiscoverDrillDown.FULL_QUERY_RESULTS,
         )
 }

@@ -17,8 +17,8 @@ enum class DiscoverCategory {
 }
 
 enum class DiscoverSpecSource {
-    OFFICIAL_METADATA,
-    STATIC_OFFICIAL_COMPAT,
+    CURATOR_MANIFEST,
+    GENERIC_FALLBACK,
     DERIVED_FROM_CANDIDATES,
     USER_CUSTOM,
 }
@@ -64,7 +64,6 @@ data class DiscoverRailSpec(
     val semantic: String,
     val titleKind: DiscoverTitleKind,
     val titleArgument: String? = null,
-    val coverSubmissionId: Long? = null,
     val diversityTags: Set<String> = emptySet(),
     val queryPlan: DiscoverQueryPlan,
     val priority: Float,

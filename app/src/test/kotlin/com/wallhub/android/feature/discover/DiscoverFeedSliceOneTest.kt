@@ -43,6 +43,20 @@ class DiscoverFeedSliceOneTest {
     }
 
     @Test
+    fun `cached curator generation replaces generic bootstrap`() = runTest {
+        val cached = spec(9).copy(source = DiscoverSpecSource.CURATOR_MANIFEST)
+        val loader = RecordingLoader(specs = listOf(spec(1)), cachedSpecs = listOf(cached))
+        val viewModel = viewModel(loader)
+
+        viewModel.setVisible(true)
+        runCurrent()
+
+        assertTrue(loader.staticGenerations.isEmpty())
+        assertEquals(listOf(cached.id), viewModel.state.value.rails.map { it.spec.id })
+        assertEquals(DiscoverMetadataSource.PERSISTED_CACHE, viewModel.state.value.metadataSource)
+    }
+
+    @Test
     fun `one feed worker keeps maximum active row loads at one`() = runTest {
         val loader = RecordingLoader(specs = listOf(spec(1), spec(2), spec(3)))
         val viewModel = viewModel(loader)
@@ -127,6 +141,7 @@ class DiscoverFeedSliceOneTest {
 
     private class RecordingLoader(
         private val specs: List<DiscoverRailSpec>,
+        private val cachedSpecs: List<DiscoverRailSpec> = emptyList(),
         blockMetadata: Boolean = false,
         private val staticGateAfterFirst: CompletableDeferred<Unit>? = null,
         private val loadGate: CompletableDeferred<Unit>? = null,
@@ -142,8 +157,13 @@ class DiscoverFeedSliceOneTest {
         override suspend fun prepareStaticGeneration(generation: Long): DiscoverGeneration {
             staticGenerations += generation
             if (staticGenerations.size > 1) staticGateAfterFirst?.await()
-            return DiscoverGeneration(generation, DiscoverMetadataSource.STATIC_FALLBACK, "static", specs)
+            return DiscoverGeneration(generation, DiscoverMetadataSource.GENERIC_FALLBACK, "static", specs)
         }
+
+        override suspend fun prepareCachedMetadataGeneration(generation: Long): DiscoverGeneration? =
+            cachedSpecs.takeIf(List<DiscoverRailSpec>::isNotEmpty)?.let {
+                DiscoverGeneration(generation, DiscoverMetadataSource.PERSISTED_CACHE, "cached", it)
+            }
 
         override suspend fun prepareMetadataGeneration(generation: Long): DiscoverGeneration {
             metadataGate.await()
@@ -211,7 +231,7 @@ class DiscoverFeedSliceOneTest {
         priority = 1f,
         weight = 1,
         sticky = false,
-        source = DiscoverSpecSource.STATIC_OFFICIAL_COMPAT,
+        source = DiscoverSpecSource.GENERIC_FALLBACK,
         drillDown = DiscoverDrillDown.FULL_QUERY_RESULTS,
     )
 }

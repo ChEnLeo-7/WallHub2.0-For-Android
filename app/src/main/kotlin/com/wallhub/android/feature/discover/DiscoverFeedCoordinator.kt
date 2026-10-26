@@ -10,14 +10,11 @@ import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopRepository
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopType
-import com.wallhub.android.feature.discover.model.OfficialDiscoverCategory
+import com.wallhub.android.feature.discover.model.DiscoverCuratorCategory
 import com.wallhub.android.feature.discover.model.DiscoverMetadataSource
-import com.wallhub.android.feature.discover.model.OfficialDiscoverDescriptor
-import com.wallhub.android.feature.discover.model.OfficialDiscoverMetadataRepository
+import com.wallhub.android.feature.discover.model.DiscoverCuratorDescriptor
+import com.wallhub.android.feature.discover.model.DiscoverCuratorRepository
 import java.io.IOException
-import java.time.LocalDate
-import java.time.MonthDay
-import java.time.ZoneId
 import java.util.Locale
 import java.util.Random
 import javax.inject.Inject
@@ -33,6 +30,8 @@ import kotlinx.coroutines.flow.first
 interface DiscoverFeedLoader {
     suspend fun prepareStaticGeneration(generation: Long): DiscoverGeneration
 
+    suspend fun prepareCachedMetadataGeneration(generation: Long): DiscoverGeneration? = null
+
     suspend fun prepareMetadataGeneration(generation: Long): DiscoverGeneration
 
     suspend fun loadRail(
@@ -46,7 +45,7 @@ interface DiscoverFeedLoader {
 class DiscoverFeedCoordinator
     @Inject
     constructor(
-        private val metadataRepository: OfficialDiscoverMetadataRepository,
+        private val metadataRepository: DiscoverCuratorRepository,
         private val queryAdapter: DiscoverQueryAdapter,
         private val collectionResolver: DiscoverCollectionResolver,
         private val pageSource: DiscoverPageSource,
@@ -62,23 +61,31 @@ class DiscoverFeedCoordinator
             collectionResolver.invalidateDiscoverCache()
             val preferences = settingsRepository.preferences.first()
             val candidates =
-                buildList {
-                    addAll(staticOfficialSpecs(preferences.steamWorkshopDataSource, preferences.matureContentEnabled))
-                    addAll(seasonalCollectionSpecs())
-                    addAll(bestOfYearSpecs(preferences.matureContentEnabled))
-                }.distinctBy(DiscoverRailSpec::id)
+                genericFallbackSpecs(
+                    preferences.steamWorkshopDataSource,
+                    preferences.matureContentEnabled,
+                ).distinctBy(DiscoverRailSpec::id)
             return rankGeneration(
                 generation = generation,
                 candidates = candidates,
-                metadataSource = DiscoverMetadataSource.STATIC_FALLBACK,
+                metadataSource = DiscoverMetadataSource.GENERIC_FALLBACK,
                 metadataVersion = "static",
             )
         }
 
-        override suspend fun prepareMetadataGeneration(generation: Long): DiscoverGeneration {
-            metadataRepository.invalidateDiscoverCache()
+        override suspend fun prepareCachedMetadataGeneration(generation: Long): DiscoverGeneration? {
+            val snapshot = metadataRepository.loadCachedMetadata() ?: return null
+            return prepareMetadataSnapshot(generation, snapshot)
+        }
+
+        override suspend fun prepareMetadataGeneration(generation: Long): DiscoverGeneration =
+            prepareMetadataSnapshot(generation, metadataRepository.loadMetadata())
+
+        private suspend fun prepareMetadataSnapshot(
+            generation: Long,
+            snapshot: com.wallhub.android.feature.discover.model.DiscoverMetadataSnapshot,
+        ): DiscoverGeneration {
             val preferences = settingsRepository.preferences.first()
-            val snapshot = metadataRepository.loadMetadata()
             val candidates =
                 snapshot.descriptors
                     .flatMap { descriptor ->
@@ -94,7 +101,7 @@ class DiscoverFeedCoordinator
             metadataVersion: String,
         ): DiscoverGeneration {
             val rawCandidates = candidates
-            val candidates = aggregateOfficialShowcases(rawCandidates)
+            val candidates = aggregateCuratorShowcases(rawCandidates)
             val feedbackSnapshot = feedbackRepository.feedback.first()
             val feedbackWeights = candidates.associate { spec ->
                 spec.feedbackKey to (feedbackSnapshot[spec.feedbackKey]?.toDiscoverFeedbackWeight() ?: com.wallhub.android.core.model.DiscoverFeedbackWeight())
@@ -136,8 +143,8 @@ class DiscoverFeedCoordinator
             repeat(MAX_RAIL_ATTEMPTS) { attempt ->
                 attempts = attempt + 1
                 try {
-                    val candidates = includeCoverSubmission(spec, loadCandidates(spec))
-                    val selected = sampleCandidates(spec, candidates, excludedIds, generation)
+                    val candidates = loadCandidates(spec)
+                    val selected = selectDiscoverCandidates(spec, candidates, excludedIds)
                     val resolvedTitle =
                         when (spec.category) {
                             DiscoverCategory.CREATOR -> selected.firstOrNull()?.author
@@ -196,53 +203,28 @@ class DiscoverFeedCoordinator
             startedAt: Long,
         ): DiscoverRailLoadResult = coroutineScope {
             val children = sampleFeaturedChildren(spec.children, generation, spec.id)
-            val coverIds = children.mapNotNull(DiscoverRailSpec::coverSubmissionId)
-            val collectionIds = children.mapNotNull { it.queryPlan.collectionId }
-            var partialMissingCount = 0
-            val details =
-                (discoverOptional {
-                    networkBudget.withPermit {
-                        val ids = (coverIds + collectionIds).distinct()
-                        val primary = unifiedWorkshopRepository.getPublicDetailsResult(ids)
-                        partialMissingCount = primary.missingCount
-                        val resolved = primary.available.associateBy { it.summary.id }
-                        ids.mapNotNull(resolved::get)
-                    }
-                } ?: emptyList()).associateBy { it.summary.id }
-            val fallbackCollectionCovers =
+            val featured =
                 children
-                    .filter { child ->
-                        val primaryCover = child.coverSubmissionId?.let(details::get)?.summary
-                        child.queryPlan.collectionId != null && primaryCover?.previewUrl.isNullOrBlank()
-                    }.map { child ->
+                    .map { child ->
                         async {
-                            val fallback =
-                                discoverOptional {
-                                    collectionResolver.browse(child.queryPlan.collectionId!!, page = 1, pageSize = 1).items.firstOrNull()
+                            val candidates = discoverOptional { loadCandidates(child) }.orEmpty()
+                            val cover =
+                                candidates.firstOrNull { candidate ->
+                                    candidate.id !in excludedIds &&
+                                        (!child.qualityRules.requirePreview || !candidate.previewUrl.isNullOrBlank()) &&
+                                        (!child.qualityRules.requireKnownType || candidate.type != WorkshopType.UNKNOWN)
+                                } ?: return@async null
+                            val title =
+                                when (child.category) {
+                                    DiscoverCategory.CREATOR -> cover.author
+                                    else -> child.titleArgument ?: cover.title
                                 }
-                            child.id to fallback
+                            DiscoverFeaturedItem(child, cover, title)
                         }
                     }.awaitAll()
-                    .mapNotNull { (childId, cover) -> cover?.let { childId to it } }
-                    .toMap()
-            val featured =
-                children.mapNotNull { child ->
-                    val coverId = child.coverSubmissionId ?: return@mapNotNull null
-                    val cover =
-                        details[coverId]?.summary
-                            ?.takeUnless { it.previewUrl.isNullOrBlank() }
-                            ?: fallbackCollectionCovers[child.id]
-                            ?: details[coverId]?.summary
-                            ?: return@mapNotNull null
-                    if (cover.id in excludedIds) return@mapNotNull null
-                    val title =
-                        when (child.category) {
-                            DiscoverCategory.CREATOR -> cover.author
-                            DiscoverCategory.COLLECTION -> child.queryPlan.collectionId?.let(details::get)?.summary?.title ?: cover.title
-                            else -> child.titleArgument ?: cover.title
-                        }
-                    DiscoverFeaturedItem(child, cover, title)
-                }.distinctBy { it.spec.id }.take(DISCOVER_FEATURED_ITEM_COUNT)
+                    .filterNotNull()
+                    .distinctBy { it.spec.id }
+                    .take(DISCOVER_FEATURED_ITEM_COUNT)
             val metrics =
                 DiscoverRailMetrics(
                     startedAtMillis = startedAt,
@@ -260,40 +242,10 @@ class DiscoverFeedCoordinator
                 resolvedTitle = null,
                 metrics = metrics,
                 featuredItems = featured,
-                partialMissingCount = partialMissingCount,
             )
         }
 
-        private fun sampleCandidates(
-            spec: DiscoverRailSpec,
-            candidates: List<com.wallhub.android.core.model.WorkshopSummary>,
-            excludedIds: Set<Long>,
-            generation: Long,
-        ): List<com.wallhub.android.core.model.WorkshopSummary> {
-            val eligible = candidates
-            .asSequence()
-            .filter { it.id > 0L && it.id !in excludedIds }
-            .filter { !spec.qualityRules.requirePreview || !it.previewUrl.isNullOrBlank() }
-            .filter { !spec.qualityRules.requireKnownType || it.type != WorkshopType.UNKNOWN }
-            .toList()
-            val cover = spec.coverSubmissionId?.let { coverId -> eligible.firstOrNull { it.id == coverId } }
-            val remaining = eligible.filterNot { it.id == cover?.id }.shuffled(Random(generation xor spec.id.hashCode().toLong()))
-            return (listOfNotNull(cover) + remaining).take(spec.qualityRules.targetItemCount)
-        }
-
-        private suspend fun includeCoverSubmission(
-            spec: DiscoverRailSpec,
-            candidates: List<com.wallhub.android.core.model.WorkshopSummary>,
-        ): List<com.wallhub.android.core.model.WorkshopSummary> {
-            val coverId = spec.coverSubmissionId ?: return candidates
-            if (candidates.any { it.id == coverId }) return candidates
-            val cover = discoverOptional {
-                networkBudget.withPermit { workshopRepository.getDetail(coverId).summary }
-            } ?: return candidates
-            return listOf(cover) + candidates
-        }
-
-        private fun OfficialDiscoverDescriptor.toRailSpecs(
+        private fun DiscoverCuratorDescriptor.toRailSpecs(
             dataSource: SteamWorkshopDataSource,
             allowNsfw: Boolean,
         ): List<DiscoverRailSpec> =
@@ -302,9 +254,9 @@ class DiscoverFeedCoordinator
                 if (!plan.isExecutable) return@mapNotNull null
                 val category =
                     when (category) {
-                        OfficialDiscoverCategory.CREATOR -> DiscoverCategory.CREATOR
-                        OfficialDiscoverCategory.KEYWORD -> DiscoverCategory.KEYWORD
-                        OfficialDiscoverCategory.COLLECTION -> DiscoverCategory.COLLECTION
+                        DiscoverCuratorCategory.CREATOR -> DiscoverCategory.CREATOR
+                        DiscoverCuratorCategory.KEYWORD -> DiscoverCategory.KEYWORD
+                        DiscoverCuratorCategory.COLLECTION -> DiscoverCategory.COLLECTION
                     }
                 DiscoverRailSpec(
                     id = "$stableId:${plan.semantic}",
@@ -317,13 +269,12 @@ class DiscoverFeedCoordinator
                             else -> DiscoverTitleKind.KEYWORD
                         },
                     titleArgument = keyword ?: itemId,
-                    coverSubmissionId = coverSubmissionId,
                     diversityTags = (tags + includeTags + dependentTags).mapTo(linkedSetOf()) { it.lowercase(Locale.ROOT) },
                     queryPlan = plan,
-                    priority = priority.coerceIn(-5f, 10f) + OFFICIAL_METADATA_PRIORITY_BONUS,
+                    priority = priority.coerceIn(-5f, 10f) + CURATOR_PRIORITY_BONUS,
                     weight = weight.coerceAtLeast(1),
                     sticky = sticky,
-                    source = DiscoverSpecSource.OFFICIAL_METADATA,
+                    source = DiscoverSpecSource.CURATOR_MANIFEST,
                     drillDown =
                         when (category) {
                             DiscoverCategory.CREATOR -> DiscoverDrillDown.CREATOR_RESULTS
@@ -334,7 +285,7 @@ class DiscoverFeedCoordinator
                 )
             }
 
-        private fun aggregateOfficialShowcases(specs: List<DiscoverRailSpec>): List<DiscoverRailSpec> {
+        private fun aggregateCuratorShowcases(specs: List<DiscoverRailSpec>): List<DiscoverRailSpec> {
             val creators = specs.filter { it.category == DiscoverCategory.CREATOR && !it.sticky }
             val collections =
                 specs.filter { spec ->
@@ -348,76 +299,12 @@ class DiscoverFeedCoordinator
             }
         }
 
-        private fun seasonalCollectionSpecs(now: LocalDate = LocalDate.now()): List<DiscoverRailSpec> =
-            SEASONAL_COLLECTIONS.map { definition ->
-                val active = MonthDay.from(now).isWithin(definition.from, definition.to)
-                DiscoverRailSpec(
-                    id = "static:seasonal:${definition.key}",
-                    category = DiscoverCategory.COLLECTION,
-                    semantic = "collection",
-                    titleKind = definition.titleKind,
-                    coverSubmissionId = definition.collectionId,
-                    diversityTags = setOf("curated", "seasonal", definition.key),
-                    queryPlan =
-                        DiscoverQueryPlan(
-                            descriptorId = "static:seasonal:${definition.key}",
-                            semantic = "collection",
-                            query = null,
-                            collectionId = definition.collectionId,
-                            fidelity = DiscoverQueryFidelity.EXACT,
-                        ),
-                    priority = if (active) ACTIVE_SEASON_PRIORITY else 0f,
-                    weight = 1,
-                    sticky = active,
-                    source = DiscoverSpecSource.STATIC_OFFICIAL_COMPAT,
-                    drillDown = DiscoverDrillDown.COLLECTION_RESULTS,
-                )
-            }
-
-        private fun bestOfYearSpecs(allowNsfw: Boolean): List<DiscoverRailSpec> {
-            val zone = ZoneId.systemDefault()
-            return BEST_OF_YEAR_COVERS.map { (year, coverId) ->
-                val start = LocalDate.of(year, 1, 1).atStartOfDay(zone).toEpochSecond()
-                val end = LocalDate.of(year + 1, 1, 1).atStartOfDay(zone).toEpochSecond() - 1L
-                val id = "static:best-of-$year"
-                DiscoverRailSpec(
-                    id = id,
-                    category = DiscoverCategory.TOP_YEAR,
-                    semantic = "top_rated",
-                    titleKind = DiscoverTitleKind.TOP_YEAR,
-                    titleArgument = year.toString(),
-                    coverSubmissionId = coverId,
-                    diversityTags = setOf("curated", "best-of-year", year.toString()),
-                    queryPlan =
-                        DiscoverQueryPlan(
-                            descriptorId = id,
-                            semantic = "top_rated",
-                            query =
-                                WorkshopBrowseQuery(
-                                    sort = WorkshopSort.TOP_RATED,
-                                    days = 0,
-                                    excludedTags = setOf("Anime", "MMD", "Unspecified"),
-                                    allowNsfw = allowNsfw,
-                                    createdAfterEpochSeconds = start,
-                                    createdBeforeEpochSeconds = end,
-                                ),
-                            fidelity = DiscoverQueryFidelity.EXACT,
-                        ),
-                    priority = 0f,
-                    weight = 1,
-                    sticky = false,
-                    source = DiscoverSpecSource.STATIC_OFFICIAL_COMPAT,
-                    drillDown = DiscoverDrillDown.FULL_QUERY_RESULTS,
-                )
-            }
-        }
-
         private fun showcaseSpec(
             category: DiscoverCategory,
             children: List<DiscoverRailSpec>,
         ): DiscoverRailSpec =
             DiscoverRailSpec(
-                id = if (category == DiscoverCategory.CREATOR_SHOWCASE) "official:focus-creators" else "official:focus-collections",
+                id = if (category == DiscoverCategory.CREATOR_SHOWCASE) "curator:focus-creators" else "curator:focus-collections",
                 category = category,
                 semantic = if (category == DiscoverCategory.CREATOR_SHOWCASE) "creator_showcase" else "collection_showcase",
                 titleKind = if (category == DiscoverCategory.CREATOR_SHOWCASE) DiscoverTitleKind.CREATOR else DiscoverTitleKind.COLLECTION,
@@ -432,12 +319,12 @@ class DiscoverFeedCoordinator
                 priority = children.maxOf(DiscoverRailSpec::priority) + SHOWCASE_PRIORITY_BONUS,
                 weight = children.sumOf(DiscoverRailSpec::weight),
                 sticky = true,
-                source = DiscoverSpecSource.OFFICIAL_METADATA,
+                source = DiscoverSpecSource.CURATOR_MANIFEST,
                 drillDown = DiscoverDrillDown.FULL_QUERY_RESULTS,
                 children = children,
             )
 
-        private fun staticOfficialSpecs(
+        private fun genericFallbackSpecs(
             dataSource: SteamWorkshopDataSource,
             allowNsfw: Boolean,
         ): List<DiscoverRailSpec> =
@@ -535,18 +422,29 @@ class DiscoverFeedCoordinator
             priority = priority,
             weight = 1,
             sticky = sticky,
-            source = DiscoverSpecSource.STATIC_OFFICIAL_COMPAT,
+            source = DiscoverSpecSource.GENERIC_FALLBACK,
             drillDown = DiscoverDrillDown.FULL_QUERY_RESULTS,
         )
     }
 
+internal fun selectDiscoverCandidates(
+    spec: DiscoverRailSpec,
+    candidates: List<com.wallhub.android.core.model.WorkshopSummary>,
+    excludedIds: Set<Long>,
+): List<com.wallhub.android.core.model.WorkshopSummary> =
+    candidates
+        .asSequence()
+        .filter { it.id > 0L && it.id !in excludedIds }
+        .filter { !spec.qualityRules.requirePreview || !it.previewUrl.isNullOrBlank() }
+        .filter { !spec.qualityRules.requireKnownType || it.type != WorkshopType.UNKNOWN }
+        .take(spec.qualityRules.targetItemCount)
+        .toList()
+
 internal suspend fun invalidateDiscoverCaches(
-    metadataRepository: OfficialDiscoverMetadataRepository,
     unifiedWorkshopRepository: SteamUnifiedWorkshopRepository,
     workshopRepository: WorkshopRepository,
     collectionResolver: DiscoverCollectionResolver,
 ) {
-    metadataRepository.invalidateDiscoverCache()
     unifiedWorkshopRepository.invalidateDiscoverCache()
     workshopRepository.invalidateDiscoverCache()
     collectionResolver.invalidateDiscoverCache()
@@ -655,7 +553,7 @@ private const val DISCOVER_NETWORK_CONCURRENCY = 4
 private const val DISCOVER_QUERY_PAGE_SIZE = 20
 private const val MAX_RAIL_ATTEMPTS = 3
 private const val RETRY_BASE_DELAY_MILLIS = 350L
-private const val OFFICIAL_METADATA_PRIORITY_BONUS = 5f
+private const val CURATOR_PRIORITY_BONUS = 5f
 private const val WEIGHT_FACTOR = 0.15f
 private const val NOVELTY_JITTER = 0.35f
 private const val CATEGORY_COVERAGE_BONUS = 5f
@@ -666,46 +564,3 @@ private const val RELATED_TOPIC_FEEDBACK_FACTOR = 0.15f
 private const val SHOWCASE_PRIORITY_BONUS = 1f
 private const val DISCOVER_FEATURED_ITEM_COUNT = 8
 private const val DISCOVER_FEATURED_RESOLUTION_COUNT = 8
-private const val ACTIVE_SEASON_PRIORITY = 0.8f
-
-private data class SeasonalCollectionDefinition(
-    val key: String,
-    val from: MonthDay,
-    val to: MonthDay,
-    val collectionId: Long,
-    val titleKind: DiscoverTitleKind,
-)
-
-private val SEASONAL_COLLECTIONS =
-    listOf(
-        SeasonalCollectionDefinition("spring", MonthDay.of(3, 20), MonthDay.of(4, 20), 1884277090L, DiscoverTitleKind.SEASONAL_SPRING),
-        SeasonalCollectionDefinition("summer", MonthDay.of(6, 19), MonthDay.of(7, 31), 1884277844L, DiscoverTitleKind.SEASONAL_SUMMER),
-        SeasonalCollectionDefinition("fall", MonthDay.of(9, 23), MonthDay.of(10, 23), 1884263373L, DiscoverTitleKind.SEASONAL_FALL),
-        SeasonalCollectionDefinition("halloween", MonthDay.of(10, 24), MonthDay.of(11, 2), 1873353144L, DiscoverTitleKind.SEASONAL_HALLOWEEN),
-        SeasonalCollectionDefinition("winter", MonthDay.of(12, 1), MonthDay.of(1, 31), 1884258271L, DiscoverTitleKind.SEASONAL_WINTER),
-    )
-
-private val BEST_OF_YEAR_COVERS =
-    linkedMapOf(
-        2016 to 818603284L,
-        2017 to 932995255L,
-        2018 to 1339064732L,
-        2019 to 1962375063L,
-        2020 to 2292710588L,
-        2021 to 2388299037L,
-        2022 to 2784382079L,
-        2023 to 2944773634L,
-        2024 to 3163333989L,
-        2025 to 3441873795L,
-        2026 to 3696323523L,
-    )
-
-private fun MonthDay.isWithin(
-    from: MonthDay,
-    to: MonthDay,
-): Boolean =
-    if (from <= to) {
-        this >= from && this <= to
-    } else {
-        this >= from || this <= to
-    }

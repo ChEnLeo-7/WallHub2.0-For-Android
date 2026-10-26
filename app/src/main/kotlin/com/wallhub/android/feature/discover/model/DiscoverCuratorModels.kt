@@ -1,13 +1,14 @@
 package com.wallhub.android.feature.discover.model
 
-interface OfficialDiscoverMetadataRepository {
-    /** Drops process-local data before a user-requested realtime Discover generation. */
-    suspend fun invalidateDiscoverCache() = Unit
+interface DiscoverCuratorRepository {
+    /** Returns the most recent validated memory or disk snapshot without accessing the network. */
+    suspend fun loadCachedMetadata(): DiscoverMetadataSnapshot? = null
 
+    /** Conditionally revalidates the curator provider and falls back to the last-known-good snapshot. */
     suspend fun loadMetadata(): DiscoverMetadataSnapshot
 }
 
-enum class OfficialDiscoverCategory {
+enum class DiscoverCuratorCategory {
     CREATOR,
     KEYWORD,
     COLLECTION,
@@ -16,15 +17,15 @@ enum class OfficialDiscoverCategory {
 enum class DiscoverMetadataSource {
     NETWORK,
     MEMORY_CACHE,
-    STATIC_FALLBACK,
+    PERSISTED_CACHE,
+    GENERIC_FALLBACK,
 }
 
-data class OfficialDiscoverDescriptor(
+data class DiscoverCuratorDescriptor(
     val stableId: String,
-    val category: OfficialDiscoverCategory,
+    val category: DiscoverCuratorCategory,
     val itemId: String? = null,
     val keyword: String? = null,
-    val coverSubmissionId: Long? = null,
     val queryTypes: List<String> = emptyList(),
     val tags: List<String> = emptyList(),
     val includeTags: List<String> = emptyList(),
@@ -41,7 +42,7 @@ data class OfficialDiscoverDescriptor(
 )
 
 data class DiscoverMetadataSnapshot(
-    val descriptors: List<OfficialDiscoverDescriptor>,
+    val descriptors: List<DiscoverCuratorDescriptor>,
     val version: String,
     val fetchedAtMillis: Long,
     val expiresAtMillis: Long,

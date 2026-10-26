@@ -1,5 +1,6 @@
 package com.wallhub.android.feature.discover
 
+import com.wallhub.android.core.model.SteamUnifiedWorkshopRepository
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopPage
 import com.wallhub.android.core.model.WorkshopRepository
@@ -27,6 +28,7 @@ interface DiscoverPageSource {
 class DefaultDiscoverPageSource
     @Inject
     constructor(
+        private val unifiedWorkshopRepository: SteamUnifiedWorkshopRepository,
         private val workshopRepository: WorkshopRepository,
         private val collectionResolver: DiscoverCollectionResolver,
         private val networkBudget: DiscoverNetworkBudget,
@@ -40,6 +42,8 @@ class DefaultDiscoverPageSource
             val loaded =
                 recipe.collectionId?.let { collectionId ->
                     collectionResolver.browse(collectionId, page, pageSize)
+                } ?: networkBudget.withPermit {
+                    unifiedWorkshopRepository.browsePublic(query)
                 } ?: networkBudget.withPermit {
                     workshopRepository.browse(query)
                 }

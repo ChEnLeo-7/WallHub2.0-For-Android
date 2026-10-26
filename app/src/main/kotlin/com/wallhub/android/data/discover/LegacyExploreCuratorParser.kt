@@ -2,22 +2,21 @@ package com.wallhub.android.data.discover
 
 import com.wallhub.android.feature.discover.model.DiscoverMetadataSnapshot
 import com.wallhub.android.feature.discover.model.DiscoverMetadataSource
-import com.wallhub.android.feature.discover.model.OfficialDiscoverCategory
-import com.wallhub.android.feature.discover.model.OfficialDiscoverDescriptor
+import com.wallhub.android.feature.discover.model.DiscoverCuratorCategory
+import com.wallhub.android.feature.discover.model.DiscoverCuratorDescriptor
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.Locale
 
-internal data class OfficialDiscoverResponseDto(
-    val items: List<OfficialDiscoverItemDto>,
+internal data class LegacyExploreResponseDto(
+    val items: List<LegacyExploreItemDto>,
 )
 
-internal data class OfficialDiscoverItemDto(
+internal data class LegacyExploreItemDto(
     val category: String,
     val itemId: String?,
     val keyword: String?,
-    val coverSubmissionId: Long?,
     val queryTypes: List<String>,
     val tags: List<String>,
     val includeTags: List<String>,
@@ -33,23 +32,31 @@ internal data class OfficialDiscoverItemDto(
     val sticky: Boolean,
 )
 
-internal data class ParsedDiscoverMetadata(
-    val descriptors: List<OfficialDiscoverDescriptor>,
+internal data class ParsedCuratorMetadata(
+    val descriptors: List<DiscoverCuratorDescriptor>,
     val receivedItemCount: Int,
     val rejectedItemCount: Int,
 )
 
-internal object OfficialDiscoverMetadataParser {
+internal object LegacyExploreCuratorParser {
     private val supportedPlatforms = setOf("all", "any", "android", "mobile", "pc", "steam", "steamint", "windows")
+    private const val MAX_CURATOR_ITEMS = 512
+    private const val MAX_LIST_ITEMS = 64
+    private const val MAX_TAG_GROUPS = 16
+    private const val MAX_TAGS_PER_GROUP = 16
+    private const val MAX_TEXT_LENGTH = 256
+    private const val MAX_WEIGHT = 100
+    private const val MIN_PRIORITY = -100f
+    private const val MAX_PRIORITY = 100f
 
-    fun parse(json: String): ParsedDiscoverMetadata {
+    fun parse(json: String): ParsedCuratorMetadata {
         val root = JSONObject(json)
         val response = root.optJSONObject("response") ?: throw IllegalArgumentException("Missing response object")
         val rawItems = response.optJSONArray("items") ?: throw IllegalArgumentException("Missing response.items array")
-        if (rawItems.length() == 0) throw IllegalArgumentException("response.items is empty")
+        require(rawItems.length() in 1..MAX_CURATOR_ITEMS) { "response.items count is outside the supported range" }
 
         val dto =
-            OfficialDiscoverResponseDto(
+            LegacyExploreResponseDto(
                 items =
                     buildList {
                         repeat(rawItems.length()) { index ->
@@ -57,9 +64,9 @@ internal object OfficialDiscoverMetadataParser {
                         }
                     },
             )
-        val descriptors = dto.items.mapNotNull(::toDescriptorOrNull).distinctBy(OfficialDiscoverDescriptor::stableId)
+        val descriptors = dto.items.mapNotNull(::toDescriptorOrNull).distinctBy(DiscoverCuratorDescriptor::stableId)
         if (descriptors.isEmpty()) throw IllegalArgumentException("response.items has no supported descriptors")
-        return ParsedDiscoverMetadata(
+        return ParsedCuratorMetadata(
             descriptors = descriptors,
             receivedItemCount = rawItems.length(),
             rejectedItemCount = rawItems.length() - descriptors.size,
@@ -67,7 +74,7 @@ internal object OfficialDiscoverMetadataParser {
     }
 
     fun snapshot(
-        parsed: ParsedDiscoverMetadata,
+        parsed: ParsedCuratorMetadata,
         nowMillis: Long,
         ttlMillis: Long,
         source: DiscoverMetadataSource = DiscoverMetadataSource.NETWORK,
@@ -82,7 +89,7 @@ internal object OfficialDiscoverMetadataParser {
             rejectedItemCount = parsed.rejectedItemCount,
         )
 
-    private fun JSONObject.toDtoOrNull(): OfficialDiscoverItemDto? {
+    private fun JSONObject.toDtoOrNull(): LegacyExploreItemDto? {
         val queryTypes = stringList("querytypes") ?: return null
         val tags = stringList("tags") ?: return null
         val includeTags = stringList("includetags") ?: return null
@@ -90,11 +97,10 @@ internal object OfficialDiscoverMetadataParser {
         val dependentTags = stringList("dependenttags") ?: return null
         val requiredTagGroups = tagGroups("requiredtaggroups") ?: return null
         val platforms = platformSet("platforms") ?: return null
-        return OfficialDiscoverItemDto(
+        return LegacyExploreItemDto(
             category = optString("category").trim().lowercase(Locale.ROOT),
             itemId = scalarString("itemid"),
             keyword = scalarString("keyword"),
-            coverSubmissionId = scalarLong("coversubmission"),
             queryTypes = queryTypes.map { it.lowercase(Locale.ROOT) },
             tags = tags,
             includeTags = includeTags,
@@ -105,35 +111,34 @@ internal object OfficialDiscoverMetadataParser {
             platforms = platforms,
             timestampStart = scalarLong("timestampstart"),
             timestampEnd = scalarLong("timestampend"),
-            priority = scalarFloat("priority") ?: 0f,
-            weight = (scalarLong("weight") ?: 1L).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt(),
+            priority = (scalarFloat("priority") ?: 0f).coerceIn(MIN_PRIORITY, MAX_PRIORITY),
+            weight = (scalarLong("weight") ?: 1L).coerceIn(1L, MAX_WEIGHT.toLong()).toInt(),
             sticky = scalarBoolean("sticky") ?: false,
         )
     }
 
-    private fun toDescriptorOrNull(dto: OfficialDiscoverItemDto): OfficialDiscoverDescriptor? {
+    private fun toDescriptorOrNull(dto: LegacyExploreItemDto): DiscoverCuratorDescriptor? {
         if (dto.platforms.isNotEmpty() && dto.platforms.none(supportedPlatforms::contains)) return null
         if (dto.timestampStart != null && dto.timestampEnd != null && dto.timestampStart > dto.timestampEnd) return null
         val category =
             when (dto.category) {
-                "creator" -> OfficialDiscoverCategory.CREATOR
-                "keyword" -> OfficialDiscoverCategory.KEYWORD
-                "collection" -> OfficialDiscoverCategory.COLLECTION
+                "creator" -> DiscoverCuratorCategory.CREATOR
+                "keyword" -> DiscoverCuratorCategory.KEYWORD
+                "collection" -> DiscoverCuratorCategory.COLLECTION
                 else -> return null
             }
         val subject =
             when (category) {
-                OfficialDiscoverCategory.CREATOR -> dto.itemId?.takeIf(::isSteamId)
-                OfficialDiscoverCategory.COLLECTION -> dto.itemId?.takeIf(::isWorkshopId)
-                OfficialDiscoverCategory.KEYWORD -> dto.keyword?.trim()?.takeIf(String::isNotEmpty)
+                DiscoverCuratorCategory.CREATOR -> dto.itemId?.takeIf(::isSteamId)
+                DiscoverCuratorCategory.COLLECTION -> dto.itemId?.takeIf(::isWorkshopId)
+                DiscoverCuratorCategory.KEYWORD -> dto.keyword?.trim()?.takeIf(String::isNotEmpty)
             } ?: return null
         val queryIdentity = dto.queryTypes.joinToString(",").ifBlank { "default" }
-        return OfficialDiscoverDescriptor(
+        return DiscoverCuratorDescriptor(
             stableId = "${category.name.lowercase(Locale.ROOT)}:${subject.lowercase(Locale.ROOT)}:$queryIdentity",
             category = category,
             itemId = dto.itemId,
             keyword = dto.keyword?.trim(),
-            coverSubmissionId = dto.coverSubmissionId?.takeIf { it > 0L },
             queryTypes = dto.queryTypes.distinct(),
             tags = dto.tags.distinct(),
             includeTags = dto.includeTags.distinct(),
@@ -153,11 +158,14 @@ internal object OfficialDiscoverMetadataParser {
     private fun JSONObject.stringList(name: String): List<String>? {
         if (!has(name) || isNull(name)) return emptyList()
         val array = optJSONArray(name) ?: return null
+        if (array.length() > MAX_LIST_ITEMS) return null
         return buildList {
             repeat(array.length()) { index ->
                 val value = array.opt(index)
                 if (value !is String) return null
-                value.trim().takeIf(String::isNotEmpty)?.let(::add)
+                val normalized = value.trim()
+                if (normalized.length > MAX_TEXT_LENGTH) return null
+                normalized.takeIf(String::isNotEmpty)?.let(::add)
             }
         }
     }
@@ -165,16 +173,24 @@ internal object OfficialDiscoverMetadataParser {
     private fun JSONObject.tagGroups(name: String): List<List<String>>? {
         if (!has(name) || isNull(name)) return emptyList()
         val array = optJSONArray(name) ?: return null
+        if (array.length() > MAX_TAG_GROUPS) return null
         return buildList {
             repeat(array.length()) { index ->
                 when (val value = array.opt(index)) {
-                    is String -> value.trim().takeIf(String::isNotEmpty)?.let { add(listOf(it)) }
+                    is String -> {
+                        val normalized = value.trim()
+                        if (normalized.length > MAX_TEXT_LENGTH) return null
+                        normalized.takeIf(String::isNotEmpty)?.let { add(listOf(it)) }
+                    }
                     is JSONArray -> {
+                        if (value.length() > MAX_TAGS_PER_GROUP) return null
                         val group = buildList {
                             repeat(value.length()) { groupIndex ->
                                 val tag = value.opt(groupIndex)
                                 if (tag !is String) return null
-                                tag.trim().takeIf(String::isNotEmpty)?.let(::add)
+                                val normalized = tag.trim()
+                                if (normalized.length > MAX_TEXT_LENGTH) return null
+                                normalized.takeIf(String::isNotEmpty)?.let(::add)
                             }
                         }
                         if (group.isNotEmpty()) add(group)
@@ -188,18 +204,25 @@ internal object OfficialDiscoverMetadataParser {
     private fun JSONObject.platformSet(name: String): Set<String>? {
         if (!has(name) || isNull(name)) return emptySet()
         optJSONArray(name)?.let { array ->
+            if (array.length() > MAX_LIST_ITEMS) return null
             return buildSet {
                 repeat(array.length()) { index ->
                     val value = array.opt(index)
                     if (value !is String) return null
-                    value.trim().takeIf(String::isNotEmpty)?.lowercase(Locale.ROOT)?.let(::add)
+                    val normalized = value.trim()
+                    if (normalized.length > MAX_TEXT_LENGTH) return null
+                    normalized.takeIf(String::isNotEmpty)?.lowercase(Locale.ROOT)?.let(::add)
                 }
             }
         }
         val values = optJSONObject(name) ?: return null
+        val keys = values.keys().asSequence().toList()
+        if (keys.size > MAX_LIST_ITEMS || keys.any { it.trim().length > MAX_TEXT_LENGTH }) return null
         return buildSet {
-            values.keys().forEach { key ->
-                if (values.optBoolean(key, false)) key.trim().takeIf(String::isNotEmpty)?.lowercase(Locale.ROOT)?.let(::add)
+            keys.forEach { key ->
+                val enabled = values.opt(key)
+                if (enabled !is Boolean) return null
+                if (enabled) key.trim().takeIf(String::isNotEmpty)?.lowercase(Locale.ROOT)?.let(::add)
             }
         }
     }
@@ -208,7 +231,7 @@ internal object OfficialDiscoverMetadataParser {
         if (!has(name) || isNull(name)) {
             null
         } else {
-            opt(name)?.toString()?.trim()?.takeIf(String::isNotEmpty)
+            opt(name)?.toString()?.trim()?.takeIf { it.isNotEmpty() && it.length <= MAX_TEXT_LENGTH }
         }
 
     private fun JSONObject.scalarLong(name: String): Long? =
@@ -230,14 +253,13 @@ internal object OfficialDiscoverMetadataParser {
     private fun isWorkshopId(value: String): Boolean = value.toULongOrNull()?.let { it > 0uL } == true
 }
 
-private fun List<OfficialDiscoverDescriptor>.metadataVersion(): String {
+private fun List<DiscoverCuratorDescriptor>.metadataVersion(): String {
     val canonical =
         joinToString("\n") { descriptor ->
             listOf(
                 descriptor.stableId,
                 descriptor.itemId.orEmpty(),
                 descriptor.keyword.orEmpty(),
-                descriptor.coverSubmissionId.orEmptyString(),
                 descriptor.queryTypes.joinToString(","),
                 descriptor.tags.joinToString(","),
                 descriptor.includeTags.joinToString(","),

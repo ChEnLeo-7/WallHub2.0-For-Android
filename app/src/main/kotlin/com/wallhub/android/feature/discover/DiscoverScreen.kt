@@ -148,7 +148,7 @@ fun DiscoverRoute(
                             )
                         }
                     }
-                    if (state.metadataSource == DiscoverMetadataSource.STATIC_FALLBACK) {
+                    if (state.metadataSource == DiscoverMetadataSource.GENERIC_FALLBACK) {
                         item(key = "discover-fallback-notice") {
                             Text(
                                 stringResource(R.string.discover_static_fallback),

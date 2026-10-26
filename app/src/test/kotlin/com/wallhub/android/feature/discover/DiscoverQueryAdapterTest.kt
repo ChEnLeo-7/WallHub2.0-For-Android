@@ -8,8 +8,8 @@ import com.wallhub.android.core.model.WorkshopType
 import com.wallhub.android.core.model.steamSearchText
 import com.wallhub.android.data.workshop.buildBrowseUrl
 import com.wallhub.android.data.workshop.buildSteamApiBrowseUrl
-import com.wallhub.android.feature.discover.model.OfficialDiscoverCategory
-import com.wallhub.android.feature.discover.model.OfficialDiscoverDescriptor
+import com.wallhub.android.feature.discover.model.DiscoverCuratorCategory
+import com.wallhub.android.feature.discover.model.DiscoverCuratorDescriptor
 import com.wallhub.android.friendResultsDestination
 import com.wallhub.android.feature.home.HomeFilterSelection
 import org.junit.Test
@@ -23,7 +23,7 @@ class DiscoverQueryAdapterTest {
     private val adapter = DiscoverQueryAdapter()
 
     @Test
-    fun `official query types preserve their distinct sort and time window`() {
+    fun `curator query types preserve their distinct sort and time window`() {
         val descriptor = descriptor(
             queryTypes = listOf("trend_month", "trend_year", "published_votes", "published_desc"),
         )
@@ -80,12 +80,12 @@ class DiscoverQueryAdapterTest {
     @Test
     fun `creator and collection stay independent from generic wallpaper browse`() {
         val creator = descriptor(
-            category = OfficialDiscoverCategory.CREATOR,
+            category = DiscoverCuratorCategory.CREATOR,
             itemId = "76561198000000000",
             queryTypes = listOf("published_votes"),
         )
         val collection = descriptor(
-            category = OfficialDiscoverCategory.COLLECTION,
+            category = DiscoverCuratorCategory.COLLECTION,
             itemId = "1234567890",
             queryTypes = emptyList(),
         )
@@ -101,7 +101,7 @@ class DiscoverQueryAdapterTest {
     }
 
     @Test
-    fun `static official rails keep recent positive and mobile semantics distinct`() {
+    fun `generic fallback rails keep recent positive and mobile semantics distinct`() {
         val recent = adapter.recentPositive()
         val mobile = adapter.mobileEssentials(
             dataSource = SteamWorkshopDataSource.WEB_API,
@@ -181,7 +181,7 @@ class DiscoverQueryAdapterTest {
     }
 
     private fun descriptor(
-        category: OfficialDiscoverCategory = OfficialDiscoverCategory.KEYWORD,
+        category: DiscoverCuratorCategory = DiscoverCuratorCategory.KEYWORD,
         itemId: String? = null,
         keyword: String? = null,
         exact: Boolean = false,
@@ -191,7 +191,7 @@ class DiscoverQueryAdapterTest {
         requiredTagGroups: List<List<String>> = emptyList(),
         timestampStart: Long? = null,
         timestampEnd: Long? = null,
-    ) = OfficialDiscoverDescriptor(
+    ) = DiscoverCuratorDescriptor(
         stableId = "test",
         category = category,
         itemId = itemId,

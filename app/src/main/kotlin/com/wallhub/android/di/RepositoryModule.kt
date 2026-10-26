@@ -16,7 +16,7 @@ import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.WorkshopRepository
 import com.wallhub.android.core.model.WorkshopVideoStreamRepository
 import com.wallhub.android.data.diagnostics.FileDiagnosticRepository
-import com.wallhub.android.data.discover.HttpOfficialDiscoverMetadataRepository
+import com.wallhub.android.data.discover.HttpDiscoverCuratorRepository
 import com.wallhub.android.data.downloads.LocalWallpaperFileRepository
 import com.wallhub.android.data.downloads.RoomDownloadTaskRepository
 import com.wallhub.android.data.downloads.SteamWorkshopVideoStreamRepository
@@ -26,7 +26,7 @@ import com.wallhub.android.data.steam.SteamContentSdkWorkshopRepository
 import com.wallhub.android.data.steamaccess.SteamAccessManager
 import com.wallhub.android.data.update.GitHubAppUpdateRepository
 import com.wallhub.android.data.workshop.CommunityWorkshopRepository
-import com.wallhub.android.feature.discover.model.OfficialDiscoverMetadataRepository
+import com.wallhub.android.feature.discover.model.DiscoverCuratorRepository
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -39,9 +39,9 @@ import javax.inject.Singleton
 internal abstract class RepositoryModule {
     @Binds
     @Singleton
-    abstract fun bindOfficialDiscoverMetadataRepository(
-        repository: HttpOfficialDiscoverMetadataRepository,
-    ): OfficialDiscoverMetadataRepository
+    abstract fun bindDiscoverCuratorRepository(
+        repository: HttpDiscoverCuratorRepository,
+    ): DiscoverCuratorRepository
 
     @Binds
     @Singleton

@@ -4,7 +4,7 @@ import com.wallhub.android.core.model.SteamWorkshopDataSource
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
-import com.wallhub.android.feature.discover.model.OfficialDiscoverDescriptor
+import com.wallhub.android.feature.discover.model.DiscoverCuratorDescriptor
 import java.util.Locale
 import javax.inject.Inject
 
@@ -49,7 +49,7 @@ data class DiscoverQueryPlan(
     }
 }
 
-/** Converts official Discover descriptors without leaking Discover-only semantics into Home. */
+/** Converts bounded curator descriptors without leaking Discover-only semantics into Home. */
 class DiscoverQueryAdapter
     @Inject
     constructor() {
@@ -108,7 +108,7 @@ class DiscoverQueryAdapter
         }
 
         fun adapt(
-            descriptor: OfficialDiscoverDescriptor,
+            descriptor: DiscoverCuratorDescriptor,
             dataSource: SteamWorkshopDataSource,
             page: Int = 1,
             pageSize: Int = DEFAULT_DISCOVER_PAGE_SIZE,
@@ -125,7 +125,7 @@ class DiscoverQueryAdapter
         }
 
         private fun adaptSemantic(
-            descriptor: OfficialDiscoverDescriptor,
+            descriptor: DiscoverCuratorDescriptor,
             category: String,
             rawSemantic: String,
             dataSource: SteamWorkshopDataSource,
@@ -195,7 +195,7 @@ class DiscoverQueryAdapter
             )
         }
 
-        private fun collectionPlan(descriptor: OfficialDiscoverDescriptor): DiscoverQueryPlan {
+        private fun collectionPlan(descriptor: DiscoverCuratorDescriptor): DiscoverQueryPlan {
             val collectionId = descriptor.itemId?.toLongOrNull()?.takeIf { it > 0L }
             return DiscoverQueryPlan(
                 descriptorId = descriptor.stableId,
@@ -213,7 +213,7 @@ class DiscoverQueryAdapter
         }
 
         private fun unsupportedPlan(
-            descriptor: OfficialDiscoverDescriptor,
+            descriptor: DiscoverCuratorDescriptor,
             semantic: String,
             degradation: DiscoverQueryDegradation,
         ) = DiscoverQueryPlan(

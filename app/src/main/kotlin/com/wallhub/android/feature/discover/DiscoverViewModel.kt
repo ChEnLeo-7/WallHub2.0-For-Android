@@ -91,7 +91,8 @@ class DiscoverViewModel
             val bootstrapJob =
                 viewModelScope.launch {
                     try {
-                        val prepared = coordinator.prepareStaticGeneration(generation)
+                        val cached = coordinator.prepareCachedMetadataGeneration(generation)
+                        val prepared = cached ?: coordinator.prepareStaticGeneration(generation)
                         if (mutableState.value.generation != generation) return@launch
                         commitGeneration(prepared, preserveCommittedRows = retainedRows.isNotEmpty())
                     } catch (error: CancellationException) {
@@ -112,16 +113,16 @@ class DiscoverViewModel
             metadataJob =
                 viewModelScope.launch {
                     try {
-                        val prepared = coordinator.prepareMetadataGeneration(generation)
-                        // Metadata HTTP runs beside the static bootstrap, but the bootstrap owns the initial
-                        // spec list. Merge only after it has committed so a fast response cannot be discarded.
+                        // Bootstrap prefers the validated LKG; only a device without one sees generic rails.
+                        // Revalidation then atomically replaces that generation without flashing an empty feed.
+                        val refreshed = coordinator.prepareMetadataGeneration(generation)
                         bootstrapJob.join()
                         if (mutableState.value.generation != generation) return@launch
-                        mergeMetadataGeneration(prepared)
+                        if (refreshed.specs.isNotEmpty()) replaceMetadataGeneration(refreshed)
                     } catch (error: CancellationException) {
                         throw error
                     } catch (_: Throwable) {
-                        // Static rails are the usable fallback; metadata failure must not block them.
+                        // The persisted curator snapshot or generic rails remain usable.
                     }
                 }
         }
@@ -320,47 +321,31 @@ class DiscoverViewModel
             startFeedWorker()
         }
 
-        private fun mergeMetadataGeneration(prepared: DiscoverGeneration) {
-            if (generationSpecs.isEmpty()) {
-                commitGeneration(
-                    prepared = prepared,
-                    preserveCommittedRows = mutableState.value.rails.isNotEmpty(),
-                )
-                return
-            }
-            val visibleRows = mutableState.value.rails
+        private fun replaceMetadataGeneration(prepared: DiscoverGeneration) {
+            val currentRows = mutableState.value.rails.associateBy { it.spec.id }
             val feedback = mutableState.value.feedback
-            val metadataSpecs =
+            val specs =
                 prepared.specs.filterNot { spec ->
                     spec.feedbackKey in suppressedFeedbackKeys || feedback[spec.feedbackKey]?.disliked == true
                 }
-            val metadataById = metadataSpecs.associateBy(DiscoverRailSpec::id)
-            val mergedRows =
-                visibleRows.mapNotNull { row ->
-                    val fresh = metadataById[row.spec.id]
-                    if (row.spec.source == DiscoverSpecSource.OFFICIAL_METADATA && fresh == null) {
-                        null
-                    } else if (fresh != null) {
-                        row.copy(spec = fresh, loadState = DiscoverRailLoadState.QUEUED, error = null)
-                    } else {
-                        row
-                    }
+            val initialCount = initialDiscoverRailCount(specs)
+            val rows =
+                specs.take(initialCount).map { spec ->
+                    currentRows[spec.id]?.copy(spec = spec, loadState = DiscoverRailLoadState.QUEUED, error = null)
+                        ?: DiscoverRailState(spec)
                 }
-            val visibleIds = mergedRows.mapTo(hashSetOf()) { it.spec.id }
-            val unconsumedTail = generationSpecs.drop(nextSpecIndex)
-            generationSpecs =
-                mergedRows.map(DiscoverRailState::spec) +
-                    metadataSpecs.filterNot { it.id in visibleIds } +
-                    unconsumedTail.filterNot { tail ->
-                        tail.id in visibleIds || metadataSpecs.any { it.id == tail.id }
-                    }
-            nextSpecIndex = mergedRows.size
+            val materializedIds = rows.mapTo(hashSetOf()) { it.spec.id }
+            generationSpecs = rows.map(DiscoverRailState::spec) + specs.filterNot { it.id in materializedIds }
+            nextSpecIndex = rows.size
             mutableState.value =
                 mutableState.value.copy(
-                    rails = mergedRows,
+                    rails = rows,
+                    isPreparing = false,
+                    isRefreshing = rows.isNotEmpty(),
                     metadataSource = prepared.metadataSource,
                     metadataVersion = prepared.metadataVersion,
                     hasMore = nextSpecIndex < generationSpecs.size,
+                    error = null,
                 )
             startFeedWorker()
         }
@@ -441,7 +426,7 @@ internal fun rowsForStaticRefresh(
     return retained +
         specs
             .filterNot { it.id in retainedIds }
-            .take((initialCount - retained.count { it.spec.source != DiscoverSpecSource.OFFICIAL_METADATA }).coerceAtLeast(0))
+            .take((initialCount - retained.count { it.spec.source != DiscoverSpecSource.CURATOR_MANIFEST }).coerceAtLeast(0))
             .map(::DiscoverRailState)
 }
 
