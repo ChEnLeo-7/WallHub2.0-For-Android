@@ -27,7 +27,7 @@ import org.json.JSONObject
 @Singleton
 class HttpDiscoverCuratorRepository
     @Inject
-    constructor(
+    internal constructor(
         @ApplicationContext context: Context,
         private val settingsRepository: SettingsRepository,
         private val noSniTransport: DiscoverCuratorNoSniTransport,

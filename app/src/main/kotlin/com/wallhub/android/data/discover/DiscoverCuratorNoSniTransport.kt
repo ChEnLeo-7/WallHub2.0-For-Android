@@ -36,6 +36,11 @@ internal data class CuratorTransportResponse(
     val lastModified: String?,
 )
 
+private class CuratorAuthenticatedResponseException(cause: Throwable) : IOException(
+    "Authenticated Curator response failed",
+    cause,
+)
+
 @Singleton
 internal class DiscoverCuratorNoSniTransport internal constructor(
     private val resolverClient: OkHttpClient,
@@ -78,7 +83,10 @@ internal class DiscoverCuratorNoSniTransport internal constructor(
                     .onSuccess { response ->
                         logSuccess(target.host, response.statusCode, startedAt)
                         return@withContext response
-                    }.onFailure { currentCoroutineContext().ensureActive() }
+                    }.onFailure { error ->
+                        currentCoroutineContext().ensureActive()
+                        if (error is CuratorAuthenticatedResponseException) throw error
+                    }
                 lastSuccessfulAddress = null
             }
 
@@ -91,6 +99,7 @@ internal class DiscoverCuratorNoSniTransport internal constructor(
                         return@withContext response
                     }.onFailure { error ->
                         currentCoroutineContext().ensureActive()
+                        if (error is CuratorAuthenticatedResponseException) throw error
                         lastFailure = error
                     }
             }
@@ -168,7 +177,11 @@ internal class DiscoverCuratorNoSniTransport internal constructor(
                     }
                 secured.outputStream.write(requestHead.toByteArray(Charsets.ISO_8859_1))
                 secured.outputStream.flush()
-                return parseHttpResponse(secured.inputStream)
+                return try {
+                    parseHttpResponse(secured.inputStream)
+                } catch (error: Exception) {
+                    throw CuratorAuthenticatedResponseException(error)
+                }
             }
         } catch (error: Throwable) {
             runCatching { activeSocket.get().close() }
