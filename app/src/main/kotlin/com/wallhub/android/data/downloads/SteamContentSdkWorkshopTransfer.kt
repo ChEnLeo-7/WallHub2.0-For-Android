@@ -125,6 +125,8 @@ internal interface SteamContentSdkRangeStream : Closeable {
 
     fun cdnProvider(): com.wallhub.android.core.model.WorkshopVideoCdnProvider? = null
 
+    fun currentCdnHost(): String? = null
+
     fun cancelPlaybackDemand()
 
     /** Interrupts an in-flight native chunk transport before close waits for its synchronized handle. */

@@ -139,6 +139,8 @@ private class SteamContentSdkEngineRangeStream(
 
     override fun cdnProvider(): WorkshopVideoCdnProvider? = lastProvider.get()
 
+    override fun currentCdnHost(): String? = stream.currentCdnHost()
+
     override fun telemetry(): SteamContentSdkStreamTelemetry =
         stream.telemetry().let { value ->
             SteamContentSdkStreamTelemetry(
