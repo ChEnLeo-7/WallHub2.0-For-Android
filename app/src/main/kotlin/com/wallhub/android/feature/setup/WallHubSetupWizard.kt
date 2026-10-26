@@ -125,11 +125,11 @@ import org.uwuaosp.compose.wizard.WizardPageConfig
 import org.uwuaosp.compose.wizard.WizardPageScaffold
 import org.uwuaosp.compose.wizard.wizardActionContentPadding
 import org.uwuaosp.compose.wizard.wizardPageTransition
+import org.uwuaosp.compose.settingslib.SettingsBackIcon
 import org.uwuaosp.compose.settingslib.SettingsToolbarActionButton
 import org.uwuaosp.compose.settingslib.rememberSettingsTypography
 import javax.inject.Inject
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -512,7 +512,7 @@ fun WallHubSetupWizard(
         )
         if (page != WallHubSetupPage.Welcome) {
             SettingsToolbarActionButton(
-                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                imageVector = SettingsBackIcon,
                 contentDescription = stringResource(R.string.settings_action_back),
                 onClick = navigateBack,
                 iconSize = 16.dp,

@@ -76,6 +76,7 @@ import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubColorTokens
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubShapeTokens
+import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.ExportFormat
@@ -619,7 +620,13 @@ internal fun WorkshopDetailPane(
     val commentComposerHeight = with(LocalDensity.current) { commentComposerHeightPx.toDp() }
 
     Box(modifier = modifier.fillMaxSize().nestedScroll(nestedScrollConnection)) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .widthIn(max = WallHubSizeTokens.readableContentMaxWidth)
+                    .align(Alignment.TopCenter),
+        ) {
             WorkshopDetailCollapsibleHeader(
                 detail = detail,
                 offsetPx = headerOffsetPx,

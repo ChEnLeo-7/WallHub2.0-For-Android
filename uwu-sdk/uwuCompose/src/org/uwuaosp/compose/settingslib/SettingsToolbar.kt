@@ -45,8 +45,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-private val ExpressiveBackIcon = ImageVector.Builder(
+val SettingsBackIcon = ImageVector.Builder(
     name = "SettingsLibExpressiveBack",
+    autoMirror = true,
     defaultWidth = 16.dp,
     defaultHeight = 16.dp,
     viewportWidth = 16f,
@@ -150,7 +151,7 @@ internal fun SettingsToolbar(
         )
         if (showBackButton) {
             SettingsToolbarActionButton(
-                imageVector = ExpressiveBackIcon,
+                imageVector = SettingsBackIcon,
                 contentDescription = null,
                 onClick = onNavigateUp,
                 modifier = Modifier
