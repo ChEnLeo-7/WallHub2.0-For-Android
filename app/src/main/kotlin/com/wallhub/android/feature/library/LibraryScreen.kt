@@ -1039,7 +1039,7 @@ private const val LIBRARY_FOREGROUND_LOAD_TIMEOUT_MS = 12_000L
 
 @Composable
 fun LibraryRoute(
-    onOpenSettings: () -> Unit = {},
+    onOpenLogin: () -> Unit = {},
     onBack: () -> Unit = {},
     onOpenDetail: (Long) -> Unit,
     onPlayVideo: (Long) -> Unit = {},
@@ -1062,7 +1062,7 @@ fun LibraryRoute(
         LibraryScreen(
             state = state,
             onAction = viewModel::onAction,
-            onOpenSettings = onOpenSettings,
+            onOpenLogin = onOpenLogin,
             onBack = onBack,
             onContextMenuActiveChanged = onContextMenuActiveChanged,
         )
@@ -1132,7 +1132,7 @@ fun LibraryEffectHandler(
 fun LibraryScreen(
     state: LibraryUiState,
     onAction: (LibraryAction) -> Unit,
-    onOpenSettings: () -> Unit = {},
+    onOpenLogin: () -> Unit = {},
     onBack: () -> Unit = {},
     onContextMenuActiveChanged: (Boolean) -> Unit = {},
 ) {
@@ -1199,6 +1199,7 @@ fun LibraryScreen(
             LibraryContent(
                 state = state,
                 onAction = onAction,
+                onOpenLogin = onOpenLogin,
                 onRemoveFromCollection = { pendingRemoval = it },
                 onContextMenuActiveChanged = onContextMenuActiveChanged,
                 showSearch = false,
@@ -1235,6 +1236,7 @@ fun LibraryScreen(
 fun LibraryContent(
     state: LibraryUiState,
     onAction: (LibraryAction) -> Unit,
+    onOpenLogin: () -> Unit = {},
     onRemoveFromCollection: (WorkshopSummary) -> Unit,
     onContextMenuActiveChanged: (Boolean) -> Unit,
     showSearch: Boolean = true,
@@ -1517,6 +1519,7 @@ private fun LibraryResults(
         LibraryResultsContent(
             state = state,
             onRefresh = onRefresh,
+            onOpenLogin = onOpenLogin,
             onPageSelected = onPageSelected,
             onOpenDetail = onOpenDetail,
             onPlayVideo = onPlayVideo,
@@ -1550,6 +1553,7 @@ private fun LibraryResults(
 private fun LibraryResultsContent(
     state: LibraryUiState,
     onRefresh: () -> Unit,
+    onOpenLogin: () -> Unit,
     onPageSelected: (Int) -> Unit,
     onOpenDetail: (Long) -> Unit,
     onPlayVideo: (Long) -> Unit,
@@ -1573,9 +1577,9 @@ private fun LibraryResultsContent(
                     if (state.session.isRestoreRetryable) {
                         stringResource(R.string.library_retry_restore)
                     } else {
-                        null
+                        stringResource(R.string.profile_sign_in)
                     },
-                onAction = if (state.session.isRestoreRetryable) onRefresh else null,
+                onAction = if (state.session.isRestoreRetryable) onRefresh else onOpenLogin,
                 modifier = modifier.refreshableEmptyState(),
             )
         }
@@ -1624,7 +1628,7 @@ private fun LibraryResultsContent(
                         start = WallHubSpacing.md,
                         top = WallHubSpacing.sm,
                         end = WallHubSpacing.md,
-                        bottom = 84.dp,
+                        bottom = WallHubSpacing.xs,
                     ),
                 horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
                 verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
@@ -1803,6 +1807,7 @@ private fun LibraryWorkshopCard(
                 val statisticsStyle =
                     MaterialTheme.typography.bodySmall.copy(
                         fontSize = statisticsMetrics.fontSize.sp,
+                        lineHeight = 14.sp,
                     )
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text(
@@ -1941,7 +1946,7 @@ private data class LibraryCardStatisticsMetrics(
     companion object {
         fun forAvailableWidth(availableWidth: Dp): LibraryCardStatisticsMetrics {
             val statisticSlotWidth = availableWidth.value / 3f
-            val fontSize = (statisticSlotWidth / 5.5f).coerceIn(8.5f, 13f)
+            val fontSize = (statisticSlotWidth / 5.5f).coerceIn(10.5f, 11.5f)
             return LibraryCardStatisticsMetrics(
                 fontSize = fontSize,
                 iconSize =

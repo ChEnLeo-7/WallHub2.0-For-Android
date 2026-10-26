@@ -257,7 +257,7 @@ sealed interface HomeEffect {
     ) : HomeEffect
 }
 
-internal fun HomeUiState.showPullToRefresh(): Boolean = isInitialLoading || isPageLoading
+internal fun HomeUiState.showPullToRefresh(): Boolean = isPageLoading
 
 internal fun String.creatorIdOrNull(): String? {
     val query = trim()

@@ -183,6 +183,20 @@ fun SettingsRoute(
                         ) != PackageManager.PERMISSION_GRANTED
                     ) {
                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                },
+                            )
+                        }.onFailure {
+                            viewModel.onAction(
+                                SettingsAction.SystemActionFailed(
+                                    context.getString(R.string.settings_error_open_notification_settings),
+                                ),
+                            )
+                        }
                     }
                 }
                 is SettingsEffect.InstallDownloadedRelease -> {

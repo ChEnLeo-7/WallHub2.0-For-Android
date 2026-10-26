@@ -22,14 +22,13 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 
 @Composable
 fun WallHubSurfaceCard(
     modifier: Modifier = Modifier,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     shape: Shape? = null,
-    elevation: Dp = 0.dp,
+    elevation: Dp = WallHubSpacing.none,
     content: @Composable () -> Unit,
 ) {
     Surface(
@@ -37,7 +36,7 @@ fun WallHubSurfaceCard(
         shape = shape ?: MaterialTheme.shapes.medium,
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        tonalElevation = 0.dp,
+        tonalElevation = WallHubSpacing.none,
         shadowElevation = elevation,
     ) { content() }
 }
@@ -55,9 +54,12 @@ fun WallHubEmptyState(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 48.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = WallHubSpacing.lg, vertical = WallHubSpacing.xxl),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm, Alignment.CenterVertically),
     ) {
         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(

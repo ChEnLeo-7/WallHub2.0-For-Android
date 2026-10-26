@@ -621,24 +621,29 @@ internal fun SteamAccessDohEditor(
             color = MaterialTheme.colorScheme.surfaceContainerLow,
             tonalElevation = WallHubSpacing.none,
         ) {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth().padding(WallHubSpacing.md),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
             ) {
-                androidx.compose.material3.OutlinedButton(
-                    onClick = onRestoreDefaults,
-                    enabled = endpoints != DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS || disabledEndpoints.isNotEmpty(),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact, Alignment.End),
                 ) {
-                    Text(stringResource(R.string.settings_action_reset))
-                }
-                TextButton(onClick = onCancel) {
-                    Text(stringResource(R.string.settings_action_cancel))
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = onRestoreDefaults,
+                        enabled = endpoints != DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS || disabledEndpoints.isNotEmpty(),
+                    ) {
+                        Text(stringResource(R.string.settings_action_reset))
+                    }
+                    TextButton(onClick = onCancel) {
+                        Text(stringResource(R.string.settings_action_cancel))
+                    }
                 }
                 Button(
                     onClick = onSave,
                     enabled = hasChanges,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.settings_action_save_changes))
                 }

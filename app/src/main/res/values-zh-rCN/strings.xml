@@ -278,6 +278,7 @@
     <string name='settings_background_task_notifications'>后台任务通知</string>
     <string name='settings_background_task_notifications_description'>用于显示下载、转换和导出的实时进度</string>
     <string name='settings_background_task_notifications_granted'>已允许；点击管理通知权限</string>
+    <string name='settings_error_open_notification_settings'>无法打开通知设置</string>
     <string name='settings_action_allow_background_notifications'>允许后台通知</string>
     <string name='settings_steam_login_title'>Steam 登录</string>
     <string name='settings_steam_username'>Steam 用户名</string>

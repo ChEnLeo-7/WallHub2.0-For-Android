@@ -813,26 +813,35 @@ internal fun MonetColorPicker(
                 Box(
                     modifier =
                         Modifier
-                            .size(30.dp)
-                            .clip(CircleShape)
-                            .background(swatchColor)
-                            .clickable {
-                                onColorChanged(hsv.copy(hue = hue).toHex())
-                            },
+                            .size(WallHubSizeTokens.minimumTouchTarget)
+                            .selectable(
+                                selected = selected,
+                                role = Role.RadioButton,
+                                onClick = { onColorChanged(hsv.copy(hue = hue).toHex()) },
+                            ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    CompositionLocalProvider(
-                        LocalContentColor provides
-                            if (swatchColor.luminance() > 0.45f) {
-                                WallHubColorTokens.customAccentPreviewOnLight
-                            } else {
-                                WallHubColorTokens.customAccentPreviewOnDark
-                            },
+                    Box(
+                        modifier =
+                            Modifier
+                                .size(30.dp)
+                                .clip(CircleShape)
+                                .background(swatchColor),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        WallHubAnimatedSelectionCheck(
-                            selected = selected,
-                            size = WallHubSizeTokens.compactIcon,
-                        )
+                        CompositionLocalProvider(
+                            LocalContentColor provides
+                                if (swatchColor.luminance() > 0.45f) {
+                                    WallHubColorTokens.customAccentPreviewOnLight
+                                } else {
+                                    WallHubColorTokens.customAccentPreviewOnDark
+                                },
+                        ) {
+                            WallHubAnimatedSelectionCheck(
+                                selected = selected,
+                                size = WallHubSizeTokens.compactIcon,
+                            )
+                        }
                     }
                 }
             }

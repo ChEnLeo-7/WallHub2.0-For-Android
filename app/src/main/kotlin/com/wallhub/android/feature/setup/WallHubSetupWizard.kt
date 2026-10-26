@@ -341,7 +341,12 @@ fun WallHubSetupWizard(
     var storageError by rememberSaveable { mutableStateOf<String?>(null) }
     val legacyStoragePermissionLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (!granted) storageError = context.getString(R.string.setup_storage_legacy_permission_denied)
+            if (granted) {
+                storageError = null
+                page = WallHubSetupPage.Steam
+            } else {
+                storageError = context.getString(R.string.setup_storage_legacy_permission_denied)
+            }
         }
     val outputDirectoryLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { treeUri ->
@@ -476,7 +481,6 @@ fun WallHubSetupWizard(
                             Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
                                 context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED -> {
                                 legacyStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                                page = WallHubSetupPage.Steam
                             }
                             preferences.outputTreeUri.isNullOrBlank() -> {
                                 continueAfterDirectorySelection = true
@@ -740,27 +744,37 @@ private fun NetworkPage(
                     }
                 }
             }
-            TextField(
-                value = apiKey,
-                onValueChange = { apiKey = it },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                singleLine = true,
-                label = { Text(stringResource(R.string.settings_steam_api_key)) },
-                visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    androidx.compose.material3.IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
-                        Icon(
-                            if (apiKeyVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                            contentDescription = null,
-                        )
-                    }
-                },
-            )
+            if (source == SteamWorkshopDataSource.WEB_API) {
+                TextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    modifier = Modifier.fillMaxWidth().padding(top = WallHubSpacing.xs),
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.settings_steam_api_key)) },
+                    visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        androidx.compose.material3.IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+                            Icon(
+                                if (apiKeyVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                contentDescription =
+                                    stringResource(
+                                        if (apiKeyVisible) {
+                                            R.string.settings_action_hide_api_key
+                                        } else {
+                                            R.string.settings_action_show_api_key
+                                        },
+                                    ),
+                            )
+                        }
+                    },
+                )
+            }
         }
         WizardActions(
             visible = true,
             expanded = false,
             primaryLabel = stringResource(R.string.setup_action_next),
+            primaryEnabled = source != SteamWorkshopDataSource.WEB_API || apiKey.isNotBlank(),
             onPrimaryClick = { onContinue(proxyUrl, proxyEnabled, accessEnabled, source, apiKey) },
         )
     }

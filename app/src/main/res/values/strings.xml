@@ -293,6 +293,7 @@
     <string name='settings_background_task_notifications'>Background task notifications</string>
     <string name='settings_background_task_notifications_description'>Shows live progress for downloads, conversion, and export</string>
     <string name='settings_background_task_notifications_granted'>Allowed; tap to manage notification permission</string>
+    <string name='settings_error_open_notification_settings'>Could not open notification settings</string>
     <string name='settings_action_allow_background_notifications'>Allow background notifications</string>
     <string name='settings_steam_login_title'>Steam sign-in</string>
     <string name='settings_steam_username'>Steam username</string>

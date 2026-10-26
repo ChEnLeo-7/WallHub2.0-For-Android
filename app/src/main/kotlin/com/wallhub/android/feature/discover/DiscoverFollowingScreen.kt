@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,7 +29,6 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -63,7 +64,10 @@ import coil.compose.AsyncImage
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubDropdownMenu
 import com.wallhub.android.core.designsystem.WallHubDropdownMenuItem
+import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
+import com.wallhub.android.core.designsystem.WallHubSpacing
+import com.wallhub.android.core.designsystem.WallHubSurfaceCard
 import com.wallhub.android.core.model.DiscoverFeedbackRepository
 import com.wallhub.android.core.model.DiscoverSavedQuery
 import com.wallhub.android.core.model.DiscoverSavedQueryCategory
@@ -123,21 +127,25 @@ fun DiscoverFollowingRoute(
         },
     ) { padding ->
         if (queries.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding).padding(32.dp), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(stringResource(R.string.discover_following_empty), style = MaterialTheme.typography.bodyLarge)
-                    Button(onClick = onAddQuery, modifier = Modifier.padding(top = 16.dp)) {
-                        Icon(Icons.Outlined.Add, null)
-                        Text(stringResource(R.string.discover_create_query), modifier = Modifier.padding(start = 8.dp))
-                    }
-                }
-            }
+            WallHubEmptyState(
+                icon = Icons.Outlined.CollectionsBookmark,
+                title = stringResource(R.string.discover_following_empty),
+                actionLabel = stringResource(R.string.discover_create_query),
+                onAction = onAddQuery,
+                modifier = Modifier.fillMaxSize().padding(padding),
+            )
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(vertical = 8.dp),
+                contentPadding =
+                    PaddingValues(
+                        horizontal = WallHubSpacing.md,
+                        vertical = WallHubSpacing.xs,
+                    ),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
             ) {
                 items(queries, key = DiscoverSavedQuery::id) { query ->
+                    WallHubSurfaceCard(modifier = Modifier.fillMaxWidth()) {
                     ListItem(
                         headlineContent = { Text(query.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         supportingContent = {
@@ -166,10 +174,10 @@ fun DiscoverFollowingRoute(
                                 Icon(Icons.Outlined.Delete, stringResource(R.string.discover_remove_followed_query))
                             }
                         },
-                        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
+                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                         modifier = Modifier.clickable { onOpenQuery(query) },
                     )
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    }
                 }
             }
         }
@@ -267,6 +275,7 @@ enum class DiscoverCustomSort(
     COLLECTION(WorkshopSort.MOST_RECENT, 0, "collection", R.string.discover_query_category_collection),
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DiscoverQueryEditorRoute(
     onBack: () -> Unit,
@@ -330,11 +339,18 @@ fun DiscoverQueryEditorRoute(
             },
         ) { padding ->
             Column(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp, vertical = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.content),
+                verticalArrangement = Arrangement.spacedBy(WallHubSpacing.content),
             ) {
                 Text(stringResource(R.string.discover_query_category), style = MaterialTheme.typography.titleSmall)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                ) {
                     DiscoverSavedQueryCategory.entries.filter { it != DiscoverSavedQueryCategory.TOPIC }.forEach { item ->
                         FilterChip(
                             selected = category == item,

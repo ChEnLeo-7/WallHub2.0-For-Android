@@ -106,7 +106,7 @@ internal fun SteamAccountCard(
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val scale = maxWidth.value / STEAM_CARD_DESIGN_WIDTH
+        val scale = (maxWidth.value / STEAM_CARD_DESIGN_WIDTH).coerceAtMost(1f)
         val shape = RoundedCornerShape((STEAM_CARD_CORNER * scale).dp)
         val horizontalPadding = (STEAM_CARD_HORIZONTAL_PADDING * scale).dp
         val topPadding = (STEAM_CARD_TOP_PADDING * scale).dp

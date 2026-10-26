@@ -180,6 +180,7 @@ internal fun WallHubNavHost(
         }
         composable<LibraryDestination> {
             LibraryRoute(
+                onOpenLogin = { navController.navigate(SteamLoginDestination) },
                 onBack = { navController.popBackStack() },
                 onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
                 onPlayVideo = { navController.navigate(OnlineVideoPlayerDestination(it)) },
@@ -190,6 +191,7 @@ internal fun WallHubNavHost(
         }
         composable<LibraryCollectionDestination> {
             LibraryRoute(
+                onOpenLogin = { navController.navigate(SteamLoginDestination) },
                 onBack = { navController.popBackStack() },
                 onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
                 onPlayVideo = { navController.navigate(OnlineVideoPlayerDestination(it)) },

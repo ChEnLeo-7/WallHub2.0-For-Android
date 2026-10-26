@@ -106,6 +106,7 @@ fun WizardActions(
     onSecondaryClick: (() -> Unit)? = null,
     showPrimary: Boolean = true,
     showSecondary: Boolean = secondaryLabel != null && onSecondaryClick != null,
+    primaryEnabled: Boolean = true,
 ) {
     if (!visible || (!showPrimary && !showSecondary)) return
     Box(modifier = modifier.fillMaxSize()) {
@@ -160,6 +161,7 @@ fun WizardActions(
                     if (showPrimary) {
                         Button(
                             onClick = onPrimaryClick,
+                            enabled = primaryEnabled,
                             shape = RoundedCornerShape(cornerRadius),
                             modifier = Modifier.fillMaxWidth().height(WizardDefaults.ActionHeight),
                             colors = ButtonDefaults.buttonColors(

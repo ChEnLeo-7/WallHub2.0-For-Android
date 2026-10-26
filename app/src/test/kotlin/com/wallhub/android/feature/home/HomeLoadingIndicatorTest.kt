@@ -6,8 +6,8 @@ import org.junit.Test
 
 class HomeLoadingIndicatorTest {
     @Test
-    fun `initial browse and page refresh use the existing loading indicator`() {
-        assertTrue(HomeUiState().showPullToRefresh())
+    fun `only page refresh uses the pull to refresh indicator`() {
+        assertFalse(HomeUiState().showPullToRefresh())
         assertTrue(HomeUiState(isInitialLoading = false, isPageLoading = true).showPullToRefresh())
     }
 

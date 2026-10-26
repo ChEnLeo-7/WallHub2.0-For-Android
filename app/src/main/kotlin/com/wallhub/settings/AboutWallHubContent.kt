@@ -187,12 +187,28 @@ internal fun AboutWallHubPreferences(
         onOpenExternalUri = onOpenExternalUri,
     )
     Spacer(modifier = Modifier.height(WallHubSpacing.sm))
+    val checkingForUpdate = appUpdateState.phase == AppUpdatePhase.CHECKING
     PreferenceRow(
-        title = stringResource(R.string.settings_about_version_check),
-        summary = stringResource(R.string.settings_about_current_version_check, installed.versionName),
+        title =
+            stringResource(
+                if (checkingForUpdate) {
+                    R.string.settings_about_checking_updates
+                } else {
+                    R.string.settings_about_version_check
+                },
+            ),
+        summary =
+            stringResource(
+                if (checkingForUpdate) {
+                    R.string.settings_about_current_version
+                } else {
+                    R.string.settings_about_current_version_check
+                },
+                installed.versionName,
+            ),
         icon = Icons.Outlined.Refresh,
         position = PreferencePosition.Top,
-        enabled = appUpdateState.phase != AppUpdatePhase.DOWNLOADING,
+        enabled = appUpdateState.phase !in setOf(AppUpdatePhase.CHECKING, AppUpdatePhase.DOWNLOADING),
         onClick = onCheckForAppUpdate,
     )
     PreferenceGroupSpacer()

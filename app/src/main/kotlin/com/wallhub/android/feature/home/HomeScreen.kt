@@ -966,7 +966,14 @@ internal fun HomeResults(
         modifier = modifier.fillMaxWidth(),
     ) {
         when {
-            state.isInitialLoading -> Box(modifier = Modifier.fillMaxSize())
+            state.isInitialLoading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
 
             (state.error != null || state.errorRes != null) && state.items.isEmpty() -> {
                 WallHubEmptyState(
