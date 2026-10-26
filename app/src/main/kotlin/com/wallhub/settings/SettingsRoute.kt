@@ -53,6 +53,7 @@ fun SettingsRoute(
     val openUnknownSourcesSettingsError = stringResource(R.string.settings_error_open_unknown_sources_settings)
     val preferences by viewModel.preferences.collectAsStateWithLifecycle()
     val session by viewModel.session.collectAsStateWithLifecycle()
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val diagnosticExportState by viewModel.diagnosticExportState.collectAsStateWithLifecycle()
     val appUpdateState by viewModel.appUpdateState.collectAsStateWithLifecycle()
     val workshopSourceCacheState by viewModel.workshopSourceCacheState.collectAsStateWithLifecycle()
@@ -68,6 +69,7 @@ fun SettingsRoute(
         )
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.refreshAppLanguage()
         notificationsGranted =
             NotificationManagerCompat.from(context).areNotificationsEnabled() &&
             (
@@ -234,7 +236,7 @@ fun SettingsRoute(
     Box(modifier = Modifier.fillMaxSize()) {
         SettingsScreen(
             preferences = preferences,
-            appLanguage = viewModel.appLanguage,
+            appLanguage = appLanguage,
             steamAccessState = steamAccessState,
             session = session,
             diagnosticExportState = diagnosticExportState,

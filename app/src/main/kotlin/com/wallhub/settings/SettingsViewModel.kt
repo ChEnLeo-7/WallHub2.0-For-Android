@@ -65,7 +65,8 @@ class SettingsViewModel
         private var appUpdateJob: Job? = null
         private val effectChannel = Channel<SettingsEffect>(capacity = Channel.BUFFERED)
 
-        val appLanguage: AppLanguage = appLocaleController.current()
+        private val mutableAppLanguage = MutableStateFlow(appLocaleController.current())
+        val appLanguage: StateFlow<AppLanguage> = mutableAppLanguage.asStateFlow()
 
         val preferences: StateFlow<AppPreferences> =
             settingsRepository.preferences.stateIn(
@@ -95,6 +96,10 @@ class SettingsViewModel
             refreshWorkshopSourceCacheUsage()
         }
 
+        fun refreshAppLanguage() {
+            mutableAppLanguage.value = appLocaleController.current()
+        }
+
         fun onAction(action: SettingsAction) {
             action.toEffect()?.let(effectChannel::trySend) ?: handleStateAction(action)
         }
@@ -108,7 +113,10 @@ class SettingsViewModel
 
         private fun handleAppearanceAndHomeAction(action: SettingsAction): Boolean {
             when (action) {
-                is SettingsAction.LanguageChanged -> appLocaleController.set(action.language)
+                is SettingsAction.LanguageChanged -> {
+                    mutableAppLanguage.value = action.language
+                    appLocaleController.set(action.language)
+                }
                 is SettingsAction.ThemeChanged -> setTheme(action.theme)
                 is SettingsAction.AccentChanged -> setAccent(action.accent, action.customColor)
                 is SettingsAction.SystemMonetEnabledChanged -> setSystemMonetEnabled(action.enabled)
