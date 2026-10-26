@@ -13,7 +13,7 @@
 3. 两者属于同一域名、相同证书和相同后端，改用 apex SNI 没有可靠的绕过价值；
 4. 没有发现第三个可安全采用且更可能可达的 authority。
 
-所以生产建议是：**不要加入第三方兼容 authority；DoH + 原始 `www` TLS 身份可以作为低成本诊断步骤，但最新设备证据证明它不足以恢复 PJZ110 的连接。** apex 仅可作为受运行时严格验证的实验候选，不能当成稳定的防阻断方案。若产品必须可靠取得远程策展配置，需要一个在目标网络可达、归属明确的 WallHub Curator mirror/relay；该中继仍只能返回经过同一严格 schema 验证的无凭据 manifest。
+所以生产建议是：**不要加入第三方兼容 authority；普通 SNI 或 apex SNI 都不能恢复 PJZ110 的连接。后续补充实验找到了一条不同路径：从 `doh.pub` 获得 `212.95.50.195`，直连该地址、ClientHello 不发送 SNI、握手后仍用系统 CA 和原始 hostname 验证证书，再发送原始 HTTP Host。** 这不是兼容 authority 或中继，而是严格认证的 no-SNI direct-origin transport。
 
 ## 用户补充的精确 HTTPS 测量与设备复核
 
@@ -37,7 +37,13 @@ curl --resolve www.wallpaperengineapi.com:443:<REAL_IP> \
 
 四个地址均在 5 秒 connect timeout 内失败，`time_connect=0`、`time_appconnect=0`、HTTP code `000`，说明连接在 TCP 建立前就失败，尚未进入 TLS/SNI 阶段。该设备上仅用可信 DoH 替换 DNS、继续直连这组真实地址不能恢复服务。
 
-因此证据支持的优先级应修正为：LKG/generic Steam fallback 优先保证页面可用；普通路径和 DoH 真实 IP只作有界尝试；若需要稳定远程策展，应使用归属明确、目标网络可达的新 Curator 服务或中继，而不是反复切换 apex/www 或猜测子域。
+该阶段的结论只适用于携带原始 SNI 的连接；后续 no-SNI 实验改变了产品决策，但没有改变“apex 不是兼容 authority 绕过方案”的判断。
+
+## 后续 no-SNI 直连证据
+
+对 `doh.pub` 返回的 `212.95.50.195`，普通 `www` SNI 在 ClientHello 后被 reset；改为 IP URL（因此不发送 SNI）并在加密 HTTP 中保留原始 Host 后，设备收到 HTTP 200、23,469 字节有效 JSON，SHA-256 为 `8943d3f2cdaee9825fc15ac430aa8bfe3052650951b74c53eac755708d6cf678`。服务器无 SNI 时呈现的公开证书链由 Let's Encrypt YE2 签发，SAN 同时覆盖 apex 与 www；离线 PKIX + hostname 验证对两个名称均通过，对 `example.com` 的负向控制失败。当前 SPKI pin 的命令行正向控制成功，错误 pin 被拒绝；生产实现没有固定该 pin，而是使用系统 TrustManager 加原始 hostname verifier。
+
+Windows Release revision `0a72e551` 安装到 PJZ110 后，App 内实际 no-SNI transport 连续完成 70 次 `www` ETag 重验证，全部返回 304，无 repository failure、crash 或 ANR；耗时中位数 888 ms、P95 1,068 ms、最大 1,703 ms。命令行固定请求验收中 `www` 连续 30/30 HTTP 200；apex 在一次无间隔混合压力轮中为 28/30，随后按生产节奏间隔一秒重新执行，连续 30/30 HTTP 200，P95 3.517 秒、最大 3.767 秒。因此最终实现只生产请求 canonical `www`，不把 apex 作为冗余 fallback。
 
 ## 证据分级
 
@@ -192,10 +198,10 @@ Wallpaper Engine 开发者只曾公开确认 Discover 会访问其内部服务�
 | 候选 | 证书覆盖 | 交叉 Host 实测 | 一方稳定承诺 | 目标网络绕过证据 | 判定 |
 |---|---:|---:|---:|---:|---|
 | `wallpaperengineapi.com`（apex） | 是 | 是，四地址全部一致 | 无 | 无，且被报告阻断 | 仅当前操作兼容，不建议作为正式绕过 authority |
-| `www.wallpaperengineapi.com` | 是 | 是 | 无 | PJZ110 超时 | 保持原始 authority |
+| `www.wallpaperengineapi.com` | 是 | 是 | 无 | 原始 SNI 超时；认证 no-SNI 成功 | 保持原始 HTTP authority，以 no-SNI TLS 传输 |
 | `api.wallpaperengineapi.com` | 当前后端证书不覆盖 | 否 | 无 | 无 | 禁止 |
 | `explore.wallpaperengineapi.com` | 当前后端证书不覆盖 | 否 | 无 | 无 | 禁止 |
 | `cdn.wallpaperengineapi.com` | 当前后端证书不覆盖 | 否 | 无 | 无 | 禁止 |
 | 任意 IONOS/Cloudflare 共享 hostname | 无对应证明 | 无 | 无 | 无 | 禁止 |
 
-简要结论：**网络上没有找到有实际绕过价值且证据充分的兼容 authority。apex 与 www 当前技术互兼容，但同样受阻断，不足以改变“真实 IP + 原始 www TLS 身份”的推荐方案。**
+简要结论：**网络上仍没有找到有实际绕过价值且证据充分的兼容 authority；有效方案不是更换 authority，而是使用经过 DoH 发现并通过 PKIX + 原始 hostname 认证的真实地址，在 ClientHello 中省略 SNI，再以 canonical `www` 作为加密后的 HTTP Host。**
