@@ -56,9 +56,6 @@ class DiscoverFeedCoordinator
         private val settingsRepository: SettingsRepository,
     ) : DiscoverFeedLoader {
         override suspend fun prepareStaticGeneration(generation: Long): DiscoverGeneration {
-            unifiedWorkshopRepository.invalidateDiscoverCache()
-            workshopRepository.invalidateDiscoverCache()
-            collectionResolver.invalidateDiscoverCache()
             val preferences = settingsRepository.preferences.first()
             val candidates =
                 genericFallbackSpecs(
@@ -74,6 +71,9 @@ class DiscoverFeedCoordinator
         }
 
         override suspend fun prepareCachedMetadataGeneration(generation: Long): DiscoverGeneration? {
+            unifiedWorkshopRepository.invalidateDiscoverCache()
+            workshopRepository.invalidateDiscoverCache()
+            collectionResolver.invalidateDiscoverCache()
             val snapshot = metadataRepository.loadCachedMetadata() ?: return null
             return prepareMetadataSnapshot(generation, snapshot)
         }
