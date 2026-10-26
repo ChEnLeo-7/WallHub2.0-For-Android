@@ -785,7 +785,7 @@ internal fun ColumnScope.WorkshopDetailTabPager(
         flingBehavior =
             PagerDefaults.flingBehavior(
                 state = pagerState,
-                snapPositionalThreshold = { DETAIL_PAGER_POSITIONAL_THRESHOLD },
+                snapPositionalThreshold = DETAIL_PAGER_POSITIONAL_THRESHOLD,
             ),
         modifier =
             Modifier
