@@ -13,7 +13,31 @@
 3. 两者属于同一域名、相同证书和相同后端，改用 apex SNI 没有可靠的绕过价值；
 4. 没有发现第三个可安全采用且更可能可达的 authority。
 
-所以生产建议仍然是：**不要加入第三方兼容 authority；优先使用 DoH 得到真实 IP，但继续保持原始 `www.wallpaperengineapi.com` SNI、证书验证和 HTTP Host。** apex 仅可作为受运行时严格验证的实验候选，不能当成稳定的防阻断方案。
+所以生产建议是：**不要加入第三方兼容 authority；DoH + 原始 `www` TLS 身份可以作为低成本诊断步骤，但最新设备证据证明它不足以恢复 PJZ110 的连接。** apex 仅可作为受运行时严格验证的实验候选，不能当成稳定的防阻断方案。若产品必须可靠取得远程策展配置，需要一个在目标网络可达、归属明确的 WallHub Curator mirror/relay；该中继仍只能返回经过同一严格 schema 验证的无凭据 manifest。
+
+## 用户补充的精确 HTTPS 测量与设备复核
+
+用户随后提供了 ITDOG 对以下完整 API URL 的 HTTP 测试截图：
+
+```text
+https://www.wallpaperengineapi.com/api/explore/v1
+https://wallpaperengineapi.com/api/explore/v1
+```
+
+两个测试各有约 318 个监测点，完成进度分别为 99% 和 100%。中国大陆地图几乎全部为红色（图例为 `>10s`），中国电信、中国联通、中国移动及华东、华南、华中、华北、西南、西北、东北各行均为 `--`；只有港澳台出现成功值。`www` 的港澳台最快为澳门约 0.706 秒、最慢为台湾约 1.002 秒、平均约 0.869 秒；apex 最快为澳门约 0.710 秒、最慢为台北约 1.291 秒、平均约 0.963 秒。
+
+这比此前 Ping/TCP 图更有判别力：失败对象正是产品使用的 HTTPS API 路径，且 apex 与 www 在大陆均无可见成功节点。因此 apex 不是具有绕过价值的 authority。
+
+为区分 DNS 污染与目标网段不可达，又在 PJZ110 上对四个已验证候选地址执行：
+
+```bash
+curl --resolve www.wallpaperengineapi.com:443:<REAL_IP> \
+  https://www.wallpaperengineapi.com/api/explore/v1
+```
+
+四个地址均在 5 秒 connect timeout 内失败，`time_connect=0`、`time_appconnect=0`、HTTP code `000`，说明连接在 TCP 建立前就失败，尚未进入 TLS/SNI 阶段。该设备上仅用可信 DoH 替换 DNS、继续直连这组真实地址不能恢复服务。
+
+因此证据支持的优先级应修正为：LKG/generic Steam fallback 优先保证页面可用；普通路径和 DoH 真实 IP只作有界尝试；若需要稳定远程策展，应使用归属明确、目标网络可达的新 Curator 服务或中继，而不是反复切换 apex/www 或猜测子域。
 
 ## 证据分级
 
