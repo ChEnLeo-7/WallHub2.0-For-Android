@@ -95,7 +95,10 @@ internal fun isAnonymousCommunityBrowseRequest(
     requestHead: String,
 ): Boolean =
     connectAuthority.equals("steamcommunity.com", ignoreCase = true) &&
-        requestHead.startsWith("GET /workshop/browse", ignoreCase = false) &&
+        requestHead.substringBefore(" HTTP/1.1\r\n").let { target ->
+            target.startsWith("GET /workshop/browse", ignoreCase = false) ||
+                ANONYMOUS_COMMUNITY_AUTHOR_TARGET.matches(target)
+        } &&
         mayUseSteamWebAlias(connectAuthority, requestHead)
 
 internal fun isAnonymousWorkshopImageRequest(
@@ -152,7 +155,8 @@ internal fun mayUseSteamWebAlias(
     return when (expectedHost) {
         "steamcommunity.com", "www.steamcommunity.com" ->
             when {
-                requestLine[0] == "GET" && path in ANONYMOUS_COMMUNITY_PATHS ->
+                requestLine[0] == "GET" &&
+                    (path in ANONYMOUS_COMMUNITY_PATHS || ANONYMOUS_COMMUNITY_AUTHOR_PATH.matches(path)) ->
                     queryNames.all { name -> name in ANONYMOUS_COMMUNITY_PARAMETERS }
                 requestLine[0] == "POST" && ANONYMOUS_COMMUNITY_COMMENT_PATH.matches(path) -> {
                     val contentType = headers.singleOrNull { (name, _) -> name == "content-type" }?.second.orEmpty()
@@ -235,6 +239,9 @@ private val ALIAS_SECRET_HEADERS = setOf("authorization", "cookie", "proxy-autho
 private val ALIAS_UNSUPPORTED_REQUEST_HEADERS = setOf("expect", "transfer-encoding", "upgrade")
 private val ANONYMOUS_COMMUNITY_PATHS =
     setOf("/sharedfiles/filedetails/", "/workshop/browse", "/workshop/browse/")
+private val ANONYMOUS_COMMUNITY_AUTHOR_PATH = Regex("^/profiles/[0-9]+/myworkshopfiles$")
+private val ANONYMOUS_COMMUNITY_AUTHOR_TARGET =
+    Regex("^GET /profiles/[0-9]+/myworkshopfiles(?:\\?[^ ]*)?$")
 private val ANONYMOUS_COMMUNITY_COMMENT_PATH =
     Regex("^/comment/PublishedFile_Public/render/[0-9]+/(?:[0-9]+|-1)/$")
 private val WORKSHOP_IMAGE_PATH = Regex("^/ugc/[0-9]+/[0-9A-Fa-f]+/$")

@@ -30,6 +30,22 @@ class SteamRequestRoutingTest {
             ),
         )
         assertTrue(
+            isAnonymousCommunityBrowseRequest(
+                connectAuthority = "steamcommunity.com",
+                requestHead =
+                    "GET /profiles/76561198148035115/myworkshopfiles?appid=431960&p=1&numperpage=30 HTTP/1.1\r\n" +
+                        "Host: steamcommunity.com\r\nAccept: text/html\r\nConnection: close\r\n\r\n",
+            ),
+        )
+        assertFalse(
+            isAnonymousCommunityBrowseRequest(
+                connectAuthority = "steamcommunity.com",
+                requestHead =
+                    "GET /profiles/not-a-steamid/myworkshopfiles?appid=431960&p=1&numperpage=30 HTTP/1.1\r\n" +
+                        "Host: steamcommunity.com\r\nConnection: close\r\n\r\n",
+            ),
+        )
+        assertTrue(
             mayUseSteamWebAlias(
                 connectAuthority = "steamcommunity.com",
                 requestHead =
