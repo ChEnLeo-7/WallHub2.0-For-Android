@@ -2,6 +2,7 @@ package com.wallhub.android.data.discover
 
 import android.content.Context
 import android.util.AtomicFile
+import android.util.Log
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.data.downloads.readBytesBounded
 import com.wallhub.android.feature.discover.model.DiscoverMetadataSnapshot
@@ -112,7 +113,8 @@ class HttpDiscoverCuratorRepository
                 }
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                Log.w(LOG_TAG, "Curator refresh failed: ${error.javaClass.simpleName}")
                 withContext(Dispatchers.IO) { persistedSnapshot(now, allowExpired = true) }
                     ?.copy(
                         fetchedAtMillis = now,
@@ -249,6 +251,7 @@ class HttpDiscoverCuratorRepository
 
         private companion object {
             const val DISCOVER_CURATOR_URL = "https://www.wallpaperengineapi.com/api/explore/v1"
+            const val LOG_TAG = "DiscoverCuratorRepository"
             const val USER_AGENT = "WallHub-Android/Discover"
             const val MANIFEST_FILE_NAME = "discover-curator-manifest.json"
             const val PERSISTED_SCHEMA_VERSION = 1
