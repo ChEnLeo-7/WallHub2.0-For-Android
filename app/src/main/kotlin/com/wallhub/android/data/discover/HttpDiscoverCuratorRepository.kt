@@ -2,6 +2,7 @@ package com.wallhub.android.data.discover
 
 import android.content.Context
 import android.util.AtomicFile
+import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.data.downloads.readBytesBounded
 import com.wallhub.android.feature.discover.model.DiscoverMetadataSnapshot
 import com.wallhub.android.feature.discover.model.DiscoverMetadataSource
@@ -15,6 +16,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -27,6 +29,8 @@ class HttpDiscoverCuratorRepository
     @Inject
     constructor(
         @ApplicationContext context: Context,
+        private val settingsRepository: SettingsRepository,
+        private val noSniTransport: DiscoverCuratorNoSniTransport,
     ) : DiscoverCuratorRepository {
         private data class PersistedManifest(
             val payload: String,
@@ -118,7 +122,35 @@ class HttpDiscoverCuratorRepository
             }
         }
 
-        private suspend fun fetch(previous: PersistedManifest?): FetchResult =
+        private suspend fun fetch(previous: PersistedManifest?): FetchResult {
+            val antiBlockingEnabled = settingsRepository.preferences.first().steamAccessEnabled
+            return if (antiBlockingEnabled) {
+                fetchNoSni(previous)
+            } else {
+                fetchDirect(previous)
+            }
+        }
+
+        private suspend fun fetchNoSni(previous: PersistedManifest?): FetchResult {
+            val response =
+                noSniTransport.get(
+                    url = DISCOVER_CURATOR_URL,
+                    etag = previous?.etag,
+                    lastModified = previous?.lastModified,
+                )
+            if (response.statusCode == 304) return FetchResult.NotModified
+            if (response.statusCode !in 200..299) {
+                throw IOException("Discover curator failed: HTTP ${response.statusCode}")
+            }
+            return FetchResult.Updated(
+                payload = response.body,
+                parsed = DiscoverCuratorManifestParser.parse(response.body),
+                etag = response.etag.boundedHeaderOrNull(),
+                lastModified = response.lastModified.boundedHeaderOrNull(),
+            )
+        }
+
+        private suspend fun fetchDirect(previous: PersistedManifest?): FetchResult =
             withContext(Dispatchers.IO) {
                 val requestBuilder =
                     Request
