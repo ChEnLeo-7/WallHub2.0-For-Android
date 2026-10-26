@@ -11,8 +11,10 @@ import javax.inject.Singleton
 /** Canonical, feature-owned recipe for one Discover page, shared by rails and result screens. */
 data class DiscoverPageRecipe(
     val query: WorkshopBrowseQuery,
+    val fallbackQuery: WorkshopBrowseQuery = query,
     val collectionId: Long? = null,
     val clientRequiredTagGroups: List<Set<String>> = emptyList(),
+    val fallbackClientRequiredTagGroups: List<Set<String>> = clientRequiredTagGroups,
 )
 
 /** Hides collection/query dispatch and Discover-only post-filtering behind one page seam. */
@@ -39,18 +41,21 @@ class DefaultDiscoverPageSource
             pageSize: Int,
         ): WorkshopPage {
             val query = recipe.query.copy(page = page, pageSize = pageSize)
+            val fallbackQuery = recipe.fallbackQuery.copy(page = page, pageSize = pageSize)
+            var clientTagGroups = recipe.clientRequiredTagGroups
             val loaded =
                 recipe.collectionId?.let { collectionId ->
                     collectionResolver.browse(collectionId, page, pageSize)
                 } ?: networkBudget.withPermit {
                     unifiedWorkshopRepository.browsePublic(query)
                 } ?: networkBudget.withPermit {
-                    workshopRepository.browse(query)
+                    clientTagGroups = recipe.fallbackClientRequiredTagGroups
+                    workshopRepository.browse(fallbackQuery)
                 }
             val filtered =
                 loaded.items
                     .filter { item ->
-                        recipe.clientRequiredTagGroups.all { group ->
+                        clientTagGroups.all { group ->
                             group.any { required -> item.tags.any { tag -> tag.equals(required, ignoreCase = true) } }
                         }
                     }.let { items ->

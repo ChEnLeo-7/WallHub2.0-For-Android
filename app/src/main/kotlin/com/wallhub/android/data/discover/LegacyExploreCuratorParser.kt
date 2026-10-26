@@ -14,6 +14,7 @@ internal data class LegacyExploreResponseDto(
 )
 
 internal data class LegacyExploreItemDto(
+    val declaredId: String?,
     val category: String,
     val itemId: String?,
     val keyword: String?,
@@ -90,6 +91,11 @@ internal object LegacyExploreCuratorParser {
         )
 
     private fun JSONObject.toDtoOrNull(): LegacyExploreItemDto? {
+        if (!validOptionalScalar("timestampstart") { it.toLongOrNull() != null }) return null
+        if (!validOptionalScalar("timestampend") { it.toLongOrNull() != null }) return null
+        if (!validOptionalScalar("priority") { it.toFloatOrNull()?.isFinite() == true }) return null
+        if (!validOptionalScalar("weight") { it.toLongOrNull() != null }) return null
+        if (!validOptionalBoolean("exact") || !validOptionalBoolean("sticky")) return null
         val queryTypes = stringList("querytypes") ?: return null
         val tags = stringList("tags") ?: return null
         val includeTags = stringList("includetags") ?: return null
@@ -98,6 +104,7 @@ internal object LegacyExploreCuratorParser {
         val requiredTagGroups = tagGroups("requiredtaggroups") ?: return null
         val platforms = platformSet("platforms") ?: return null
         return LegacyExploreItemDto(
+            declaredId = scalarString("_stableid"),
             category = optString("category").trim().lowercase(Locale.ROOT),
             itemId = scalarString("itemid"),
             keyword = scalarString("keyword"),
@@ -135,7 +142,7 @@ internal object LegacyExploreCuratorParser {
             } ?: return null
         val queryIdentity = dto.queryTypes.joinToString(",").ifBlank { "default" }
         return DiscoverCuratorDescriptor(
-            stableId = "${category.name.lowercase(Locale.ROOT)}:${subject.lowercase(Locale.ROOT)}:$queryIdentity",
+            stableId = dto.declaredId ?: "${category.name.lowercase(Locale.ROOT)}:${subject.lowercase(Locale.ROOT)}:$queryIdentity",
             category = category,
             itemId = dto.itemId,
             keyword = dto.keyword?.trim(),
@@ -224,6 +231,25 @@ internal object LegacyExploreCuratorParser {
                 if (enabled !is Boolean) return null
                 if (enabled) key.trim().takeIf(String::isNotEmpty)?.lowercase(Locale.ROOT)?.let(::add)
             }
+        }
+    }
+
+    private fun JSONObject.validOptionalScalar(
+        name: String,
+        predicate: (String) -> Boolean,
+    ): Boolean {
+        if (!has(name) || isNull(name)) return true
+        val normalized = opt(name)?.toString()?.trim() ?: return false
+        return normalized.isNotEmpty() && normalized.length <= MAX_TEXT_LENGTH && predicate(normalized)
+    }
+
+    private fun JSONObject.validOptionalBoolean(name: String): Boolean {
+        if (!has(name) || isNull(name)) return true
+        return when (val value = opt(name)) {
+            is Boolean -> true
+            is Number -> value.toInt() == 0 || value.toInt() == 1
+            is String -> value == "true" || value == "false"
+            else -> false
         }
     }
 

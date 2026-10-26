@@ -234,7 +234,14 @@ class DiscoverViewModel
                 )
             }
             try {
-                val loaded = feedLoadMutex.withLock { coordinator.loadRail(spec, generation, emptySet()) }
+                val loaded =
+                    feedLoadMutex.withLock {
+                        val excludedIds =
+                            mutableState.value.rails
+                                .takeWhile { it.spec.id != spec.id }
+                                .flatMapTo(linkedSetOf()) { row -> row.items.map { it.id } }
+                        coordinator.loadRail(spec, generation, excludedIds)
+                    }
                 if (mutableState.value.generation != generation) return
                 val currentSpec = mutableState.value.rails.firstOrNull { it.spec.id == spec.id }?.spec
                 if (currentSpec != spec) return

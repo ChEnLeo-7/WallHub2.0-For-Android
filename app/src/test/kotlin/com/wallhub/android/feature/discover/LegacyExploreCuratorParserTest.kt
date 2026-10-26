@@ -84,12 +84,12 @@ class LegacyExploreCuratorParserTest {
     fun `versioned manifest rejects unknown fields and fixed cover policy`() {
         assertFailsWith<IllegalArgumentException> {
             DiscoverCuratorManifestParser.parse(
-                """{"schemaVersion":1,"sections":[{"category":"keyword","keyword":"Nature","requestUrl":"https://example.com"}]}""",
+                """{"schemaVersion":1,"sections":[{"id":"nature","category":"keyword","keyword":"Nature","requestUrl":"https://example.com"}]}""",
             )
         }
         assertFailsWith<IllegalArgumentException> {
             DiscoverCuratorManifestParser.parse(
-                """{"schemaVersion":1,"sections":[{"category":"keyword","keyword":"Nature","coverPolicy":"submission_id"}]}""",
+                """{"schemaVersion":1,"sections":[{"id":"nature","category":"keyword","keyword":"Nature","coverPolicy":"submission_id"}]}""",
             )
         }
     }
@@ -101,6 +101,7 @@ class LegacyExploreCuratorParserTest {
                 """{"schemaVersion":1,"revision":"r1","sections":[{"id":"nature","category":"keyword","keyword":"Nature","queryTypes":["trend_year"],"coverPolicy":"first_result"}]}""",
             )
 
+        assertEquals("nature", parsed.descriptors.single().stableId)
         assertEquals("Nature", parsed.descriptors.single().keyword)
         assertEquals(listOf("trend_year"), parsed.descriptors.single().queryTypes)
     }

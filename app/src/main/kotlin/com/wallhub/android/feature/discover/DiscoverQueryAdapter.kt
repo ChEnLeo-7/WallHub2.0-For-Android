@@ -30,8 +30,10 @@ data class DiscoverQueryPlan(
     val descriptorId: String,
     val semantic: String,
     val query: WorkshopBrowseQuery?,
+    val fallbackQuery: WorkshopBrowseQuery? = query,
     val collectionId: Long? = null,
     val clientRequiredTagGroups: List<Set<String>> = emptyList(),
+    val fallbackClientRequiredTagGroups: List<Set<String>> = clientRequiredTagGroups,
     val fidelity: DiscoverQueryFidelity,
     val degradations: Set<DiscoverQueryDegradation> = emptySet(),
 ) {

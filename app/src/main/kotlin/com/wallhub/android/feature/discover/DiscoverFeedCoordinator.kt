@@ -184,8 +184,10 @@ class DiscoverFeedCoordinator
             val recipe =
                 DiscoverPageRecipe(
                     query = baseQuery,
+                    fallbackQuery = spec.queryPlan.fallbackQuery ?: baseQuery,
                     collectionId = spec.queryPlan.collectionId,
                     clientRequiredTagGroups = spec.queryPlan.clientRequiredTagGroups,
+                    fallbackClientRequiredTagGroups = spec.queryPlan.fallbackClientRequiredTagGroups,
                 )
             val candidates = mutableListOf<com.wallhub.android.core.model.WorkshopSummary>()
             for (page in 1..spec.qualityRules.candidatePageCount) {
@@ -249,8 +251,18 @@ class DiscoverFeedCoordinator
             dataSource: SteamWorkshopDataSource,
             allowNsfw: Boolean,
         ): List<DiscoverRailSpec> =
-            queryAdapter.adapt(this, dataSource).mapNotNull { rawPlan ->
-                val plan = rawPlan.copy(query = rawPlan.query?.copy(allowNsfw = allowNsfw))
+            queryAdapter.adapt(this, SteamWorkshopDataSource.CM_WEBSOCKET).mapNotNull { primaryPlan ->
+                val fallbackPlan =
+                    queryAdapter.adapt(this, dataSource).firstOrNull { it.semantic == primaryPlan.semantic }
+                        ?: primaryPlan
+                val plan =
+                    primaryPlan.copy(
+                        query = primaryPlan.query?.copy(allowNsfw = allowNsfw),
+                        fallbackQuery = fallbackPlan.query?.copy(allowNsfw = allowNsfw),
+                        fallbackClientRequiredTagGroups = fallbackPlan.clientRequiredTagGroups,
+                        fidelity = fallbackPlan.fidelity,
+                        degradations = fallbackPlan.degradations,
+                    )
                 if (!plan.isExecutable) return@mapNotNull null
                 val category =
                     when (category) {

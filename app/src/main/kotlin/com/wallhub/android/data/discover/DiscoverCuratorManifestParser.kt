@@ -20,8 +20,16 @@ internal object DiscoverCuratorManifestParser {
             val section = sections.optJSONObject(index) ?: throw IllegalArgumentException("Invalid curator section")
             require(section.keys().asSequence().all(ALLOWED_SECTION_FIELDS::contains)) { "Unknown curator section field" }
             require(section.optString("coverPolicy", "first_result") in ALLOWED_COVER_POLICIES) { "Unsupported curator cover policy" }
+            val stableId = section.optString("id").trim()
+            require(stableId.matches(SECTION_ID_PATTERN)) { "Invalid curator section id" }
+            val activeFrom = section.optionalLong("activeFrom")
+            val activeUntil = section.optionalLong("activeUntil")
+            require(activeFrom == null || activeUntil == null || activeFrom <= activeUntil) { "Invalid curator active interval" }
+            val now = System.currentTimeMillis() / 1_000L
+            if ((activeFrom != null && now < activeFrom) || (activeUntil != null && now > activeUntil)) return@repeat
             legacyItems.put(
                 JSONObject()
+                    .put("_stableid", stableId)
                     .copyIfPresent(section, "category", "category")
                     .copyIfPresent(section, "itemId", "itemid")
                     .copyIfPresent(section, "keyword", "keyword")
@@ -44,6 +52,12 @@ internal object DiscoverCuratorManifestParser {
         return LegacyExploreCuratorParser.parse(normalized.toString())
     }
 
+    private fun JSONObject.optionalLong(name: String): Long? {
+        if (!has(name) || isNull(name)) return null
+        return opt(name)?.toString()?.toLongOrNull()
+            ?: throw IllegalArgumentException("Invalid curator $name")
+    }
+
     private fun JSONObject.copyIfPresent(
         source: JSONObject,
         sourceName: String,
@@ -55,6 +69,7 @@ internal object DiscoverCuratorManifestParser {
 
     private const val SUPPORTED_SCHEMA_VERSION = 1
     private const val MAX_SECTIONS = 512
+    private val SECTION_ID_PATTERN = Regex("[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}")
     private val ALLOWED_ROOT_FIELDS = setOf("schemaVersion", "revision", "generatedAt", "expiresAt", "sections")
     private val ALLOWED_COVER_POLICIES = setOf("first_result", "collection_first_eligible", "auto")
     private val ALLOWED_SECTION_FIELDS =
@@ -76,6 +91,8 @@ internal object DiscoverCuratorManifestParser {
             "priority",
             "weight",
             "sticky",
+            "activeFrom",
+            "activeUntil",
             "coverPolicy",
         )
 }

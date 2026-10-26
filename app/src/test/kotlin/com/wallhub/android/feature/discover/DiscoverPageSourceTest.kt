@@ -11,6 +11,7 @@ import com.wallhub.android.core.model.WorkshopType
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiscoverPageSourceTest {
@@ -41,6 +42,30 @@ class DiscoverPageSourceTest {
     }
 
     @Test
+    fun `fallback degradation does not weaken the primary CM query`() = runTest {
+        val unified = FakeUnified(null)
+        val fallback = FakeWorkshop(page(8L))
+        val source = DefaultDiscoverPageSource(unified, fallback, UnusedCollection, DiscoverNetworkBudget())
+        val primary = WorkshopBrowseQuery(createdAfterEpochSeconds = 100L, requiredTagGroups = listOf(setOf("Scene")))
+        val degraded = WorkshopBrowseQuery(createdAfterEpochSeconds = null, requiredTagGroups = emptyList())
+
+        source.page(
+            DiscoverPageRecipe(
+                query = primary,
+                fallbackQuery = degraded,
+                fallbackClientRequiredTagGroups = listOf(setOf("Scene")),
+            ),
+            page = 1,
+            pageSize = 20,
+        )
+
+        assertEquals(100L, unified.lastQuery?.createdAfterEpochSeconds)
+        assertEquals(listOf(setOf("Scene")), unified.lastQuery?.requiredTagGroups)
+        assertEquals(null, fallback.lastQuery?.createdAfterEpochSeconds)
+        assertTrue(fallback.lastQuery?.requiredTagGroups.isNullOrEmpty())
+    }
+
+    @Test
     fun `collection preserves child order and does not query ordinary browse`() = runTest {
         val unified = FakeUnified(page(99L))
         val fallback = FakeWorkshop(page(98L))
@@ -61,8 +86,10 @@ class DiscoverPageSourceTest {
 
     private class FakeUnified(private val result: WorkshopPage?) : SteamUnifiedWorkshopRepository {
         var browseCalls = 0
+        var lastQuery: WorkshopBrowseQuery? = null
         override suspend fun browsePublic(query: WorkshopBrowseQuery): WorkshopPage? {
             browseCalls += 1
+            lastQuery = query
             return result
         }
         override suspend fun getPublicDetail(workshopId: Long): WorkshopDetail? = null
@@ -76,8 +103,10 @@ class DiscoverPageSourceTest {
 
     private class FakeWorkshop(private val result: WorkshopPage) : WorkshopRepository {
         var browseCalls = 0
+        var lastQuery: WorkshopBrowseQuery? = null
         override suspend fun browse(query: WorkshopBrowseQuery): WorkshopPage {
             browseCalls += 1
+            lastQuery = query
             return result
         }
         override suspend fun getDetail(workshopId: Long): WorkshopDetail = error("not used")
