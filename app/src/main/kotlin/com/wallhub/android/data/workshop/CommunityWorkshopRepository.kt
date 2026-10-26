@@ -141,11 +141,12 @@ class CommunityWorkshopRepository internal constructor(
                 val source = preferences.steamWorkshopDataSource
                 val epoch = selectDataSource(source)
                 if (
+                    normalizedQuery.creatorId != null ||
                     normalizedQuery.sort == WorkshopSort.FRIENDS_FAVORITES ||
                     normalizedQuery.sort == WorkshopSort.FRIENDS_CREATED
                 ) {
                     return@withContext unifiedWorkshopRepository.browsePublic(normalizedQuery)
-                        ?: error("A signed-in Steam session is required for friend Workshop activity")
+                        ?: error("A signed-in Steam session is required for this Workshop query")
                 }
                 require(
                     preferences.steamWorkshopDataSource != SteamWorkshopDataSource.COMMUNITY_HTML ||
