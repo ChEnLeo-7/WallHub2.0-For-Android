@@ -218,12 +218,12 @@
     <string name='settings_steam_automatic_anti_blocking'>自动防阻断</string>
     <string name='settings_disabled'>已关闭</string>
     <string name='settings_enabled'>已开启</string>
-    <string name='settings_steam_routes_checking'>正在检测直连与内置线路</string>
-    <string name='settings_steam_route_available'>线路可用</string>
-    <string name='settings_steam_route_direct'>当前网络可直连，已绕过内置线路</string>
+    <string name='settings_steam_routes_checking'>正在通过 Google 检测网络环境</string>
+    <string name='settings_steam_route_available'>直连受限，已启用内置线路</string>
+    <string name='settings_steam_route_direct'>当前网络可用，已自动直连</string>
     <string name='settings_steam_probe_disclosure'>启用后，WallHub 会在启动、网络变化、连接异常和手动重检时访问 Google HTTPS，以判断是否需要内置线路。</string>
-    <string name='settings_steam_route_unstable'>线路不稳定，等待重新检测</string>
-    <string name='settings_steam_no_route'>当前没有可用线路</string>
+    <string name='settings_steam_route_unstable'>线路异常，正在自动重试</string>
+    <string name='settings_steam_no_route'>暂无可用线路，请重新检测</string>
     <string name='settings_action_check_routes_again'>重新检测线路</string>
     <string name='settings_workshop_data_source_title'>公开 Workshop 数据源</string>
     <string name='settings_workshop_data_source_account_note'>收藏、订阅、好友动态和个人库始终使用已登录的 Steam CM 会话。</string>

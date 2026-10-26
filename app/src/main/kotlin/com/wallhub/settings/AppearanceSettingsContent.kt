@@ -418,8 +418,7 @@ internal fun SteamAccessState.summary(): String {
             SteamAccessPhase.DEGRADED -> stringResource(R.string.settings_steam_route_unstable)
             SteamAccessPhase.FAILED -> stringResource(R.string.settings_steam_no_route)
         }
-    val disclosure = stringResource(R.string.settings_steam_probe_disclosure)
-    return phaseLabel + message?.let { "\n$it" }.orEmpty() + "\n$disclosure"
+    return phaseLabel
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
