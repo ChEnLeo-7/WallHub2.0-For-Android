@@ -210,6 +210,7 @@ registry audience
 | `api.github.com/meta` | HTTP 200 | API 可直连，但默认多轮不稳定 |
 | API 默认地址族 10 轮 | 5/10 | 地址族/路径选择导致显著抖动 |
 | API 强制 IPv4 10 轮 | 10/10 | 当前网络应优先 IPv4；这不是永久关闭 IPv6 的理由 |
+| API `doh.pub` + IPv4 20 轮 | 20/20，均到 `20.205.243.168` | exact-host DoH + 原始 SNI/Host 是当前最稳定的增强路径 |
 | API IPv6 | 解析/连接失败 | 当前网络/目标组合不能用 IPv6 |
 | `raw.githubusercontent.com` | 200 | raw 可达 |
 | `codeload.github.com` | 200 | archive/action 下载入口可达 |
@@ -563,7 +564,7 @@ no-SNI 必须逐 exact host 至少 30 次稳定成功才进入生产 allowlist�
 ## 10. 最终结论
 
 1. GitHub 官方给出了足够的动态控制面：`GET /meta` 提供域名、IP类别、SSH keys；但官方明确说清单不完整且 IP会变化。
-2. **DNS-only + 原始 authority验证**是所有 HTTPS服务的默认增强方式；PJZ110 还证明当前 API 路径应采用 IPv4 优先/强制 IPv4 回退，默认 10 轮仅 5/10，而 IPv4 为 10/10。
+2. **DNS-only + 原始 authority验证**是所有 HTTPS服务的默认增强方式；PJZ110 还证明当前 API 路径应采用 IPv4 优先/强制 IPv4 回退：默认 10 轮仅 5/10，强制 IPv4 为 10/10，`doh.pub` + IPv4 则为 20/20。
 3. **no-SNI 只有逐 exact host 前瞻通过后才可使用**；虽然可以用系统 PKIX + 原始 hostname verification 安全实现，但本轮 GitHub regional IP 全部失败，因此当前 GitHub生产 allowlist应为空，不能照搬 Curator 策略。
 4. GitHub 没有公布可泛化的 HTTPS compatible authority。CNAME/CDN/云厂商 hostname不能用于 SNI替换或 domain fronting。
 5. `ssh.github.com:443` 是唯一本文确认的正式替代入口，但它只承载 SSH。
