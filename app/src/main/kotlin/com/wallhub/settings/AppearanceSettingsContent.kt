@@ -55,6 +55,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selectableGroup
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wallhub.android.R
@@ -804,16 +807,21 @@ internal fun MonetColorPicker(
             }
         }
         FlowRow(
+            modifier = Modifier.selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
             verticalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
         ) {
             MONET_HUE_PRESETS.forEach { hue ->
                 val swatchColor = MonetHsv(hue, 0.82f, 0.82f).toComposeColor()
                 val selected = circularHueDistance(hsv.hue, hue) < 10f
+                val hueDescription = stringResource(R.string.settings_hue_value, hue.toInt())
                 Box(
                     modifier =
                         Modifier
                             .size(WallHubSizeTokens.minimumTouchTarget)
+                            .semantics {
+                                contentDescription = hueDescription
+                            }
                             .selectable(
                                 selected = selected,
                                 role = Role.RadioButton,

@@ -1000,8 +1000,8 @@ internal fun HomeResults(
                 BoxWithConstraints(
                     modifier =
                         Modifier
-                            .fillMaxSize()
                             .widthIn(max = WallHubSizeTokens.readableContentMaxWidth)
+                            .fillMaxSize()
                             .align(Alignment.TopCenter),
                 ) {
                     val layoutKey = HomeCardLayoutKey.resolve(state.viewMode, state.columns)

@@ -623,8 +623,8 @@ internal fun WorkshopDetailPane(
         Column(
             modifier =
                 Modifier
-                    .fillMaxSize()
                     .widthIn(max = WallHubSizeTokens.readableContentMaxWidth)
+                    .fillMaxSize()
                     .align(Alignment.TopCenter),
         ) {
             WorkshopDetailCollapsibleHeader(
