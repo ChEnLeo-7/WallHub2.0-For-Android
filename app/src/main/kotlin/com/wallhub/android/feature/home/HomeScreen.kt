@@ -344,7 +344,17 @@ internal fun HomeScreenBody(
             titleContent = {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = WallHubSizeTokens.minimumTouchTarget)
+                                .clickable(
+                                    role = Role.Button,
+                                    onClickLabel = stringResource(R.string.home_reset),
+                                ) {
+                                    focusManager.clearFocus(force = true)
+                                    onAction(HomeAction.ResetAndRefresh)
+                                },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(

@@ -10,15 +10,23 @@ class WorkshopSessionAccessTest {
     fun `friend sorts require the authenticated account engine`() {
         assertEquals(
             WorkshopSessionAccess.AUTHENTICATED_ACCOUNT,
-            workshopSessionAccessForSort(WorkshopSort.FRIENDS_FAVORITES),
+            workshopSessionAccessForBrowse(WorkshopSort.FRIENDS_FAVORITES, creatorId = null),
         )
         assertEquals(
             WorkshopSessionAccess.AUTHENTICATED_ACCOUNT,
-            workshopSessionAccessForSort(WorkshopSort.FRIENDS_CREATED),
+            workshopSessionAccessForBrowse(WorkshopSort.FRIENDS_CREATED, creatorId = null),
         )
         assertEquals(
             WorkshopSessionAccess.PUBLIC,
-            workshopSessionAccessForSort(WorkshopSort.TRENDING),
+            workshopSessionAccessForBrowse(WorkshopSort.TRENDING, creatorId = null),
+        )
+    }
+
+    @Test
+    fun `author items require the authenticated account engine regardless of sort`() {
+        assertEquals(
+            WorkshopSessionAccess.AUTHENTICATED_ACCOUNT,
+            workshopSessionAccessForBrowse(WorkshopSort.MOST_RECENT, creatorId = "7656119810"),
         )
     }
 

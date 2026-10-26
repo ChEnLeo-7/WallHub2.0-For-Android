@@ -276,6 +276,26 @@ internal fun String.workshopIdOrNull(): Long? {
     return candidate?.toLongOrNull()?.takeIf { it > 0L }
 }
 
+internal fun HomeUiState.resetForDefaultBrowse(): HomeUiState {
+    val defaults = HomeFilterSelection.defaults()
+    return copy(
+        query = "",
+        creatorId = null,
+        requiredTags = emptySet(),
+        exactPhrase = false,
+        selectedTypes = defaults.types,
+        selectedRatings = defaults.ratings,
+        selectedGenres = defaults.genres,
+        selectedOfficialTags = defaults.officialTags,
+        selectedExcludedOfficialTags = defaults.excludedOfficialTags,
+        selectedResolutions = defaults.resolutions,
+        sort = defaults.sort,
+        days = defaults.days,
+        error = null,
+        errorRes = null,
+    )
+}
+
 internal fun HomeUiState.asAuthorSearchState(creatorId: String): HomeUiState =
     copy(
         query = "author:$creatorId",

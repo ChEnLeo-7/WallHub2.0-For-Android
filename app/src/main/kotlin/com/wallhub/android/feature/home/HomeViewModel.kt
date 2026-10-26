@@ -24,7 +24,6 @@ import com.wallhub.android.core.model.workshopDetailTagSearch
 import com.wallhub.android.core.model.WorkshopPage
 import com.wallhub.android.core.model.WorkshopRating
 import com.wallhub.android.core.model.WorkshopRepository
-import com.wallhub.android.core.model.WorkshopSort
 import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.data.downloads.DownloadTimingTelemetry
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -294,24 +293,8 @@ class HomeViewModel
 
         private fun resetAndRefresh() {
             unsubmittedQuery = null
-            val current = mutableState.value
-            mutableState.value =
-                current.copy(
-                    query = "",
-                    creatorId = null,
-                    exactPhrase = false,
-                    selectedTypes = emptySet(),
-                    selectedRatings = setOf(WorkshopRating.EVERYONE),
-                    selectedGenres = DEFAULT_HOME_GENRE_SELECTION,
-                    selectedOfficialTags = emptySet(),
-                    selectedResolutions = DEFAULT_HOME_RESOLUTION_SELECTION,
-                    requiredTags = emptySet(),
-                    sort = WorkshopSort.TRENDING,
-                    days = 30,
-                    error = null,
-                    errorRes = null,
-                )
-            refresh()
+            mutableState.value = mutableState.value.resetForDefaultBrowse()
+            refreshAfterSearch()
         }
 
         private fun loadNextPage() {

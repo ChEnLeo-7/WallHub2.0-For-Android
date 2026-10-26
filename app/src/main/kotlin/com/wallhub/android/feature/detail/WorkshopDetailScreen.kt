@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -96,6 +97,8 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ImageNotSupported
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
+
+private const val DETAIL_PAGER_POSITIONAL_THRESHOLD = 0.65f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -779,6 +782,11 @@ internal fun ColumnScope.WorkshopDetailTabPager(
     }
     HorizontalPager(
         state = pagerState,
+        flingBehavior =
+            PagerDefaults.flingBehavior(
+                state = pagerState,
+                snapPositionalThreshold = { DETAIL_PAGER_POSITIONAL_THRESHOLD },
+            ),
         modifier =
             Modifier
                 .fillMaxWidth()

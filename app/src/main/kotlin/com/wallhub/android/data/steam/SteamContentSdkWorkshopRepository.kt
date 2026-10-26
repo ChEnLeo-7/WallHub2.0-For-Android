@@ -144,7 +144,7 @@ internal class SteamContentSdkWorkshopRepository
                 val loaded = runCatchingUnavailable {
                     val creatorId = normalized.creatorId?.toLongOrNull()?.takeIf { it > 0L }
                     sdkBrowseRead(
-                        access = workshopSessionAccessForSort(normalized.sort),
+                        access = workshopSessionAccessForBrowse(normalized.sort, normalized.creatorId),
                         key = publicWorkshopReadKey(readEpoch, "browse:$normalized"),
                         kind = WorkshopReadKind.SEARCH,
                         priority =

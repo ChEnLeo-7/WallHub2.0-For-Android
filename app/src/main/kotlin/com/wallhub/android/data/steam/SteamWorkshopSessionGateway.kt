@@ -10,11 +10,14 @@ internal enum class WorkshopSessionAccess {
     AUTHENTICATED_ACCOUNT,
 }
 
-internal fun workshopSessionAccessForSort(sort: WorkshopSort): WorkshopSessionAccess =
-    when (sort) {
-        WorkshopSort.FRIENDS_FAVORITES,
-        WorkshopSort.FRIENDS_CREATED,
-        -> WorkshopSessionAccess.AUTHENTICATED_ACCOUNT
+internal fun workshopSessionAccessForBrowse(
+    sort: WorkshopSort,
+    creatorId: String?,
+): WorkshopSessionAccess =
+    when {
+        !creatorId.isNullOrBlank() -> WorkshopSessionAccess.AUTHENTICATED_ACCOUNT
+        sort == WorkshopSort.FRIENDS_FAVORITES || sort == WorkshopSort.FRIENDS_CREATED ->
+            WorkshopSessionAccess.AUTHENTICATED_ACCOUNT
         else -> WorkshopSessionAccess.PUBLIC
     }
 
