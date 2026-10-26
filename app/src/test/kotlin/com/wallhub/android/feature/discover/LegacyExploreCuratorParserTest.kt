@@ -107,6 +107,18 @@ class LegacyExploreCuratorParserTest {
     }
 
     @Test
+    fun `versioned manifest omits inactive sections without becoming invalid`() {
+        val parsed =
+            DiscoverCuratorManifestParser.parse(
+                """{"schemaVersion":1,"sections":[{"id":"future","category":"keyword","keyword":"Future","activeFrom":4102444800}]}""",
+            )
+
+        assertTrue(parsed.descriptors.isEmpty())
+        assertEquals(1, parsed.receivedItemCount)
+        assertEquals(0, parsed.rejectedItemCount)
+    }
+
+    @Test
     fun `collection parser preserves Steam child order and removes later duplicates`() {
         val ids =
             parseCollectionMemberIds(

@@ -48,6 +48,13 @@ internal object DiscoverCuratorManifestParser {
                     .copyIfPresent(section, "sticky", "sticky"),
             )
         }
+        if (legacyItems.length() == 0) {
+            return ParsedCuratorMetadata(
+                descriptors = emptyList(),
+                receivedItemCount = sections.length(),
+                rejectedItemCount = 0,
+            )
+        }
         val normalized = JSONObject().put("response", JSONObject().put("items", legacyItems))
         return LegacyExploreCuratorParser.parse(normalized.toString())
     }
