@@ -15,6 +15,7 @@
     <string name='setup_warmup_working_detail'>正在竞速已启用提供商，准备最快的国内 5 条和国外 5 条线路。</string>
     <string name='setup_warmup_ready'>可直连线路已就绪</string>
     <string name='setup_warmup_ready_detail'>已准备国内 %1$d 条、国外 %2$d 条线路，即将开始连接检测…</string>
+    <string name='setup_warmup_direct_detail'>当前网络可访问开放互联网，已自动绕过内置线路。</string>
     <string name='setup_warmup_degraded'>线路预热未完成</string>
     <string name='setup_warmup_degraded_detail'>当前仅有国内 %1$d 条、国外 %2$d 条实测线路就绪。</string>
     <string name='setup_warmup_retry'>重新预热</string>
@@ -219,6 +220,7 @@
     <string name='settings_enabled'>已开启</string>
     <string name='settings_steam_routes_checking'>正在检测直连与内置线路</string>
     <string name='settings_steam_route_available'>线路可用</string>
+    <string name='settings_steam_route_direct'>当前网络可直连，已绕过内置线路</string>
     <string name='settings_steam_route_unstable'>线路不稳定，等待重新检测</string>
     <string name='settings_steam_no_route'>当前没有可用线路</string>
     <string name='settings_action_check_routes_again'>重新检测线路</string>

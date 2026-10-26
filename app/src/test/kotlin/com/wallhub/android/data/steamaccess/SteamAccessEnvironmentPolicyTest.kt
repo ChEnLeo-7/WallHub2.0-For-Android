@@ -29,8 +29,8 @@ class SteamAccessEnvironmentPolicyTest {
     }
 
     @Test
-    fun `unknown environment stays direct until classification completes`() {
-        assertFalse(
+    fun `unknown environment conservatively keeps anti blocking until classification completes`() {
+        assertTrue(
             shouldApplySteamAccess(
                 configured = true,
                 mode = SteamAccessMode.SMART_DOH,

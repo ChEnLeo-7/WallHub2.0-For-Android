@@ -898,11 +898,15 @@ private fun AntiBlockingWarmupPage(
                                     SetupAntiBlockingWarmupPhase.WARMING,
                                     -> stringResource(R.string.setup_warmup_working_detail)
                                     SetupAntiBlockingWarmupPhase.READY ->
-                                        stringResource(
-                                            R.string.setup_warmup_ready_detail,
-                                            state.domesticRoutes,
-                                            state.foreignRoutes,
-                                        )
+                                        if (state.bypassed) {
+                                            stringResource(R.string.setup_warmup_direct_detail)
+                                        } else {
+                                            stringResource(
+                                                R.string.setup_warmup_ready_detail,
+                                                state.domesticRoutes,
+                                                state.foreignRoutes,
+                                            )
+                                        }
                                     SetupAntiBlockingWarmupPhase.DEGRADED ->
                                         if (state.reason.isNotBlank()) {
                                             state.reason

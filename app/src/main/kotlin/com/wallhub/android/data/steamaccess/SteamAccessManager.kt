@@ -2,8 +2,10 @@ package com.wallhub.android.data.steamaccess
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.os.SystemClock
 import com.wallhub.android.R
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.STEAM_ACCESS_DOH_BUILT_IN_LIMIT_PER_REGION
@@ -25,6 +27,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -59,10 +62,12 @@ internal data class SteamDohWarmupResult(
     val foreignRoutes: Int,
     val measuredRoutes: Int,
     val elapsedMillis: Long,
+    val bypassed: Boolean = false,
 ) {
     val ready: Boolean
         get() =
-            domesticRoutes >= STEAM_ACCESS_DOH_BUILT_IN_LIMIT_PER_REGION &&
+            bypassed ||
+                domesticRoutes >= STEAM_ACCESS_DOH_BUILT_IN_LIMIT_PER_REGION &&
                 foreignRoutes >= STEAM_ACCESS_DOH_BUILT_IN_LIMIT_PER_REGION
 }
 
@@ -72,6 +77,7 @@ class SteamAccessManager @Inject internal constructor(
     @ApplicationContext private val context: Context,
     settingsRepository: SettingsRepository,
     private val diagnostics: DiagnosticRepository,
+    private val environmentProbe: SteamNetworkEnvironmentProbe,
 ) : Dns, SteamAccessRepository {
     internal data class AcceleratedRoute(
         val networkType: String,
@@ -130,6 +136,13 @@ class SteamAccessManager @Inject internal constructor(
     private var networkType = detectNetworkType(activeNetwork)
     @Volatile
     private var lastEndpoint: Pair<String, Int>? = null
+    @Volatile
+    private var networkEnvironment = SteamNetworkEnvironment.UNKNOWN
+    @Volatile
+    private var environmentCheckedAtElapsedMs = 0L
+    private var networkFingerprint = networkFingerprint(activeNetwork)
+    private var environmentProbeJob: Job? = null
+    private var environmentProbeGeneration = 0L
 
     init {
         connectivityManager.registerDefaultNetworkCallback(
@@ -143,11 +156,15 @@ class SteamAccessManager @Inject internal constructor(
                 override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
                     if (network == activeNetwork) networkChanged(network)
                 }
+
+                override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+                    if (network == activeNetwork) networkChanged(network)
+                }
             },
         )
         scope.launch {
             settingsRepository.preferences.collectLatest { next ->
-                var shouldBenchmark = false
+                var shouldClassify = false
                 synchronized(this@SteamAccessManager) {
                     val changed = !preferencesInitialized ||
                         preferences.steamAccessEnabled != next.steamAccessEnabled ||
@@ -158,22 +175,36 @@ class SteamAccessManager @Inject internal constructor(
                     preferences = next
                     preferencesInitialized = true
                     if (changed) {
+                        if (next.steamAccessEnabled && next.steamAccessMode == SteamAccessMode.SMART_DOH) {
+                            networkEnvironment = SteamNetworkEnvironment.UNKNOWN
+                            environmentCheckedAtElapsedMs = 0L
+                            shouldClassify = true
+                        }
                         invalidate()
-                        shouldBenchmark = next.steamAccessEnabled && next.steamAccessMode == SteamAccessMode.SMART_DOH
                     }
                 }
                 preferencesReady.complete(Unit)
-                if (shouldBenchmark) scope.launch { ensureDohSelection(next) }
+                if (shouldClassify) scheduleEnvironmentProbe(force = true)
             }
         }
     }
 
-    internal fun enhancedConnectionEnabled(): Boolean = preferencesInitialized && preferences.steamAccessEnabled
+    internal fun enhancedConnectionEnabled(): Boolean {
+        maybeRefreshEnvironmentProbe()
+        return preferencesInitialized && effectiveSteamAccessEnabled(preferences)
+    }
 
-    internal suspend fun awaitEnhancedConnectionEnabled(expected: Boolean) {
-        withTimeout(1_000L) {
-            while (!preferencesInitialized || preferences.steamAccessEnabled != expected) delay(10L)
+    internal suspend fun awaitEnhancedConnectionDecision(): Boolean {
+        preferencesReady.await()
+        val settings = preferences
+        if (!settings.steamAccessEnabled || settings.steamAccessMode != SteamAccessMode.SMART_DOH) {
+            return effectiveSteamAccessEnabled(settings)
         }
+        scheduleEnvironmentProbe(force = false)
+        withTimeout(8_000L) {
+            while (networkEnvironment == SteamNetworkEnvironment.UNKNOWN) delay(10L)
+        }
+        return effectiveSteamAccessEnabled(preferences)
     }
 
     internal suspend fun awaitDohConfiguration(expectedEnabledEndpoints: List<String>) {
@@ -199,6 +230,18 @@ class SteamAccessManager @Inject internal constructor(
             "Automatic anti-blocking is not enabled"
         }
         val startedAt = System.nanoTime()
+        if (settings.steamAccessMode == SteamAccessMode.SMART_DOH) {
+            classifyEnvironmentNow(force = force)
+            if (!effectiveSteamAccessEnabled(settings)) {
+                return SteamDohWarmupResult(
+                    domesticRoutes = 0,
+                    foreignRoutes = 0,
+                    measuredRoutes = 0,
+                    elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt),
+                    bypassed = true,
+                )
+            }
+        }
         ensureDohSelection(settings, force = force)
         val statuses = mutableState.value.dohEndpointStatuses
         fun selectedAvailable(region: SteamDohRegion): Int =
@@ -224,7 +267,7 @@ class SteamAccessManager @Inject internal constructor(
         val host = SteamDomainPolicy.requireSupported(hostname)
         runBlocking { preferencesReady.await() }
         return synchronized(this) {
-            if (preferences.steamAccessEnabled) {
+            if (effectiveSteamAccessEnabled(preferences)) {
                 throw UnknownHostException("System DNS is disabled for protected Steam services")
             }
             Dns.SYSTEM.lookup(host)
@@ -260,6 +303,7 @@ class SteamAccessManager @Inject internal constructor(
                 selectedNetwork = networkType
                 settings = preferences
             }
+            val enhanced = effectiveSteamAccessEnabled(settings)
             val authorities = rules.map(SteamWebUpstreamRule::resolveAuthority)
             if (reuseCachedTargets) {
                 val cachedByAuthority =
@@ -274,12 +318,12 @@ class SteamAccessManager @Inject internal constructor(
             }
             val systemByAuthority =
                 authorities.associateWith { authority ->
-                    systemDnsCandidates(settings.steamAccessEnabled) {
+                    systemDnsCandidates(enhanced) {
                         runCatching { Dns.SYSTEM.lookup(authority) }.getOrDefault(emptyList())
                     }
                 }
             val resolvedByAuthority =
-                if (!settings.steamAccessEnabled) {
+                if (!enhanced) {
                     emptyMap()
                 } else {
                     when (settings.steamAccessMode) {
@@ -343,15 +387,16 @@ class SteamAccessManager @Inject internal constructor(
                 selectedNetwork = networkType
                 settings = preferences
             }
+            val enhanced = effectiveSteamAccessEnabled(settings)
             val key = steamRouteCacheKey(selectedNetwork, host, port)
             candidates.get(key, generation)?.let {
                 return@withLock AcceleratedRoute(selectedNetwork, generation, port, it)
             }
             val system =
-                systemDnsCandidates(settings.steamAccessEnabled) {
+                systemDnsCandidates(enhanced) {
                     runCatching { Dns.SYSTEM.lookup(host) }.getOrDefault(emptyList())
                 }
-            val resolved = if (!settings.steamAccessEnabled) {
+            val resolved = if (!enhanced) {
                 emptyList()
             } else {
                 when (settings.steamAccessMode) {
@@ -591,7 +636,7 @@ class SteamAccessManager @Inject internal constructor(
                 scope.launch {
                     delay(DOH_BENCHMARK_RETRY_MS)
                     val latest = preferences
-                    if (latest.steamAccessEnabled && latest.steamAccessMode == SteamAccessMode.SMART_DOH) {
+                    if (effectiveSteamAccessEnabled(latest) && latest.steamAccessMode == SteamAccessMode.SMART_DOH) {
                         ensureDohSelection(latest)
                     }
                 }
@@ -629,6 +674,18 @@ class SteamAccessManager @Inject internal constructor(
             var refreshGeneration: Long? = null
             try {
                 preferencesReady.await()
+                val settings = preferences
+                if (settings.steamAccessMode == SteamAccessMode.SMART_DOH) {
+                    classifyEnvironmentNow(force = true)
+                    if (!effectiveSteamAccessEnabled(settings)) {
+                        synchronized(this@SteamAccessManager) {
+                            invalidate(phase = SteamAccessPhase.BYPASSED, schedulePoolEviction = false)
+                        }
+                        connectionPool.evictAll()
+                        return@launch
+                    }
+                    ensureDohSelection(settings, force = true)
+                }
                 val endpoint = lastEndpoint
                 refreshGeneration = synchronized(this@SteamAccessManager) {
                     invalidate(phase = SteamAccessPhase.RESOLVING, schedulePoolEviction = false)
@@ -663,6 +720,118 @@ class SteamAccessManager @Inject internal constructor(
         }
     }
 
+    private fun effectiveSteamAccessEnabled(settings: AppPreferences): Boolean =
+        shouldApplySteamAccess(
+            configured = settings.steamAccessEnabled,
+            mode = settings.steamAccessMode,
+            environment = networkEnvironment,
+        )
+
+    private fun maybeRefreshEnvironmentProbe() {
+        val settings = preferences
+        if (!preferencesInitialized || !settings.steamAccessEnabled || settings.steamAccessMode != SteamAccessMode.SMART_DOH) return
+        val stale = SystemClock.elapsedRealtime() - environmentCheckedAtElapsedMs >= STEAM_ENVIRONMENT_PROBE_TTL_MS
+        if (networkEnvironment == SteamNetworkEnvironment.UNKNOWN || stale) scheduleEnvironmentProbe(force = false)
+    }
+
+    @Synchronized
+    private fun scheduleEnvironmentProbe(force: Boolean, debounceMs: Long = 0L) {
+        val settings = preferences
+        if (!preferencesInitialized || !settings.steamAccessEnabled || settings.steamAccessMode != SteamAccessMode.SMART_DOH) return
+        if (!force && environmentProbeJob?.isActive == true) return
+        environmentProbeGeneration += 1L
+        val generation = environmentProbeGeneration
+        val fingerprint = networkFingerprint
+        val network = activeNetwork
+        environmentProbeJob?.cancel()
+        environmentProbeJob =
+            scope.launch {
+                if (debounceMs > 0L) delay(debounceMs)
+                val result = classifyNetwork(network)
+                applyNetworkEnvironment(generation, fingerprint, result)
+            }
+    }
+
+    private suspend fun classifyEnvironmentNow(force: Boolean): SteamNetworkEnvironment {
+        val settings = preferences
+        if (!settings.steamAccessEnabled || settings.steamAccessMode != SteamAccessMode.SMART_DOH) return networkEnvironment
+        val fresh =
+            networkEnvironment != SteamNetworkEnvironment.UNKNOWN &&
+                SystemClock.elapsedRealtime() - environmentCheckedAtElapsedMs < STEAM_ENVIRONMENT_PROBE_TTL_MS
+        if (!force && fresh) return networkEnvironment
+        val generation: Long
+        val fingerprint: String
+        val network: Network?
+        synchronized(this) {
+            environmentProbeGeneration += 1L
+            generation = environmentProbeGeneration
+            fingerprint = networkFingerprint
+            network = activeNetwork
+            environmentProbeJob?.cancel()
+            environmentProbeJob = null
+        }
+        val result = classifyNetwork(network)
+        applyNetworkEnvironment(generation, fingerprint, result)
+        return networkEnvironment
+    }
+
+    private suspend fun classifyNetwork(network: Network?): SteamNetworkEnvironment {
+        if (network == null) return SteamNetworkEnvironment.UNKNOWN
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return SteamNetworkEnvironment.UNKNOWN
+        if (
+            !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ||
+            !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) ||
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL)
+        ) {
+            return SteamNetworkEnvironment.UNKNOWN
+        }
+        return environmentProbe.classify(network)
+    }
+
+    private fun applyNetworkEnvironment(
+        generation: Long,
+        fingerprint: String,
+        result: SteamNetworkEnvironment,
+    ) {
+        var benchmarkSettings: AppPreferences? = null
+        synchronized(this) {
+            if (generation != environmentProbeGeneration || fingerprint != networkFingerprint) return
+            val oldEffective = effectiveSteamAccessEnabled(preferences)
+            networkEnvironment = result
+            environmentCheckedAtElapsedMs = SystemClock.elapsedRealtime()
+            val newEffective = effectiveSteamAccessEnabled(preferences)
+            if (oldEffective != newEffective || result == SteamNetworkEnvironment.UNKNOWN) {
+                invalidate(
+                    phase =
+                        when {
+                            !preferences.steamAccessEnabled -> SteamAccessPhase.DISABLED
+                            result == SteamNetworkEnvironment.OPEN_INTERNET -> SteamAccessPhase.BYPASSED
+                            result == SteamNetworkEnvironment.UNKNOWN -> SteamAccessPhase.RESOLVING
+                            else -> invalidatedSteamAccessPhase()
+                        },
+                )
+            } else if (result == SteamNetworkEnvironment.OPEN_INTERNET) {
+                mutableState.value = mutableState.value.copy(
+                    phase = SteamAccessPhase.BYPASSED,
+                    message = null,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            }
+            if (newEffective && preferences.steamAccessMode == SteamAccessMode.SMART_DOH) {
+                benchmarkSettings = preferences
+            }
+            recordDiagnostic(
+                message = "Steam network environment classified",
+                attributes = mapOf(
+                    "environment" to result.name.lowercase(),
+                    "effectiveEnhanced" to newEffective.toString(),
+                    "networkType" to networkType,
+                ),
+            )
+        }
+        benchmarkSettings?.let { settings -> scope.launch { ensureDohSelection(settings) } }
+    }
+
     @Synchronized
     private fun invalidate(
         phase: SteamAccessPhase = invalidatedSteamAccessPhase(),
@@ -678,6 +847,8 @@ class SteamAccessManager @Inject internal constructor(
 
     private fun invalidatedSteamAccessPhase(): SteamAccessPhase = when {
         !preferences.steamAccessEnabled -> SteamAccessPhase.DISABLED
+        preferences.steamAccessMode == SteamAccessMode.SMART_DOH &&
+            networkEnvironment == SteamNetworkEnvironment.OPEN_INTERNET -> SteamAccessPhase.BYPASSED
         lastEndpoint == null -> SteamAccessPhase.FAILED
         else -> SteamAccessPhase.DEGRADED
     }
@@ -685,20 +856,51 @@ class SteamAccessManager @Inject internal constructor(
     @Synchronized
     private fun networkChanged(network: Network?) {
         val type = detectNetworkType(network)
-        if (network == activeNetwork && type == networkType) return
+        val fingerprint = networkFingerprint(network)
+        if (fingerprint == networkFingerprint) return
         val previousType = networkType
         activeNetwork = network
         networkType = type
+        networkFingerprint = fingerprint
+        networkEnvironment = SteamNetworkEnvironment.UNKNOWN
+        environmentCheckedAtElapsedMs = 0L
         recordDiagnostic(
             message = "Active network changed",
             attributes = mapOf("from" to previousType, "to" to type),
             level = DiagnosticLevel.INFO,
         )
-        invalidate()
-        val settings = preferences
-        if (preferencesInitialized && settings.steamAccessEnabled && settings.steamAccessMode == SteamAccessMode.SMART_DOH) {
-            scope.launch { ensureDohSelection(settings) }
+        invalidate(phase = if (preferences.steamAccessEnabled) SteamAccessPhase.RESOLVING else SteamAccessPhase.DISABLED)
+        if (preferencesInitialized && preferences.steamAccessEnabled && preferences.steamAccessMode == SteamAccessMode.SMART_DOH) {
+            scheduleEnvironmentProbe(force = true, debounceMs = STEAM_ENVIRONMENT_NETWORK_DEBOUNCE_MS)
         }
+    }
+
+    private fun networkFingerprint(network: Network?): String {
+        if (network == null) return "offline"
+        val capabilities = connectivityManager.getNetworkCapabilities(network)
+        val links = connectivityManager.getLinkProperties(network)
+        val transports =
+            listOf(
+                NetworkCapabilities.TRANSPORT_CELLULAR,
+                NetworkCapabilities.TRANSPORT_WIFI,
+                NetworkCapabilities.TRANSPORT_BLUETOOTH,
+                NetworkCapabilities.TRANSPORT_ETHERNET,
+                NetworkCapabilities.TRANSPORT_VPN,
+                NetworkCapabilities.TRANSPORT_WIFI_AWARE,
+                NetworkCapabilities.TRANSPORT_LOWPAN,
+            ).filter { transport -> capabilities?.hasTransport(transport) == true }
+        val proxy = links?.httpProxy
+        return listOf(
+            network.toString(),
+            transports.joinToString(","),
+            capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED).toString(),
+            capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL).toString(),
+            links?.interfaceName.orEmpty(),
+            links?.dnsServers.orEmpty().joinToString(",") { address -> address.hostAddress.orEmpty() },
+            proxy?.host.orEmpty(),
+            proxy?.port?.toString().orEmpty(),
+            proxy?.pacFileUrl?.toString().orEmpty(),
+        ).joinToString("|")
     }
 
     private fun detectNetworkType(network: Network?): String {

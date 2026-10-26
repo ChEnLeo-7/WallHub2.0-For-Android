@@ -412,6 +412,7 @@ internal fun SteamAccessState.summary(): String {
     val phaseLabel =
         when (phase) {
             SteamAccessPhase.DISABLED -> stringResource(R.string.settings_disabled)
+            SteamAccessPhase.BYPASSED -> stringResource(R.string.settings_steam_route_direct)
             SteamAccessPhase.RESOLVING -> stringResource(R.string.settings_steam_routes_checking)
             SteamAccessPhase.READY -> stringResource(R.string.settings_steam_route_available)
             SteamAccessPhase.DEGRADED -> stringResource(R.string.settings_steam_route_unstable)

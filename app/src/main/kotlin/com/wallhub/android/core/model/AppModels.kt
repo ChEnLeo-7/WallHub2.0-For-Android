@@ -48,6 +48,7 @@ enum class SteamWorkshopDataSource {
 
 enum class SteamAccessPhase {
     DISABLED,
+    BYPASSED,
     READY,
     RESOLVING,
     DEGRADED,

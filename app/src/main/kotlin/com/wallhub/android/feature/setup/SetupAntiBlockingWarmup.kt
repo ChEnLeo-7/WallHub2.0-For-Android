@@ -15,6 +15,7 @@ internal data class SetupAntiBlockingWarmupState(
     val foreignRoutes: Int = 0,
     val measuredRoutes: Int = 0,
     val elapsedMillis: Long = 0L,
+    val bypassed: Boolean = false,
     val reason: String = "",
 ) {
     companion object {
@@ -35,4 +36,5 @@ internal fun SteamDohWarmupResult.toSetupState(): SetupAntiBlockingWarmupState =
         foreignRoutes = foreignRoutes,
         measuredRoutes = measuredRoutes,
         elapsedMillis = elapsedMillis,
+        bypassed = bypassed,
     )

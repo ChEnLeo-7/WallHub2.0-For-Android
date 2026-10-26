@@ -15,6 +15,7 @@
     <string name='setup_warmup_working_detail'>Racing enabled providers to prepare the fastest 5 domestic and 5 international routes.</string>
     <string name='setup_warmup_ready'>Direct routes are ready</string>
     <string name='setup_warmup_ready_detail'>Prepared %1$d domestic and %2$d international routes. Starting connectivity checks…</string>
+    <string name='setup_warmup_direct_detail'>The current network can reach the open Internet. Built-in routes are bypassed.</string>
     <string name='setup_warmup_degraded'>Route warm-up was incomplete</string>
     <string name='setup_warmup_degraded_detail'>Only %1$d domestic and %2$d international measured routes are ready.</string>
     <string name='setup_warmup_retry'>Retry warm-up</string>
@@ -231,6 +232,7 @@
     <string name='settings_enabled'>Enabled</string>
     <string name='settings_steam_routes_checking'>Checking direct and built-in routes</string>
     <string name='settings_steam_route_available'>Route available</string>
+    <string name='settings_steam_route_direct'>System connection available; built-in routes bypassed</string>
     <string name='settings_steam_route_unstable'>Route unstable; waiting to check again</string>
     <string name='settings_steam_no_route'>No route is currently available</string>
     <string name='settings_action_check_routes_again'>Check routes again</string>

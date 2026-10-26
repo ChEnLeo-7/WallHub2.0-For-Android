@@ -236,8 +236,8 @@ class SetupNetworkPreflight
         input: SetupNetworkPreflightInput,
         onUpdate: (SetupNetworkPreflightResult) -> Unit = {},
     ): SetupNetworkPreflightResult {
-        accessManager.awaitEnhancedConnectionEnabled(input.automaticAntiBlockingEnabled)
-        if (!input.automaticAntiBlockingEnabled) {
+        val enhancedConnectionEnabled = accessManager.awaitEnhancedConnectionDecision()
+        if (!enhancedConnectionEnabled) {
             return SetupNetworkPreflightRunner(
                 commonProbes(
                     detailsProbe = {
