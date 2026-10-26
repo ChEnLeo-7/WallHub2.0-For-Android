@@ -80,9 +80,14 @@
     <string name='settings_action_export_diagnostic_log'>Export diagnostic log</string>
     <string name='settings_diagnostic_exported'>Diagnostic log exported</string>
     <string name='settings_error_diagnostic_export'>Export failed: %1$s</string>
+    <string name='settings_language_category'>Language</string>
+    <string name='settings_language'>App language</string>
+    <string name='settings_language_system'>Follow system</string>
+    <string name='settings_language_simplified_chinese'>Simplified Chinese</string>
+    <string name='settings_language_english'>English</string>
     <string name='settings_content_access_title'>Content access</string>
     <string name='settings_nsfw_content'>NSFW content</string>
-    <string name='settings_nsfw_content_description'>Control whether mature content appears in Discover</string>
+    <string name='settings_nsfw_content_description'>Understand what this content means before enabling it</string>
     <string name='settings_storage_location_title'>Storage location</string>
     <string name='settings_storage_location_description'>Choose where converted files are exported</string>
     <string name='settings_current_export_directory'>Current export directory</string>

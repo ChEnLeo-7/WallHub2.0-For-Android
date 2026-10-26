@@ -80,9 +80,14 @@
     <string name='settings_action_export_diagnostic_log'>导出诊断日志</string>
     <string name='settings_diagnostic_exported'>诊断日志已导出</string>
     <string name='settings_error_diagnostic_export'>导出失败：%1$s</string>
+    <string name='settings_language_category'>语言</string>
+    <string name='settings_language'>应用语言</string>
+    <string name='settings_language_system'>跟随系统</string>
+    <string name='settings_language_simplified_chinese'>简体中文</string>
+    <string name='settings_language_english'>英语</string>
     <string name='settings_content_access_title'>内容访问</string>
     <string name='settings_nsfw_content'>NSFW 内容</string>
-    <string name='settings_nsfw_content_description'>控制发现页是否显示成人内容</string>
+    <string name='settings_nsfw_content_description'>开启前需了解该内容的含义</string>
     <string name='settings_storage_location_title'>存储位置</string>
     <string name='settings_storage_location_description'>选择转换完成后的文件导出位置</string>
     <string name='settings_current_export_directory'>当前导出目录</string>

@@ -195,6 +195,7 @@ dependencies {
     implementation(libs.androidx.compose.material3.expressive)
     implementation(libs.androidx.compose.material3.adaptive)
     implementation(libs.androidx.compose.material3.adaptive.navigation)
+    implementation(libs.androidx.appcompat)
     implementation(libs.androidx.compose.runtime.saveable)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
@@ -223,7 +224,7 @@ dependencies {
     implementation(libs.ktor.client.okhttp)
     // Steam Content SDK: the app's Steam session, Workshop, and content backend. The AAR is a local,
     // gitignored preview published from the SDK repository.
-    implementation("io.steamcontent.sdk:sc-content-android-preview:0.1.151")
+    implementation("io.steamcontent.sdk:sc-content-android-preview:0.1.152")
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.jdk8)

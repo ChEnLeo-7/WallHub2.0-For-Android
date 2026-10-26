@@ -35,6 +35,9 @@ internal class SteamContentSdkVideoStreamSession(
     override val currentCdnProvider: com.wallhub.android.core.model.WorkshopVideoCdnProvider?
         get() = stream.cdnProvider()
 
+    override val currentCdnHost: String?
+        get() = stream.currentCdnHost()
+
     init {
         demandScope.launch {
             for (ignored in demandSignal) {

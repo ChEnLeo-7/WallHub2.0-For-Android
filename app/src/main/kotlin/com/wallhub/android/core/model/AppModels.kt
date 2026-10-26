@@ -2,6 +2,12 @@ package com.wallhub.android.core.model
 
 import java.net.URI
 
+enum class AppLanguage {
+    SYSTEM,
+    SIMPLIFIED_CHINESE,
+    ENGLISH,
+}
+
 enum class ThemePreference {
     SYSTEM,
     LIGHT,

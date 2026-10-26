@@ -228,6 +228,10 @@ interface WorkshopVideoStreamSession : Closeable {
     val currentCdnProvider: WorkshopVideoCdnProvider?
         get() = null
 
+    /** Bare transport hostname of the last successful CDN read; never includes credentials, a path, or a token. */
+    val currentCdnHost: String?
+        get() = null
+
     /** Reports Media3's actual logical-file cursor to the bounded Depot prefetcher. */
     fun updateReadDemand(demand: WorkshopVideoReadDemand) = Unit
 

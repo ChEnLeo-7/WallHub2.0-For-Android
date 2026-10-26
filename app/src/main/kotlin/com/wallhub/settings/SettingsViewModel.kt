@@ -7,7 +7,9 @@ import android.text.format.Formatter
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wallhub.android.R
+import com.wallhub.android.app.AppLocaleController
 import com.wallhub.android.core.model.AccentPreference
+import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.AppUpdateRepository
 import com.wallhub.android.core.model.DiagnosticExportRepository
@@ -45,6 +47,7 @@ class SettingsViewModel
     internal constructor(
         @ApplicationContext private val context: Context,
         private val settingsRepository: SettingsRepository,
+        private val appLocaleController: AppLocaleController,
         private val launcherIconController: LauncherIconController,
         private val steamSessionRepository: SteamSessionRepository,
         private val diagnosticExportRepository: DiagnosticExportRepository,
@@ -61,6 +64,8 @@ class SettingsViewModel
             )
         private var appUpdateJob: Job? = null
         private val effectChannel = Channel<SettingsEffect>(capacity = Channel.BUFFERED)
+
+        val appLanguage: AppLanguage = appLocaleController.current()
 
         val preferences: StateFlow<AppPreferences> =
             settingsRepository.preferences.stateIn(
@@ -103,6 +108,7 @@ class SettingsViewModel
 
         private fun handleAppearanceAndHomeAction(action: SettingsAction): Boolean {
             when (action) {
+                is SettingsAction.LanguageChanged -> appLocaleController.set(action.language)
                 is SettingsAction.ThemeChanged -> setTheme(action.theme)
                 is SettingsAction.AccentChanged -> setAccent(action.accent, action.customColor)
                 is SettingsAction.SystemMonetEnabledChanged -> setSystemMonetEnabled(action.enabled)

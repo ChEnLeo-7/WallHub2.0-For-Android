@@ -234,6 +234,7 @@ fun SettingsRoute(
     Box(modifier = Modifier.fillMaxSize()) {
         SettingsScreen(
             preferences = preferences,
+            appLanguage = viewModel.appLanguage,
             steamAccessState = steamAccessState,
             session = session,
             diagnosticExportState = diagnosticExportState,

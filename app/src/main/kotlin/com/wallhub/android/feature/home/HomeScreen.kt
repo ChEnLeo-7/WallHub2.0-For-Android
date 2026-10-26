@@ -343,24 +343,21 @@ internal fun HomeScreenBody(
         WallHubPageScaffold(
             title = stringResource(R.string.app_name),
             titleContent = {
-                Column(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable(
-                                role = Role.Button,
-                                onClickLabel = stringResource(R.string.home_reset),
-                            ) {
-                                focusManager.clearFocus(force = true)
-                                onAction(HomeAction.ResetAndRefresh)
-                            },
-                ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             text = stringResource(R.string.app_name),
+                            modifier =
+                                Modifier.clickable(
+                                    role = Role.Button,
+                                    onClickLabel = stringResource(R.string.home_reset),
+                                ) {
+                                    focusManager.clearFocus(force = true)
+                                    onAction(HomeAction.ResetAndRefresh)
+                                },
                             style = MaterialTheme.typography.titleLarge,
                             maxLines = 1,
                         )

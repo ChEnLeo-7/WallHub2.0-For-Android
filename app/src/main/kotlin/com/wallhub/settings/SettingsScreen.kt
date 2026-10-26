@@ -35,6 +35,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.VisualTransformation
 import com.wallhub.android.R
 import com.wallhub.android.core.model.AccentPreference
+import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppPreferences
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
@@ -53,6 +54,7 @@ import org.uwuaosp.compose.settingslib.SettingsCategory as UwuSettingsCategory
 @Composable
 fun SettingsScreen(
     preferences: AppPreferences,
+    appLanguage: AppLanguage,
     steamAccessState: SteamAccessState,
     session: SteamSessionState,
     diagnosticExportState: DiagnosticExportUiState,
@@ -311,6 +313,7 @@ fun SettingsScreen(
                             SettingsCategoryContent(
                                 category = displayedCategory,
                                 preferences = preferences,
+                                appLanguage = appLanguage,
                                 steamAccessState = steamAccessState,
                                 session = session,
                                 diagnosticExportState = diagnosticExportState,
@@ -362,6 +365,7 @@ fun SettingsScreen(
 internal fun SettingsCategoryContent(
     category: SettingsCategory,
     preferences: AppPreferences,
+    appLanguage: AppLanguage,
     steamAccessState: SteamAccessState,
     session: SteamSessionState,
     diagnosticExportState: DiagnosticExportUiState,
@@ -401,9 +405,11 @@ internal fun SettingsCategoryContent(
     when (category) {
         SettingsCategory.BASIC ->
             BasicSettingsContent(
+                appLanguage = appLanguage,
                 matureContentEnabled = preferences.matureContentEnabled,
                 diagnosticExportState = diagnosticExportState,
                 notificationsGranted = notificationsGranted,
+                onLanguageChange = { onAction(SettingsAction.LanguageChanged(it)) },
                 onMatureContentEnabledChange = onMatureContentEnabledChange,
                 onExportDiagnostics = onExportDiagnostics,
                 onRequestNotifications = onRequestNotifications,

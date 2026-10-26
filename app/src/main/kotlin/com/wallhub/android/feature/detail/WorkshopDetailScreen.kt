@@ -31,6 +31,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SnackbarDuration
@@ -41,6 +42,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -156,9 +158,8 @@ fun WorkshopDetailScreen(
                         if (shouldShowInlinePlaybackStartNotice()) {
                             Toast.makeText(
                                 context.applicationContext,
-                                stream.currentCdnProvider?.let { provider ->
-                                    steamCdnMessageTemplate.format(cdnProviderLabel(context, provider))
-                                } ?: streamingStartedMessage,
+                                stream.currentCdnHost?.let(steamCdnMessageTemplate::format)
+                                    ?: streamingStartedMessage,
                                 Toast.LENGTH_SHORT,
                             ).show()
                         }
@@ -1007,15 +1008,17 @@ internal fun DetailTab(
     text: String,
     onClick: () -> Unit,
 ) {
-    Tab(
-        selected = selected,
-        onClick = onClick,
-        text = {
-            Text(
-                text = text,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                maxLines = 1,
-            )
-        },
-    )
+    CompositionLocalProvider(LocalRippleConfiguration provides null) {
+        Tab(
+            selected = selected,
+            onClick = onClick,
+            text = {
+                Text(
+                    text = text,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    maxLines = 1,
+                )
+            },
+        )
+    }
 }

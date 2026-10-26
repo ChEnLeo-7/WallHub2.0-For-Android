@@ -6,6 +6,7 @@ import androidx.annotation.StringRes
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.wallhub.android.R
 import com.wallhub.android.core.model.AccentPreference
+import com.wallhub.android.core.model.AppLanguage
 import com.wallhub.android.core.model.AppReleaseInfo
 import com.wallhub.android.core.model.HomeCardAction
 import com.wallhub.android.core.model.HomePaginationMode
@@ -81,6 +82,10 @@ data class AppUpdateUiState(
 }
 
 sealed interface SettingsAction {
+    data class LanguageChanged(
+        val language: AppLanguage,
+    ) : SettingsAction
+
     data class ThemeChanged(
         val theme: ThemePreference,
     ) : SettingsAction
