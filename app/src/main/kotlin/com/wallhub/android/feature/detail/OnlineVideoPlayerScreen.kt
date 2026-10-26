@@ -205,7 +205,7 @@ fun OnlineVideoPlayerScreen(
         if (shouldShowPlaybackStartNotice()) {
             Toast.makeText(
                 context.applicationContext,
-                state.stream?.currentCdnHost?.let(steamCdnMessageTemplate::format)
+                state.stream?.currentCdnHost?.let { host -> steamCdnMessageTemplate.format(host) }
                     ?: streamingStartedMessage,
                 Toast.LENGTH_SHORT,
             ).show()

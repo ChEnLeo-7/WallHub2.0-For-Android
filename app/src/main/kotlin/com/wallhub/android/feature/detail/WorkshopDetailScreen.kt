@@ -158,7 +158,7 @@ fun WorkshopDetailScreen(
                         if (shouldShowInlinePlaybackStartNotice()) {
                             Toast.makeText(
                                 context.applicationContext,
-                                stream.currentCdnHost?.let(steamCdnMessageTemplate::format)
+                                stream.currentCdnHost?.let { host -> steamCdnMessageTemplate.format(host) }
                                     ?: streamingStartedMessage,
                                 Toast.LENGTH_SHORT,
                             ).show()

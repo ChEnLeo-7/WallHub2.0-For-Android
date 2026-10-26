@@ -322,6 +322,7 @@ fun SettingsScreen(
                                 onProxyUrlChanged = { proxyUrl = it },
                                 steamApiKey = steamApiKey,
                                 onSteamApiKeyChanged = { steamApiKey = it },
+                                onLanguageChange = { onAction(SettingsAction.LanguageChanged(it)) },
                                 onMatureContentEnabledChange = { enabled ->
                                     saveHomePreferences(matureContentEnabled = enabled)
                                 },
@@ -374,6 +375,7 @@ internal fun SettingsCategoryContent(
     onProxyUrlChanged: (String) -> Unit,
     steamApiKey: String,
     onSteamApiKeyChanged: (String) -> Unit,
+    onLanguageChange: (AppLanguage) -> Unit,
     onMatureContentEnabledChange: (Boolean) -> Unit,
     onDownloadPreferencesChange: (Int, Int, String, Int) -> Unit,
     onMpkgConversionPresetChange: (MpkgConversionPreset) -> Unit,
@@ -409,7 +411,7 @@ internal fun SettingsCategoryContent(
                 matureContentEnabled = preferences.matureContentEnabled,
                 diagnosticExportState = diagnosticExportState,
                 notificationsGranted = notificationsGranted,
-                onLanguageChange = { onAction(SettingsAction.LanguageChanged(it)) },
+                onLanguageChange = onLanguageChange,
                 onMatureContentEnabledChange = onMatureContentEnabledChange,
                 onExportDiagnostics = onExportDiagnostics,
                 onRequestNotifications = onRequestNotifications,
