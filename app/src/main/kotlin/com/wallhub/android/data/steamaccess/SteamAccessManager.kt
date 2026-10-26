@@ -144,6 +144,7 @@ class SteamAccessManager @Inject internal constructor(
     private var networkFingerprint = networkFingerprint(activeNetwork)
     private var environmentProbeJob: Job? = null
     private var environmentProbeGeneration = 0L
+    private var lastWarningTriggeredProbeAtElapsedMs = 0L
 
     init {
         connectivityManager.registerDefaultNetworkCallback(
@@ -177,6 +178,7 @@ class SteamAccessManager @Inject internal constructor(
                     preferencesInitialized = true
                     if (changed) {
                         environmentProbeGeneration += 1L
+                        lastWarningTriggeredProbeAtElapsedMs = 0L
                         environmentProbeJob?.cancel()
                         environmentProbeJob = null
                         if (next.steamAccessEnabled && next.steamAccessMode == SteamAccessMode.SMART_DOH) {
@@ -882,6 +884,7 @@ class SteamAccessManager @Inject internal constructor(
         networkFingerprint = fingerprint
         networkEnvironment = SteamNetworkEnvironment.UNKNOWN
         environmentCheckedAtElapsedMs = 0L
+        lastWarningTriggeredProbeAtElapsedMs = 0L
         recordDiagnostic(
             message = "Active network changed",
             attributes = mapOf("from" to previousType, "to" to type),
@@ -948,8 +951,16 @@ class SteamAccessManager @Inject internal constructor(
             preferences.steamAccessMode == SteamAccessMode.SMART_DOH &&
             networkEnvironment == SteamNetworkEnvironment.OPEN_INTERNET
         ) {
-            environmentCheckedAtElapsedMs = 0L
-            scheduleEnvironmentProbe(force = false)
+            synchronized(this) {
+                val now = SystemClock.elapsedRealtime()
+                if (
+                    lastWarningTriggeredProbeAtElapsedMs == 0L ||
+                    now - lastWarningTriggeredProbeAtElapsedMs >= STEAM_ENVIRONMENT_WARNING_REPROBE_COOLDOWN_MS
+                ) {
+                    lastWarningTriggeredProbeAtElapsedMs = now
+                    scheduleEnvironmentProbe(force = false)
+                }
+            }
         }
         recordDiagnostic(
             message = message,

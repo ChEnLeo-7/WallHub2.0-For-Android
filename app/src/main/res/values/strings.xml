@@ -233,6 +233,7 @@
     <string name='settings_steam_routes_checking'>Checking direct and built-in routes</string>
     <string name='settings_steam_route_available'>Route available</string>
     <string name='settings_steam_route_direct'>System connection available; built-in routes bypassed</string>
+    <string name='settings_steam_probe_disclosure'>When enabled, WallHub checks Google HTTPS after startup, network changes, failures, and manual re-detection to decide whether built-in routes are needed.</string>
     <string name='settings_steam_route_unstable'>Route unstable; waiting to check again</string>
     <string name='settings_steam_no_route'>No route is currently available</string>
     <string name='settings_action_check_routes_again'>Check routes again</string>

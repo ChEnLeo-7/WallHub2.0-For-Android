@@ -221,6 +221,7 @@
     <string name='settings_steam_routes_checking'>正在检测直连与内置线路</string>
     <string name='settings_steam_route_available'>线路可用</string>
     <string name='settings_steam_route_direct'>当前网络可直连，已绕过内置线路</string>
+    <string name='settings_steam_probe_disclosure'>启用后，WallHub 会在启动、网络变化、连接异常和手动重检时访问 Google HTTPS，以判断是否需要内置线路。</string>
     <string name='settings_steam_route_unstable'>线路不稳定，等待重新检测</string>
     <string name='settings_steam_no_route'>当前没有可用线路</string>
     <string name='settings_action_check_routes_again'>重新检测线路</string>
