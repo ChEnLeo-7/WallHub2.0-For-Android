@@ -18,6 +18,7 @@ import com.wallhub.android.core.model.WorkshopDownloads
 import com.wallhub.android.core.model.toQuickDownloadRequest
 import com.wallhub.android.core.model.HomePaginationMode
 import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.core.model.SteamAccessRepository
 import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
 import com.wallhub.android.core.model.WorkshopBrowseQuery
 import com.wallhub.android.core.model.workshopDetailTagSearch
@@ -53,6 +54,7 @@ class HomeViewModel
         @ApplicationContext private val applicationContext: Context,
         private val workshopRepository: WorkshopRepository,
         private val settingsRepository: SettingsRepository,
+        private val steamAccessRepository: SteamAccessRepository,
         private val downloadTaskRepository: WorkshopDownloads,
         savedStateHandle: SavedStateHandle,
     ) : ViewModel() {
@@ -377,6 +379,10 @@ class HomeViewModel
                             errorRes = null,
                         )
                     try {
+                        if (!append && requestState.items.isEmpty()) {
+                            steamAccessRepository.awaitRouteDecision()
+                        }
+                        if (version != requestVersion) return@launch
                         val response =
                             withTimeout(
                                 if (!append && requestState.items.isEmpty()) HOME_INITIAL_LOAD_TIMEOUT_MS else Long.MAX_VALUE,

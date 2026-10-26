@@ -200,6 +200,10 @@ class SteamAccessManager @Inject internal constructor(
         return preferencesInitialized && effectiveSteamAccessEnabled(preferences)
     }
 
+    override suspend fun awaitRouteDecision() {
+        awaitEnhancedConnectionDecision()
+    }
+
     internal suspend fun awaitEnhancedConnectionDecision(): Boolean {
         preferencesReady.await()
         val settings = preferences

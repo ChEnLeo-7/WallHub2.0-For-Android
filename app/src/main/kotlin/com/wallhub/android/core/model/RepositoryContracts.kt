@@ -113,6 +113,9 @@ interface AppUpdateRepository {
 interface SteamAccessRepository {
     val state: StateFlow<SteamAccessState>
 
+    /** Waits for the bounded automatic-route decision before a first network request. */
+    suspend fun awaitRouteDecision() = Unit
+
     fun refresh()
 }
 
