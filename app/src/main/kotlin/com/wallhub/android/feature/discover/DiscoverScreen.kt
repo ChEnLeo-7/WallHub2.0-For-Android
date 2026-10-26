@@ -29,13 +29,13 @@ import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Bookmarks
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -77,7 +77,10 @@ import coil.compose.AsyncImage
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubDropdownMenu
 import com.wallhub.android.core.designsystem.WallHubDropdownMenuItem
+import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
+import com.wallhub.android.core.designsystem.WallHubSizeTokens
+import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.localizedAuthor
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.model.DiscoverRailFeedback
@@ -129,8 +132,11 @@ fun DiscoverRoute(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize().padding(padding),
-                    contentPadding = PaddingValues(bottom = 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                    contentPadding =
+                        PaddingValues(
+                            bottom = WallHubSizeTokens.bottomNavigationClearance + WallHubSpacing.md,
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(WallHubSpacing.lg),
                 ) {
                     if (state.partialMissingCount > 0) {
                         item(key = "discover-cm-partial-notice") {
@@ -185,14 +191,13 @@ private fun DiscoverFullPageError(
     padding: PaddingValues,
     onRetry: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(stringResource(R.string.discover_load_failed), color = MaterialTheme.colorScheme.error)
-            Button(onClick = onRetry, modifier = Modifier.padding(top = 12.dp)) {
-                Text(stringResource(R.string.discover_retry))
-            }
-        }
-    }
+    WallHubEmptyState(
+        icon = Icons.Outlined.ErrorOutline,
+        title = stringResource(R.string.discover_load_failed),
+        actionLabel = stringResource(R.string.discover_retry),
+        onAction = onRetry,
+        modifier = Modifier.fillMaxSize().padding(padding),
+    )
 }
 
 @Composable

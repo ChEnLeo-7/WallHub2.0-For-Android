@@ -138,6 +138,7 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -522,14 +523,13 @@ fun DiscoverResultsRoute(
                                 CircularProgressIndicator()
                             }
                         state.items.isEmpty() && state.error != null ->
-                            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(stringResource(R.string.discover_results_load_failed), color = MaterialTheme.colorScheme.error)
-                                    Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) {
-                                        Text(stringResource(R.string.discover_retry))
-                                    }
-                                }
-                            }
+                            WallHubEmptyState(
+                                icon = Icons.Outlined.ErrorOutline,
+                                title = stringResource(R.string.discover_results_load_failed),
+                                actionLabel = stringResource(R.string.discover_retry),
+                                onAction = viewModel::retry,
+                                modifier = Modifier.fillMaxSize().padding(padding),
+                            )
                         state.items.isEmpty() ->
                             WallHubEmptyState(
                                 icon = Icons.Outlined.Collections,

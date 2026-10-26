@@ -1360,6 +1360,7 @@ fun LibraryContent(
                 LibraryResults(
                     state = state,
                     onRefresh = { onAction(LibraryAction.Refresh) },
+                    onOpenLogin = onOpenLogin,
                     onLoadNextPage = { onAction(LibraryAction.LoadNextPage) },
                     onPageSelected = { onAction(LibraryAction.SelectPage(it)) },
                     onOpenDetail = { onAction(LibraryAction.OpenDetail(it)) },
@@ -1474,6 +1475,7 @@ private fun LibraryLoadingOverlay(modifier: Modifier = Modifier) {
 private fun LibraryResults(
     state: LibraryUiState,
     onRefresh: () -> Unit,
+    onOpenLogin: () -> Unit,
     onLoadNextPage: () -> Unit,
     onPageSelected: (Int) -> Unit,
     onOpenDetail: (Long) -> Unit,

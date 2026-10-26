@@ -133,6 +133,7 @@ import com.wallhub.android.core.designsystem.WallHubContextMenuSurface
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubPaginationControl
+import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.designsystem.rememberWallHubContextMenuState
@@ -996,7 +997,13 @@ internal fun HomeResults(
             }
 
             else -> {
-                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                BoxWithConstraints(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .widthIn(max = WallHubSizeTokens.readableContentMaxWidth)
+                            .align(Alignment.TopCenter),
+                ) {
                     val layoutKey = HomeCardLayoutKey.resolve(state.viewMode, state.columns)
                     val contentWidth = (maxWidth - HOME_GRID_HORIZONTAL_PADDING * 2).coerceAtLeast(WallHubSpacing.none)
                     val gridCardWidth =
