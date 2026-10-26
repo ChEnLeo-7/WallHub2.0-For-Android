@@ -27,8 +27,8 @@ if (!sourceOnlyHostedCi) {
     val sdkCommitFile = rootDir.resolve("sc-sdk-maven/sdk-commit.txt")
     val provenanceArgs =
         when {
-            sdkRepo != null -> listOf("--sdk-repo", sdkRepo.absolutePath)
             sdkCommitFile.isFile -> listOf("--sdk-commit-file", sdkCommitFile.absolutePath)
+            sdkRepo != null -> listOf("--sdk-repo", sdkRepo.absolutePath)
             else -> error(
                 "Steam Content SDK checkout/provenance not found; set WALLHUB_STEAM_CONTENT_SDK_REPO",
             )
