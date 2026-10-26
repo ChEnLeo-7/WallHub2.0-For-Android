@@ -938,11 +938,18 @@ object ShaderCompatibility {
     private val textureCoordinateZero = Regex("(v_TexCoord\\.[zw] = )0;")
     private val vectorDeclaration =
         Regex("""(?:uniform\s+|attribute\s+|varying\s+)?vec[234]\s+([A-Za-z_][A-Za-z0-9_]*)""")
+    private val floatDeclaration =
+        Regex("""(?:uniform\s+|attribute\s+|varying\s+|const\s+)?float\s+([A-Za-z_][A-Za-z0-9_]*)""")
+    private val floatFunctionDeclaration =
+        Regex("""\bfloat\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^;]*\)\s*\{""")
     private val floatLiteral = Regex("""\d+\.\d*|\.\d+""")
     private val integerLiteral = Regex("""\d+""")
     private val numericArgument =
         Regex("""(?<![\w.])(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+\-]?\d+)?(?![\w.])""")
     private val mixCall = Regex("""(?<![A-Za-z0-9_])mix\(""")
+    private val scalarAssignment =
+        Regex("""(?:\bfloat\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)""")
+    private val floatReturn = Regex("""(\breturn\s+)([^;]+)""")
     private val packedAudioSpectrumIndex =
         Regex(
             """(g_AudioSpectrum64(?:Left|Right))\[([A-Za-z_][A-Za-z0-9_]*)\s*/\s*4\]\[\2\s*%\s*4\]""",
@@ -978,6 +985,8 @@ object ShaderCompatibility {
         ).forEach { (old, new) -> output = output.replace(old, new) }
         checkCancellation()
         output = rewriteVectorIntegerArithmetic(output)
+        checkCancellation()
+        output = rewriteScalarFloatContexts(output)
         checkCancellation()
         output = rewriteMixArguments(output)
         checkCancellation()
@@ -1040,6 +1049,101 @@ object ShaderCompatibility {
         expression.replace(numericArgument) { match ->
             if (match.value.all(Char::isDigit)) "${match.value}.0" else match.value
         }
+
+    /**
+     * Mobile GLSL is strict about int-to-float coercion. Desktop Workshop shaders commonly rely on literals
+     * such as `float x = 0`, `x = max(0, y)`, and `return 1 - y`; the official mobile exporter promotes those
+     * literals while retaining actual integer control flow and array indices. This bounded pass does the same
+     * only when the assignment target or function return type is known to be float.
+     */
+    private fun rewriteScalarFloatContexts(source: String): String {
+        val floatNames = floatDeclaration.findAll(source).map { it.groupValues[1] }.toSet()
+        if (floatNames.isEmpty() && !floatFunctionDeclaration.containsMatchIn(source)) return source
+        var braceDepth = 0
+        var floatFunctionDepth: Int? = null
+        return source.lineSequence().joinToString("\n") { line ->
+            val code = line.substringBefore("//")
+            val comment = line.substring(code.length)
+            val startsFloatFunction = floatFunctionDeclaration.containsMatchIn(code)
+            val inFloatFunction = startsFloatFunction || floatFunctionDepth?.let { braceDepth >= it } == true
+            val assignment = scalarAssignment.find(code)
+            val rewrittenCode =
+                when {
+                    code.trimStart().startsWith("#") -> code
+                    assignment != null && assignment.groupValues[1] in floatNames -> {
+                        val rhsStart = assignment.range.last + 1
+                        code.substring(0, rhsStart) + promoteIntegerLiteralsInFloatExpression(code.substring(rhsStart))
+                    }
+                    inFloatFunction ->
+                        floatReturn.replace(code) { match ->
+                            match.groupValues[1] + promoteIntegerLiteralsInFloatExpression(match.groupValues[2])
+                        }
+                    else -> code
+                }
+            val opens = code.count { it == '{' }
+            val closes = code.count { it == '}' }
+            if (startsFloatFunction && opens > 0) floatFunctionDepth = braceDepth + 1
+            braceDepth += opens - closes
+            if (floatFunctionDepth?.let { braceDepth < it } == true) floatFunctionDepth = null
+            rewrittenCode + comment
+        }
+    }
+
+    private fun promoteIntegerLiteralsInFloatExpression(expression: String): String {
+        if (expression.any { it in "&|" } || "<<" in expression || ">>" in expression) return expression
+        val output = StringBuilder(expression.length)
+        var index = 0
+        var bracketDepth = 0
+        var parenthesisDepth = 0
+        var explicitIntParenthesisDepth: Int? = null
+        while (index < expression.length) {
+            when {
+                expression.startsWith("int(", index) -> {
+                    output.append("int(")
+                    parenthesisDepth += 1
+                    explicitIntParenthesisDepth = parenthesisDepth
+                    index += 4
+                }
+                expression[index] == '(' -> {
+                    parenthesisDepth += 1
+                    output.append(expression[index++])
+                }
+                expression[index] == '[' -> {
+                    bracketDepth += 1
+                    output.append(expression[index++])
+                }
+                expression[index] == ']' -> {
+                    bracketDepth = (bracketDepth - 1).coerceAtLeast(0)
+                    output.append(expression[index++])
+                }
+                expression[index] == ')' -> {
+                    if (explicitIntParenthesisDepth == parenthesisDepth) explicitIntParenthesisDepth = null
+                    parenthesisDepth = (parenthesisDepth - 1).coerceAtLeast(0)
+                    output.append(expression[index++])
+                }
+                expression[index].isDigit() -> {
+                    val start = index
+                    while (index < expression.length && expression[index].isDigit()) index += 1
+                    val token = expression.substring(start, index)
+                    val isDecimalPart =
+                        (start > 0 && expression[start - 1] == '.') ||
+                            (index < expression.length && expression[index] in ".eE")
+                    val touchesIdentifier =
+                        (start > 0 && (expression[start - 1].isLetterOrDigit() || expression[start - 1] == '_')) ||
+                            (index < expression.length && (expression[index].isLetterOrDigit() || expression[index] == '_'))
+                    output.append(
+                        if (bracketDepth == 0 && explicitIntParenthesisDepth == null && !isDecimalPart && !touchesIdentifier) {
+                            "$token.0"
+                        } else {
+                            token
+                        },
+                    )
+                }
+                else -> output.append(expression[index++])
+            }
+        }
+        return output.toString()
+    }
 
     private fun rewriteMixArguments(source: String): String {
         val calls = mixCall.findAll(source).toList()

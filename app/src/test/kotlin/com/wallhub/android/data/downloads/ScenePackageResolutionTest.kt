@@ -320,6 +320,55 @@ class ScenePackageResolutionTest {
     }
 
     @Test
+    fun shaderRewritePromotesIntegerLiteralsInFloatScalarContexts() {
+        val source =
+            """
+            varying float i_DCorrectingFactor;
+            uniform vec2 g_Texture0Resolution;
+            float remapVolume(float volume) {
+                if (volume > 0.5) return log2(9 * volume + 1);
+                return 1 - volume;
+            }
+            void main() {
+                i_DCorrectingFactor = 1;
+                float rAntiAliasFactor = 15 / min(g_Texture0Resolution.x, g_Texture0Resolution.y);
+                float rBoxLowerBound = 0;
+                rBoxLowerBound = max(0, min(rBoxLowerBound, i_DCorrectingFactor - 1));
+            }
+            """.trimIndent()
+
+        val rewritten = ShaderCompatibility.rewrite(source)
+
+        assertTrue(rewritten.contains("i_DCorrectingFactor = 1.0;"))
+        assertTrue(rewritten.contains("float rAntiAliasFactor = 15.0 / min"))
+        assertTrue(rewritten.contains("float rBoxLowerBound = 0.0;"))
+        assertTrue(rewritten.contains("max(0.0, min(rBoxLowerBound, i_DCorrectingFactor - 1.0))"))
+        assertTrue(rewritten.contains("log2(9.0 * volume + 1.0)"))
+        assertTrue(rewritten.contains("return 1.0 - volume;"))
+        assertEquals(rewritten, ShaderCompatibility.rewrite(rewritten))
+    }
+
+    @Test
+    fun shaderRewriteKeepsIntegerControlAndIndexContexts() {
+        val source =
+            """
+            #define BAR_STYLE 1
+            uniform float spectrum[16];
+            void main() {
+                for (int i = 0; i < 16; ++i) {
+                    float sample = spectrum[i] + spectrum[0];
+                }
+            }
+            """.trimIndent()
+
+        val rewritten = ShaderCompatibility.rewrite(source)
+
+        assertTrue(rewritten.contains("#define BAR_STYLE 1"))
+        assertTrue(rewritten.contains("for (int i = 0; i < 16; ++i)"))
+        assertTrue(rewritten.contains("spectrum[0]"))
+    }
+
+    @Test
     fun knownXrayShaderAdapterInjectsPointerStateOnlyForMatchingStructure() {
         val source = """
             varying vec4 v_PointerUV;
