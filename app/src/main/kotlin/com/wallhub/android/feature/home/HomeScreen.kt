@@ -36,7 +36,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
@@ -134,7 +133,6 @@ import com.wallhub.android.core.designsystem.WallHubContextMenuSurface
 import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.designsystem.WallHubPaginationControl
-import com.wallhub.android.core.designsystem.WallHubSizeTokens
 import com.wallhub.android.core.designsystem.WallHubSpacing
 import com.wallhub.android.core.designsystem.localizedTitle
 import com.wallhub.android.core.designsystem.rememberWallHubContextMenuState
@@ -344,19 +342,20 @@ internal fun HomeScreenBody(
         WallHubPageScaffold(
             title = stringResource(R.string.app_name),
             titleContent = {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                role = Role.Button,
+                                onClickLabel = stringResource(R.string.home_reset),
+                            ) {
+                                focusManager.clearFocus(force = true)
+                                onAction(HomeAction.ResetAndRefresh)
+                            },
+                ) {
                     Row(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = WallHubSizeTokens.minimumTouchTarget)
-                                .clickable(
-                                    role = Role.Button,
-                                    onClickLabel = stringResource(R.string.home_reset),
-                                ) {
-                                    focusManager.clearFocus(force = true)
-                                    onAction(HomeAction.ResetAndRefresh)
-                                },
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
