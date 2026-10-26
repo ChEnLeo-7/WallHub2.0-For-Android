@@ -81,15 +81,30 @@ class LegacyExploreCuratorParserTest {
     }
 
     @Test
+    fun `present invalid scalar rejects descriptor instead of using a broad default`() {
+        val parsed =
+            LegacyExploreCuratorParser.parse(
+                """{"response":{"items":[
+                    {"category":"keyword","keyword":"bad-time","timestampstart":"later"},
+                    {"category":"keyword","keyword":"bad-exact","exact":2},
+                    {"category":"keyword","keyword":"good","exact":true}
+                ]}}""",
+            )
+
+        assertEquals(listOf("good"), parsed.descriptors.map { it.keyword })
+        assertEquals(2, parsed.rejectedItemCount)
+    }
+
+    @Test
     fun `versioned manifest rejects unknown fields and fixed cover policy`() {
         assertFailsWith<IllegalArgumentException> {
             DiscoverCuratorManifestParser.parse(
-                """{"schemaVersion":1,"sections":[{"id":"nature","category":"keyword","keyword":"Nature","requestUrl":"https://example.com"}]}""",
+                """{"schemaVersion":1,"revision":"test","sections":[{"id":"nature","category":"keyword","keyword":"Nature","requestUrl":"https://example.com"}]}""",
             )
         }
         assertFailsWith<IllegalArgumentException> {
             DiscoverCuratorManifestParser.parse(
-                """{"schemaVersion":1,"sections":[{"id":"nature","category":"keyword","keyword":"Nature","coverPolicy":"submission_id"}]}""",
+                """{"schemaVersion":1,"revision":"test","sections":[{"id":"nature","category":"keyword","keyword":"Nature","coverPolicy":"submission_id"}]}""",
             )
         }
     }
@@ -110,7 +125,7 @@ class LegacyExploreCuratorParserTest {
     fun `versioned manifest omits inactive sections without becoming invalid`() {
         val parsed =
             DiscoverCuratorManifestParser.parse(
-                """{"schemaVersion":1,"sections":[{"id":"future","category":"keyword","keyword":"Future","activeFrom":4102444800}]}""",
+                """{"schemaVersion":1,"revision":"test","sections":[{"id":"future","category":"keyword","keyword":"Future","activeFrom":4102444800}]}""",
             )
 
         assertTrue(parsed.descriptors.isEmpty())

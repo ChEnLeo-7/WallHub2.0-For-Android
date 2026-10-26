@@ -13,6 +13,11 @@ internal object DiscoverCuratorManifestParser {
         if (!root.has("schemaVersion")) return LegacyExploreCuratorParser.parse(json)
         require(root.optInt("schemaVersion") == SUPPORTED_SCHEMA_VERSION) { "Unsupported curator schema version" }
         require(root.keys().asSequence().all(ALLOWED_ROOT_FIELDS::contains)) { "Unknown curator manifest field" }
+        val revision = root.optString("revision").trim()
+        require(revision.matches(SECTION_ID_PATTERN)) { "Invalid curator revision" }
+        val expiresAtMillis =
+            root.optionalLong("expiresAt")
+                ?.let { Math.multiplyExact(it, 1_000L) }
         val sections = root.optJSONArray("sections") ?: throw IllegalArgumentException("Missing curator sections")
         require(sections.length() in 1..MAX_SECTIONS) { "Curator section count is outside the supported range" }
         val legacyItems = JSONArray()
@@ -53,10 +58,14 @@ internal object DiscoverCuratorManifestParser {
                 descriptors = emptyList(),
                 receivedItemCount = sections.length(),
                 rejectedItemCount = 0,
+                versionHint = revision,
+                expiresAtMillis = expiresAtMillis,
             )
         }
         val normalized = JSONObject().put("response", JSONObject().put("items", legacyItems))
-        return LegacyExploreCuratorParser.parse(normalized.toString())
+        return LegacyExploreCuratorParser
+            .parse(normalized.toString())
+            .copy(versionHint = revision, expiresAtMillis = expiresAtMillis)
     }
 
     private fun JSONObject.optionalLong(name: String): Long? {

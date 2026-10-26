@@ -37,6 +37,8 @@ internal data class ParsedCuratorMetadata(
     val descriptors: List<DiscoverCuratorDescriptor>,
     val receivedItemCount: Int,
     val rejectedItemCount: Int,
+    val versionHint: String? = null,
+    val expiresAtMillis: Long? = null,
 )
 
 internal object LegacyExploreCuratorParser {
@@ -82,9 +84,9 @@ internal object LegacyExploreCuratorParser {
     ): DiscoverMetadataSnapshot =
         DiscoverMetadataSnapshot(
             descriptors = parsed.descriptors,
-            version = parsed.descriptors.metadataVersion(),
+            version = parsed.versionHint ?: parsed.descriptors.metadataVersion(),
             fetchedAtMillis = nowMillis,
-            expiresAtMillis = nowMillis + ttlMillis,
+            expiresAtMillis = minOf(nowMillis + ttlMillis, parsed.expiresAtMillis ?: Long.MAX_VALUE),
             source = source,
             receivedItemCount = parsed.receivedItemCount,
             rejectedItemCount = parsed.rejectedItemCount,

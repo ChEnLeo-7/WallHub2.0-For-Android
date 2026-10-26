@@ -317,7 +317,7 @@ class DiscoverResultsViewModel
                             )
                         val result =
                             pageSource.page(
-                                recipe = DiscoverPageRecipe(browseQuery, destination.collectionId),
+                                recipe = DiscoverPageRecipe(query = browseQuery, collectionId = destination.collectionId),
                                 page = nextPage,
                                 pageSize = RESULTS_PAGE_SIZE,
                             )
