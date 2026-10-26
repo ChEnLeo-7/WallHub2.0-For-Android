@@ -79,5 +79,6 @@ internal class SteamNetworkEnvironmentProbe
 internal const val GOOGLE_CONNECTIVITY_CHECK_URL = "https://www.google.com/generate_204"
 private const val PROBE_TIMEOUT_SECONDS = 3L
 private const val PROBE_FAILURE_CONFIRMATION_DELAY_MS = 500L
-internal const val STEAM_ENVIRONMENT_PROBE_TTL_MS = 30_000L
+internal const val STEAM_ENVIRONMENT_OPEN_TTL_MS = 5 * 60_000L
+internal const val STEAM_ENVIRONMENT_RESTRICTED_TTL_MS = 60_000L
 internal const val STEAM_ENVIRONMENT_NETWORK_DEBOUNCE_MS = 500L

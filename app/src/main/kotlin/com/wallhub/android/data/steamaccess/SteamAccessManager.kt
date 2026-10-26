@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -175,6 +176,9 @@ class SteamAccessManager @Inject internal constructor(
                     preferences = next
                     preferencesInitialized = true
                     if (changed) {
+                        environmentProbeGeneration += 1L
+                        environmentProbeJob?.cancel()
+                        environmentProbeJob = null
                         if (next.steamAccessEnabled && next.steamAccessMode == SteamAccessMode.SMART_DOH) {
                             networkEnvironment = SteamNetworkEnvironment.UNKNOWN
                             environmentCheckedAtElapsedMs = 0L
@@ -201,7 +205,7 @@ class SteamAccessManager @Inject internal constructor(
             return effectiveSteamAccessEnabled(settings)
         }
         scheduleEnvironmentProbe(force = false)
-        withTimeout(8_000L) {
+        withTimeoutOrNull(8_000L) {
             while (networkEnvironment == SteamNetworkEnvironment.UNKNOWN) delay(10L)
         }
         return effectiveSteamAccessEnabled(preferences)
@@ -727,10 +731,18 @@ class SteamAccessManager @Inject internal constructor(
             environment = networkEnvironment,
         )
 
+    private fun environmentProbeTtlMs(): Long =
+        when (networkEnvironment) {
+            SteamNetworkEnvironment.OPEN_INTERNET -> STEAM_ENVIRONMENT_OPEN_TTL_MS
+            SteamNetworkEnvironment.RESTRICTED,
+            SteamNetworkEnvironment.UNKNOWN,
+            -> STEAM_ENVIRONMENT_RESTRICTED_TTL_MS
+        }
+
     private fun maybeRefreshEnvironmentProbe() {
         val settings = preferences
         if (!preferencesInitialized || !settings.steamAccessEnabled || settings.steamAccessMode != SteamAccessMode.SMART_DOH) return
-        val stale = SystemClock.elapsedRealtime() - environmentCheckedAtElapsedMs >= STEAM_ENVIRONMENT_PROBE_TTL_MS
+        val stale = SystemClock.elapsedRealtime() - environmentCheckedAtElapsedMs >= environmentProbeTtlMs()
         if (networkEnvironment == SteamNetworkEnvironment.UNKNOWN || stale) scheduleEnvironmentProbe(force = false)
     }
 
@@ -757,7 +769,7 @@ class SteamAccessManager @Inject internal constructor(
         if (!settings.steamAccessEnabled || settings.steamAccessMode != SteamAccessMode.SMART_DOH) return networkEnvironment
         val fresh =
             networkEnvironment != SteamNetworkEnvironment.UNKNOWN &&
-                SystemClock.elapsedRealtime() - environmentCheckedAtElapsedMs < STEAM_ENVIRONMENT_PROBE_TTL_MS
+                SystemClock.elapsedRealtime() - environmentCheckedAtElapsedMs < environmentProbeTtlMs()
         if (!force && fresh) return networkEnvironment
         val generation: Long
         val fingerprint: String
@@ -785,7 +797,9 @@ class SteamAccessManager @Inject internal constructor(
         ) {
             return SteamNetworkEnvironment.UNKNOWN
         }
-        return environmentProbe.classify(network)
+        if (connectivityManager.activeNetwork != network) return SteamNetworkEnvironment.UNKNOWN
+        val result = environmentProbe.classify(network)
+        return if (connectivityManager.activeNetwork == network) result else SteamNetworkEnvironment.UNKNOWN
     }
 
     private fun applyNetworkEnvironment(
@@ -810,7 +824,11 @@ class SteamAccessManager @Inject internal constructor(
                             else -> invalidatedSteamAccessPhase()
                         },
                 )
-            } else if (result == SteamNetworkEnvironment.OPEN_INTERNET) {
+            } else if (
+                preferences.steamAccessEnabled &&
+                preferences.steamAccessMode == SteamAccessMode.SMART_DOH &&
+                result == SteamNetworkEnvironment.OPEN_INTERNET
+            ) {
                 mutableState.value = mutableState.value.copy(
                     phase = SteamAccessPhase.BYPASSED,
                     message = null,
@@ -924,6 +942,15 @@ class SteamAccessManager @Inject internal constructor(
         attributes: Map<String, String>,
         warning: Boolean,
     ) {
+        if (
+            warning &&
+            preferences.steamAccessEnabled &&
+            preferences.steamAccessMode == SteamAccessMode.SMART_DOH &&
+            networkEnvironment == SteamNetworkEnvironment.OPEN_INTERNET
+        ) {
+            environmentCheckedAtElapsedMs = 0L
+            scheduleEnvironmentProbe(force = false)
+        }
         recordDiagnostic(
             message = message,
             attributes = attributes + ("networkType" to networkType),
