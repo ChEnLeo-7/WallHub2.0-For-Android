@@ -24,7 +24,7 @@ if (!sourceOnlyHostedCi) {
         configuredSdkRepo
             ?: listOf(rootDir.resolve("../Steam Content SDK"), rootDir.resolve("../sdk-source"))
                 .firstOrNull { it.resolve(".git").exists() }
-    val sdkCommitFile = rootDir.resolve("sc-sdk-maven/sdk-commit.txt")
+    val sdkCommitFile = rootDir.resolve("config/steam-content-sdk.commit")
     val provenanceArgs =
         when {
             sdkCommitFile.isFile -> listOf("--sdk-commit-file", sdkCommitFile.absolutePath)
