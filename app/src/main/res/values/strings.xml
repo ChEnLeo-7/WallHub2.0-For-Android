@@ -8,7 +8,7 @@
     <string name='setup_steam_title'>Sign in to Steam</string>
     <string name='setup_steam_description'>Connect your Steam account to access your library, comments, and authenticated Workshop features.</string>
     <string name='setup_network_title'>Network settings</string>
-    <string name='setup_network_description'>Set the proxy, Steam service access route, Workshop data source, and Web API key.</string>
+    <string name='setup_network_description'>Set the proxy, service access routes, Workshop data source, and Web API key.</string>
     <string name='setup_warmup_title'>Preparing anti-blocking routes</string>
     <string name='setup_warmup_description'>WallHub is measuring enabled secure DNS providers before testing Steam services.</string>
     <string name='setup_warmup_working'>Warming up direct routes…</string>
@@ -55,6 +55,8 @@
     <string name='setup_network_item_community_html'>Community HTML</string>
     <string name='setup_network_item_workshop_image'>Workshop image</string>
     <string name='setup_network_item_cm_transport'>CM transport</string>
+    <string name='setup_network_item_github_api'>GitHub API</string>
+    <string name='setup_network_item_curator_api'>Wallpaper curator API</string>
     <string name='settings_restart_setup_wizard'>Run setup wizard again</string>
     <string name='settings_restart_setup_wizard_description'>Return to the welcome page and review network, save location, and Steam setup</string>
     <string name='settings_title'>Settings</string>
@@ -225,15 +227,15 @@
     <string name='settings_action_sign_in_again_steam'>Sign in again</string>
     <string name='settings_steam_disconnected'>Connection interrupted</string>
     <string name='settings_steam_avatar'>Steam profile avatar</string>
-    <string name='settings_steam_service_access_title'>Steam service access</string>
-    <string name='settings_steam_service_access_description'>Enhances Steam Community, Web API, account CM, and content delivery when direct access is incomplete</string>
+    <string name='settings_steam_service_access_title'>Service access</string>
+    <string name='settings_steam_service_access_description'>Enhances Steam services, GitHub app updates, and the Discover curator when direct access is incomplete</string>
     <string name='settings_steam_automatic_anti_blocking'>Automatic anti-blocking</string>
     <string name='settings_disabled'>Disabled</string>
     <string name='settings_enabled'>Enabled</string>
     <string name='settings_steam_routes_checking'>Checking the network through Google</string>
     <string name='settings_steam_route_available'>Direct access is limited; built-in routing is active</string>
     <string name='settings_steam_route_direct'>Current network available; using direct access</string>
-    <string name='settings_steam_probe_disclosure'>When enabled, WallHub checks Google HTTPS after startup, network changes, failures, and manual re-detection to decide whether built-in routes are needed.</string>
+    <string name='settings_steam_probe_disclosure'>When enabled, WallHub uses Google HTTPS to decide Steam routing and dedicated authenticated direct routes for GitHub updates and the Discover curator.</string>
     <string name='settings_steam_route_unstable'>Route issue detected; retrying automatically</string>
     <string name='settings_steam_no_route'>No route available; check again</string>
     <string name='settings_action_check_routes_again'>Check routes again</string>

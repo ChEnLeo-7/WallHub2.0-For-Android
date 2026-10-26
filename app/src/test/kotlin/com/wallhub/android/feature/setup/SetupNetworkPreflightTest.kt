@@ -78,6 +78,8 @@ class SetupNetworkPreflightTest {
                 SetupNetworkCheck.COMMUNITY_HTML to SetupNetworkProbe { SetupProbeOutcome.Passed("Workshop page") },
                 SetupNetworkCheck.WORKSHOP_IMAGE to SetupNetworkProbe { SetupProbeOutcome.Passed("image/png") },
                 SetupNetworkCheck.CM_TRANSPORT to SetupNetworkProbe { SetupProbeOutcome.Skipped("No safe anonymous transport probe") },
+                SetupNetworkCheck.GITHUB_API to SetupNetworkProbe { SetupProbeOutcome.Passed("GitHub Release API") },
+                SetupNetworkCheck.CURATOR_API to SetupNetworkProbe { SetupProbeOutcome.Passed("Wallpaper curator API") },
             ),
             nowMillis = { clock.also { clock += 7L } },
         )
@@ -118,6 +120,9 @@ class SetupNetworkPreflightTest {
         assertEquals(12_000L, setupProbeTimeoutMillis(SetupNetworkCheck.COMMUNITY_HTML, true))
         assertEquals(68_000L, setupProbeTimeoutMillis(SetupNetworkCheck.WORKSHOP_IMAGE, true))
         assertEquals(5_000L, setupProbeTimeoutMillis(SetupNetworkCheck.CM_TRANSPORT, true))
+        assertEquals(12_000L, setupProbeTimeoutMillis(SetupNetworkCheck.GITHUB_API, true))
+        assertEquals(20_000L, setupProbeTimeoutMillis(SetupNetworkCheck.CURATOR_API, true))
+        assertEquals(12_000L, setupProbeTimeoutMillis(SetupNetworkCheck.CURATOR_API, false))
         assertEquals(5_000L, setupProbeTimeoutMillis(SetupNetworkCheck.PUBLIC_DETAILS_JSON, false))
         assertEquals(5_000L, setupProbeTimeoutMillis(SetupNetworkCheck.WORKSHOP_IMAGE, false))
     }

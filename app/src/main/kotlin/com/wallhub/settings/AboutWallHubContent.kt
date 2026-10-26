@@ -57,13 +57,14 @@ import androidx.compose.material.icons.outlined.Settings
 internal data class WallHubPerson(
     val displayName: String,
     val githubAccount: String,
+    val githubUserId: Long,
     @StringRes val roleRes: Int,
 ) {
     val githubUrl: String
         get() = "https://github.com/$githubAccount"
 
     val avatarUrl: String
-        get() = "https://github.com/$githubAccount.png?size=160"
+        get() = "https://avatars.githubusercontent.com/u/$githubUserId?v=4&s=160"
 }
 
 internal const val WALLHUB_QQ_GROUP_NUMBER = "1082323527"
@@ -77,6 +78,7 @@ internal val WALLHUB_AUTHOR =
     WallHubPerson(
         displayName = "CHENLEO_7",
         githubAccount = "ChEnLeo-7",
+        githubUserId = 136879424L,
         roleRes = R.string.settings_about_role_author,
     )
 
@@ -86,6 +88,7 @@ internal val WALLHUB_DEVELOPERS =
         WallHubPerson(
             displayName = "uwugl",
             githubAccount = "uwu-gl",
+            githubUserId = 137363994L,
             roleRes = R.string.settings_about_role_logo_guidance,
         ),
     )
@@ -95,11 +98,13 @@ internal val WALLHUB_CONTRIBUTORS =
         WallHubPerson(
             displayName = "cccp114",
             githubAccount = "cccp114",
+            githubUserId = 138763311L,
             roleRes = R.string.settings_about_role_logo_ui,
         ),
         WallHubPerson(
             displayName = "hf5203344",
             githubAccount = "hf5203344",
+            githubUserId = 293614903L,
             roleRes = R.string.settings_about_role_early_testing,
         ),
     )

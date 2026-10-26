@@ -8,7 +8,7 @@
     <string name='setup_steam_title'>登录 Steam</string>
     <string name='setup_steam_description'>连接 Steam 账户，以访问资料库、评论和需要登录的创意工坊功能。</string>
     <string name='setup_network_title'>网络设置</string>
-    <string name='setup_network_description'>设置网络代理、Steam 服务访问线路、创意工坊数据源和 Web API Key。</string>
+    <string name='setup_network_description'>设置网络代理、服务访问线路、创意工坊数据源和 Web API Key。</string>
     <string name='setup_warmup_title'>准备防阻断线路</string>
     <string name='setup_warmup_description'>WallHub 会先测速已启用的安全 DNS，再检测 Steam 服务。</string>
     <string name='setup_warmup_working'>正在预热可直连线路…</string>
@@ -55,6 +55,8 @@
     <string name='setup_network_item_community_html'>社区 HTML</string>
     <string name='setup_network_item_workshop_image'>创意工坊图片</string>
     <string name='setup_network_item_cm_transport'>CM 传输</string>
+    <string name='setup_network_item_github_api'>GitHub API</string>
+    <string name='setup_network_item_curator_api'>壁纸策展 API</string>
     <string name='settings_restart_setup_wizard'>重新开始设置向导</string>
     <string name='settings_restart_setup_wizard_description'>返回欢迎页，重新检查网络、保存位置与 Steam 配置</string>
     <string name='settings_title'>设置</string>
@@ -213,15 +215,15 @@
     <string name='settings_action_sign_in_again_steam'>重新登录</string>
     <string name='settings_steam_disconnected'>连接已中断</string>
     <string name='settings_steam_avatar'>Steam 账户头像</string>
-    <string name='settings_steam_service_access_title'>Steam 服务访问</string>
-    <string name='settings_steam_service_access_description'>在直连不完整时增强 Steam 社区、Web API、账号 CM 与内容下载连接</string>
+    <string name='settings_steam_service_access_title'>服务访问</string>
+    <string name='settings_steam_service_access_description'>在直连不完整时增强 Steam 服务、GitHub 应用更新与发现页策展连接</string>
     <string name='settings_steam_automatic_anti_blocking'>自动防阻断</string>
     <string name='settings_disabled'>已关闭</string>
     <string name='settings_enabled'>已开启</string>
     <string name='settings_steam_routes_checking'>正在通过 Google 检测网络环境</string>
     <string name='settings_steam_route_available'>直连受限，已启用内置线路</string>
     <string name='settings_steam_route_direct'>当前网络可用，已自动直连</string>
-    <string name='settings_steam_probe_disclosure'>启用后，WallHub 会在启动、网络变化、连接异常和手动重检时访问 Google HTTPS，以判断是否需要内置线路。</string>
+    <string name='settings_steam_probe_disclosure'>启用后，WallHub 通过 Google HTTPS 判断 Steam 线路，并为 GitHub 更新与发现页策展使用经过身份验证的专用直连线路。</string>
     <string name='settings_steam_route_unstable'>线路异常，正在自动重试</string>
     <string name='settings_steam_no_route'>暂无可用线路，请重新检测</string>
     <string name='settings_action_check_routes_again'>重新检测线路</string>

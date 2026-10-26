@@ -1,11 +1,14 @@
 package com.wallhub.android.feature.setup
 
+import com.wallhub.android.data.discover.DiscoverCuratorManifestParser
+import com.wallhub.android.data.discover.DiscoverCuratorNoSniTransport
 import com.wallhub.android.data.steam.cmCandidateCount
 import com.wallhub.android.data.steam.cmCandidatesFromBody
 import com.wallhub.android.data.steam.CM_DIRECTORY_URL
 import com.wallhub.android.data.steam.MAX_CM_LIST_CACHE_BYTES
 import com.wallhub.android.data.steamaccess.SteamAccessManager
 import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
+import com.wallhub.android.data.update.GitHubNetworkClient
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -38,8 +41,13 @@ internal const val SETUP_WEB_PROBE_TIMEOUT_MS = 12_000L
 internal const val SETUP_DIRECTORY_PROBE_TIMEOUT_MS = 34_000L
 internal const val SETUP_DETAILS_PROBE_TIMEOUT_MS = 34_000L
 internal const val SETUP_IMAGE_PROBE_TIMEOUT_MS = 68_000L
+internal const val SETUP_GITHUB_PROBE_TIMEOUT_MS = 12_000L
+internal const val SETUP_CURATOR_PROBE_TIMEOUT_MS = 20_000L
 private const val SETUP_PROBE_BODY_LIMIT = 512L * 1024L
 private const val SETUP_PROBE_WORKSHOP_ID = 3799142774L
+private const val GITHUB_RELEASE_PROBE_URL =
+    "https://api.github.com/repos/ChEnLeo-7/WallHub2.0-For-Android/releases/latest"
+private const val CURATOR_PROBE_URL = "https://wallpaperengineapi.com/api/explore/v1"
 
 internal enum class SetupNetworkCheck {
     DIRECTORY,
@@ -47,6 +55,8 @@ internal enum class SetupNetworkCheck {
     COMMUNITY_HTML,
     WORKSHOP_IMAGE,
     CM_TRANSPORT,
+    GITHUB_API,
+    CURATOR_API,
 }
 
 internal fun setupProbeTimeoutMillis(
@@ -61,6 +71,9 @@ internal fun setupProbeTimeoutMillis(
         SetupNetworkCheck.WORKSHOP_IMAGE ->
             if (automaticAntiBlockingEnabled) SETUP_IMAGE_PROBE_TIMEOUT_MS else SETUP_PROBE_TIMEOUT_MS
         SetupNetworkCheck.CM_TRANSPORT -> SETUP_PROBE_TIMEOUT_MS
+        SetupNetworkCheck.GITHUB_API -> SETUP_GITHUB_PROBE_TIMEOUT_MS
+        SetupNetworkCheck.CURATOR_API ->
+            if (automaticAntiBlockingEnabled) SETUP_CURATOR_PROBE_TIMEOUT_MS else SETUP_WEB_PROBE_TIMEOUT_MS
     }
 
 internal enum class SetupNetworkCheckStatus { CHECKING, PASSED, FAILED, SKIPPED }
@@ -97,6 +110,8 @@ internal data class SetupNetworkPreflightResult(
             )
     }
 }
+
+private class GitHubRateLimitException : IOException("GitHub API rate limit exceeded")
 
 internal sealed interface SetupProbeOutcome {
     data class Passed(val reason: String) : SetupProbeOutcome
@@ -207,9 +222,11 @@ internal class SetupNetworkPreflightRunner(
 
 @Singleton
 class SetupNetworkPreflight
-@Inject constructor(
+@Inject internal constructor(
     httpClientFactory: SteamHttpClientFactory,
     private val accessManager: SteamAccessManager,
+    private val curatorNoSniTransport: DiscoverCuratorNoSniTransport,
+    githubNetworkClient: GitHubNetworkClient,
 ) {
     private val client = httpClientFactory.newBuilder()
         .connectTimeout(SETUP_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -231,11 +248,20 @@ class SetupNetworkPreflight
         .readTimeout(SETUP_DETAILS_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .callTimeout(SETUP_DETAILS_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .build()
+    private val githubDirectClient = githubNetworkClient.newBuilder(enhanced = false).setupProbeClient().build()
+    private val githubEnhancedClient = githubNetworkClient.newBuilder(enhanced = true).setupProbeClient().build()
+    private val curatorDirectClient = OkHttpClient.Builder().setupProbeClient().build()
 
     internal suspend fun run(
         input: SetupNetworkPreflightInput,
         onUpdate: (SetupNetworkPreflightResult) -> Unit = {},
     ): SetupNetworkPreflightResult {
+        val githubProbe: suspend () -> SetupProbeOutcome = {
+            probeGithub(if (input.automaticAntiBlockingEnabled) githubEnhancedClient else githubDirectClient)
+        }
+        val curatorProbe: suspend () -> SetupProbeOutcome = {
+            if (input.automaticAntiBlockingEnabled) probeCuratorNoSni() else probeCuratorDirect()
+        }
         val enhancedConnectionEnabled = accessManager.awaitEnhancedConnectionDecision()
         if (!enhancedConnectionEnabled) {
             return SetupNetworkPreflightRunner(
@@ -247,6 +273,8 @@ class SetupNetworkPreflight
                     imageProbe = {
                         probeWorkshopImage(fetchPublicDetail(client), client)
                     },
+                    githubProbe = githubProbe,
+                    curatorProbe = curatorProbe,
                 ),
             ).run(input, onUpdate)
         }
@@ -264,6 +292,8 @@ class SetupNetworkPreflight
                         imageProbe = {
                             probeWorkshopImage(publicDetail.await(), detailsImageClient)
                         },
+                        githubProbe = githubProbe,
+                        curatorProbe = curatorProbe,
                     ),
                 )
             try {
@@ -277,6 +307,8 @@ class SetupNetworkPreflight
     private fun commonProbes(
         detailsProbe: suspend () -> SetupProbeOutcome,
         imageProbe: suspend () -> SetupProbeOutcome,
+        githubProbe: suspend () -> SetupProbeOutcome,
+        curatorProbe: suspend () -> SetupProbeOutcome,
     ): Map<SetupNetworkCheck, SetupNetworkProbe> =
         mapOf(
             SetupNetworkCheck.DIRECTORY to SetupNetworkProbe { probeDirectory() },
@@ -286,7 +318,45 @@ class SetupNetworkPreflight
             SetupNetworkCheck.CM_TRANSPORT to SetupNetworkProbe {
                 SetupProbeOutcome.Skipped("No safe anonymous CM transport probe")
             },
+            SetupNetworkCheck.GITHUB_API to SetupNetworkProbe { githubProbe() },
+            SetupNetworkCheck.CURATOR_API to SetupNetworkProbe { curatorProbe() },
         )
+
+    private suspend fun probeGithub(httpClient: OkHttpClient): SetupProbeOutcome {
+        val request =
+            Request
+                .Builder()
+                .url(GITHUB_RELEASE_PROBE_URL)
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .header("User-Agent", "WallHub-Android-Setup/1.0")
+                .get()
+                .build()
+        val body =
+            try {
+                executeGitHubProbe(request, httpClient)
+            } catch (_: GitHubRateLimitException) {
+                return SetupProbeOutcome.Skipped("GitHub API rate limit exceeded")
+            }
+        val release = runCatching { JSONObject(body) }.getOrNull() ?: throw IOException("Invalid GitHub JSON")
+        if (release.optString("tag_name").isBlank() || release.optJSONArray("assets") == null) {
+            throw IOException("Unexpected GitHub Release JSON")
+        }
+        return SetupProbeOutcome.Passed("GitHub Release API")
+    }
+
+    private suspend fun probeCuratorNoSni(): SetupProbeOutcome {
+        val response = curatorNoSniTransport.get(CURATOR_PROBE_URL, etag = null, lastModified = null)
+        if (response.statusCode != 200) throw IOException("Curator HTTP ${response.statusCode}")
+        DiscoverCuratorManifestParser.parse(response.body)
+        return SetupProbeOutcome.Passed("Wallpaper curator API")
+    }
+
+    private suspend fun probeCuratorDirect(): SetupProbeOutcome {
+        val body = getBounded(CURATOR_PROBE_URL, "application/json", curatorDirectClient)
+        DiscoverCuratorManifestParser.parse(body)
+        return SetupProbeOutcome.Passed("Wallpaper curator API")
+    }
 
     private suspend fun probeDirectory(): SetupProbeOutcome {
         val body =
@@ -353,6 +423,20 @@ class SetupNetworkPreflight
     ): String =
         executeBounded(Request.Builder().url(url).header("Accept", accept).build(), httpClient, bodyLimit)
 
+    private suspend fun executeGitHubProbe(
+        request: Request,
+        httpClient: OkHttpClient,
+    ): String =
+        withContext(Dispatchers.IO) {
+            httpClient.newCall(request).await().use { response ->
+                if (response.code == 403 && response.header("X-RateLimit-Remaining") == "0") {
+                    throw GitHubRateLimitException()
+                }
+                if (!response.isSuccessful) throw IOException("GitHub HTTP ${response.code}")
+                readBoundedBody(response, SETUP_PROBE_BODY_LIMIT)
+            }
+        }
+
     private suspend fun executeBounded(
         request: Request,
         httpClient: OkHttpClient = client,
@@ -361,23 +445,37 @@ class SetupNetworkPreflight
         withContext(Dispatchers.IO) {
             httpClient.newCall(request).await().use { response ->
                 if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-                val body = response.body
-                if (body.contentLength() > bodyLimit) throw IOException("Response too large")
-                val output = ByteArrayOutputStream()
-                val buffer = ByteArray(8 * 1024)
-                body.byteStream().use { input ->
-                    while (true) {
-                        val remaining = bodyLimit + 1L - output.size()
-                        if (remaining <= 0L) throw IOException("Response too large")
-                        val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
-                        if (read < 0) break
-                        output.write(buffer, 0, read)
-                    }
-                }
-                output.toString(Charsets.UTF_8.name())
+                readBoundedBody(response, bodyLimit)
             }
         }
+
+    private fun readBoundedBody(
+        response: Response,
+        bodyLimit: Long,
+    ): String {
+        val body = response.body
+        if (body.contentLength() > bodyLimit) throw IOException("Response too large")
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(8 * 1024)
+        body.byteStream().use { input ->
+            while (true) {
+                val remaining = bodyLimit + 1L - output.size()
+                if (remaining <= 0L) throw IOException("Response too large")
+                val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                if (read < 0) break
+                output.write(buffer, 0, read)
+            }
+        }
+        return output.toString(Charsets.UTF_8.name())
+    }
 }
+
+private fun OkHttpClient.Builder.setupProbeClient(): OkHttpClient.Builder =
+    connectTimeout(SETUP_GITHUB_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .readTimeout(SETUP_GITHUB_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .callTimeout(SETUP_GITHUB_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
 
 private suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation { cancel() }

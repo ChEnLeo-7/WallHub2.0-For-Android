@@ -7,10 +7,14 @@ import android.os.Build
 import com.wallhub.android.core.model.AppReleaseInfo
 import com.wallhub.android.core.model.AppUpdateRepository
 import com.wallhub.android.core.model.InstalledAppInfo
+import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.core.model.SteamAccessMode
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.Call
@@ -28,6 +32,7 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -35,19 +40,15 @@ import javax.inject.Singleton
 @Singleton
 class GitHubAppUpdateRepository
     @Inject
-    constructor(
+    internal constructor(
         @ApplicationContext private val context: Context,
+        private val settingsRepository: SettingsRepository,
+        networkClient: GitHubNetworkClient,
     ) : AppUpdateRepository {
-        private val client =
-            OkHttpClient
-                .Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .callTimeout(15, TimeUnit.MINUTES)
-                .followRedirects(true)
-                .followSslRedirects(false)
-                .build()
+        private val directClient = networkClient.newBuilder(enhanced = false).updateClient().build()
+        private val enhancedClient = networkClient.newBuilder(enhanced = true).updateClient().build()
         private val activeDownloadCall = AtomicReference<Call?>()
+        private val downloadCancelRequested = AtomicBoolean(false)
 
         override val installedAppInfo: InstalledAppInfo by lazy {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
@@ -70,7 +71,7 @@ class GitHubAppUpdateRepository
                     .header("User-Agent", USER_AGENT)
                     .get()
                     .build()
-            return client.newCall(request).awaitResponse().use { response ->
+            return selectedClient().newCall(request).awaitResponse().use { response ->
                 if (!response.isSuccessful) {
                     throw IOException("GitHub Release check failed: HTTP ${response.code}")
                 }
@@ -84,7 +85,7 @@ class GitHubAppUpdateRepository
             onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
         ): String =
             withContext(Dispatchers.IO) {
-                release.assetUrl.requireOfficialAssetUrl(release.tagName, release.assetName)
+                release.assetUrl.requireOfficialAssetApiUrl()
                 require(release.assetSizeBytes in 1L..MAX_APK_BYTES) { "Release APK size is invalid" }
                 require(release.sha256.matches(SHA_256_REGEX)) { "Release APK SHA-256 is invalid" }
 
@@ -92,7 +93,6 @@ class GitHubAppUpdateRepository
                 check(directory.isDirectory) { "Cannot create update cache directory" }
                 val destination = File(directory, VERIFIED_APK_NAME)
                 val partial = File(directory, "$VERIFIED_APK_NAME.part")
-                partial.delete()
 
                 val request =
                     Request
@@ -102,52 +102,18 @@ class GitHubAppUpdateRepository
                         .header("User-Agent", USER_AGENT)
                         .get()
                         .build()
-                val call = client.newCall(request)
-                check(activeDownloadCall.compareAndSet(null, call)) { "A Release APK download is already active" }
+                val client = selectedClient()
+                val apiCall = client.newCall(request)
+                check(activeDownloadCall.compareAndSet(null, apiCall)) { "A Release APK download is already active" }
+                downloadCancelRequested.set(false)
+                partial.delete()
                 try {
-                    call.awaitResponse().use { response ->
-                        if (!response.isSuccessful) {
-                            throw IOException("Release APK download failed: HTTP ${response.code}")
-                        }
-                        val responseLength = response.body.contentLength()
-                        if (responseLength > 0L && responseLength != release.assetSizeBytes) {
-                            throw IOException("Release APK size metadata mismatch")
-                        }
-                        val digest = MessageDigest.getInstance("SHA-256")
-                        var downloaded = 0L
-                        var lastReportedBytes = 0L
-                        response.body.byteStream().use { input ->
-                            partial.outputStream().buffered().use { output ->
-                                val buffer = ByteArray(COPY_BUFFER_BYTES)
-                                while (true) {
-                                    currentCoroutineContext().ensureActive()
-                                    val read = input.read(buffer)
-                                    if (read < 0) break
-                                    output.write(buffer, 0, read)
-                                    digest.update(buffer, 0, read)
-                                    downloaded += read
-                                    if (downloaded > release.assetSizeBytes || downloaded > MAX_APK_BYTES) {
-                                        throw IOException("Release APK exceeds expected size")
-                                    }
-                                    if (
-                                        downloaded == release.assetSizeBytes ||
-                                        downloaded - lastReportedBytes >= PROGRESS_REPORT_INTERVAL_BYTES
-                                    ) {
-                                        onProgress(downloaded, release.assetSizeBytes)
-                                        lastReportedBytes = downloaded
-                                    }
-                                }
-                            }
-                        }
-                        if (downloaded != release.assetSizeBytes) {
-                            throw IOException("Release APK download is incomplete")
-                        }
-                        val actualDigest = digest.digest().toHexString()
-                        if (!actualDigest.equals(release.sha256, ignoreCase = true)) {
-                            throw IOException("Release APK SHA-256 verification failed")
-                        }
+                    openReleaseAssetResponse(client, apiCall).use { response ->
+                        writeVerifiedReleaseBody(response, release, partial, onProgress)
                     }
+                    ensureDownloadActive()
                     verifyArchiveIdentityAndSigner(partial, release.versionName)
+                    ensureDownloadActive()
                     try {
                         Files.move(
                             partial.toPath(),
@@ -167,12 +133,109 @@ class GitHubAppUpdateRepository
                     partial.delete()
                     throw error
                 } finally {
-                    activeDownloadCall.compareAndSet(call, null)
+                    activeDownloadCall.getAndSet(null)?.cancel()
+                    downloadCancelRequested.set(false)
                 }
             }
 
         override fun cancelDownload() {
+            downloadCancelRequested.set(true)
             activeDownloadCall.get()?.cancel()
+        }
+
+        private suspend fun selectedClient(): OkHttpClient {
+            val preferences = settingsRepository.preferences.first()
+            val enhanced = preferences.steamAccessEnabled && preferences.steamAccessMode == SteamAccessMode.SMART_DOH
+            return if (enhanced) enhancedClient else directClient
+        }
+
+        private suspend fun openReleaseAssetResponse(
+            client: OkHttpClient,
+            apiCall: Call,
+        ): Response {
+            val apiResponse = apiCall.awaitResponse()
+            if (apiResponse.code == 200) return apiResponse
+            if (apiResponse.code != 302) {
+                val code = apiResponse.code
+                apiResponse.close()
+                throw IOException("Release APK download failed: HTTP $code")
+            }
+            val redirectUrl =
+                try {
+                    requireOfficialReleaseAssetRedirect(apiResponse.header("Location"))
+                } finally {
+                    apiResponse.close()
+                }
+            currentCoroutineContext().ensureActive()
+            if (downloadCancelRequested.get()) throw CancellationException("Release APK download cancelled")
+            val assetRequest =
+                Request
+                    .Builder()
+                    .url(redirectUrl)
+                    .header("Accept", "application/octet-stream")
+                    .header("User-Agent", USER_AGENT)
+                    .get()
+                    .build()
+            val assetCall = client.newCall(assetRequest)
+            check(activeDownloadCall.compareAndSet(apiCall, assetCall)) { "Release APK download state changed" }
+            if (downloadCancelRequested.get()) {
+                assetCall.cancel()
+                throw CancellationException("Release APK download cancelled")
+            }
+            return assetCall.awaitResponse().also { response ->
+                if (!response.isSuccessful) {
+                    response.close()
+                    throw IOException("Release APK download failed: HTTP ${response.code}")
+                }
+            }
+        }
+
+        private suspend fun ensureDownloadActive() {
+            currentCoroutineContext().ensureActive()
+            if (downloadCancelRequested.get()) throw CancellationException("Release APK download cancelled")
+        }
+
+        private suspend fun writeVerifiedReleaseBody(
+            response: Response,
+            release: AppReleaseInfo,
+            partial: File,
+            onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
+        ) {
+            val responseLength = response.body.contentLength()
+            if (responseLength > 0L && responseLength != release.assetSizeBytes) {
+                throw IOException("Release APK size metadata mismatch")
+            }
+            val digest = MessageDigest.getInstance("SHA-256")
+            var downloaded = 0L
+            var lastReportedBytes = 0L
+            response.body.byteStream().use { input ->
+                partial.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(COPY_BUFFER_BYTES)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        output.write(buffer, 0, read)
+                        digest.update(buffer, 0, read)
+                        downloaded += read
+                        if (downloaded > release.assetSizeBytes || downloaded > MAX_APK_BYTES) {
+                            throw IOException("Release APK exceeds expected size")
+                        }
+                        if (
+                            downloaded == release.assetSizeBytes ||
+                            downloaded - lastReportedBytes >= PROGRESS_REPORT_INTERVAL_BYTES
+                        ) {
+                            onProgress(downloaded, release.assetSizeBytes)
+                            lastReportedBytes = downloaded
+                        }
+                    }
+                }
+            }
+            if (downloaded != release.assetSizeBytes) throw IOException("Release APK download is incomplete")
+            val actualDigest = digest.digest().toHexString()
+            if (!actualDigest.equals(release.sha256, ignoreCase = true)) {
+                throw IOException("Release APK SHA-256 verification failed")
+            }
         }
 
         @Suppress("DEPRECATION")
@@ -247,6 +310,13 @@ class GitHubAppUpdateRepository
         }
     }
 
+private fun OkHttpClient.Builder.updateClient(): OkHttpClient.Builder =
+    connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .callTimeout(15, TimeUnit.MINUTES)
+        .followRedirects(false)
+        .followSslRedirects(false)
+
 internal fun parseLatestRelease(
     json: String,
     installedVersionName: String,
@@ -277,10 +347,9 @@ internal fun parseLatestRelease(
     require(universalAssets.size == 1) { "Latest Release must contain exactly one universal APK" }
     val asset = universalAssets.single()
     val assetName = asset.getString("name").trim()
-    val assetUrl =
-        asset
-            .getString("browser_download_url")
-            .requireOfficialAssetUrl(tagName, assetName)
+    val assetId = asset.getLong("id")
+    require(assetId > 0L) { "Universal APK asset ID is invalid" }
+    val assetUrl = asset.getString("url").requireOfficialAssetApiUrl(assetId)
     val assetSize = asset.getLong("size")
     require(assetSize > 0L) { "Universal APK size is missing" }
     val sha256 =
@@ -350,15 +419,40 @@ private fun String.requireOfficialReleasePageUrl(tagName: String): String {
     return this
 }
 
-private fun String.requireOfficialAssetUrl(
-    tagName: String,
-    assetName: String,
-): String {
-    requireOfficialGitHubUri(
-        expectedPath = "$OFFICIAL_RELEASE_PATH/download/$tagName/$assetName",
-        description = "Release asset",
-    )
+private fun String.requireOfficialAssetApiUrl(expectedAssetId: Long? = null): String {
+    val uri = runCatching { URI(this) }.getOrNull()
+    val assetId = uri?.path?.substringAfterLast('/')?.toLongOrNull()
+    require(
+        uri?.scheme == "https" &&
+            uri.host.equals(GitHubNetworkClient.GITHUB_API_HOST, ignoreCase = true) &&
+            uri.port == -1 &&
+            uri.userInfo == null &&
+            uri.query == null &&
+            uri.fragment == null &&
+            assetId != null &&
+            assetId > 0L &&
+            uri.path == "$OFFICIAL_RELEASE_ASSET_API_PATH/$assetId" &&
+            (expectedAssetId == null || assetId == expectedAssetId)
+    ) {
+        "Release asset API URL must exactly match the official WallHub Release"
+    }
     return this
+}
+
+internal fun requireOfficialReleaseAssetRedirect(rawLocation: String?): String {
+    val uri = rawLocation?.let { runCatching { URI(it) }.getOrNull() }
+    require(
+        uri?.scheme == "https" &&
+            uri.host.equals(GitHubNetworkClient.GITHUB_RELEASE_ASSETS_HOST, ignoreCase = true) &&
+            uri.port == -1 &&
+            uri.userInfo == null &&
+            uri.fragment == null &&
+            uri.path.startsWith("/github-production-release-asset/") &&
+            !uri.query.isNullOrBlank()
+    ) {
+        "Release asset redirect must use the official signed GitHub asset authority"
+    }
+    return requireNotNull(rawLocation)
 }
 
 private fun String.requireOfficialGitHubUri(
@@ -383,6 +477,8 @@ private fun ByteArray.toHexString(): String = joinToString("") { byte -> "%02x".
 
 private const val APK_CONTENT_TYPE = "application/vnd.android.package-archive"
 private const val OFFICIAL_RELEASE_PATH = "/ChEnLeo-7/WallHub2.0-For-Android/releases"
+private const val OFFICIAL_RELEASE_ASSET_API_PATH =
+    "/repos/ChEnLeo-7/WallHub2.0-For-Android/releases/assets"
 private val SHA_256_REGEX = Regex("(?i)[a-f0-9]{64}")
 
 private suspend fun Call.awaitResponse(): Response =

@@ -13,6 +13,10 @@ class GitHubReleaseParserTest {
 
         assertEquals("v0.9.0", release.tagName)
         assertEquals("WallHub-0.9.0-universal.apk", release.assetName)
+        assertEquals(
+            "https://api.github.com/repos/ChEnLeo-7/WallHub2.0-For-Android/releases/assets/123456",
+            release.assetUrl,
+        )
         assertEquals(CHECKSUM, release.sha256)
         assertTrue(release.isNewer)
     }
@@ -86,19 +90,39 @@ class GitHubReleaseParserTest {
     ): String {
         val url =
             if (unofficialUrl) {
-                "https://github.com/example/releases/download/v0.9.0/$name"
+                "https://api.github.com/repos/example/releases/assets/123456"
             } else {
-                "https://github.com/ChEnLeo-7/WallHub2.0-For-Android/releases/download/v0.9.0/$name"
+                "https://api.github.com/repos/ChEnLeo-7/WallHub2.0-For-Android/releases/assets/123456"
             }
         return """
             {
+              "id": 123456,
               "name": "$name",
               "size": 30400000,
               "content_type": "application/vnd.android.package-archive",
-              "browser_download_url": "$url",
+              "url": "$url",
               "digest": "sha256:$CHECKSUM"
             }
             """.trimIndent()
+    }
+
+    @Test
+    fun `accepts only exact signed release asset redirects`() {
+        val valid =
+            "https://release-assets.githubusercontent.com/github-production-release-asset/1/file?sp=r&sig=abc"
+
+        assertEquals(valid, requireOfficialReleaseAssetRedirect(valid))
+        listOf(
+            "http://release-assets.githubusercontent.com/github-production-release-asset/1/file?sig=abc",
+            "https://release-assets.githubusercontent.com:444/github-production-release-asset/1/file?sig=abc",
+            "https://example.com/github-production-release-asset/1/file?sig=abc",
+            "https://release-assets.githubusercontent.com/other/1/file?sig=abc",
+            "https://release-assets.githubusercontent.com/github-production-release-asset/1/file",
+            "https://user@release-assets.githubusercontent.com/github-production-release-asset/1/file?sig=abc",
+            "https://release-assets.githubusercontent.com/github-production-release-asset/1/file?sig=abc#fragment",
+        ).forEach { url ->
+            assertFailsWith<IllegalArgumentException> { requireOfficialReleaseAssetRedirect(url) }
+        }
     }
 
     private companion object {
