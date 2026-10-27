@@ -32,9 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -346,6 +344,9 @@ private fun ProfileStats(
     }
 }
 
+internal fun profileCountDisplayValue(state: ProfileCountState): String =
+    (state as? ProfileCountState.Loaded)?.count?.toString() ?: "-"
+
 @Composable
 private fun ProfileStatCard(title: String, state: ProfileCountState, onClick: () -> Unit, enabled: Boolean, modifier: Modifier) {
     val status =
@@ -355,12 +356,7 @@ private fun ProfileStatCard(title: String, state: ProfileCountState, onClick: ()
             ProfileCountState.Unavailable -> stringResource(R.string.profile_count_unavailable)
             ProfileCountState.SignInRequired -> stringResource(R.string.library_sign_in_required)
         }
-    val value =
-        when (state) {
-            is ProfileCountState.Loaded -> state.count.toString()
-            ProfileCountState.SignInRequired -> stringResource(R.string.profile_sign_in)
-            else -> status
-        }
+    val value = profileCountDisplayValue(state)
     Card(
         onClick = onClick,
         enabled = enabled,
@@ -374,7 +370,11 @@ private fun ProfileStatCard(title: String, state: ProfileCountState, onClick: ()
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         shape = MaterialTheme.shapes.medium,
     ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 108.dp).padding(16.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Text(value, style = MaterialTheme.typography.titleLarge)
             Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

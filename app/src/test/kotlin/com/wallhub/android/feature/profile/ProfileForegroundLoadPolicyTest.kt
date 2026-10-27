@@ -63,6 +63,14 @@ class ProfileForegroundLoadPolicyTest {
     }
 
     @Test
+    fun `count cards show a dash until a real count is loaded`() {
+        assertEquals("-", profileCountDisplayValue(ProfileCountState.Loading))
+        assertEquals("-", profileCountDisplayValue(ProfileCountState.Unavailable))
+        assertEquals("-", profileCountDisplayValue(ProfileCountState.SignInRequired))
+        assertEquals("12", profileCountDisplayValue(ProfileCountState.Loaded(12)))
+    }
+
+    @Test
     fun `visible signed-in profile schedules account metadata and collection totals`() {
         assertTrue(
             shouldScheduleProfileLoad(

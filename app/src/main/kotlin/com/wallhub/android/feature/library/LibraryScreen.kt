@@ -55,6 +55,7 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -72,6 +73,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -1281,13 +1283,15 @@ fun LibraryScreen(
             },
         ) { padding ->
             Column(modifier = Modifier.padding(padding)) {
-                PrimaryTabRow(selectedTabIndex = state.collection.ordinal) {
-                    LibraryCollectionTab.entries.forEach { collection ->
-                        Tab(
-                            selected = state.collection == collection,
-                            onClick = { onAction(LibraryAction.SelectCollection(collection)) },
-                            text = { Text(collection.label()) },
-                        )
+                CompositionLocalProvider(LocalRippleConfiguration provides null) {
+                    PrimaryTabRow(selectedTabIndex = state.collection.ordinal) {
+                        LibraryCollectionTab.entries.forEach { collection ->
+                            Tab(
+                                selected = state.collection == collection,
+                                onClick = { onAction(LibraryAction.SelectCollection(collection)) },
+                                text = { Text(collection.label()) },
+                            )
+                        }
                     }
                 }
                 LibraryContent(
