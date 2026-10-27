@@ -36,7 +36,7 @@ internal fun resolveSteamSystemProxy(
                 ?: return SteamSystemProxyRoute(representable = false, sdkProxyUri = null)
         }
     if (routes.distinct().size != 1) return SteamSystemProxyRoute(representable = false, sdkProxyUri = null)
-    return SteamSystemProxyRoute(representable = true, sdkProxyUri = routes.single().takeIf(String::isNotEmpty))
+    return SteamSystemProxyRoute(representable = true, sdkProxyUri = routes.first().takeIf(String::isNotEmpty))
 }
 
 private fun Proxy.toSdkProxyUri(): String? {
