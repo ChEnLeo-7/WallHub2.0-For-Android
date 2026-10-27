@@ -104,6 +104,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -924,6 +925,8 @@ internal fun HomeResults(
     bottomContentPadding: Dp = WallHubSpacing.xs,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val prefetchBudget by rememberHomeCoverPrefetchBudget(context)
     val shouldAutoLoadMore by remember(gridState, state) {
         derivedStateOf {
             if (
@@ -1018,6 +1021,21 @@ internal fun HomeResults(
                                 LIST_CARD_ACTION_END_PADDING -
                                 LIST_CARD_COPY_HORIZONTAL_PADDING
                         ).coerceAtLeast(WallHubSpacing.none)
+                    val density = LocalDensity.current
+                    val coverSizePx =
+                        with(density) {
+                            (if (layoutKey.listMode) LIST_CARD_MEDIA_SIZE else gridCardWidth).roundToPx()
+                        }
+                    val prefetchBatchKey = state.successfulSearchToken to layoutKey
+                    HomeCoverPrefetchEffect(
+                        items = state.items,
+                        gridState = gridState,
+                        columns = layoutKey.effectiveColumns,
+                        listMode = layoutKey.listMode,
+                        budget = prefetchBudget,
+                        coverSizePx = coverSizePx,
+                        batchKey = prefetchBatchKey,
+                    )
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(layoutKey.effectiveColumns),
                         state = gridState,
@@ -1053,6 +1071,7 @@ internal fun HomeResults(
                                 gridShowFavorites = state.columns < 4,
                                 gridStatisticsAvailableWidth = gridStatisticsAvailableWidth,
                                 listStatisticsAvailableWidth = listStatisticsAvailableWidth,
+                                coverSizePx = coverSizePx,
                                 isContextMenuPreviewTarget = contextMenuPreviewItemId == item.id,
                                 action = state.cardAction,
                                 onOpen = { onOpenDetail(item.id) },
@@ -1126,6 +1145,7 @@ internal fun WorkshopCard(
     gridShowFavorites: Boolean,
     gridStatisticsAvailableWidth: Dp,
     listStatisticsAvailableWidth: Dp,
+    coverSizePx: Int,
     isContextMenuPreviewTarget: Boolean,
     action: HomeCardAction,
     onOpen: () -> Unit,
@@ -1329,6 +1349,7 @@ internal fun WorkshopCard(
                 gridShowFavorites = gridShowFavorites,
                 gridStatisticsAvailableWidth = gridStatisticsAvailableWidth,
                 listStatisticsAvailableWidth = listStatisticsAvailableWidth,
+                coverSizePx = coverSizePx,
                 layoutMotion = layoutMotion,
                 onPrimaryAction = onPrimaryAction,
             )

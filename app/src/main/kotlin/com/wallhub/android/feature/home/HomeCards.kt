@@ -56,6 +56,7 @@ import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
+import coil.compose.LocalImageLoader
 import android.provider.Settings
 import com.wallhub.android.R
 import com.wallhub.android.core.designsystem.WallHubSpacing
@@ -78,6 +79,7 @@ internal fun WorkshopAdaptiveCardContent(
     gridShowFavorites: Boolean,
     gridStatisticsAvailableWidth: Dp,
     listStatisticsAvailableWidth: Dp,
+    coverSizePx: Int,
     layoutMotion: HomeViewCardLayoutMotion,
     onPrimaryAction: () -> Unit,
 ) {
@@ -91,6 +93,7 @@ internal fun WorkshopAdaptiveCardContent(
         content = {
             WorkshopCoverFrame(
                 item = item,
+                coverSizePx = coverSizePx,
                 coverShape = layoutMotion.coverShape(),
                 typeTagModifier = layoutMotion.mediaContentScaleCompensationModifier(),
                 modifier =
@@ -224,6 +227,7 @@ internal const val WORKSHOP_COVER_FADE_IN_START_SCALE = 1.015f
 @Composable
 internal fun WorkshopCoverFrame(
     item: WorkshopSummary,
+    coverSizePx: Int,
     coverShape: Shape,
     typeTagModifier: Modifier,
     modifier: Modifier,
@@ -233,6 +237,7 @@ internal fun WorkshopCoverFrame(
     ) {
         WorkshopCover(
             item = item,
+            coverSizePx = coverSizePx,
             modifier = Modifier.fillMaxSize(),
             shape = coverShape,
         )
@@ -250,6 +255,7 @@ internal fun WorkshopCoverFrame(
 @Composable
 internal fun WorkshopCover(
     item: WorkshopSummary,
+    coverSizePx: Int,
     modifier: Modifier,
     shape: Shape,
 ) {
@@ -259,8 +265,10 @@ internal fun WorkshopCover(
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
-    if (item.previewUrl != null) {
+    val previewUrl = normalizeHomeCoverPreviewUrl(item.previewUrl)
+    if (previewUrl != null) {
         val context = LocalContext.current
+        val imageLoader = LocalImageLoader.current
         val animatorScale =
             remember {
                 Settings.Global.getFloat(
@@ -269,7 +277,11 @@ internal fun WorkshopCover(
                     1f,
                 )
             }
-        var coverLoaded by remember(item.previewUrl) { mutableStateOf(false) }
+        val coverRequest =
+            remember(context, previewUrl, coverSizePx) {
+                homeWorkshopCoverRequest(context, previewUrl, coverSizePx)
+            }
+        var coverLoaded by remember(previewUrl) { mutableStateOf(false) }
         val fadeInSpec =
             tween<Float>(
                 durationMillis = (WORKSHOP_COVER_FADE_IN_DURATION_MS * animatorScale).roundToInt(),
@@ -286,7 +298,8 @@ internal fun WorkshopCover(
             label = "WorkshopCoverFadeInScale",
         )
         AsyncImage(
-            model = item.previewUrl,
+            model = coverRequest,
+            imageLoader = imageLoader,
             contentDescription = stringResource(R.string.home_preview_image, item.localizedTitle()),
             contentScale = ContentScale.Crop,
             onState = { state ->
