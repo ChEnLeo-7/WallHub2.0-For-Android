@@ -1,11 +1,30 @@
 package com.wallhub.android.data.steamaccess
 
 import java.net.InetAddress
+import java.util.concurrent.Executors
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class SteamAccessDohResolverTest {
+    @Test
+    fun `blocking DoH operation leaves the caller thread`() {
+        Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "doh-caller") }
+            .asCoroutineDispatcher()
+            .use { callerDispatcher ->
+                runBlocking(callerDispatcher) {
+                    val callerThread = Thread.currentThread().name
+                    val blockingThread = runDohBlockingOperation { Thread.currentThread().name }
+
+                    assertEquals("doh-caller", callerThread)
+                    assertNotEquals(callerThread, blockingThread)
+                }
+            }
+    }
+
     @Test
     fun `query plan gives every authority an IPv4 slot before secondary work`() {
         val plan = SteamAccessDohResolver.queryPlan(

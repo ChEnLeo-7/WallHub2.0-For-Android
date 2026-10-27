@@ -4,9 +4,11 @@ import com.wallhub.android.core.model.STEAM_ACCESS_DOH_ENDPOINT_LIMIT
 import com.wallhub.android.core.model.SteamDohCatalog
 import com.wallhub.android.core.model.SteamDohEndpoint
 import com.wallhub.android.core.model.SteamDohProtocol
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.Dns
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -22,6 +24,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val MIN_FOREGROUND_ADDRESSES_PER_AUTHORITY = 1
+
+internal suspend fun <T> runDohBlockingOperation(block: () -> T): T =
+    withContext(Dispatchers.IO) { block() }
 
 internal data class SteamDohQuery(
     val hostname: String,
@@ -108,23 +113,24 @@ internal class SteamAccessDohResolver(
         }
     }
 
-    fun benchmark(endpoints: List<SteamDohEndpoint>): List<SteamDohProbeResult> {
-        val tasks = endpoints.take(STEAM_ACCESS_DOH_ENDPOINT_LIMIT).map { endpoint ->
-            Callable {
-                val startedAt = System.nanoTime()
-                val addresses = runCatching { resolveOne(BENCHMARK_HOST, endpoint, TYPE_A) }.getOrDefault(emptyList())
-                val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
-                SteamDohProbeResult(endpoint, elapsedMs.takeIf { addresses.isNotEmpty() }, addresses)
+    suspend fun benchmark(endpoints: List<SteamDohEndpoint>): List<SteamDohProbeResult> =
+        runDohBlockingOperation {
+            val tasks = endpoints.take(STEAM_ACCESS_DOH_ENDPOINT_LIMIT).map { endpoint ->
+                Callable {
+                    val startedAt = System.nanoTime()
+                    val addresses = runCatching { resolveOne(BENCHMARK_HOST, endpoint, TYPE_A) }.getOrDefault(emptyList())
+                    val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
+                    SteamDohProbeResult(endpoint, elapsedMs.takeIf { addresses.isNotEmpty() }, addresses)
+                }
             }
+            if (tasks.isEmpty()) return@runDohBlockingOperation emptyList()
+            benchmarkExecutor
+                .invokeAll(tasks, BENCHMARK_BUDGET_MS, TimeUnit.MILLISECONDS)
+                .mapIndexed { index, future ->
+                    runCatching { future.get() }.getOrNull()
+                        ?: SteamDohProbeResult(endpoints[index], null, emptyList())
+                }
         }
-        if (tasks.isEmpty()) return emptyList()
-        return benchmarkExecutor
-            .invokeAll(tasks, BENCHMARK_BUDGET_MS, TimeUnit.MILLISECONDS)
-            .mapIndexed { index, future ->
-                runCatching { future.get() }.getOrNull()
-                    ?: SteamDohProbeResult(endpoints[index], null, emptyList())
-            }
-    }
 
     private fun resolveOne(
         hostname: String,
