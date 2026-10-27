@@ -28,11 +28,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -40,6 +36,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -85,12 +82,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.invisibleToUser
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
@@ -832,25 +831,44 @@ private fun AntiBlockingWarmupPage(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
             ) {
+                val ready = state.phase == SetupAntiBlockingWarmupPhase.READY
+                val readyAlpha =
+                    animateFloatAsState(
+                        targetValue = if (ready) 1f else 0f,
+                        animationSpec = warmupFadeSpec(reduceMotion),
+                        label = "anti-blocking-warmup-progress",
+                    )
+                var showSpinner by remember(reduceMotion) { mutableStateOf(!reduceMotion) }
+                LaunchedEffect(ready, reduceMotion) {
+                    showSpinner = !reduceMotion
+                    if (ready && !reduceMotion) {
+                        delay(warmupFadeDurationMillis(reduceMotion) + 50L)
+                        showSpinner = false
+                    }
+                }
                 Box(
                     modifier = Modifier.size(128.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Crossfade(
-                        targetState = state.phase,
-                        animationSpec = warmupFadeSpec(reduceMotion),
-                        label = "anti-blocking-warmup-status",
-                    ) { phase ->
-                        when (phase) {
-                            SetupAntiBlockingWarmupPhase.IDLE,
-                            SetupAntiBlockingWarmupPhase.WARMING,
-                            -> Surface(
-                                modifier = Modifier.size(128.dp),
+                    when (state.phase) {
+                        SetupAntiBlockingWarmupPhase.DEGRADED ->
+                            Icon(
+                                imageVector = Icons.Outlined.ErrorOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(72.dp),
+                            )
+                        else -> {
+                            Surface(
+                                modifier =
+                                    Modifier
+                                        .size(128.dp)
+                                        .graphicsLayer { alpha = 1f - readyAlpha.value },
                                 shape = CircleShape,
                                 color = MaterialTheme.colorScheme.primaryContainer,
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    if (!reduceMotion) {
+                                    if (showSpinner) {
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(92.dp),
                                             strokeWidth = 5.dp,
@@ -864,72 +882,67 @@ private fun AntiBlockingWarmupPage(
                                     )
                                 }
                             }
-                            SetupAntiBlockingWarmupPhase.READY ->
-                                Icon(
-                                    imageVector = Icons.Outlined.Check,
-                                    contentDescription = null,
-                                    tint = successColor,
-                                    modifier = Modifier.size(72.dp),
-                                )
-                            SetupAntiBlockingWarmupPhase.DEGRADED ->
-                                Icon(
-                                    imageVector = Icons.Outlined.ErrorOutline,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(72.dp),
-                                )
+                            Icon(
+                                imageVector = Icons.Outlined.Check,
+                                contentDescription = null,
+                                tint = successColor,
+                                modifier =
+                                    Modifier
+                                        .size(72.dp)
+                                        .graphicsLayer { alpha = readyAlpha.value },
+                            )
                         }
                     }
                 }
-                Crossfade(
-                    targetState = state.phase,
-                    animationSpec = warmupFadeSpec(reduceMotion),
-                    label = "anti-blocking-warmup-copy",
-                ) { phase ->
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+                if (state.phase == SetupAntiBlockingWarmupPhase.DEGRADED) {
+                    WarmupCopy(
+                        title = stringResource(R.string.setup_warmup_degraded),
+                        detail =
+                            if (state.reason.isNotBlank()) {
+                                state.reason
+                            } else {
+                                stringResource(
+                                    R.string.setup_warmup_degraded_detail,
+                                    state.domesticRoutes,
+                                    state.foreignRoutes,
+                                )
+                            },
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.TopCenter,
                     ) {
-                        Text(
-                            text =
-                                when (phase) {
-                                    SetupAntiBlockingWarmupPhase.IDLE,
-                                    SetupAntiBlockingWarmupPhase.WARMING,
-                                    -> stringResource(R.string.setup_warmup_working)
-                                    SetupAntiBlockingWarmupPhase.READY -> stringResource(R.string.setup_warmup_ready)
-                                    SetupAntiBlockingWarmupPhase.DEGRADED -> stringResource(R.string.setup_warmup_degraded)
-                                },
-                            style = MaterialTheme.typography.titleLarge,
+                        WarmupCopy(
+                            title = stringResource(R.string.setup_warmup_working),
+                            detail = stringResource(R.string.setup_warmup_working_detail),
+                            modifier =
+                                Modifier
+                                    .graphicsLayer { alpha = 1f - readyAlpha.value }
+                                    .then(
+                                        if (ready) Modifier.semantics { invisibleToUser() }
+                                        else Modifier,
+                                    ),
                         )
-                        Text(
-                            text =
-                                when (phase) {
-                                    SetupAntiBlockingWarmupPhase.IDLE,
-                                    SetupAntiBlockingWarmupPhase.WARMING,
-                                    -> stringResource(R.string.setup_warmup_working_detail)
-                                    SetupAntiBlockingWarmupPhase.READY ->
-                                        if (state.bypassed) {
-                                            stringResource(R.string.setup_warmup_direct_detail)
-                                        } else {
-                                            stringResource(
-                                                R.string.setup_warmup_ready_detail,
-                                                state.domesticRoutes,
-                                                state.foreignRoutes,
-                                            )
-                                        }
-                                    SetupAntiBlockingWarmupPhase.DEGRADED ->
-                                        if (state.reason.isNotBlank()) {
-                                            state.reason
-                                        } else {
-                                            stringResource(
-                                                R.string.setup_warmup_degraded_detail,
-                                                state.domesticRoutes,
-                                                state.foreignRoutes,
-                                            )
-                                        }
+                        WarmupCopy(
+                            title = stringResource(R.string.setup_warmup_ready),
+                            detail =
+                                if (state.bypassed) {
+                                    stringResource(R.string.setup_warmup_direct_detail)
+                                } else {
+                                    stringResource(
+                                        R.string.setup_warmup_ready_detail,
+                                        state.domesticRoutes,
+                                        state.foreignRoutes,
+                                    )
                                 },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier =
+                                Modifier
+                                    .graphicsLayer { alpha = readyAlpha.value }
+                                    .then(
+                                        if (ready) Modifier
+                                        else Modifier.semantics { invisibleToUser() },
+                                    ),
                         )
                     }
                 }
@@ -955,8 +968,8 @@ private fun AntiBlockingWarmupPage(
                         contentAlignment = Alignment.Center,
                     ) {
                         WarmupReadyContinueButton(
-                            visible = state.phase == SetupAntiBlockingWarmupPhase.READY,
-                            reduceMotion = reduceMotion,
+                            visible = ready,
+                            alpha = { readyAlpha.value },
                             onClick = onReadyContinue,
                         )
                     }
@@ -967,22 +980,48 @@ private fun AntiBlockingWarmupPage(
 }
 
 @Composable
+private fun WarmupCopy(
+    title: String,
+    detail: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xs),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+        )
+        Text(
+            text = detail,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
 private fun WarmupReadyContinueButton(
     visible: Boolean,
-    reduceMotion: Boolean,
+    alpha: () -> Float,
     onClick: () -> Unit,
 ) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = warmupButtonEnterTransition(reduceMotion),
-        exit = warmupButtonExitTransition(reduceMotion),
+    Button(
+        onClick = onClick,
+        enabled = visible,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .graphicsLayer { this.alpha = alpha() }
+                .then(
+                    if (visible) Modifier
+                    else Modifier.semantics { invisibleToUser() },
+                ),
     ) {
-        Button(
-            onClick = onClick,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-        ) {
-            Text(stringResource(R.string.setup_warmup_continue))
-        }
+        Text(stringResource(R.string.setup_warmup_continue))
     }
 }
 
@@ -1242,17 +1281,13 @@ private fun ConnectivityCheckStatusIcon(
     }
 }
 
+private fun warmupFadeDurationMillis(reduceMotion: Boolean): Int = if (reduceMotion) 90 else 200
+
 private fun warmupFadeSpec(reduceMotion: Boolean): FiniteAnimationSpec<Float> =
     tween(
-        durationMillis = if (reduceMotion) 90 else 200,
+        durationMillis = warmupFadeDurationMillis(reduceMotion),
         easing = LinearEasing,
     )
-
-private fun warmupButtonEnterTransition(reduceMotion: Boolean): EnterTransition =
-    fadeIn(warmupFadeSpec(reduceMotion))
-
-private fun warmupButtonExitTransition(reduceMotion: Boolean): ExitTransition =
-    fadeOut(warmupFadeSpec(reduceMotion))
 
 private fun connectivityStatusTransition(reduceMotion: Boolean): ContentTransform =
     if (reduceMotion) {
