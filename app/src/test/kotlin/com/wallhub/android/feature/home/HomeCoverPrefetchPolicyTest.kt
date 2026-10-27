@@ -8,14 +8,14 @@ import kotlin.test.assertTrue
 class HomeCoverPrefetchPolicyTest {
     @Test
     fun `two column grid prefetches only the next two rows`() {
-        val candidates = candidates(lastVisible = 3, columns = 2, listMode = false, HomeCoverPrefetchBudget.UNMETERED)
+        val candidates = candidates(lastVisible = 3, columns = 2, listMode = false, budget = HomeCoverPrefetchBudget.UNMETERED)
 
         assertEquals(listOf(5L, 6L, 7L, 8L), candidates.map(HomeCoverPrefetchCandidate::itemId))
     }
 
     @Test
     fun `four column grid is capped at eight covers`() {
-        val candidates = candidates(lastVisible = 7, columns = 4, listMode = false, HomeCoverPrefetchBudget.UNMETERED)
+        val candidates = candidates(lastVisible = 7, columns = 4, listMode = false, budget = HomeCoverPrefetchBudget.UNMETERED)
 
         assertEquals(8, candidates.size)
         assertEquals(9L..16L, candidates.map(HomeCoverPrefetchCandidate::itemId).let { it.first()..it.last() })
@@ -23,14 +23,14 @@ class HomeCoverPrefetchPolicyTest {
 
     @Test
     fun `list mode prefetches three covers`() {
-        val candidates = candidates(lastVisible = 1, columns = 1, listMode = true, HomeCoverPrefetchBudget.UNMETERED)
+        val candidates = candidates(lastVisible = 1, columns = 1, listMode = true, budget = HomeCoverPrefetchBudget.UNMETERED)
 
         assertEquals(listOf(3L, 4L, 5L), candidates.map(HomeCoverPrefetchCandidate::itemId))
     }
 
     @Test
     fun `metered network shrinks budget to one row`() {
-        val candidates = candidates(lastVisible = 3, columns = 2, listMode = false, HomeCoverPrefetchBudget.METERED)
+        val candidates = candidates(lastVisible = 3, columns = 2, listMode = false, budget = HomeCoverPrefetchBudget.METERED)
 
         assertEquals(listOf(5L, 6L), candidates.map(HomeCoverPrefetchCandidate::itemId))
     }
