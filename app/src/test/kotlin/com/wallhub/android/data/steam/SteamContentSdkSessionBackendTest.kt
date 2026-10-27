@@ -1401,6 +1401,22 @@ class SteamContentSdkSessionBackendTest {
         backend.close()
     }
 
+    private class FakeAdmissionStore : SteamAccountAdmissionStore {
+        var limited = false
+        var failWrites = false
+        var failReads = false
+
+        override fun readLimited(): Boolean {
+            check(!failReads)
+            return limited
+        }
+
+        override fun writeLimited(limited: Boolean) {
+            check(!failWrites)
+            this.limited = limited
+        }
+    }
+
     private class Fixture {
         val session = FakeSdkSession()
         val platform = FakeSdkPlatform(session)
@@ -1408,19 +1424,7 @@ class SteamContentSdkSessionBackendTest {
         val credentialStore = EncryptedSteamCredentialStore(store)
         val diagnostics = RecordingDiagnostics()
         var nowMillis = 1_000_000L
-        val admissionStore = object : SteamAccountAdmissionStore {
-            var limited = false
-            var failWrites = false
-            var failReads = false
-            override fun readLimited(): Boolean {
-                check(!failReads)
-                return limited
-            }
-            override fun writeLimited(limited: Boolean) {
-                check(!failWrites)
-                this.limited = limited
-            }
-        }
+        val admissionStore = FakeAdmissionStore()
 
         fun backend(
             scope: CoroutineScope,
