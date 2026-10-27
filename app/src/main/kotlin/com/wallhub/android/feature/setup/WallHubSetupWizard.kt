@@ -28,12 +28,17 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +48,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
@@ -828,12 +834,21 @@ private fun AntiBlockingWarmupPage(
                 Surface(
                     modifier = Modifier.size(128.dp),
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer,
+                    color =
+                        if (state.phase == SetupAntiBlockingWarmupPhase.READY) {
+                            Color.Transparent
+                        } else {
+                            MaterialTheme.colorScheme.primaryContainer
+                        },
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        AnimatedContent(
+                        Crossfade(
                             targetState = state.phase,
-                            transitionSpec = { connectivityStatusTransition(reduceMotion) },
+                            animationSpec =
+                                tween(
+                                    durationMillis = if (reduceMotion) 90 else 160,
+                                    easing = WARMUP_STATUS_EASE_OUT,
+                                ),
                             label = "anti-blocking-warmup-status",
                         ) { phase ->
                             when (phase) {
@@ -855,7 +870,7 @@ private fun AntiBlockingWarmupPage(
                                 }
                                 SetupAntiBlockingWarmupPhase.READY ->
                                     Icon(
-                                        imageVector = Icons.Outlined.CheckCircle,
+                                        imageVector = Icons.Outlined.Check,
                                         contentDescription = null,
                                         tint = successColor,
                                         modifier = Modifier.size(72.dp),
@@ -871,9 +886,13 @@ private fun AntiBlockingWarmupPage(
                         }
                     }
                 }
-                AnimatedContent(
+                Crossfade(
                     targetState = state.phase,
-                    transitionSpec = { connectivityStatusTransition(reduceMotion) },
+                    animationSpec =
+                        tween(
+                            durationMillis = if (reduceMotion) 90 else 160,
+                            easing = WARMUP_STATUS_EASE_OUT,
+                        ),
                     label = "anti-blocking-warmup-copy",
                 ) { phase ->
                     Column(
@@ -939,12 +958,23 @@ private fun AntiBlockingWarmupPage(
                         )
                     }
                 }
-                if (state.phase == SetupAntiBlockingWarmupPhase.READY && showReadyContinue) {
-                    Button(
-                        onClick = onReadyContinue,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                if (showReadyContinue) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Text(stringResource(R.string.setup_warmup_continue))
+                        AnimatedVisibility(
+                            visible = state.phase == SetupAntiBlockingWarmupPhase.READY,
+                            enter = warmupButtonEnterTransition(reduceMotion),
+                            exit = warmupButtonExitTransition(reduceMotion),
+                        ) {
+                            Button(
+                                onClick = onReadyContinue,
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                            ) {
+                                Text(stringResource(R.string.setup_warmup_continue))
+                            }
+                        }
                     }
                 }
             }
@@ -1207,6 +1237,25 @@ private fun ConnectivityCheckStatusIcon(
             )
     }
 }
+
+private val WARMUP_STATUS_EASE_OUT = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
+
+private fun warmupButtonEnterTransition(reduceMotion: Boolean): EnterTransition =
+    fadeIn(
+        tween(
+            durationMillis = if (reduceMotion) 100 else 140,
+            delayMillis = if (reduceMotion) 0 else 80,
+            easing = WARMUP_STATUS_EASE_OUT,
+        ),
+    )
+
+private fun warmupButtonExitTransition(reduceMotion: Boolean): ExitTransition =
+    fadeOut(
+        tween(
+            durationMillis = if (reduceMotion) 70 else 90,
+            easing = WARMUP_STATUS_EASE_OUT,
+        ),
+    )
 
 private fun connectivityStatusTransition(reduceMotion: Boolean): ContentTransform =
     if (reduceMotion) {
