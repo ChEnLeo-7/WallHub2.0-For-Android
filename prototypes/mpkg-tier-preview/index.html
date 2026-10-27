@@ -1,117 +1,21 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>WallHub · MPKG 档位 UI 预览</title>
-  <style>
-    :root{color-scheme:light;--canvas:#f5f6f8;--surface:#f9fafb;--low:#f7f8fa;--container:#f1f2f4;--high:#ebecef;--highest:#e4e6e9;--text:#191919;--muted:#5f5f5f;--primary:#242424;--on-primary:#fff;--selected:#e4e4e4;--outline:#777;--outline-v:#c6c6c6;--shadow:0 8px 28px rgba(0,0,0,.08);--safe-bottom:env(safe-area-inset-bottom,0px)}
-    [data-theme="dark"]{color-scheme:dark;--canvas:#121212;--surface:#1c1c1c;--low:#1c1c1c;--container:#1c1c1c;--high:#242424;--highest:#2c2c2c;--text:#fff;--muted:#c8c8c8;--primary:#fff;--on-primary:#181818;--selected:#3a3a3a;--outline:#a8a8a8;--outline-v:#4c4c4c;--shadow:0 12px 32px rgba(0,0,0,.32)}
-    *{box-sizing:border-box}[hidden]{display:none!important}html,body{margin:0;min-height:100%;font-family:Roboto,"Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;background:var(--canvas);color:var(--text)}button{font:inherit;color:inherit}button:focus-visible,.resource:focus-visible{outline:3px solid color-mix(in srgb,var(--primary) 42%,transparent);outline-offset:2px}
-    .app{min-height:100dvh;display:grid;grid-template-rows:64px 1fr 80px}.topbar{position:sticky;z-index:10;top:0;display:flex;align-items:center;gap:8px;padding:0 16px;background:color-mix(in srgb,var(--canvas) 94%,transparent);backdrop-filter:blur(18px);border-bottom:1px solid transparent}.topbar h1{font-size:22px;margin:0;flex:1;font-weight:500;letter-spacing:-.01em}.icon-btn{width:48px;height:48px;border:0;border-radius:999px;background:transparent;display:grid;place-items:center;cursor:pointer}.icon-btn:hover{background:var(--container)}.icon-btn svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-    .content{width:min(1080px,100%);margin:0 auto;padding:8px 16px 104px}.screen{display:none}.screen.active{display:block}.section-head{display:flex;align-items:center;gap:12px;padding:12px 0 8px}.section-head h2{font-size:16px;margin:0;flex:1}.hint{font-size:13px;color:var(--muted)}
-    .resource-list{display:grid;gap:8px}.resource{border:0;width:100%;display:grid;grid-template-columns:104px minmax(0,1fr) 48px;align-items:center;gap:12px;padding:8px;border-radius:8px;background:var(--low);text-align:left;cursor:pointer}.resource:hover{background:var(--high)}.thumb{width:104px;height:68px;border-radius:6px;overflow:hidden;position:relative;background:linear-gradient(135deg,#8c5dff,#292343 55%,#fa809b)}.thumb::after{content:"";position:absolute;inset:12px 18px;border-radius:50%;background:radial-gradient(circle at 40% 40%,#fff8,transparent 55%);box-shadow:42px 18px 0 -6px #ffcf7788}.thumb.blue{background:linear-gradient(145deg,#283550,#0f89a7 65%,#8ee7d3)}.thumb.gold{background:linear-gradient(135deg,#30231c,#ad6c27 60%,#e8c47c)}.thumb.gray{background:linear-gradient(145deg,#40454b,#858b92)}.resource-title{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:5px}.resource-meta{font-size:14px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.phone{width:24px;height:24px;justify-self:center;color:var(--muted)}
-    .bottom-nav{position:fixed;z-index:12;left:0;right:0;bottom:0;height:calc(80px + var(--safe-bottom));padding-bottom:var(--safe-bottom);display:grid;grid-template-columns:repeat(3,1fr);background:color-mix(in srgb,var(--surface) 96%,transparent);backdrop-filter:blur(18px);border-top:1px solid var(--outline-v)}.nav-item{border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--muted);cursor:pointer}.nav-item.active{color:var(--primary)}.nav-pill{height:32px;min-width:64px;border-radius:18px;display:grid;place-items:center}.nav-item.active .nav-pill{background:var(--selected)}.nav-item svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:2}.nav-item span{font-size:12px}
-    .detail{max-width:920px;margin:0 auto}.hero{aspect-ratio:1.65;width:100%;border-radius:16px;background:linear-gradient(145deg,#151827,#2c4070 48%,#8f55cd);position:relative;overflow:hidden;box-shadow:var(--shadow)}.hero::before{content:"";position:absolute;width:42%;aspect-ratio:1;border-radius:50%;left:29%;top:18%;background:radial-gradient(circle at 35% 35%,#fff,#c39cff 22%,#724eb8 60%,transparent 63%);filter:drop-shadow(0 0 28px #b488ff)}.hero::after{content:"WALLHUB MPKG";position:absolute;left:20px;bottom:16px;font-size:12px;letter-spacing:.18em;color:#fff9}.actions{display:grid;grid-template-columns:1fr auto auto;gap:8px;margin:12px 0 20px}.primary-btn,.utility-btn{min-height:48px;border-radius:999px;border:0;cursor:pointer}.primary-btn{background:var(--primary);color:var(--on-primary);font-weight:600}.utility-btn{width:48px;background:var(--container)}
-    .info-card{padding:16px;border-radius:16px;background:var(--low);margin-bottom:12px}.info-title{font-size:16px;font-weight:600;margin-bottom:8px}.line{min-height:48px;display:grid;grid-template-columns:minmax(112px,34%) 1fr;align-items:center;gap:12px;border-bottom:1px solid var(--outline-v)}.line:last-child{border-bottom:0}.line-label{font-size:14px;color:var(--muted)}.line-value{font-size:14px;text-align:right;overflow-wrap:anywhere}.tier-panel{border-radius:16px;padding:16px;background:var(--high);margin:12px 0}.tier-kicker{font-size:12px;color:var(--muted);margin-bottom:8px}.tier-row{display:flex;align-items:center;gap:12px}.tier-icon{width:44px;height:44px;border-radius:14px;background:var(--selected);display:grid;place-items:center;flex:none}.tier-icon svg{width:24px;height:24px;fill:none;stroke:var(--primary);stroke-width:2}.tier-copy{min-width:0;flex:1}.tier-name{font-size:18px;font-weight:650}.tier-desc{font-size:13px;color:var(--muted);margin-top:3px}.evidence{font-size:12px;padding:6px 10px;border-radius:999px;background:var(--surface);white-space:nowrap}.tier-extra{font-size:13px;color:var(--muted);margin:12px 0 0;padding-top:12px;border-top:1px solid var(--outline-v);line-height:1.5}
-    .preview-controls{position:fixed;z-index:30;right:16px;bottom:96px;display:flex;flex-direction:column;gap:8px}.floating{width:48px;height:48px;border:1px solid var(--outline-v);border-radius:16px;background:var(--surface);box-shadow:var(--shadow);cursor:pointer;display:grid;place-items:center}.floating svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2}.sheet-backdrop{display:none;position:fixed;z-index:40;inset:0;background:#0007;align-items:flex-end;justify-content:center}.sheet-backdrop.open{display:flex}.sheet{width:min(680px,100%);max-height:88dvh;overflow:auto;background:var(--surface);border-radius:28px 28px 0 0;padding:12px 16px calc(24px + var(--safe-bottom));box-shadow:0 -12px 36px #0004}.handle{width:32px;height:4px;border-radius:2px;background:var(--outline);margin:0 auto 16px}.sheet h2{font-size:20px;margin:0 0 4px}.sheet p{font-size:14px;color:var(--muted);margin:0 0 16px}.scenario-grid{display:grid;gap:8px}.scenario{border:0;border-radius:12px;background:var(--container);padding:14px;text-align:left;cursor:pointer}.scenario.selected{background:var(--selected);outline:2px solid var(--primary)}.scenario strong{display:block;font-size:15px}.scenario small{display:block;color:var(--muted);margin-top:4px;line-height:1.4}.prototype-note{border:1px dashed var(--outline);padding:12px;border-radius:12px;color:var(--muted);font-size:13px;line-height:1.5;margin-top:12px}
-    @media(min-width:760px){.app{grid-template-columns:240px 1fr;grid-template-rows:64px 1fr}.topbar{grid-column:2}.content{grid-column:2;padding:16px 24px 48px}.bottom-nav{position:fixed;left:0;top:0;bottom:0;width:240px;height:100dvh;padding:92px 12px 24px;display:flex;flex-direction:column;gap:8px;border-top:0;border-right:1px solid var(--outline-v);background:var(--surface)}.nav-item{height:56px;display:grid;grid-template-columns:48px 1fr;text-align:left;border-radius:16px;padding:0 12px}.nav-item:hover{background:var(--container)}.nav-pill{min-width:48px}.nav-item.active .nav-pill{background:transparent}.nav-item span{font-size:14px}.preview-controls{bottom:24px}.resource-list{grid-template-columns:repeat(2,minmax(0,1fr))}.sheet{border-radius:28px;margin-bottom:24px}.sheet-backdrop{align-items:center}}
-    @media(max-width:480px){.content{padding-left:12px;padding-right:12px}.resource{grid-template-columns:92px minmax(0,1fr) 40px}.thumb{width:92px;height:64px}.actions{grid-template-columns:1fr auto}.actions .utility-btn:last-child{display:none}.tier-row{align-items:flex-start}.evidence{white-space:normal;text-align:center}.line{grid-template-columns:108px 1fr}}
-    @media(prefers-reduced-motion:no-preference){.screen.active{animation:fade .16s ease-out}.sheet{animation:rise .2s cubic-bezier(.2,0,0,1)}@keyframes fade{from{opacity:.45}to{opacity:1}}@keyframes rise{from{transform:translateY(28px)}to{transform:none}}}
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>WallHub · MD3 全界面预览</title>
+  <link rel="stylesheet" href="styles.css?v=4">
+  <link rel="stylesheet" href="override.css?v=4">
 </head>
 <body>
-<div class="app">
-  <header class="topbar">
-    <button class="icon-btn" id="backBtn" aria-label="返回" hidden><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
-    <h1 id="pageTitle">本地壁纸</h1>
-    <button class="icon-btn" aria-label="搜索"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button>
-    <button class="icon-btn" aria-label="更多选项"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
-  </header>
-
-  <main class="content">
-    <section class="screen active" id="localScreen">
-      <div class="section-head"><h2>设备上的壁纸</h2><span class="hint">4 个 MPKG</span></div>
-      <div class="resource-list" id="resourceList"></div>
-      <div class="prototype-note">这是视觉与交互原型，不读取真实文件。点击任意 MPKG 查看详情；右下角按钮可快速比较四种档位识别状态。</div>
-    </section>
-
-    <section class="screen" id="detailScreen">
-      <article class="detail">
-        <div class="hero" aria-label="MPKG 预览占位图"></div>
-        <div class="actions">
-          <button class="primary-btn">导入 Wallpaper Engine</button>
-          <button class="utility-btn" aria-label="分享">↗</button>
-          <button class="utility-btn" aria-label="删除">⌫</button>
-        </div>
-        <div class="tier-panel" id="tierPanel">
-          <div class="tier-kicker">转换档位</div>
-          <div class="tier-row">
-            <div class="tier-icon"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></div>
-            <div class="tier-copy"><div class="tier-name" id="tierName"></div><div class="tier-desc" id="tierDesc"></div></div>
-            <span class="evidence" id="tierEvidence"></span>
-          </div>
-          <p class="tier-extra" id="tierExtra"></p>
-        </div>
-        <div class="info-card">
-          <div class="info-title">文件信息</div>
-          <div class="line"><span class="line-label">格式</span><span class="line-value">MPKG · Scene</span></div>
-          <div class="line"><span class="line-label">大小</span><span class="line-value" id="detailSize">94.9 MB</span></div>
-          <div class="line"><span class="line-label">来源</span><span class="line-value">Download/WallHub</span></div>
-          <div class="line"><span class="line-label">位置</span><span class="line-value" id="detailFile">Aurora_Glass.mpkg</span></div>
-          <div class="line"><span class="line-label">创意工坊 ID</span><span class="line-value">3299228616</span></div>
-          <div class="line"><span class="line-label">导入状态</span><span class="line-value">尚未导入</span></div>
-        </div>
-        <div class="info-card"><div class="info-title">标签</div><span class="evidence">动态壁纸</span> <span class="evidence">场景</span></div>
-      </article>
-    </section>
-  </main>
-
-  <nav class="bottom-nav" aria-label="主导航">
-    <button class="nav-item"><span class="nav-pill"><svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7v9H3z"/></svg></span><span>首页</span></button>
-    <button class="nav-item"><span class="nav-pill"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15 9-2 4-4 2 2-4z"/></svg></span><span>发现</span></button>
-    <button class="nav-item active"><span class="nav-pill"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/></svg></span><span>我的</span></button>
-  </nav>
-</div>
-
-<div class="preview-controls">
-  <button class="floating" id="scenarioBtn" aria-label="比较档位状态"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
-  <button class="floating" id="themeBtn" aria-label="切换明暗主题"><svg viewBox="0 0 24 24"><path d="M20 15a8 8 0 1 1-11-11 7 7 0 0 0 11 11z"/></svg></button>
-</div>
-
-<div class="sheet-backdrop" id="sheetBackdrop" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
-  <div class="sheet">
-    <div class="handle"></div><h2 id="sheetTitle">比较转换档位状态</h2><p>选择后立即更新 MPKG 详情页。重点比较“档位名称、证据来源、可信度说明”的信息层级。</p>
-    <div class="scenario-grid" id="scenarioGrid"></div>
+  <div id="app" class="app-shell">
+    <aside id="nav" class="app-nav" aria-label="主导航"></aside>
+    <header id="topbar" class="topbar"></header>
+    <main id="viewport" class="viewport" tabindex="-1"></main>
   </div>
-</div>
-
-<script>
-const scenarios={
- exact:{name:'平衡',desc:'2× 纹理缩减 · 标准视觉与性能平衡',evidence:'文件声明',extra:'由 MPKG 内的 WallHub 版本化元数据精确识别。文件复制、重命名或跨设备导入后仍可保留此档位。'},
- inferred:{name:'高性能',desc:'4× 纹理缩减',evidence:'内容推断',extra:'外部 MPKG 未包含 WallHub 元数据；根据 scene.json 的 general.texturereduction=4 保守推断。'},
- ambiguous:{name:'原始分辨率',desc:'高质量或极致质量',evidence:'无法完全确认',extra:'文件没有可验证的 WallHub 档位声明。内容表明未进行纹理缩减，但仅凭输出文件无法可靠区分“高质量”和“极致质量”。'},
- unknown:{name:'未知',desc:'未找到可验证的档位信息',evidence:'外部文件',extra:'该 MPKG 没有 WallHub 元数据，且场景设置不足以推断档位。文件仍可正常浏览和导入。'}
-};
-const items=[
- {title:'Aurora Glass · Dynamic Scene',meta:'MPKG · 94.9 MB · WallHub',file:'Aurora_Glass.mpkg',size:'94.9 MB',scenario:'exact',tone:''},
- {title:'City Rain · Official Export',meta:'MPKG · 68.4 MB · Download',file:'City_Rain_Official.mpkg',size:'68.4 MB',scenario:'inferred',tone:'blue'},
- {title:'Forest Clock · External',meta:'MPKG · 122.1 MB · 外部目录',file:'Forest_Clock.mpkg',size:'122.1 MB',scenario:'ambiguous',tone:'gold'},
- {title:'Legacy Mobile Package',meta:'MPKG · 31.7 MB · 外部目录',file:'Legacy_Package.mpkg',size:'31.7 MB',scenario:'unknown',tone:'gray'}
-];
-let current='exact';
-const resourceList=document.querySelector('#resourceList');
-items.forEach(item=>{const b=document.createElement('button');b.className='resource';b.innerHTML=`<span class="thumb ${item.tone}"></span><span><div class="resource-title">${item.title}</div><div class="resource-meta">${item.meta}</div></span><svg class="phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M10 18h4"/></svg>`;b.onclick=()=>openDetail(item);resourceList.appendChild(b)});
-function setScenario(key){current=key;const s=scenarios[key];tierName.textContent=s.name;tierDesc.textContent=s.desc;tierEvidence.textContent=s.evidence;tierExtra.textContent=s.extra;document.querySelectorAll('.scenario').forEach(x=>x.classList.toggle('selected',x.dataset.key===key));}
-function openDetail(item=items.find(x=>x.scenario===current)||items[0]){detailFile.textContent=item.file;detailSize.textContent=item.size;setScenario(item.scenario);localScreen.classList.remove('active');detailScreen.classList.add('active');pageTitle.textContent=item.title;backBtn.hidden=false;window.scrollTo({top:0,behavior:'instant'});}
-function closeDetail(){detailScreen.classList.remove('active');localScreen.classList.add('active');pageTitle.textContent='本地壁纸';backBtn.hidden=true;}
-backBtn.onclick=closeDetail;
-Object.entries(scenarios).forEach(([key,s])=>{const b=document.createElement('button');b.className='scenario';b.dataset.key=key;b.innerHTML=`<strong>${s.name} · ${s.evidence}</strong><small>${s.extra}</small>`;b.onclick=()=>{setScenario(key);if(!detailScreen.classList.contains('active'))openDetail({...items[0],scenario:key});sheetBackdrop.classList.remove('open')};scenarioGrid.appendChild(b)});
-scenarioBtn.onclick=()=>{sheetBackdrop.classList.add('open');setScenario(current)};
-sheetBackdrop.onclick=e=>{if(e.target===sheetBackdrop)sheetBackdrop.classList.remove('open')};
-themeBtn.onclick=()=>{const root=document.documentElement;root.dataset.theme=root.dataset.theme==='dark'?'':'dark'};
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(sheetBackdrop.classList.contains('open'))sheetBackdrop.classList.remove('open');else if(detailScreen.classList.contains('active'))closeDetail()}});
-setScenario('exact');
-</script>
+  <div id="overlay"></div>
+  <div id="toast" class="snackbar" role="status" aria-live="polite"></div>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
