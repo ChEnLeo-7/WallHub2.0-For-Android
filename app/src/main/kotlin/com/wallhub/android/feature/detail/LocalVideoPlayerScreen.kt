@@ -231,12 +231,12 @@ internal suspend fun resolveVideoFile(root: File): File? {
     while (pending.isNotEmpty() && visited < MAX_FALLBACK_NODES) {
         currentCoroutineContext().ensureActive()
         val (directory, depth) = pending.removeFirst()
-        val children = directory.listFiles()?.sortedBy(File::name).orEmpty()
+        val children = directory.listFiles()?.sortedBy { child -> child.name }.orEmpty()
         for (child in children) {
             currentCoroutineContext().ensureActive()
             visited += 1
             if (visited > MAX_FALLBACK_NODES) break
-            val canonicalChild = runCatching(File::getCanonicalFile).getOrNull() ?: continue
+            val canonicalChild = runCatching { child.canonicalFile }.getOrNull() ?: continue
             val childPath = canonicalChild.toPath()
             if (!childPath.startsWith(rootPath)) continue
             if (canonicalChild.isFile && canonicalChild.extension.lowercase() in VIDEO_EXTENSIONS) {
