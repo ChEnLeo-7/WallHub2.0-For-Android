@@ -25,14 +25,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.uwuaosp.compose.settingslib.SettingsAppBarScaffold
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Search
 
 @Composable
@@ -75,8 +82,22 @@ fun WallHubToolbarSearchTitle(
     onSubmit: () -> Unit,
     onExpand: () -> Unit,
     onCollapse: () -> Unit,
+    collapseContentDescription: String? = null,
+    clearContentDescription: String? = null,
     enabled: Boolean = true,
 ) {
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    LaunchedEffect(expanded, enabled) {
+        if (expanded && enabled) {
+            focusRequester.requestFocus()
+            keyboardController?.show()
+        } else if (!expanded) {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+        }
+    }
     Box(
         modifier = Modifier.fillMaxWidth().height(56.dp),
         contentAlignment = Alignment.CenterStart,
@@ -112,7 +133,7 @@ fun WallHubToolbarSearchTitle(
                     value = query,
                     onValueChange = onQueryChanged,
                     enabled = enabled,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().focusRequester(focusRequester),
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
@@ -122,15 +143,25 @@ fun WallHubToolbarSearchTitle(
                             IconButton(onClick = onCollapse) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                    contentDescription = null,
+                                    contentDescription = collapseContentDescription,
                                     modifier = Modifier.size(24.dp),
                                 )
                             }
                             Icon(Icons.Outlined.Search, contentDescription = null)
                             Spacer(modifier = Modifier.width(12.dp))
-                            Box(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                            Box(modifier = Modifier.weight(1f)) {
                                 if (query.isBlank()) Text(placeholder, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 innerTextField()
+                            }
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { onQueryChanged("") }) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Cancel,
+                                        contentDescription = clearContentDescription,
+                                    )
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.width(16.dp))
                             }
                         }
                     },

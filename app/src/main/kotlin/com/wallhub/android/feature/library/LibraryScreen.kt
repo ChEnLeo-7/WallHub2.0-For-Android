@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -57,11 +58,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -95,6 +98,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.invisibleToUser
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -202,6 +213,8 @@ data class LibraryUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val isLoadingMore: Boolean = false,
+    @StringRes val appendErrorRes: Int? = null,
+    val failedAppendPage: Int? = null,
     val error: String? = null,
     @StringRes val errorRes: Int? = null,
     val appliedSearchQuery: String = "",
@@ -220,6 +233,47 @@ private fun LibraryUiState.filterSelection(): HomeFilterSelection =
         excludedOfficialTags = selectedExcludedOfficialTags,
         resolutions = selectedResolutions,
     )
+
+internal fun LibraryUiState.selectCollectionState(collection: LibraryCollectionTab): LibraryUiState =
+    copy(collection = collection, currentPage = 1, appendErrorRes = null, failedAppendPage = null)
+
+internal fun LibraryUiState.resetLibraryFiltersState(): LibraryUiState =
+    copy(
+        selectedTypes = emptySet(),
+        selectedRatings = DEFAULT_HOME_RATING_SELECTION,
+        selectedGenres = DEFAULT_HOME_GENRE_SELECTION,
+        selectedOfficialTags = emptySet(),
+        selectedExcludedOfficialTags = emptySet(),
+        selectedResolutions = DEFAULT_HOME_RESOLUTION_SELECTION,
+        exactPhrase = false,
+        paginationMode = HomePaginationMode.INFINITE_SCROLL,
+        currentPage = 1,
+        appendErrorRes = null,
+        failedAppendPage = null,
+    )
+
+enum class LibraryEmptyKind { TRUE_EMPTY, SEARCH_NO_RESULTS, FILTERED_NO_RESULTS }
+
+internal fun LibraryUiState.hasActiveLibraryFilters(): Boolean =
+    filterSelection() != HomeFilterSelection.defaults() || exactPhrase
+
+internal fun LibraryUiState.emptyKind(): LibraryEmptyKind =
+    when {
+        appliedSearchQuery.isNotBlank() -> LibraryEmptyKind.SEARCH_NO_RESULTS
+        hasActiveLibraryFilters() -> LibraryEmptyKind.FILTERED_NO_RESULTS
+        else -> LibraryEmptyKind.TRUE_EMPTY
+    }
+
+internal fun shouldAutoLoadNextLibraryPage(state: LibraryUiState): Boolean =
+    state.paginationMode == HomePaginationMode.INFINITE_SCROLL &&
+        state.searchQuery.trim() == state.appliedSearchQuery.trim() &&
+        !state.isLoading &&
+        !state.isLoadingMore &&
+        state.appendErrorRes == null &&
+        state.hasNextPage
+
+internal fun canRetryNextLibraryPage(state: LibraryUiState): Boolean =
+    state.appendErrorRes != null && state.failedAppendPage == state.nextPage && state.hasNextPage
 
 private fun LibraryUiState.asHomeFilterUiState(): HomeUiState =
     HomeUiState(
@@ -259,6 +313,8 @@ sealed interface LibraryAction {
     data object Refresh : LibraryAction
 
     data object LoadNextPage : LibraryAction
+
+    data object RetryNextPage : LibraryAction
 
     data class SelectPage(
         val page: Int,
@@ -461,6 +517,7 @@ class LibraryViewModel
                 LibraryAction.ResetFilters -> resetManagementFilters()
                 LibraryAction.Refresh -> refresh()
                 LibraryAction.LoadNextPage -> loadNextPage()
+                LibraryAction.RetryNextPage -> retryNextPage()
                 is LibraryAction.SelectPage -> selectPage(action.page)
                 is LibraryAction.RequestAuthorDisplayName -> requestAuthorDisplayName(action.item)
                 is LibraryAction.Download -> enqueueDownload(action.item)
@@ -476,7 +533,8 @@ class LibraryViewModel
         private fun selectCollection(collection: LibraryCollectionTab) {
             if (mutableState.value.collection == collection) return
             searchJob?.cancel()
-            mutableState.value = mutableState.value.copy(collection = collection, currentPage = 1)
+            // Collection peers share query/filter/pagination constraints; each collection starts at page one.
+            mutableState.value = mutableState.value.selectCollectionState(collection)
             loadCurrentPage(forceRefresh = false, refreshing = false)
         }
 
@@ -630,27 +688,8 @@ class LibraryViewModel
         private fun resetManagementFilters() {
             searchJob?.cancel()
             val state = mutableState.value
-            if (
-                state.collection == LibraryCollectionTab.SUBSCRIPTIONS &&
-                state.filterSelection() == HomeFilterSelection.defaults() &&
-                !state.exactPhrase &&
-                state.paginationMode == HomePaginationMode.INFINITE_SCROLL
-            ) {
-                return
-            }
-            mutableState.value =
-                state.copy(
-                    collection = LibraryCollectionTab.SUBSCRIPTIONS,
-                    selectedTypes = emptySet(),
-                    selectedRatings = DEFAULT_HOME_RATING_SELECTION,
-                    selectedGenres = DEFAULT_HOME_GENRE_SELECTION,
-                    selectedOfficialTags = emptySet(),
-                    selectedExcludedOfficialTags = emptySet(),
-                    selectedResolutions = DEFAULT_HOME_RESOLUTION_SELECTION,
-                    exactPhrase = false,
-                    paginationMode = HomePaginationMode.INFINITE_SCROLL,
-                    currentPage = 1,
-                )
+            if (!state.hasActiveLibraryFilters() && state.paginationMode == HomePaginationMode.INFINITE_SCROLL) return
+            mutableState.value = state.resetLibraryFiltersState()
             loadCurrentPage(forceRefresh = false, refreshing = false)
         }
 
@@ -679,12 +718,32 @@ class LibraryViewModel
                 state.searchQuery.trim() != state.appliedSearchQuery.trim() ||
                 state.isLoading ||
                 state.isLoadingMore ||
+                state.appendErrorRes != null ||
                 !state.hasNextPage
             ) {
                 return
             }
             loadPage(
                 page = state.nextPage,
+                append = true,
+                version = requestVersion,
+                key = state.cacheKey(),
+                refreshing = false,
+            )
+        }
+
+        private fun retryNextPage() {
+            val state = mutableState.value
+            if (!canRetryNextLibraryPage(state)) return
+            val page = requireNotNull(state.failedAppendPage)
+            mutableState.value =
+                state.copy(
+                    isLoadingMore = true,
+                    appendErrorRes = null,
+                    failedAppendPage = null,
+                )
+            loadPage(
+                page = page,
                 append = true,
                 version = requestVersion,
                 key = state.cacheKey(),
@@ -779,6 +838,8 @@ class LibraryViewModel
                             isLoading = !append && cachedPages[key] == null,
                             isRefreshing = refreshing && !append,
                             isLoadingMore = append,
+                            appendErrorRes = null,
+                            failedAppendPage = null,
                             error = null,
                             errorRes = null,
                         )
@@ -819,29 +880,26 @@ class LibraryViewModel
                         mutableState.value = merged
                     } catch (error: TimeoutCancellationException) {
                         if (version != requestVersion) return@launch
-                        mutableState.value =
-                            snapshot.copy(
-                                isLoading = false,
-                                isRefreshing = false,
-                                isLoadingMore = false,
-                                error = null,
-                                errorRes = R.string.library_load_failed,
-                            )
+                        mutableState.value = snapshot.libraryLoadFailure(append = append, page = page)
                     } catch (error: CancellationException) {
                         throw error
                     } catch (error: Throwable) {
                         if (version != requestVersion) return@launch
-                        mutableState.value =
-                            snapshot.copy(
-                                isLoading = false,
-                                isRefreshing = false,
-                                isLoadingMore = false,
-                                error = null,
-                                errorRes = R.string.library_load_failed,
-                            )
+                        mutableState.value = snapshot.libraryLoadFailure(append = append, page = page)
                     }
                 }
         }
+
+        private fun LibraryUiState.libraryLoadFailure(append: Boolean, page: Int): LibraryUiState =
+            copy(
+                isLoading = false,
+                isRefreshing = false,
+                isLoadingMore = false,
+                appendErrorRes = if (append) R.string.library_load_failed else null,
+                failedAppendPage = page.takeIf { append },
+                error = null,
+                errorRes = if (append) null else R.string.library_load_failed,
+            )
 
         private suspend fun browseWithInitialSessionRetry(
             query: AccountWorkshopQuery,
@@ -892,6 +950,8 @@ class LibraryViewModel
                 isLoading = false,
                 isRefreshing = false,
                 isLoadingMore = false,
+                appendErrorRes = null,
+                failedAppendPage = null,
                 error = null,
                 errorRes = null,
                 appliedSearchQuery = previous.searchQuery,
@@ -1156,6 +1216,7 @@ fun LibraryScreen(
     var pendingRemoval by remember { mutableStateOf<WorkshopSummary?>(null) }
     val filterDrawerState = rememberDrawerState(DrawerValue.Closed)
     val filterDrawerScope = rememberCoroutineScope()
+    BackHandler(enabled = searchToolbarExpanded) { searchToolbarExpanded = false }
     ModalNavigationDrawer(
         drawerState = filterDrawerState,
         gesturesEnabled = filterDrawerState.isOpen,
@@ -1197,30 +1258,48 @@ fun LibraryScreen(
                     onSubmit = { onAction(LibraryAction.SubmitSearch) },
                     onExpand = { searchToolbarExpanded = true },
                     onCollapse = { searchToolbarExpanded = false },
+                    collapseContentDescription = stringResource(R.string.library_collapse_search),
+                    clearContentDescription = stringResource(R.string.library_clear_search),
                     enabled = state.session.phase == SteamSessionPhase.SIGNED_IN,
                 )
             },
             actions = {
-                IconButton(
-                    onClick = { filterDrawerScope.launch { filterDrawerState.open() } },
-                    enabled = state.session.phase == SteamSessionPhase.SIGNED_IN,
-                ) {
-                    Icon(Icons.Outlined.FilterAlt, contentDescription = stringResource(R.string.home_open_all_filters))
-                }
-                IconButton(onClick = { onAction(LibraryAction.Refresh) }) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = stringResource(R.string.library_refresh))
+                if (!searchToolbarExpanded) {
+                    IconButton(
+                        onClick = { filterDrawerScope.launch { filterDrawerState.open() } },
+                        enabled = state.session.phase == SteamSessionPhase.SIGNED_IN,
+                    ) {
+                        Icon(Icons.Outlined.FilterAlt, contentDescription = stringResource(R.string.home_open_all_filters))
+                    }
+                    IconButton(
+                        onClick = { onAction(LibraryAction.Refresh) },
+                        enabled = state.session.phase == SteamSessionPhase.SIGNED_IN || state.session.isRestoreRetryable,
+                    ) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = stringResource(R.string.library_refresh))
+                    }
                 }
             },
         ) { padding ->
-            LibraryContent(
-                state = state,
-                onAction = onAction,
-                onOpenLogin = onOpenLogin,
-                onRemoveFromCollection = { pendingRemoval = it },
-                onContextMenuActiveChanged = onContextMenuActiveChanged,
-                showSearch = false,
-                modifier = Modifier.padding(padding),
-            )
+            Column(modifier = Modifier.padding(padding)) {
+                PrimaryTabRow(selectedTabIndex = state.collection.ordinal) {
+                    LibraryCollectionTab.entries.forEach { collection ->
+                        Tab(
+                            selected = state.collection == collection,
+                            onClick = { onAction(LibraryAction.SelectCollection(collection)) },
+                            text = { Text(collection.label()) },
+                        )
+                    }
+                }
+                LibraryContent(
+                    state = state,
+                    onAction = onAction,
+                    onOpenLogin = onOpenLogin,
+                    onRemoveFromCollection = { pendingRemoval = it },
+                    onContextMenuActiveChanged = onContextMenuActiveChanged,
+                    showSearch = false,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
     }
     pendingRemoval?.let { item ->
@@ -1376,9 +1455,12 @@ fun LibraryContent(
                 LibraryResults(
                     state = state,
                     onRefresh = { onAction(LibraryAction.Refresh) },
+                    onClearQuery = { onAction(LibraryAction.UpdateSearchQuery("")) },
+                    onResetFilters = { onAction(LibraryAction.ResetFilters) },
                     onOpenLogin = onOpenLogin,
                     onLoadNextPage = { onAction(LibraryAction.LoadNextPage) },
                     onPageSelected = { onAction(LibraryAction.SelectPage(it)) },
+            onRetryNextPage = { onAction(LibraryAction.RetryNextPage) },
                     onOpenDetail = { onAction(LibraryAction.OpenDetail(it)) },
                     onPlayVideo = { onAction(LibraryAction.PlayVideo(it)) },
                     onSearchAuthor = { onAction(LibraryAction.SearchAuthor(it)) },
@@ -1461,11 +1543,21 @@ private fun LibrarySearchField(
 
 @Composable
 private fun LibraryLoadingOverlay(modifier: Modifier = Modifier) {
+    val loadingDescription = stringResource(R.string.library_loading)
     Box(
         modifier =
             modifier
                 .background(MaterialTheme.colorScheme.background.copy(alpha = 0.96f))
-                .clickable(onClick = {}),
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(pass = PointerEventPass.Initial).consume()
+                    }
+                }
+                .clearAndSetSemantics {
+                    contentDescription = loadingDescription
+                    liveRegion = LiveRegionMode.Polite
+                    progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
+                },
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -1491,9 +1583,12 @@ private fun LibraryLoadingOverlay(modifier: Modifier = Modifier) {
 private fun LibraryResults(
     state: LibraryUiState,
     onRefresh: () -> Unit,
+    onClearQuery: () -> Unit,
+    onResetFilters: () -> Unit,
     onOpenLogin: () -> Unit,
     onLoadNextPage: () -> Unit,
     onPageSelected: (Int) -> Unit,
+    onRetryNextPage: () -> Unit,
     onOpenDetail: (Long) -> Unit,
     onPlayVideo: (Long) -> Unit,
     onSearchAuthor: (String) -> Unit,
@@ -1514,6 +1609,7 @@ private fun LibraryResults(
                 state.searchQuery.trim() != state.appliedSearchQuery.trim() ||
                 state.isLoading ||
                 state.isLoadingMore ||
+                state.appendErrorRes != null ||
                 !state.hasNextPage
             ) {
                 false
@@ -1537,8 +1633,11 @@ private fun LibraryResults(
         LibraryResultsContent(
             state = state,
             onRefresh = onRefresh,
+            onClearQuery = onClearQuery,
+            onResetFilters = onResetFilters,
             onOpenLogin = onOpenLogin,
             onPageSelected = onPageSelected,
+            onRetryNextPage = onRetryNextPage,
             onOpenDetail = onOpenDetail,
             onPlayVideo = onPlayVideo,
             onSearchAuthor = onSearchAuthor,
@@ -1550,7 +1649,10 @@ private fun LibraryResults(
             onOpenSteam = onOpenSteam,
             gridState = gridState,
             contextMenuCoordinator = contextMenuCoordinator,
-            modifier = Modifier.fillMaxSize(),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .then(if (state.isLoading && !state.isRefreshing) Modifier.semantics { invisibleToUser() } else Modifier),
         )
         AnimatedVisibility(
             visible =
@@ -1571,8 +1673,11 @@ private fun LibraryResults(
 private fun LibraryResultsContent(
     state: LibraryUiState,
     onRefresh: () -> Unit,
+    onClearQuery: () -> Unit,
+    onResetFilters: () -> Unit,
     onOpenLogin: () -> Unit,
     onPageSelected: (Int) -> Unit,
+    onRetryNextPage: () -> Unit,
     onOpenDetail: (Long) -> Unit,
     onPlayVideo: (Long) -> Unit,
     onSearchAuthor: (String) -> Unit,
@@ -1617,18 +1722,32 @@ private fun LibraryResultsContent(
         }
 
         state.items.isEmpty() -> {
+            val emptyKind = state.emptyKind()
             WallHubEmptyState(
-                icon = if (state.searchQuery.isNotBlank()) Icons.Outlined.Search else state.collection.icon(),
+                icon = if (emptyKind == LibraryEmptyKind.SEARCH_NO_RESULTS) Icons.Outlined.Search else state.collection.icon(),
                 title =
-                    if (state.searchQuery.isNotBlank()) {
-                        stringResource(R.string.library_empty_search)
-                    } else if (state.collection == LibraryCollectionTab.SUBSCRIPTIONS) {
-                        stringResource(R.string.library_empty_subscriptions)
-                    } else {
-                        stringResource(R.string.library_empty_favorites)
+                    when (emptyKind) {
+                        LibraryEmptyKind.SEARCH_NO_RESULTS -> stringResource(R.string.library_empty_search)
+                        LibraryEmptyKind.FILTERED_NO_RESULTS -> stringResource(R.string.library_empty_filtered)
+                        LibraryEmptyKind.TRUE_EMPTY ->
+                            if (state.collection == LibraryCollectionTab.SUBSCRIPTIONS) {
+                                stringResource(R.string.library_empty_true_subscriptions)
+                            } else {
+                                stringResource(R.string.library_empty_true_favorites)
+                            }
                     },
-                actionLabel = stringResource(R.string.library_refresh),
-                onAction = onRefresh,
+                actionLabel =
+                    when (emptyKind) {
+                        LibraryEmptyKind.SEARCH_NO_RESULTS -> stringResource(R.string.library_clear_search)
+                        LibraryEmptyKind.FILTERED_NO_RESULTS -> stringResource(R.string.home_reset)
+                        LibraryEmptyKind.TRUE_EMPTY -> stringResource(R.string.library_refresh)
+                    },
+                onAction =
+                    when (emptyKind) {
+                        LibraryEmptyKind.SEARCH_NO_RESULTS -> onClearQuery
+                        LibraryEmptyKind.FILTERED_NO_RESULTS -> onResetFilters
+                        LibraryEmptyKind.TRUE_EMPTY -> onRefresh
+                    },
                 modifier = modifier.refreshableEmptyState(),
             )
         }
@@ -1687,6 +1806,21 @@ private fun LibraryResultsContent(
                 }
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     when {
+                        canRetryNextLibraryPage(state) ->
+                            Column(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(WallHubSpacing.sm)
+                                        .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(stringResource(requireNotNull(state.appendErrorRes)))
+                                TextButton(onClick = onRetryNextPage) {
+                                    Text(stringResource(R.string.library_retry_next_page))
+                                }
+                            }
+
                         state.paginationMode == HomePaginationMode.INFINITE_SCROLL &&
                             state.isLoadingMore ->
                             Box(

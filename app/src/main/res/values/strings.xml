@@ -433,6 +433,9 @@
     <string name='profile_favorites'>Favorites</string>
     <string name='profile_collection_hint'>Open your collection</string>
     <string name='profile_count_format'>%1$d items</string>
+    <string name='profile_count_loading'>Loading count…</string>
+    <string name='profile_count_unavailable'>Count unavailable</string>
+    <string name='profile_count_retry'>Retry counts</string>
     <string name='profile_runtime'>Runtime</string>
     <string name='profile_runtime_unknown'>--</string>
     <string name='profile_hours_format'>%1$d hours</string>
@@ -850,6 +853,11 @@
     <string name='library_title'>Library</string>
     <string name='library_search_placeholder'>Search saved wallpapers</string>
     <string name='library_clear_search'>Clear search</string>
+    <string name='library_collapse_search'>Collapse search</string>
+    <string name='library_empty_filtered'>No wallpapers match these filters</string>
+    <string name='library_empty_true_subscriptions'>You have no subscriptions yet</string>
+    <string name='library_empty_true_favorites'>You have no favorites yet</string>
+    <string name='library_retry_next_page'>Retry loading more</string>
     <string name='library_loading'>Loading your library…</string>
     <string name='library_loading_supporting'>Your library will appear when loading finishes</string>
     <string name='library_retry_restore'>Retry restore</string>

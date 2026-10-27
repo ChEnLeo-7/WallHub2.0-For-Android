@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="detail_no_comments">暂时没有评论</string>
+    <string name="profile_count_loading">正在加载数量…</string>
+    <string name="profile_count_unavailable">数量暂不可用</string>
+    <string name="profile_count_retry">重试加载数量</string>
+    <string name="library_collapse_search">收起搜索</string>
+    <string name="library_empty_filtered">没有符合当前筛选条件的壁纸</string>
+    <string name="library_empty_true_subscriptions">你还没有订阅任何壁纸</string>
+    <string name="library_empty_true_favorites">你还没有收藏任何壁纸</string>
+    <string name="library_retry_next_page">重试加载更多</string>
     <string name="setup_connectivity_title">连接检测</string>
     <string name="setup_connectivity_description">WallHub 正在使用已保存的网络设置进行检测。失败仅作为警告，不会阻止完成设置。</string>
     <string name="setup_action_continue">继续</string>
