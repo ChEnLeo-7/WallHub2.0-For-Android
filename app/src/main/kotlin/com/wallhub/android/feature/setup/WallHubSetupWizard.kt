@@ -36,7 +36,11 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -81,7 +85,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
@@ -869,9 +875,8 @@ private fun AntiBlockingWarmupPage(
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     if (showSpinner) {
-                                        CircularProgressIndicator(
+                                        ContinuousWarmupProgressIndicator(
                                             modifier = Modifier.size(92.dp),
-                                            strokeWidth = 5.dp,
                                         )
                                     }
                                     Icon(
@@ -977,6 +982,34 @@ private fun AntiBlockingWarmupPage(
             }
         }
     }
+}
+
+@Composable
+private fun ContinuousWarmupProgressIndicator(modifier: Modifier = Modifier) {
+    val rotation =
+        rememberInfiniteTransition(label = "anti-blocking-warmup-spinner").animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec =
+                infiniteRepeatable(
+                    animation =
+                        tween(
+                            durationMillis = 1_332,
+                            easing = LinearEasing,
+                        ),
+                    repeatMode = RepeatMode.Restart,
+                ),
+            label = "anti-blocking-warmup-spinner-rotation",
+        )
+    CircularProgressIndicator(
+        progress = { 0.25f },
+        modifier = modifier.rotate(rotation.value),
+        color = MaterialTheme.colorScheme.primary,
+        strokeWidth = 5.dp,
+        trackColor = Color.Transparent,
+        strokeCap = StrokeCap.Round,
+        gapSize = 0.dp,
+    )
 }
 
 @Composable
