@@ -85,7 +85,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -1003,7 +1002,7 @@ private fun ContinuousWarmupProgressIndicator(modifier: Modifier = Modifier) {
         )
     CircularProgressIndicator(
         progress = { 0.25f },
-        modifier = modifier.rotate(rotation.value),
+        modifier = modifier.graphicsLayer { rotationZ = rotation.value },
         color = MaterialTheme.colorScheme.primary,
         strokeWidth = 5.dp,
         trackColor = Color.Transparent,
