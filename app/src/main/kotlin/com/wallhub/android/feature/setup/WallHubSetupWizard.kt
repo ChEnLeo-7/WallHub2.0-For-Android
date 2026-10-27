@@ -38,7 +38,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -831,30 +832,24 @@ private fun AntiBlockingWarmupPage(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(WallHubSpacing.md),
             ) {
-                Surface(
+                Box(
                     modifier = Modifier.size(128.dp),
-                    shape = CircleShape,
-                    color =
-                        if (state.phase == SetupAntiBlockingWarmupPhase.READY) {
-                            Color.Transparent
-                        } else {
-                            MaterialTheme.colorScheme.primaryContainer
-                        },
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Crossfade(
-                            targetState = state.phase,
-                            animationSpec =
-                                tween(
-                                    durationMillis = if (reduceMotion) 90 else 160,
-                                    easing = WARMUP_STATUS_EASE_OUT,
-                                ),
-                            label = "anti-blocking-warmup-status",
-                        ) { phase ->
-                            when (phase) {
-                                SetupAntiBlockingWarmupPhase.IDLE,
-                                SetupAntiBlockingWarmupPhase.WARMING,
-                                -> Box(contentAlignment = Alignment.Center) {
+                    Crossfade(
+                        targetState = state.phase,
+                        animationSpec = warmupFadeSpec(reduceMotion),
+                        label = "anti-blocking-warmup-status",
+                    ) { phase ->
+                        when (phase) {
+                            SetupAntiBlockingWarmupPhase.IDLE,
+                            SetupAntiBlockingWarmupPhase.WARMING,
+                            -> Surface(
+                                modifier = Modifier.size(128.dp),
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
                                     if (!reduceMotion) {
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(92.dp),
@@ -868,31 +863,27 @@ private fun AntiBlockingWarmupPage(
                                         modifier = Modifier.size(42.dp),
                                     )
                                 }
-                                SetupAntiBlockingWarmupPhase.READY ->
-                                    Icon(
-                                        imageVector = Icons.Outlined.Check,
-                                        contentDescription = null,
-                                        tint = successColor,
-                                        modifier = Modifier.size(72.dp),
-                                    )
-                                SetupAntiBlockingWarmupPhase.DEGRADED ->
-                                    Icon(
-                                        imageVector = Icons.Outlined.ErrorOutline,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(72.dp),
-                                    )
                             }
+                            SetupAntiBlockingWarmupPhase.READY ->
+                                Icon(
+                                    imageVector = Icons.Outlined.Check,
+                                    contentDescription = null,
+                                    tint = successColor,
+                                    modifier = Modifier.size(72.dp),
+                                )
+                            SetupAntiBlockingWarmupPhase.DEGRADED ->
+                                Icon(
+                                    imageVector = Icons.Outlined.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(72.dp),
+                                )
                         }
                     }
                 }
                 Crossfade(
                     targetState = state.phase,
-                    animationSpec =
-                        tween(
-                            durationMillis = if (reduceMotion) 90 else 160,
-                            easing = WARMUP_STATUS_EASE_OUT,
-                        ),
+                    animationSpec = warmupFadeSpec(reduceMotion),
                     label = "anti-blocking-warmup-copy",
                 ) { phase ->
                     Column(
@@ -1251,24 +1242,17 @@ private fun ConnectivityCheckStatusIcon(
     }
 }
 
-private val WARMUP_STATUS_EASE_OUT = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
+private fun warmupFadeSpec(reduceMotion: Boolean): FiniteAnimationSpec<Float> =
+    tween(
+        durationMillis = if (reduceMotion) 90 else 200,
+        easing = LinearEasing,
+    )
 
 private fun warmupButtonEnterTransition(reduceMotion: Boolean): EnterTransition =
-    fadeIn(
-        tween(
-            durationMillis = if (reduceMotion) 100 else 140,
-            delayMillis = if (reduceMotion) 0 else 80,
-            easing = WARMUP_STATUS_EASE_OUT,
-        ),
-    )
+    fadeIn(warmupFadeSpec(reduceMotion))
 
 private fun warmupButtonExitTransition(reduceMotion: Boolean): ExitTransition =
-    fadeOut(
-        tween(
-            durationMillis = if (reduceMotion) 70 else 90,
-            easing = WARMUP_STATUS_EASE_OUT,
-        ),
-    )
+    fadeOut(warmupFadeSpec(reduceMotion))
 
 private fun connectivityStatusTransition(reduceMotion: Boolean): ContentTransform =
     if (reduceMotion) {
