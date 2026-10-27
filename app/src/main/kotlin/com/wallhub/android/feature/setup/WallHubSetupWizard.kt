@@ -963,21 +963,34 @@ private fun AntiBlockingWarmupPage(
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        AnimatedVisibility(
+                        WarmupReadyContinueButton(
                             visible = state.phase == SetupAntiBlockingWarmupPhase.READY,
-                            enter = warmupButtonEnterTransition(reduceMotion),
-                            exit = warmupButtonExitTransition(reduceMotion),
-                        ) {
-                            Button(
-                                onClick = onReadyContinue,
-                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                            ) {
-                                Text(stringResource(R.string.setup_warmup_continue))
-                            }
-                        }
+                            reduceMotion = reduceMotion,
+                            onClick = onReadyContinue,
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun WarmupReadyContinueButton(
+    visible: Boolean,
+    reduceMotion: Boolean,
+    onClick: () -> Unit,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = warmupButtonEnterTransition(reduceMotion),
+        exit = warmupButtonExitTransition(reduceMotion),
+    ) {
+        Button(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+        ) {
+            Text(stringResource(R.string.setup_warmup_continue))
         }
     }
 }
