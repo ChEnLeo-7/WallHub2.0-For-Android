@@ -195,6 +195,111 @@ class DownloadLiveTelemetryTest {
     }
 
     @Test
+    fun `speed samples are materially filtered and rate limited`() = runTest {
+        var now = 1_000L
+        val telemetry =
+            DownloadLiveTelemetry(
+                nowMs = { now },
+                scope = backgroundScope,
+                waitMs = { delay(it) },
+            )
+
+        fun accept(speed: Long, bytes: Long) =
+            telemetry.accept(
+                "task",
+                SteamDownloadProgress(
+                    phase = SteamDownloadPhase.DOWNLOADING,
+                    networkBytes = bytes,
+                    networkBytesPerSecond = speed,
+                    firstContentReceived = true,
+                ),
+            )
+
+        accept(speed = 1_000_000L, bytes = 1_000L)
+        now += 250L
+        accept(speed = 1_005_000L, bytes = 2_000L)
+        assertEquals(1_000_000L, telemetry.current("task")?.networkBytesPerSecond)
+
+        now += 250L
+        accept(speed = 2_000_000L, bytes = 3_000L)
+        assertEquals(1_000_000L, telemetry.current("task")?.networkBytesPerSecond)
+
+        now += 500L
+        accept(speed = 2_100_000L, bytes = 4_000L)
+        assertEquals(2_100_000L, telemetry.current("task")?.networkBytesPerSecond)
+    }
+
+    @Test
+    fun `suppressed progress extends the speed expiration deadline`() = runTest {
+        val telemetry =
+            DownloadLiveTelemetry(
+                nowMs = { testScheduler.currentTime },
+                scope = backgroundScope,
+                waitMs = { delay(it) },
+            )
+
+        telemetry.accept(
+            "task",
+            SteamDownloadProgress(
+                phase = SteamDownloadPhase.DOWNLOADING,
+                networkBytes = 1_000L,
+                networkBytesPerSecond = 1_000_000L,
+                firstContentReceived = true,
+            ),
+        )
+        advanceTimeBy(900L)
+        telemetry.accept(
+            "task",
+            SteamDownloadProgress(
+                phase = SteamDownloadPhase.DOWNLOADING,
+                networkBytes = 2_000L,
+                networkBytesPerSecond = 2_000_000L,
+                firstContentReceived = true,
+            ),
+        )
+
+        advanceTimeBy(1_100L)
+        runCurrent()
+        assertEquals(1_000_000L, telemetry.current("task")?.networkBytesPerSecond)
+
+        advanceTimeBy(899L)
+        runCurrent()
+        assertEquals(1_000_000L, telemetry.current("task")?.networkBytesPerSecond)
+
+        advanceTimeBy(1L)
+        runCurrent()
+        assertNull(telemetry.current("task")?.networkBytesPerSecond)
+    }
+
+    @Test
+    fun `phase and clear transitions publish immediately inside speed window`() = runTest {
+        var now = 1_000L
+        val telemetry =
+            DownloadLiveTelemetry(
+                nowMs = { now },
+                scope = backgroundScope,
+                waitMs = { delay(it) },
+            )
+        telemetry.accept(
+            "task",
+            SteamDownloadProgress(
+                phase = SteamDownloadPhase.DOWNLOADING,
+                networkBytes = 1_000L,
+                networkBytesPerSecond = 1_000_000L,
+                firstContentReceived = true,
+            ),
+        )
+
+        now += 250L
+        telemetry.accept("task", SteamDownloadProgress(phase = SteamDownloadPhase.VERIFYING))
+        assertEquals(DownloadLiveActivity.VERIFYING, telemetry.current("task")?.activity)
+        assertNull(telemetry.current("task")?.networkBytesPerSecond)
+
+        telemetry.clear("task")
+        assertNull(telemetry.current("task"))
+    }
+
+    @Test
     fun `preparing and verifying never expose a historical speed`() = runTest {
         val telemetry =
             DownloadLiveTelemetry(

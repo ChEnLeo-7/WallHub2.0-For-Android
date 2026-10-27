@@ -20,8 +20,10 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
@@ -63,64 +65,9 @@ data class LocalWallpaperUiState(
     val selectedResourceId: String? = null,
     val selectionMode: Boolean = false,
     val selectedResourceIds: Set<String> = emptySet(),
+    val resources: List<LocalWallpaperResource> = emptyList(),
+    val allTags: List<String> = emptyList(),
 ) {
-    val resources: List<LocalWallpaperResource>
-        get() {
-            val query = searchQuery.trim().lowercase(Locale.ROOT)
-            return scan.resources
-                .asSequence()
-                .filter { resource ->
-                    formatFilter == LocalWallpaperFormatFilter.ALL ||
-                        resource.format.name == formatFilter.name
-                }.filter { resource ->
-                    when (importFilter) {
-                        LocalWallpaperImportFilter.ALL -> true
-                        LocalWallpaperImportFilter.NOT_IMPORTED ->
-                            resource.importState == LocalWallpaperImportState.NOT_IMPORTED
-                        LocalWallpaperImportFilter.IMPORT_REQUESTED ->
-                            resource.importState == LocalWallpaperImportState.IMPORT_REQUESTED
-                    }
-                }.filter { resource -> sourceId == null || resource.sourceId == sourceId }
-                .filter { resource -> !favoriteOnly || resource.isFavorite }
-                .filter { resource -> selectedTag == null || selectedTag in resource.tags }
-                .filter { resource ->
-                    query.isBlank() ||
-                        listOf(
-                            resource.title,
-                            resource.displayName,
-                            resource.relativePath,
-                            resource.format.name,
-                            resource.tags.joinToString(" "),
-                        ).any { value -> value.lowercase(Locale.ROOT).contains(query) }
-                }.let { filtered ->
-                    when (sort) {
-                        LocalWallpaperSort.RECENT ->
-                            filtered.sortedWith(
-                                compareByDescending<LocalWallpaperResource> { it.modifiedAt }
-                                    .thenBy { it.title.lowercase(Locale.ROOT) },
-                            )
-
-                        LocalWallpaperSort.NAME ->
-                            filtered.sortedBy {
-                                it.title.lowercase(Locale.ROOT)
-                            }
-
-                        LocalWallpaperSort.SIZE -> filtered.sortedByDescending(LocalWallpaperResource::sizeBytes)
-                        LocalWallpaperSort.TYPE ->
-                            filtered.sortedWith(
-                                compareBy<LocalWallpaperResource> { it.format.name }
-                                    .thenBy { it.title.lowercase(Locale.ROOT) },
-                            )
-                    }
-                }.toList()
-        }
-
-    val allTags: List<String>
-        get() =
-            scan.resources
-                .flatMap(LocalWallpaperResource::tags)
-                .distinct()
-                .sorted()
 
     val activeFilterCount: Int
         get() =
@@ -156,6 +103,91 @@ data class LocalWallpaperUiState(
                         listOf(resources.size),
                     )
             }
+}
+
+internal data class LocalWallpaperResourceProjectionInput(
+    val resources: List<LocalWallpaperResource>,
+    val searchQuery: String,
+    val formatFilter: LocalWallpaperFormatFilter,
+    val importFilter: LocalWallpaperImportFilter,
+    val sourceId: String?,
+    val favoriteOnly: Boolean,
+    val selectedTag: String?,
+    val sort: LocalWallpaperSort,
+)
+
+internal class LocalWallpaperResourceProjection {
+    private var previousInput: LocalWallpaperResourceProjectionInput? = null
+    private var previousResources: List<LocalWallpaperResource> = emptyList()
+    private var previousTags: List<String> = emptyList()
+
+    fun apply(state: LocalWallpaperUiState): LocalWallpaperUiState {
+        val input =
+            LocalWallpaperResourceProjectionInput(
+                resources = state.scan.resources,
+                searchQuery = state.searchQuery,
+                formatFilter = state.formatFilter,
+                importFilter = state.importFilter,
+                sourceId = state.sourceId,
+                favoriteOnly = state.favoriteOnly,
+                selectedTag = state.selectedTag,
+                sort = state.sort,
+            )
+        if (input != previousInput) {
+            val derived = state.withDerivedResources()
+            previousInput = input
+            previousResources = derived.resources
+            previousTags = derived.allTags
+        }
+        return state.copy(resources = previousResources, allTags = previousTags)
+    }
+}
+
+internal fun LocalWallpaperUiState.withDerivedResources(): LocalWallpaperUiState {
+    val query = searchQuery.trim().lowercase(Locale.ROOT)
+    val filtered =
+        scan.resources
+            .asSequence()
+            .filter { resource ->
+                formatFilter == LocalWallpaperFormatFilter.ALL || resource.format.name == formatFilter.name
+            }.filter { resource ->
+                when (importFilter) {
+                    LocalWallpaperImportFilter.ALL -> true
+                    LocalWallpaperImportFilter.NOT_IMPORTED ->
+                        resource.importState == LocalWallpaperImportState.NOT_IMPORTED
+                    LocalWallpaperImportFilter.IMPORT_REQUESTED ->
+                        resource.importState == LocalWallpaperImportState.IMPORT_REQUESTED
+                }
+            }.filter { resource -> sourceId == null || resource.sourceId == sourceId }
+            .filter { resource -> !favoriteOnly || resource.isFavorite }
+            .filter { resource -> selectedTag == null || selectedTag in resource.tags }
+            .filter { resource ->
+                query.isBlank() ||
+                    sequenceOf(
+                        resource.title,
+                        resource.displayName,
+                        resource.relativePath,
+                        resource.format.name,
+                        resource.tags.joinToString(" "),
+                    ).any { value -> value.lowercase(Locale.ROOT).contains(query) }
+            }
+    val sorted =
+        when (sort) {
+            LocalWallpaperSort.RECENT ->
+                filtered.sortedWith(
+                    compareByDescending<LocalWallpaperResource> { it.modifiedAt }
+                        .thenBy { it.title.lowercase(Locale.ROOT) },
+                )
+            LocalWallpaperSort.NAME -> filtered.sortedBy { it.title.lowercase(Locale.ROOT) }
+            LocalWallpaperSort.SIZE -> filtered.sortedByDescending(LocalWallpaperResource::sizeBytes)
+            LocalWallpaperSort.TYPE ->
+                filtered.sortedWith(
+                    compareBy<LocalWallpaperResource> { it.format.name }
+                        .thenBy { it.title.lowercase(Locale.ROOT) },
+                )
+        }.toList()
+    val tags = scan.resources.flatMap(LocalWallpaperResource::tags).distinct().sorted()
+    return copy(resources = sorted, allTags = tags)
 }
 
 sealed interface LocalUiText {
@@ -340,11 +372,19 @@ class LocalWallpaperViewModel
         private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
     ) : ViewModel() {
         private val mutableState = MutableStateFlow(savedStateHandle.localWallpaperState())
+        private val resourceProjection = LocalWallpaperResourceProjection()
         private val effectChannel = Channel<LocalWallpaperEffect>(capacity = Channel.BUFFERED)
         private var scanJob: Job? = null
         private var browseViewMode = LocalWallpaperViewMode.LIST
 
-        val uiState: StateFlow<LocalWallpaperUiState> = mutableState.asStateFlow()
+        val uiState: StateFlow<LocalWallpaperUiState> =
+            mutableState
+                .map(resourceProjection::apply)
+                .stateIn(
+                    scope = viewModelScope,
+                    started = SharingStarted.Eagerly,
+                    initialValue = mutableState.value.withDerivedResources(),
+                )
         val effects: Flow<LocalWallpaperEffect> = effectChannel.receiveAsFlow()
 
         init {
@@ -384,14 +424,11 @@ class LocalWallpaperViewModel
                             } else {
                                 snapshot.copy(resources = scannedResources)
                             }
-                        val selectedResourceId =
-                            state.selectedResourceId
-                                ?.takeIf { id -> displayedSnapshot.resources.any { it.id == id } }
+                        val availableResourceIds =
+                            displayedSnapshot.resources.mapTo(hashSetOf(), LocalWallpaperResource::id)
+                        val selectedResourceId = state.selectedResourceId?.takeIf(availableResourceIds::contains)
                         val selectedResourceIds =
-                            state.selectedResourceIds
-                                .filterTo(linkedSetOf()) { id ->
-                                    displayedSnapshot.resources.any { it.id == id }
-                                }
+                            state.selectedResourceIds.filterTo(linkedSetOf(), availableResourceIds::contains)
                         mutableState.value =
                             state.copy(
                                 scan = displayedSnapshot,

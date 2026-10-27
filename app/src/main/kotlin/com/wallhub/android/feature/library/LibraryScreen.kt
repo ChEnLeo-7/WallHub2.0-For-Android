@@ -374,7 +374,7 @@ class LibraryViewModel
         private var loadJob: Job? = null
         private var searchJob: Job? = null
         private var requestVersion = 0L
-        private val cachedPages = mutableMapOf<LibraryQueryKey, LibraryCacheEntry>()
+        private val cachedPages = BoundedLruCache<LibraryQueryKey, LibraryCacheEntry>(MAX_CACHED_LIBRARY_QUERIES)
         private val authorNameRequests = mutableSetOf<Long>()
         private val collectionMutationIds = mutableSetOf<Long>()
         private var activeAccountName: String? = null
@@ -400,9 +400,7 @@ class LibraryViewModel
             }
             viewModelScope.launch {
                 accountWorkshopRepository.collectionChanges.collect { collection ->
-                    cachedPages.keys
-                        .filter { it.collection.collection == collection }
-                        .forEach(cachedPages::remove)
+                    cachedPages.removeWhere { it.collection.collection == collection }
                     val current = mutableState.value
                     if (current.session.phase == SteamSessionPhase.SIGNED_IN && current.collection.collection == collection) {
                         loadCurrentPage(forceRefresh = false, refreshing = false, page = current.currentPage)
@@ -521,14 +519,9 @@ class LibraryViewModel
                     // A request started before the confirmed write must not restore the removed row afterward.
                     loadJob?.cancel()
                     requestVersion += 1L
-                    cachedPages.keys
-                        .filter { key -> key.collection == collection }
-                        .forEach { key ->
-                            cachedPages[key] =
-                                requireNotNull(cachedPages[key]).let { cached ->
-                                    cached.copy(items = cached.items.filterNot { cachedItem -> cachedItem.id == item.id })
-                                }
-                        }
+                    cachedPages.updateWhere({ key -> key.collection == collection }) { cached ->
+                        cached.copy(items = cached.items.filterNot { cachedItem -> cachedItem.id == item.id })
+                    }
                     mutableState.value =
                         mutableState.value.let { state ->
                             if (state.collection == collection) {
@@ -945,6 +938,7 @@ class LibraryViewModel
             const val INITIAL_SESSION_RETRY_DELAY_MS = 450L
             const val SEARCH_DEBOUNCE_MS = 320L
             const val MAX_SEARCH_LENGTH = 120
+            const val MAX_CACHED_LIBRARY_QUERIES = 12
         }
     }
 

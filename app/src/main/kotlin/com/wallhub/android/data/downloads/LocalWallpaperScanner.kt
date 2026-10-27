@@ -261,28 +261,16 @@ internal suspend fun LocalWallpaperFileRepository.inspectNodes(
     onResource: suspend (LocalWallpaperResource) -> Unit,
 ) {
     val sortedNodes = nodes.sortedByDescending(ScanNode::modifiedAt)
-    val nodesByParent = sortedNodes.groupBy(ScanNode::parentPath)
-    val projectParents =
-        nodesByParent
-            .mapNotNull { (parent, siblings) ->
-                val hasIndex = siblings.any { node -> node.name.equals("index.html", ignoreCase = true) }
-                val hasProject = siblings.any { node -> node.name.equals("project.json", ignoreCase = true) }
-                parent.takeIf { hasIndex || hasProject }
-            }.sortedByDescending(String::length)
+    val projectAssignments = assignNodesToNearestProjects(sortedNodes)
     val emittedIds = mutableSetOf<String>()
-    for (parent in projectParents) {
+    for ((parent, projectNodes) in projectAssignments.nodesByProject) {
         currentCoroutineContext().ensureActive()
-        val projectNodes = sortedNodes.filter { node -> node.isInside(parent) }
         val resource = inspectProjectDirectory(parent, projectNodes, tasks, states, tags)
         if (resource != null && emittedIds.add(resource.id)) onResource(resource)
     }
-    for (node in sortedNodes) {
+    for (node in projectAssignments.standaloneNodes) {
         currentCoroutineContext().ensureActive()
-        if (
-            node.isTemporary() ||
-            projectParents.any { parent -> node.isInside(parent) } ||
-            node.extension in SIDECAR_EXTENSIONS
-        ) {
+        if (node.isTemporary() || node.extension in SIDECAR_EXTENSIONS) {
             continue
         }
         val resource =
@@ -293,6 +281,52 @@ internal suspend fun LocalWallpaperFileRepository.inspectNodes(
                 tags,
             )
         if (resource != null && emittedIds.add(resource.id)) onResource(resource)
+    }
+}
+
+internal data class ProjectNodeAssignments(
+    val nodesByProject: Map<String, List<ScanNode>>,
+    val standaloneNodes: List<ScanNode>,
+)
+
+/** Assigns each node to its nearest ancestor project in one path-indexed pass. */
+internal fun assignNodesToNearestProjects(nodes: List<ScanNode>): ProjectNodeAssignments {
+    val projectParents =
+        nodes
+            .groupBy(ScanNode::parentPath)
+            .mapNotNullTo(hashSetOf()) { (parent, siblings) ->
+                parent.takeIf {
+                    siblings.any { node ->
+                        node.name.equals("index.html", ignoreCase = true) ||
+                            node.name.equals("project.json", ignoreCase = true)
+                    }
+                }
+            }
+    val assigned = linkedMapOf<String, MutableList<ScanNode>>()
+    val standalone = mutableListOf<ScanNode>()
+    nodes.forEach { node ->
+        val project = nearestProjectParent(node.relativePath, projectParents)
+        if (project == null) {
+            standalone += node
+        } else {
+            assigned.getOrPut(project) { mutableListOf() } += node
+        }
+    }
+    return ProjectNodeAssignments(
+        nodesByProject = assigned,
+        standaloneNodes = standalone,
+    )
+}
+
+internal fun nearestProjectParent(
+    relativePath: String,
+    projectParents: Set<String>,
+): String? {
+    var path = relativePath.substringBeforeLast('/', "")
+    while (true) {
+        if (path in projectParents) return path
+        if (path.isBlank()) return null
+        path = path.substringBeforeLast('/', "")
     }
 }
 
@@ -690,7 +724,7 @@ internal const val LOCAL_SOURCE_ID = "local"
 internal const val DEFAULT_DOWNLOAD_DIRECTORY = "WallHub"
 internal const val DEFAULT_DOWNLOAD_LABEL = "Download/WallHub"
 internal const val DEFAULT_DOWNLOAD_ROOT_URI = "content://media/external/downloads/Download/WallHub"
-internal const val RESULT_EMIT_BATCH_SIZE = 8
+internal const val RESULT_EMIT_BATCH_SIZE = 32
 internal const val MAX_TAG_LENGTH = 40
 internal const val RESOURCE_ID_BYTES = 12
 internal const val MAX_MAGIC_LENGTH = 64

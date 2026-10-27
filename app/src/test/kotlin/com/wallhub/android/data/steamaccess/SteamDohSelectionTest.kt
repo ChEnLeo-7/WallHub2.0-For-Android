@@ -7,6 +7,8 @@ import com.wallhub.android.core.model.SteamDohRegion
 import java.net.InetAddress
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class SteamDohSelectionTest {
     @Test
@@ -95,6 +97,27 @@ class SteamDohSelectionTest {
                 ),
             ),
         )
+    }
+
+    @Test
+    fun `production benchmark is attempted once per generation and endpoint fingerprint`() {
+        val admission = SteamDohBenchmarkAdmission()
+
+        assertTrue(admission.admit(7, "a\u0000b"))
+        assertFalse(admission.admit(7, "a\u0000b"))
+        assertTrue(admission.admit(7, "a\u0000c"))
+        assertTrue(admission.admit(8, "a\u0000c"))
+    }
+
+    @Test
+    fun `invalidating routes permits a new benchmark attempt`() {
+        val admission = SteamDohBenchmarkAdmission()
+        assertTrue(admission.admit(7, "a"))
+        assertFalse(admission.admit(7, "a"))
+
+        admission.clear()
+
+        assertTrue(admission.admit(7, "a"))
     }
 
     private fun endpoint(name: String, region: SteamDohRegion) =

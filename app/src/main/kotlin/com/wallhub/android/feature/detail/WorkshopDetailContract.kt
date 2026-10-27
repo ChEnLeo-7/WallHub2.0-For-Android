@@ -42,6 +42,7 @@ data class WorkshopDetailUiState(
     val commentsHasMore: Boolean = false,
     val commentsOwnerId: String? = null,
     val commentsRequested: Boolean = false,
+    val commentsRequestGeneration: Long = 0L,
     val isLoadingComments: Boolean = false,
     val isLoadingMoreComments: Boolean = false,
     val commentsError: DetailUiText? = null,
@@ -83,6 +84,27 @@ internal fun beginCommentsRequest(
         isLoadingMoreComments = !refresh,
         commentsError = null,
     )
+
+internal fun resetCommentsForDetailReload(state: WorkshopDetailUiState): WorkshopDetailUiState =
+    state.copy(
+        comments = emptyList(),
+        commentsTotal = null,
+        commentsNextStart = 0,
+        commentsHasMore = false,
+        commentsOwnerId = null,
+        commentsRequested = false,
+        commentsRequestGeneration = state.commentsRequestGeneration + 1L,
+        isLoadingComments = false,
+        isLoadingMoreComments = false,
+        commentsError = null,
+    )
+
+internal inline fun completeCommentsRequest(
+    state: WorkshopDetailUiState,
+    requestGeneration: Long,
+    update: WorkshopDetailUiState.() -> WorkshopDetailUiState,
+): WorkshopDetailUiState =
+    if (state.commentsRequestGeneration == requestGeneration) state.update() else state
 
 sealed interface DetailUiText {
     data class Resource(

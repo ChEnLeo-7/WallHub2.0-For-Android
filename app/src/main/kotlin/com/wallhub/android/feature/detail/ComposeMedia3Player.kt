@@ -438,12 +438,11 @@ private class HoldToDoubleSpeedController(
     private var restorePlaybackParameters: PlaybackParameters? = null
     private var longPressActivated = false
     private var activeSpeed = 1f
-    private val refreshIndicatorFrame =
-        object : Runnable {
-            override fun run() {
-                if (acceleratedPlayer == null) return
+    private val frameCapturePolicy = HoldSpeedFrameCapturePolicy()
+    private val captureIndicatorFrame =
+        Runnable {
+            if (acceleratedPlayer != null && frameCapturePolicy.takeCaptureRequest()) {
                 onActiveChanged(true, captureVideoFrame(), activeSpeed)
-                playerView.postDelayed(this, HOLD_SPEED_FRAME_REFRESH_MS)
             }
         }
     private val gestureDetector =
@@ -484,19 +483,22 @@ private class HoldToDoubleSpeedController(
         activeSpeed = (player.playbackParameters.speed + 1f).coerceAtMost(MAX_HOLD_SPEED)
         player.setPlaybackParameters(player.playbackParameters.withSpeed(activeSpeed))
         vibrate()
-        refreshIndicatorFrame.run()
+        frameCapturePolicy.onHoldStarted()
+        onActiveChanged(true, null, activeSpeed)
+        playerView.postDelayed(captureIndicatorFrame, HOLD_SPEED_FRAME_CAPTURE_DELAY_MS)
     }
 
     private fun restoreSpeed() {
         val player = acceleratedPlayer ?: return
-        playerView.removeCallbacks(refreshIndicatorFrame)
+        playerView.removeCallbacks(captureIndicatorFrame)
+        frameCapturePolicy.onHoldEnded()
         val parameters = restorePlaybackParameters
         if (parameters != null && player.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH)) {
             player.setPlaybackParameters(parameters)
         }
         acceleratedPlayer = null
         restorePlaybackParameters = null
-        onActiveChanged(false, null, restorePlaybackParameters?.speed ?: 1f)
+        onActiveChanged(false, null, parameters?.speed ?: 1f)
     }
 
     private fun vibrate() {
@@ -546,6 +548,24 @@ private class HoldToDoubleSpeedController(
     }
 }
 
+internal class HoldSpeedFrameCapturePolicy {
+    private var capturePending = false
+
+    fun onHoldStarted() {
+        capturePending = true
+    }
+
+    fun onHoldEnded() {
+        capturePending = false
+    }
+
+    fun takeCaptureRequest(): Boolean {
+        if (!capturePending) return false
+        capturePending = false
+        return true
+    }
+}
+
 private val PLAYBACK_SPEEDS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f, 4f)
 private const val SPEED_EPSILON = 0.01f
 private const val SPEED_POPUP_GAP_DP = 4f
@@ -561,6 +581,6 @@ private val HOLD_SPEED_BLUR_RADIUS = 20.dp
 private val HOLD_SPEED_BORDER_WIDTH = 1.dp
 private val HOLD_SPEED_ELEVATION = 6.dp
 private const val HOLD_SPEED_CAPTURE_MAX_WIDTH_PX = 480
-private const val HOLD_SPEED_FRAME_REFRESH_MS = 100L
+private const val HOLD_SPEED_FRAME_CAPTURE_DELAY_MS = 100L
 private const val HOLD_SPEED_TOP_FRACTION = 0.06f
 private const val MAX_HOLD_SPEED = 4f

@@ -1349,7 +1349,6 @@ private fun SetupNetworkCheck.label(): String =
         SetupNetworkCheck.PUBLIC_DETAILS_JSON -> stringResource(R.string.setup_network_item_public_details)
         SetupNetworkCheck.COMMUNITY_HTML -> stringResource(R.string.setup_network_item_community_html)
         SetupNetworkCheck.WORKSHOP_IMAGE -> stringResource(R.string.setup_network_item_workshop_image)
-        SetupNetworkCheck.CM_TRANSPORT -> stringResource(R.string.setup_network_item_cm_transport)
         SetupNetworkCheck.GITHUB_API -> stringResource(R.string.setup_network_item_github_api)
         SetupNetworkCheck.CURATOR_API -> stringResource(R.string.setup_network_item_curator_api)
     }

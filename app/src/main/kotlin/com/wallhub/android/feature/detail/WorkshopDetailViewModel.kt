@@ -191,27 +191,23 @@ class WorkshopDetailViewModel
 
         fun reload() {
             detailLoadJob?.cancel()
+            commentsLoadJob?.cancel()
+            commentsLoadJob = null
             inlineVideoLoadJob?.cancel()
             inlineVideoLoadJob = null
+            val current = mutableState.value
+            current.inlineVideoStream?.close()
+            current.inlineVideoPlayer?.release()
+            mutableState.value =
+                resetCommentsForDetailReload(beginDetailRefresh(current)).copy(
+                    inlineVideoStream = null,
+                    inlineVideoPlayer = null,
+                    isInlineVideoFullscreen = false,
+                    isLoadingInlineVideo = false,
+                    inlineVideoError = null,
+                )
             refreshInteraction()
             detailLoadJob = viewModelScope.launch {
-                mutableState.value.inlineVideoStream?.close()
-                mutableState.value.inlineVideoPlayer?.release()
-                mutableState.value =
-                    beginDetailRefresh(mutableState.value).copy(
-                        comments = emptyList(),
-                        commentsTotal = null,
-                        commentsNextStart = 0,
-                        commentsHasMore = false,
-                        commentsOwnerId = null,
-                        commentsRequested = false,
-                        commentsError = null,
-                        inlineVideoStream = null,
-                        inlineVideoPlayer = null,
-                        isInlineVideoFullscreen = false,
-                        isLoadingInlineVideo = false,
-                        inlineVideoError = null,
-                    )
                 if (shouldAutoLoadComments(mutableState.value)) {
                     loadComments(refresh = true)
                 }
@@ -445,6 +441,7 @@ class WorkshopDetailViewModel
                 return
             }
             val start = if (refresh) 0 else current.commentsNextStart
+            val requestGeneration = current.commentsRequestGeneration
             mutableState.value = beginCommentsRequest(current, refresh)
             commentsLoadJob =
                 viewModelScope.launch {
@@ -472,29 +469,33 @@ class WorkshopDetailViewModel
                                     }
                                 }
                             mutableState.value =
-                                latest.copy(
-                                    comments = comments,
-                                    commentsTotal = page.total,
-                                    commentsNextStart = page.nextStart,
-                                    commentsHasMore = page.hasMore,
-                                    commentsOwnerId = page.ownerId ?: latest.commentsOwnerId ?: detail.creatorId,
-                                    isLoadingComments = false,
-                                    isLoadingMoreComments = false,
-                                    commentsError = null,
-                                )
+                                completeCommentsRequest(latest, requestGeneration) {
+                                    copy(
+                                        comments = comments,
+                                        commentsTotal = page.total,
+                                        commentsNextStart = page.nextStart,
+                                        commentsHasMore = page.hasMore,
+                                        commentsOwnerId = page.ownerId ?: commentsOwnerId ?: detail.creatorId,
+                                        isLoadingComments = false,
+                                        isLoadingMoreComments = false,
+                                        commentsError = null,
+                                    )
+                                }
                         }.onFailure { error ->
                             if (error is CancellationException && error !is TimeoutCancellationException) throw error
                             mutableState.value =
-                                mutableState.value.copy(
-                                    isLoadingComments = false,
-                                    isLoadingMoreComments = false,
-                                    commentsError =
-                                        if (error is TimeoutCancellationException) {
-                                            DetailUiText.Resource(R.string.detail_comments_load_failed)
-                                        } else {
-                                            error.toDetailUiText(R.string.detail_comments_load_failed)
-                                        },
-                                )
+                                completeCommentsRequest(mutableState.value, requestGeneration) {
+                                    copy(
+                                        isLoadingComments = false,
+                                        isLoadingMoreComments = false,
+                                        commentsError =
+                                            if (error is TimeoutCancellationException) {
+                                                DetailUiText.Resource(R.string.detail_comments_load_failed)
+                                            } else {
+                                                error.toDetailUiText(R.string.detail_comments_load_failed)
+                                            },
+                                    )
+                                }
                         }
                     } finally {
                         Log.d(

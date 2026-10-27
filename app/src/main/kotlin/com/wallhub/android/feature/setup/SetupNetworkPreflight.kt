@@ -54,7 +54,6 @@ internal enum class SetupNetworkCheck {
     PUBLIC_DETAILS_JSON,
     COMMUNITY_HTML,
     WORKSHOP_IMAGE,
-    CM_TRANSPORT,
     GITHUB_API,
     CURATOR_API,
 }
@@ -70,7 +69,6 @@ internal fun setupProbeTimeoutMillis(
         SetupNetworkCheck.COMMUNITY_HTML -> SETUP_WEB_PROBE_TIMEOUT_MS
         SetupNetworkCheck.WORKSHOP_IMAGE ->
             if (automaticAntiBlockingEnabled) SETUP_IMAGE_PROBE_TIMEOUT_MS else SETUP_PROBE_TIMEOUT_MS
-        SetupNetworkCheck.CM_TRANSPORT -> SETUP_PROBE_TIMEOUT_MS
         SetupNetworkCheck.GITHUB_API -> SETUP_GITHUB_PROBE_TIMEOUT_MS
         SetupNetworkCheck.CURATOR_API ->
             if (automaticAntiBlockingEnabled) SETUP_CURATOR_PROBE_TIMEOUT_MS else SETUP_WEB_PROBE_TIMEOUT_MS
@@ -315,9 +313,6 @@ class SetupNetworkPreflight
             SetupNetworkCheck.PUBLIC_DETAILS_JSON to SetupNetworkProbe { detailsProbe() },
             SetupNetworkCheck.COMMUNITY_HTML to SetupNetworkProbe { probeCommunity() },
             SetupNetworkCheck.WORKSHOP_IMAGE to SetupNetworkProbe { imageProbe() },
-            SetupNetworkCheck.CM_TRANSPORT to SetupNetworkProbe {
-                SetupProbeOutcome.Skipped("No safe anonymous CM transport probe")
-            },
             SetupNetworkCheck.GITHUB_API to SetupNetworkProbe { githubProbe() },
             SetupNetworkCheck.CURATOR_API to SetupNetworkProbe { curatorProbe() },
         )

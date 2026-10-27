@@ -2,7 +2,9 @@ package com.wallhub.android.data.steam
 
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.data.steamaccess.SteamDomainPolicy
+import com.wallhub.android.data.steamaccess.STEAM_SYSTEM_PROXY_TARGETS
 import com.wallhub.android.data.steamaccess.SteamLoopbackTlsBridge
+import com.wallhub.android.data.steamaccess.SteamSystemProxyResolver
 import io.steamcontent.sdk.SessionTransportKind
 import java.net.InetSocketAddress
 import java.net.URI
@@ -30,6 +32,7 @@ internal class SteamContentSdkRouteFactory
         private val cmEndpoints: SteamCmEndpointSource,
         private val settingsRepository: SettingsRepository,
         private val bridge: SteamLoopbackTlsBridge,
+        private val systemProxyResolver: SteamSystemProxyResolver,
     ) {
         /**
          * The route this platform actually has.
@@ -53,8 +56,10 @@ internal class SteamContentSdkRouteFactory
         ): SteamContentSdkEngine.Route? {
             val directoryCandidates = cmEndpoints.candidates(refreshLive = refreshLive) ?: return null
             val preferences = settingsRepository.preferences.first()
-            val configuredProxy =
+            val explicitProxy =
                 cdnProxy ?: preferences.downloadProxyUrl.takeIf { preferences.downloadProxyEnabled }
+            val configuredProxy =
+                explicitProxy ?: systemProxyResolver.resolve(STEAM_SYSTEM_PROXY_TARGETS).takeIf { it.representable }?.sdkProxyUri
             val preparedCandidates = mutableListOf<String>()
             directoryCandidates.lineSequence().map(String::trim).filter(String::isNotEmpty).forEach { candidate ->
                 val endpoint = parseCmEndpoint(candidate) ?: return@forEach

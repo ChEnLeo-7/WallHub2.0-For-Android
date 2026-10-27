@@ -40,6 +40,9 @@ internal class DownloadLiveTelemetry internal constructor(
         private val mutableReadings = MutableStateFlow<Map<String, DownloadLiveReading>>(emptyMap())
         val readings: StateFlow<Map<String, DownloadLiveReading>> = mutableReadings.asStateFlow()
 
+        private val telemetryLock = Any()
+        private val latestReadings = mutableMapOf<String, DownloadLiveReading>()
+        private val lastPublishedAt = mutableMapOf<String, Long>()
         private val expirationLock = Any()
         private var expirationJob: Job? = null
         private var expirationGeneration = 0L
@@ -49,8 +52,8 @@ internal class DownloadLiveTelemetry internal constructor(
             progress: SteamDownloadProgress,
         ) {
             val now = nowMs()
-            mutableReadings.update { current ->
-                val previous = current[taskId]
+            synchronized(telemetryLock) {
+                val previous = latestReadings[taskId]
                 val reading =
                     when (progress.phase) {
                         SteamDownloadPhase.PREPARING_DOWNLOAD ->
@@ -60,11 +63,8 @@ internal class DownloadLiveTelemetry internal constructor(
                         SteamDownloadPhase.DOWNLOADING -> {
                             // A lower counter belongs to a new transfer/dependency epoch. The reset
                             // snapshot establishes its baseline; only a later increase is activity.
-                            val counterReset =
-                                previous != null && progress.networkBytes < previous.networkBytes
-                            val advanced =
-                                !counterReset &&
-                                    progress.networkBytes > (previous?.networkBytes ?: 0L)
+                            val counterReset = previous != null && progress.networkBytes < previous.networkBytes
+                            val advanced = !counterReset && progress.networkBytes > (previous?.networkBytes ?: 0L)
                             val lastActivityAt =
                                 when {
                                     counterReset || !progress.firstContentReceived -> null
@@ -72,8 +72,7 @@ internal class DownloadLiveTelemetry internal constructor(
                                     else -> previous?.lastNetworkActivityAt
                                 }
                             val fresh =
-                                lastActivityAt != null &&
-                                    now - lastActivityAt < NETWORK_ACTIVITY_STALE_AFTER_MS
+                                lastActivityAt != null && now - lastActivityAt < NETWORK_ACTIVITY_STALE_AFTER_MS
                             DownloadLiveReading(
                                 activity =
                                     if (progress.firstContentReceived) {
@@ -81,9 +80,7 @@ internal class DownloadLiveTelemetry internal constructor(
                                     } else {
                                         DownloadLiveActivity.PREPARING
                                     },
-                                networkBytesPerSecond =
-                                    progress.networkBytesPerSecond
-                                        .takeIf { fresh && it > 0L },
+                                networkBytesPerSecond = progress.networkBytesPerSecond.takeIf { fresh && it > 0L },
                                 networkBytes = progress.networkBytes,
                                 lastNetworkActivityAt = lastActivityAt,
                             )
@@ -92,15 +89,35 @@ internal class DownloadLiveTelemetry internal constructor(
                         SteamDownloadPhase.AUTHENTICATING,
                         SteamDownloadPhase.RECOVERING_SESSION,
                         SteamDownloadPhase.RESOLVING,
-                        -> return@update current - taskId
+                        -> {
+                            latestReadings.remove(taskId)
+                            lastPublishedAt.remove(taskId)
+                            mutableReadings.update { it - taskId }
+                            return
+                        }
                     }
-                current + (taskId to reading)
+                latestReadings[taskId] = reading
+                val published = mutableReadings.value[taskId]
+                val immediateTransition =
+                    published == null ||
+                        published.activity != reading.activity ||
+                        (published.networkBytesPerSecond != null && reading.networkBytesPerSecond == null)
+                val speedChanged = materiallyDifferent(published?.networkBytesPerSecond, reading.networkBytesPerSecond)
+                val rateLimitElapsed = lastPublishedAt[taskId]?.let { now - it >= SPEED_UPDATE_INTERVAL_MS } ?: true
+                if (immediateTransition || (speedChanged && rateLimitElapsed)) {
+                    mutableReadings.update { it + (taskId to reading) }
+                    lastPublishedAt[taskId] = now
+                }
             }
             scheduleExpiration()
         }
 
         fun clear(taskId: String) {
-            mutableReadings.update { it - taskId }
+            synchronized(telemetryLock) {
+                latestReadings.remove(taskId)
+                lastPublishedAt.remove(taskId)
+                mutableReadings.update { it - taskId }
+            }
             scheduleExpiration()
         }
 
@@ -110,14 +127,16 @@ internal class DownloadLiveTelemetry internal constructor(
                 val generation = expirationGeneration
                 expirationJob?.cancel()
                 val nextActivityAt =
-                    mutableReadings.value.values
-                        .asSequence()
-                        .filter {
-                            it.activity == DownloadLiveActivity.RECEIVING &&
-                                it.networkBytesPerSecond != null
-                        }
-                        .mapNotNull { it.lastNetworkActivityAt }
-                        .minOrNull()
+                    synchronized(telemetryLock) {
+                        latestReadings.values
+                            .asSequence()
+                            .filter {
+                                it.activity == DownloadLiveActivity.RECEIVING &&
+                                    it.networkBytesPerSecond != null
+                            }
+                            .mapNotNull { it.lastNetworkActivityAt }
+                            .minOrNull()
+                    }
                 expirationJob =
                     nextActivityAt?.let { activityAt ->
                         scope.launch {
@@ -134,20 +153,42 @@ internal class DownloadLiveTelemetry internal constructor(
 
         private fun expireStaleReadings() {
             val now = nowMs()
-            mutableReadings.update { current ->
-                current.mapValues { (_, reading) ->
-                    if (
-                        reading.activity == DownloadLiveActivity.RECEIVING &&
-                        reading.networkBytesPerSecond != null &&
-                        reading.lastNetworkActivityAt != null &&
-                        now - reading.lastNetworkActivityAt >= NETWORK_ACTIVITY_STALE_AFTER_MS
-                    ) {
-                        reading.copy(networkBytesPerSecond = null)
-                    } else {
-                        reading
+            synchronized(telemetryLock) {
+                latestReadings.replaceAll { _, reading -> reading.expireSpeedAt(now) }
+                mutableReadings.update { current ->
+                    current.mapValues { (taskId, published) ->
+                        val latest = latestReadings[taskId] ?: published
+                        if (latest.networkBytesPerSecond == null) {
+                            latest
+                        } else {
+                            published.copy(
+                                activity = latest.activity,
+                                networkBytes = latest.networkBytes,
+                                lastNetworkActivityAt = latest.lastNetworkActivityAt,
+                            )
+                        }
                     }
                 }
             }
+        }
+
+        private fun DownloadLiveReading.expireSpeedAt(now: Long): DownloadLiveReading =
+            if (
+                activity == DownloadLiveActivity.RECEIVING &&
+                networkBytesPerSecond != null &&
+                lastNetworkActivityAt != null &&
+                now - lastNetworkActivityAt >= NETWORK_ACTIVITY_STALE_AFTER_MS
+            ) {
+                copy(networkBytesPerSecond = null)
+            } else {
+                this
+            }
+
+        private fun materiallyDifferent(previous: Long?, current: Long?): Boolean {
+            if (previous == null || current == null) return previous != current
+            val delta = kotlin.math.abs(current - previous)
+            return delta >= SPEED_CHANGE_MIN_BYTES_PER_SECOND &&
+                delta * 100 >= maxOf(previous, current) * SPEED_CHANGE_MIN_PERCENT
         }
 
         fun current(taskId: String): DownloadLiveReading? = mutableReadings.value[taskId]
@@ -163,5 +204,8 @@ internal class DownloadLiveTelemetry internal constructor(
 
         private companion object {
             const val NETWORK_ACTIVITY_STALE_AFTER_MS = 2_000L
+            const val SPEED_UPDATE_INTERVAL_MS = 1_000L
+            const val SPEED_CHANGE_MIN_BYTES_PER_SECOND = 32L * 1_024L
+            const val SPEED_CHANGE_MIN_PERCENT = 10L
         }
     }

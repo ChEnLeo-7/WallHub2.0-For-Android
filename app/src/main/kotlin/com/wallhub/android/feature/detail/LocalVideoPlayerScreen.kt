@@ -32,10 +32,15 @@ import com.wallhub.android.core.designsystem.WallHubEmptyState
 import com.wallhub.android.core.designsystem.WallHubPageScaffold
 import com.wallhub.android.core.model.WorkshopDownloads
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 import androidx.compose.material.icons.Icons
@@ -68,18 +73,20 @@ class LocalVideoPlayerViewModel
             viewModelScope.launch {
                 mutableState.value = mutableState.value.copy(isLoading = true, error = null)
                 runCatching {
-                    val task =
-                        workshopDownloads.find(taskId)
-                            ?: throw DetailUiTextException(R.string.detail_download_task_missing)
-                    val root =
-                        task.stagingDirectory
-                            ?.let(::File)
-                            ?.takeIf(File::isDirectory)
-                            ?: throw DetailUiTextException(R.string.detail_download_staging_missing)
-                    val video =
-                        resolveVideoFile(root)
-                            ?: throw DetailUiTextException(R.string.detail_playable_video_missing)
-                    task.title to video.absolutePath
+                    withContext(Dispatchers.IO) {
+                        val task =
+                            workshopDownloads.find(taskId)
+                                ?: throw DetailUiTextException(R.string.detail_download_task_missing)
+                        val root =
+                            task.stagingDirectory
+                                ?.let(::File)
+                                ?.takeIf(File::isDirectory)
+                                ?: throw DetailUiTextException(R.string.detail_download_staging_missing)
+                        val video =
+                            resolveVideoFile(root)
+                                ?: throw DetailUiTextException(R.string.detail_playable_video_missing)
+                        task.title to video.absolutePath
+                    }
                 }.onSuccess { (title, path) ->
                     mutableState.value =
                         LocalVideoPlayerUiState(
@@ -88,6 +95,7 @@ class LocalVideoPlayerViewModel
                             isLoading = false,
                         )
                 }.onFailure { error ->
+                    if (error is CancellationException) throw error
                     mutableState.value =
                         LocalVideoPlayerUiState(
                             isLoading = false,
@@ -188,19 +196,71 @@ private fun LocalVideoPlayer(
     )
 }
 
-private fun resolveVideoFile(root: File): File? {
+internal suspend fun resolveVideoFile(root: File): File? {
+    val canonicalRoot = root.canonicalFile
     val declared =
-        File(root, "project.json")
+        File(canonicalRoot, "project.json")
             .takeIf(File::isFile)
-            ?.readText()
-            ?.let { content -> Regex("\\\"file\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").find(content)?.groupValues?.getOrNull(1) }
-            ?.let { relativePath -> File(root, relativePath.replace('/', File.separatorChar)) }
-            ?.takeIf(File::isFile)
+            ?.inputStream()
+            ?.buffered()
+            ?.use { input ->
+                val bytes = ByteArray(MAX_PROJECT_JSON_BYTES + 1)
+                var offset = 0
+                while (offset < bytes.size) {
+                    currentCoroutineContext().ensureActive()
+                    val read = input.read(bytes, offset, bytes.size - offset)
+                    if (read < 0) break
+                    offset += read
+                }
+                bytes.copyOf(offset).takeIf { offset <= MAX_PROJECT_JSON_BYTES }
+            }
+            ?.toString(Charsets.UTF_8)
+            ?.let(PROJECT_FILE_PATTERN::find)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.let(::decodeJsonPath)
+            ?.let { relativePath -> File(canonicalRoot, relativePath.replace('/', File.separatorChar)).canonicalFile }
+            ?.takeIf { file -> file.isFile && file.toPath().startsWith(canonicalRoot.toPath()) }
     if (declared != null) return declared
-    return root
-        .walkTopDown()
-        .maxDepth(4)
-        .firstOrNull { file ->
-            file.isFile && file.extension.lowercase() in setOf("mp4", "webm", "mkv", "avi", "mov")
+
+    val rootPath = canonicalRoot.toPath()
+    val pending = ArrayDeque<Pair<File, Int>>()
+    val visitedDirectories = mutableSetOf(rootPath)
+    pending += canonicalRoot to 0
+    var visited = 0
+    while (pending.isNotEmpty() && visited < MAX_FALLBACK_NODES) {
+        currentCoroutineContext().ensureActive()
+        val (directory, depth) = pending.removeFirst()
+        val children = directory.listFiles()?.sortedBy(File::name).orEmpty()
+        for (child in children) {
+            currentCoroutineContext().ensureActive()
+            visited += 1
+            if (visited > MAX_FALLBACK_NODES) break
+            val canonicalChild = runCatching(File::getCanonicalFile).getOrNull() ?: continue
+            val childPath = canonicalChild.toPath()
+            if (!childPath.startsWith(rootPath)) continue
+            if (canonicalChild.isFile && canonicalChild.extension.lowercase() in VIDEO_EXTENSIONS) {
+                return canonicalChild
+            }
+            if (
+                canonicalChild.isDirectory &&
+                depth < MAX_FALLBACK_DEPTH &&
+                visitedDirectories.add(childPath)
+            ) {
+                pending += canonicalChild to depth + 1
+            }
         }
+    }
+    return null
 }
+
+internal fun decodeJsonPath(value: String): String =
+    value
+        .replace("\\/", "/")
+        .replace("\\\\", "\\")
+
+private val PROJECT_FILE_PATTERN = Regex("\\\"file\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"])*)\\\"")
+private val VIDEO_EXTENSIONS = setOf("mp4", "webm", "mkv", "avi", "mov")
+private const val MAX_PROJECT_JSON_BYTES = 1024 * 1024
+private const val MAX_FALLBACK_DEPTH = 4
+private const val MAX_FALLBACK_NODES = 10_000

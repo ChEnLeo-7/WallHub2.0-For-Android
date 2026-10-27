@@ -17,7 +17,6 @@
     <string name="setup_network_item_public_details">公开详情 JSON</string>
     <string name="setup_network_item_community_html">社区 HTML</string>
     <string name="setup_network_item_workshop_image">创意工坊图片</string>
-    <string name="setup_network_item_cm_transport">CM 传输</string>
     <string name="setup_network_item_github_api">GitHub API</string>
     <string name="setup_network_item_curator_api">壁纸策展 API</string>
 </resources>

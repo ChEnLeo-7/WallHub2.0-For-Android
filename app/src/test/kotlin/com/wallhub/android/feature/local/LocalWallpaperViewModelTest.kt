@@ -147,6 +147,7 @@ class LocalWallpaperViewModelTest {
                 )
                 viewModel.onAction(LocalWallpaperAction.SetFavoriteOnly(true))
                 viewModel.onAction(LocalWallpaperAction.SelectResource(RESOURCE_ID))
+                advanceUntilIdle()
 
                 assertEquals("rain", viewModel.uiState.value.searchQuery)
                 assertEquals(LocalWallpaperFormatFilter.MPKG, viewModel.uiState.value.formatFilter)
@@ -156,6 +157,7 @@ class LocalWallpaperViewModelTest {
 
                 viewModel.onAction(LocalWallpaperAction.SelectResource(null))
                 viewModel.onAction(LocalWallpaperAction.ResetFilters)
+                advanceUntilIdle()
 
                 assertEquals(LocalWallpaperViewMode.LIST, viewModel.uiState.value.viewMode)
                 assertEquals(null, viewModel.uiState.value.selectedResourceId)
@@ -163,6 +165,23 @@ class LocalWallpaperViewModelTest {
                 assertEquals(false, viewModel.uiState.value.favoriteOnly)
             }
         }
+
+    @Test
+    fun `derived resource list is filtered sorted and stable until state input changes`() {
+        val older = testResource(id = "older", title = "Zeta", modifiedAt = 1L)
+        val newer = testResource(id = "newer", title = "Alpha", modifiedAt = 2L)
+        val input =
+            LocalWallpaperUiState(
+                scan = LocalWallpaperScanSnapshot(resources = listOf(older, newer)),
+                searchQuery = "a",
+                sort = LocalWallpaperSort.NAME,
+            )
+
+        val derived = input.withDerivedResources()
+
+        assertEquals(listOf("newer", "older"), derived.resources.map(LocalWallpaperResource::id))
+        assertEquals(derived.resources, derived.resources)
+    }
 
     @Test
     fun `local filters and selection survive view model recreation`() =
@@ -216,6 +235,25 @@ class LocalWallpaperViewModelTest {
         const val RESOURCE_ID = "local-1"
     }
 }
+
+private fun testResource(
+    id: String,
+    title: String,
+    modifiedAt: Long,
+): LocalWallpaperResource =
+    LocalWallpaperResource(
+        id = id,
+        contentUri = "content://wallhub/$id",
+        displayName = "$id.mpkg",
+        title = title,
+        format = LocalWallpaperFormat.MPKG,
+        workshopType = WorkshopType.SCENE,
+        sourceId = "local",
+        sourceLabel = "Local",
+        relativePath = "$id.mpkg",
+        modifiedAt = modifiedAt,
+        detectionReason = "test",
+    )
 
 private class FakeLocalWallpaperRepository : LocalWallpaperRepository {
     val importRequests = mutableListOf<Pair<String, Long>>()

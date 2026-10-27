@@ -2,7 +2,9 @@ package com.wallhub.android.data.steamaccess
 
 import android.net.Network
 import com.wallhub.android.core.model.SteamAccessMode
-import java.net.ProxySelector
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.URI
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -38,25 +40,30 @@ internal fun shouldApplySteamAccess(
 @Singleton
 internal class SteamNetworkEnvironmentProbe
     @Inject
-    constructor() {
+    constructor(
+        private val systemProxyResolver: SteamSystemProxyResolver,
+    ) {
         suspend fun classify(network: Network?): SteamNetworkEnvironment {
             if (network == null) return SteamNetworkEnvironment.UNKNOWN
-            if (canReachGoogle()) return SteamNetworkEnvironment.OPEN_INTERNET
+            val proxyRoute = systemProxyResolver.resolve(STEAM_SYSTEM_PROXY_TARGETS)
+            if (!proxyRoute.representable) return SteamNetworkEnvironment.UNKNOWN
+            if (canReachGoogle(proxyRoute.sdkProxyUri)) return SteamNetworkEnvironment.OPEN_INTERNET
             delay(PROBE_FAILURE_CONFIRMATION_DELAY_MS)
-            return if (canReachGoogle()) {
+            return if (canReachGoogle(proxyRoute.sdkProxyUri)) {
                 SteamNetworkEnvironment.OPEN_INTERNET
             } else {
                 SteamNetworkEnvironment.RESTRICTED
             }
         }
 
-        private suspend fun canReachGoogle(): Boolean =
+        private suspend fun canReachGoogle(proxyUri: String?): Boolean =
             withContext(Dispatchers.IO) {
+                val proxy = proxyUri?.let(::sdkSystemProxy)
                 val client =
                     OkHttpClient
                         .Builder()
                         .dns(Dns.SYSTEM)
-                        .proxySelector(ProxySelector.getDefault())
+                        .proxy(proxy ?: Proxy.NO_PROXY)
                         .followRedirects(false)
                         .followSslRedirects(false)
                         .connectTimeout(PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -76,6 +83,18 @@ internal class SteamNetworkEnvironmentProbe
             }
     }
 
+private fun sdkSystemProxy(raw: String): Proxy {
+    val uri = URI(raw)
+    val type = if (uri.scheme == "socks") Proxy.Type.SOCKS else Proxy.Type.HTTP
+    return Proxy(type, InetSocketAddress.createUnresolved(requireNotNull(uri.host), uri.port))
+}
+
+internal val STEAM_SYSTEM_PROXY_TARGETS =
+    listOf(
+        URI(GOOGLE_CONNECTIVITY_CHECK_URL),
+        URI("https://cm0.steamserver.net:443/"),
+        URI("https://cdn.steamcontent.com:443/"),
+    )
 internal const val GOOGLE_CONNECTIVITY_CHECK_URL = "https://www.google.com/generate_204"
 private const val PROBE_TIMEOUT_SECONDS = 3L
 private const val PROBE_FAILURE_CONFIRMATION_DELAY_MS = 500L

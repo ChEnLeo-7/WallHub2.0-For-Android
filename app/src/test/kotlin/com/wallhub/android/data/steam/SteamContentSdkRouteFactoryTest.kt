@@ -1,5 +1,13 @@
 package com.wallhub.android.data.steam
 
+import com.wallhub.android.data.steamaccess.STEAM_SYSTEM_PROXY_TARGETS
+import com.wallhub.android.data.steamaccess.resolveSteamSystemProxy
+import java.io.IOException
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.ProxySelector
+import java.net.SocketAddress
+import java.net.URI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -147,6 +155,33 @@ class SteamContentSdkRouteFactoryTest {
     }
 
     @Test
+    fun `representable system HTTP proxy applies to both SDK traffic planes`() {
+        val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved("proxy.example", 8080))
+        val effective = resolveSteamSystemProxy(proxySelector { listOf(proxy) }, STEAM_SYSTEM_PROXY_TARGETS)
+
+        val route = sdkPlatformRoute("cm1.steamserver.net:443", effective.sdkProxyUri)
+
+        assertTrue(effective.representable)
+        assertEquals("http://proxy.example:8080", route.cdnProxy)
+        assertEquals("http://proxy.example:8080", route.cmProxy)
+        assertNull(route.cdnProxyAuthorization)
+        assertNull(route.cmProxyAuthorization)
+    }
+
+    @Test
+    fun `system proxy bypass is rejected when SDK planes do not share one representable egress`() {
+        val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved("proxy.example", 8080))
+        val effective =
+            resolveSteamSystemProxy(
+                proxySelector { uri -> if (uri.host.startsWith("cm")) listOf(Proxy.NO_PROXY) else listOf(proxy) },
+                STEAM_SYSTEM_PROXY_TARGETS,
+            )
+
+        assertTrue(!effective.representable)
+        assertNull(effective.sdkProxyUri)
+    }
+
+    @Test
     fun `connect attempts equal the bounded supplied CM candidate count`() {
         val route =
             sdkPlatformRoute(
@@ -162,4 +197,11 @@ class SteamContentSdkRouteFactoryTest {
 
         assertEquals(4, route.connectAttempts)
     }
+
+    private fun proxySelector(select: (URI) -> List<Proxy>): ProxySelector =
+        object : ProxySelector() {
+            override fun select(uri: URI): List<Proxy> = select(uri)
+
+            override fun connectFailed(uri: URI?, sa: SocketAddress?, ioe: IOException?) = Unit
+        }
 }

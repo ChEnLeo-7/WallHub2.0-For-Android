@@ -54,7 +54,6 @@
     <string name='setup_network_item_public_details'>Public Details JSON</string>
     <string name='setup_network_item_community_html'>Community HTML</string>
     <string name='setup_network_item_workshop_image'>Workshop image</string>
-    <string name='setup_network_item_cm_transport'>CM transport</string>
     <string name='setup_network_item_github_api'>GitHub API</string>
     <string name='setup_network_item_curator_api'>Wallpaper curator API</string>
     <string name='settings_restart_setup_wizard'>Run setup wizard again</string>

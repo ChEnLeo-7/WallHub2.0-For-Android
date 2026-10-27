@@ -53,6 +53,23 @@ import javax.inject.Singleton
 
 private const val DOH_BENCHMARK_RETRY_MS = 60_000L
 
+internal class SteamDohBenchmarkAdmission {
+    private var attemptedKey: Pair<Long, String>? = null
+
+    @Synchronized
+    fun admit(generation: Long, fingerprint: String): Boolean {
+        val key = generation to fingerprint
+        if (attemptedKey == key) return false
+        attemptedKey = key
+        return true
+    }
+
+    @Synchronized
+    fun clear() {
+        attemptedKey = null
+    }
+}
+
 internal inline fun systemDnsCandidates(
     steamAccessEnabled: Boolean,
     lookup: () -> List<InetAddress>,
@@ -118,6 +135,9 @@ class SteamAccessManager @Inject internal constructor(
     private val mutableState = MutableStateFlow(SteamAccessState())
     private val refreshGate = SteamAccessRefreshGate()
     private val dohSelectionLock = Mutex()
+    private var dohBenchmarkJob: Job? = null
+    private var dohRetryJob: Job? = null
+    private val dohBenchmarkAdmission = SteamDohBenchmarkAdmission()
 
     @Volatile
     private var dohSelectionGeneration = -1L
@@ -342,7 +362,7 @@ class SteamAccessManager @Inject internal constructor(
                         SteamAccessMode.SMART_DOH ->
                             dohResolver.resolveByHostname(
                                 authorities,
-                                currentDohEndpoints(settings),
+                                dohEndpointsForProduction(settings),
                                 currentNetworkSupportsIpv6(),
                             )
                     }
@@ -413,7 +433,7 @@ class SteamAccessManager @Inject internal constructor(
                     SteamAccessMode.HOSTS -> SteamHostsParser.parse(settings.steamAccessHosts)[host].orEmpty()
                     SteamAccessMode.SMART_DOH -> dohResolver.resolve(
                         listOf(host) + if (web) SteamAccessRoutes.aliases(host) else emptyList(),
-                        ensureDohSelection(settings),
+                        dohEndpointsForProduction(settings),
                         currentNetworkSupportsIpv6(),
                     )
                 }
@@ -580,9 +600,28 @@ class SteamAccessManager @Inject internal constructor(
         }
     }
 
+    private fun dohEndpointsForProduction(settings: AppPreferences): List<String> {
+        val fallback = currentDohEndpoints(settings)
+        scheduleDohBenchmark(settings)
+        return fallback
+    }
+
+    @Synchronized
+    private fun scheduleDohBenchmark(settings: AppPreferences) {
+        val fingerprint = settings.enabledSteamAccessDohEndpoints().joinToString("\u0000")
+        if (!dohBenchmarkAdmission.admit(candidates.generation, fingerprint)) return
+        dohBenchmarkJob?.cancel()
+        dohRetryJob?.cancel()
+        dohBenchmarkJob =
+            scope.launch {
+                ensureDohSelection(settings)
+            }
+    }
+
     private suspend fun ensureDohSelection(
         settings: AppPreferences,
         force: Boolean = false,
+        scheduleRetry: Boolean = true,
     ): List<String> {
         val enabledUrls = settings.enabledSteamAccessDohEndpoints()
         val fingerprint = enabledUrls.joinToString("\u0000")
@@ -612,11 +651,9 @@ class SteamAccessManager @Inject internal constructor(
             if (candidates.generation != currentGeneration || latestFingerprint != fingerprint) {
                 return@withLock effective
             }
-            if (selected.isNotEmpty()) {
-                dohSelectionGeneration = currentGeneration
-                dohSelectionFingerprint = fingerprint
-                selectedDohEndpoints = selected
-            }
+            dohSelectionGeneration = currentGeneration
+            dohSelectionFingerprint = fingerprint
+            selectedDohEndpoints = selected
             mutableState.value = mutableState.value.copy(
                 dohEndpointStatuses = settings.steamAccessDohEndpoints.map { endpoint ->
                     val result = resultByUrl[endpoint]
@@ -642,13 +679,23 @@ class SteamAccessManager @Inject internal constructor(
                 ),
                 level = if (selected.isEmpty()) DiagnosticLevel.WARNING else DiagnosticLevel.INFO,
             )
-            if (selected.isEmpty() && endpoints.isNotEmpty()) {
-                scope.launch {
-                    delay(DOH_BENCHMARK_RETRY_MS)
-                    val latest = preferences
-                    if (effectiveSteamAccessEnabled(latest) && latest.steamAccessMode == SteamAccessMode.SMART_DOH) {
-                        ensureDohSelection(latest)
-                    }
+            if (scheduleRetry && selected.isEmpty() && endpoints.isNotEmpty()) {
+                synchronized(this@SteamAccessManager) {
+                    dohRetryJob?.cancel()
+                    dohRetryJob =
+                        scope.launch {
+                            delay(DOH_BENCHMARK_RETRY_MS)
+                            val latest = preferences
+                            val latestFingerprint = latest.enabledSteamAccessDohEndpoints().joinToString("\u0000")
+                            if (
+                                effectiveSteamAccessEnabled(latest) &&
+                                latest.steamAccessMode == SteamAccessMode.SMART_DOH &&
+                                candidates.generation == currentGeneration &&
+                                latestFingerprint == fingerprint
+                            ) {
+                                ensureDohSelection(latest, force = true, scheduleRetry = true)
+                            }
+                        }
                 }
             }
             effective
@@ -853,7 +900,7 @@ class SteamAccessManager @Inject internal constructor(
                 ),
             )
         }
-        benchmarkSettings?.let { settings -> scope.launch { ensureDohSelection(settings) } }
+        benchmarkSettings?.let(::scheduleDohBenchmark)
     }
 
     @Synchronized
@@ -862,6 +909,11 @@ class SteamAccessManager @Inject internal constructor(
         schedulePoolEviction: Boolean = true,
     ) {
         candidates.invalidate()
+        dohBenchmarkJob?.cancel()
+        dohBenchmarkJob = null
+        dohRetryJob?.cancel()
+        dohRetryJob = null
+        dohBenchmarkAdmission.clear()
         dohSelectionGeneration = -1L
         dohSelectionFingerprint = ""
         selectedDohEndpoints = emptyList()

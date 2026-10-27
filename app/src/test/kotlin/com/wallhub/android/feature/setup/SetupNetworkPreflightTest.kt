@@ -77,7 +77,6 @@ class SetupNetworkPreflightTest {
                 SetupNetworkCheck.PUBLIC_DETAILS_JSON to SetupNetworkProbe { throw IOException("HTTP 503") },
                 SetupNetworkCheck.COMMUNITY_HTML to SetupNetworkProbe { SetupProbeOutcome.Passed("Workshop page") },
                 SetupNetworkCheck.WORKSHOP_IMAGE to SetupNetworkProbe { SetupProbeOutcome.Passed("image/png") },
-                SetupNetworkCheck.CM_TRANSPORT to SetupNetworkProbe { SetupProbeOutcome.Skipped("No safe anonymous transport probe") },
                 SetupNetworkCheck.GITHUB_API to SetupNetworkProbe { SetupProbeOutcome.Passed("GitHub Release API") },
                 SetupNetworkCheck.CURATOR_API to SetupNetworkProbe { SetupProbeOutcome.Passed("Wallpaper curator API") },
             ),
@@ -97,8 +96,8 @@ class SetupNetworkPreflightTest {
         val runner = SetupNetworkPreflightRunner(
             probes = SetupNetworkCheck.entries.associateWith { check ->
                 SetupNetworkProbe {
-                    if (check == SetupNetworkCheck.CM_TRANSPORT) {
-                        SetupProbeOutcome.Skipped("unsafe without credentials")
+                    if (check == SetupNetworkCheck.GITHUB_API) {
+                        SetupProbeOutcome.Skipped("GitHub API rate limit exceeded")
                     } else {
                         SetupProbeOutcome.Passed("reachable")
                     }
@@ -119,7 +118,6 @@ class SetupNetworkPreflightTest {
         assertEquals(34_000L, setupProbeTimeoutMillis(SetupNetworkCheck.PUBLIC_DETAILS_JSON, true))
         assertEquals(12_000L, setupProbeTimeoutMillis(SetupNetworkCheck.COMMUNITY_HTML, true))
         assertEquals(68_000L, setupProbeTimeoutMillis(SetupNetworkCheck.WORKSHOP_IMAGE, true))
-        assertEquals(5_000L, setupProbeTimeoutMillis(SetupNetworkCheck.CM_TRANSPORT, true))
         assertEquals(12_000L, setupProbeTimeoutMillis(SetupNetworkCheck.GITHUB_API, true))
         assertEquals(20_000L, setupProbeTimeoutMillis(SetupNetworkCheck.CURATOR_API, true))
         assertEquals(12_000L, setupProbeTimeoutMillis(SetupNetworkCheck.CURATOR_API, false))
