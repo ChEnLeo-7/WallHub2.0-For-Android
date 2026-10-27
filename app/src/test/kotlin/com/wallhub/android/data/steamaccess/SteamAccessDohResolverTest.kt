@@ -1,9 +1,14 @@
 package com.wallhub.android.data.steamaccess
 
 import java.net.InetAddress
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -23,6 +28,36 @@ class SteamAccessDohResolverTest {
                     assertNotEquals(callerThread, blockingThread)
                 }
             }
+    }
+
+    @Test
+    fun `cancelling a blocking DoH operation interrupts its worker`() = runBlocking {
+        val entered = CountDownLatch(1)
+        val interrupted = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val job =
+            launch {
+                runDohBlockingOperation {
+                    entered.countDown()
+                    try {
+                        release.await()
+                    } catch (_: InterruptedException) {
+                        interrupted.countDown()
+                    }
+                }
+            }
+
+        assertTrue(entered.await(2, TimeUnit.SECONDS))
+        val cancellationCompleted =
+            withTimeoutOrNull(2_000) {
+                job.cancelAndJoin()
+                true
+            } ?: false
+        release.countDown()
+        if (!cancellationCompleted) job.cancelAndJoin()
+
+        assertTrue(cancellationCompleted)
+        assertTrue(interrupted.await(2, TimeUnit.SECONDS))
     }
 
     @Test

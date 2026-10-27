@@ -5,7 +5,7 @@ import com.wallhub.android.core.model.SteamDohCatalog
 import com.wallhub.android.core.model.SteamDohEndpoint
 import com.wallhub.android.core.model.SteamDohProtocol
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
 import okhttp3.Call
 import okhttp3.Dns
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger
 private const val MIN_FOREGROUND_ADDRESSES_PER_AUTHORITY = 1
 
 internal suspend fun <T> runDohBlockingOperation(block: () -> T): T =
-    withContext(Dispatchers.IO) { block() }
+    runInterruptible(Dispatchers.IO, block)
 
 internal data class SteamDohQuery(
     val hostname: String,
