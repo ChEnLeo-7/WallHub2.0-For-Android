@@ -26,6 +26,7 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
     private val contentTargetFetcher: suspend (Long) -> WorkshopContentTarget,
     private val playbackCoordinator: PlaybackDownloadCoordinator,
     private val sdkSessionBroker: SteamContentSdkSessionBroker,
+    private val closeScheduler: VideoStreamCloseScheduler,
 ) : WorkshopVideoStreamRepository {
     @Inject
     constructor(
@@ -34,6 +35,7 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
         steamHttpClientFactory: SteamHttpClientFactory,
         playbackCoordinator: PlaybackDownloadCoordinator,
         sdkSessionBroker: SteamContentSdkSessionBroker,
+        closeScheduler: CoroutineVideoStreamCloseScheduler,
     ) : this(
         cacheRootDirectory = File(context.cacheDir, STREAM_CACHE_DIRECTORY),
         settingsRepository = settingsRepository,
@@ -46,6 +48,7 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
         },
         playbackCoordinator = playbackCoordinator,
         sdkSessionBroker = sdkSessionBroker,
+        closeScheduler = closeScheduler,
     )
 
     internal constructor(
@@ -54,6 +57,7 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
         contentTargetFetcher: suspend (Long) -> WorkshopContentTarget,
         playbackCoordinator: PlaybackDownloadCoordinator,
         sdkSessionBroker: SteamContentSdkSessionBroker,
+        closeScheduler: VideoStreamCloseScheduler = DirectVideoStreamCloseScheduler,
     ) : this(
         cacheRootDirectory = cacheRootDirectory,
         settingsRepository = settingsRepository,
@@ -61,15 +65,22 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
         contentTargetFetcher = contentTargetFetcher,
         playbackCoordinator = playbackCoordinator,
         sdkSessionBroker = sdkSessionBroker,
+        closeScheduler = closeScheduler,
     )
 
     override suspend fun open(request: WorkshopVideoOpenRequest): WorkshopVideoStreamSession {
         var openedStream: WorkshopVideoStreamSession? = null
+        var closeReservation: VideoStreamCloseReservation? = null
         val operationId = NEXT_OPERATION_ID.incrementAndGet()
         val totalStarted = System.nanoTime()
         try {
             return withContext(Dispatchers.IO) {
                     require(request.workshopId > 0L) { "Invalid Workshop item ID" }
+                    val reservation =
+                        checkNotNull(closeScheduler.tryReserve()) {
+                            "Too many video streams are awaiting native cleanup"
+                        }
+                    closeReservation = reservation
                     val preferences = settingsRepository.preferences.first()
                     val activeProxyUrl = preferences.downloadProxyUrl.takeIf { preferences.downloadProxyEnabled }.orEmpty()
                     val targetStarted = System.nanoTime()
@@ -101,12 +112,19 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
                             }
                             is WorkshopDelivery.DepotContent -> openSdkVideoStream(target, request, operationId)
                         }
-                    val coordinated = CoordinatedVideoStreamSession(stream, playbackCoordinator.registerPlayback())
+                    val coordinated =
+                        CoordinatedVideoStreamSession(
+                            delegate = stream,
+                            playbackLease = playbackCoordinator.registerPlayback(),
+                            closeReservation = reservation,
+                        )
+                    closeReservation = null
                     openedStream = coordinated
                     return@withContext coordinated
                 }.also { openedStream = null }
             } finally {
                 openedStream?.close()
+                closeReservation?.close()
                 Log.i(TAG, "video_prepare op=$operationId phase=total elapsed_ms=${elapsedMillis(totalStarted)}")
             }
         }
@@ -212,19 +230,19 @@ internal class SteamWorkshopVideoStreamRepository private constructor(
         }
     }
 
-private class CoordinatedVideoStreamSession(
+/** Ends playback admission immediately, signals cancellation, and moves native handle disposal off the caller thread. */
+internal class CoordinatedVideoStreamSession(
     private val delegate: WorkshopVideoStreamSession,
     private val playbackLease: Closeable,
+    private val closeReservation: VideoStreamCloseReservation,
 ) : WorkshopVideoStreamSession by delegate {
     private val closed = AtomicBoolean(false)
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        try {
-            delegate.close()
-        } finally {
-            playbackLease.close()
-        }
+        runCatching { delegate.cancelPendingReads() }
+        runCatching { playbackLease.close() }
+        closeReservation.schedule(delegate::close)
     }
 }
 

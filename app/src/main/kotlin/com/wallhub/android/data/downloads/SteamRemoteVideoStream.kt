@@ -19,6 +19,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -94,7 +95,11 @@ internal class SteamRemoteVideoStream private constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val bufferMutex = Mutex()
     private val aheadJobLock = Any()
+    private val activeCalls = ConcurrentHashMap.newKeySet<Call>()
     private var aheadJob: Job? = null
+
+    @Volatile
+    private var cancellationRequested = false
 
     @Volatile
     private var closed = false
@@ -109,7 +114,7 @@ internal class SteamRemoteVideoStream private constructor(
         length: Int,
     ): Int =
         withContext(Dispatchers.IO) {
-            check(!closed) { "Remote video stream is closed" }
+            check(!cancellationRequested && !closed) { "Remote video stream is closed" }
             require(position >= 0L) { "Invalid remote video read position" }
             require(length >= 0) { "Invalid remote video read length" }
             require(destinationOffset >= 0 && destinationOffset <= destination.size - length) {
@@ -130,10 +135,16 @@ internal class SteamRemoteVideoStream private constructor(
             copied
         }
 
+    override fun cancelPendingReads() {
+        cancellationRequested = true
+        synchronized(aheadJobLock) { aheadJob?.cancel() }
+        activeCalls.forEach(Call::cancel)
+    }
+
     override fun close() {
         if (closed) return
         closed = true
-        synchronized(aheadJobLock) { aheadJob?.cancel() }
+        cancelPendingReads()
         scope.cancel()
     }
 
@@ -153,7 +164,7 @@ internal class SteamRemoteVideoStream private constructor(
     }
 
     private fun scheduleAheadPrefetch(from: Long) {
-        if (closed || from >= contentLength) return
+        if (cancellationRequested || closed || from >= contentLength) return
         synchronized(aheadJobLock) {
             if (aheadJob?.isActive == true) return
             aheadJob =
@@ -201,29 +212,36 @@ internal class SteamRemoteVideoStream private constructor(
                 .header("Range", "bytes=$start-${start + length - 1}")
                 .header("User-Agent", STEAM_REMOTE_USER_AGENT)
                 .build()
-        return httpClient.newCall(request).awaitCall().use { response ->
-            when {
-                response.code == HTTP_PARTIAL_CONTENT -> Unit
-                response.code == HTTP_OK && start == 0L -> Unit
-                else -> throw IOException("Remote video range request failed: HTTP ${response.code}")
+        val call = httpClient.newCall(request)
+        activeCalls += call
+        if (cancellationRequested || closed) call.cancel()
+        return try {
+            call.awaitCall().use { response ->
+                when {
+                    response.code == HTTP_PARTIAL_CONTENT -> Unit
+                    response.code == HTTP_OK && start == 0L -> Unit
+                    else -> throw IOException("Remote video range request failed: HTTP ${response.code}")
+                }
+                val body = response.body
+                if (response.code == HTTP_PARTIAL_CONTENT && start > 0L) {
+                    val total = parseContentRangeTotal(response.header("Content-Range"))
+                    check(total != null) { "Remote video range response missing Content-Range" }
+                }
+                val stream = body.byteStream()
+                val output = ByteArray(length)
+                var filled = 0
+                while (filled < length) {
+                    val read = stream.read(output, filled, length - filled)
+                    if (read < 0) break
+                    filled += read
+                }
+                if (filled < length) {
+                    throw IOException("Remote video range returned ${filled}/$length bytes")
+                }
+                output
             }
-            val body = response.body
-            if (response.code == HTTP_PARTIAL_CONTENT && start > 0L) {
-                val total = parseContentRangeTotal(response.header("Content-Range"))
-                check(total != null) { "Remote video range response missing Content-Range" }
-            }
-            val stream = body.byteStream()
-            val output = ByteArray(length)
-            var filled = 0
-            while (filled < length) {
-                val read = stream.read(output, filled, length - filled)
-                if (read < 0) break
-                filled += read
-            }
-            if (filled < length) {
-                throw IOException("Remote video range returned ${filled}/$length bytes")
-            }
-            output
+        } finally {
+            activeCalls -= call
         }
     }
 

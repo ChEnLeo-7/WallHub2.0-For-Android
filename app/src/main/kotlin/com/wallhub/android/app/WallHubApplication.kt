@@ -11,6 +11,7 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
+import com.wallhub.android.core.model.AccountWorkshopRepository
 import com.wallhub.android.core.model.LauncherIconController
 import com.wallhub.android.core.model.SettingsRepository
 import com.wallhub.android.core.model.SteamSessionPhase
@@ -26,8 +27,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.util.Locale
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -53,6 +58,9 @@ class WallHubApplication :
     lateinit var steamSessionRepository: SteamSessionRepository
 
     @Inject
+    lateinit var accountWorkshopRepository: AccountWorkshopRepository
+
+    @Inject
     internal lateinit var downloadWorkScheduler: DownloadWorkScheduler
 
     @Inject
@@ -66,11 +74,20 @@ class WallHubApplication :
         CrashDiagnostics.install(this)
         steamSessionRepository.restorePersistedSession()
         applicationScope.launch {
-            steamSessionRepository.session.collect { state ->
-                if (state.phase == SteamSessionPhase.SIGNED_IN) {
+            steamSessionRepository.session
+                .map(::accountCollectionPrefetchIdentity)
+                .distinctUntilChanged()
+                .filterNotNull()
+                .collect {
                     publicSessionRouter.onAccountAuthenticated()
+                    try {
+                        accountWorkshopRepository.prefetchCollections()
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        Log.w(TAG, "Unable to prefetch account collections", error)
+                    }
                 }
-            }
         }
         applicationScope.launch {
             try {
@@ -98,6 +115,15 @@ class WallHubApplication :
                 object : DefaultLifecycleObserver {
                     override fun onStart(owner: LifecycleOwner) {
                         steamSessionRepository.onAppForegrounded()
+                        if (steamSessionRepository.session.value.phase == SteamSessionPhase.SIGNED_IN) {
+                            applicationScope.launch {
+                                runCatching { accountWorkshopRepository.prefetchCollections() }
+                                    .onFailure { error ->
+                                        if (error is CancellationException) throw error
+                                        Log.w(TAG, "Unable to refresh prefetched account collections", error)
+                                    }
+                            }
+                        }
                     }
 
                     override fun onStop(owner: LifecycleOwner) {
@@ -141,3 +167,6 @@ class WallHubApplication :
         const val TAG = "WallHubApplication"
     }
 }
+
+internal fun accountCollectionPrefetchIdentity(state: com.wallhub.android.core.model.SteamSessionState): String? =
+    state.accountName?.takeIf { state.phase == SteamSessionPhase.SIGNED_IN }?.lowercase(Locale.ROOT)

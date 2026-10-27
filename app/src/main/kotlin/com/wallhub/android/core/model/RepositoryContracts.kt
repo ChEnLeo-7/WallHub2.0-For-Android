@@ -241,6 +241,9 @@ interface WorkshopVideoStreamSession : Closeable {
     /** Marks one transition into rebuffering for the next rolling-demand update. */
     fun reportPlaybackRebuffer() = Unit
 
+    /** Signals in-flight transport work to stop without waiting for a synchronized read or handle release. */
+    fun cancelPendingReads() = Unit
+
     suspend fun readAt(
         position: Long,
         destination: ByteArray,
@@ -352,7 +355,18 @@ interface WorkshopRepository {
  * browser so public discovery remains usable without a Steam account.
  */
 interface AccountWorkshopRepository {
+    /** Emits after a cached account collection changed without requiring the page to poll Steam. */
+    val collectionChanges: Flow<AccountWorkshopCollection>
+        get() = kotlinx.coroutines.flow.emptyFlow()
+
+    /** Returns a fresh page or an immediately usable recent snapshot while a refresh runs in the background. */
     suspend fun browseCollection(query: AccountWorkshopQuery): WorkshopPage
+
+    /** Explicitly waits for Steam instead of accepting a stale-while-revalidate snapshot. */
+    suspend fun refreshCollection(query: AccountWorkshopQuery): WorkshopPage = browseCollection(query)
+
+    /** Warms the two account collection totals and first pages after the account session becomes usable. */
+    suspend fun prefetchCollections() = Unit
 
     /** Resolves the public Steam display name for a Workshop item's creator on demand. */
     suspend fun resolveAuthorDisplayName(workshopId: Long): String?
@@ -365,11 +379,13 @@ interface AccountWorkshopRepository {
     suspend fun setSubscribed(
         workshopId: Long,
         subscribed: Boolean,
+        summary: WorkshopSummary? = null,
     ): WorkshopInteraction
 
     suspend fun setFavorited(
         workshopId: Long,
         favorited: Boolean,
+        summary: WorkshopSummary? = null,
     ): WorkshopInteraction
 
     suspend fun postComment(

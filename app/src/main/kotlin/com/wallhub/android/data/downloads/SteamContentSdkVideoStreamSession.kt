@@ -118,6 +118,10 @@ internal class SteamContentSdkVideoStreamSession(
         if (!closed.get()) pendingRebuffer.set(true)
     }
 
+    override fun cancelPendingReads() {
+        if (!closed.get()) runCatching { stream.cancel() }
+    }
+
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         sampleTelemetry(latestDemand.get(), null, force = true, event = "close")

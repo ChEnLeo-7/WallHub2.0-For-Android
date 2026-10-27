@@ -83,6 +83,14 @@ class ProfileViewModel
 
         init {
             viewModelScope.launch {
+                accountRepository.collectionChanges.collectLatest {
+                    loadedAccount = null
+                    if (isVisible && session.value.phase == SteamSessionPhase.SIGNED_IN) {
+                        scheduleProfileLoad(session.value.accountName)
+                    }
+                }
+            }
+            viewModelScope.launch {
                 session.collectLatest { current ->
                     when {
                         current.phase == SteamSessionPhase.SIGNED_IN -> scheduleProfileLoad(current.accountName)
@@ -161,7 +169,7 @@ class ProfileViewModel
                         pageSize = 1,
                         resolveTotalCount = true,
                     ),
-                ).totalCount ?: 0
+                ).let(::profileCollectionCount)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
@@ -175,6 +183,9 @@ class ProfileViewModel
             loadingAccount = null
         }
     }
+
+internal fun profileCollectionCount(page: com.wallhub.android.core.model.WorkshopPage): Int? =
+    page.totalCount ?: if (page.items.isEmpty() && !page.hasNextPage) 0 else null
 
 internal fun shouldScheduleProfileLoad(
     isVisible: Boolean,

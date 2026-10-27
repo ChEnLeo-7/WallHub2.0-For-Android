@@ -41,6 +41,20 @@ internal class SteamReadCache<K : Any, V : Any>(
         while (entries.size > maxEntries) entries.entries.iterator().run { next(); remove() }
     }
 
+    /** Patches matching cached projections after a confirmed account mutation. */
+    suspend fun updateWhere(
+        predicate: (K) -> Boolean,
+        transform: (K, V) -> V,
+    ) = mutex.withLock {
+        entries.entries
+            .filter { predicate(it.key) }
+            .forEach { (key, entry) -> entries[key] = Entry(transform(key, entry.value), clockMillis()) }
+    }
+
+    suspend fun removeWhere(predicate: (K) -> Boolean) = mutex.withLock {
+        entries.keys.removeAll(predicate)
+    }
+
     suspend fun invalidateAll() = mutex.withLock { entries.clear() }
 
     private data class Entry<V>(val value: V, val writtenAtMillis: Long)

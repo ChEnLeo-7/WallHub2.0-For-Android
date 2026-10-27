@@ -1,7 +1,9 @@
 package com.wallhub.android.data.steam
 
+import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
 import com.wallhub.android.core.model.WorkshopBrowseQuery
+import com.wallhub.android.core.model.WorkshopSummary
 import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopPage
 import java.util.concurrent.atomic.AtomicLong
@@ -46,7 +48,40 @@ internal class SteamWorkshopCacheStore(
         detailInteractions.invalidateAll()
         publicDetails.invalidateAll()
         publicPages.invalidateAll()
-        accountPages.invalidateAll()
+        accountPager.invalidateAll()
+    }
+
+    suspend fun patchAccountCollection(
+        accountId: Long,
+        collection: AccountWorkshopCollection,
+        itemId: Long,
+        present: Boolean,
+        summary: WorkshopSummary?,
+    ) {
+        accountEpoch.incrementAndGet()
+        accountPages.removeWhere { key ->
+            key.accountId == accountId &&
+                key.query.collection == collection &&
+                key.query.resolveTotalCount &&
+                key.query.pageSize == 1
+        }
+        accountPages.updateWhere(
+            predicate = { key -> key.accountId == accountId && key.query.collection == collection },
+            transform = { key, page ->
+                val existing = page.items.indexOfFirst { it.id == itemId }
+                val patchedItems =
+                    when {
+                        !present && existing >= 0 -> page.items.filterNot { it.id == itemId }
+                        present && existing >= 0 && summary != null ->
+                            page.items.toMutableList().also { it[existing] = summary }
+                        present && existing < 0 && summary != null && key.query.page == 1 &&
+                            key.query.matchesAccountCollectionItem(summary) ->
+                            (listOf(summary) + page.items).take(key.query.pageSize)
+                        else -> page.items
+                    }
+                page.copy(items = patchedItems, totalCount = null, totalPages = null)
+            },
+        )
         accountPager.invalidateAll()
     }
 

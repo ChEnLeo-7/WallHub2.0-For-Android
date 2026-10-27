@@ -1,5 +1,6 @@
 package com.wallhub.android.data.steam
 
+import android.content.Context
 import android.util.Log
 import com.wallhub.android.core.model.AccountWorkshopCollection
 import com.wallhub.android.core.model.AccountWorkshopQuery
@@ -32,6 +33,7 @@ import com.wallhub.android.core.model.workshopAuthorSearchOrNull
 import com.wallhub.android.core.model.workshopDetailTagSearch
 import com.wallhub.android.di.SteamAnonymousWorkshopEngine
 import com.wallhub.android.di.SteamSessionSdkEngine
+import dagger.hilt.android.qualifiers.ApplicationContext
 import io.steamcontent.sdk.PlayerField
 import io.steamcontent.sdk.PlayerProfileField
 import io.steamcontent.sdk.PlayerProfiles
@@ -47,7 +49,15 @@ import io.steamcontent.sdk.WorkshopTextField
 import io.steamcontent.sdk.WorkshopTrendWindow
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 
 /**
@@ -82,6 +92,8 @@ internal class SteamContentSdkWorkshopRepository
         @SteamAnonymousWorkshopEngine private val anonymousEngine: SteamContentSdkEngine,
         private val publicSessionRouter: SteamWorkshopPublicSessionRouter,
         authenticatedSessions: SteamContentSdkAuthenticatedSessionRegistry,
+        mutations: SteamAccountCollectionMutationLedger,
+        @ApplicationContext context: Context,
     ) : SteamUnifiedWorkshopRepository,
         AccountWorkshopRepository,
         SteamPlaytimeRepository {
@@ -89,11 +101,26 @@ internal class SteamContentSdkWorkshopRepository
         private val gateway = SteamWorkshopSdkGateway(engine, authenticatedSessions)
         private val anonymousGateway = SteamWorkshopSdkGateway(anonymousEngine)
         private val cache = SteamWorkshopCacheStore()
-        private val accountMutations = SteamWorkshopAccountMutations(engine, gateway, cache)
+        private val snapshots: AccountWorkshopPageSnapshotStore =
+            BoundedPersistentAccountWorkshopPageSnapshotStore(context)
+        private val accountScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val accountMutations = SteamWorkshopAccountMutations(engine, gateway, cache, mutations, snapshots)
         private val accountReader =
-            SteamWorkshopAccountReader(engine, gateway, cache) { page, requestedPage, collection ->
+            SteamWorkshopAccountReader(
+                engine = engine,
+                gateway = gateway,
+                cache = cache,
+                snapshots = snapshots,
+                mutations = mutations,
+                scope = accountScope,
+            ) { page, requestedPage, collection ->
                 readWorkshopPage(page, requestedPage, collection)
             }
+        override val collectionChanges: Flow<AccountWorkshopCollection> =
+            merge(
+                accountReader.refreshes,
+                mutations.changes.map { it.key.collection },
+            )
         private val accountPublicDetailsReader = publicDetailsReader(engine, gateway)
         private val anonymousPublicDetailsReader = publicDetailsReader(anonymousEngine, anonymousGateway)
 
@@ -285,6 +312,26 @@ internal class SteamContentSdkWorkshopRepository
         override suspend fun browseCollection(query: AccountWorkshopQuery): WorkshopPage =
             accountReader.browseCollection(query)
 
+        override suspend fun refreshCollection(query: AccountWorkshopQuery): WorkshopPage =
+            accountReader.browseCollection(query, forceRefresh = true)
+
+        override suspend fun prefetchCollections() =
+            withContext(Dispatchers.IO) {
+                supervisorScope {
+                    accountCollectionPrefetchQueries(PREFETCH_PAGE_SIZE)
+                        .map { query ->
+                            async {
+                                runCatching { accountReader.browseCollection(query, background = true) }
+                                    .onFailure { error ->
+                                        if (error is kotlinx.coroutines.CancellationException) throw error
+                                        Log.w(TAG, "account collection prefetch failed collection=${query.collection}", error)
+                                    }
+                            }
+                        }.awaitAll()
+                }
+                Unit
+            }
+
         /**
          * Resolves the creator's public display name through the player family (ADR 0032).
          *
@@ -319,11 +366,17 @@ internal class SteamContentSdkWorkshopRepository
         override suspend fun getInteraction(workshopId: Long): WorkshopInteraction =
             accountMutations.getInteraction(workshopId)
 
-        override suspend fun setSubscribed(workshopId: Long, subscribed: Boolean): WorkshopInteraction =
-            accountMutations.setSubscribed(workshopId, subscribed)
+        override suspend fun setSubscribed(
+            workshopId: Long,
+            subscribed: Boolean,
+            summary: WorkshopSummary?,
+        ): WorkshopInteraction = accountMutations.setSubscribed(workshopId, subscribed, summary)
 
-        override suspend fun setFavorited(workshopId: Long, favorited: Boolean): WorkshopInteraction =
-            accountMutations.setFavorited(workshopId, favorited)
+        override suspend fun setFavorited(
+            workshopId: Long,
+            favorited: Boolean,
+            summary: WorkshopSummary?,
+        ): WorkshopInteraction = accountMutations.setFavorited(workshopId, favorited, summary)
 
         override suspend fun postComment(workshopId: Long, ownerId: String, text: String) =
             accountMutations.postComment(workshopId, ownerId, text)
@@ -838,6 +891,7 @@ private fun Int.toMaximumPage(pageSize: Int): Int {
 }
 
 private const val TAG = "WallHubSdkWorkshop"
+private const val PREFETCH_PAGE_SIZE = 16
 
 /** How many tag names one diagnostic page line may carry: enough to name the type, no more. */
 private const val MAX_LOGGED_TAGS = 8

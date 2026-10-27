@@ -427,6 +427,17 @@ class SteamContentSdkVideoStreamSessionTest {
     }
 
     @Test
+    fun `pending read cancellation signals native transport without releasing handles`() {
+        val fixture = fixture(contentLength = 100L)
+
+        fixture.session.cancelPendingReads()
+
+        assertEquals(listOf("cancel"), fixture.stream.order)
+        assertTrue(!fixture.stream.closed)
+        assertEquals(listOf("stream-opened"), fixture.sdkSession.order)
+    }
+
+    @Test
     fun `close cancels demand before closing stream and lease and remains idempotent`() {
         val fixture = fixture(contentLength = 100L)
 

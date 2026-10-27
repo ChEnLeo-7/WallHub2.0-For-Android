@@ -35,6 +35,21 @@ class SteamReadCacheTest {
     }
 
     @Test
+    fun `targeted patch and removal preserve unrelated entries`() = runTest {
+        val cache = SteamReadCache<String, String>(freshMillis = 100, staleMillis = 200) { 0L }
+        cache.put("subscriptions", "old")
+        cache.put("favorites", "favorite")
+
+        cache.updateWhere({ it == "subscriptions" }) { _, _ -> "new" }
+        assertEquals("new", cache.getFresh("subscriptions"))
+        assertEquals("favorite", cache.getFresh("favorites"))
+
+        cache.removeWhere { it == "subscriptions" }
+        assertNull(cache.getStale("subscriptions"))
+        assertEquals("favorite", cache.getFresh("favorites"))
+    }
+
+    @Test
     fun `invalidate removes account scoped data`() = runTest {
         val cache = SteamReadCache<String, String>(freshMillis = 100, staleMillis = 200) { 0L }
         cache.put("subscription", "page")

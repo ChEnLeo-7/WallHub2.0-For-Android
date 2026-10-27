@@ -61,6 +61,7 @@ signing.properties
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/DownloadCancellationPersistenceTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/FormalWorkshopExportRecoveryTest.kt
 !/app/src/test/kotlin/com/wallhub/android/data/downloads/MpkgScannerCompatibilityTest.kt
+!/app/src/test/kotlin/com/wallhub/android/data/downloads/VideoStreamCloseSchedulerTest.kt
 !/app/src/test/kotlin/com/wallhub/prototype/
 !/app/src/test/kotlin/com/wallhub/prototype/mpkg/
 !/app/src/test/kotlin/com/wallhub/prototype/mpkg/MpkgFormatScaleTest.kt
@@ -86,6 +87,8 @@ signing.properties
 !/app/src/test/kotlin/com/wallhub/android/feature/detail/
 /app/src/test/kotlin/com/wallhub/android/feature/detail/*
 !/app/src/test/kotlin/com/wallhub/android/feature/detail/StreamRecoveryBudgetTest.kt
+!/app/src/test/kotlin/com/wallhub/android/feature/home/
+!/app/src/test/kotlin/com/wallhub/android/feature/home/HomeCoverPrefetchPolicyTest.kt
 !/app/src/test/kotlin/com/wallhub/android/feature/local/
 !/app/src/test/kotlin/com/wallhub/android/feature/discover/
 /app/src/test/kotlin/com/wallhub/android/feature/discover/*

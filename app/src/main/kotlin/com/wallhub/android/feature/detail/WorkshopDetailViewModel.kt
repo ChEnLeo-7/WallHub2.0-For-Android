@@ -195,8 +195,8 @@ class WorkshopDetailViewModel
             inlineVideoLoadJob = null
             refreshInteraction()
             detailLoadJob = viewModelScope.launch {
-                mutableState.value.inlineVideoPlayer?.release()
                 mutableState.value.inlineVideoStream?.close()
+                mutableState.value.inlineVideoPlayer?.release()
                 mutableState.value =
                     beginDetailRefresh(mutableState.value).copy(
                         comments = emptyList(),
@@ -352,8 +352,8 @@ class WorkshopDetailViewModel
             inlineVideoLoadJob?.cancel()
             inlineVideoLoadJob = null
             val current = mutableState.value
-            current.inlineVideoPlayer?.release()
             current.inlineVideoStream?.close()
+            current.inlineVideoPlayer?.release()
             mutableState.value =
                 current.copy(
                     inlineVideoStream = null,
@@ -525,7 +525,7 @@ class WorkshopDetailViewModel
                         R.string.detail_subscribe_submitted
                     },
             ) {
-                accountWorkshopRepository.setSubscribed(workshopId, !currentlySubscribed)
+                accountWorkshopRepository.setSubscribed(workshopId, !currentlySubscribed, current.detail?.summary)
             }
         }
 
@@ -548,7 +548,7 @@ class WorkshopDetailViewModel
                         R.string.detail_favorite_submitted
                     },
             ) {
-                accountWorkshopRepository.setFavorited(workshopId, !currentlyFavorited)
+                accountWorkshopRepository.setFavorited(workshopId, !currentlyFavorited, current.detail?.summary)
             }
         }
 

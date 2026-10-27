@@ -399,6 +399,17 @@ class LibraryViewModel
                 }
             }
             viewModelScope.launch {
+                accountWorkshopRepository.collectionChanges.collect { collection ->
+                    cachedPages.keys
+                        .filter { it.collection.collection == collection }
+                        .forEach(cachedPages::remove)
+                    val current = mutableState.value
+                    if (current.session.phase == SteamSessionPhase.SIGNED_IN && current.collection.collection == collection) {
+                        loadCurrentPage(forceRefresh = false, refreshing = false, page = current.currentPage)
+                    }
+                }
+            }
+            viewModelScope.launch {
                 steamSessionRepository.session.collect { session ->
                     val previous = mutableState.value
                     if (session.phase != SteamSessionPhase.SIGNED_IN) {
@@ -504,9 +515,12 @@ class LibraryViewModel
             viewModelScope.launch {
                 try {
                     when (collection) {
-                        LibraryCollectionTab.SUBSCRIPTIONS -> accountWorkshopRepository.setSubscribed(item.id, false)
-                        LibraryCollectionTab.FAVORITES -> accountWorkshopRepository.setFavorited(item.id, false)
+                        LibraryCollectionTab.SUBSCRIPTIONS -> accountWorkshopRepository.setSubscribed(item.id, false, item)
+                        LibraryCollectionTab.FAVORITES -> accountWorkshopRepository.setFavorited(item.id, false, item)
                     }
+                    // A request started before the confirmed write must not restore the removed row afterward.
+                    loadJob?.cancel()
+                    requestVersion += 1L
                     cachedPages.keys
                         .filter { key -> key.collection == collection }
                         .forEach { key ->
@@ -746,7 +760,6 @@ class LibraryViewModel
                                     state.searchAnimationItemIds
                                 },
                         )
-                    return
                 }
             }
             loadPage(
@@ -770,7 +783,7 @@ class LibraryViewModel
                 viewModelScope.launch {
                     mutableState.value =
                         snapshot.copy(
-                            isLoading = !append,
+                            isLoading = !append && cachedPages[key] == null,
                             isRefreshing = refreshing && !append,
                             isLoadingMore = append,
                             error = null,
@@ -794,7 +807,11 @@ class LibraryViewModel
                             )
                         val result =
                             withTimeout(LIBRARY_FOREGROUND_LOAD_TIMEOUT_MS) {
-                                browseWithInitialSessionRetry(query, retry = !append && page == 1)
+                                browseWithInitialSessionRetry(
+                                    query = query,
+                                    retry = !append && page == 1,
+                                    forceRefresh = refreshing,
+                                )
                             }
                         if (version != requestVersion) return@launch
                         val merged = result.mergeInto(snapshot, append)
@@ -836,11 +853,16 @@ class LibraryViewModel
         private suspend fun browseWithInitialSessionRetry(
             query: AccountWorkshopQuery,
             retry: Boolean,
+            forceRefresh: Boolean = false,
         ): WorkshopPage {
             var lastFailure: Throwable? = null
             repeat(if (retry) INITIAL_SESSION_LOAD_ATTEMPTS else 1) { attempt ->
                 try {
-                    return accountWorkshopRepository.browseCollection(query)
+                    return if (forceRefresh) {
+                        accountWorkshopRepository.refreshCollection(query)
+                    } else {
+                        accountWorkshopRepository.browseCollection(query)
+                    }
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Throwable) {
