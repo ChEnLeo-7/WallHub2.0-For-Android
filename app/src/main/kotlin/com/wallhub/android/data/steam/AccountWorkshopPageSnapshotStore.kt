@@ -440,7 +440,7 @@ internal class BoundedPersistentAccountWorkshopPageSnapshotStore(
         writeNullableInt(page.totalCount)
         writeNullableInt(page.totalPages)
         writeInt(page.items.size)
-        page.items.forEach(::writeSummary)
+        page.items.forEach { summary -> writeSummary(summary) }
     }
 
     private fun DataOutputStream.writeSummary(summary: WorkshopSummary) {
@@ -452,7 +452,7 @@ internal class BoundedPersistentAccountWorkshopPageSnapshotStore(
         writeNullableString(summary.previewUrl)
         writeEnum(summary.type)
         writeInt(summary.tags.size)
-        summary.tags.forEach(::writeString)
+        summary.tags.forEach { tag -> writeString(tag) }
         writeNullableLong(summary.subscriptions)
         writeNullableLong(summary.favorites)
         writeNullableLong(summary.views)
@@ -594,7 +594,7 @@ internal class BoundedPersistentAccountWorkshopPageSnapshotStore(
         require(validStringSet(values))
         val ordered = values.sorted()
         writeInt(ordered.size)
-        ordered.forEach(::writeString)
+        ordered.forEach { value -> writeString(value) }
     }
 
     private fun DataInputStream.readStringSet(): Set<String> {
@@ -622,7 +622,7 @@ internal class BoundedPersistentAccountWorkshopPageSnapshotStore(
         require(validEnumSet(values))
         val ordered = values.sortedBy { it.name }
         writeInt(ordered.size)
-        ordered.forEach(::writeEnum)
+        ordered.forEach { value -> writeEnum(value) }
     }
 
     private inline fun <reified T : Enum<T>> DataInputStream.readEnumSet(): Set<T> {
