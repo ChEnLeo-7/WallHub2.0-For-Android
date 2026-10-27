@@ -1067,6 +1067,7 @@
     <string name='backend_steam_access_using_recent_route'>线路刷新失败，继续使用最近可用线路</string>
     <string name='backend_steam_anonymous_account'>匿名 Steam 账户</string>
     <string name='backend_steam_auth_rejected'>Steam 拒绝了本次登录或验证。</string>
+    <string name='backend_steam_rate_limited'>请求过于频繁，登录暂时暂停。WallHub 将至少等待一小时后再尝试；重启应用会重新计时。</string>
     <string name='backend_steam_challenge_unsupported'>本次 Steam 登录要求的验证方式 WallHub 无法完成。</string>
     <string name='backend_steam_code_submitted'>已提交验证码，正在等待 Steam 确认…</string>
     <string name='backend_steam_confirm_mobile'>请在 Steam 手机客户端确认此次登录，确认后会自动继续。</string>

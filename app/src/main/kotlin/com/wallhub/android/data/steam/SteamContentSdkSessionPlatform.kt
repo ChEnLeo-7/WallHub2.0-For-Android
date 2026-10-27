@@ -282,6 +282,10 @@ internal fun serviceRefusedCredential(detail: String?): Boolean {
     return result in CREDENTIAL_REFUSAL_RESULTS
 }
 
+internal fun isRemoteRateLimit(detail: String?): Boolean =
+    detail != null && detail.contains(REMOTE_RESULT_CAUSE_MARKER) &&
+        REMOTE_RESULT_PATTERN.find(detail)?.groupValues?.getOrNull(1)?.toIntOrNull() == 84
+
 /** Remote results that actually invalidate a stored credential, rather than asking the client to retry later. */
 private val CREDENTIAL_REFUSAL_RESULTS = setOf(5, 15, 26, 27)
 private val REMOTE_RESULT_PATTERN = Regex("result=Some\\((\\d+)\\)")

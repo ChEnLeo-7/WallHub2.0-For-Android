@@ -1112,6 +1112,7 @@
     <string name='backend_steam_access_using_recent_route'>Route refresh failed. Continuing with the most recent available route.</string>
     <string name='backend_steam_anonymous_account'>anonymous Steam account</string>
     <string name='backend_steam_auth_rejected'>Steam rejected the sign-in or verification.</string>
+    <string name='backend_steam_rate_limited'>Sign-in is temporarily paused after too many requests. WallHub waits at least one hour before trying again; restarting the app starts the wait again.</string>
     <string name='backend_steam_challenge_unsupported'>This Steam sign-in asked for a verification method WallHub cannot complete.</string>
     <string name='backend_steam_code_submitted'>Code submitted. Waiting for Steam confirmation…</string>
     <string name='backend_steam_confirm_mobile'>

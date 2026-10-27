@@ -3,6 +3,7 @@ package com.wallhub.android.di
 import android.content.Context
 import com.wallhub.android.core.model.DiagnosticRepository
 import com.wallhub.android.core.model.SteamSessionRepository
+import com.wallhub.android.data.steam.AndroidSteamAccountAdmissionStore
 import com.wallhub.android.data.steam.AndroidSteamContentSdkSessionMessages
 import com.wallhub.android.data.steam.EncryptedSteamCredentialStore
 import com.wallhub.android.data.steam.SteamContentSdkAuthenticatedSessionRegistry
@@ -80,6 +81,7 @@ internal object SteamSessionBackendModule {
     @Provides
     @Singleton
     internal fun provideSteamSessionRepository(
+        @ApplicationContext context: Context,
         platform: SteamContentSdkPlatform,
         credentialStore: EncryptedSteamCredentialStore,
         messages: SteamContentSdkSessionMessages,
@@ -93,5 +95,6 @@ internal object SteamSessionBackendModule {
             diagnostics = diagnostics,
             authenticatedSessions = authenticatedSessions,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+            admissionStore = AndroidSteamAccountAdmissionStore(context),
         )
 }

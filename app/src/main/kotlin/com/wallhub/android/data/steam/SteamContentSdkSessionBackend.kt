@@ -80,6 +80,8 @@ internal class SteamContentSdkSessionBackend(
     private val authenticatedSessions: SteamContentSdkAuthenticatedSessionRegistry =
         SteamContentSdkAuthenticatedSessionRegistry(),
     private val scope: CoroutineScope,
+    private val admissionStore: SteamAccountAdmissionStore,
+    private val cooldownNowMillis: () -> Long = { android.os.SystemClock.elapsedRealtime() },
     /**
      * How often an established session is drained and maintained, or zero to leave the schedule to nobody.
      *
@@ -144,6 +146,48 @@ internal class SteamContentSdkSessionBackend(
     /** Monotonic start of the authenticated generation, used only to decide whether retry debt resets. */
     private val authenticatedAtNanos = AtomicLong(0L)
     private val sessionMutex = Mutex()
+    // A durable marker restarts a full monotonic cooldown on every process start. This intentionally
+    // over-waits after process death, but cannot be shortened by wall-clock changes or reboot.
+    private var rateLimitStartedAt: Long? = null
+    private var rateLimitMarkerRequired = false
+
+    private sealed interface Admission {
+        data object Allowed : Admission
+        data class Limited(val waitMs: Long) : Admission
+        data object StorageUnavailable : Admission
+    }
+
+    private fun admission(): Admission {
+        try {
+            if (rateLimitMarkerRequired) {
+                admissionStore.writeLimited(true)
+                rateLimitMarkerRequired = false
+            }
+            if (!admissionStore.readLimited() && rateLimitStartedAt == null) return Admission.Allowed
+            val now = cooldownNowMillis()
+            val started = rateLimitStartedAt ?: now.also { rateLimitStartedAt = it }
+            val elapsed = (now - started).coerceAtLeast(0L)
+            if (elapsed < ACCOUNT_RATE_LIMIT_COOLDOWN_MS) return Admission.Limited(ACCOUNT_RATE_LIMIT_COOLDOWN_MS - elapsed)
+            admissionStore.writeLimited(false)
+            rateLimitStartedAt = null
+            return Admission.Allowed
+        } catch (error: Throwable) {
+            record("account_admission_storage_failure", error)
+            return Admission.StorageUnavailable
+        }
+    }
+
+    private fun rememberRateLimit() {
+        rateLimitStartedAt = cooldownNowMillis()
+        rateLimitMarkerRequired = true
+        recoveryJob.getAndSet(null)?.cancel()
+        try {
+            admissionStore.writeLimited(true)
+            rateLimitMarkerRequired = false
+        } catch (error: Throwable) {
+            record("account_admission_storage_failure", error)
+        }
+    }
 
     init {
         authenticatedSessions.installRecoveryOwner(
@@ -204,12 +248,18 @@ internal class SteamContentSdkSessionBackend(
     }
 
     private fun requestOnDemandRecovery(fromScheduledPlan: Boolean = false) {
+        if (mutableSession.value.phase == SteamSessionPhase.WAITING_FOR_CODE ||
+            mutableSession.value.phase == SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION
+        ) return
         // Ordinary signals join the current not-before plan. Only that plan may spend its retry at the deadline.
         if (!fromScheduledPlan && recoveryJob.get() != null) {
             record("recovery_backoff_joined")
             return
         }
         launchAttempt {
+            if (mutableSession.value.phase == SteamSessionPhase.WAITING_FOR_CODE ||
+                mutableSession.value.phase == SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION
+            ) return@launchAttempt
             val authenticated =
                 activeSession
                     .get()
@@ -219,10 +269,10 @@ internal class SteamContentSdkSessionBackend(
         }
     }
 
-    private fun scheduleStoredRecovery(failures: Long) {
+    private fun scheduleStoredRecovery(failures: Long, minimumDelayMs: Long = 0L) {
         if (logoutInProgress.get() || !mutableSession.value.hasStoredSession) return
         val retryDebt = failures.coerceAtLeast(1L)
-        val delayMs = steamAccountRecoveryDelayMs(retryDebt)
+        val delayMs = maxOf(steamAccountRecoveryDelayMs(retryDebt), minimumDelayMs)
         lateinit var scheduled: Job
         scheduled =
             scope.launch(start = CoroutineStart.LAZY) {
@@ -439,6 +489,9 @@ internal class SteamContentSdkSessionBackend(
     }
 
     override fun onAppForegrounded() {
+        if (mutableSession.value.phase == SteamSessionPhase.WAITING_FOR_CODE ||
+            mutableSession.value.phase == SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION
+        ) return
         val session = activeSession.get()
         if (session == null || mutableSession.value.phase != SteamSessionPhase.SIGNED_IN) {
             restorePersistedSession()
@@ -604,7 +657,21 @@ internal class SteamContentSdkSessionBackend(
                 )
             }
 
-            is SteamCredentialReadResult.Value -> restore(credential.credential)
+            is SteamCredentialReadResult.Value -> {
+                when (val result = admission()) {
+                    Admission.Allowed -> restore(credential.credential)
+                    is Admission.Limited -> {
+                        publish(SteamSessionPhase.RESTORABLE, messages.rateLimited,
+                            accountName = credential.credential.accountName, hasStoredSession = true)
+                        scheduleStoredRecovery(1L, result.waitMs)
+                    }
+                    Admission.StorageUnavailable -> {
+                        publish(SteamSessionPhase.RESTORABLE, messages.sessionStorageUnavailable,
+                            accountName = credential.credential.accountName, hasStoredSession = true)
+                        scheduleStoredRecovery(1L, MAX_RECOVERY_BACKOFF_MS)
+                    }
+                }
+            }
         }
     }
 
@@ -694,6 +761,19 @@ internal class SteamContentSdkSessionBackend(
         accountName: String,
         password: String,
     ) {
+        when (val result = admission()) {
+            Admission.Allowed -> Unit
+            is Admission.Limited -> {
+                publish(SteamSessionPhase.FAILED, messages.rateLimited)
+                scheduleStoredRecovery(1L, result.waitMs)
+                return
+            }
+            Admission.StorageUnavailable -> {
+                publish(SteamSessionPhase.FAILED, messages.sessionStorageUnavailable)
+                scheduleStoredRecovery(1L, MAX_RECOVERY_BACKOFF_MS)
+                return
+            }
+        }
         // At most one extra open per user-initiated logon: a transport failure asks once for an endpoint set
         // read live instead of the platform's cached one, which is the only input a failed candidate pass can
         // mean was stale. A second transport failure, or any other failure class, reports as it is - no loop,
@@ -999,6 +1079,7 @@ internal class SteamContentSdkSessionBackend(
             is SteamContentSdkSessionEvent.CommandFailed ->
                 if (
                     event.failure == SteamContentSdkSessionFailure.AUTHENTICATION_FAILED &&
+                    !isRemoteRateLimit(sdkFailureDetail(session)) &&
                     republishRejectedChallenge(session, accountName, hasStoredSession)
                 ) {
                     true
@@ -1354,7 +1435,21 @@ internal class SteamContentSdkSessionBackend(
         failure: SteamContentSdkSessionFailure,
         sdkDetail: String? = null,
     ): Boolean {
-        lastAttemptFailure.set(failure)
+        val rateLimited = failure == SteamContentSdkSessionFailure.RATE_LIMITED || isRemoteRateLimit(sdkDetail)
+        lastAttemptFailure.set(if (rateLimited) SteamContentSdkSessionFailure.RATE_LIMITED else failure)
+        if (rateLimited) {
+            rememberRateLimit()
+            recordClassifiedFailure(failure, restore, sdkDetail)
+            val stored = hasStoredSession || credentialStore.read() !is SteamCredentialReadResult.Missing
+            publish(
+                if (stored) SteamSessionPhase.RESTORABLE else SteamSessionPhase.FAILED,
+                messages.rateLimited,
+                accountName = accountName,
+                hasStoredSession = stored,
+            )
+            scheduleStoredRecovery(1L, if (rateLimitMarkerRequired) MAX_RECOVERY_BACKOFF_MS else ACCOUNT_RATE_LIMIT_COOLDOWN_MS)
+            return true
+        }
         recordClassifiedFailure(failure, restore, sdkDetail)
         // A restore the service refused is a dead stored credential, not a transport problem: the same bytes
         // would be refused again, so it is cleared and reported as expired instead of being replayed on every

@@ -1275,12 +1275,152 @@ class SteamContentSdkSessionBackendTest {
             assertEquals(1, fixture.platform.openCalls)
         }
 
+    @Test
+    fun `rate limit blocks all new authentication after foreground and restart without deleting token`() =
+        runTest {
+            val fixture = Fixture()
+            val credential = PersistedSteamCredential("account", opaqueValue(seed = 13))
+            fixture.storeCredential(credential)
+            fixture.session.events += SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.RATE_LIMITED)
+            val backend = fixture.backend(this)
+            backend.restorePersistedSession()
+            runCurrent()
+            backend.onAppForegrounded()
+            backend.restorePersistedSession()
+            backend.login("account", opaqueValue(seed = 15))
+            runCurrent()
+            backend.close()
+            val restarted = fixture.backend(this)
+            restarted.restorePersistedSession()
+            runCurrent()
+            assertEquals(SteamSessionPhase.RESTORABLE, restarted.session.value.phase)
+            assertTrue(restarted.session.value.hasStoredSession)
+            restarted.login("account", opaqueValue(seed = 17))
+            runCurrent()
+            assertEquals(1, fixture.platform.openCalls)
+            assertEquals(0, fixture.platform.liveOpenCalls)
+            assertEquals(0, fixture.store.clearCalls)
+            assertEquals(credential, fixture.credentialStore.load())
+            restarted.close()
+        }
+
+    @Test
+    fun `remote result 84 holds admission until local cooldown expires`() = runTest {
+        val fixture = Fixture()
+        fixture.storeCredential(PersistedSteamCredential("account", opaqueValue(seed = 19)))
+        fixture.session.lastFailure = "authentication failed cause=RemoteResult (result=Some(84))"
+        fixture.session.events += SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.AUTHENTICATION_FAILED)
+        val backend = fixture.backend(this)
+        backend.restorePersistedSession()
+        runCurrent()
+        fixture.nowMillis += ACCOUNT_RATE_LIMIT_COOLDOWN_MS - 1
+        advanceTimeBy(ACCOUNT_RATE_LIMIT_COOLDOWN_MS - 1)
+        runCurrent()
+        assertEquals(1, fixture.platform.openCalls)
+        fixture.nowMillis++
+        fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(2, fixture.platform.openCalls)
+        assertEquals(SteamSessionPhase.SIGNED_IN, backend.session.value.phase)
+        backend.close()
+    }
+
+    @Test
+    fun `failed durable cooldown clear blocks restore until storage recovers`() = runTest {
+        val fixture = Fixture()
+        fixture.storeCredential(PersistedSteamCredential("account", opaqueValue(seed = 23)))
+        fixture.admissionStore.limited = true
+        fixture.admissionStore.failWrites = true
+        val backend = fixture.backend(this)
+        backend.restorePersistedSession()
+        runCurrent()
+        fixture.nowMillis += ACCOUNT_RATE_LIMIT_COOLDOWN_MS
+        advanceTimeBy(ACCOUNT_RATE_LIMIT_COOLDOWN_MS)
+        runCurrent()
+        assertEquals(0, fixture.platform.openCalls)
+        fixture.admissionStore.failWrites = false
+        fixture.session.events += SteamContentSdkSessionEvent.StateChanged(SteamContentSdkSessionState.AUTHENTICATED)
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(1, fixture.platform.openCalls)
+        backend.close()
+    }
+
+    @Test
+    fun `fresh login reports admission storage failure without opening a session`() = runTest {
+        val fixture = Fixture()
+        fixture.admissionStore.failReads = true
+        val backend = fixture.backend(this)
+        backend.login("account", opaqueValue(seed = 25))
+        runCurrent()
+        assertEquals(0, fixture.platform.openCalls)
+        assertEquals(FakeMessages.sessionStorageUnavailable, backend.session.value.message)
+        backend.close()
+    }
+
+    @Test
+    fun `failed rate limit marker write is retried before cooldown recovery`() = runTest {
+        val fixture = Fixture()
+        fixture.storeCredential(PersistedSteamCredential("account", opaqueValue(seed = 27)))
+        fixture.admissionStore.failWrites = true
+        fixture.session.events += SteamContentSdkSessionEvent.CommandFailed(SteamContentSdkSessionFailure.RATE_LIMITED)
+        val backend = fixture.backend(this)
+        backend.restorePersistedSession()
+        runCurrent()
+        assertEquals(1, fixture.platform.openCalls)
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(FakeMessages.sessionStorageUnavailable, backend.session.value.message)
+        assertEquals(1, fixture.platform.openCalls)
+        fixture.admissionStore.failWrites = false
+        fixture.nowMillis += 120_000
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertTrue(fixture.admissionStore.limited)
+        assertEquals(1, fixture.platform.openCalls)
+        backend.close()
+    }
+
+    @Test
+    fun `foreground and recovery leave an active Guard challenge intact`() = runTest {
+        val fixture = Fixture()
+        fixture.session.pendingChallengeId = byteArrayOf(1)
+        fixture.session.events += SteamContentSdkSessionEvent.AuthenticationChallenge(SteamContentSdkChallengeKind.EMAIL)
+        val backend = fixture.backend(this)
+        backend.login("account", opaqueValue(seed = 21))
+        runCurrent()
+        backend.onAppForegrounded()
+        backend.restorePersistedSession()
+        runCurrent()
+        assertEquals(1, fixture.platform.openCalls)
+        assertEquals(SteamSessionPhase.WAITING_FOR_CODE, backend.session.value.phase)
+        backend.submitSteamGuardCode("12345")
+        runCurrent()
+        assertEquals(1, fixture.session.answers.size)
+        backend.close()
+    }
+
     private class Fixture {
         val session = FakeSdkSession()
         val platform = FakeSdkPlatform(session)
         val store = FakeEncryptedStringStore()
         val credentialStore = EncryptedSteamCredentialStore(store)
         val diagnostics = RecordingDiagnostics()
+        var nowMillis = 1_000_000L
+        val admissionStore = object : SteamAccountAdmissionStore {
+            var limited = false
+            var failWrites = false
+            var failReads = false
+            override fun readLimited(): Boolean {
+                check(!failReads)
+                return limited
+            }
+            override fun writeLimited(limited: Boolean) {
+                check(!failWrites)
+                this.limited = limited
+            }
+        }
 
         fun backend(
             scope: CoroutineScope,
@@ -1294,6 +1434,8 @@ class SteamContentSdkSessionBackendTest {
                 messages = FakeMessages,
                 diagnostics = diagnostics,
                 scope = scope,
+                admissionStore = admissionStore,
+                cooldownNowMillis = { nowMillis },
                 // Zero by default: a maintenance loop is never idle, so the tests about logon and restore
                 // leave the schedule to the one test that is about it.
                 maintenanceIntervalMs = maintenanceIntervalMs,

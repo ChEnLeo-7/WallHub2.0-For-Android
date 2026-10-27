@@ -52,6 +52,8 @@ internal interface SteamContentSdkSessionMessages {
 
     val authRejected: String
 
+    val rateLimited: String get() = authRejected
+
     val networkFailed: String
 
     val challengeUnsupported: String
@@ -118,6 +120,9 @@ internal class AndroidSteamContentSdkSessionMessages(
 
     override val authRejected: String
         get() = context.getString(R.string.backend_steam_auth_rejected)
+
+    override val rateLimited: String
+        get() = context.getString(R.string.backend_steam_rate_limited)
 
     override val networkFailed: String
         get() = context.getString(R.string.backend_steam_network_failed)
