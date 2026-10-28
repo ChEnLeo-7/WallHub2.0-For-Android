@@ -22,4 +22,7 @@ esac
 }
 
 printf 'Serving WallHub %s Web preview from %s on 0.0.0.0:%s\n' "$mode" "$output" "$port"
-exec python3 -m http.server "$port" --bind 0.0.0.0 --directory "$output"
+exec python3 scripts/web-preview-server.py \
+    --port "$port" \
+    --bind 0.0.0.0 \
+    --directory "$output"
