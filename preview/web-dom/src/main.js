@@ -15,13 +15,38 @@ const iconPaths = {
   person: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4 1.79-4 4 1.79 4 4 4Zm0-6a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm0 8c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Zm-5.33 4c.73-1.02 3.32-2 5.33-2 2.02 0 4.61.99 5.34 2H6.67Z',
 };
 const destinations = contract.destinations.map((destination) => ({...destination, iconPath: iconPaths[destination.icon]}));
-const themeKey = 'wallhub.preview.dom.theme';
 const storage = {
   get(key) { try { return localStorage.getItem(key); } catch { return null; } },
   set(key, value) { try { localStorage.setItem(key, value); } catch { /* Persistence is optional. */ } },
 };
 const backend = new FakeBackend(storage);
-let theme = storage.get(themeKey) === 'light' ? 'light' : 'dark';
+const systemThemeQuery = matchMedia('(prefers-color-scheme: light)');
+const effectiveTheme = (preference) => preference === 'LIGHT' || (preference === 'SYSTEM' && systemThemeQuery.matches) ? 'light' : 'dark';
+let theme = effectiveTheme(backend.snapshot().settings.themePreference);
+const accentSeeds = {DEFAULT: '#6750A4', BLUE: '#385CA8', GREEN: '#356A3F', RED: '#A33B4E', PURPLE: '#76518D'};
+const parseHex = (hex) => [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16));
+const toHex = (rgb) => `#${rgb.map((value) => Math.round(value).toString(16).padStart(2, '0')).join('')}`;
+const mixHex = (foreground, background, amount) => toHex(parseHex(foreground).map((value, index) => value * amount + parseHex(background)[index] * (1 - amount)));
+const relativeLuminance = (hex) => parseHex(hex).map((value) => value / 255).map((value) => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
+const contrastText = (background) => {
+  const luminance = relativeLuminance(background);
+  const whiteContrast = 1.05 / (luminance + .05);
+  const blackContrast = (luminance + .05) / .05;
+  return whiteContrast >= blackContrast ? '#ffffff' : '#000000';
+};
+function applyAppearance() {
+  const settings = backend.snapshot().settings;
+  theme = effectiveTheme(settings.themePreference);
+  document.documentElement.dataset.theme = theme;
+  const seed = settings.useSystemMonet ? '#6750A4' : settings.accent === 'CUSTOM' ? settings.customAccentColor : accentSeeds[settings.accent] ?? accentSeeds.DEFAULT;
+  const surface = theme === 'dark' ? '#1c1c1c' : '#f9fafb';
+  const container = mixHex(seed, surface, theme === 'dark' ? .42 : .22);
+  document.documentElement.style.setProperty('--md-sys-color-primary', seed);
+  document.documentElement.style.setProperty('--md-sys-color-on-primary', contrastText(seed));
+  document.documentElement.style.setProperty('--md-sys-color-primary-container', container);
+  document.documentElement.style.setProperty('--md-sys-color-on-primary-container', contrastText(container));
+}
+systemThemeQuery.addEventListener('change', () => { if (backend.snapshot().settings.themePreference === 'SYSTEM') { applyAppearance(); renderApp(); } });
 
 const app = document.querySelector('#app');
 app.innerHTML = `
@@ -254,6 +279,10 @@ function renderHome() {
   document.title = '首页 · WallHub Web Preview';
 }
 
+function settingsSelect(title, key, selected, options, disabled = false) {
+  return `<label class="settings-select"><span><strong>${title}</strong></span><select data-setting-select="${key}" ${disabled ? 'disabled' : ''}>${options.map(([value, label]) => `<option value="${value}" ${String(selected) === String(value) ? 'selected' : ''}>${label}</option>`).join('')}</select></label>`;
+}
+
 function renderSettings() {
   const slug = location.pathname.match(/^\/settings\/([a-z-]+)$/u)?.[1] ?? null;
   const snapshot = backend.snapshot();
@@ -281,9 +310,10 @@ function renderSettings() {
               : '<h2>登录 Steam</h2><p>登录后同步订阅、收藏和好友活动。</p><md-outlined-text-field id="steam-account" label="账户名称" autocomplete="username"></md-outlined-text-field><md-outlined-text-field id="steam-password" label="密码" type="password" autocomplete="current-password"></md-outlined-text-field><md-filled-button id="steam-login" disabled>登录</md-filled-button>';
     body = `<section class="settings-group steam-account-card" id="steam-account-status" tabindex="-1">${steamBody}</section><section class="settings-group"><label class="settings-switch"><span><strong>增强访问</strong><small>通过兼容连接路径访问 Steam</small></span><input type="checkbox" data-setting-toggle="enhancedAccess" ${state.preferences.enhancedAccess ? 'checked' : ''}></label></section>`;
   } else if (slug === 'basic') {
-    body = `<section class="settings-group"><label class="settings-switch"><span><strong>成人内容</strong><small>在浏览与搜索中允许成熟内容</small></span><input type="checkbox" data-setting-toggle="matureContent" ${state.preferences.matureContent ? 'checked' : ''}></label><button type="button" class="settings-row" id="notifications-setting"><span><strong>通知</strong><small>下载与更新通知</small></span><span>›</span></button></section>`;
+    const languages = {SYSTEM: '跟随系统', SIMPLIFIED_CHINESE: '简体中文', ENGLISH: 'English'};
+    body = `<section class="settings-section"><h2>语言</h2><button type="button" class="settings-row" id="open-language"><span><strong>语言</strong><small>${languages[state.preferences.language]}</small></span><span>›</span></button></section><section class="settings-section"><h2>诊断与支持</h2><button type="button" class="settings-row" id="export-diagnostics"><span><strong>导出诊断日志</strong><small>${state.preferences.diagnosticMessage || '导出用于排查问题的文本日志'}</small></span><span>›</span></button>${state.preferences.diagnosticMessage ? `<p class="settings-notice" role="status">${escapeHtml(state.preferences.diagnosticMessage)}</p>` : ''}</section><section class="settings-section"><h2>内容访问</h2><label class="settings-switch"><span><strong>成人内容</strong><small>在浏览与搜索中允许成熟内容</small></span><input type="checkbox" data-setting-toggle="matureContent" ${state.preferences.matureContent ? 'checked' : ''}></label></section><section class="settings-section"><h2>系统权限</h2><button type="button" class="settings-row" id="notifications-setting"><span><strong>后台任务通知</strong><small>${state.preferences.notificationsGranted ? '通知权限已授予' : '允许显示下载与更新进度'}</small></span><span>›</span></button></section><md-dialog id="language-dialog" aria-label="选择语言"><div slot="headline">语言</div><form slot="content" class="settings-choice-list" id="language-form">${Object.entries(languages).map(([value,label]) => `<label><input type="radio" name="language" value="${value}" ${state.preferences.language === value ? 'checked' : ''}>${label}</label>`).join('')}</form><div slot="actions"><md-text-button id="cancel-language">取消</md-text-button></div></md-dialog>`;
   } else if (slug === 'appearance') {
-    body = `<section class="settings-group"><button type="button" class="settings-row" id="settings-theme-toggle"><span><strong>外观模式</strong><small>${theme === 'dark' ? '深色' : '浅色'}</small></span><span>›</span></button><div class="settings-row"><span><strong>强调色</strong><small>WallHub Current 紫色</small></span></div></section>`;
+    body = `<section class="settings-section"><h2>主题</h2>${settingsSelect('外观模式', 'themePreference', state.preferences.themePreference, [['SYSTEM','跟随系统'],['LIGHT','浅色'],['DARK','深色']])}</section><section class="settings-section"><h2>个性化颜色</h2><label class="settings-switch"><span><strong>系统动态颜色</strong><small>${state.preferences.useSystemMonet ? 'Web 使用 WallHub 兼容动态配色' : '使用静态调色板'}</small></span><input type="checkbox" data-setting-toggle="useSystemMonet" ${state.preferences.useSystemMonet ? 'checked' : ''}></label><label class="settings-switch"><span><strong>主题应用图标</strong><small>Android 13 及以上版本</small></span><input type="checkbox" data-setting-toggle="themedLauncherIcon" ${state.preferences.themedLauncherIcon ? 'checked' : ''}></label>${settingsSelect('静态调色板', 'accent', state.preferences.accent, [['DEFAULT','默认'],['BLUE','蓝色'],['GREEN','绿色'],['RED','红色'],['PURPLE','紫色'],['CUSTOM','自定义']], state.preferences.useSystemMonet)}</section><section class="settings-section"><h2>发现</h2>${settingsSelect('每页项目数', 'homePageSize', state.preferences.homePageSize, [[10,'10'],[15,'15'],[30,'30'],[50,'50']])}${settingsSelect('分页方式', 'homePaginationMode', state.preferences.homePaginationMode, [['INFINITE','无限滚动'],['PAGED','网页式分页']])}${settingsSelect('手机列数', 'homeColumns', state.preferences.homeColumns, [[1,'1 列'],[2,'2 列'],[3,'3 列'],[4,'4 列']])}<label class="settings-switch"><span><strong>首页浮动搜索</strong><small>显示浮动搜索按钮</small></span><input type="checkbox" data-setting-toggle="homeSearchFab" ${state.preferences.homeSearchFab ? 'checked' : ''}></label><label class="settings-switch"><span><strong>多选类型与分级</strong><small>筛选器允许同时选择多个选项</small></span><input type="checkbox" data-setting-toggle="homeFilterMultiSelect" ${state.preferences.homeFilterMultiSelect ? 'checked' : ''}></label>${settingsSelect('默认卡片操作', 'homeCardAction', state.preferences.homeCardAction, [['DOWNLOAD','下载'],['PLAY','播放'],['STEAM','Steam']])}</section><md-dialog id="custom-accent-dialog" aria-label="自定义调色板"><div slot="headline">自定义调色板</div><div slot="content" class="custom-accent-editor"><div id="custom-accent-preview" style="background:${escapeHtml(state.preferences.customAccentColor)}"></div><label>自定义颜色<input id="custom-accent-color" type="color" value="${escapeHtml(state.preferences.customAccentColor)}"></label><div class="hue-presets" aria-label="色相预设">${['#A33B4E','#B44B28','#9A6500','#6F7300','#356A3F','#006B5E','#006590','#385CA8','#5B5FB5','#76518D','#92506F','#9E4057'].map((color) => `<button type="button" data-custom-accent="${color}" aria-label="选择 ${color}" style="background:${color}"></button>`).join('')}</div></div><div slot="actions"><md-text-button id="cancel-custom-accent">取消</md-text-button><md-filled-button id="apply-custom-accent">应用</md-filled-button></div></md-dialog>`;
   } else if (slug === 'downloads') {
     body = `<section class="settings-group"><div class="settings-row"><span><strong>输出目录</strong><small>${escapeHtml(state.preferences.outputDirectory)}</small></span></div><label class="settings-switch"><span><strong>增强访问</strong><small>改进 Steam 下载连接</small></span><input type="checkbox" data-setting-toggle="enhancedAccess" ${state.preferences.enhancedAccess ? 'checked' : ''}></label></section>`;
   } else {
@@ -602,9 +632,8 @@ function renderPlaceholder() {
 function bindSharedControls() {
   document.querySelector('#dialog-button')?.addEventListener('click', () => dialog.show());
   document.querySelector('#theme-toggle')?.addEventListener('click', () => {
-    theme = theme === 'dark' ? 'light' : 'dark';
-    storage.set(themeKey, theme);
-    document.documentElement.dataset.theme = theme;
+    backend.setSetting('themePreference', theme === 'dark' ? 'LIGHT' : 'DARK');
+    applyAppearance();
     renderApp();
     requestAnimationFrame(() => document.querySelector('#theme-toggle')?.focus());
   });
@@ -645,7 +674,26 @@ function bindSharedControls() {
   document.querySelectorAll('[data-view-mode]').forEach((button) => button.addEventListener('click', () => backend.setViewMode(button.dataset.viewMode)));
   document.querySelectorAll('[data-open-workshop]').forEach((button) => button.addEventListener('click', () => navigate(`/workshop/${button.dataset.openWorkshop}`)));
   document.querySelectorAll('[data-settings-category]').forEach((button) => button.addEventListener('click', () => { settingsReturnFocus = button.dataset.settingsCategory; navigate(`/settings/${button.dataset.settingsCategory}`); }));
-  document.querySelectorAll('[data-setting-toggle]').forEach((control) => control.addEventListener('change', () => backend.toggleSetting(control.dataset.settingToggle)));
+  document.querySelectorAll('[data-setting-toggle]').forEach((control) => control.addEventListener('change', () => { backend.toggleSetting(control.dataset.settingToggle); if (control.dataset.settingToggle === 'useSystemMonet') applyAppearance(); }));
+  document.querySelectorAll('[data-setting-select]').forEach((control) => control.addEventListener('change', () => {
+    const key = control.dataset.settingSelect;
+    const numericKeys = new Set(['homePageSize', 'homeColumns']);
+    if (key === 'accent' && control.value === 'CUSTOM') { document.querySelector('#custom-accent-dialog')?.show(); return; }
+    if (key === 'accent') backend.setAccent(control.value);
+    else backend.setSetting(key, numericKeys.has(key) ? Number(control.value) : control.value);
+    if (['themePreference', 'accent'].includes(key)) applyAppearance();
+  }));
+  const languageDialog = document.querySelector('#language-dialog');
+  document.querySelector('#open-language')?.addEventListener('click', () => languageDialog?.show());
+  document.querySelector('#cancel-language')?.addEventListener('click', () => languageDialog?.close());
+  document.querySelectorAll('[name="language"]').forEach((control) => control.addEventListener('change', () => { languageDialog?.close(); backend.setSetting('language', control.value); requestAnimationFrame(() => document.querySelector('#open-language')?.focus()); }));
+  document.querySelector('#export-diagnostics')?.addEventListener('click', () => { backend.exportDiagnostics(); requestAnimationFrame(() => document.querySelector('#export-diagnostics')?.focus()); });
+  const customAccentDialog = document.querySelector('#custom-accent-dialog');
+  const updateAccentPreview = (color) => { const input = document.querySelector('#custom-accent-color'); const preview = document.querySelector('#custom-accent-preview'); if (input) input.value = color; if (preview) preview.style.background = color; };
+  document.querySelector('#custom-accent-color')?.addEventListener('input', (event) => updateAccentPreview(event.target.value));
+  document.querySelectorAll('[data-custom-accent]').forEach((button) => button.addEventListener('click', () => updateAccentPreview(button.dataset.customAccent)));
+  document.querySelector('#cancel-custom-accent')?.addEventListener('click', () => { customAccentDialog?.close(); const accent = document.querySelector('[data-setting-select="accent"]'); if (accent) accent.value = backend.snapshot().settings.accent; });
+  document.querySelector('#apply-custom-accent')?.addEventListener('click', () => { const color = document.querySelector('#custom-accent-color')?.value.toUpperCase(); backend.setAccent('CUSTOM', color); applyAppearance(); customAccentDialog?.close(); requestAnimationFrame(() => document.querySelector('[data-setting-select="accent"]')?.focus()); });
   const completeSteamTransition = (message, focusSelector = '#steam-account-status') => requestAnimationFrame(() => {
     document.querySelector(focusSelector)?.focus();
     const status = document.querySelector('#settings-status'); if (status) status.textContent = message;
@@ -666,7 +714,7 @@ function bindSharedControls() {
     const url = new URL(location.href); url.searchParams.delete('scenario'); history.replaceState(history.state, '', url); backend.setScenario('content'); backend.setProfileSession('signed-in'); completeSteamTransition('Steam 会话已恢复', '#steam-logout');
   });
   document.querySelector('#settings-theme-toggle')?.addEventListener('click', () => document.querySelector('#theme-toggle')?.click());
-  document.querySelector('#notifications-setting')?.addEventListener('click', () => { const status = document.querySelector('#settings-status'); if (status) status.textContent = '通知设置已打开'; });
+  document.querySelector('#notifications-setting')?.addEventListener('click', () => { backend.toggleSetting('notificationsGranted'); requestAnimationFrame(() => { document.querySelector('#notifications-setting')?.focus(); const status = document.querySelector('#settings-status'); if (status) status.textContent = '通知权限状态已更新'; }); });
   document.querySelector('#check-updates')?.addEventListener('click', () => { const status = document.querySelector('#settings-status'); if (status) status.textContent = '当前已是最新版本'; });
   const setLocalActionStatus = (message) => { const status = document.querySelector('#local-status'); if (status) status.textContent = message; };
   document.querySelector('#local-open-native')?.addEventListener('click', () => setLocalActionStatus('已请求打开本地壁纸'));
@@ -1206,6 +1254,6 @@ backend.subscribe(() => {
   renderApp();
   if (focusSelector) requestAnimationFrame(() => document.querySelector(focusSelector)?.focus());
 });
-document.documentElement.dataset.theme = theme;
+applyAppearance();
 applyWindowSizeClass();
 renderApp();

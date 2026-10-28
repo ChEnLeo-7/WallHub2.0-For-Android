@@ -135,10 +135,21 @@ test('settings and Steam session states persist deterministically', () => {
   backend.toggleSetting('matureContent');
   backend.setProfileSession('signed-out');
   const restored = new FakeBackend(storage);
-  assert.deepEqual(restored.settingsState(), {
-    preferences: {matureContent: true, enhancedAccess: false, outputDirectory: 'WallHub Downloads'},
-    steamPhase: 'signed-out',
-  });
+  assert.equal(restored.settingsState().preferences.matureContent, true);
+  assert.equal(restored.settingsState().preferences.enhancedAccess, false);
+  assert.equal(restored.settingsState().preferences.language, 'SYSTEM');
+  assert.equal(restored.settingsState().preferences.useSystemMonet, true);
+  restored.setSetting('language', 'ENGLISH');
+  restored.setSetting('homePageSize', 50);
+  restored.toggleSetting('homeFilterMultiSelect');
+  restored.exportDiagnostics();
+  restored.setAccent('CUSTOM', '#123456');
+  assert.equal(new FakeBackend(storage).settingsState().preferences.language, 'ENGLISH');
+  assert.equal(new FakeBackend(storage).settingsState().preferences.homePageSize, 50);
+  assert.equal(new FakeBackend(storage).settingsState().preferences.homeFilterMultiSelect, false);
+  assert.equal(new FakeBackend(storage).settingsState().preferences.diagnosticMessage, '诊断日志已导出');
+  assert.equal(new FakeBackend(storage).settingsState().preferences.customAccentColor, '#123456');
+  assert.equal(new FakeBackend(storage).settingsState().preferences.useSystemMonet, false);
   restored.submitSteamCredentials('fixture-user', 'not-persisted-secret');
   assert.equal(restored.settingsState().steamPhase, 'device-confirmation');
   assert.equal(JSON.stringify(restored.snapshot()).includes('not-persisted-secret'), false);

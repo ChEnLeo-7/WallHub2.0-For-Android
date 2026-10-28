@@ -50,7 +50,7 @@ function defaultState() {
     detailDownloadPreset: 'HIGH_QUALITY',
     detailPreserveAudio: false,
     userComments: [],
-    settings: {matureContent: false, enhancedAccess: true, outputDirectory: 'WallHub Downloads'},
+    settings: {matureContent: false, enhancedAccess: true, outputDirectory: 'WallHub Downloads', language: 'SYSTEM', notificationsGranted: false, diagnosticMessage: '', themePreference: 'SYSTEM', useSystemMonet: true, themedLauncherIcon: true, accent: 'DEFAULT', customAccentColor: '#5B7AA0', homePageSize: 30, homePaginationMode: 'INFINITE', homeColumns: 2, homeSearchFab: true, homeFilterMultiSelect: true, homeCardAction: 'DOWNLOAD'},
     downloads: [],
   };
 }
@@ -128,6 +128,20 @@ function normalizedState(candidate) {
       matureContent: candidate.settings?.matureContent === true,
       enhancedAccess: candidate.settings?.enhancedAccess !== false,
       outputDirectory: typeof candidate.settings?.outputDirectory === 'string' ? candidate.settings.outputDirectory.slice(0, 100) : fallback.settings.outputDirectory,
+      language: ['SYSTEM', 'SIMPLIFIED_CHINESE', 'ENGLISH'].includes(candidate.settings?.language) ? candidate.settings.language : fallback.settings.language,
+      notificationsGranted: candidate.settings?.notificationsGranted === true,
+      diagnosticMessage: typeof candidate.settings?.diagnosticMessage === 'string' ? candidate.settings.diagnosticMessage.slice(0, 120) : '',
+      themePreference: ['SYSTEM', 'LIGHT', 'DARK'].includes(candidate.settings?.themePreference) ? candidate.settings.themePreference : fallback.settings.themePreference,
+      useSystemMonet: candidate.settings?.useSystemMonet !== false,
+      themedLauncherIcon: candidate.settings?.themedLauncherIcon !== false,
+      accent: ['DEFAULT', 'BLUE', 'GREEN', 'RED', 'PURPLE', 'CUSTOM'].includes(candidate.settings?.accent) ? candidate.settings.accent : fallback.settings.accent,
+      customAccentColor: /^#[0-9a-f]{6}$/iu.test(candidate.settings?.customAccentColor ?? '') ? candidate.settings.customAccentColor.toUpperCase() : fallback.settings.customAccentColor,
+      homePageSize: [10, 15, 30, 50].includes(candidate.settings?.homePageSize) ? candidate.settings.homePageSize : fallback.settings.homePageSize,
+      homePaginationMode: ['PAGED', 'INFINITE'].includes(candidate.settings?.homePaginationMode) ? candidate.settings.homePaginationMode : fallback.settings.homePaginationMode,
+      homeColumns: [1, 2, 3, 4].includes(candidate.settings?.homeColumns) ? candidate.settings.homeColumns : fallback.settings.homeColumns,
+      homeSearchFab: candidate.settings?.homeSearchFab !== false,
+      homeFilterMultiSelect: candidate.settings?.homeFilterMultiSelect === true,
+      homeCardAction: ['DOWNLOAD', 'PLAY', 'STEAM'].includes(candidate.settings?.homeCardAction) ? candidate.settings.homeCardAction : fallback.settings.homeCardAction,
     },
     downloads: normalizedDownloads,
   };
@@ -222,8 +236,23 @@ export class FakeBackend {
   }
 
   toggleSetting(key) {
-    if (!['matureContent', 'enhancedAccess'].includes(key)) return this.snapshot();
+    if (!['matureContent', 'enhancedAccess', 'notificationsGranted', 'useSystemMonet', 'themedLauncherIcon', 'homeSearchFab', 'homeFilterMultiSelect'].includes(key)) return this.snapshot();
     return this.update({settings: {...this.state.settings, [key]: !this.state.settings[key]}});
+  }
+
+  setSetting(key, value) {
+    const allowed = ['language', 'themePreference', 'accent', 'customAccentColor', 'homePageSize', 'homePaginationMode', 'homeColumns', 'homeCardAction'];
+    if (!allowed.includes(key)) return this.snapshot();
+    return this.update({settings: {...this.state.settings, [key]: value}});
+  }
+
+  exportDiagnostics() {
+    return this.update({settings: {...this.state.settings, diagnosticMessage: '诊断日志已导出'}});
+  }
+
+  setAccent(accent, customColor = this.state.settings.customAccentColor) {
+    if (!['DEFAULT', 'BLUE', 'GREEN', 'RED', 'PURPLE', 'CUSTOM'].includes(accent) || !/^#[0-9a-f]{6}$/iu.test(customColor)) return this.snapshot();
+    return this.update({settings: {...this.state.settings, accent, customAccentColor: customColor.toUpperCase(), useSystemMonet: false}});
   }
 
   setProfileSession(session) {

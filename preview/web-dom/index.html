@@ -8,9 +8,10 @@
   <title>WallHub Web Preview</title>
   <script>
     try {
-      if (localStorage.getItem('wallhub.preview.dom.theme') === 'light') {
-        document.documentElement.dataset.theme = 'light';
-      }
+      const persisted = JSON.parse(localStorage.getItem('wallhub.preview.fake-backend') || 'null');
+      const preference = persisted?.settings?.themePreference || 'SYSTEM';
+      const light = preference === 'LIGHT' || (preference === 'SYSTEM' && matchMedia('(prefers-color-scheme: light)').matches);
+      document.documentElement.dataset.theme = light ? 'light' : 'dark';
     } catch {}
     const width = Math.round(window.visualViewport?.width ?? window.innerWidth);
     document.documentElement.dataset.windowClass =
