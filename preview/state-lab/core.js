@@ -433,6 +433,7 @@ export class FakeBackend {
     return workshopFixtures.find((item) => item.id === String(id)) ?? null;
   }
 
+
   comments(id) {
     const workshopId = String(id);
     return Object.freeze([...(workshopComments[workshopId] ?? []), ...this.state.userComments.filter((comment) => comment.workshopId === workshopId)].map((comment) => Object.freeze({...comment})));

@@ -195,10 +195,32 @@ await new Promise((resolve) => setTimeout(resolve, 150));
 if (!(await evaluate(`location.pathname === '/workshop/3357929793' && Boolean(document.querySelector('.detail-overview')) && document.querySelector('.primary-nav').hidden`))) {
   throw new Error('Home card did not open deterministic Workshop Detail');
 }
+await evaluate(`{ const url = new URL(location.href); url.searchParams.set('lab', '1'); history.replaceState(history.state, '', url); dispatchEvent(new PopStateEvent('popstate')); true }`);
+await new Promise((resolve) => setTimeout(resolve, 100));
 await evaluate(`document.querySelector('.play-button').click(); true`);
-if (!(await evaluate(`document.querySelector('.play-button').getAttribute('aria-pressed') === 'true'`))) {
-  throw new Error('Detail video preview control did not toggle');
-}
+if (!(await evaluate(`document.querySelector('.video-state')?.textContent.includes('正在载入视频')`))) throw new Error('Detail video did not enter loading state');
+await new Promise((resolve) => setTimeout(resolve, 50));
+await evaluate(`document.querySelector('#lab-fail-video').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 20));
+if (!(await evaluate(`Boolean(document.querySelector('#retry-inline-video'))`))) throw new Error('State Lab did not expose deterministic video failure');
+await evaluate(`document.querySelector('#retry-inline-video').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 220));
+if (!(await evaluate(`document.querySelector('.video-state')?.textContent.includes('正在载入视频')`))) throw new Error('A stale video attempt completed the retry early');
+await new Promise((resolve) => setTimeout(resolve, 80));
+if (!(await evaluate(`Boolean(document.querySelector('#open-video-fullscreen'))`))) throw new Error('Detail video retry did not enter playing state');
+await evaluate(`document.querySelector('#open-video-fullscreen').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`Boolean(document.querySelector('.video-fullscreen')) && document.activeElement?.id === 'exit-video-fullscreen'`))) throw new Error('Detail video fullscreen did not open with focus');
+await call('Input.dispatchKeyEvent', {type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9});
+await call('Input.dispatchKeyEvent', {type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9});
+if (!(await evaluate(`document.activeElement?.id === 'exit-video-fullscreen'`))) throw new Error('Fullscreen video did not trap forward Tab focus');
+await call('Input.dispatchKeyEvent', {type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: 8});
+await call('Input.dispatchKeyEvent', {type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: 8});
+if (!(await evaluate(`document.activeElement?.id === 'exit-video-fullscreen'`))) throw new Error('Fullscreen video did not trap reverse Tab focus');
+await call('Input.dispatchKeyEvent', {type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27});
+await call('Input.dispatchKeyEvent', {type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27});
+await new Promise((resolve) => setTimeout(resolve, 300));
+if (!(await evaluate(`!document.querySelector('.video-fullscreen') && location.pathname === '/workshop/3357929793' && document.activeElement?.id === 'open-video-fullscreen'`))) throw new Error('Detail video fullscreen Escape did not restore detail focus');
 await evaluate(`document.querySelector('[data-detail-tab="comments"]').click(); true`);
 if (!(await evaluate(`location.search.includes('tab=comments') && document.querySelectorAll('.comment').length === 2 && document.activeElement?.dataset.detailTab === 'comments' && Boolean(document.querySelector('#comment-composer'))`))) throw new Error('Workshop Detail comments tab/composer did not render with restored focus');
 if (!(await evaluate(`(() => { const composer = document.querySelector('#comment-composer').getBoundingClientRect(); const actions = document.querySelector('.detail-actions').getBoundingClientRect(); return composer.bottom <= actions.top + 1 && composer.top < innerHeight; })()`))) throw new Error('Comment composer was not fixed above the Detail action bar');

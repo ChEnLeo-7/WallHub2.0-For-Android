@@ -316,8 +316,13 @@ md-outlined-text-field { width: min(100%, 560px); }
   border-radius: var(--wallhub-shape-medium); overflow: hidden;
   background: linear-gradient(135deg, var(--md-sys-color-primary-container), var(--md-sys-color-surface-container-high));
 }
+.detail-media-image { position: absolute; inset: 0; }
 .detail-media > span { position: absolute; left: var(--wallhub-space-2); top: var(--wallhub-space-2); padding: 4px 8px; border-radius: 999px; background: var(--md-sys-color-surface-container-high); font-size: 11px; font-weight: 700; }
-.play-button { width: 72px; height: 72px; border: 0; border-radius: 50%; color: var(--md-sys-color-on-primary); background: var(--md-sys-color-primary); font-size: 26px; cursor: pointer; }
+.play-button { position: relative; width: 72px; height: 72px; border: 0; border-radius: 50%; color: var(--md-sys-color-on-primary); background: var(--md-sys-color-primary); font-size: 26px; cursor: pointer; }
+.video-state { position: relative; padding: var(--wallhub-space-2); display: flex; align-items: center; gap: var(--wallhub-space-1); border-radius: var(--wallhub-shape-medium); background: color-mix(in srgb, var(--md-sys-color-surface) 88%, transparent); }
+.video-state button { min-width: 48px; min-height: 48px; border: 0; border-radius: 999px; color: var(--md-sys-color-on-primary); background: var(--md-sys-color-primary); }
+.video-fullscreen { position: fixed; z-index: 10; inset: 0; display: grid; place-items: center; color: white; background: #000; }
+.video-fullscreen #exit-video-fullscreen { position: absolute; top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); width: 48px; height: 48px; border: 0; border-radius: 50%; color: white; background: rgb(255 255 255 / .16); font-size: 28px; }
 .detail-tabs { margin-top: var(--wallhub-space-2); display: flex; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
 .detail-tabs button { min-width: 112px; min-height: 48px; border: 0; border-bottom: 3px solid transparent; color: var(--md-sys-color-on-surface-variant); background: transparent; cursor: pointer; }
 .detail-tabs button[aria-selected='true'] { border-color: var(--md-sys-color-primary); color: var(--md-sys-color-on-surface); font-weight: 700; }

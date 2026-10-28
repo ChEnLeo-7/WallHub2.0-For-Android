@@ -85,6 +85,20 @@ let localSearchTimer = null;
 let settingsReturnFocus = null;
 let pendingReconversion = null;
 let reconvertDismissed = false;
+let fullscreenVideoId = null;
+let inlineVideo = {id: null, state: 'idle', attempt: 0, timer: null};
+let renderedWorkshopId = null;
+
+function resetInlineVideo() {
+  if (inlineVideo.timer) clearTimeout(inlineVideo.timer);
+  inlineVideo = {id: null, state: 'idle', attempt: inlineVideo.attempt + 1, timer: null};
+  fullscreenVideoId = null;
+}
+
+function setInlineVideoState(id, state) {
+  inlineVideo = {...inlineVideo, id: String(id), state};
+  renderApp();
+}
 
 const escapeHtml = (value) => String(value)
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -157,6 +171,7 @@ function renderStateLab(snapshot) {
       <span>虚拟时间 ${new Date(snapshot.clockMs).toISOString().slice(0, 16).replace('T', ' ')}</span>
       <button type="button" id="advance-clock">+1 小时</button>
       ${snapshot.steamAuthPhase === 'device-confirmation' ? '<button type="button" id="lab-confirm-steam">模拟 Steam 后端批准</button>' : ''}
+      ${/^\/workshop\/\d+$/u.test(location.pathname) && inlineVideo.id === location.pathname.split('/').pop() && ['loading', 'playing'].includes(inlineVideo.state) ? '<button type="button" id="lab-fail-video">模拟视频失败</button>' : ''}
       <button type="button" id="reset-lab">重置</button>
     </aside>`;
 }
@@ -496,6 +511,8 @@ function renderDetail() {
   const comments = scenario === 'empty' ? [] : backend.comments(id);
   const favorite = snapshot.favorites.includes(id);
   const subscribed = snapshot.subscriptions.includes(id);
+  const videoState = item.type === 'VIDEO' && inlineVideo.id === id ? inlineVideo.state : 'idle';
+  const videoControl = videoState === 'loading' ? '<div class="video-state" role="status"><md-circular-progress indeterminate></md-circular-progress><span>正在载入视频…</span></div>' : videoState === 'failed' ? '<div class="video-state" role="alert"><span>视频载入失败</span><button type="button" id="retry-inline-video">重试</button></div>' : videoState === 'playing' ? '<div class="video-state is-playing"><span>正在播放预览</span><button type="button" id="open-video-fullscreen">全屏</button></div>' : '<button type="button" class="play-button" aria-label="播放预览">▶</button>';
   const commentComposer = snapshot.profileSession === 'signed-in'
     ? '<form class="comment-composer" id="comment-composer"><md-outlined-text-field id="comment-draft" label="发表评论" type="textarea" rows="3" maxlength="1000" aria-describedby="comment-limit"></md-outlined-text-field><span id="comment-limit">最多 1000 字符 · 0/1000</span><md-filled-button id="submit-comment" type="submit" disabled>发布</md-filled-button></form>'
     : snapshot.profileSession === 'restoring'
@@ -528,7 +545,7 @@ function renderDetail() {
     </header>
     ${isLabVisible() ? renderStateLab(snapshot) : ''}
     <article class="detail-page">
-      <div class="detail-media card-media-${item.accent}" role="img" aria-label="${escapeHtml(item.title)} 预览"><span>${item.type}</span>${item.type === 'VIDEO' ? '<button type="button" class="play-button" aria-label="播放预览" aria-pressed="false">▶</button>' : ''}</div>
+      <div class="detail-media card-media-${item.accent}"><div class="detail-media-image" role="img" aria-label="${escapeHtml(item.title)} 预览"></div><span>${item.type}</span>${item.type === 'VIDEO' ? videoControl : ''}</div>
       <div class="detail-tabs" role="tablist" aria-label="详情内容">
         <button type="button" role="tab" id="detail-tab-details" aria-controls="detail-tabpanel" tabindex="${tab === 'details' ? '0' : '-1'}" data-detail-tab="details" aria-selected="${tab === 'details'}">详情</button>
         <button type="button" role="tab" id="detail-tab-comments" aria-controls="detail-tabpanel" tabindex="${tab === 'comments' ? '0' : '-1'}" data-detail-tab="comments" aria-selected="${tab === 'comments'}">评论${comments.length ? ` · ${comments.length}` : ''}</button>
@@ -539,7 +556,10 @@ function renderDetail() {
       <button type="button" data-subscribe="${id}" aria-pressed="${subscribed}">${subscribed ? '已订阅' : '订阅'}</button>
       <button type="button" data-favorite="${id}" aria-pressed="${favorite}">${favorite ? '已收藏' : '收藏'}</button>
       <md-filled-button id="detail-download">下载</md-filled-button>
-    </div>`;
+    </div>${fullscreenVideoId === id && videoState === 'playing' ? `<div class="video-fullscreen" role="dialog" aria-modal="true" aria-label="${escapeHtml(item.title)} 全屏视频"><span>正在全屏播放 ${escapeHtml(item.title)}</span><button type="button" id="exit-video-fullscreen" aria-label="退出全屏">×</button></div>` : ''}`;
+  if (fullscreenVideoId === id && videoState === 'playing') {
+    document.querySelectorAll('#main-content > :not(.video-fullscreen)').forEach((element) => { element.inert = true; });
+  }
   document.title = `${item.title} · WallHub Web Preview`;
 }
 
@@ -572,6 +592,14 @@ function bindSharedControls() {
     backend.setScenario(event.target.value);
   });
   document.querySelector('#advance-clock')?.addEventListener('click', () => backend.advanceClock(3_600_000));
+  document.querySelector('#lab-fail-video')?.addEventListener('click', () => {
+    const id = location.pathname.match(/^\/workshop\/(\d+)$/u)?.[1];
+    if (id) {
+      if (inlineVideo.timer) clearTimeout(inlineVideo.timer);
+      inlineVideo = {id, state: 'failed', attempt: inlineVideo.attempt + 1, timer: null};
+      renderApp();
+    }
+  });
   document.querySelector('#lab-confirm-steam')?.addEventListener('click', () => {
     backend.approveSteamDeviceConfirmation();
     requestAnimationFrame(() => {
@@ -926,11 +954,25 @@ function bindSharedControls() {
     const id = location.pathname.split('/').pop();
     window.open(`https://steamcommunity.com/sharedfiles/filedetails/?id=${encodeURIComponent(id)}`, '_blank', 'noopener,noreferrer');
   });
-  document.querySelector('.play-button')?.addEventListener('click', (event) => {
-    const playing = event.currentTarget.getAttribute('aria-pressed') === 'true';
-    event.currentTarget.setAttribute('aria-pressed', String(!playing));
-    event.currentTarget.textContent = playing ? '▶' : '❚❚';
+  const startInlineVideo = () => {
+    const id = location.pathname.match(/^\/workshop\/(\d+)$/u)?.[1];
+    if (!id) return;
+    if (inlineVideo.timer) clearTimeout(inlineVideo.timer);
+    const attempt = inlineVideo.attempt + 1;
+    inlineVideo = {id, state: 'loading', attempt, timer: null};
+    renderApp();
+    inlineVideo.timer = setTimeout(() => {
+      if (inlineVideo.id === id && inlineVideo.state === 'loading' && inlineVideo.attempt === attempt) setInlineVideoState(id, 'playing');
+    }, 250);
+  };
+  document.querySelector('.play-button')?.addEventListener('click', startInlineVideo);
+  document.querySelector('#retry-inline-video')?.addEventListener('click', startInlineVideo);
+  document.querySelector('#open-video-fullscreen')?.addEventListener('click', () => {
+    fullscreenVideoId = location.pathname.match(/^\/workshop\/(\d+)$/u)?.[1] ?? null;
+    history.pushState({...history.state, modal: 'video-fullscreen'}, '', location.href);
+    renderApp(); requestAnimationFrame(() => document.querySelector('#exit-video-fullscreen')?.focus());
   });
+  document.querySelector('#exit-video-fullscreen')?.addEventListener('click', () => history.back());
   document.querySelector('#detail-download')?.addEventListener('click', () => downloadDialog.show());
   document.querySelector('#close-download').onclick = () => downloadDialog.close();
   document.querySelectorAll('[data-download-format]').forEach((button) => button.onclick = () => {
@@ -964,6 +1006,9 @@ function bindSharedControls() {
 }
 
 function renderApp() {
+  const nextWorkshopId = location.pathname.match(/^\/workshop\/(\d+)$/u)?.[1] ?? null;
+  if (renderedWorkshopId && renderedWorkshopId !== nextWorkshopId) resetInlineVideo();
+  renderedWorkshopId = nextWorkshopId;
   const scenario = requestedScenario();
   if (scenario && backend.snapshot().scenario !== scenario) {
     backend.setScenario(scenario);
@@ -998,7 +1043,22 @@ nav.addEventListener('click', (event) => {
   const button = event.target.closest('[data-route]');
   if (button) navigate(button.dataset.route);
 });
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Tab' && fullscreenVideoId) {
+    event.preventDefault();
+    document.querySelector('#exit-video-fullscreen')?.focus();
+  } else if (event.key === 'Escape' && fullscreenVideoId) {
+    event.preventDefault();
+    history.back();
+  }
+});
 window.addEventListener('popstate', () => {
+  if (fullscreenVideoId) {
+    fullscreenVideoId = null;
+    renderApp();
+    requestAnimationFrame(() => document.querySelector('#open-video-fullscreen')?.focus());
+    return;
+  }
   const reconvertDialog = document.querySelector('#reconvert-dialog');
   if (reconvertDialog?.open || reconvertDismissed) {
     if (reconvertDialog?.open) reconvertDialog.close();
