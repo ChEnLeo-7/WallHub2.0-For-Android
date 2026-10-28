@@ -45,6 +45,7 @@ function defaultState() {
     profileSession: 'signed-in',
     steamAuthPhase: 'idle',
     profileCounts: {subscriptions: 42, favorites: 18},
+    userComments: [],
     settings: {matureContent: false, enhancedAccess: true, outputDirectory: 'WallHub Downloads'},
     downloads: [],
   };
@@ -116,6 +117,7 @@ function normalizedState(candidate) {
     profileSession,
     steamAuthPhase: ['idle', 'device-confirmation', 'waiting-code'].includes(candidate.steamAuthPhase) ? candidate.steamAuthPhase : fallback.steamAuthPhase,
     profileCounts,
+    userComments: Array.isArray(candidate.userComments) ? candidate.userComments.filter((comment) => comment && /^[a-z0-9-]{1,80}$/u.test(comment.id) && /^\d+$/u.test(comment.workshopId) && typeof comment.text === 'string' && Number.isSafeInteger(comment.timestamp)).slice(-100).map((comment) => ({id: comment.id, workshopId: comment.workshopId.slice(0, 32), author: 'Astra', text: comment.text.slice(0, 1000), timestamp: comment.timestamp, isCreator: false})) : [],
     settings: {
       matureContent: candidate.settings?.matureContent === true,
       enhancedAccess: candidate.settings?.enhancedAccess !== false,
@@ -148,14 +150,19 @@ export class FakeBackend {
   }
 
   update(patch) {
-    this.state = normalizedState({...this.state, ...patch});
-    this.persist();
+    const next = normalizedState({...this.state, ...patch});
+    try {
+      this.storage.set(FAKE_BACKEND_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      return this.snapshot();
+    }
+    this.state = next;
     this.listeners.forEach((listener) => listener(this.snapshot()));
     return this.snapshot();
   }
 
   persist() {
-    this.storage.set(FAKE_BACKEND_STORAGE_KEY, JSON.stringify(this.state));
+    try { this.storage.set(FAKE_BACKEND_STORAGE_KEY, JSON.stringify(this.state)); } catch { /* Keep normalized in-memory state. */ }
   }
 
   reset() {
@@ -427,7 +434,19 @@ export class FakeBackend {
   }
 
   comments(id) {
-    return workshopComments[String(id)] ?? [];
+    const workshopId = String(id);
+    return Object.freeze([...(workshopComments[workshopId] ?? []), ...this.state.userComments.filter((comment) => comment.workshopId === workshopId)].map((comment) => Object.freeze({...comment})));
+  }
+
+  postComment(id, text) {
+    const workshopId = String(id);
+    const value = String(text).trim().slice(0, 1000);
+    if (this.state.profileSession !== 'signed-in' || !this.workshop(workshopId) || !value) return {ok: false, state: this.snapshot()};
+    let suffix = 1;
+    while (this.state.userComments.some((comment) => comment.id === `comment-${this.state.clockMs}-${suffix}`)) suffix += 1;
+    const idValue = `comment-${this.state.clockMs}-${suffix}`;
+    const state = this.update({userComments: [...this.state.userComments, {id: idValue, workshopId, author: 'Astra', text: value, timestamp: this.state.clockMs, isCreator: false}]});
+    return {ok: state.userComments.some((comment) => comment.id === idValue), state};
   }
 
   toggleFavorite(id) {

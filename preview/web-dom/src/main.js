@@ -496,9 +496,15 @@ function renderDetail() {
   const comments = scenario === 'empty' ? [] : backend.comments(id);
   const favorite = snapshot.favorites.includes(id);
   const subscribed = snapshot.subscriptions.includes(id);
+  const commentComposer = snapshot.profileSession === 'signed-in'
+    ? '<form class="comment-composer" id="comment-composer"><md-outlined-text-field id="comment-draft" label="发表评论" type="textarea" rows="3" maxlength="1000" aria-describedby="comment-limit"></md-outlined-text-field><span id="comment-limit">最多 1000 字符 · 0/1000</span><md-filled-button id="submit-comment" type="submit" disabled>发布</md-filled-button></form>'
+    : snapshot.profileSession === 'restoring'
+      ? '<div class="comment-auth" role="status"><md-circular-progress indeterminate></md-circular-progress><span>正在恢复 Steam 会话…</span></div>'
+      : '<div class="comment-auth"><span>登录 Steam 后发表评论</span><md-filled-button id="comment-login">登录</md-filled-button></div>';
   const tabContent = tab === 'comments' ? `
     <section class="comment-list" id="detail-tabpanel" role="tabpanel" aria-labelledby="detail-tab-comments" tabindex="0">
       ${comments.length ? comments.map((comment) => `<article class="comment"><div class="avatar" aria-hidden="true">${escapeHtml(comment.author.slice(0, 1))}</div><div><h3>${escapeHtml(comment.author)} ${comment.isCreator ? '<span>作者</span>' : ''}</h3><p class="comment-time">${relativeTime(comment.timestamp, snapshot.clockMs)}</p><p>${escapeHtml(comment.text)}</p></div></article>`).join('') : '<div class="center-state"><h2>暂无评论</h2></div>'}
+      ${commentComposer}<p id="comment-status" class="sr-only" aria-live="polite"></p>
     </section>` : `
     <section class="detail-overview" id="detail-tabpanel" role="tabpanel" aria-labelledby="detail-tab-details" tabindex="0">
       <div class="description"><h2>描述</h2><p>${escapeHtml(item.description || '未提供描述')}</p></div>
@@ -866,6 +872,23 @@ function bindSharedControls() {
       main.focus();
     }
   });
+  const commentDraft = document.querySelector('#comment-draft');
+  commentDraft?.addEventListener('input', () => {
+    if (commentDraft.value.length > 1000) commentDraft.value = commentDraft.value.slice(0, 1000);
+    const submit = document.querySelector('#submit-comment'); if (submit) submit.disabled = !commentDraft.value.trim();
+    const limit = document.querySelector('#comment-limit'); if (limit) limit.textContent = `最多 1000 字符 · ${commentDraft.value.length}/1000`;
+  });
+  document.querySelector('#comment-composer')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const text = commentDraft?.value;
+    if (!text?.trim()) return;
+    const result = backend.postComment(location.pathname.match(/^\/workshop\/(\d+)$/u)?.[1], text);
+    requestAnimationFrame(() => {
+      document.querySelector('#comment-draft')?.focus();
+      const status = document.querySelector('#comment-status'); if (status) status.textContent = result.ok ? '评论已发布' : '评论未能保存，请重试';
+    });
+  });
+  document.querySelector('#comment-login')?.addEventListener('click', () => navigate('/settings/steam'));
   document.querySelector('#retry-detail')?.addEventListener('click', () => {
     const url = new URL(location.href);
     url.searchParams.delete('scenario');

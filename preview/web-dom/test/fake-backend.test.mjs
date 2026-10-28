@@ -295,10 +295,28 @@ test('discover rails and feedback remain deterministic', () => {
 });
 
 test('detail comments remain deterministic and immutable', () => {
-  const backend = new FakeBackend(memoryStorage());
+  const commentStorage = memoryStorage();
+  const backend = new FakeBackend(commentStorage);
   assert.equal(backend.comments('3357929793').length, 2);
   assert.throws(() => backend.comments('3357929793').push({}));
   assert.deepEqual(backend.comments('unknown'), []);
+  backend.postComment('3357929793', '  确定性的用户评论  ');
+  assert.equal(backend.comments('3357929793').at(-1).text, '确定性的用户评论');
+  assert.equal(new FakeBackend(commentStorage).comments('3357929793').length, 3);
+  const storage = memoryStorage();
+  const signedOut = new FakeBackend(storage);
+  signedOut.setProfileSession('signed-out');
+  signedOut.postComment('3357929793', '不应发布');
+  assert.equal(new FakeBackend(storage).comments('3357929793').length, 2);
+  for (let index = 0; index < 105; index += 1) backend.postComment('3357929793', `评论 ${index}`);
+  assert.equal(backend.snapshot().userComments.length, 100);
+  const quotaStorage = memoryStorage();
+  const quotaBackend = new FakeBackend(quotaStorage);
+  const beforeQuotaFailure = quotaBackend.snapshot();
+  quotaStorage.set = () => { throw new Error('QuotaExceededError'); };
+  const quotaResult = quotaBackend.postComment('3357929793', '不能持久化');
+  assert.equal(quotaResult.ok, false);
+  assert.deepEqual(quotaBackend.snapshot(), beforeQuotaFailure);
 });
 
 test('search and mutations remain deterministic across reloads', () => {

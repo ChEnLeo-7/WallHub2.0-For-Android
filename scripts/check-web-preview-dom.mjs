@@ -200,9 +200,22 @@ if (!(await evaluate(`document.querySelector('.play-button').getAttribute('aria-
   throw new Error('Detail video preview control did not toggle');
 }
 await evaluate(`document.querySelector('[data-detail-tab="comments"]').click(); true`);
-if (!(await evaluate(`location.search.includes('tab=comments') && document.querySelectorAll('.comment').length === 2 && document.activeElement?.dataset.detailTab === 'comments'`))) {
-  throw new Error('Workshop Detail comments tab did not render with restored focus');
+if (!(await evaluate(`location.search.includes('tab=comments') && document.querySelectorAll('.comment').length === 2 && document.activeElement?.dataset.detailTab === 'comments' && Boolean(document.querySelector('#comment-composer'))`))) throw new Error('Workshop Detail comments tab/composer did not render with restored focus');
+if (!(await evaluate(`(() => { const composer = document.querySelector('#comment-composer').getBoundingClientRect(); const actions = document.querySelector('.detail-actions').getBoundingClientRect(); return composer.bottom <= actions.top + 1 && composer.top < innerHeight; })()`))) throw new Error('Comment composer was not fixed above the Detail action bar');
+for (const width of [320, 840]) {
+  await call('Emulation.setDeviceMetricsOverride', {width, height: 900, screenWidth: width, screenHeight: 900, deviceScaleFactor: 1, mobile: true});
+  await evaluate(`dispatchEvent(new Event('resize')); true`);
+  const geometry = await evaluate(`(() => { const rect = document.querySelector('#comment-composer').getBoundingClientRect(); return {left: Math.round(rect.left), right: Math.round(rect.right), width: innerWidth}; })()`);
+  if (geometry.left !== 0 || Math.abs(geometry.right - geometry.width) > 1) throw new Error(`${width}px comment composer horizontal alignment failed: ${JSON.stringify(geometry)}`);
 }
+await call('Emulation.clearDeviceMetricsOverride');
+await evaluate(`dispatchEvent(new Event('resize')); true`);
+await evaluate(`document.querySelector('#comment-draft').value = '字'.repeat(1001); document.querySelector('#comment-draft').dispatchEvent(new InputEvent('input', {bubbles: true, composed: true})); true`);
+if (!(await evaluate(`document.querySelector('#comment-draft').value.length === 1000 && document.querySelector('#comment-limit').textContent.includes('1000/1000')`))) throw new Error('Comment draft did not enforce and expose 1000-character limit');
+await evaluate(`document.querySelector('#comment-draft').value = '来自 Web 镜像的确定性评论'; document.querySelector('#comment-draft').dispatchEvent(new InputEvent('input', {bubbles: true, composed: true})); document.querySelector('#comment-composer').requestSubmit(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`document.querySelectorAll('.comment').length === 3 && document.querySelector('.comment:last-of-type').textContent.includes('来自 Web 镜像的确定性评论') && document.activeElement?.id === 'comment-draft' && document.querySelector('#comment-status').textContent === '评论已发布'`))) throw new Error('Workshop comment submission did not persist focus and announce');
+await evaluate(`document.querySelector('[data-detail-tab="comments"]').focus(); true`);
 await call('Input.dispatchKeyEvent', {type: 'keyDown', key: 'ArrowLeft', code: 'ArrowLeft', windowsVirtualKeyCode: 37});
 await call('Input.dispatchKeyEvent', {type: 'keyUp', key: 'ArrowLeft', code: 'ArrowLeft', windowsVirtualKeyCode: 37});
 await new Promise((resolve) => setTimeout(resolve, 100));
