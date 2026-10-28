@@ -13,6 +13,8 @@ FILES = (
     Path("preview/web-dom/package.json"),
     Path("preview/web-dom/package-lock.json"),
     Path("preview/web-dom/src/contract.css"),
+    Path("preview/state-lab/core.js"),
+    Path("preview/state-lab/fixtures-v1.js"),
     Path("preview/web-dom/src/main.js"),
     Path("preview/web-dom/src/styles.css"),
     Path("shared/ui-contract/wallhub-current.json"),

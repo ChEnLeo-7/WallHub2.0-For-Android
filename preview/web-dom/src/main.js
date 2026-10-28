@@ -2,57 +2,32 @@ import '@material/web/button/filled-button.js';
 import '@material/web/button/outlined-button.js';
 import '@material/web/button/text-button.js';
 import '@material/web/dialog/dialog.js';
+import '@material/web/progress/circular-progress.js';
 import '@material/web/textfield/outlined-text-field.js';
 import './contract.css';
 import './styles.css';
 import contract from '../../../shared/ui-contract/wallhub-current.json';
+import {FakeBackend, stateLabScenarios} from '../../state-lab/core.js';
 
 const iconPaths = {
-  home: 'M12 3 2 12h3v8h6v-6h2v6h6v-8L12 3Zm5 15h-2v-6H9v6H7v-7.1l5-4.5 5 4.5V18Z',
+  home: 'M12 3 2 12h3v8h6v-6h2v6h6v-8L12 3Zm5 15h-2v-6H9v6h-2v-7.1l5-4.5 5 4.5V18Z',
   explore: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm2.19 12.19L6 18l3.81-8.19L18 6l-3.81 8.19ZM12 10.9a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Z',
-  person: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4Zm0-6a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm0 8c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Zm-5.33 4c.73-1.02 3.32-2 5.33-2 2.02 0 4.61.99 5.34 2H6.67Z',
+  person: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4 1.79-4 4 1.79 4 4 4Zm0-6a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm0 8c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Zm-5.33 4c.73-1.02 3.32-2 5.33-2 2.02 0 4.61.99 5.34 2H6.67Z',
 };
-const destinations = contract.destinations.map((destination) => ({
-  ...destination,
-  iconPath: iconPaths[destination.icon],
-}));
-const clickKey = 'wallhub.preview.dom.clicks';
+const destinations = contract.destinations.map((destination) => ({...destination, iconPath: iconPaths[destination.icon]}));
 const themeKey = 'wallhub.preview.dom.theme';
 const storage = {
-  get(key) {
-    try { return localStorage.getItem(key); } catch { return null; }
-  },
-  set(key, value) {
-    try { localStorage.setItem(key, value); } catch { /* Persistence is optional. */ }
-  },
+  get(key) { try { return localStorage.getItem(key); } catch { return null; } },
+  set(key, value) { try { localStorage.setItem(key, value); } catch { /* Persistence is optional. */ } },
 };
-let clicks = Number.parseInt(storage.get(clickKey) ?? '0', 10) || 0;
+const backend = new FakeBackend(storage);
 let theme = storage.get(themeKey) === 'light' ? 'light' : 'dark';
 
 const app = document.querySelector('#app');
 app.innerHTML = `
   <div class="app-shell">
     <nav class="primary-nav" aria-label="主导航"></nav>
-    <main id="main-content" tabindex="-1">
-      <header class="top-bar">
-        <div>
-          <div class="eyebrow">CURRENT UI · DOM ACCESSIBILITY PROBE</div>
-          <h1>WallHub</h1>
-        </div>
-        <md-outlined-button id="theme-toggle">切换外观</md-outlined-button>
-      </header>
-      <section class="content" aria-labelledby="page-title">
-        <h2 id="page-title"></h2>
-        <p class="supporting">共享 WallHub 令牌 + Material Web 2.5.0 原生 DOM 渲染层</p>
-        <md-outlined-text-field id="search" label="搜索创意工坊"></md-outlined-text-field>
-        <div class="actions">
-          <md-filled-button id="state-button"></md-filled-button>
-          <md-filled-button id="dialog-button">打开焦点对话框</md-filled-button>
-        </div>
-        <p id="route-status" aria-live="polite"></p>
-        <p>减少动态效果：${matchMedia('(prefers-reduced-motion: reduce)').matches ? '开启' : '关闭'}</p>
-      </section>
-    </main>
+    <main id="main-content" tabindex="-1"></main>
   </div>
   <md-dialog id="focus-dialog" aria-label="焦点与对话框验证">
     <div slot="headline">焦点与对话框验证</div>
@@ -64,23 +39,65 @@ app.innerHTML = `
       <md-text-button form="dialog-form" value="confirm">确认</md-text-button>
     </div>
   </md-dialog>
+  <md-dialog id="filter-dialog" aria-label="筛选创意工坊">
+    <div slot="headline">筛选</div>
+    <form slot="content" id="filter-form" method="dialog" class="filter-form">
+      <label>排序
+        <select id="filter-sort">
+          <option value="TRENDING">热门趋势</option>
+          <option value="MOST_SUBSCRIBED">最多订阅</option>
+        </select>
+      </label>
+      <label>类型
+        <select id="filter-type">
+          <option value="ALL">全部类型</option>
+          <option value="SCENE">场景</option>
+          <option value="VIDEO">视频</option>
+        </select>
+      </label>
+      <label class="checkbox-row"><input id="filter-exact" type="checkbox"> 精确短语</label>
+    </form>
+    <div slot="actions">
+      <md-text-button id="reset-filters">重置</md-text-button>
+      <md-text-button form="filter-form" value="cancel">取消</md-text-button>
+      <md-filled-button id="apply-filters">应用</md-filled-button>
+    </div>
+  </md-dialog>
 `;
-
 const nav = document.querySelector('.primary-nav');
-const pageTitle = document.querySelector('#page-title');
-const routeStatus = document.querySelector('#route-status');
-const stateButton = document.querySelector('#state-button');
-const dialogButton = document.querySelector('#dialog-button');
+const main = document.querySelector('#main-content');
 const dialog = document.querySelector('#focus-dialog');
-const themeToggle = document.querySelector('#theme-toggle');
+const filterDialog = document.querySelector('#filter-dialog');
 
-function normalizedRoute() {
+const escapeHtml = (value) => String(value)
+  .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+const compactNumber = new Intl.NumberFormat('zh-CN', {notation: 'compact', maximumFractionDigits: 1});
+const formatBytes = (bytes) => `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+
+function isLabVisible() {
+  return new URLSearchParams(location.search).get('lab') === '1';
+}
+
+function requestedScenario() {
+  if (!isLabVisible()) return 'content';
+  const scenario = new URLSearchParams(location.search).get('scenario');
+  return stateLabScenarios.includes(scenario) ? scenario : null;
+}
+
+function currentTopRoute() {
+  if (location.pathname.startsWith('/workshop/')) return '/';
   return destinations.some((item) => item.route === location.pathname) ? location.pathname : '/';
 }
 
-function renderRoute() {
-  const route = normalizedRoute();
-  const selected = destinations.find((item) => item.route === route) ?? destinations[0];
+function navigate(destination) {
+  history.pushState({route: destination}, '', destination);
+  renderApp();
+  main.focus();
+}
+
+function renderNavigation() {
+  const route = currentTopRoute();
   nav.innerHTML = destinations.map((item) => `
     <button class="nav-item" type="button" data-route="${item.route}"
       aria-current="${item.route === route ? 'page' : 'false'}">
@@ -88,53 +105,190 @@ function renderRoute() {
       <span>${item.label}</span>
     </button>
   `).join('');
-  pageTitle.textContent = `${selected.label} · Current UI extraction shell`;
-  routeStatus.textContent = `当前路由：${location.pathname}`;
+}
+
+function shellHeader(title, subtitle = '') {
+  return `
+    <header class="top-bar">
+      <div class="title-block">
+        <div class="eyebrow">CURRENT UI · WEB MIRROR</div>
+        <h1>${escapeHtml(title)}</h1>
+        ${subtitle ? `<div class="page-summary">${escapeHtml(subtitle)}</div>` : ''}
+      </div>
+      <div class="toolbar-actions">
+        ${isLabVisible() ? '<md-outlined-button id="dialog-button">验证焦点</md-outlined-button>' : ''}
+        <md-outlined-button id="theme-toggle">${theme === 'dark' ? '浅色外观' : '深色外观'}</md-outlined-button>
+      </div>
+    </header>`;
+}
+
+function renderStateLab(snapshot) {
+  const labels = {content: '内容', loading: '初始加载', empty: '空结果', error: '加载失败'};
+  return `
+    <aside class="state-lab" aria-label="状态实验室">
+      <span class="state-lab-label">状态实验室</span>
+      <label>场景
+        <select id="scenario-select">
+          ${stateLabScenarios.map((scenario) => `<option value="${scenario}" ${snapshot.scenario === scenario ? 'selected' : ''}>${labels[scenario]}</option>`).join('')}
+        </select>
+      </label>
+      <span>虚拟时间 ${new Date(snapshot.clockMs).toISOString().slice(0, 16).replace('T', ' ')}</span>
+      <button type="button" id="advance-clock">+1 小时</button>
+      <button type="button" id="reset-lab">重置</button>
+    </aside>`;
+}
+
+function workshopCard(item, snapshot) {
+  const favorite = snapshot.favorites.includes(item.id);
+  return `
+    <article class="workshop-card" data-workshop-id="${item.id}">
+      <button class="card-open" type="button" data-open-workshop="${item.id}" aria-label="查看 ${escapeHtml(item.title)} 的详情">
+        <div class="card-media card-media-${item.accent}" role="img" aria-label="${escapeHtml(item.title)} 预览占位图">
+          <span>${escapeHtml(item.type)}</span>
+        </div>
+        <div class="card-copy">
+          <h2>${escapeHtml(item.title)}</h2>
+          <p class="card-author">${escapeHtml(item.author)}</p>
+          <div class="card-stats" aria-label="作品统计">
+            <span title="订阅">↓ ${compactNumber.format(item.subscriptions)}</span>
+            <span title="收藏">♥ ${compactNumber.format(item.favorites)}</span>
+            <span title="文件大小">${formatBytes(item.fileSizeBytes)}</span>
+          </div>
+        </div>
+      </button>
+      <div class="card-actions">
+        <md-text-button data-favorite="${item.id}">${favorite ? '已收藏' : '收藏'}</md-text-button>
+        <md-filled-button data-download="${item.id}">下载</md-filled-button>
+      </div>
+    </article>`;
+}
+
+function renderHome() {
+  const snapshot = backend.snapshot();
+  const result = backend.listWorkshops();
+  const total = result.items.length;
+  let results;
+  if (result.status === 'loading') {
+    results = `<div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress><p>正在载入创意工坊…</p></div>`;
+  } else if (result.status === 'error') {
+    results = `<div class="center-state" role="alert"><div class="state-icon">↻</div><h2>${escapeHtml(result.message)}</h2><md-filled-button id="retry-home">重试</md-filled-button></div>`;
+  } else if (result.status === 'empty') {
+    results = `<div class="center-state"><div class="state-icon">⌕</div><h2>没有匹配的壁纸</h2><md-filled-button id="retry-home">重新加载</md-filled-button></div>`;
+  } else {
+    results = `<div class="workshop-grid ${snapshot.viewMode === 'list' ? 'is-list' : ''}">${result.items.map((item) => workshopCard(item, snapshot)).join('')}</div>`;
+  }
+  main.innerHTML = `
+    ${shellHeader('WallHub', `steam-community · 已加载 ${total} / 42 个项目 · 第 1/2 页`)}
+    ${isLabVisible() ? renderStateLab(snapshot) : ''}
+    <section class="home-tools" aria-label="浏览工具">
+      <md-outlined-text-field id="search" label="搜索创意工坊" value="${escapeHtml(snapshot.query)}"></md-outlined-text-field>
+      <div class="view-toggle" role="group" aria-label="视图模式">
+        <button type="button" data-view-mode="grid" aria-pressed="${snapshot.viewMode === 'grid'}">网格</button>
+        <button type="button" data-view-mode="list" aria-pressed="${snapshot.viewMode === 'list'}">列表</button>
+      </div>
+      <md-outlined-button id="filter-button">筛选${snapshot.filters.type !== 'ALL' || snapshot.filters.sort !== 'TRENDING' || snapshot.filters.exactPhrase ? ' · 已启用' : ''}</md-outlined-button>
+    </section>
+    <section class="home-results" aria-label="创意工坊结果">${results}</section>`;
+  document.title = '首页 · WallHub Web Preview';
+}
+
+function renderPlaceholder() {
+  const selected = destinations.find((item) => item.route === currentTopRoute()) ?? destinations[0];
+  main.innerHTML = `${shellHeader(selected.label)}<section class="placeholder"><h2>${selected.label} · Current UI</h2><p>此页面将在后续垂直切片中接入确定性状态。</p></section>`;
   document.title = `${selected.label} · WallHub Web Preview`;
 }
 
-function renderClicks() {
-  stateButton.textContent = `真实状态切换 · ${clicks}`;
+function bindSharedControls() {
+  document.querySelector('#dialog-button')?.addEventListener('click', () => dialog.show());
+  document.querySelector('#theme-toggle')?.addEventListener('click', () => {
+    theme = theme === 'dark' ? 'light' : 'dark';
+    storage.set(themeKey, theme);
+    document.documentElement.dataset.theme = theme;
+    renderApp();
+    requestAnimationFrame(() => document.querySelector('#theme-toggle')?.focus());
+  });
+  document.querySelector('#scenario-select')?.addEventListener('change', (event) => {
+    const url = new URL(location.href);
+    url.searchParams.set('lab', '1');
+    url.searchParams.set('scenario', event.target.value);
+    history.replaceState(history.state, '', url);
+    backend.setScenario(event.target.value);
+  });
+  document.querySelector('#advance-clock')?.addEventListener('click', () => backend.advanceClock(3_600_000));
+  document.querySelector('#reset-lab')?.addEventListener('click', () => {
+    const url = new URL(location.href);
+    url.searchParams.delete('scenario');
+    history.replaceState(history.state, '', url);
+    backend.reset();
+  });
+  document.querySelector('#retry-home')?.addEventListener('click', () => backend.setScenario('content'));
+  document.querySelector('#search')?.addEventListener('change', (event) => backend.setQuery(event.target.value));
+  document.querySelector('#search')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') backend.setQuery(event.target.value);
+  });
+  document.querySelectorAll('[data-view-mode]').forEach((button) => button.addEventListener('click', () => backend.setViewMode(button.dataset.viewMode)));
+  document.querySelectorAll('[data-open-workshop]').forEach((button) => button.addEventListener('click', () => navigate(`/workshop/${button.dataset.openWorkshop}`)));
+  document.querySelectorAll('[data-favorite]').forEach((button) => button.addEventListener('click', () => backend.toggleFavorite(button.dataset.favorite)));
+  document.querySelectorAll('[data-download]').forEach((button) => button.addEventListener('click', () => backend.requestDownload(button.dataset.download)));
+  document.querySelector('#filter-button')?.addEventListener('click', () => {
+    const snapshot = backend.snapshot();
+    document.querySelector('#filter-sort').value = snapshot.filters.sort;
+    document.querySelector('#filter-type').value = snapshot.filters.type;
+    document.querySelector('#filter-exact').checked = snapshot.filters.exactPhrase;
+    filterDialog.show();
+  });
+  document.querySelector('#reset-filters').onclick = () => {
+    document.querySelector('#filter-sort').value = 'TRENDING';
+    document.querySelector('#filter-type').value = 'ALL';
+    document.querySelector('#filter-exact').checked = false;
+  };
+  document.querySelector('#apply-filters').onclick = () => {
+    const filters = {
+      sort: document.querySelector('#filter-sort').value,
+      type: document.querySelector('#filter-type').value,
+      exactPhrase: document.querySelector('#filter-exact').checked,
+    };
+    filterDialog.addEventListener('closed', () => document.querySelector('#filter-button')?.focus(), {once: true});
+    filterDialog.close();
+    backend.setFilters(filters);
+  };
 }
 
-function applyTheme() {
-  document.documentElement.dataset.theme = theme;
-  themeToggle.textContent = theme === 'dark' ? '切换到浅色' : '切换到深色';
+function renderApp() {
+  const scenario = requestedScenario();
+  if (scenario && backend.snapshot().scenario !== scenario) {
+    backend.setScenario(scenario);
+    return;
+  }
+  renderNavigation();
+  if (location.pathname === '/') renderHome();
+  else renderPlaceholder();
+  bindSharedControls();
 }
 
 function applyWindowSizeClass() {
-  const next =
-    innerWidth < contract.breakpoints.medium
-      ? 'compact'
-      : innerWidth < contract.breakpoints.expanded ? 'medium' : 'expanded';
-  if (document.documentElement.dataset.windowClass !== next) {
-    document.documentElement.dataset.windowClass = next;
-  }
+  const width = Math.round(window.visualViewport?.width ?? innerWidth);
+  const next = width < contract.breakpoints.medium ? 'compact' : width < contract.breakpoints.expanded ? 'medium' : 'expanded';
+  if (document.documentElement.dataset.windowClass !== next) document.documentElement.dataset.windowClass = next;
 }
 
 nav.addEventListener('click', (event) => {
   const button = event.target.closest('[data-route]');
-  if (!button) return;
-  history.pushState({ route: button.dataset.route }, '', button.dataset.route);
-  renderRoute();
-  document.querySelector('#main-content').focus();
+  if (button) navigate(button.dataset.route);
 });
-window.addEventListener('popstate', renderRoute);
+window.addEventListener('popstate', renderApp);
 window.addEventListener('resize', applyWindowSizeClass);
-
-stateButton.addEventListener('click', () => {
-  clicks += 1;
-  storage.set(clickKey, String(clicks));
-  renderClicks();
+window.visualViewport?.addEventListener('resize', applyWindowSizeClass);
+backend.subscribe(() => {
+  const active = document.activeElement;
+  const focusSelector =
+    active?.dataset?.favorite ? `[data-favorite="${active.dataset.favorite}"]` :
+    active?.dataset?.download ? `[data-download="${active.dataset.download}"]` :
+    active?.dataset?.viewMode ? `[data-view-mode="${active.dataset.viewMode}"]` :
+    active?.id ? `#${CSS.escape(active.id)}` : null;
+  renderApp();
+  if (focusSelector) requestAnimationFrame(() => document.querySelector(focusSelector)?.focus());
 });
-dialogButton.addEventListener('click', () => dialog.show());
-themeToggle.addEventListener('click', () => {
-  theme = theme === 'dark' ? 'light' : 'dark';
-  storage.set(themeKey, theme);
-  applyTheme();
-});
-
+document.documentElement.dataset.theme = theme;
 applyWindowSizeClass();
-renderRoute();
-renderClicks();
-applyTheme();
+renderApp();

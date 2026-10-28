@@ -12,7 +12,7 @@
         document.documentElement.dataset.theme = 'light';
       }
     } catch {}
-    const width = window.innerWidth;
+    const width = Math.round(window.visualViewport?.width ?? window.innerWidth);
     document.documentElement.dataset.windowClass =
       width < {{MEDIUM_BREAKPOINT}}
         ? 'compact'

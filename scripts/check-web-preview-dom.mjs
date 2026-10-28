@@ -31,7 +31,8 @@ const evaluate = async (expression) => {
   return result.result.value;
 };
 
-await call('Page.navigate', {url: `${previewOrigin}/?acceptance=dom`});
+await evaluate(`localStorage.removeItem('wallhub.preview.fake-backend'); true`);
+await call('Page.navigate', {url: `${previewOrigin}/?acceptance=dom&lab=1`});
 await new Promise((resolve) => setTimeout(resolve, 1200));
 if (!(await evaluate(`Boolean(customElements.get('md-filled-button'))`))) {
   throw new Error('Material Web components are not registered');
@@ -52,6 +53,7 @@ for (const width of [599, 600, 839, 840]) {
     deviceScaleFactor: 1,
     mobile: true,
   });
+  await evaluate(`dispatchEvent(new Event('resize')); true`);
   await new Promise((resolve) => setTimeout(resolve, 250));
   const actual = await evaluate(`(() => {
     const nav = document.querySelector('.primary-nav').getBoundingClientRect();
@@ -67,6 +69,8 @@ for (const width of [599, 600, 839, 840]) {
   }
 }
 await call('Emulation.clearDeviceMetricsOverride');
+await call('Page.reload', {ignoreCache: true});
+await new Promise((resolve) => setTimeout(resolve, 700));
 
 await call('Emulation.setEmulatedMedia', {
   features: [{name: 'prefers-reduced-motion', value: 'reduce'}],
@@ -101,7 +105,7 @@ if (!focusCycle.every((item) =>
   throw new Error(`Dialog focus escaped: ${JSON.stringify(focusCycle)}`);
 }
 if (new Set(focusCycle.map((item) => item.text)).size !== 2) {
-  throw new Error('Dialog focus did not reach both actions');
+  throw new Error(`Dialog focus did not reach both actions: ${JSON.stringify(focusCycle)}`);
 }
 await call('Input.dispatchKeyEvent', {type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27});
 await call('Input.dispatchKeyEvent', {type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27});
@@ -116,9 +120,11 @@ if (!dialogResult.closed || !dialogResult.restored) {
 
 await evaluate(`localStorage.setItem('wallhub.preview.dom.theme', 'dark'); location.reload(); true`);
 await new Promise((resolve) => setTimeout(resolve, 900));
-await evaluate(`document.querySelector('#theme-toggle').click(); true`);
-if ((await evaluate(`document.documentElement.dataset.theme`)) !== 'light') {
-  throw new Error('Theme did not switch to light');
+await evaluate(`document.querySelector('#theme-toggle').focus(); document.querySelector('#theme-toggle').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+const themeResult = await evaluate(`({theme: document.documentElement.dataset.theme, focus: document.activeElement?.id})`);
+if (themeResult.theme !== 'light' || themeResult.focus !== 'theme-toggle') {
+  throw new Error(`Theme switch/focus restoration failed: ${JSON.stringify(themeResult)}`);
 }
 await call('Page.reload', {ignoreCache: true});
 await new Promise((resolve) => setTimeout(resolve, 900));
@@ -126,11 +132,65 @@ if ((await evaluate(`document.documentElement.dataset.theme`)) !== 'light') {
   throw new Error('Theme did not survive reload');
 }
 await evaluate(`document.querySelector('[data-route="/discover"]').click(); true`);
-if ((await evaluate(`location.pathname`)) !== '/discover') throw new Error('pushState failed');
+const pushedRoute = await evaluate(`({path: location.pathname, lab: Boolean(document.querySelector('.state-lab')), dialogTrigger: Boolean(document.querySelector('#dialog-button'))})`);
+if (pushedRoute.path !== '/discover' || pushedRoute.lab || pushedRoute.dialogTrigger) {
+  throw new Error(`pushState/lab visibility failed: ${JSON.stringify(pushedRoute)}`);
+}
 await evaluate(`history.back(); true`);
 await new Promise((resolve) => setTimeout(resolve, 250));
 if ((await evaluate(`location.pathname`)) !== '/') throw new Error('popstate/back failed');
+
+await call('Page.navigate', {url: `${previewOrigin}/?lab=1&scenario=loading`});
+await new Promise((resolve) => setTimeout(resolve, 500));
+if (!(await evaluate(`Boolean(document.querySelector('.state-lab') && document.querySelector('md-circular-progress'))`))) {
+  throw new Error('State lab loading scenario did not render');
+}
+await call('Page.navigate', {url: `${previewOrigin}/`});
+await new Promise((resolve) => setTimeout(resolve, 300));
+if (!(await evaluate(`!document.querySelector('.state-lab') && document.querySelectorAll('.workshop-card').length === 6`))) {
+  throw new Error('State lab scenario leaked into the normal Home surface');
+}
+await call('Page.navigate', {url: `${previewOrigin}/?lab=1&scenario=loading`});
+await new Promise((resolve) => setTimeout(resolve, 300));
+await evaluate(`document.querySelector('[data-route="/discover"]').click(); true`);
+await evaluate(`history.back(); true`);
+await new Promise((resolve) => setTimeout(resolve, 300));
+if (!(await evaluate(`location.search.includes('scenario=loading') && document.querySelector('#scenario-select')?.value === 'loading' && Boolean(document.querySelector('md-circular-progress'))`))) {
+  throw new Error('Browser Back did not reconcile the State Lab scenario');
+}
+await evaluate(`(() => {
+  const select = document.querySelector('#scenario-select');
+  select.value = 'empty';
+  select.dispatchEvent(new Event('change', {bubbles: true}));
+  return true;
+})()`);
+await new Promise((resolve) => setTimeout(resolve, 200));
+if (!(await evaluate(`location.search.includes('scenario=empty') && document.querySelector('.center-state h2')?.textContent === '没有匹配的壁纸'`))) {
+  throw new Error('State lab scenario URL/render synchronization failed');
+}
+await evaluate(`document.querySelector('#reset-lab').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 200));
+if (!(await evaluate(`document.querySelectorAll('.workshop-card').length === 6 && !location.search.includes('scenario=')`))) {
+  throw new Error('State lab reset did not restore deterministic content');
+}
+await evaluate(`document.querySelector('#filter-button').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 250));
+if (!(await evaluate(`document.querySelector('#filter-dialog').open`))) throw new Error('Filter dialog did not open');
+await evaluate(`document.querySelector('#filter-type').value = 'VIDEO'; document.querySelector('#apply-filters').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 250));
+const filterResult = await evaluate(`({cards: document.querySelectorAll('.workshop-card').length, focus: document.activeElement?.id, dialogOpen: document.querySelector('#filter-dialog').open})`);
+if (filterResult.cards !== 2 || filterResult.focus !== 'filter-button' || filterResult.dialogOpen) {
+  throw new Error(`Filter application or focus restoration failed: ${JSON.stringify(filterResult)}`);
+}
+const favoriteId = await evaluate(`document.querySelector('[data-favorite]').dataset.favorite`);
+await evaluate(`document.querySelector('[data-favorite]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`document.activeElement?.dataset.favorite === ${JSON.stringify(favoriteId)} && document.activeElement?.textContent.trim() === '已收藏'`))) {
+  throw new Error('Mutation focus was not restored to the updated favorite action');
+}
+await evaluate(`document.querySelector('#reset-lab').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
 await evaluate(`localStorage.setItem('wallhub.preview.dom.theme', 'dark'); document.documentElement.dataset.theme = 'dark'; true`);
 
 socket.close();
-console.log('WEB_DOM_ACCEPTANCE=OK breakpoints=599/600/839/840 dialog_focus=trapped theme=persistent history=restored');
+console.log('WEB_DOM_ACCEPTANCE=OK breakpoints=599/600/839/840 dialog_focus=trapped theme=persistent history=restored state_lab=deterministic');

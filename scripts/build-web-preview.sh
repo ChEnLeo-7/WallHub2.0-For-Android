@@ -31,6 +31,7 @@ cleanup() {
 trap cleanup EXIT
 
 npm ci --ignore-scripts --no-audit --no-fund --prefix "$BASE"
+npm test --prefix "$BASE"
 mkdir "$staging"
 WALLHUB_OUTPUT_DIR="$(realpath "$staging")" \
 WALLHUB_SOURCE_HASH="$source_hash" \

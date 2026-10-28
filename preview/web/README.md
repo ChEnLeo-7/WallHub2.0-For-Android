@@ -25,7 +25,9 @@ scripts/serve-web-preview.sh
 
 Both commands require Node.js 24.18.0 with npm 11.16.0. `shared/ui-contract/wallhub-current.json` is the renderer-neutral Current UI contract; each build checks Android/shared Kotlin parity and verifies its generated Web CSS before bundling. The build uses `npm ci` with a committed lock, bundles only imported Material Web components, generates deterministic gzip assets, and enforces the transfer budget. The default LAN port is `4180`; override it with `WALLHUB_WEB_PORT`. The server falls back to `index.html` for extensionless deep links while preserving real 404 responses for missing assets. Build output uses content-hashed immutable assets and an atomic release symlink; the server refuses output whose source hash is stale.
 
-The required browser gate builds a fresh release, opens it in Android Chrome, and verifies exact breakpoints, reduced motion, dialog focus trapping/restoration, theme persistence, and history:
+The deterministic Fake Backend and State Lab live in `preview/state-lab`. Normal `/` renders the Current Home slice without developer controls; append `?lab=1` and optionally `&scenario=loading`, `empty`, `error`, or `content` to inspect reproducible states. Run the pure state regressions with `npm test --prefix preview/web-dom`.
+
+The required browser gate builds a fresh release, runs the state regressions, opens it in Android Chrome, and verifies exact breakpoints, reduced motion, dialog focus trapping/restoration, theme persistence, history, and State Lab URL/reset behavior:
 
 ```bash
 WALLHUB_ADB_SERIAL=192.168.2.234:33445 scripts/verify-web-preview.sh
