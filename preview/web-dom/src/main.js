@@ -82,6 +82,7 @@ let confirmLibraryRemoval = false;
 let pendingLocalDelete = null;
 let confirmLocalDelete = false;
 let localSearchTimer = null;
+let settingsReturnFocus = null;
 
 const escapeHtml = (value) => String(value)
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -209,6 +210,35 @@ function renderHome() {
     </section>
     <section class="home-results" aria-label="创意工坊结果">${results}</section>`;
   document.title = '首页 · WallHub Web Preview';
+}
+
+function renderSettings() {
+  const slug = location.pathname.match(/^\/settings\/([a-z-]+)$/u)?.[1] ?? null;
+  const snapshot = backend.snapshot();
+  const state = backend.settingsState();
+  const categories = [
+    {slug: 'basic', title: '基础', description: '内容、通知与应用行为'},
+    {slug: 'appearance', title: '外观', description: '主题、强调色与首页布局'},
+    {slug: 'downloads', title: '下载', description: '目录、转换与网络访问'},
+    {slug: 'steam', title: 'Steam', description: '账户、会话与内容数据源'},
+  ];
+  let body;
+  if (!slug) {
+    body = `<div class="settings-list">${categories.map((category) => `<button type="button" data-settings-category="${category.slug}"><span><strong>${category.title}</strong><small>${category.description}</small></span><span aria-hidden="true">›</span></button>`).join('')}<button type="button" data-settings-category="about"><span><strong>关于 WallHub</strong><small>版本、更新与诊断</small></span><span aria-hidden="true">›</span></button></div>`;
+  } else if (slug === 'steam') {
+    const steamBody = state.steamPhase === 'signed-in' ? '<h2>Astra</h2><p>Steam 会话已连接</p><md-outlined-button id="steam-logout">退出登录</md-outlined-button>' : state.steamPhase === 'restoring' ? '<md-circular-progress indeterminate></md-circular-progress><h2>正在恢复 Steam 会话…</h2>' : state.steamPhase === 'failed' ? '<h2>Steam 连接失败</h2><p>可重试恢复已有会话。</p><md-filled-button id="steam-retry">重试</md-filled-button>' : '<h2>登录 Steam</h2><p>登录后同步订阅、收藏和好友活动。</p><md-filled-button id="steam-login">登录</md-filled-button>';
+    body = `<section class="settings-group steam-account-card" id="steam-account-status" tabindex="-1" role="status" aria-live="polite">${steamBody}</section><section class="settings-group"><label class="settings-switch"><span><strong>增强访问</strong><small>通过兼容连接路径访问 Steam</small></span><input type="checkbox" data-setting-toggle="enhancedAccess" ${state.preferences.enhancedAccess ? 'checked' : ''}></label></section>`;
+  } else if (slug === 'basic') {
+    body = `<section class="settings-group"><label class="settings-switch"><span><strong>成人内容</strong><small>在浏览与搜索中允许成熟内容</small></span><input type="checkbox" data-setting-toggle="matureContent" ${state.preferences.matureContent ? 'checked' : ''}></label><button type="button" class="settings-row" id="notifications-setting"><span><strong>通知</strong><small>下载与更新通知</small></span><span>›</span></button></section>`;
+  } else if (slug === 'appearance') {
+    body = `<section class="settings-group"><button type="button" class="settings-row" id="settings-theme-toggle"><span><strong>外观模式</strong><small>${theme === 'dark' ? '深色' : '浅色'}</small></span><span>›</span></button><div class="settings-row"><span><strong>强调色</strong><small>WallHub Current 紫色</small></span></div></section>`;
+  } else if (slug === 'downloads') {
+    body = `<section class="settings-group"><div class="settings-row"><span><strong>输出目录</strong><small>${escapeHtml(state.preferences.outputDirectory)}</small></span></div><label class="settings-switch"><span><strong>增强访问</strong><small>改进 Steam 下载连接</small></span><input type="checkbox" data-setting-toggle="enhancedAccess" ${state.preferences.enhancedAccess ? 'checked' : ''}></label></section>`;
+  } else {
+    body = '<section class="settings-group"><h2>关于 WallHub</h2><p>Current Web Mirror · 确定性预览</p><md-outlined-button id="check-updates">检查更新</md-outlined-button></section>';
+  }
+  main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回">←</button><h1>${slug ? categories.find((category) => category.slug === slug)?.title ?? '关于 WallHub' : '设置'}</h1></header>${isLabVisible() ? renderStateLab(snapshot) : ''}<p id="settings-status" class="sr-only" aria-live="polite"></p><section class="settings-page">${body}</section>`;
+  document.title = `${slug ? '设置 · ' + slug : '设置'} · WallHub Web Preview`;
 }
 
 function renderLocalDetail() {
@@ -473,6 +503,20 @@ function bindSharedControls() {
   });
   document.querySelectorAll('[data-view-mode]').forEach((button) => button.addEventListener('click', () => backend.setViewMode(button.dataset.viewMode)));
   document.querySelectorAll('[data-open-workshop]').forEach((button) => button.addEventListener('click', () => navigate(`/workshop/${button.dataset.openWorkshop}`)));
+  document.querySelectorAll('[data-settings-category]').forEach((button) => button.addEventListener('click', () => { settingsReturnFocus = button.dataset.settingsCategory; navigate(`/settings/${button.dataset.settingsCategory}`); }));
+  document.querySelectorAll('[data-setting-toggle]').forEach((control) => control.addEventListener('change', () => backend.toggleSetting(control.dataset.settingToggle)));
+  const completeSteamTransition = (message) => requestAnimationFrame(() => {
+    document.querySelector('#steam-account-status')?.focus();
+    const status = document.querySelector('#settings-status'); if (status) status.textContent = message;
+  });
+  document.querySelector('#steam-login')?.addEventListener('click', () => { backend.setProfileSession('signed-in'); completeSteamTransition('Steam 登录成功'); });
+  document.querySelector('#steam-logout')?.addEventListener('click', () => { backend.setProfileSession('signed-out'); completeSteamTransition('已退出 Steam'); });
+  document.querySelector('#steam-retry')?.addEventListener('click', () => {
+    const url = new URL(location.href); url.searchParams.delete('scenario'); history.replaceState(history.state, '', url); backend.setScenario('content'); backend.setProfileSession('signed-in'); completeSteamTransition('Steam 会话已恢复');
+  });
+  document.querySelector('#settings-theme-toggle')?.addEventListener('click', () => document.querySelector('#theme-toggle')?.click());
+  document.querySelector('#notifications-setting')?.addEventListener('click', () => { const status = document.querySelector('#settings-status'); if (status) status.textContent = '通知设置已打开'; });
+  document.querySelector('#check-updates')?.addEventListener('click', () => { const status = document.querySelector('#settings-status'); if (status) status.textContent = '当前已是最新版本'; });
   const setLocalActionStatus = (message) => { const status = document.querySelector('#local-status'); if (status) status.textContent = message; };
   document.querySelector('#local-open-native')?.addEventListener('click', () => setLocalActionStatus('已请求打开本地壁纸'));
   document.querySelector('#local-share')?.addEventListener('click', () => setLocalActionStatus('已准备分享本地壁纸'));
@@ -644,7 +688,7 @@ function bindSharedControls() {
     if (history.state?.wallhub === true && String(history.state.from).startsWith('/')) {
       history.back();
     } else {
-      const fallback = location.pathname.startsWith('/discover/') ? '/discover' : location.pathname.startsWith('/local/') ? '/local' : currentTopRoute() === '/profile' ? '/profile' : '/';
+      const fallback = location.pathname.startsWith('/discover/') ? '/discover' : location.pathname.startsWith('/local/') ? '/local' : location.pathname.startsWith('/settings/') ? '/settings' : currentTopRoute() === '/profile' ? '/profile' : '/';
       history.replaceState({wallhub: true, route: fallback}, '', fallback);
       renderApp();
       main.focus();
@@ -735,6 +779,7 @@ function renderApp() {
   else if (location.pathname === '/discover') renderDiscover();
   else if (location.pathname === '/profile') renderProfile();
   else if (location.pathname === '/downloads') renderDownloads();
+  else if (location.pathname === '/settings' || /^\/settings\/[a-z-]+$/u.test(location.pathname)) renderSettings();
   else if (location.pathname === '/local') renderLocal();
   else if (/^\/local\/[a-z0-9-]+$/u.test(location.pathname)) renderLocalDetail();
   else if (/^\/library\/(subscriptions|favorites)$/u.test(location.pathname)) renderLibrary();
@@ -787,7 +832,13 @@ window.addEventListener('popstate', () => {
     confirmLibraryRemoval = false;
     return;
   }
+  const categoryFocus = location.pathname === '/settings' ? settingsReturnFocus : null;
   renderApp();
+  requestAnimationFrame(() => {
+    if (categoryFocus) document.querySelector(`[data-settings-category="${categoryFocus}"]`)?.focus();
+    else main.focus();
+    settingsReturnFocus = null;
+  });
 });
 window.addEventListener('resize', applyWindowSizeClass);
 window.visualViewport?.addEventListener('resize', applyWindowSizeClass);
@@ -799,6 +850,7 @@ backend.subscribe(() => {
     active?.dataset?.railRating ? `[data-rail-rating="${active.dataset.railRating}"][data-rail="${active.dataset.rail}"]` :
     active?.dataset?.railFavorite ? `[data-rail-favorite="${active.dataset.railFavorite}"]` :
     active?.dataset?.localFavorite ? `[data-local-favorite="${active.dataset.localFavorite}"]` :
+    active?.dataset?.settingToggle ? `[data-setting-toggle="${active.dataset.settingToggle}"]` :
     active?.dataset?.download ? `[data-download="${active.dataset.download}"]` :
     active?.dataset?.viewMode ? `[data-view-mode="${active.dataset.viewMode}"]` :
     active?.id ? `#${CSS.escape(active.id)}` : null;

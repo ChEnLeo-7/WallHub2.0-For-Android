@@ -175,6 +175,18 @@ md-outlined-text-field { width: min(100%, 560px); }
 .center-state md-circular-progress { --md-circular-progress-size: 48px; }
 .state-icon { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); font-size: 30px; }
 .placeholder { max-width: var(--wallhub-content-max); padding: var(--wallhub-space-2); }
+.settings-page { max-width: 840px; margin: 0 auto; padding: 0 var(--wallhub-space-2) var(--wallhub-space-3); }
+.settings-list, .settings-group { overflow: hidden; display: grid; border-radius: var(--wallhub-shape-large); background: var(--md-sys-color-surface-container-low); }
+.settings-list button, .settings-row, .settings-switch { min-height: 72px; padding: var(--wallhub-space-1) var(--wallhub-space-2); display: flex; align-items: center; justify-content: space-between; gap: var(--wallhub-space-2); border: 0; border-bottom: 1px solid var(--md-sys-color-outline-variant); text-align: start; color: inherit; background: transparent; }
+.settings-list button:last-child, .settings-group > :last-child { border-bottom: 0; }
+.settings-list button, button.settings-row { cursor: pointer; }
+.settings-list span:first-child, .settings-row span:first-child, .settings-switch span:first-child { display: grid; gap: 2px; }
+.settings-list small, .settings-row small, .settings-switch small, .steam-account-card p { color: var(--md-sys-color-on-surface-variant); }
+.settings-group { margin-bottom: var(--wallhub-space-2); }
+.settings-switch input { width: 42px; height: 24px; accent-color: var(--md-sys-color-primary); }
+.steam-account-card { min-height: 220px; padding: var(--wallhub-space-3); place-items: center; align-content: center; text-align: center; }
+.steam-account-card h2, .steam-account-card p { margin: 0; }
+
 .local-tools, .local-page { max-width: var(--wallhub-content-max); margin: 0 auto; padding: 0 var(--wallhub-space-2) var(--wallhub-space-2); }
 .local-page { padding-bottom: var(--wallhub-space-3); }
 .local-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--wallhub-space-2); }

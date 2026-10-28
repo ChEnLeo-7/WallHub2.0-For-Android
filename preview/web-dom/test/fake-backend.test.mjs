@@ -77,7 +77,9 @@ test('migrates pre-Profile schema-v1 state and canonicalizes signed-out counts',
       profileCounts: {subscriptions: 99, favorites: 88},
     }),
   });
-  assert.deepEqual(new FakeBackend(signedOutStorage).snapshot().profileCounts, {subscriptions: null, favorites: null});
+  const signedOutBackend = new FakeBackend(signedOutStorage);
+  assert.deepEqual(signedOutBackend.snapshot().profileCounts, {subscriptions: 99, favorites: 88});
+  assert.deepEqual(signedOutBackend.profile().counts, {subscriptions: null, favorites: null});
 });
 
 test('supports repeatable state-lab scenarios and virtual time', () => {
@@ -99,6 +101,26 @@ test('exact phrase distinguishes exact fields from partial matches', () => {
   assert.deepEqual(backend.listWorkshops().items, []);
   backend.setQuery('Neon Rain');
   assert.deepEqual(backend.listWorkshops().items.map((item) => item.id), ['3357929793']);
+});
+
+test('settings and Steam session states persist deterministically', () => {
+  const storage = memoryStorage();
+  const backend = new FakeBackend(storage);
+  assert.equal(backend.settingsState().preferences.enhancedAccess, true);
+  backend.toggleSetting('enhancedAccess');
+  backend.toggleSetting('matureContent');
+  backend.setProfileSession('signed-out');
+  const restored = new FakeBackend(storage);
+  assert.deepEqual(restored.settingsState(), {
+    preferences: {matureContent: true, enhancedAccess: false, outputDirectory: 'WallHub Downloads'},
+    steamPhase: 'signed-out',
+  });
+  restored.setProfileSession('signed-in');
+  assert.deepEqual(new FakeBackend(storage).profile().counts, {subscriptions: 42, favorites: 18});
+  restored.setScenario('loading');
+  assert.equal(restored.settingsState().steamPhase, 'restoring');
+  restored.setScenario('error');
+  assert.equal(restored.settingsState().steamPhase, 'failed');
 });
 
 test('normalizes malformed and duplicate persisted Local IDs', () => {

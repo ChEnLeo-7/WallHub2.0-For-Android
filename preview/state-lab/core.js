@@ -38,6 +38,7 @@ function defaultState() {
     discoverResultColumns: 2,
     profileSession: 'signed-in',
     profileCounts: {subscriptions: 42, favorites: 18},
+    settings: {matureContent: false, enhancedAccess: true, outputDirectory: 'WallHub Downloads'},
     downloads: [],
   };
 }
@@ -105,7 +106,12 @@ function normalizedState(candidate) {
       : {},
     discoverResultColumns: candidate.discoverResultColumns === 1 ? 1 : 2,
     profileSession,
-    profileCounts: profileSession === 'signed-in' ? profileCounts : {subscriptions: null, favorites: null},
+    profileCounts,
+    settings: {
+      matureContent: candidate.settings?.matureContent === true,
+      enhancedAccess: candidate.settings?.enhancedAccess !== false,
+      outputDirectory: typeof candidate.settings?.outputDirectory === 'string' ? candidate.settings.outputDirectory.slice(0, 100) : fallback.settings.outputDirectory,
+    },
     downloads: normalizedDownloads,
   };
 }
@@ -183,6 +189,21 @@ export class FakeBackend {
       items = [...items].sort((left, right) => right.subscriptions - left.subscriptions);
     }
     return {status: items.length ? 'content' : 'empty', items};
+  }
+
+  settingsState() {
+    const steamPhase = this.state.scenario === 'loading' ? 'restoring' : this.state.scenario === 'empty' ? 'signed-out' : this.state.scenario === 'error' ? 'failed' : this.state.profileSession;
+    return {preferences: {...this.state.settings}, steamPhase};
+  }
+
+  toggleSetting(key) {
+    if (!['matureContent', 'enhancedAccess'].includes(key)) return this.snapshot();
+    return this.update({settings: {...this.state.settings, [key]: !this.state.settings[key]}});
+  }
+
+  setProfileSession(session) {
+    if (!['signed-out', 'restoring', 'signed-in'].includes(session)) return this.snapshot();
+    return this.update({profileSession: session});
   }
 
   localWallpaper(id) {
@@ -270,7 +291,7 @@ export class FakeBackend {
     if (scenario === 'loading') return {session: 'restoring', counts: {subscriptions: null, favorites: null}};
     if (scenario === 'empty') return {session: 'signed-out', counts: {subscriptions: null, favorites: null}};
     if (scenario === 'error') return {session: 'signed-in', counts: {subscriptions: null, favorites: 18}};
-    return {session: this.state.profileSession, counts: {...this.state.profileCounts}};
+    return {session: this.state.profileSession, counts: this.state.profileSession === 'signed-in' ? {...this.state.profileCounts} : {subscriptions: null, favorites: null}};
   }
 
   discoverRails() {
