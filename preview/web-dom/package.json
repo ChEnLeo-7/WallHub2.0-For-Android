@@ -1,0 +1,19 @@
+{
+  "name": "wallhub-web-preview",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@material/web": "2.5.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  },
+  "engines": {
+    "node": "24.18.0",
+    "npm": "11.16.0"
+  }
+}

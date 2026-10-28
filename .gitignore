@@ -2,6 +2,10 @@
 .kotlin/
 build/
 **/build/
+**/node_modules/
+/preview/web-dom/dist
+/preview/web-dom/releases/
+/preview/web-dom/.dist.*
 /build-logic/bin/
 # App-owned native output (built by scripts/build-etc2.sh locally or on the build worker)
 /app/src/main/jniLibs/

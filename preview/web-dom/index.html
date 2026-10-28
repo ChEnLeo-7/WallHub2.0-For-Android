@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="wallhub-source" content="{{SOURCE_HASH}}">
+  <title>WallHub Web Preview</title>
+  <script>
+    try {
+      if (localStorage.getItem('wallhub.preview.dom.theme') === 'light') {
+        document.documentElement.dataset.theme = 'light';
+      }
+    } catch {}
+    const width = window.innerWidth;
+    document.documentElement.dataset.windowClass =
+      width < {{MEDIUM_BREAKPOINT}}
+        ? 'compact'
+        : width < {{EXPANDED_BREAKPOINT}} ? 'medium' : 'expanded';
+  </script>
+  <link rel="stylesheet" href="{{STYLESHEET}}">
+  <script type="module" src="{{SCRIPT}}"></script>
+</head>
+<body>
+  <div id="app"></div>
+</body>
+</html>

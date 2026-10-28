@@ -11,11 +11,15 @@ from pathlib import Path
 import re
 from urllib.parse import urlsplit
 
-HASHED_ASSET = re.compile(r"^[0-9a-f]{20,}\.(?:wasm|js|ttf)$")
+HASHED_ASSET = re.compile(r"^.+-[A-Z0-9]{8,}\.(?:css|js|ttf|wasm)$")
 
 
 class PreviewHandler(http.server.SimpleHTTPRequestHandler):
     """Serve generated files without disguising missing build assets as HTML."""
+
+    def __init__(self, *args, spa_entry: str, **kwargs) -> None:
+        self.spa_entry = spa_entry
+        super().__init__(*args, **kwargs)
 
     def end_headers(self) -> None:
         request_name = Path(urlsplit(self.path).path).name
@@ -28,15 +32,17 @@ class PreviewHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def send_head(self):  # type: ignore[no-untyped-def]
+        request_path = urlsplit(self.path).path
         translated = Path(self.translate_path(self.path))
-        if translated.is_dir():
+        if request_path in {"", "/"}:
+            translated = Path(self.directory) / self.spa_entry
+        elif translated.is_dir():
             translated /= "index.html"
         if not translated.is_file():
-            request_path = urlsplit(self.path).path
             if Path(request_path).suffix:
                 self.send_error(404, "File not found")
                 return None
-            translated = Path(self.directory) / "index.html"
+            translated = Path(self.directory) / self.spa_entry
 
         accepts_gzip = "gzip" in self.headers.get("Accept-Encoding", "").lower()
         gzip_path = translated.with_name(translated.name + ".gz")
@@ -64,15 +70,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--directory", required=True, type=Path)
     parser.add_argument("--bind", default="0.0.0.0")
     parser.add_argument("--port", default=4180, type=int)
+    parser.add_argument("--spa-entry", default="index.html")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    directory = args.directory.resolve(strict=True)
-    if not (directory / "index.html").is_file():
-        raise SystemExit(f"Missing preview entry point: {directory / 'index.html'}")
-    handler = partial(PreviewHandler, directory=str(directory))
+    directory = args.directory.absolute()
+    resolved = directory.resolve(strict=True)
+    entry = resolved / args.spa_entry
+    if not entry.is_file():
+        raise SystemExit(f"Missing preview entry point: {entry}")
+    handler = partial(PreviewHandler, directory=str(directory), spa_entry=args.spa_entry)
     server = http.server.ThreadingHTTPServer((args.bind, args.port), handler)
     print(f"Serving WallHub Web preview from {directory} on {args.bind}:{args.port}")
     server.serve_forever()

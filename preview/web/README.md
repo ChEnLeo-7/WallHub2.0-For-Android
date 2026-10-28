@@ -1,46 +1,53 @@
-# WallHub Compose Web Preview
+# WallHub Web Preview
 
-This module is the browser entry point for the WallHub shared Compose UI. It does not contain a second HTML/CSS implementation of application screens. Product UI belongs in `:shared:ui`; this module owns only Web/Wasm startup and browser-specific adapters.
+The primary Web renderer is `preview/web-dom`: native semantic DOM plus pinned Material Web components. Shared presentation state, design tokens, resources, and Android Compose UI remain under `:shared:ui`.
+
+The original Compose/Wasm spike is retained in `preview/web` only as a compatibility probe. It proved rendering, CJK resources, browser state, history, and Android accessibility exposure, but failed the hard desktop-keyboard gate: Canvas semantics produced no DOM focus targets or dialog focus trap. It must not be presented as the production Web mirror.
 
 ## Current phase
 
-The page currently shown is a compatibility probe, not a completed WallHub screen mirror. It verifies:
+The page currently shown is an adaptive Current UI shell and accessibility probe, not a completed WallHub screen mirror. It verifies:
 
-- Compose Multiplatform Material 3 rendering on Wasm;
-- Android and Wasm consumption of one shared UI module;
-- self-hosted Simplified Chinese font resources;
-- browser text input, state changes, and accessibility semantics;
-- bounded-memory development and production builds.
+- official Material Web 2.5.0 buttons, text field, and dialog;
+- native DOM roles, Tab traversal, dialog focus trapping, Escape dismissal, and focus restoration;
+- Compact `<600`, Medium `600–839`, and Expanded `>=840` navigation;
+- browser history, persistent state, real dark/light appearance switching, and reduced motion;
+- self-hosted Simplified Chinese font resources and an 8 MiB compressed-transfer gate.
 
 Do not describe the preview as complete until the route/state/theme/language coverage matrix is closed.
 
-## Build
+## Build and serve
 
 ```bash
-scripts/build-web-preview.sh development
-scripts/build-web-preview.sh production
+scripts/build-web-preview.sh
+scripts/serve-web-preview.sh
 ```
 
-The scripts require Node.js 24.18.0 with npm 11.16.0, run one Gradle worker with a 1536 MiB heap, and fail if the cgroup `oom_kill` counter increases. Production builds download pinned Binaryen 125 into the user cache, verify its archive and executable SHA-256 plus version on every run, precompress browser assets, and enforce an 8 MiB gzip transfer budget.
+Both commands require Node.js 24.18.0 with npm 11.16.0. `shared/ui-contract/wallhub-current.json` is the renderer-neutral Current UI contract; each build checks Android/shared Kotlin parity and verifies its generated Web CSS before bundling. The build uses `npm ci` with a committed lock, bundles only imported Material Web components, generates deterministic gzip assets, and enforces the transfer budget. The default LAN port is `4180`; override it with `WALLHUB_WEB_PORT`. The server falls back to `index.html` for extensionless deep links while preserving real 404 responses for missing assets. Build output uses content-hashed immutable assets and an atomic release symlink; the server refuses output whose source hash is stale.
 
-## Serve
+The required browser gate builds a fresh release, opens it in Android Chrome, and verifies exact breakpoints, reduced motion, dialog focus trapping/restoration, theme persistence, and history:
 
 ```bash
-scripts/serve-web-preview.sh production
+WALLHUB_ADB_SERIAL=192.168.2.234:33445 scripts/verify-web-preview.sh
 ```
 
-The default LAN port is `4180`; override it with `WALLHUB_WEB_PORT`. The preview server sends precompressed assets and falls back to `index.html` for extensionless deep links while preserving real 404 responses for missing build assets.
+To rebuild the non-shipping Compose/Wasm compatibility probe:
+
+```bash
+scripts/build-compose-wasm-probe.sh development
+scripts/build-compose-wasm-probe.sh production
+```
+
+The probe script uses one Gradle worker, in-process Kotlin, a 1536 MiB heap, verified Binaryen 125, and cgroup OOM checking.
 
 ## Font provenance
-
-The Simplified Chinese subset is reproducible from immutable Google Fonts and FontTools inputs. Run:
 
 ```bash
 scripts/verify-web-font-subset.sh
 ```
 
-The script verifies both downloaded inputs by SHA-256, regenerates the subset using the committed character ledger, and requires a byte-for-byte match with the committed TTF.
+The script verifies immutable Google Fonts and FontTools inputs by SHA-256, regenerates the subset from the committed character ledger, and requires a byte-for-byte match with the committed TTF.
 
 ## Supported browsers
 
-The Wasm build requires a modern WasmGC browser. Chrome 155 on the OnePlus 5T is the current phone validation browser. The device's Via browser is not a supported acceptance browser for this preview.
+Modern Chrome/Edge and Android Chrome are primary. Safari requires practical WasmGC support only for the retained Compose probe; the primary DOM renderer does not require WasmGC. Firefox is best effort. The OnePlus 5T currently validates Chrome 155; its Via browser is not an acceptance browser.

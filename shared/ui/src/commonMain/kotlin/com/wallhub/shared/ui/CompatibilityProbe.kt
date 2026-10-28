@@ -13,8 +13,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -22,19 +20,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.wallhub.shared.ui.generated.resources.Res
-import com.wallhub.shared.ui.generated.resources.noto_sans_sc_wallhub
-import org.jetbrains.compose.resources.ExperimentalResourceApi
-import org.jetbrains.compose.resources.Font
 
 @Composable
-@OptIn(ExperimentalResourceApi::class)
 fun WallHubSharedUiCompatibilityProbe(
     route: String = "/",
     persistedClicks: Int = 0,
@@ -45,55 +33,8 @@ fun WallHubSharedUiCompatibilityProbe(
     var query by remember { mutableStateOf("") }
     var clicks by remember { mutableIntStateOf(persistedClicks) }
     var showDialog by remember { mutableStateOf(false) }
-    val wallHubFont =
-        FontFamily(
-            Font(Res.font.noto_sans_sc_wallhub, FontWeight.Normal),
-            Font(Res.font.noto_sans_sc_wallhub, FontWeight.Medium),
-            Font(Res.font.noto_sans_sc_wallhub, FontWeight.SemiBold),
-            Font(Res.font.noto_sans_sc_wallhub, FontWeight.Bold),
-        )
-    val typography =
-        Typography(
-            headlineSmall =
-                TextStyle(
-                    fontFamily = wallHubFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 24.sp,
-                    lineHeight = 32.sp,
-                ),
-            bodyLarge =
-                TextStyle(
-                    fontFamily = wallHubFont,
-                    fontSize = 16.sp,
-                    lineHeight = 24.sp,
-                ),
-            labelLarge =
-                TextStyle(
-                    fontFamily = wallHubFont,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                ),
-        )
-    val colors =
-        darkColorScheme(
-            primary = Color.White,
-            onPrimary = Color(0xFF242424),
-            primaryContainer = Color(0xFF2C2C2C),
-            onPrimaryContainer = Color.White,
-            background = Color(0xFF121212),
-            onBackground = Color.White,
-            surface = Color(0xFF1C1C1C),
-            onSurface = Color.White,
-            surfaceContainer = Color(0xFF1C1C1C),
-            surfaceContainerHigh = Color(0xFF242424),
-            onSurfaceVariant = Color(0xFFCACACA),
-        )
 
-    MaterialTheme(
-        colorScheme = colors,
-        typography = typography,
-    ) {
+    WallHubSharedTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,

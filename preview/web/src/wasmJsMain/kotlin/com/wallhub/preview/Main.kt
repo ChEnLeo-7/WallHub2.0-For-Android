@@ -32,6 +32,10 @@ fun main() {
             window.onpopstate = { route = window.location.pathname }
             onDispose { window.onpopstate = previousHandler }
         }
+        val navigate: (String) -> Unit = { destination ->
+            window.history.pushState(destination.toJsString(), "", destination)
+            route = destination
+        }
         WallHubSharedUiCompatibilityProbe(
             route = route,
             persistedClicks = persistedClicks,
@@ -39,11 +43,7 @@ fun main() {
             onClicksChanged = { value ->
                 window.localStorage.setItem(CLICK_COUNT_KEY, value.toString())
             },
-            onOpenDetail = {
-                val destination = "/workshop/compatibility-probe"
-                window.history.pushState(destination.toJsString(), "", destination)
-                route = destination
-            },
+            onOpenDetail = { navigate("/workshop/compatibility-probe") },
         )
     }
 }
