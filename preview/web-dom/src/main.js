@@ -83,6 +83,8 @@ let pendingLocalDelete = null;
 let confirmLocalDelete = false;
 let localSearchTimer = null;
 let settingsReturnFocus = null;
+let pendingReconversion = null;
+let reconvertDismissed = false;
 
 const escapeHtml = (value) => String(value)
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -103,7 +105,7 @@ function requestedScenario() {
 function currentTopRoute() {
   if (location.pathname.startsWith('/workshop/')) return '/';
   if (location.pathname.startsWith('/discover/')) return '/discover';
-  if (location.pathname.startsWith('/profile/') || location.pathname.startsWith('/library/') || ['/downloads', '/local', '/settings'].includes(location.pathname) || location.pathname.startsWith('/local/') || location.pathname.startsWith('/settings/')) return '/profile';
+  if (location.pathname.startsWith('/profile/') || location.pathname.startsWith('/library/') || ['/downloads', '/local', '/settings'].includes(location.pathname) || location.pathname.startsWith('/local/') || location.pathname.startsWith('/settings/') || location.pathname.startsWith('/downloads/')) return '/profile';
   return destinations.some((item) => item.route === location.pathname) ? location.pathname : '/';
 }
 
@@ -275,6 +277,23 @@ function renderLocal() {
   document.title = '本地壁纸 · WallHub Web Preview';
 }
 
+function renderDownloadTaskDetail() {
+  const taskId = location.pathname.match(/^\/downloads\/task\/([a-z0-9-]+)$/u)?.[1];
+  const task = taskId ? backend.downloadTask(taskId) : null;
+  if (!task) {
+    main.innerHTML = '<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back">←</button><h1>下载任务</h1></header><div class="center-state" role="alert"><h2>找不到此下载任务</h2></div>';
+    return;
+  }
+  const title = task.workshop?.title ?? task.workshopId;
+  const statusLabels = {QUEUED: '等待中', DOWNLOADING: '下载中', PAUSED: '已暂停', COMPLETED: '已完成', FAILED: '失败', CANCELLED: '已取消'};
+  const canReconvert = task.status === 'COMPLETED' && task.format === 'MPKG' && task.workshop?.type === 'SCENE';
+  const canPlay = task.status === 'COMPLETED' && task.workshop?.type === 'VIDEO' && task.stagingAvailable;
+  const canExport = task.status === 'FAILED' && task.hasIntactStaging;
+  main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回下载">←</button><h1>下载任务</h1></header><section class="download-detail"><div class="download-detail-hero"><span>${task.workshop?.type ?? task.format}</span><h2>${escapeHtml(title)}</h2><p>${statusLabels[task.status]} · ${task.format}</p><progress max="1" value="${task.progress}" aria-label="进度 ${Math.round(task.progress * 100)}%"></progress></div><dl class="detail-metrics"><div><dt>输出格式</dt><dd>${task.format}</dd></div><div><dt>转换档位</dt><dd>${task.preset}</dd></div><div><dt>保留音频</dt><dd>${task.preserveAudio ? '是' : '否'}</dd></div><div><dt>任务 ID</dt><dd>${task.id}</dd></div></dl>${task.message ? `<div class="download-failure" role="alert"><h3>失败详情</h3><p>${escapeHtml(task.message)}</p>${task.rawZipExported ? '<strong>原始 ZIP 已导出</strong>' : ''}</div>` : ''}<div class="download-detail-actions"><md-outlined-button id="open-download-workshop">打开项目</md-outlined-button>${canPlay ? '<md-filled-button id="play-downloaded-video">播放视频</md-filled-button>' : ''}${canReconvert ? '<md-filled-button id="open-reconvert">重新转换</md-filled-button>' : ''}${canExport ? '<md-filled-button id="export-raw-zip">导出原始 ZIP</md-filled-button>' : ''}</div><p id="download-detail-status" class="sr-only" aria-live="polite"></p></section><md-dialog id="reconvert-dialog" aria-label="重新转换"><div slot="headline">重新转换 MPKG</div><div slot="content" class="reconvert-form"><label>转换档位<select id="reconvert-preset"><option value="PERFORMANCE">性能优先</option><option value="BALANCED">均衡</option><option value="QUALITY">质量优先</option></select></label><label><input type="checkbox" id="reconvert-audio" ${task.preserveAudio ? 'checked' : ''}>保留音频</label></div><div slot="actions"><md-text-button id="cancel-reconvert">取消</md-text-button><md-filled-button id="confirm-reconvert">开始转换</md-filled-button></div></md-dialog>`;
+  const preset = document.querySelector('#reconvert-preset'); if (preset) preset.value = task.preset;
+  document.title = `${title} · 下载任务 · WallHub Web Preview`;
+}
+
 function renderDownloads() {
   const result = backend.downloadTaskGroups();
   const tab = new URLSearchParams(location.search).get('tab') === 'completed' ? 'completed' : 'active';
@@ -288,7 +307,7 @@ function renderDownloads() {
     const title = task.workshop?.title ?? task.workshopId;
     const primaryAction = ['DOWNLOADING', 'QUEUED'].includes(task.status) ? 'PAUSE' : task.status === 'PAUSED' ? 'RESUME' : ['FAILED', 'CANCELLED'].includes(task.status) ? 'RETRY' : null;
     const secondaryAction = task.status === 'CANCELLED' ? 'DELETE' : tab === 'active' ? 'CANCEL' : null;
-    return `<article class="download-task" data-download-task="${task.id}" tabindex="-1"><div class="download-task-icon" aria-hidden="true">↓</div><div><h2>${escapeHtml(title)}</h2><p>${statusLabels[task.status]} · ${task.format}</p><progress max="1" value="${task.progress}" aria-label="${escapeHtml(title)} ${Math.round(task.progress * 100)}%"></progress></div><div class="download-task-actions">${primaryAction ? `<md-outlined-button data-task-action="${primaryAction}" data-task-id="${task.id}">${{PAUSE: '暂停', RESUME: '继续', RETRY: '重试'}[primaryAction]}</md-outlined-button>` : ''}${secondaryAction ? `<md-text-button data-task-action="${secondaryAction}" data-task-id="${task.id}">${secondaryAction === 'DELETE' ? '删除' : '取消'}</md-text-button>` : ''}</div></article>`;
+    return `<article class="download-task" data-download-task="${task.id}" tabindex="-1"><div class="download-task-icon" aria-hidden="true">↓</div><button type="button" class="download-task-open" data-open-download-task="${task.id}"><h2>${escapeHtml(title)}</h2><p>${statusLabels[task.status]} · ${task.format}</p><progress max="1" value="${task.progress}" aria-label="${escapeHtml(title)} ${Math.round(task.progress * 100)}%"></progress></button><div class="download-task-actions">${primaryAction ? `<md-outlined-button data-task-action="${primaryAction}" data-task-id="${task.id}">${{PAUSE: '暂停', RESUME: '继续', RETRY: '重试'}[primaryAction]}</md-outlined-button>` : ''}${secondaryAction ? `<md-text-button data-task-action="${secondaryAction}" data-task-id="${task.id}">${secondaryAction === 'DELETE' ? '删除' : '取消'}</md-text-button>` : ''}</div></article>`;
   }).join('')}</div>`;
   main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回我的">←</button><h1>下载</h1><div class="toolbar-actions"><md-outlined-button id="retry-failed-downloads">重试失败项</md-outlined-button><md-text-button id="clear-finished-downloads">清除已完成</md-text-button></div></header>${isLabVisible() ? renderStateLab(backend.snapshot()) : ''}<div class="library-tabs" role="tablist" aria-label="下载分类"><button type="button" role="tab" data-download-tab="active" aria-selected="${tab === 'active'}" tabindex="${tab === 'active' ? '0' : '-1'}">活动</button><button type="button" role="tab" data-download-tab="completed" aria-selected="${tab === 'completed'}" tabindex="${tab === 'completed' ? '0' : '-1'}">已完成</button></div><p id="downloads-status" class="sr-only" aria-live="polite"></p><section class="downloads-page">${content}</section>`;
   document.title = '下载 · WallHub Web Preview';
@@ -618,6 +637,38 @@ function bindSharedControls() {
   document.querySelector('#retry-local')?.addEventListener('click', () => {
     const url = new URL(location.href); url.searchParams.delete('scenario'); history.replaceState(history.state, '', url); backend.setScenario('content');
   });
+  document.querySelectorAll('[data-open-download-task]').forEach((button) => button.addEventListener('click', () => navigate(`/downloads/task/${button.dataset.openDownloadTask}`)));
+  document.querySelector('#open-download-workshop')?.addEventListener('click', () => {
+    const taskId = location.pathname.match(/^\/downloads\/task\/([a-z0-9-]+)$/u)?.[1];
+    const task = taskId ? backend.downloadTask(taskId) : null;
+    if (task) navigate(`/workshop/${task.workshopId}`);
+  });
+  document.querySelector('#play-downloaded-video')?.addEventListener('click', () => { const status = document.querySelector('#download-detail-status'); if (status) status.textContent = '已请求播放本地视频'; });
+  document.querySelector('#open-reconvert')?.addEventListener('click', () => {
+    history.pushState({...history.state, modal: 'reconvert'}, '', location.href);
+    const reconvertDialog = document.querySelector('#reconvert-dialog');
+    reconvertDialog?.addEventListener('closed', () => {
+      if (history.state?.modal === 'reconvert') { reconvertDismissed = true; history.back(); }
+    }, {once: true});
+    reconvertDialog?.show();
+  });
+  document.querySelector('#cancel-reconvert')?.addEventListener('click', () => history.back());
+  document.querySelector('#confirm-reconvert')?.addEventListener('click', () => {
+    pendingReconversion = {
+      taskId: location.pathname.match(/^\/downloads\/task\/([a-z0-9-]+)$/u)?.[1],
+      preset: document.querySelector('#reconvert-preset')?.value,
+      preserveAudio: document.querySelector('#reconvert-audio')?.checked === true,
+    };
+    history.back();
+  });
+  document.querySelector('#export-raw-zip')?.addEventListener('click', () => {
+    const taskId = location.pathname.match(/^\/downloads\/task\/([a-z0-9-]+)$/u)?.[1];
+    backend.exportRawZip(taskId);
+    requestAnimationFrame(() => {
+      document.querySelector('#export-raw-zip')?.focus();
+      const status = document.querySelector('#download-detail-status'); if (status) status.textContent = '原始 ZIP 已导出';
+    });
+  });
   const recoverDownloads = () => {
     const url = new URL(location.href); url.searchParams.delete('scenario'); history.replaceState(history.state, '', url); backend.setScenario('content');
   };
@@ -796,7 +847,7 @@ function bindSharedControls() {
     if (history.state?.wallhub === true && String(history.state.from).startsWith('/')) {
       history.back();
     } else {
-      const fallback = location.pathname.startsWith('/discover/') ? '/discover' : location.pathname.startsWith('/local/') ? '/local' : location.pathname.startsWith('/settings/') ? '/settings' : currentTopRoute() === '/profile' ? '/profile' : '/';
+      const fallback = location.pathname.startsWith('/discover/') ? '/discover' : location.pathname.startsWith('/local/') ? '/local' : location.pathname.startsWith('/settings/') ? '/settings' : location.pathname.startsWith('/downloads/') ? '/downloads' : currentTopRoute() === '/profile' ? '/profile' : '/';
       history.replaceState({wallhub: true, route: fallback}, '', fallback);
       renderApp();
       main.focus();
@@ -887,6 +938,7 @@ function renderApp() {
   else if (location.pathname === '/discover') renderDiscover();
   else if (location.pathname === '/profile') renderProfile();
   else if (location.pathname === '/downloads') renderDownloads();
+  else if (/^\/downloads\/task\/[a-z0-9-]+$/u.test(location.pathname)) renderDownloadTaskDetail();
   else if (location.pathname === '/settings' || /^\/settings\/[a-z-]+$/u.test(location.pathname)) renderSettings();
   else if (location.pathname === '/local') renderLocal();
   else if (/^\/local\/[a-z0-9-]+$/u.test(location.pathname)) renderLocalDetail();
@@ -911,6 +963,21 @@ nav.addEventListener('click', (event) => {
   if (button) navigate(button.dataset.route);
 });
 window.addEventListener('popstate', () => {
+  const reconvertDialog = document.querySelector('#reconvert-dialog');
+  if (reconvertDialog?.open || reconvertDismissed) {
+    if (reconvertDialog?.open) reconvertDialog.close();
+    reconvertDismissed = false;
+    if (pendingReconversion) {
+      const request = pendingReconversion; pendingReconversion = null;
+      backend.reconvertDownloadTask(request.taskId, request.preset, request.preserveAudio);
+      history.replaceState({wallhub: true, route: '/downloads'}, '', '/downloads');
+      renderApp();
+      requestAnimationFrame(() => document.querySelector(`[data-download-task="${request.taskId}"]`)?.focus());
+    } else {
+      requestAnimationFrame(() => document.querySelector('#open-reconvert')?.focus());
+    }
+    return;
+  }
   const localDeleteDialog = document.querySelector('#local-delete-dialog');
   if (localDeleteDialog?.open) {
     localDeleteDialog.close();

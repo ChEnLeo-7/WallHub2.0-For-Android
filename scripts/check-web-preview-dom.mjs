@@ -348,9 +348,15 @@ await new Promise((resolve) => setTimeout(resolve, 100));
 if (!(await evaluate(`location.pathname === '/profile'`))) throw new Error('Profile collection Back did not restore Profile');
 await evaluate(`document.querySelector('[data-profile-route="/downloads"]').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 100));
-if (!(await evaluate(`location.pathname === '/downloads' && document.querySelectorAll('.download-task').length === 2 && document.querySelector('.primary-nav').hidden`))) {
-  throw new Error('Downloads did not render deterministic active tasks');
-}
+if (!(await evaluate(`location.pathname === '/downloads' && document.querySelectorAll('.download-task').length === 2 && document.querySelector('.primary-nav').hidden`))) throw new Error('Downloads did not render deterministic active tasks');
+await evaluate(`document.querySelector('[data-open-download-task="task-mountain"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/downloads/task/task-mountain' && Boolean(document.querySelector('.download-failure')) && Boolean(document.querySelector('#export-raw-zip'))`))) throw new Error('Failed task detail did not expose failure and raw ZIP recovery');
+await evaluate(`document.querySelector('#export-raw-zip').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/downloads/task/task-mountain' && document.querySelector('.download-failure').textContent.includes('原始 ZIP 已导出') && document.activeElement?.id === 'export-raw-zip' && document.querySelector('#download-detail-status').textContent === '原始 ZIP 已导出'`))) throw new Error('Raw ZIP export did not preserve task identity, focus, and feedback');
+await evaluate(`document.querySelector('#detail-back').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
 await evaluate(`document.querySelector('[data-task-action="PAUSE"]').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 100));
 if (!(await evaluate(`document.querySelector('[data-download-task="task-neon"]').textContent.includes('已暂停') && document.activeElement?.dataset.downloadTask === 'task-neon' && document.querySelector('#downloads-status').textContent === '下载任务已更新'`))) {
@@ -361,9 +367,35 @@ await new Promise((resolve) => setTimeout(resolve, 100));
 if (!(await evaluate(`document.querySelector('[data-download-task="task-mountain"]').textContent.includes('等待中') && document.activeElement?.id === 'retry-failed-downloads' && document.querySelector('#downloads-status').textContent === '失败任务已重新排队'`))) throw new Error('Retry failed downloads did not update task, focus, and announcement');
 await evaluate(`document.querySelector('[data-download-tab="completed"]').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 100));
-if (!(await evaluate(`location.search.includes('tab=completed') && document.querySelectorAll('.download-task').length === 1 && document.activeElement?.dataset.downloadTab === 'completed'`))) {
-  throw new Error('Downloads completed tab did not render with focus');
-}
+if (!(await evaluate(`location.search.includes('tab=completed') && document.querySelectorAll('.download-task').length === 2 && document.activeElement?.dataset.downloadTab === 'completed'`))) throw new Error('Downloads completed tab did not render with focus');
+await evaluate(`document.querySelector('[data-open-download-task="task-cafe"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/downloads/task/task-cafe' && Boolean(document.querySelector('#open-reconvert'))`))) throw new Error('Completed Scene task detail did not expose reconversion');
+await evaluate(`document.querySelector('#open-reconvert').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+await evaluate(`history.back(); true`);
+await new Promise((resolve) => setTimeout(resolve, 400));
+if (!(await evaluate(`location.pathname === '/downloads/task/task-cafe' && !document.querySelector('#reconvert-dialog').open && document.activeElement?.id === 'open-reconvert'`))) throw new Error('Reconversion Back did not dismiss dialog and restore focus');
+await evaluate(`document.querySelector('#open-reconvert').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+await call('Input.dispatchKeyEvent', {type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27});
+await call('Input.dispatchKeyEvent', {type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27});
+await new Promise((resolve) => setTimeout(resolve, 400));
+if (!(await evaluate(`location.pathname === '/downloads/task/task-cafe' && !document.querySelector('#reconvert-dialog').open && document.activeElement?.id === 'open-reconvert'`))) throw new Error('Reconversion Escape did not dismiss dialog and restore focus');
+await evaluate(`document.querySelector('#open-reconvert').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+await evaluate(`document.querySelector('#reconvert-preset').value = 'PERFORMANCE'; document.querySelector('#reconvert-audio').checked = true; document.querySelector('#confirm-reconvert').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/downloads' && document.querySelector('[data-download-task="task-cafe"]').textContent.includes('等待中')`))) throw new Error('Reconversion did not return task to active queue');
+await evaluate(`document.querySelector('[data-download-tab="completed"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+await evaluate(`document.querySelector('[data-open-download-task="task-video"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`Boolean(document.querySelector('#play-downloaded-video'))`))) throw new Error('Completed Video task detail did not expose playback');
+await evaluate(`document.querySelector('#play-downloaded-video').click(); true`);
+if (!(await evaluate(`document.querySelector('#download-detail-status').textContent === '已请求播放本地视频'`))) throw new Error('Downloaded video playback was not announced');
+await evaluate(`document.querySelector('#detail-back').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
 await evaluate(`document.querySelector('#clear-finished-downloads').focus(); document.querySelector('#clear-finished-downloads').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 100));
 if (!(await evaluate(`document.querySelector('.center-state h2').textContent === '没有已完成任务' && document.activeElement?.id === 'clear-finished-downloads' && document.querySelector('#downloads-status').textContent === '已完成记录已清除'`))) {

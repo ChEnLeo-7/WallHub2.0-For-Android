@@ -21,9 +21,10 @@ function defaultState() {
     subscriptions: ['3174098802', '2985110421', '2769012550'],
     libraryInitialized: true,
     downloadTasks: [
-      {id: 'task-neon', workshopId: '3357929793', status: 'DOWNLOADING', progress: 0.62, format: 'MPKG'},
-      {id: 'task-mountain', workshopId: '3174098802', status: 'FAILED', progress: 0.34, format: 'ZIP'},
-      {id: 'task-cafe', workshopId: '3048819267', status: 'COMPLETED', progress: 1, format: 'MPKG'},
+      {id: 'task-neon', workshopId: '3357929793', status: 'DOWNLOADING', progress: 0.62, format: 'MPKG', preset: 'BALANCED', preserveAudio: true, message: ''},
+      {id: 'task-mountain', workshopId: '3174098802', status: 'FAILED', progress: 0.34, format: 'ZIP', preset: 'BALANCED', preserveAudio: true, message: '网络连接中断，暂存文件仍然完整。'},
+      {id: 'task-cafe', workshopId: '3048819267', status: 'COMPLETED', progress: 1, format: 'MPKG', preset: 'QUALITY', preserveAudio: false, message: ''},
+      {id: 'task-video', workshopId: '3357929793', status: 'COMPLETED', progress: 1, format: 'ZIP', preset: 'BALANCED', preserveAudio: true, message: ''},
     ],
     downloadsInitialized: true,
     localInitialized: true,
@@ -72,17 +73,17 @@ function normalizedState(candidate) {
     }))
     : [];
   const normalizedTasks = Array.isArray(candidate.downloadTasks) ? candidate.downloadTasks.filter((task) =>
-    task && typeof task === 'object' && typeof task.id === 'string' && typeof task.workshopId === 'string' &&
+    task && typeof task === 'object' && typeof task.id === 'string' && /^[a-z0-9-]{1,64}$/u.test(task.id) && typeof task.workshopId === 'string' &&
     ['QUEUED', 'DOWNLOADING', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(task.status) &&
     Number.isFinite(task.progress) && ['MPKG', 'ZIP'].includes(task.format)
-  ).map((task) => ({id: task.id.slice(0, 64), workshopId: task.workshopId.slice(0, 32), status: task.status, progress: Math.min(1, Math.max(0, task.progress)), format: task.format})) : [];
+  ).map((task) => ({id: task.id.slice(0, 64), workshopId: task.workshopId.slice(0, 32), status: task.status, progress: Math.min(1, Math.max(0, task.progress)), format: task.format, preset: ['PERFORMANCE', 'BALANCED', 'QUALITY'].includes(task.preset) ? task.preset : 'BALANCED', preserveAudio: task.preserveAudio !== false, message: typeof task.message === 'string' ? task.message.slice(0, 240) : '', rawZipExported: task.rawZipExported === true, hasIntactStaging: task.hasIntactStaging !== false, stagingAvailable: task.stagingAvailable !== false})) : [];
   const normalizedLocalItems = candidate.localInitialized === true && Array.isArray(candidate.localItems)
     ? [...new Map(candidate.localItems.filter((item) => item && typeof item.id === 'string' && /^[a-z0-9-]{1,64}$/u.test(item.id) && typeof item.title === 'string' && ['SCENE', 'VIDEO', 'WEB'].includes(item.type)).map((item) => ({id: item.id, title: item.title.slice(0, 120), type: item.type, source: String(item.source ?? '').slice(0, 40), favorite: item.favorite === true, tags: Array.isArray(item.tags) ? item.tags.map(String).slice(0, 8) : []})).map((item) => [item.id, item])).values()]
     : fallback.localItems.map((item) => ({...item, tags: [...item.tags]}));
   const taskCandidates = candidate.downloadsInitialized === true
     ? normalizedTasks
     : [...fallback.downloadTasks.map((task) => ({...task})), ...normalizedDownloads.map((entry) => ({id: entry.id, workshopId: entry.workshopId, status: 'QUEUED', progress: 0, format: entry.format}))];
-  const downloadTasks = [...new Map(taskCandidates.map((task) => [`${task.workshopId}:${task.format}`, task])).values()];
+  const downloadTasks = [...new Map(taskCandidates.map((task) => [`${task.workshopId}:${task.format}`, task])).values()].map((task) => ({...task, preset: task.preset ?? 'BALANCED', preserveAudio: task.preserveAudio !== false, message: task.message ?? '', rawZipExported: task.rawZipExported === true, hasIntactStaging: task.hasIntactStaging !== false, stagingAvailable: task.stagingAvailable !== false}));
   return {
     schemaVersion: FIXTURE_SCHEMA_VERSION,
     seed: typeof candidate.seed === 'string' ? candidate.seed.slice(0, 64) : fallback.seed,
@@ -270,6 +271,20 @@ export class FakeBackend {
       active: this.state.downloadTasks.filter((task) => task.status !== 'COMPLETED').map(hydrate),
       completed: this.state.downloadTasks.filter((task) => task.status === 'COMPLETED').map(hydrate),
     };
+  }
+
+  downloadTask(id) {
+    const task = this.state.downloadTasks.find((candidate) => candidate.id === String(id));
+    return task ? {...task, workshop: this.workshop(task.workshopId)} : null;
+  }
+
+  reconvertDownloadTask(id, preset, preserveAudio) {
+    if (!['PERFORMANCE', 'BALANCED', 'QUALITY'].includes(preset)) return this.snapshot();
+    return this.update({downloadTasks: this.state.downloadTasks.map((task) => task.id === id && task.status === 'COMPLETED' && task.format === 'MPKG' && this.workshop(task.workshopId)?.type === 'SCENE' ? {...task, status: 'QUEUED', progress: 0, preset, preserveAudio: preserveAudio === true, message: ''} : task)});
+  }
+
+  exportRawZip(id) {
+    return this.update({downloadTasks: this.state.downloadTasks.map((task) => task.id === id && task.status === 'FAILED' && task.hasIntactStaging ? {...task, rawZipExported: true} : task)});
   }
 
   requestDownloadTaskAction(id, action) {

@@ -224,6 +224,15 @@ test('download task controls and migration remain deterministic', () => {
   assert.equal(backend.snapshot().downloads.some((entry) => entry.workshopId === '2871466005' && entry.format === 'ZIP'), false);
   backend.requestDownload('2871466005', 'ZIP');
   assert.equal(backend.snapshot().downloadTasks.some((task) => task.id === clearedId), true);
+  const detailBackend = new FakeBackend(memoryStorage());
+  assert.equal(detailBackend.downloadTask('task-cafe').preset, 'QUALITY');
+  detailBackend.reconvertDownloadTask('task-cafe', 'PERFORMANCE', true);
+  assert.equal(detailBackend.downloadTask('task-cafe').status, 'QUEUED');
+  assert.equal(detailBackend.downloadTask('task-cafe').preset, 'PERFORMANCE');
+  assert.equal(detailBackend.downloadTask('task-cafe').preserveAudio, true);
+  detailBackend.exportRawZip('task-mountain');
+  assert.equal(detailBackend.downloadTask('task-mountain').status, 'FAILED');
+  assert.equal(detailBackend.downloadTask('task-mountain').rawZipExported, true);
 });
 
 test('migrates pre-Library schema-v1 membership without losing user additions', () => {
