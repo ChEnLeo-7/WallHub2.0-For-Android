@@ -21,6 +21,8 @@ function defaultState() {
     subscriptions: [],
     discoverFeedback: {},
     discoverResultColumns: 2,
+    profileSession: 'signed-in',
+    profileCounts: {subscriptions: 42, favorites: 18},
     downloads: [],
   };
 }
@@ -28,6 +30,11 @@ function defaultState() {
 function normalizedState(candidate) {
   if (!candidate || candidate.schemaVersion !== FIXTURE_SCHEMA_VERSION) return defaultState();
   const fallback = defaultState();
+  const profileSession = ['signed-out', 'restoring', 'signed-in'].includes(candidate.profileSession) ? candidate.profileSession : fallback.profileSession;
+  const profileCounts = candidate.profileCounts && typeof candidate.profileCounts === 'object' ? {
+    subscriptions: Number.isSafeInteger(candidate.profileCounts.subscriptions) && candidate.profileCounts.subscriptions >= 0 ? candidate.profileCounts.subscriptions : null,
+    favorites: Number.isSafeInteger(candidate.profileCounts.favorites) && candidate.profileCounts.favorites >= 0 ? candidate.profileCounts.favorites : null,
+  } : {...fallback.profileCounts};
   return {
     schemaVersion: FIXTURE_SCHEMA_VERSION,
     seed: typeof candidate.seed === 'string' ? candidate.seed.slice(0, 64) : fallback.seed,
@@ -48,6 +55,8 @@ function normalizedState(candidate) {
       ).map(([key, value]) => [String(key).slice(0, 64), {rating: value.rating, favorite: value.favorite === true}]))
       : {},
     discoverResultColumns: candidate.discoverResultColumns === 1 ? 1 : 2,
+    profileSession,
+    profileCounts: profileSession === 'signed-in' ? profileCounts : {subscriptions: null, favorites: null},
     downloads: Array.isArray(candidate.downloads)
       ? candidate.downloads.filter((entry) =>
         entry && typeof entry === 'object' && typeof entry.workshopId === 'string' &&
@@ -134,6 +143,14 @@ export class FakeBackend {
       items = [...items].sort((left, right) => right.subscriptions - left.subscriptions);
     }
     return {status: items.length ? 'content' : 'empty', items};
+  }
+
+  profile() {
+    const scenario = this.state.scenario;
+    if (scenario === 'loading') return {session: 'restoring', counts: {subscriptions: null, favorites: null}};
+    if (scenario === 'empty') return {session: 'signed-out', counts: {subscriptions: null, favorites: null}};
+    if (scenario === 'error') return {session: 'signed-in', counts: {subscriptions: null, favorites: 18}};
+    return {session: this.state.profileSession, counts: {...this.state.profileCounts}};
   }
 
   discoverRails() {

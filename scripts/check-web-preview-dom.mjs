@@ -281,7 +281,38 @@ if (!(await evaluate(`document.activeElement?.id === 'discover-result-columns' &
 await evaluate(`document.querySelector('#detail-back').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 100));
 if (!(await evaluate(`location.pathname === '/discover'`))) throw new Error('Discover results Back did not restore feed');
+await evaluate(`document.querySelector('[data-route="/profile"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/profile' && document.querySelector('.profile-identity h2').textContent === 'Astra' && document.querySelectorAll('.profile-stats button').length === 2`))) {
+  throw new Error('Profile did not render deterministic signed-in state');
+}
+await call('Page.navigate', {url: `${previewOrigin}/profile?lab=1&scenario=loading`});
+await new Promise((resolve) => setTimeout(resolve, 200));
+if (!(await evaluate(`document.querySelector('.profile-identity').textContent.includes('正在恢复') && [...document.querySelectorAll('.profile-stats button')].every((button) => button.disabled)`))) {
+  throw new Error('Profile restoring state did not disable collection actions');
+}
+await call('Page.navigate', {url: `${previewOrigin}/profile?lab=1&scenario=empty`});
+await new Promise((resolve) => setTimeout(resolve, 150));
+if (!(await evaluate(`Boolean(document.querySelector('#profile-login')) && document.querySelector('.profile-identity h2').textContent === '匿名用户'`))) {
+  throw new Error('Profile signed-out state did not render');
+}
+await call('Page.navigate', {url: `${previewOrigin}/profile?lab=1&scenario=error`});
+await new Promise((resolve) => setTimeout(resolve, 150));
+if (!(await evaluate(`document.querySelector('[data-profile-collection="favorites"]').textContent.includes('18')`))) throw new Error('Profile partial failure did not preserve loaded sibling');
+await evaluate(`document.querySelector('#retry-profile-counts').focus(); document.querySelector('#retry-profile-counts').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`!location.search.includes('scenario=') && document.querySelector('[data-profile-collection="subscriptions"]').textContent.includes('42') && document.querySelector('[data-profile-collection="favorites"]').textContent.includes('18') && document.activeElement?.dataset.profileCollection === 'subscriptions' && document.querySelector('#profile-status').textContent === '统计已更新'`))) {
+  throw new Error('Profile partial count retry did not preserve sibling, focus, and announcement');
+}
+await evaluate(`document.querySelector('[data-profile-collection="subscriptions"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/library/subscriptions' && document.querySelector('.primary-nav').hidden && Boolean(document.querySelector('#detail-back'))`))) {
+  throw new Error('Profile collection route did not use secondary chrome');
+}
+await evaluate(`document.querySelector('#detail-back').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/profile'`))) throw new Error('Profile collection Back did not restore Profile');
 await evaluate(`localStorage.setItem('wallhub.preview.dom.theme', 'dark'); document.documentElement.dataset.theme = 'dark'; true`);
 
 socket.close();
-console.log('WEB_DOM_ACCEPTANCE=OK breakpoints=599/600/839/840 dialog_focus=trapped theme=persistent history=restored state_lab=deterministic detail=interactive discover=interactive');
+console.log('WEB_DOM_ACCEPTANCE=OK breakpoints=599/600/839/840 dialog_focus=trapped theme=persistent history=restored state_lab=deterministic detail=interactive discover=interactive profile=stateful');

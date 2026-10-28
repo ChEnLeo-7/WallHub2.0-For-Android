@@ -63,6 +63,23 @@ test('migrates schema-v1 downloads without format to MPKG', () => {
   assert.equal(backend.snapshot().downloads[0].format, 'MPKG');
 });
 
+test('migrates pre-Profile schema-v1 state and canonicalizes signed-out counts', () => {
+  const legacyStorage = memoryStorage({
+    [FAKE_BACKEND_STORAGE_KEY]: JSON.stringify({schemaVersion: FIXTURE_SCHEMA_VERSION, scenario: 'content'}),
+  });
+  assert.deepEqual(new FakeBackend(legacyStorage).profile(), {
+    session: 'signed-in', counts: {subscriptions: 42, favorites: 18},
+  });
+  const signedOutStorage = memoryStorage({
+    [FAKE_BACKEND_STORAGE_KEY]: JSON.stringify({
+      schemaVersion: FIXTURE_SCHEMA_VERSION,
+      profileSession: 'signed-out',
+      profileCounts: {subscriptions: 99, favorites: 88},
+    }),
+  });
+  assert.deepEqual(new FakeBackend(signedOutStorage).snapshot().profileCounts, {subscriptions: null, favorites: null});
+});
+
 test('supports repeatable state-lab scenarios and virtual time', () => {
   const backend = new FakeBackend(memoryStorage());
   backend.setScenario('loading');
@@ -82,6 +99,17 @@ test('exact phrase distinguishes exact fields from partial matches', () => {
   assert.deepEqual(backend.listWorkshops().items, []);
   backend.setQuery('Neon Rain');
   assert.deepEqual(backend.listWorkshops().items.map((item) => item.id), ['3357929793']);
+});
+
+test('profile session and partial count states remain deterministic', () => {
+  const backend = new FakeBackend(memoryStorage());
+  assert.deepEqual(backend.profile(), {session: 'signed-in', counts: {subscriptions: 42, favorites: 18}});
+  backend.setScenario('loading');
+  assert.deepEqual(backend.profile(), {session: 'restoring', counts: {subscriptions: null, favorites: null}});
+  backend.setScenario('empty');
+  assert.deepEqual(backend.profile(), {session: 'signed-out', counts: {subscriptions: null, favorites: null}});
+  backend.setScenario('error');
+  assert.deepEqual(backend.profile(), {session: 'signed-in', counts: {subscriptions: null, favorites: 18}});
 });
 
 test('discover rails and feedback remain deterministic', () => {

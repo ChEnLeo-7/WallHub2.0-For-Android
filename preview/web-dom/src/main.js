@@ -97,7 +97,7 @@ function requestedScenario() {
 function currentTopRoute() {
   if (location.pathname.startsWith('/workshop/')) return '/';
   if (location.pathname.startsWith('/discover/')) return '/discover';
-  if (location.pathname.startsWith('/profile/')) return '/profile';
+  if (location.pathname.startsWith('/profile/') || location.pathname.startsWith('/library/') || ['/downloads', '/local', '/settings'].includes(location.pathname) || location.pathname.startsWith('/settings/')) return '/profile';
   return destinations.some((item) => item.route === location.pathname) ? location.pathname : '/';
 }
 
@@ -204,6 +204,32 @@ function renderHome() {
     </section>
     <section class="home-results" aria-label="创意工坊结果">${results}</section>`;
   document.title = '首页 · WallHub Web Preview';
+}
+
+function renderProfile() {
+  const snapshot = backend.snapshot();
+  const profile = backend.profile();
+  const signedIn = profile.session === 'signed-in';
+  const restoring = profile.session === 'restoring';
+  const countLabel = (value) => Number.isSafeInteger(value) ? compactNumber.format(value) : '-';
+  const countState = (value) => Number.isSafeInteger(value) ? `${value}` : restoring ? '正在载入' : signedIn ? '暂不可用' : '需要登录';
+  main.innerHTML = `
+    <header class="top-bar"><div class="title-group"><p class="eyebrow">CURRENT UI · WEB MIRROR</p><h1>我的</h1></div><md-outlined-button id="open-settings">设置</md-outlined-button></header>
+    ${isLabVisible() ? renderStateLab(snapshot) : ''}
+    <section class="profile-page">
+      <p id="profile-status" class="sr-only" aria-live="polite"></p>
+      <div class="profile-identity"><div class="profile-avatar" aria-hidden="true">${signedIn || restoring ? 'A' : '?'}</div><div><h2>${signedIn || restoring ? 'Astra' : '匿名用户'}</h2><p>${signedIn ? 'wallhub_fixture · Wallpaper Engine 128 小时' : restoring ? '正在恢复 Steam 会话…' : '登录 Steam 以同步你的内容'}</p></div>${!signedIn && !restoring ? '<md-filled-button id="profile-login">登录 Steam</md-filled-button>' : ''}</div>
+      <div class="profile-stats">
+        <button type="button" data-profile-collection="subscriptions" ${restoring ? 'disabled' : ''} aria-label="订阅 ${countState(profile.counts.subscriptions)}"><span>${countLabel(profile.counts.subscriptions)}</span><strong>订阅</strong></button>
+        <button type="button" data-profile-collection="favorites" ${restoring ? 'disabled' : ''} aria-label="收藏 ${countState(profile.counts.favorites)}"><span>${countLabel(profile.counts.favorites)}</span><strong>收藏</strong></button>
+      </div>
+      ${signedIn && Object.values(profile.counts).some((value) => value === null) ? '<md-outlined-button id="retry-profile-counts">重试统计</md-outlined-button>' : ''}
+      <div class="profile-links">
+        <button type="button" data-profile-route="/downloads"><span aria-hidden="true">↓</span><span><strong>下载</strong><small>查看活动与已完成任务</small></span><span aria-hidden="true">›</span></button>
+        <button type="button" data-profile-route="/local"><span aria-hidden="true">▣</span><span><strong>本地壁纸</strong><small>管理设备上的壁纸</small></span><span aria-hidden="true">›</span></button>
+      </div>
+    </section>`;
+  document.title = '我的 · WallHub Web Preview';
 }
 
 function renderDiscover() {
@@ -337,8 +363,11 @@ function renderDetail() {
 function renderPlaceholder() {
   const selected = destinations.find((item) => item.route === currentTopRoute()) ?? destinations[0];
   const secondary = location.pathname !== selected.route;
+  const secondaryTitle = ({
+    '/library/subscriptions': '订阅', '/library/favorites': '收藏', '/downloads': '下载', '/local': '本地壁纸', '/settings': '设置', '/settings/steam': 'Steam 账户',
+  })[location.pathname] ?? selected.label;
   main.innerHTML = secondary
-    ? `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回">←</button><h1>${selected.label}</h1></header><section class="placeholder"><h2>${selected.label} · Current UI</h2><p>此页面将在后续垂直切片中接入确定性状态。</p></section>`
+    ? `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回">←</button><h1>${secondaryTitle}</h1></header><section class="placeholder"><h2>${secondaryTitle} · Current UI</h2><p>此页面将在后续垂直切片中接入确定性状态。</p></section>`
     : `${shellHeader(selected.label)}<section class="placeholder"><h2>${selected.label} · Current UI</h2><p>此页面将在后续垂直切片中接入确定性状态。</p></section>`;
   document.title = `${selected.label} · WallHub Web Preview`;
 }
@@ -373,6 +402,28 @@ function bindSharedControls() {
   });
   document.querySelectorAll('[data-view-mode]').forEach((button) => button.addEventListener('click', () => backend.setViewMode(button.dataset.viewMode)));
   document.querySelectorAll('[data-open-workshop]').forEach((button) => button.addEventListener('click', () => navigate(`/workshop/${button.dataset.openWorkshop}`)));
+  document.querySelector('#open-settings')?.addEventListener('click', () => navigate('/settings'));
+  document.querySelector('#profile-login')?.addEventListener('click', () => navigate('/settings/steam'));
+  document.querySelectorAll('[data-profile-route]').forEach((button) => button.addEventListener('click', () => navigate(button.dataset.profileRoute)));
+  document.querySelectorAll('[data-profile-collection]').forEach((button) => button.addEventListener('click', () => {
+    const destination = backend.profile().session === 'signed-in' ? `/library/${button.dataset.profileCollection}` : '/settings/steam';
+    navigate(destination);
+  }));
+  document.querySelector('#retry-profile-counts')?.addEventListener('click', () => {
+    const currentCounts = backend.profile().counts;
+    const url = new URL(location.href);
+    url.searchParams.delete('scenario');
+    history.replaceState(history.state, '', url);
+    backend.update({profileCounts: {
+      subscriptions: currentCounts.subscriptions ?? 42,
+      favorites: currentCounts.favorites ?? 18,
+    }, scenario: 'content'});
+    requestAnimationFrame(() => {
+      document.querySelector('[data-profile-collection="subscriptions"]')?.focus();
+      const status = document.querySelector('#profile-status');
+      if (status) status.textContent = '统计已更新';
+    });
+  });
   document.querySelector('#retry-discover')?.addEventListener('click', () => {
     const url = new URL(location.href);
     url.searchParams.delete('scenario');
@@ -414,7 +465,7 @@ function bindSharedControls() {
     if (history.state?.wallhub === true && String(history.state.from).startsWith('/')) {
       history.back();
     } else {
-      const fallback = location.pathname.startsWith('/discover/') ? '/discover' : '/';
+      const fallback = location.pathname.startsWith('/discover/') ? '/discover' : currentTopRoute() === '/profile' ? '/profile' : '/';
       history.replaceState({wallhub: true, route: fallback}, '', fallback);
       renderApp();
       main.focus();
@@ -503,6 +554,7 @@ function renderApp() {
   renderNavigation();
   if (location.pathname === '/') renderHome();
   else if (location.pathname === '/discover') renderDiscover();
+  else if (location.pathname === '/profile') renderProfile();
   else if (/^\/discover\/results\/[a-z0-9-]+$/u.test(location.pathname)) renderDiscoverResults();
   else if (/^\/workshop\/\d+$/u.test(location.pathname)) renderDetail();
   else renderPlaceholder();
