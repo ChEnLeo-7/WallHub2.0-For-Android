@@ -79,6 +79,9 @@ const filterDialog = document.querySelector('#filter-dialog');
 const downloadDialog = document.querySelector('#download-dialog');
 let pendingLibraryRemoval = null;
 let confirmLibraryRemoval = false;
+let pendingLocalDelete = null;
+let confirmLocalDelete = false;
+let localSearchTimer = null;
 
 const escapeHtml = (value) => String(value)
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -99,7 +102,7 @@ function requestedScenario() {
 function currentTopRoute() {
   if (location.pathname.startsWith('/workshop/')) return '/';
   if (location.pathname.startsWith('/discover/')) return '/discover';
-  if (location.pathname.startsWith('/profile/') || location.pathname.startsWith('/library/') || ['/downloads', '/local', '/settings'].includes(location.pathname) || location.pathname.startsWith('/settings/')) return '/profile';
+  if (location.pathname.startsWith('/profile/') || location.pathname.startsWith('/library/') || ['/downloads', '/local', '/settings'].includes(location.pathname) || location.pathname.startsWith('/local/') || location.pathname.startsWith('/settings/')) return '/profile';
   return destinations.some((item) => item.route === location.pathname) ? location.pathname : '/';
 }
 
@@ -206,6 +209,29 @@ function renderHome() {
     </section>
     <section class="home-results" aria-label="创意工坊结果">${results}</section>`;
   document.title = '首页 · WallHub Web Preview';
+}
+
+function renderLocalDetail() {
+  const id = location.pathname.match(/^\/local\/([a-z0-9-]+)$/u)?.[1];
+  const item = id ? backend.localWallpaper(id) : null;
+  if (!item) {
+    main.innerHTML = '<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back">←</button><h1>本地壁纸详情</h1></header><div class="center-state" role="alert"><h2>找不到此本地壁纸</h2></div>';
+    return;
+  }
+  main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回本地壁纸">←</button><h1>${escapeHtml(item.title)}</h1></header><section class="local-detail"><div class="local-detail-preview"><span>${item.type}</span></div><div class="description"><h2>信息</h2><dl class="detail-metrics"><div><dt>来源</dt><dd>${escapeHtml(item.source)}</dd></div><div><dt>本地 ID</dt><dd>${item.id}</dd></div><div><dt>类型</dt><dd>${item.type}</dd></div></dl><div class="tag-list">${item.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div></div><div class="local-detail-actions"><md-filled-button id="local-open-native">打开</md-filled-button><md-outlined-button id="local-share">分享</md-outlined-button><md-outlined-button id="local-copy-location">复制位置</md-outlined-button><button type="button" data-local-favorite="${item.id}" aria-pressed="${item.favorite}">${item.favorite ? '已收藏' : '收藏'}</button></div><p id="local-status" class="sr-only" aria-live="polite"></p></section>`;
+  document.title = `${item.title} · WallHub Web Preview`;
+}
+
+function renderLocal() {
+  const snapshot = backend.snapshot();
+  const result = backend.localWallpapers();
+  let content;
+  if (result.status === 'loading') content = '<div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress><p>正在扫描本地壁纸…</p></div>';
+  else if (result.status === 'error') content = '<div class="center-state" role="alert"><h2>无法扫描本地壁纸</h2><md-filled-button id="retry-local">重试</md-filled-button></div>';
+  else if (result.status === 'empty') content = '<div class="center-state"><h2>没有匹配的本地壁纸</h2></div>';
+  else content = `<div class="local-grid ${snapshot.localViewMode === 'list' ? 'is-list' : ''}">${result.items.map((item) => `<article class="local-item" data-local-item="${item.id}" tabindex="-1"><button type="button" class="local-open" data-local-open="${item.id}"><div class="local-preview"><span>${item.type}</span></div><div><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.source)} · ${item.tags.map(escapeHtml).join(' · ')}</p></div></button><div class="local-actions"><button type="button" data-local-favorite="${item.id}" aria-pressed="${item.favorite}">${item.favorite ? '已收藏' : '收藏'}</button><button type="button" data-local-delete="${item.id}">删除</button></div></article>`).join('')}</div>`;
+  main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回我的">←</button><h1>本地壁纸</h1><div class="toolbar-actions"><md-outlined-button id="local-view-toggle">${snapshot.localViewMode === 'grid' ? '列表' : '网格'}</md-outlined-button></div></header>${isLabVisible() ? renderStateLab(snapshot) : ''}<div class="local-tools"><md-outlined-text-field id="local-search" label="搜索本地壁纸" value="${escapeHtml(snapshot.localQuery)}"></md-outlined-text-field></div><p id="local-status" class="sr-only" aria-live="polite"></p><section class="local-page">${content}</section><md-dialog id="local-delete-dialog" aria-label="确认删除"><div slot="headline">删除本地壁纸？</div><div slot="content">此操作将从确定性预览中移除此项目。</div><div slot="actions"><md-text-button id="cancel-local-delete">取消</md-text-button><md-filled-button id="confirm-local-delete">删除</md-filled-button></div></md-dialog>`;
+  document.title = '本地壁纸 · WallHub Web Preview';
 }
 
 function renderDownloads() {
@@ -408,7 +434,7 @@ function renderDetail() {
 function renderPlaceholder() {
   const selected = destinations.find((item) => item.route === currentTopRoute()) ?? destinations[0];
   const secondary = location.pathname !== selected.route;
-  const secondaryTitle = ({
+  const secondaryTitle = location.pathname.startsWith('/local/') ? '本地壁纸详情' : ({
     '/library/subscriptions': '订阅', '/library/favorites': '收藏', '/downloads': '下载', '/local': '本地壁纸', '/settings': '设置', '/settings/steam': 'Steam 账户',
   })[location.pathname] ?? selected.label;
   main.innerHTML = secondary
@@ -447,6 +473,35 @@ function bindSharedControls() {
   });
   document.querySelectorAll('[data-view-mode]').forEach((button) => button.addEventListener('click', () => backend.setViewMode(button.dataset.viewMode)));
   document.querySelectorAll('[data-open-workshop]').forEach((button) => button.addEventListener('click', () => navigate(`/workshop/${button.dataset.openWorkshop}`)));
+  const setLocalActionStatus = (message) => { const status = document.querySelector('#local-status'); if (status) status.textContent = message; };
+  document.querySelector('#local-open-native')?.addEventListener('click', () => setLocalActionStatus('已请求打开本地壁纸'));
+  document.querySelector('#local-share')?.addEventListener('click', () => setLocalActionStatus('已准备分享本地壁纸'));
+  document.querySelector('#local-copy-location')?.addEventListener('click', () => setLocalActionStatus('位置已复制'));
+  document.querySelector('#local-search')?.addEventListener('input', (event) => {
+    const value = event.target.value;
+    clearTimeout(localSearchTimer);
+    localSearchTimer = setTimeout(() => backend.setLocalQuery(value), 180);
+  });
+  document.querySelector('#local-search')?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    clearTimeout(localSearchTimer);
+    backend.setLocalQuery(event.target.value);
+  });
+  document.querySelector('#local-view-toggle')?.addEventListener('click', () => backend.setLocalViewMode(backend.snapshot().localViewMode === 'grid' ? 'list' : 'grid'));
+  document.querySelectorAll('[data-local-open]').forEach((button) => button.addEventListener('click', () => navigate(`/local/${button.dataset.localOpen}`)));
+  document.querySelectorAll('[data-local-favorite]').forEach((button) => button.addEventListener('click', () => backend.toggleLocalFavorite(button.dataset.localFavorite)));
+  document.querySelectorAll('[data-local-delete]').forEach((button) => button.addEventListener('click', () => {
+    pendingLocalDelete = button.dataset.localDelete;
+    history.pushState({...history.state, modal: 'local-delete'}, '', location.href);
+    const deleteDialog = document.querySelector('#local-delete-dialog');
+    deleteDialog.addEventListener('closed', () => { if (history.state?.modal === 'local-delete') history.back(); }, {once: true});
+    deleteDialog.show();
+  }));
+  document.querySelector('#cancel-local-delete')?.addEventListener('click', () => history.back());
+  document.querySelector('#confirm-local-delete')?.addEventListener('click', () => { confirmLocalDelete = true; history.back(); });
+  document.querySelector('#retry-local')?.addEventListener('click', () => {
+    const url = new URL(location.href); url.searchParams.delete('scenario'); history.replaceState(history.state, '', url); backend.setScenario('content');
+  });
   const recoverDownloads = () => {
     const url = new URL(location.href); url.searchParams.delete('scenario'); history.replaceState(history.state, '', url); backend.setScenario('content');
   };
@@ -589,7 +644,7 @@ function bindSharedControls() {
     if (history.state?.wallhub === true && String(history.state.from).startsWith('/')) {
       history.back();
     } else {
-      const fallback = location.pathname.startsWith('/discover/') ? '/discover' : currentTopRoute() === '/profile' ? '/profile' : '/';
+      const fallback = location.pathname.startsWith('/discover/') ? '/discover' : location.pathname.startsWith('/local/') ? '/local' : currentTopRoute() === '/profile' ? '/profile' : '/';
       history.replaceState({wallhub: true, route: fallback}, '', fallback);
       renderApp();
       main.focus();
@@ -680,6 +735,8 @@ function renderApp() {
   else if (location.pathname === '/discover') renderDiscover();
   else if (location.pathname === '/profile') renderProfile();
   else if (location.pathname === '/downloads') renderDownloads();
+  else if (location.pathname === '/local') renderLocal();
+  else if (/^\/local\/[a-z0-9-]+$/u.test(location.pathname)) renderLocalDetail();
   else if (/^\/library\/(subscriptions|favorites)$/u.test(location.pathname)) renderLibrary();
   else if (/^\/discover\/results\/[a-z0-9-]+$/u.test(location.pathname)) renderDiscoverResults();
   else if (/^\/workshop\/\d+$/u.test(location.pathname)) renderDetail();
@@ -698,6 +755,21 @@ nav.addEventListener('click', (event) => {
   if (button) navigate(button.dataset.route);
 });
 window.addEventListener('popstate', () => {
+  const localDeleteDialog = document.querySelector('#local-delete-dialog');
+  if (localDeleteDialog?.open) {
+    localDeleteDialog.close();
+    if (confirmLocalDelete && pendingLocalDelete) {
+      const deletedId = pendingLocalDelete;
+      confirmLocalDelete = false;
+      backend.deleteLocalWallpaper(deletedId);
+      requestAnimationFrame(() => {
+        (document.querySelector('.local-item') ?? document.querySelector('#local-search'))?.focus();
+        const status = document.querySelector('#local-status'); if (status) status.textContent = '本地壁纸已删除';
+      });
+    }
+    pendingLocalDelete = null; confirmLocalDelete = false;
+    return;
+  }
   const removeDialog = document.querySelector('#library-remove-dialog');
   if (removeDialog?.open) {
     removeDialog.close();
@@ -726,6 +798,7 @@ backend.subscribe(() => {
     active?.dataset?.subscribe ? `[data-subscribe="${active.dataset.subscribe}"]` :
     active?.dataset?.railRating ? `[data-rail-rating="${active.dataset.railRating}"][data-rail="${active.dataset.rail}"]` :
     active?.dataset?.railFavorite ? `[data-rail-favorite="${active.dataset.railFavorite}"]` :
+    active?.dataset?.localFavorite ? `[data-local-favorite="${active.dataset.localFavorite}"]` :
     active?.dataset?.download ? `[data-download="${active.dataset.download}"]` :
     active?.dataset?.viewMode ? `[data-view-mode="${active.dataset.viewMode}"]` :
     active?.id ? `#${CSS.escape(active.id)}` : null;

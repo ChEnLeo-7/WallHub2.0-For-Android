@@ -101,6 +101,35 @@ test('exact phrase distinguishes exact fields from partial matches', () => {
   assert.deepEqual(backend.listWorkshops().items.map((item) => item.id), ['3357929793']);
 });
 
+test('normalizes malformed and duplicate persisted Local IDs', () => {
+  const storage = memoryStorage({[FAKE_BACKEND_STORAGE_KEY]: JSON.stringify({
+    schemaVersion: FIXTURE_SCHEMA_VERSION,
+    localInitialized: true,
+    localItems: [
+      {id: 'bad\" onclick=\"alert(1)', title: 'bad', type: 'SCENE'},
+      {id: 'local-safe', title: 'first', type: 'SCENE'},
+      {id: 'local-safe', title: 'last', type: 'VIDEO'},
+    ],
+  })});
+  const items = new FakeBackend(storage).localWallpapers().items;
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, 'local-safe');
+});
+
+test('local wallpaper search, favorites, and deletion persist', () => {
+  const storage = memoryStorage();
+  const backend = new FakeBackend(storage);
+  assert.equal(backend.localWallpapers().items.length, 3);
+  backend.setLocalQuery('水墨');
+  assert.deepEqual(backend.localWallpapers().items.map((item) => item.id), ['local-ink']);
+  backend.setLocalQuery('');
+  backend.toggleLocalFavorite('local-ink');
+  backend.deleteLocalWallpaper('local-cafe');
+  const restored = new FakeBackend(storage);
+  assert.equal(restored.localWallpapers().items.length, 2);
+  assert.equal(restored.localWallpapers().items.find((item) => item.id === 'local-ink').favorite, true);
+});
+
 test('download task controls and migration remain deterministic', () => {
   const legacy = memoryStorage({[FAKE_BACKEND_STORAGE_KEY]: JSON.stringify({
     schemaVersion: FIXTURE_SCHEMA_VERSION,

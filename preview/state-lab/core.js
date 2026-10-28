@@ -26,6 +26,14 @@ function defaultState() {
       {id: 'task-cafe', workshopId: '3048819267', status: 'COMPLETED', progress: 1, format: 'MPKG'},
     ],
     downloadsInitialized: true,
+    localInitialized: true,
+    localViewMode: 'grid',
+    localQuery: '',
+    localItems: [
+      {id: 'local-neon', title: '雨夜霓虹（本地）', type: 'VIDEO', source: 'WallHub', favorite: true, tags: ['赛博朋克', '雨夜']},
+      {id: 'local-ink', title: '水墨游鱼（导入）', type: 'SCENE', source: '导入', favorite: false, tags: ['水墨', '鱼']},
+      {id: 'local-cafe', title: '像素咖啡馆（缓存）', type: 'SCENE', source: '下载', favorite: false, tags: ['像素', '咖啡']},
+    ],
     discoverFeedback: {},
     discoverResultColumns: 2,
     profileSession: 'signed-in',
@@ -62,6 +70,9 @@ function normalizedState(candidate) {
     ['QUEUED', 'DOWNLOADING', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(task.status) &&
     Number.isFinite(task.progress) && ['MPKG', 'ZIP'].includes(task.format)
   ).map((task) => ({id: task.id.slice(0, 64), workshopId: task.workshopId.slice(0, 32), status: task.status, progress: Math.min(1, Math.max(0, task.progress)), format: task.format})) : [];
+  const normalizedLocalItems = candidate.localInitialized === true && Array.isArray(candidate.localItems)
+    ? [...new Map(candidate.localItems.filter((item) => item && typeof item.id === 'string' && /^[a-z0-9-]{1,64}$/u.test(item.id) && typeof item.title === 'string' && ['SCENE', 'VIDEO', 'WEB'].includes(item.type)).map((item) => ({id: item.id, title: item.title.slice(0, 120), type: item.type, source: String(item.source ?? '').slice(0, 40), favorite: item.favorite === true, tags: Array.isArray(item.tags) ? item.tags.map(String).slice(0, 8) : []})).map((item) => [item.id, item])).values()]
+    : fallback.localItems.map((item) => ({...item, tags: [...item.tags]}));
   const taskCandidates = candidate.downloadsInitialized === true
     ? normalizedTasks
     : [...fallback.downloadTasks.map((task) => ({...task})), ...normalizedDownloads.map((entry) => ({id: entry.id, workshopId: entry.workshopId, status: 'QUEUED', progress: 0, format: entry.format}))];
@@ -83,6 +94,10 @@ function normalizedState(candidate) {
     libraryInitialized: true,
     downloadTasks,
     downloadsInitialized: true,
+    localInitialized: true,
+    localViewMode: candidate.localViewMode === 'list' ? 'list' : fallback.localViewMode,
+    localQuery: typeof candidate.localQuery === 'string' ? candidate.localQuery.slice(0, 120) : fallback.localQuery,
+    localItems: normalizedLocalItems,
     discoverFeedback: candidate.discoverFeedback && typeof candidate.discoverFeedback === 'object'
       ? Object.fromEntries(Object.entries(candidate.discoverFeedback).filter(([, value]) =>
         value && typeof value === 'object' && ['none', 'like', 'dislike'].includes(value.rating)
@@ -169,6 +184,25 @@ export class FakeBackend {
     }
     return {status: items.length ? 'content' : 'empty', items};
   }
+
+  localWallpaper(id) {
+    const item = this.state.localItems.find((candidate) => candidate.id === String(id));
+    return item ? {...item, tags: [...item.tags]} : null;
+  }
+
+  localWallpapers() {
+    if (this.state.scenario === 'loading') return {status: 'loading', items: []};
+    if (this.state.scenario === 'error') return {status: 'error', items: []};
+    if (this.state.scenario === 'empty') return {status: 'empty', items: []};
+    const needle = this.state.localQuery.trim().toLocaleLowerCase('zh-CN');
+    const items = needle ? this.state.localItems.filter((item) => [item.title, item.source, ...item.tags].some((value) => value.toLocaleLowerCase('zh-CN').includes(needle))) : this.state.localItems;
+    return {status: items.length ? 'content' : 'empty', items: items.map((item) => ({...item, tags: [...item.tags]}))};
+  }
+
+  setLocalQuery(query) { return this.update({localQuery: String(query).slice(0, 120)}); }
+  setLocalViewMode(mode) { return this.update({localViewMode: mode === 'list' ? 'list' : 'grid'}); }
+  toggleLocalFavorite(id) { return this.update({localItems: this.state.localItems.map((item) => item.id === id ? {...item, favorite: !item.favorite} : item)}); }
+  deleteLocalWallpaper(id) { return this.update({localItems: this.state.localItems.filter((item) => item.id !== id)}); }
 
   downloadTaskGroups() {
     if (this.state.scenario === 'loading') return {status: 'loading', active: [], completed: []};

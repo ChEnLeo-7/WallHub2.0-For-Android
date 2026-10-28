@@ -372,6 +372,48 @@ if (!(await evaluate(`document.querySelector('.center-state h2').textContent ===
 await evaluate(`document.querySelector('#detail-back').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 100));
 if (!(await evaluate(`location.pathname === '/profile'`))) throw new Error('Downloads Back did not restore Profile');
+await evaluate(`document.querySelector('[data-profile-route="/local"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/local' && document.querySelectorAll('.local-item').length === 3`))) throw new Error('Local wallpapers did not render deterministic content');
+await evaluate(`document.querySelector('#local-search').focus(); true`);
+await call('Input.insertText', {text: '水'});
+await new Promise((resolve) => setTimeout(resolve, 60));
+await call('Input.insertText', {text: '墨'});
+await new Promise((resolve) => setTimeout(resolve, 300));
+if (!(await evaluate(`document.querySelectorAll('.local-item').length === 1 && document.querySelector('#local-search').value === '水墨' && document.activeElement?.id === 'local-search'`))) throw new Error('Local search did not preserve multi-character typing and focus');
+await evaluate(`document.querySelector('#local-search').value = ''; document.querySelector('#local-search').dispatchEvent(new InputEvent('input', {bubbles: true, composed: true})); true`);
+await new Promise((resolve) => setTimeout(resolve, 300));
+await evaluate(`document.querySelector('#local-view-toggle').focus(); document.querySelector('#local-view-toggle').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`document.querySelector('.local-grid').classList.contains('is-list') && document.activeElement?.id === 'local-view-toggle'`))) throw new Error('Local view mode did not persist with focus');
+for (const width of [320, 359, 599, 600, 839, 840]) {
+  await call('Emulation.setDeviceMetricsOverride', {width, height: 900, screenWidth: width, screenHeight: 900, deviceScaleFactor: 1, mobile: true});
+  await evaluate(`dispatchEvent(new Event('resize')); true`);
+  const geometry = await evaluate(`(() => { const open = document.querySelector('.local-open'); const copy = open.children[1].getBoundingClientRect(); return {columns: getComputedStyle(open).gridTemplateColumns.split(' ').length, copyWidth: Math.round(copy.width)}; })()`);
+  if ((width < 600 && geometry.columns !== 1) || (width >= 600 && geometry.columns !== 2) || geometry.copyWidth < 120) throw new Error(`${width}px Local list geometry failed: ${JSON.stringify(geometry)}`);
+}
+await call('Emulation.clearDeviceMetricsOverride');
+await evaluate(`dispatchEvent(new Event('resize')); true`);
+const localFavoriteState = await evaluate(`document.querySelector('[data-local-favorite]').getAttribute('aria-pressed')`);
+await evaluate(`document.querySelector('[data-local-favorite]').focus(); document.querySelector('[data-local-favorite]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`document.activeElement?.dataset.localFavorite && document.activeElement?.getAttribute('aria-pressed') !== ${JSON.stringify(localFavoriteState)}`))) throw new Error('Local favorite did not preserve focus');
+await evaluate(`document.querySelector('[data-local-delete]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+await evaluate(`history.back(); true`);
+await new Promise((resolve) => setTimeout(resolve, 400));
+if (!(await evaluate(`location.pathname === '/local' && !document.querySelector('#local-delete-dialog').open && document.querySelectorAll('.local-item').length === 3`))) throw new Error('Local dialog Back did not preserve route');
+await evaluate(`document.querySelector('[data-local-delete]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+await evaluate(`document.querySelector('#confirm-local-delete').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 400));
+if (!(await evaluate(`document.querySelectorAll('.local-item').length === 2 && document.querySelector('#local-status').textContent === '本地壁纸已删除'`))) throw new Error('Local delete did not persist and announce');
+await evaluate(`document.querySelector('[data-local-open]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname.startsWith('/local/') && Boolean(document.querySelector('.local-detail')) && document.querySelectorAll('.local-detail-actions button, .local-detail-actions md-filled-button, .local-detail-actions md-outlined-button').length >= 4`))) throw new Error('Local item did not open functional detail route');
+await evaluate(`history.replaceState(null, '', location.href); document.querySelector('#detail-back').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/local'`))) throw new Error('Local detail Back did not restore Local');
 await evaluate(`localStorage.setItem('wallhub.preview.dom.theme', 'dark'); document.documentElement.dataset.theme = 'dark'; true`);
 
 socket.close();
