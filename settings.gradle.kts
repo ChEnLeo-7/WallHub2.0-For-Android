@@ -2,8 +2,14 @@ pluginManagement {
     includeBuild("build-logic")
 
     repositories {
-        google()
         mavenCentral()
+        google {
+            content {
+                includeGroupByRegex("androidx\\..*")
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google\\.android.*")
+            }
+        }
         gradlePluginPortal()
         maven(url = "https://maven.aliyun.com/repository/gradle-plugin")
         maven(url = "https://maven.aliyun.com/repository/google")
@@ -55,8 +61,14 @@ dependencyResolutionManagement {
         // Locked local preview of the Steam Content SDK AAR (sc-sdk-maven/, gitignored).
         // CI and LAN builds must stage and verify this exact artifact; never fall back to ~/.m2.
         maven(url = uri("sc-sdk-maven/repository"))
-        google()
         mavenCentral()
+        google {
+            content {
+                includeGroupByRegex("androidx\\..*")
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google\\.android.*")
+            }
+        }
         maven(url = "https://maven.aliyun.com/repository/google")
         maven(url = "https://maven.aliyun.com/repository/public")
     }
@@ -66,3 +78,5 @@ rootProject.name = "WallHubAndroid"
 
 include(":app")
 include(":uwu-sdk")
+include(":shared:ui")
+include(":preview:web")

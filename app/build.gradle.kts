@@ -188,6 +188,7 @@ configurations.all {
 
 dependencies {
     implementation(project(":uwu-sdk"))
+    implementation(project(":shared:ui"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material.icons.extended)
