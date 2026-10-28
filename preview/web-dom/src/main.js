@@ -208,6 +208,25 @@ function renderHome() {
   document.title = '首页 · WallHub Web Preview';
 }
 
+function renderDownloads() {
+  const result = backend.downloadTaskGroups();
+  const tab = new URLSearchParams(location.search).get('tab') === 'completed' ? 'completed' : 'active';
+  const statusLabels = {QUEUED: '等待中', DOWNLOADING: '下载中', PAUSED: '已暂停', COMPLETED: '已完成', FAILED: '失败', CANCELLED: '已取消'};
+  const tasks = tab === 'completed' ? result.completed : result.active;
+  let content;
+  if (result.status === 'loading') content = '<div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress></div>';
+  else if (result.status === 'error') content = '<div class="center-state" role="alert"><h2>无法载入下载任务</h2><md-filled-button id="retry-downloads">重试</md-filled-button></div>';
+  else if (result.status === 'empty' || tasks.length === 0) content = `<div class="center-state"><h2>${tab === 'active' ? '没有活动任务' : '没有已完成任务'}</h2></div>`;
+  else content = `<div class="download-task-list">${tasks.map((task) => {
+    const title = task.workshop?.title ?? task.workshopId;
+    const primaryAction = ['DOWNLOADING', 'QUEUED'].includes(task.status) ? 'PAUSE' : task.status === 'PAUSED' ? 'RESUME' : ['FAILED', 'CANCELLED'].includes(task.status) ? 'RETRY' : null;
+    const secondaryAction = task.status === 'CANCELLED' ? 'DELETE' : tab === 'active' ? 'CANCEL' : null;
+    return `<article class="download-task" data-download-task="${task.id}" tabindex="-1"><div class="download-task-icon" aria-hidden="true">↓</div><div><h2>${escapeHtml(title)}</h2><p>${statusLabels[task.status]} · ${task.format}</p><progress max="1" value="${task.progress}" aria-label="${escapeHtml(title)} ${Math.round(task.progress * 100)}%"></progress></div><div class="download-task-actions">${primaryAction ? `<md-outlined-button data-task-action="${primaryAction}" data-task-id="${task.id}">${{PAUSE: '暂停', RESUME: '继续', RETRY: '重试'}[primaryAction]}</md-outlined-button>` : ''}${secondaryAction ? `<md-text-button data-task-action="${secondaryAction}" data-task-id="${task.id}">${secondaryAction === 'DELETE' ? '删除' : '取消'}</md-text-button>` : ''}</div></article>`;
+  }).join('')}</div>`;
+  main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回我的">←</button><h1>下载</h1><div class="toolbar-actions"><md-outlined-button id="retry-failed-downloads">重试失败项</md-outlined-button><md-text-button id="clear-finished-downloads">清除已完成</md-text-button></div></header>${isLabVisible() ? renderStateLab(backend.snapshot()) : ''}<div class="library-tabs" role="tablist" aria-label="下载分类"><button type="button" role="tab" data-download-tab="active" aria-selected="${tab === 'active'}" tabindex="${tab === 'active' ? '0' : '-1'}">活动</button><button type="button" role="tab" data-download-tab="completed" aria-selected="${tab === 'completed'}" tabindex="${tab === 'completed' ? '0' : '-1'}">已完成</button></div><p id="downloads-status" class="sr-only" aria-live="polite"></p><section class="downloads-page">${content}</section>`;
+  document.title = '下载 · WallHub Web Preview';
+}
+
 function renderLibrary() {
   const collection = location.pathname.endsWith('/favorites') ? 'favorites' : 'subscriptions';
   const result = backend.library(collection);
@@ -428,6 +447,45 @@ function bindSharedControls() {
   });
   document.querySelectorAll('[data-view-mode]').forEach((button) => button.addEventListener('click', () => backend.setViewMode(button.dataset.viewMode)));
   document.querySelectorAll('[data-open-workshop]').forEach((button) => button.addEventListener('click', () => navigate(`/workshop/${button.dataset.openWorkshop}`)));
+  const recoverDownloads = () => {
+    const url = new URL(location.href); url.searchParams.delete('scenario'); history.replaceState(history.state, '', url); backend.setScenario('content');
+  };
+  document.querySelector('#retry-downloads')?.addEventListener('click', recoverDownloads);
+  const activateDownloadTab = (target) => {
+    const url = new URL(location.href);
+    if (target === 'completed') url.searchParams.set('tab', 'completed'); else url.searchParams.delete('tab');
+    history.replaceState(history.state, '', url); renderApp(); requestAnimationFrame(() => document.querySelector(`[data-download-tab="${target}"]`)?.focus());
+  };
+  document.querySelectorAll('[data-download-tab]').forEach((button) => {
+    button.addEventListener('click', () => activateDownloadTab(button.dataset.downloadTab));
+    button.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      activateDownloadTab(['ArrowRight', 'End'].includes(event.key) ? 'completed' : 'active');
+    });
+  });
+  document.querySelectorAll('[data-task-action]').forEach((button) => button.addEventListener('click', () => {
+    const taskId = button.dataset.taskId;
+    backend.requestDownloadTaskAction(taskId, button.dataset.taskAction);
+    requestAnimationFrame(() => {
+      (document.querySelector(`[data-download-task="${CSS.escape(taskId)}"]`) ?? document.querySelector('[data-download-tab="active"]'))?.focus();
+      const status = document.querySelector('#downloads-status'); if (status) status.textContent = '下载任务已更新';
+    });
+  }));
+  document.querySelector('#retry-failed-downloads')?.addEventListener('click', () => {
+    backend.retryFailedDownloadTasks();
+    requestAnimationFrame(() => {
+      document.querySelector('#retry-failed-downloads')?.focus();
+      const status = document.querySelector('#downloads-status'); if (status) status.textContent = '失败任务已重新排队';
+    });
+  });
+  document.querySelector('#clear-finished-downloads')?.addEventListener('click', () => {
+    backend.clearFinishedDownloadTasks();
+    requestAnimationFrame(() => {
+      document.querySelector('#clear-finished-downloads')?.focus();
+      const status = document.querySelector('#downloads-status'); if (status) status.textContent = '已完成记录已清除';
+    });
+  });
   const recoverLibrary = () => {
     const url = new URL(location.href);
     url.searchParams.delete('scenario');
@@ -621,6 +679,7 @@ function renderApp() {
   if (location.pathname === '/') renderHome();
   else if (location.pathname === '/discover') renderDiscover();
   else if (location.pathname === '/profile') renderProfile();
+  else if (location.pathname === '/downloads') renderDownloads();
   else if (/^\/library\/(subscriptions|favorites)$/u.test(location.pathname)) renderLibrary();
   else if (/^\/discover\/results\/[a-z0-9-]+$/u.test(location.pathname)) renderDiscoverResults();
   else if (/^\/workshop\/\d+$/u.test(location.pathname)) renderDetail();

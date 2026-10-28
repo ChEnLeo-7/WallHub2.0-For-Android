@@ -346,6 +346,32 @@ if (!(await evaluate(`document.querySelectorAll('.library-item').length === 2 &&
 await evaluate(`document.querySelector('#detail-back').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 100));
 if (!(await evaluate(`location.pathname === '/profile'`))) throw new Error('Profile collection Back did not restore Profile');
+await evaluate(`document.querySelector('[data-profile-route="/downloads"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/downloads' && document.querySelectorAll('.download-task').length === 2 && document.querySelector('.primary-nav').hidden`))) {
+  throw new Error('Downloads did not render deterministic active tasks');
+}
+await evaluate(`document.querySelector('[data-task-action="PAUSE"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`document.querySelector('[data-download-task="task-neon"]').textContent.includes('已暂停') && document.activeElement?.dataset.downloadTask === 'task-neon' && document.querySelector('#downloads-status').textContent === '下载任务已更新'`))) {
+  throw new Error('Download pause did not persist focus and announcement');
+}
+await evaluate(`document.querySelector('#retry-failed-downloads').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`document.querySelector('[data-download-task="task-mountain"]').textContent.includes('等待中') && document.activeElement?.id === 'retry-failed-downloads' && document.querySelector('#downloads-status').textContent === '失败任务已重新排队'`))) throw new Error('Retry failed downloads did not update task, focus, and announcement');
+await evaluate(`document.querySelector('[data-download-tab="completed"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.search.includes('tab=completed') && document.querySelectorAll('.download-task').length === 1 && document.activeElement?.dataset.downloadTab === 'completed'`))) {
+  throw new Error('Downloads completed tab did not render with focus');
+}
+await evaluate(`document.querySelector('#clear-finished-downloads').focus(); document.querySelector('#clear-finished-downloads').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`document.querySelector('.center-state h2').textContent === '没有已完成任务' && document.activeElement?.id === 'clear-finished-downloads' && document.querySelector('#downloads-status').textContent === '已完成记录已清除'`))) {
+  throw new Error('Clearing completed downloads did not preserve focus');
+}
+await evaluate(`document.querySelector('#detail-back').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/profile'`))) throw new Error('Downloads Back did not restore Profile');
 await evaluate(`localStorage.setItem('wallhub.preview.dom.theme', 'dark'); document.documentElement.dataset.theme = 'dark'; true`);
 
 socket.close();

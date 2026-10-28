@@ -175,6 +175,17 @@ md-outlined-text-field { width: min(100%, 560px); }
 .center-state md-circular-progress { --md-circular-progress-size: 48px; }
 .state-icon { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); font-size: 30px; }
 .placeholder { max-width: var(--wallhub-content-max); padding: var(--wallhub-space-2); }
+.downloads-page { max-width: 920px; margin: 0 auto; padding: var(--wallhub-space-2) var(--wallhub-space-2) var(--wallhub-space-3); }
+.download-task-list { display: grid; gap: var(--wallhub-space-1); }
+.download-task { min-height: 112px; padding: var(--wallhub-space-2); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--wallhub-space-2); border-radius: var(--wallhub-shape-large); background: var(--md-sys-color-surface-container-low); }
+.download-task h2, .download-task p { margin: 0; }
+.download-task p { color: var(--md-sys-color-on-surface-variant); }
+.download-task-icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); font-size: 24px; }
+.download-task progress { width: 100%; height: 6px; margin-top: var(--wallhub-space-1); accent-color: var(--md-sys-color-primary); }
+.download-task-actions { display: flex; align-items: center; gap: 4px; }
+:root[data-window-class='compact'] .download-task { grid-template-columns: auto 1fr; }
+:root[data-window-class='compact'] .download-task-actions { grid-column: 1 / -1; justify-content: flex-end; }
+
 .library-tabs { max-width: var(--wallhub-content-max); margin: 0 auto; display: grid; grid-template-columns: repeat(2, 1fr); border-bottom: 1px solid var(--md-sys-color-outline-variant); }
 .library-tabs button { min-height: 52px; border: 0; border-bottom: 3px solid transparent; color: var(--md-sys-color-on-surface-variant); background: transparent; cursor: pointer; }
 .library-tabs button[aria-selected='true'] { border-bottom-color: var(--md-sys-color-primary); color: var(--md-sys-color-primary); font-weight: 700; }

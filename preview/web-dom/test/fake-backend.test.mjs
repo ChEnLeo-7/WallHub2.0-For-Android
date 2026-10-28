@@ -101,6 +101,42 @@ test('exact phrase distinguishes exact fields from partial matches', () => {
   assert.deepEqual(backend.listWorkshops().items.map((item) => item.id), ['3357929793']);
 });
 
+test('download task controls and migration remain deterministic', () => {
+  const legacy = memoryStorage({[FAKE_BACKEND_STORAGE_KEY]: JSON.stringify({
+    schemaVersion: FIXTURE_SCHEMA_VERSION,
+    downloads: [{id: 'download-legacy-zip', workshopId: '2985110421', state: 'queued', createdAt: FIXTURE_CLOCK_EPOCH_MS, format: 'ZIP'}],
+  })});
+  const backend = new FakeBackend(legacy);
+  assert.equal(backend.downloadTaskGroups().active.length, 3);
+  assert.equal(backend.snapshot().downloadTasks.find((task) => task.id === 'download-legacy-zip').status, 'QUEUED');
+  backend.requestDownloadTaskAction('task-neon', 'PAUSE');
+  assert.equal(backend.snapshot().downloadTasks.find((task) => task.id === 'task-neon').status, 'PAUSED');
+  backend.retryFailedDownloadTasks();
+  assert.equal(backend.snapshot().downloadTasks.find((task) => task.id === 'task-mountain').status, 'QUEUED');
+  backend.requestDownloadTaskAction('task-mountain', 'PAUSE');
+  assert.equal(backend.snapshot().downloadTasks.find((task) => task.id === 'task-mountain').status, 'PAUSED');
+  backend.requestDownloadTaskAction('task-mountain', 'CANCEL');
+  assert.equal(backend.downloadTaskGroups().active.find((task) => task.id === 'task-mountain').status, 'CANCELLED');
+  backend.requestDownloadTaskAction('task-mountain', 'RETRY');
+  assert.equal(backend.snapshot().downloadTasks.find((task) => task.id === 'task-mountain').status, 'QUEUED');
+  backend.clearFinishedDownloadTasks();
+  assert.equal(new FakeBackend(legacy).downloadTaskGroups().completed.length, 0);
+  backend.requestDownload('2769012550', 'ZIP');
+  const roundTripId = 'download-2769012550-zip';
+  backend.requestDownloadTaskAction(roundTripId, 'CANCEL');
+  backend.requestDownloadTaskAction(roundTripId, 'DELETE');
+  assert.equal(backend.snapshot().downloads.some((entry) => entry.workshopId === '2769012550' && entry.format === 'ZIP'), false);
+  backend.requestDownload('2769012550', 'ZIP');
+  assert.equal(backend.snapshot().downloadTasks.some((task) => task.id === roundTripId), true);
+  backend.requestDownload('2871466005', 'ZIP');
+  const clearedId = 'download-2871466005-zip';
+  backend.requestDownloadTaskAction(clearedId, 'CANCEL');
+  backend.clearFinishedDownloadTasks();
+  assert.equal(backend.snapshot().downloads.some((entry) => entry.workshopId === '2871466005' && entry.format === 'ZIP'), false);
+  backend.requestDownload('2871466005', 'ZIP');
+  assert.equal(backend.snapshot().downloadTasks.some((task) => task.id === clearedId), true);
+});
+
 test('migrates pre-Library schema-v1 membership without losing user additions', () => {
   const storage = memoryStorage({
     [FAKE_BACKEND_STORAGE_KEY]: JSON.stringify({

@@ -20,6 +20,12 @@ function defaultState() {
     favorites: ['3357929793', '3048819267', '2871466005'],
     subscriptions: ['3174098802', '2985110421', '2769012550'],
     libraryInitialized: true,
+    downloadTasks: [
+      {id: 'task-neon', workshopId: '3357929793', status: 'DOWNLOADING', progress: 0.62, format: 'MPKG'},
+      {id: 'task-mountain', workshopId: '3174098802', status: 'FAILED', progress: 0.34, format: 'ZIP'},
+      {id: 'task-cafe', workshopId: '3048819267', status: 'COMPLETED', progress: 1, format: 'MPKG'},
+    ],
+    downloadsInitialized: true,
     discoverFeedback: {},
     discoverResultColumns: 2,
     profileSession: 'signed-in',
@@ -41,6 +47,25 @@ function normalizedState(candidate) {
     const persisted = Array.isArray(candidate[key]) ? candidate[key].map(String) : [];
     return [...new Set(libraryInitialized ? persisted : [...fallback[key], ...persisted])];
   };
+  const normalizedDownloads = Array.isArray(candidate.downloads)
+    ? candidate.downloads.filter((entry) =>
+      entry && typeof entry === 'object' && typeof entry.workshopId === 'string' &&
+      typeof entry.id === 'string' && (entry.format === undefined || ['MPKG', 'ZIP'].includes(entry.format)) &&
+      entry.state === 'queued' && Number.isSafeInteger(entry.createdAt)
+    ).map((entry) => ({
+      id: entry.id.slice(0, 128), workshopId: entry.workshopId.slice(0, 32), format: entry.format ?? 'MPKG',
+      state: 'queued', createdAt: entry.createdAt,
+    }))
+    : [];
+  const normalizedTasks = Array.isArray(candidate.downloadTasks) ? candidate.downloadTasks.filter((task) =>
+    task && typeof task === 'object' && typeof task.id === 'string' && typeof task.workshopId === 'string' &&
+    ['QUEUED', 'DOWNLOADING', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(task.status) &&
+    Number.isFinite(task.progress) && ['MPKG', 'ZIP'].includes(task.format)
+  ).map((task) => ({id: task.id.slice(0, 64), workshopId: task.workshopId.slice(0, 32), status: task.status, progress: Math.min(1, Math.max(0, task.progress)), format: task.format})) : [];
+  const taskCandidates = candidate.downloadsInitialized === true
+    ? normalizedTasks
+    : [...fallback.downloadTasks.map((task) => ({...task})), ...normalizedDownloads.map((entry) => ({id: entry.id, workshopId: entry.workshopId, status: 'QUEUED', progress: 0, format: entry.format}))];
+  const downloadTasks = [...new Map(taskCandidates.map((task) => [`${task.workshopId}:${task.format}`, task])).values()];
   return {
     schemaVersion: FIXTURE_SCHEMA_VERSION,
     seed: typeof candidate.seed === 'string' ? candidate.seed.slice(0, 64) : fallback.seed,
@@ -56,6 +81,8 @@ function normalizedState(candidate) {
     favorites: normalizeMembership('favorites'),
     subscriptions: normalizeMembership('subscriptions'),
     libraryInitialized: true,
+    downloadTasks,
+    downloadsInitialized: true,
     discoverFeedback: candidate.discoverFeedback && typeof candidate.discoverFeedback === 'object'
       ? Object.fromEntries(Object.entries(candidate.discoverFeedback).filter(([, value]) =>
         value && typeof value === 'object' && ['none', 'like', 'dislike'].includes(value.rating)
@@ -64,16 +91,7 @@ function normalizedState(candidate) {
     discoverResultColumns: candidate.discoverResultColumns === 1 ? 1 : 2,
     profileSession,
     profileCounts: profileSession === 'signed-in' ? profileCounts : {subscriptions: null, favorites: null},
-    downloads: Array.isArray(candidate.downloads)
-      ? candidate.downloads.filter((entry) =>
-        entry && typeof entry === 'object' && typeof entry.workshopId === 'string' &&
-        typeof entry.id === 'string' && (entry.format === undefined || ['MPKG', 'ZIP'].includes(entry.format)) &&
-        entry.state === 'queued' && Number.isSafeInteger(entry.createdAt)
-      ).map((entry) => ({
-        id: entry.id.slice(0, 128), workshopId: entry.workshopId.slice(0, 32), format: entry.format ?? 'MPKG',
-        state: 'queued', createdAt: entry.createdAt,
-      }))
-      : [],
+    downloads: normalizedDownloads,
   };
 }
 
@@ -152,6 +170,51 @@ export class FakeBackend {
     return {status: items.length ? 'content' : 'empty', items};
   }
 
+  downloadTaskGroups() {
+    if (this.state.scenario === 'loading') return {status: 'loading', active: [], completed: []};
+    if (this.state.scenario === 'error') return {status: 'error', active: [], completed: []};
+    if (this.state.scenario === 'empty') return {status: 'empty', active: [], completed: []};
+    const hydrate = (task) => ({...task, workshop: this.workshop(task.workshopId)});
+    return {
+      status: 'content',
+      active: this.state.downloadTasks.filter((task) => task.status !== 'COMPLETED').map(hydrate),
+      completed: this.state.downloadTasks.filter((task) => task.status === 'COMPLETED').map(hydrate),
+    };
+  }
+
+  requestDownloadTaskAction(id, action) {
+    const transitions = {
+      PAUSE: {from: ['DOWNLOADING', 'QUEUED'], to: 'PAUSED'},
+      RESUME: {from: ['PAUSED'], to: 'DOWNLOADING'},
+      RETRY: {from: ['FAILED', 'CANCELLED'], to: 'QUEUED'},
+      CANCEL: {from: ['QUEUED', 'DOWNLOADING', 'PAUSED', 'FAILED'], to: 'CANCELLED'},
+    };
+    if (action === 'DELETE') {
+      const target = this.state.downloadTasks.find((task) => task.id === id);
+      return this.update({
+        downloadTasks: this.state.downloadTasks.filter((task) => task.id !== id),
+        downloads: target ? this.state.downloads.filter((entry) => !(entry.workshopId === target.workshopId && entry.format === target.format)) : this.state.downloads,
+      });
+    }
+    const transition = transitions[action];
+    if (!transition) return this.snapshot();
+    return this.update({downloadTasks: this.state.downloadTasks.map((task) =>
+      task.id === id && transition.from.includes(task.status) ? {...task, status: transition.to} : task
+    )});
+  }
+
+  clearFinishedDownloadTasks() {
+    const removed = this.state.downloadTasks.filter((task) => ['COMPLETED', 'CANCELLED'].includes(task.status));
+    return this.update({
+      downloadTasks: this.state.downloadTasks.filter((task) => !['COMPLETED', 'CANCELLED'].includes(task.status)),
+      downloads: this.state.downloads.filter((entry) => !removed.some((task) => task.workshopId === entry.workshopId && task.format === entry.format)),
+    });
+  }
+
+  retryFailedDownloadTasks() {
+    return this.update({downloadTasks: this.state.downloadTasks.map((task) => task.status === 'FAILED' ? {...task, status: 'QUEUED'} : task)});
+  }
+
   library(collection) {
     const key = collection === 'favorites' ? 'favorites' : 'subscriptions';
     if (this.state.profileSession === 'restoring') return {status: 'restoring', items: []};
@@ -224,14 +287,18 @@ export class FakeBackend {
     if (this.state.downloads.some((download) => download.workshopId === value && download.format === normalizedFormat)) {
       return this.snapshot();
     }
+    const taskId = `download-${value}-${normalizedFormat.toLowerCase()}`;
     return this.update({
       downloads: [...this.state.downloads, {
-        id: `download-${value}-${normalizedFormat.toLowerCase()}`,
+        id: taskId,
         workshopId: value,
         format: normalizedFormat,
         state: 'queued',
         createdAt: this.state.clockMs,
       }],
+      downloadTasks: this.state.downloadTasks.some((task) => task.workshopId === value && task.format === normalizedFormat)
+        ? this.state.downloadTasks
+        : [...this.state.downloadTasks, {id: taskId, workshopId: value, status: 'QUEUED', progress: 0, format: normalizedFormat}],
     });
   }
 }
