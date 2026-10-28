@@ -41,12 +41,15 @@ test('normalizes malformed fields in the current schema', () => {
       seed: 42,
       clockMs: 'today',
       downloads: [{workshopId: null}],
+      downloadsInitialized: true,
+      downloadTasks: [{id: 'malformed-audio', workshopId: '2985110421', status: 'COMPLETED', progress: 1, format: 'ZIP', preserveAudio: true}],
     }),
   });
   const backend = new FakeBackend(storage);
   assert.equal(backend.snapshot().query, '');
   assert.equal(backend.snapshot().clockMs, FIXTURE_CLOCK_EPOCH_MS);
   assert.deepEqual(backend.snapshot().downloads, []);
+  assert.equal(backend.downloadTask('malformed-audio').preserveAudio, false);
   assert.equal(backend.listWorkshops().status, 'content');
 });
 
@@ -228,11 +231,15 @@ test('download task controls and migration remain deterministic', () => {
   backend.requestDownload('2871466005', 'ZIP');
   assert.equal(backend.snapshot().downloadTasks.some((task) => task.id === clearedId), true);
   const detailBackend = new FakeBackend(memoryStorage());
-  assert.equal(detailBackend.downloadTask('task-cafe').preset, 'QUALITY');
-  detailBackend.reconvertDownloadTask('task-cafe', 'PERFORMANCE', true);
+  assert.equal(detailBackend.requestDownload('3174098802', 'ZIP').created, false);
+  assert.equal(detailBackend.snapshot().downloads.some((entry) => entry.workshopId === '3174098802' && entry.format === 'ZIP'), false);
+  assert.equal(detailBackend.downloadTask('task-cafe').preset, 'HIGH_QUALITY');
+  detailBackend.reconvertDownloadTask('task-cafe', 'COMPATIBILITY', true);
   assert.equal(detailBackend.downloadTask('task-cafe').status, 'QUEUED');
-  assert.equal(detailBackend.downloadTask('task-cafe').preset, 'PERFORMANCE');
+  assert.equal(detailBackend.downloadTask('task-cafe').preset, 'COMPATIBILITY');
   assert.equal(detailBackend.downloadTask('task-cafe').preserveAudio, true);
+  detailBackend.setScenario('empty');
+  assert.equal(detailBackend.requestDownload('3174098802', 'MPKG', {preset: 'EXTREME_QUALITY', preserveAudio: true}).created, true);
   detailBackend.exportRawZip('task-mountain');
   assert.equal(detailBackend.downloadTask('task-mountain').status, 'FAILED');
   assert.equal(detailBackend.downloadTask('task-mountain').rawZipExported, true);
@@ -326,7 +333,10 @@ test('search and mutations remain deterministic across reloads', () => {
   assert.deepEqual(backend.listWorkshops().items.map((item) => item.id), ['3048819267']);
   backend.toggleFavorite('3048819267');
   backend.toggleSubscription('3048819267');
-  backend.requestDownload('3048819267', 'MPKG');
+  assert.equal(backend.requestDownload('3174098802', 'MPKG', {preset: 'HIGH_QUALITY', preserveAudio: true}).created, true);
+  assert.equal(backend.requestDownload('3174098802', 'MPKG', {preset: 'HIGH_QUALITY', preserveAudio: true}).created, false);
+  assert.equal(backend.downloadTaskGroups().active.find((task) => task.workshopId === '3174098802' && task.format === 'MPKG')?.preset, 'HIGH_QUALITY');
+  assert.equal(backend.downloadTaskGroups().active.find((task) => task.workshopId === '3174098802' && task.format === 'MPKG')?.preserveAudio, true);
   backend.requestDownload('3048819267', 'ZIP');
   backend.requestDownload('3048819267', 'ZIP');
   const restored = new FakeBackend(storage);

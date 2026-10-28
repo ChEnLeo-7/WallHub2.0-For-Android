@@ -353,7 +353,14 @@ md-outlined-text-field { width: min(100%, 560px); }
 .detail-actions > button { min-width: 88px; min-height: 48px; border: 0; border-radius: 999px; color: var(--md-sys-color-on-surface); background: transparent; cursor: pointer; }
 .detail-actions > button[aria-pressed='true'] { color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); }
 .detail-actions md-filled-button { min-width: min(320px, 45vw); }
-.download-options { display: grid; gap: var(--wallhub-space-1); min-width: min(420px, 75vw); }
+.download-options, .download-conversion-options { display: grid; gap: var(--wallhub-space-1); min-width: min(420px, 75vw); }
+.download-options[hidden], .download-conversion-options[hidden] { display: none; }
+.download-conversion-options fieldset { display: grid; gap: var(--wallhub-space-1); border: 0; padding: 0; }
+.download-conversion-options label { min-height: 48px; display: flex; align-items: center; gap: var(--wallhub-space-1); }
+.download-conversion-options input { width: 24px; height: 24px; }
+.detail-download-feedback { position: fixed; z-index: 3; left: max(var(--wallhub-space-2), calc(50% - 280px)); right: max(var(--wallhub-space-2), calc(50% - 280px)); bottom: calc(88px + env(safe-area-inset-bottom)); min-height: 52px; padding: 0 var(--wallhub-space-2); display: flex; align-items: center; justify-content: space-between; gap: var(--wallhub-space-2); border-radius: var(--wallhub-shape-small); color: var(--md-sys-color-inverse-on-surface); background: var(--md-sys-color-inverse-surface); }
+.detail-download-feedback[hidden] { display: none; }
+.detail-download-feedback button { min-height: 48px; border: 0; color: var(--md-sys-color-inverse-primary); background: transparent; font-weight: 700; }
 .download-options button { min-height: 72px; padding: var(--wallhub-space-2); display: grid; text-align: start; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--wallhub-shape-medium); color: var(--md-sys-color-on-surface); background: var(--md-sys-color-surface-container-low); cursor: pointer; }
 .download-options span { margin-top: 4px; color: var(--md-sys-color-on-surface-variant); }
 .filter-form { min-width: min(360px, 70vw); display: grid; gap: var(--wallhub-space-2); }

@@ -65,9 +65,18 @@ app.innerHTML = `
   </md-dialog>
   <md-dialog id="download-dialog" aria-label="选择下载格式">
     <div slot="headline">下载壁纸</div>
-    <div slot="content" class="download-options">
-      <button type="button" data-download-format="MPKG"><strong>MPKG</strong><span>推荐 · 保留 WallHub 动态功能</span></button>
-      <button type="button" data-download-format="ZIP"><strong>ZIP</strong><span>原始创意工坊文件</span></button>
+    <div slot="content">
+      <div class="download-options" id="download-format-page">
+        <p>选择加入下载队列的输出格式。</p>
+        <button type="button" data-download-format="MPKG"><strong>MPKG</strong><span>推荐 · 保留 WallHub 动态功能</span></button>
+        <button type="button" data-download-format="ZIP"><strong>ZIP</strong><span>原始创意工坊文件</span></button>
+      </div>
+      <form class="download-conversion-options" id="download-mpkg-page" hidden>
+        <button type="button" id="back-download-format" aria-label="返回下载格式">←</button>
+        <fieldset><legend>转换质量</legend><label><input type="radio" name="download-preset" value="COMPATIBILITY">兼容优先</label><label><input type="radio" name="download-preset" value="BALANCED" checked>均衡</label><label><input type="radio" name="download-preset" value="HIGH_QUALITY">高质量</label><label><input type="radio" name="download-preset" value="EXTREME_QUALITY">极致质量</label></fieldset>
+        <label><input type="checkbox" id="download-preserve-audio">保留音频</label>
+        <md-filled-button id="start-mpkg-download" type="submit">开始下载 MPKG</md-filled-button>
+      </form>
     </div>
     <div slot="actions"><md-text-button id="close-download">关闭</md-text-button></div>
   </md-dialog>
@@ -85,6 +94,9 @@ let localSearchTimer = null;
 let settingsReturnFocus = null;
 let pendingReconversion = null;
 let reconvertDismissed = false;
+let pendingDetailDownload = null;
+let downloadDismissed = false;
+let detailDownloadFeedbackTimer = null;
 let fullscreenVideoId = null;
 let inlineVideo = {id: null, state: 'idle', attempt: 0, timer: null};
 let renderedWorkshopId = null;
@@ -98,6 +110,18 @@ function resetInlineVideo() {
 function setInlineVideoState(id, state) {
   inlineVideo = {...inlineVideo, id: String(id), state};
   renderApp();
+}
+
+function focusControl(selector) {
+  const element = document.querySelector(selector);
+  element?.focus();
+  if (document.activeElement !== element) element?.shadowRoot?.querySelector('button, input, textarea, select')?.focus();
+}
+
+function showDownloadStep(step) {
+  document.querySelector('#download-format-page').hidden = step !== 'format';
+  document.querySelector('#download-mpkg-page').hidden = step !== 'mpkg';
+  requestAnimationFrame(() => document.querySelector(step === 'mpkg' ? '#back-download-format' : '[data-download-format="MPKG"]')?.focus());
 }
 
 const escapeHtml = (value) => String(value)
@@ -304,7 +328,7 @@ function renderDownloadTaskDetail() {
   const canReconvert = task.status === 'COMPLETED' && task.format === 'MPKG' && task.workshop?.type === 'SCENE';
   const canPlay = task.status === 'COMPLETED' && task.workshop?.type === 'VIDEO' && task.stagingAvailable;
   const canExport = task.status === 'FAILED' && task.hasIntactStaging;
-  main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回下载">←</button><h1>下载任务</h1></header><section class="download-detail"><div class="download-detail-hero"><span>${task.workshop?.type ?? task.format}</span><h2>${escapeHtml(title)}</h2><p>${statusLabels[task.status]} · ${task.format}</p><progress max="1" value="${task.progress}" aria-label="进度 ${Math.round(task.progress * 100)}%"></progress></div><dl class="detail-metrics"><div><dt>输出格式</dt><dd>${task.format}</dd></div><div><dt>转换档位</dt><dd>${task.preset}</dd></div><div><dt>保留音频</dt><dd>${task.preserveAudio ? '是' : '否'}</dd></div><div><dt>任务 ID</dt><dd>${task.id}</dd></div></dl>${task.message ? `<div class="download-failure" role="alert"><h3>失败详情</h3><p>${escapeHtml(task.message)}</p>${task.rawZipExported ? '<strong>原始 ZIP 已导出</strong>' : ''}</div>` : ''}<div class="download-detail-actions"><md-outlined-button id="open-download-workshop">打开项目</md-outlined-button>${canPlay ? '<md-filled-button id="play-downloaded-video">播放视频</md-filled-button>' : ''}${canReconvert ? '<md-filled-button id="open-reconvert">重新转换</md-filled-button>' : ''}${canExport ? '<md-filled-button id="export-raw-zip">导出原始 ZIP</md-filled-button>' : ''}</div><p id="download-detail-status" class="sr-only" aria-live="polite"></p></section><md-dialog id="reconvert-dialog" aria-label="重新转换"><div slot="headline">重新转换 MPKG</div><div slot="content" class="reconvert-form"><label>转换档位<select id="reconvert-preset"><option value="PERFORMANCE">性能优先</option><option value="BALANCED">均衡</option><option value="QUALITY">质量优先</option></select></label><label><input type="checkbox" id="reconvert-audio" ${task.preserveAudio ? 'checked' : ''}>保留音频</label></div><div slot="actions"><md-text-button id="cancel-reconvert">取消</md-text-button><md-filled-button id="confirm-reconvert">开始转换</md-filled-button></div></md-dialog>`;
+  main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回下载">←</button><h1>下载任务</h1></header><section class="download-detail"><div class="download-detail-hero"><span>${task.workshop?.type ?? task.format}</span><h2>${escapeHtml(title)}</h2><p>${statusLabels[task.status]} · ${task.format}</p><progress max="1" value="${task.progress}" aria-label="进度 ${Math.round(task.progress * 100)}%"></progress></div><dl class="detail-metrics"><div><dt>输出格式</dt><dd>${task.format}</dd></div><div><dt>转换档位</dt><dd>${task.preset}</dd></div><div><dt>保留音频</dt><dd>${task.preserveAudio ? '是' : '否'}</dd></div><div><dt>任务 ID</dt><dd>${task.id}</dd></div></dl>${task.message ? `<div class="download-failure" role="alert"><h3>失败详情</h3><p>${escapeHtml(task.message)}</p>${task.rawZipExported ? '<strong>原始 ZIP 已导出</strong>' : ''}</div>` : ''}<div class="download-detail-actions"><md-outlined-button id="open-download-workshop">打开项目</md-outlined-button>${canPlay ? '<md-filled-button id="play-downloaded-video">播放视频</md-filled-button>' : ''}${canReconvert ? '<md-filled-button id="open-reconvert">重新转换</md-filled-button>' : ''}${canExport ? '<md-filled-button id="export-raw-zip">导出原始 ZIP</md-filled-button>' : ''}</div><p id="download-detail-status" class="sr-only" aria-live="polite"></p></section><md-dialog id="reconvert-dialog" aria-label="重新转换"><div slot="headline">重新转换 MPKG</div><div slot="content" class="reconvert-form"><label>转换档位<select id="reconvert-preset"><option value="COMPATIBILITY">兼容优先</option><option value="BALANCED">均衡</option><option value="HIGH_QUALITY">高质量</option><option value="EXTREME_QUALITY">极致质量</option></select></label><label><input type="checkbox" id="reconvert-audio" ${task.preserveAudio ? 'checked' : ''}>保留音频</label></div><div slot="actions"><md-text-button id="cancel-reconvert">取消</md-text-button><md-filled-button id="confirm-reconvert">开始转换</md-filled-button></div></md-dialog>`;
   const preset = document.querySelector('#reconvert-preset'); if (preset) preset.value = task.preset;
   document.title = `${title} · 下载任务 · WallHub Web Preview`;
 }
@@ -555,8 +579,8 @@ function renderDetail() {
     <div class="detail-actions" aria-label="壁纸操作">
       <button type="button" data-subscribe="${id}" aria-pressed="${subscribed}">${subscribed ? '已订阅' : '订阅'}</button>
       <button type="button" data-favorite="${id}" aria-pressed="${favorite}">${favorite ? '已收藏' : '收藏'}</button>
-      <md-filled-button id="detail-download">下载</md-filled-button>
-    </div>${fullscreenVideoId === id && videoState === 'playing' ? `<div class="video-fullscreen" role="dialog" aria-modal="true" aria-label="${escapeHtml(item.title)} 全屏视频"><span>正在全屏播放 ${escapeHtml(item.title)}</span><button type="button" id="exit-video-fullscreen" aria-label="退出全屏">×</button></div>` : ''}`;
+      <md-filled-button id="detail-download" tabindex="0">下载</md-filled-button>
+    </div><div class="detail-download-feedback" id="detail-download-feedback" role="status" hidden><span></span><button type="button" id="open-download-queue">查看队列</button></div>${fullscreenVideoId === id && videoState === 'playing' ? `<div class="video-fullscreen" role="dialog" aria-modal="true" aria-label="${escapeHtml(item.title)} 全屏视频"><span>正在全屏播放 ${escapeHtml(item.title)}</span><button type="button" id="exit-video-fullscreen" aria-label="退出全屏">×</button></div>` : ''}`;
   if (fullscreenVideoId === id && videoState === 'playing') {
     document.querySelectorAll('#main-content > :not(.video-fullscreen)').forEach((element) => { element.inert = true; });
   }
@@ -973,14 +997,38 @@ function bindSharedControls() {
     renderApp(); requestAnimationFrame(() => document.querySelector('#exit-video-fullscreen')?.focus());
   });
   document.querySelector('#exit-video-fullscreen')?.addEventListener('click', () => history.back());
-  document.querySelector('#detail-download')?.addEventListener('click', () => downloadDialog.show());
-  document.querySelector('#close-download').onclick = () => downloadDialog.close();
-  document.querySelectorAll('[data-download-format]').forEach((button) => button.onclick = () => {
-    const id = location.pathname.split('/').pop();
-    downloadDialog.addEventListener('closed', () => document.querySelector('#detail-download')?.focus(), {once: true});
-    downloadDialog.close();
-    backend.requestDownload(id, button.dataset.downloadFormat);
+  document.querySelector('#open-download-queue')?.addEventListener('click', () => navigate('/downloads'));
+  document.querySelector('#detail-download')?.addEventListener('click', () => {
+    if (downloadDialog.open || history.state?.modal === 'detail-download-format') return;
+    const preferences = backend.snapshot();
+    const selectedPreset = document.querySelector(`[name="download-preset"][value="${preferences.detailDownloadPreset}"]`);
+    if (selectedPreset) selectedPreset.checked = true;
+    document.querySelector('#download-preserve-audio').checked = preferences.detailPreserveAudio;
+    history.pushState({...history.state, modal: 'detail-download-format'}, '', location.href);
+    showDownloadStep('format');
+    downloadDialog.addEventListener('closed', () => {
+      if (history.state?.modal?.startsWith('detail-download')) {
+        downloadDismissed = true;
+        history.back();
+      }
+    }, {once: true});
+    downloadDialog.show();
   });
+  document.querySelector('#close-download').onclick = () => history.back();
+  document.querySelector('[data-download-format="MPKG"]').onclick = () => showDownloadStep('mpkg');
+  document.querySelector('[data-download-format="ZIP"]').onclick = () => {
+    pendingDetailDownload = {id: location.pathname.split('/').pop(), format: 'ZIP', preset: 'BALANCED', preserveAudio: false};
+    history.back();
+  };
+  document.querySelector('#back-download-format').onclick = () => showDownloadStep('format');
+  document.querySelectorAll('[name="download-preset"]').forEach((control) => { control.onchange = () => backend.setDetailDownloadPreferences(control.value, document.querySelector('#download-preserve-audio').checked); });
+  document.querySelector('#download-preserve-audio').onchange = (event) => backend.setDetailDownloadPreferences(document.querySelector('[name="download-preset"]:checked').value, event.currentTarget.checked);
+  document.querySelector('#download-mpkg-page').onsubmit = (event) => {
+    event.preventDefault();
+    pendingDetailDownload = {id: location.pathname.split('/').pop(), format: 'MPKG', preset: new FormData(event.currentTarget).get('download-preset'), preserveAudio: document.querySelector('#download-preserve-audio')?.checked === true};
+    backend.setDetailDownloadPreferences(pendingDetailDownload.preset, pendingDetailDownload.preserveAudio);
+    history.back();
+  };
   document.querySelector('#filter-button')?.addEventListener('click', () => {
     const snapshot = backend.snapshot();
     document.querySelector('#filter-sort').value = snapshot.filters.sort;
@@ -1057,6 +1105,33 @@ window.addEventListener('popstate', () => {
     fullscreenVideoId = null;
     renderApp();
     requestAnimationFrame(() => document.querySelector('#open-video-fullscreen')?.focus());
+    return;
+  }
+  if (downloadDialog?.open && history.state?.modal === 'detail-download-format') {
+    showDownloadStep('format');
+    return;
+  }
+  if (downloadDialog?.open || downloadDismissed) {
+    if (downloadDialog.open) {
+      downloadDialog.addEventListener('closed', () => setTimeout(() => focusControl('#detail-download'), 0), {once: true});
+      downloadDialog.close();
+    }
+    downloadDismissed = false;
+    if (pendingDetailDownload) {
+      const request = pendingDetailDownload; pendingDetailDownload = null;
+      const {created} = backend.requestDownload(request.id, request.format, request);
+      requestAnimationFrame(() => {
+        const feedback = document.querySelector('#detail-download-feedback');
+        if (feedback) {
+          feedback.hidden = false;
+          feedback.querySelector('span').textContent = created ? `${request.format} 已加入下载队列` : `${request.format} 已在下载队列中`;
+          feedback.querySelector('#open-download-queue').hidden = !created;
+          if (detailDownloadFeedbackTimer) clearTimeout(detailDownloadFeedbackTimer);
+          detailDownloadFeedbackTimer = setTimeout(() => { feedback.hidden = true; }, created ? 10000 : 4000);
+        }
+        setTimeout(() => focusControl('#detail-download'), 100);
+      });
+    } else setTimeout(() => focusControl('#detail-download'), 100);
     return;
   }
   const reconvertDialog = document.querySelector('#reconvert-dialog');

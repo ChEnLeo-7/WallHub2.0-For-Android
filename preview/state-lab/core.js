@@ -7,6 +7,8 @@ import {
 
 export const FAKE_BACKEND_STORAGE_KEY = 'wallhub.preview.fake-backend';
 export const stateLabScenarios = Object.freeze(['content', 'loading', 'empty', 'error']);
+const MPKG_PRESET_ALIASES = Object.freeze({PERFORMANCE: 'COMPATIBILITY', QUALITY: 'HIGH_QUALITY', COMPATIBILITY: 'COMPATIBILITY', BALANCED: 'BALANCED', HIGH_QUALITY: 'HIGH_QUALITY', EXTREME_QUALITY: 'EXTREME_QUALITY'});
+const normalizeMpkgPreset = (value) => MPKG_PRESET_ALIASES[value] ?? 'BALANCED';
 
 function defaultState() {
   return {
@@ -24,7 +26,7 @@ function defaultState() {
       {id: 'task-neon', workshopId: '3357929793', status: 'DOWNLOADING', progress: 0.62, format: 'MPKG', preset: 'BALANCED', preserveAudio: true, message: ''},
       {id: 'task-mountain', workshopId: '3174098802', status: 'FAILED', progress: 0.34, format: 'ZIP', preset: 'BALANCED', preserveAudio: true, message: '网络连接中断，暂存文件仍然完整。'},
       {id: 'task-resolving', workshopId: '2985110421', status: 'RESOLVING', progress: 0.08, format: 'MPKG', preset: 'BALANCED', preserveAudio: true, message: ''},
-      {id: 'task-cafe', workshopId: '3048819267', status: 'COMPLETED', progress: 1, format: 'MPKG', preset: 'QUALITY', preserveAudio: false, message: ''},
+      {id: 'task-cafe', workshopId: '3048819267', status: 'COMPLETED', progress: 1, format: 'MPKG', preset: 'HIGH_QUALITY', preserveAudio: false, message: ''},
       {id: 'task-video', workshopId: '3357929793', status: 'COMPLETED', progress: 1, format: 'ZIP', preset: 'BALANCED', preserveAudio: true, message: ''},
     ],
     downloadsInitialized: true,
@@ -45,6 +47,8 @@ function defaultState() {
     profileSession: 'signed-in',
     steamAuthPhase: 'idle',
     profileCounts: {subscriptions: 42, favorites: 18},
+    detailDownloadPreset: 'HIGH_QUALITY',
+    detailPreserveAudio: false,
     userComments: [],
     settings: {matureContent: false, enhancedAccess: true, outputDirectory: 'WallHub Downloads'},
     downloads: [],
@@ -78,14 +82,14 @@ function normalizedState(candidate) {
     task && typeof task === 'object' && typeof task.id === 'string' && /^[a-z0-9-]{1,64}$/u.test(task.id) && typeof task.workshopId === 'string' &&
     ['QUEUED', 'RESOLVING', 'DOWNLOADING', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(task.status) &&
     Number.isFinite(task.progress) && ['MPKG', 'ZIP'].includes(task.format)
-  ).map((task) => ({id: task.id.slice(0, 64), workshopId: task.workshopId.slice(0, 32), status: task.status, progress: Math.min(1, Math.max(0, task.progress)), format: task.format, preset: ['PERFORMANCE', 'BALANCED', 'QUALITY'].includes(task.preset) ? task.preset : 'BALANCED', preserveAudio: task.preserveAudio !== false, message: typeof task.message === 'string' ? task.message.slice(0, 240) : '', rawZipExported: task.rawZipExported === true, hasIntactStaging: task.hasIntactStaging !== false, stagingAvailable: task.stagingAvailable !== false})) : [];
+  ).map((task) => ({id: task.id.slice(0, 64), workshopId: task.workshopId.slice(0, 32), status: task.status, progress: Math.min(1, Math.max(0, task.progress)), format: task.format, preset: normalizeMpkgPreset(task.preset), preserveAudio: task.preserveAudio !== false, message: typeof task.message === 'string' ? task.message.slice(0, 240) : '', rawZipExported: task.rawZipExported === true, hasIntactStaging: task.hasIntactStaging !== false, stagingAvailable: task.stagingAvailable !== false})) : [];
   const normalizedLocalItems = candidate.localInitialized === true && Array.isArray(candidate.localItems)
     ? [...new Map(candidate.localItems.filter((item) => item && typeof item.id === 'string' && /^[a-z0-9-]{1,64}$/u.test(item.id) && typeof item.title === 'string' && ['SCENE', 'VIDEO', 'WEB'].includes(item.type)).map((item) => ({id: item.id, title: item.title.slice(0, 120), type: item.type, source: String(item.source ?? '').slice(0, 40), favorite: item.favorite === true, tags: Array.isArray(item.tags) ? item.tags.map(String).slice(0, 8) : []})).map((item) => [item.id, item])).values()]
     : fallback.localItems.map((item) => ({...item, tags: [...item.tags]}));
   const taskCandidates = candidate.downloadsInitialized === true
     ? normalizedTasks
     : [...fallback.downloadTasks.map((task) => ({...task})), ...normalizedDownloads.map((entry) => ({id: entry.id, workshopId: entry.workshopId, status: 'QUEUED', progress: 0, format: entry.format}))];
-  const downloadTasks = [...new Map(taskCandidates.map((task) => [`${task.workshopId}:${task.format}`, task])).values()].map((task) => ({...task, preset: task.preset ?? 'BALANCED', preserveAudio: task.preserveAudio !== false, message: task.message ?? '', rawZipExported: task.rawZipExported === true, hasIntactStaging: task.hasIntactStaging !== false, stagingAvailable: task.stagingAvailable !== false}));
+  const downloadTasks = [...new Map(taskCandidates.map((task) => [`${task.workshopId}:${task.format}`, task])).values()].map((task) => ({...task, preset: task.preset ?? 'BALANCED', preserveAudio: task.format === 'MPKG' && workshopFixtures.find((workshop) => workshop.id === task.workshopId)?.type === 'SCENE' && task.preserveAudio === true, message: task.message ?? '', rawZipExported: task.rawZipExported === true, hasIntactStaging: task.hasIntactStaging !== false, stagingAvailable: task.stagingAvailable !== false}));
   return {
     schemaVersion: FIXTURE_SCHEMA_VERSION,
     seed: typeof candidate.seed === 'string' ? candidate.seed.slice(0, 64) : fallback.seed,
@@ -117,6 +121,8 @@ function normalizedState(candidate) {
     profileSession,
     steamAuthPhase: ['idle', 'device-confirmation', 'waiting-code'].includes(candidate.steamAuthPhase) ? candidate.steamAuthPhase : fallback.steamAuthPhase,
     profileCounts,
+    detailDownloadPreset: normalizeMpkgPreset(candidate.detailDownloadPreset ?? 'HIGH_QUALITY'),
+    detailPreserveAudio: candidate.detailPreserveAudio === true,
     userComments: Array.isArray(candidate.userComments) ? candidate.userComments.filter((comment) => comment && /^[a-z0-9-]{1,80}$/u.test(comment.id) && /^\d+$/u.test(comment.workshopId) && typeof comment.text === 'string' && Number.isSafeInteger(comment.timestamp)).slice(-100).map((comment) => ({id: comment.id, workshopId: comment.workshopId.slice(0, 32), author: 'Astra', text: comment.text.slice(0, 1000), timestamp: comment.timestamp, isCreator: false})) : [],
     settings: {
       matureContent: candidate.settings?.matureContent === true,
@@ -287,8 +293,9 @@ export class FakeBackend {
   }
 
   reconvertDownloadTask(id, preset, preserveAudio) {
-    if (!['PERFORMANCE', 'BALANCED', 'QUALITY'].includes(preset)) return this.snapshot();
-    return this.update({downloadTasks: this.state.downloadTasks.map((task) => task.id === id && task.status === 'COMPLETED' && task.format === 'MPKG' && this.workshop(task.workshopId)?.type === 'SCENE' ? {...task, status: 'QUEUED', progress: 0, preset, preserveAudio: preserveAudio === true, message: ''} : task)});
+    const normalizedPreset = MPKG_PRESET_ALIASES[preset];
+    if (!normalizedPreset) return this.snapshot();
+    return this.update({downloadTasks: this.state.downloadTasks.map((task) => task.id === id && task.status === 'COMPLETED' && task.format === 'MPKG' && this.workshop(task.workshopId)?.type === 'SCENE' ? {...task, status: 'QUEUED', progress: 0, preset: normalizedPreset, preserveAudio: preserveAudio === true, message: ''} : task)});
   }
 
   exportRawZip(id) {
@@ -464,14 +471,22 @@ export class FakeBackend {
     return this.update({subscriptions: [...set]});
   }
 
-  requestDownload(id, format = 'MPKG') {
+  setDetailDownloadPreferences(preset, preserveAudio) {
+    return this.update({detailDownloadPreset: normalizeMpkgPreset(preset), detailPreserveAudio: preserveAudio === true});
+  }
+
+  requestDownload(id, format = 'MPKG', options = {}) {
     const value = String(id);
+    const workshop = this.workshop(value);
+    if (!workshop) return {created: false, state: this.snapshot()};
     const normalizedFormat = ['MPKG', 'ZIP'].includes(format) ? format : 'MPKG';
-    if (this.state.downloads.some((download) => download.workshopId === value && download.format === normalizedFormat)) {
-      return this.snapshot();
+    const preset = normalizeMpkgPreset(options.preset);
+    const preserveAudio = normalizedFormat === 'MPKG' && workshop.type === 'SCENE' && options.preserveAudio === true;
+    if (this.state.downloads.some((download) => download.workshopId === value && download.format === normalizedFormat) || this.state.downloadTasks.some((task) => task.workshopId === value && task.format === normalizedFormat)) {
+      return {created: false, state: this.snapshot()};
     }
     const taskId = `download-${value}-${normalizedFormat.toLowerCase()}`;
-    return this.update({
+    const state = this.update({
       downloads: [...this.state.downloads, {
         id: taskId,
         workshopId: value,
@@ -481,7 +496,8 @@ export class FakeBackend {
       }],
       downloadTasks: this.state.downloadTasks.some((task) => task.workshopId === value && task.format === normalizedFormat)
         ? this.state.downloadTasks
-        : [...this.state.downloadTasks, {id: taskId, workshopId: value, status: 'QUEUED', progress: 0, format: normalizedFormat}],
+        : [...this.state.downloadTasks, {id: taskId, workshopId: value, status: 'QUEUED', progress: 0, format: normalizedFormat, preset, preserveAudio}],
     });
+    return {created: state.downloads.some((download) => download.id === taskId), state};
   }
 }
