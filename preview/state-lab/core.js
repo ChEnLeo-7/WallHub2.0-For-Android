@@ -9,6 +9,14 @@ export const FAKE_BACKEND_STORAGE_KEY = 'wallhub.preview.fake-backend';
 export const stateLabScenarios = Object.freeze(['content', 'loading', 'empty', 'error']);
 const MPKG_PRESET_ALIASES = Object.freeze({PERFORMANCE: 'COMPATIBILITY', QUALITY: 'HIGH_QUALITY', COMPATIBILITY: 'COMPATIBILITY', BALANCED: 'BALANCED', HIGH_QUALITY: 'HIGH_QUALITY', EXTREME_QUALITY: 'EXTREME_QUALITY'});
 const normalizeMpkgPreset = (value) => MPKG_PRESET_ALIASES[value] ?? 'BALANCED';
+const HOME_GENRES = Object.freeze(['Abstract','Animal','Anime','Cartoon','CGI','Cyberpunk','Fantasy','Game','Girls','Guys','Landscape','Medieval','Memes','MMD','Music','Nature','Pixel art','Relaxing','Retro','Sci-Fi','Sports','Technology','Television','Vehicle','Unspecified']);
+const HOME_OFFICIAL_TAGS = Object.freeze(['Approved','Audio responsive','3D','Customizable','Puppet Warp','HDR','Media Integration','User Shortcut','Video Texture','Asset Pack']);
+const HOME_RESOLUTIONS = Object.freeze(['Standard','1280 x 720','1366 x 768','1920 x 1080','2560 x 1440','3840 x 2160','Ultrawide','2560 x 1080','3440 x 1440','Dual monitor','3840 x 1080','5120 x 1440','7680 x 2160','Triple monitor','4096 x 768','5760 x 1080','7680 x 1440','11520 x 2160','Portrait','720 x 1280','1080 x 1920','1440 x 2560','2160 x 3840','Other resolution','Dynamic resolution']);
+const homeWorkshopFixtures = Object.freeze(Array.from({length: 42}, (_, index) => {
+  const source = workshopFixtures[index % workshopFixtures.length];
+  const generation = Math.floor(index / workshopFixtures.length);
+  return Object.freeze({...source, id: generation === 0 ? source.id : `${source.id}${generation}`, title: generation === 0 ? source.title : `${source.title} · ${generation + 1}`, subscriptions: Math.max(1, source.subscriptions - generation * 791), favorites: Math.max(1, source.favorites - generation * 137), views: Math.max(1, source.views - generation * 3101), updatedAt: FIXTURE_CLOCK_EPOCH_MS - (index % 29) * 86_400_000});
+}));
 function validProxyUrl(value) {
   try { const parsed = new URL(value); return ['http:', 'https:', 'socks:', 'socks5:'].includes(parsed.protocol) && Boolean(parsed.hostname) && !parsed.username && !parsed.password && !parsed.search && !parsed.hash && ['', '/'].includes(parsed.pathname) && (!parsed.port || (Number(parsed.port) >= 1 && Number(parsed.port) <= 65535)); } catch { return false; }
 }
@@ -21,7 +29,9 @@ function defaultState() {
     scenario: 'content',
     query: '',
     viewMode: 'grid',
-    filters: {type: 'ALL', sort: 'TRENDING', exactPhrase: false},
+    filters: {types: [], sort: 'TRENDING', exactPhrase: false, days: 30, ratings: ['EVERYONE'], genres: [...HOME_GENRES], officialTags: [], excludedOfficialTags: [], resolutions: [...HOME_RESOLUTIONS]},
+    homePage: 1,
+    homeRefreshToken: 0,
     favorites: ['3357929793', '3048819267', '2871466005'],
     subscriptions: ['3174098802', '2985110421', '2769012550'],
     libraryInitialized: true,
@@ -92,7 +102,7 @@ function normalizedState(candidate) {
   const taskCandidates = candidate.downloadsInitialized === true
     ? normalizedTasks
     : [...fallback.downloadTasks.map((task) => ({...task})), ...normalizedDownloads.map((entry) => ({id: entry.id, workshopId: entry.workshopId, status: 'QUEUED', progress: 0, format: entry.format}))];
-  const downloadTasks = [...new Map(taskCandidates.map((task) => [`${task.workshopId}:${task.format}`, task])).values()].map((task) => ({...task, preset: task.preset ?? 'BALANCED', preserveAudio: task.format === 'MPKG' && workshopFixtures.find((workshop) => workshop.id === task.workshopId)?.type === 'SCENE' && task.preserveAudio === true, message: task.message ?? '', rawZipExported: task.rawZipExported === true, hasIntactStaging: task.hasIntactStaging !== false, stagingAvailable: task.stagingAvailable !== false}));
+  const downloadTasks = [...new Map(taskCandidates.map((task) => [`${task.workshopId}:${task.format}`, task])).values()].map((task) => ({...task, preset: task.preset ?? 'BALANCED', preserveAudio: task.format === 'MPKG' && homeWorkshopFixtures.find((workshop) => workshop.id === task.workshopId)?.type === 'SCENE' && task.preserveAudio === true, message: task.message ?? '', rawZipExported: task.rawZipExported === true, hasIntactStaging: task.hasIntactStaging !== false, stagingAvailable: task.stagingAvailable !== false}));
   return {
     schemaVersion: FIXTURE_SCHEMA_VERSION,
     seed: typeof candidate.seed === 'string' ? candidate.seed.slice(0, 64) : fallback.seed,
@@ -101,10 +111,18 @@ function normalizedState(candidate) {
     query: typeof candidate.query === 'string' ? candidate.query.slice(0, 120) : fallback.query,
     viewMode: candidate.viewMode === 'list' ? 'list' : 'grid',
     filters: {
-      type: ['ALL', 'SCENE', 'VIDEO'].includes(candidate.filters?.type) ? candidate.filters.type : fallback.filters.type,
-      sort: ['TRENDING', 'MOST_SUBSCRIBED'].includes(candidate.filters?.sort) ? candidate.filters.sort : fallback.filters.sort,
+      types: Array.isArray(candidate.filters?.types) ? [...new Set(candidate.filters.types.filter((value) => ['SCENE','VIDEO','WEB'].includes(value)))] : candidate.filters?.type && candidate.filters.type !== 'ALL' ? [candidate.filters.type] : fallback.filters.types,
+      sort: ['TRENDING','MOST_RECENT','TOP_RATED','MOST_VOTES','MOST_SUBSCRIBERS','FRIENDS_FAVORITES','FRIENDS_CREATED'].includes(candidate.filters?.sort) ? candidate.filters.sort : candidate.filters?.sort === 'MOST_SUBSCRIBED' ? 'MOST_SUBSCRIBERS' : fallback.filters.sort,
       exactPhrase: candidate.filters?.exactPhrase === true,
+      days: [0,1,7,30,90,180,365].includes(candidate.filters?.days) ? candidate.filters.days : fallback.filters.days,
+      ratings: Array.isArray(candidate.filters?.ratings) ? ([...new Set(candidate.filters.ratings.filter((value) => ['EVERYONE','QUESTIONABLE','MATURE'].includes(value) && (value !== 'MATURE' || candidate.settings?.matureContent === true)))].slice(0, 3).length ? [...new Set(candidate.filters.ratings.filter((value) => ['EVERYONE','QUESTIONABLE','MATURE'].includes(value) && (value !== 'MATURE' || candidate.settings?.matureContent === true)))].slice(0, 3) : fallback.filters.ratings) : candidate.filters?.rating ? [candidate.filters.rating] : fallback.filters.ratings,
+      genres: Array.isArray(candidate.filters?.genres) && candidate.filters.genres.some((value) => HOME_GENRES.includes(value)) ? candidate.filters.genres.filter((value) => HOME_GENRES.includes(value)) : fallback.filters.genres,
+      officialTags: Array.isArray(candidate.filters?.officialTags) ? [...new Set(candidate.filters.officialTags.filter((value) => HOME_OFFICIAL_TAGS.includes(value)))] : fallback.filters.officialTags,
+      excludedOfficialTags: Array.isArray(candidate.filters?.excludedOfficialTags) ? [...new Set(candidate.filters.excludedOfficialTags.filter((value) => HOME_OFFICIAL_TAGS.includes(value)))] : fallback.filters.excludedOfficialTags,
+      resolutions: Array.isArray(candidate.filters?.resolutions) && candidate.filters.resolutions.some((value) => HOME_RESOLUTIONS.includes(value)) ? candidate.filters.resolutions.filter((value) => HOME_RESOLUTIONS.includes(value)) : fallback.filters.resolutions,
     },
+    homePage: Number.isInteger(candidate.homePage) && candidate.homePage > 0 ? candidate.homePage : 1,
+    homeRefreshToken: Number.isSafeInteger(candidate.homeRefreshToken) && candidate.homeRefreshToken >= 0 ? candidate.homeRefreshToken : 0,
     favorites: normalizeMembership('favorites'),
     subscriptions: normalizeMembership('subscriptions'),
     libraryInitialized: true,
@@ -219,7 +237,7 @@ export class FakeBackend {
   }
 
   setQuery(query) {
-    return this.update({query: String(query).slice(0, 120)});
+    return this.update({query: String(query).slice(0, 120), homePage: 1});
   }
 
   setViewMode(viewMode) {
@@ -227,27 +245,51 @@ export class FakeBackend {
   }
 
   setFilters(filters) {
-    return this.update({filters});
+    return this.update({filters, homePage: 1});
   }
+
+  selectHomePage(page) { return this.update({homePage: Math.max(1, Number(page) || 1)}); }
+  refreshHome() { return this.update({homeRefreshToken: this.state.homeRefreshToken + 1, homePage: 1}); }
 
   listWorkshops() {
     if (this.state.scenario === 'loading') return {status: 'loading', items: []};
     if (this.state.scenario === 'error') return {status: 'error', message: '无法载入创意工坊内容，请稍后重试。', items: []};
     if (this.state.scenario === 'empty') return {status: 'empty', items: []};
     const needle = this.state.query.trim().toLocaleLowerCase('zh-CN');
-    let items = workshopFixtures.filter((item) => {
+    let items = homeWorkshopFixtures.filter((item, index) => {
       const searchable = [item.title, item.author, ...item.tags].map((value) => value.toLocaleLowerCase('zh-CN'));
       const queryMatches = !needle || (
         this.state.filters.exactPhrase
           ? searchable.some((value) => value.includes(needle))
           : needle.split(/\s+/u).every((token) => searchable.some((value) => value.includes(token)))
       );
-      return queryMatches && (this.state.filters.type === 'ALL' || item.type === this.state.filters.type);
+      const rating = (index + 1) % 17 === 0 ? 'MATURE' : (index + 1) % 13 === 0 ? 'QUESTIONABLE' : 'EVERYONE';
+      const withinDays = this.state.filters.sort !== 'TRENDING' || this.state.filters.days === 0 || item.updatedAt >= this.state.clockMs - this.state.filters.days * 86_400_000;
+      const typeMatches = this.state.filters.types.length === 0 || this.state.filters.types.includes(item.type);
+      const ratingMatches = this.state.filters.ratings.includes(rating);
+      const genreMatches = this.state.filters.genres.length === HOME_GENRES.length || this.state.filters.genres.some((genre) => item.tags.some((tag) => tag.toLocaleLowerCase('en-US') === genre.toLocaleLowerCase('en-US')));
+      const includedTagsMatch = this.state.filters.officialTags.every((tag) => item.tags.includes(tag));
+      const excludedTagsMatch = this.state.filters.excludedOfficialTags.every((tag) => !item.tags.includes(tag));
+      const resolutionMatches = this.state.filters.resolutions.length === HOME_RESOLUTIONS.length || this.state.filters.resolutions.some((resolution) => item.tags.includes(resolution));
+      return queryMatches && withinDays && typeMatches && ratingMatches && genreMatches && includedTagsMatch && excludedTagsMatch && resolutionMatches;
     });
-    if (this.state.filters.sort === 'MOST_SUBSCRIBED') {
-      items = [...items].sort((left, right) => right.subscriptions - left.subscriptions);
-    }
-    return {status: items.length ? 'content' : 'empty', items};
+    const sorters = {
+      MOST_SUBSCRIBERS: (left, right) => right.subscriptions - left.subscriptions,
+      MOST_RECENT: (left, right) => right.updatedAt - left.updatedAt,
+      TOP_RATED: (left, right) => right.favorites - left.favorites,
+      MOST_VOTES: (left, right) => right.views - left.views,
+      FRIENDS_FAVORITES: (left, right) => right.favorites - left.favorites,
+      FRIENDS_CREATED: (left, right) => right.createdAt - left.createdAt,
+    };
+    if (sorters[this.state.filters.sort]) items = [...items].sort(sorters[this.state.filters.sort]);
+    const pageSize = this.state.settings.homePageSize;
+    const totalCount = items.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const page = Math.min(this.state.homePage, totalPages);
+    const end = this.state.settings.homePaginationMode === 'INFINITE' ? page * pageSize : page * pageSize;
+    const start = this.state.settings.homePaginationMode === 'INFINITE' ? 0 : (page - 1) * pageSize;
+    items = items.slice(start, end);
+    return {status: totalCount ? 'content' : 'empty', items, totalCount, currentPage: page, totalPages, hasNextPage: page < totalPages, refreshToken: this.state.homeRefreshToken};
   }
 
   settingsState() {
@@ -264,7 +306,7 @@ export class FakeBackend {
   setSetting(key, value) {
     const allowed = ['language', 'themePreference', 'accent', 'customAccentColor', 'homePageSize', 'homePaginationMode', 'homeColumns', 'homeCardAction', 'workshopSourceCacheBudgetGiB', 'maxConcurrentDownloads', 'chunkDownloadConcurrency', 'onlineStreamCacheLimitMb'];
     if (!allowed.includes(key)) return this.snapshot();
-    return this.update({settings: {...this.state.settings, [key]: value}});
+    return this.update({settings: {...this.state.settings, [key]: value}, ...(['homePageSize', 'homePaginationMode'].includes(key) ? {homePage: 1} : {})});
   }
 
   exportDiagnostics() {
@@ -510,7 +552,7 @@ export class FakeBackend {
   }
 
   workshop(id) {
-    return workshopFixtures.find((item) => item.id === String(id)) ?? null;
+    return homeWorkshopFixtures.find((item) => item.id === String(id)) ?? null;
   }
 
 

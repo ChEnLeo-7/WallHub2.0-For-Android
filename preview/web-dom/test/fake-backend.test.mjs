@@ -19,7 +19,7 @@ test('starts from deterministic fixture state and persists it', () => {
   const storage = memoryStorage();
   const backend = new FakeBackend(storage);
   assert.equal(backend.snapshot().clockMs, FIXTURE_CLOCK_EPOCH_MS);
-  assert.equal(backend.listWorkshops().items.length, 6);
+  assert.equal(backend.listWorkshops().items.length, 30);
   assert.equal(JSON.parse(storage.values.get(FAKE_BACKEND_STORAGE_KEY)).schemaVersion, FIXTURE_SCHEMA_VERSION);
   assert.throws(() => backend.listWorkshops().items[0].tags.push('mutated'));
 });
@@ -99,11 +99,11 @@ test('supports repeatable state-lab scenarios and virtual time', () => {
 test('exact phrase distinguishes exact fields from partial matches', () => {
   const backend = new FakeBackend(memoryStorage());
   backend.setQuery('Rain Neon');
-  assert.deepEqual(backend.listWorkshops().items.map((item) => item.id), ['3357929793']);
-  backend.setFilters({type: 'ALL', sort: 'TRENDING', exactPhrase: true});
+  assert.equal(backend.listWorkshops().items.length, 6);
+  backend.setFilters({type: 'ALL', sort: 'TRENDING', exactPhrase: true, days: 30, rating: 'EVERYONE', tag: 'ALL'});
   assert.deepEqual(backend.listWorkshops().items, []);
   backend.setQuery('Neon Rain');
-  assert.deepEqual(backend.listWorkshops().items.map((item) => item.id), ['3357929793']);
+  assert.equal(backend.listWorkshops().items.length, 6);
 });
 
 test('saved Discover queries and friend access remain deterministic', () => {
@@ -360,11 +360,57 @@ test('detail comments remain deterministic and immutable', () => {
   assert.deepEqual(quotaBackend.snapshot(), beforeQuotaFailure);
 });
 
+test('home filters pagination and refresh remain deterministic', () => {
+  const storage = memoryStorage();
+  const backend = new FakeBackend(storage);
+  let result = backend.listWorkshops();
+  assert.equal(result.totalCount > 30, true);
+  assert.equal(result.items.length, 30);
+  assert.equal(result.hasNextPage, true);
+  backend.selectHomePage(2);
+  result = backend.listWorkshops();
+  assert.equal(result.items.length > 30, true);
+  backend.setSetting('homePaginationMode', 'PAGED');
+  assert.equal(backend.snapshot().homePage, 1);
+  backend.selectHomePage(2);
+  result = backend.listWorkshops();
+  assert.equal(result.items.length < 30, true);
+  assert.equal(result.currentPage, 2);
+  backend.setFilters({types: ['VIDEO'], sort: 'MOST_SUBSCRIBERS', exactPhrase: true, days: 0, ratings: ['EVERYONE'], genres: ['Sci-Fi'], officialTags: [], excludedOfficialTags: [], resolutions: [...backend.snapshot().filters.resolutions]});
+  assert.equal(backend.snapshot().homePage, 1);
+  result = backend.listWorkshops();
+  assert.equal(result.items.every((item) => item.type === 'VIDEO' && item.tags.includes('Space')), true);
+  backend.refreshHome();
+  assert.equal(new FakeBackend(storage).snapshot().homeRefreshToken, 1);
+});
+
+test('home time bounds pagination resets and generated Scene audio remain exact', () => {
+  const clockBackend = new FakeBackend(memoryStorage());
+  clockBackend.advanceClock(31 * 86_400_000);
+  assert.equal(clockBackend.listWorkshops().status, 'empty');
+  clockBackend.setFilters({...clockBackend.snapshot().filters, sort: 'MOST_RECENT'});
+  assert.equal(clockBackend.listWorkshops().status, 'content');
+  clockBackend.setFilters({...clockBackend.snapshot().filters, sort: 'TRENDING', days: 0});
+  assert.equal(clockBackend.listWorkshops().status, 'content');
+  const storage = memoryStorage();
+  const backend = new FakeBackend(storage);
+  backend.setSetting('homePageSize', 10);
+  backend.setSetting('homePaginationMode', 'PAGED');
+  backend.selectHomePage(4);
+  backend.setSetting('homePageSize', 50);
+  assert.equal(backend.snapshot().homePage, 1);
+  backend.setSetting('homePageSize', 10);
+  assert.equal(backend.listWorkshops().currentPage, 1);
+  backend.requestDownload('31740988021', 'MPKG', {preset: 'HIGH_QUALITY', preserveAudio: true});
+  assert.equal(new FakeBackend(storage).snapshot().downloadTasks.find((entry) => entry.workshopId === '31740988021')?.preserveAudio, true);
+});
+
 test('search and mutations remain deterministic across reloads', () => {
   const storage = memoryStorage();
   const backend = new FakeBackend(storage);
   backend.setQuery('像素');
-  assert.deepEqual(backend.listWorkshops().items.map((item) => item.id), ['3048819267']);
+  assert.equal(backend.listWorkshops().items.length, 6);
+  assert.equal(backend.listWorkshops().items[0].id, '3048819267');
   backend.toggleFavorite('3048819267');
   backend.toggleSubscription('3048819267');
   assert.equal(backend.requestDownload('3174098802', 'MPKG', {preset: 'HIGH_QUALITY', preserveAudio: true}).created, true);

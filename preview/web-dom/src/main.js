@@ -9,6 +9,9 @@ import './styles.css';
 import contract from '../../../shared/ui-contract/wallhub-current.json';
 import {FakeBackend, stateLabScenarios} from '../../state-lab/core.js';
 
+const homeGenres = ['Abstract','Animal','Anime','Cartoon','CGI','Cyberpunk','Fantasy','Game','Girls','Guys','Landscape','Medieval','Memes','MMD','Music','Nature','Pixel art','Relaxing','Retro','Sci-Fi','Sports','Technology','Television','Vehicle','Unspecified'];
+const homeOfficialTags = ['Approved','Audio responsive','3D','Customizable','Puppet Warp','HDR','Media Integration','User Shortcut','Video Texture','Asset Pack'];
+const homeResolutions = ['Standard','1280 x 720','1366 x 768','1920 x 1080','2560 x 1440','3840 x 2160','Ultrawide','2560 x 1080','3440 x 1440','Dual monitor','3840 x 1080','5120 x 1440','7680 x 2160','Triple monitor','4096 x 768','5760 x 1080','7680 x 1440','11520 x 2160','Portrait','720 x 1280','1080 x 1920','1440 x 2560','2160 x 3840','Other resolution','Dynamic resolution'];
 const iconPaths = {
   home: 'M12 3 2 12h3v8h6v-6h2v6h6v-8L12 3Zm5 15h-2v-6H9v6h-2v-7.1l5-4.5 5 4.5V18Z',
   explore: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm2.19 12.19L6 18l3.81-8.19L18 6l-3.81 8.19ZM12 10.9a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Z',
@@ -126,6 +129,10 @@ let clearSourceDismissed = false;
 let clearSourceModalActive = false;
 let pendingClearSource = false;
 let updateDownloadAttempt = 0;
+let homeContextId = null;
+let homeModalActive = null;
+let pendingHomeFilter = null;
+let pendingHomeContextAction = null;
 let fullscreenVideoId = null;
 let inlineVideo = {id: null, state: 'idle', attempt: 0, timer: null};
 let renderedWorkshopId = null;
@@ -248,8 +255,9 @@ function workshopCard(item, snapshot) {
         </div>
       </button>
       <div class="card-actions">
+        <md-text-button data-card-menu="${item.id}" aria-haspopup="dialog" aria-label="${escapeHtml(item.title)} 更多操作">更多</md-text-button>
         <md-text-button data-favorite="${item.id}">${favorite ? '已收藏' : '收藏'}</md-text-button>
-        <md-filled-button data-download="${item.id}">下载</md-filled-button>
+        <md-filled-button data-primary-action="${item.id}">${snapshot.settings.homeCardAction === 'PLAY' ? '播放' : snapshot.settings.homeCardAction === 'STEAM' ? 'Steam' : '下载'}</md-filled-button>
       </div>
     </article>`;
 }
@@ -257,29 +265,20 @@ function workshopCard(item, snapshot) {
 function renderHome() {
   const snapshot = backend.snapshot();
   const result = backend.listWorkshops();
-  const total = result.items.length;
+  const total = result.totalCount ?? result.items.length;
+  const activeFilters = snapshot.filters.types.length > 0 || snapshot.filters.sort !== 'TRENDING' || snapshot.filters.exactPhrase || (snapshot.filters.sort === 'TRENDING' && snapshot.filters.days !== 30) || snapshot.filters.ratings.join() !== 'EVERYONE' || snapshot.filters.genres.length !== homeGenres.length || snapshot.filters.officialTags.length > 0 || snapshot.filters.excludedOfficialTags.length > 0 || snapshot.filters.resolutions.length !== homeResolutions.length;
   let results;
-  if (result.status === 'loading') {
-    results = `<div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress><p>正在载入创意工坊…</p></div>`;
-  } else if (result.status === 'error') {
-    results = `<div class="center-state" role="alert"><div class="state-icon">↻</div><h2>${escapeHtml(result.message)}</h2><md-filled-button id="retry-home">重试</md-filled-button></div>`;
-  } else if (result.status === 'empty') {
-    results = `<div class="center-state"><div class="state-icon">⌕</div><h2>没有匹配的壁纸</h2><md-filled-button id="retry-home">重新加载</md-filled-button></div>`;
-  } else {
-    results = `<div class="workshop-grid ${snapshot.viewMode === 'list' ? 'is-list' : ''}">${result.items.map((item) => workshopCard(item, snapshot)).join('')}</div>`;
+  if (result.status === 'loading') results = `<div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress><p>正在载入创意工坊…</p></div>`;
+  else if (result.status === 'error') results = `<div class="center-state" role="alert"><div class="state-icon">↻</div><h2>${escapeHtml(result.message)}</h2><md-filled-button id="retry-home">重试</md-filled-button></div>`;
+  else if (result.status === 'empty') results = `<div class="center-state"><div class="state-icon">⌕</div><h2>没有匹配的壁纸</h2><md-filled-button id="refresh-empty-home">刷新</md-filled-button></div>`;
+  else {
+    const pagination = snapshot.settings.homePaginationMode === 'PAGED'
+      ? `<nav class="home-pagination" aria-label="结果分页"><button type="button" id="previous-home-page" data-page="${result.currentPage - 1}" ${result.currentPage <= 1 ? 'disabled' : ''}>上一页</button><span aria-live="polite">第 ${result.currentPage} / ${result.totalPages} 页</span><button type="button" id="next-home-page" data-page="${result.currentPage + 1}" ${!result.hasNextPage ? 'disabled' : ''}>下一页</button></nav>`
+      : result.hasNextPage ? `<md-filled-tonal-button id="load-more-home" data-page="${result.currentPage + 1}">加载更多</md-filled-tonal-button>` : '<p class="home-end">已显示全部结果</p>';
+    results = `<div class="workshop-grid ${snapshot.viewMode === 'list' ? 'is-list' : ''}">${result.items.map((item) => workshopCard(item, snapshot)).join('')}</div>${pagination}`;
   }
-  main.innerHTML = `
-    ${shellHeader('WallHub', `steam-community · 已加载 ${total} / 42 个项目 · 第 1/2 页`)}
-    ${isLabVisible() ? renderStateLab(snapshot) : ''}
-    <section class="home-tools" aria-label="浏览工具">
-      <md-outlined-text-field id="search" label="搜索创意工坊" value="${escapeHtml(snapshot.query)}"></md-outlined-text-field>
-      <div class="view-toggle" role="group" aria-label="视图模式">
-        <button type="button" data-view-mode="grid" aria-pressed="${snapshot.viewMode === 'grid'}">网格</button>
-        <button type="button" data-view-mode="list" aria-pressed="${snapshot.viewMode === 'list'}">列表</button>
-      </div>
-      <md-outlined-button id="filter-button">筛选${snapshot.filters.type !== 'ALL' || snapshot.filters.sort !== 'TRENDING' || snapshot.filters.exactPhrase ? ' · 已启用' : ''}</md-outlined-button>
-    </section>
-    <section class="home-results" aria-label="创意工坊结果">${results}</section>`;
+  const contextItem = result.items.find((item) => item.id === homeContextId);
+  main.innerHTML = `${shellHeader('WallHub', `steam-community · 已加载 ${result.items.length} / ${total} 个项目 · 第 ${result.currentPage ?? 1}/${result.totalPages ?? 1} 页`)}${isLabVisible() ? renderStateLab(snapshot) : ''}<section class="home-tools" aria-label="浏览工具"><md-outlined-text-field id="search" label="搜索创意工坊" value="${escapeHtml(snapshot.query)}"></md-outlined-text-field><div class="view-toggle" role="group" aria-label="视图模式"><button type="button" data-view-mode="grid" aria-pressed="${snapshot.viewMode === 'grid'}">网格</button><button type="button" data-view-mode="list" aria-pressed="${snapshot.viewMode === 'list'}">列表</button></div><md-outlined-button id="refresh-home">刷新</md-outlined-button><md-outlined-button id="filter-button">筛选${activeFilters ? ' · 已启用' : ''}</md-outlined-button></section><p class="home-refresh-status" id="home-refresh-status" role="status">刷新序号 ${snapshot.homeRefreshToken}</p><section class="home-results" aria-label="创意工坊结果">${results}</section><md-dialog id="home-filter-dialog" aria-label="筛选创意工坊"><div slot="headline">筛选与排序</div><form slot="content" id="home-filter-form" class="filter-form"><label>排序<select name="sort"><option value="TRENDING" ${snapshot.filters.sort === 'TRENDING' ? 'selected' : ''}>趋势</option><option value="MOST_SUBSCRIBERS" ${snapshot.filters.sort === 'MOST_SUBSCRIBERS' ? 'selected' : ''}>订阅最多</option><option value="TOP_RATED" ${snapshot.filters.sort === 'TOP_RATED' ? 'selected' : ''}>评分最高</option><option value="MOST_VOTES" ${snapshot.filters.sort === 'MOST_VOTES' ? 'selected' : ''}>投票最多</option><option value="MOST_RECENT" ${snapshot.filters.sort === 'MOST_RECENT' ? 'selected' : ''}>最近更新</option></select></label><label class="home-days-field" ${snapshot.filters.sort === 'TRENDING' ? '' : 'hidden'}>时间范围<select name="days">${[[1,'今天'],[7,'7 天'],[30,'30 天'],[90,'90 天'],[180,'180 天'],[365,'365 天'],[0,'全部']].map(([value,label]) => `<option value="${value}" ${snapshot.filters.days === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><fieldset><legend>类型</legend>${[['SCENE','场景'],['VIDEO','视频'],['WEB','网页']].map(([value,label]) => `<label class="checkbox-row"><input type="checkbox" name="types" value="${value}" ${snapshot.filters.types.includes(value) ? 'checked' : ''}>${label}</label>`).join('')}</fieldset><fieldset><legend>分级</legend>${[['EVERYONE','所有人'],['QUESTIONABLE','可能不适宜'],...(snapshot.settings.matureContent ? [['MATURE','成人']] : [])].map(([value,label]) => `<label class="checkbox-row"><input type="checkbox" name="ratings" value="${value}" ${snapshot.filters.ratings.includes(value) ? 'checked' : ''}>${label}</label>`).join('')}</fieldset><details><summary>类型标签</summary><div class="filter-chip-grid">${homeGenres.map((value) => `<label><input type="checkbox" name="genres" value="${value}" ${snapshot.filters.genres.includes(value) ? 'checked' : ''}>${value}</label>`).join('')}</div></details><details><summary>官方标签</summary><div class="filter-chip-grid">${homeOfficialTags.map((value) => `<label><select name="official-${value}"><option value="none">不限</option><option value="include" ${snapshot.filters.officialTags.includes(value) ? 'selected' : ''}>包含</option><option value="exclude" ${snapshot.filters.excludedOfficialTags.includes(value) ? 'selected' : ''}>排除</option></select>${value}</label>`).join('')}</div></details><details><summary>分辨率</summary><div class="filter-chip-grid">${homeResolutions.map((value) => `<label><input type="checkbox" name="resolutions" value="${value}" ${snapshot.filters.resolutions.includes(value) ? 'checked' : ''}>${value}</label>`).join('')}</div></details><label class="checkbox-row"><input name="exactPhrase" type="checkbox" ${snapshot.filters.exactPhrase ? 'checked' : ''}>精确短语</label></form><div slot="actions"><md-text-button id="reset-home-filters">重置</md-text-button><md-text-button id="cancel-home-filters">取消</md-text-button><md-filled-button id="apply-home-filters">应用</md-filled-button></div></md-dialog><md-dialog id="home-context-dialog" aria-label="作品操作"><div slot="headline">${contextItem ? escapeHtml(contextItem.title) : '作品操作'}</div><div slot="content" class="context-actions"><button type="button" data-context-action="copy-title">复制壁纸标题</button><button type="button" data-context-action="author">搜索作者</button><button type="button" data-context-action="copy-id">复制项目 ID</button><button type="button" data-context-action="download">下载</button>${contextItem?.type === 'VIDEO' ? '<button type="button" data-context-action="detail">打开视频详情</button>' : ''}<button type="button" data-context-action="steam">在 Steam 中打开</button></div><div slot="actions"><md-text-button id="close-home-context">关闭</md-text-button></div></md-dialog>`;
   document.title = '首页 · WallHub Web Preview';
 }
 
@@ -1004,6 +1003,12 @@ function bindSharedControls() {
   }));
   document.querySelectorAll('[data-favorite]').forEach((button) => button.addEventListener('click', () => backend.toggleFavorite(button.dataset.favorite)));
   document.querySelectorAll('[data-download]').forEach((button) => button.addEventListener('click', () => backend.requestDownload(button.dataset.download)));
+  document.querySelectorAll('[data-primary-action]').forEach((button) => button.addEventListener('click', () => {
+    const action = backend.snapshot().settings.homeCardAction;
+    if (action === 'DOWNLOAD') backend.requestDownload(button.dataset.primaryAction);
+    else if (action === 'PLAY') { const item = backend.workshop(button.dataset.primaryAction); if (item?.type === 'VIDEO') navigate(`/workshop/${item.id}`); else backend.requestDownload(button.dataset.primaryAction); }
+    else window.open(`https://steamcommunity.com/sharedfiles/filedetails/?id=${encodeURIComponent(button.dataset.primaryAction)}`, '_blank', 'noopener,noreferrer');
+  }));
   document.querySelectorAll('[data-subscribe]').forEach((button) => button.addEventListener('click', () => backend.toggleSubscription(button.dataset.subscribe)));
   document.querySelector('#detail-back')?.addEventListener('click', () => {
     if (history.state?.wallhub === true && String(history.state.from).startsWith('/')) {
@@ -1120,28 +1125,45 @@ function bindSharedControls() {
     backend.setDetailDownloadPreferences(pendingDetailDownload.preset, pendingDetailDownload.preserveAudio);
     history.back();
   };
-  document.querySelector('#filter-button')?.addEventListener('click', () => {
-    const snapshot = backend.snapshot();
-    document.querySelector('#filter-sort').value = snapshot.filters.sort;
-    document.querySelector('#filter-type').value = snapshot.filters.type;
-    document.querySelector('#filter-exact').checked = snapshot.filters.exactPhrase;
-    filterDialog.show();
+  const homeFilterDialog = document.querySelector('#home-filter-dialog');
+  homeFilterDialog?.addEventListener('cancel', (event) => { event.preventDefault(); if (homeModalActive === 'filter') history.back(); });
+  homeFilterDialog?.addEventListener('closed', () => { if (homeModalActive === 'filter' && history.state?.modal === 'home-filter') history.back(); });
+  document.querySelector('#filter-button')?.addEventListener('click', () => { homeModalActive = 'filter'; history.pushState({...history.state, modal: 'home-filter'}, '', location.href); homeFilterDialog?.show(); });
+  document.querySelector('#home-filter-form [name="sort"]')?.addEventListener('change', (event) => { const daysField = document.querySelector('.home-days-field'); if (event.currentTarget.value === 'TRENDING') { daysField.hidden = false; } else { daysField.hidden = true; daysField.querySelector('select').value = '0'; } });
+  document.querySelector('#cancel-home-filters')?.addEventListener('click', () => history.back());
+  document.querySelector('#reset-home-filters')?.addEventListener('click', () => {
+    const form = document.querySelector('#home-filter-form');
+    form.elements.sort.value = 'TRENDING'; form.elements.days.value = '30'; form.elements.exactPhrase.checked = false;
+    form.querySelectorAll('[name="types"]').forEach((control) => { control.checked = false; });
+    form.querySelectorAll('[name="ratings"]').forEach((control) => { control.checked = control.value === 'EVERYONE'; });
+    form.querySelectorAll('[name="genres"], [name="resolutions"]').forEach((control) => { control.checked = true; });
+    homeOfficialTags.forEach((tag) => { form.elements[`official-${tag}`].value = 'none'; });
   });
-  document.querySelector('#reset-filters').onclick = () => {
-    document.querySelector('#filter-sort').value = 'TRENDING';
-    document.querySelector('#filter-type').value = 'ALL';
-    document.querySelector('#filter-exact').checked = false;
-  };
-  document.querySelector('#apply-filters').onclick = () => {
-    const filters = {
-      sort: document.querySelector('#filter-sort').value,
-      type: document.querySelector('#filter-type').value,
-      exactPhrase: document.querySelector('#filter-exact').checked,
-    };
-    filterDialog.addEventListener('closed', () => document.querySelector('#filter-button')?.focus(), {once: true});
-    filterDialog.close();
-    backend.setFilters(filters);
-  };
+  document.querySelector('#apply-home-filters')?.addEventListener('click', () => {
+    const form = new FormData(document.querySelector('#home-filter-form'));
+    const officialTags = homeOfficialTags.filter((tag) => form.get(`official-${tag}`) === 'include');
+    const excludedOfficialTags = homeOfficialTags.filter((tag) => form.get(`official-${tag}`) === 'exclude');
+    const filters = {sort: form.get('sort'), days: Number(form.get('days')), types: form.getAll('types'), ratings: form.getAll('ratings'), genres: form.getAll('genres'), officialTags, excludedOfficialTags, resolutions: form.getAll('resolutions'), exactPhrase: form.get('exactPhrase') === 'on'};
+    pendingHomeFilter = filters;
+    history.back();
+  });
+  document.querySelector('#refresh-empty-home')?.addEventListener('click', () => backend.refreshHome());
+  document.querySelector('#refresh-home')?.addEventListener('click', () => { backend.refreshHome(); requestAnimationFrame(() => document.querySelector('#refresh-home')?.focus()); });
+  document.querySelector('#load-more-home')?.addEventListener('click', (event) => backend.selectHomePage(Number(event.currentTarget.dataset.page)));
+  document.querySelector('#previous-home-page')?.addEventListener('click', (event) => backend.selectHomePage(Number(event.currentTarget.dataset.page)));
+  document.querySelector('#next-home-page')?.addEventListener('click', (event) => backend.selectHomePage(Number(event.currentTarget.dataset.page)));
+  const homeContextDialog = document.querySelector('#home-context-dialog');
+  homeContextDialog?.addEventListener('cancel', (event) => { event.preventDefault(); if (homeModalActive === 'context') history.back(); });
+  homeContextDialog?.addEventListener('closed', () => { if (homeModalActive === 'context' && history.state?.modal === 'home-context') history.back(); });
+  document.querySelectorAll('[data-card-menu]').forEach((button) => button.addEventListener('click', () => { homeContextId = button.dataset.cardMenu; homeModalActive = 'context'; history.pushState({...history.state, modal: 'home-context'}, '', location.href); renderApp(); requestAnimationFrame(() => document.querySelector('#home-context-dialog')?.show()); }));
+  document.querySelector('#close-home-context')?.addEventListener('click', () => history.back());
+  document.querySelectorAll('[data-context-action]').forEach((button) => button.addEventListener('click', () => {
+    const item = backend.listWorkshops().items.find((candidate) => candidate.id === homeContextId);
+    const action = button.dataset.contextAction;
+    if (!item) return;
+    pendingHomeContextAction = {action, item};
+    history.back();
+  }));
 }
 
 function renderApp() {
@@ -1202,6 +1224,22 @@ window.addEventListener('popstate', () => {
     fullscreenVideoId = null;
     renderApp();
     requestAnimationFrame(() => document.querySelector('#open-video-fullscreen')?.focus());
+    return;
+  }
+  if (homeModalActive) {
+    const modal = homeModalActive;
+    homeModalActive = null;
+    document.querySelector(modal === 'filter' ? '#home-filter-dialog' : '#home-context-dialog')?.close();
+    if (pendingHomeFilter) { const filters = pendingHomeFilter; pendingHomeFilter = null; backend.setFilters(filters); requestAnimationFrame(() => document.querySelector('#filter-button')?.focus()); }
+    else if (pendingHomeContextAction) {
+      const {action, item} = pendingHomeContextAction; pendingHomeContextAction = null;
+      if (action === 'detail') navigate(`/workshop/${item.id}`);
+      else if (action === 'author') { backend.setQuery(item.author); requestAnimationFrame(() => document.querySelector('#search')?.focus()); }
+      else if (action === 'copy-title') { navigator.clipboard?.writeText(item.title).catch(() => {}); setTimeout(() => document.querySelector(`[data-card-menu="${CSS.escape(item.id)}"]`)?.focus(), 100); }
+      else if (action === 'copy-id') { navigator.clipboard?.writeText(item.id).catch(() => {}); setTimeout(() => document.querySelector(`[data-card-menu="${CSS.escape(item.id)}"]`)?.focus(), 100); }
+      else if (action === 'steam') { window.open(`https://steamcommunity.com/sharedfiles/filedetails/?id=${encodeURIComponent(item.id)}`, '_blank', 'noopener,noreferrer'); setTimeout(() => document.querySelector(`[data-card-menu="${CSS.escape(item.id)}"]`)?.focus(), 100); }
+      else { backend.requestDownload(item.id); setTimeout(() => document.querySelector(`[data-card-menu="${CSS.escape(item.id)}"]`)?.focus(), 100); }
+    } else setTimeout(() => document.querySelector(modal === 'filter' ? '#filter-button' : `[data-card-menu="${CSS.escape(homeContextId)}"]`)?.focus(), 100);
     return;
   }
   const clearSourceDialog = document.querySelector('#clear-source-dialog');

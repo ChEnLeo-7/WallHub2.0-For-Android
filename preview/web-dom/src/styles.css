@@ -219,6 +219,20 @@ md-outlined-text-field { width: min(100%, 560px); }
 .update-actions { padding: var(--wallhub-space-2); display: grid; gap: var(--wallhub-space-1); }
 .settings-page { max-width: 760px; margin-inline: auto; }
 .setup-wizard { min-height: 100dvh; padding: var(--wallhub-space-3); display: grid; place-content: center; justify-items: center; gap: var(--wallhub-space-2); text-align: center; }
+.filter-form { display: grid; gap: 16px; min-width: min(640px, 75vw); max-height: 62dvh; overflow: auto; padding-inline-end: 4px; }
+.filter-form fieldset { display: flex; flex-wrap: wrap; gap: 8px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--wallhub-shape-medium); }
+.filter-form details { border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--wallhub-shape-medium); padding: 12px; }
+.filter-form summary { min-height: 40px; cursor: pointer; font-weight: 600; }
+.filter-chip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; }
+.filter-chip-grid label { min-height: 40px; display: flex; align-items: center; gap: 8px; }
+.filter-chip-grid select { min-height: 40px; }
+.filter-form label { display: grid; gap: 6px; }
+.filter-form select { min-height: 48px; padding-inline: 12px; border: 1px solid var(--md-sys-color-outline); border-radius: var(--wallhub-shape-small); color: inherit; background: var(--md-sys-color-surface); }
+.filter-form .checkbox-row { display: flex; align-items: center; gap: 12px; min-height: 48px; }
+.home-pagination { display: flex; justify-content: center; align-items: center; gap: 16px; padding: 24px; }
+.home-pagination button, .context-actions button { min-height: 48px; padding-inline: 16px; border: 0; border-radius: var(--wallhub-shape-full); color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); }
+.home-end, .home-refresh-status { text-align: center; color: var(--md-sys-color-on-surface-variant); }
+.context-actions { display: grid; gap: 8px; min-width: min(360px, 70vw); }
 .steam-account-card { min-height: 220px; padding: var(--wallhub-space-3); place-items: center; align-content: center; text-align: center; }
 .steam-account-card h2, .steam-account-card p { margin: 0; }
 .steam-account-card md-outlined-text-field, .steam-account-card md-filled-button, .steam-account-card md-outlined-button { width: min(100%, 480px); }

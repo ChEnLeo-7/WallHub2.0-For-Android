@@ -147,7 +147,7 @@ if (!(await evaluate(`Boolean(document.querySelector('.state-lab') && document.q
 }
 await call('Page.navigate', {url: `${previewOrigin}/`});
 await new Promise((resolve) => setTimeout(resolve, 300));
-if (!(await evaluate(`!document.querySelector('.state-lab') && document.querySelectorAll('.workshop-card').length === 6`))) {
+if (!(await evaluate(`!document.querySelector('.state-lab') && document.querySelectorAll('.workshop-card').length === 30`))) {
   throw new Error('State lab scenario leaked into the normal Home surface');
 }
 await call('Page.navigate', {url: `${previewOrigin}/?lab=1&scenario=loading`});
@@ -170,18 +170,40 @@ if (!(await evaluate(`location.search.includes('scenario=empty') && document.que
 }
 await evaluate(`document.querySelector('#reset-lab').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 200));
-if (!(await evaluate(`document.querySelectorAll('.workshop-card').length === 6 && !location.search.includes('scenario=')`))) {
+if (!(await evaluate(`document.querySelectorAll('.workshop-card').length === 30 && !location.search.includes('scenario=')`))) {
   throw new Error('State lab reset did not restore deterministic content');
 }
+if (!(await evaluate(`Boolean(document.querySelector('#load-more-home'))`))) throw new Error('Infinite-scroll Home did not expose load-more');
+await evaluate(`document.querySelector('#load-more-home').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 200));
+if (!(await evaluate(`document.querySelectorAll('.workshop-card').length > 30`))) throw new Error('Home load-more did not append deterministic results');
+await evaluate(`document.querySelector('#refresh-home').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 150));
+if (!(await evaluate(`document.querySelectorAll('.workshop-card').length === 30 && document.activeElement?.id === 'refresh-home' && document.querySelector('#home-refresh-status').textContent.includes('1')`))) throw new Error('Home refresh did not reset page and restore focus');
 await evaluate(`document.querySelector('#filter-button').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 250));
-if (!(await evaluate(`document.querySelector('#filter-dialog').open`))) throw new Error('Filter dialog did not open');
-await evaluate(`document.querySelector('#filter-type').value = 'VIDEO'; document.querySelector('#apply-filters').click(); true`);
+if (!(await evaluate(`document.querySelector('#home-filter-dialog').open`))) throw new Error('Filter dialog did not open');
+await evaluate(`history.back(); true`);
+await new Promise((resolve) => setTimeout(resolve, 400));
+if (!(await evaluate(`!document.querySelector('#home-filter-dialog').open && document.activeElement?.id === 'filter-button' && location.pathname === '/'`))) throw new Error('Home filter Back did not dismiss and restore focus');
+await evaluate(`document.querySelector('#filter-button').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 200));
+await call('Input.dispatchKeyEvent', {type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27});
+await call('Input.dispatchKeyEvent', {type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27});
+await new Promise((resolve) => setTimeout(resolve, 400));
+if (!(await evaluate(`!document.querySelector('#home-filter-dialog').open && document.activeElement?.id === 'filter-button'`))) throw new Error('Home filter Escape did not unwind modal history and restore focus');
+await evaluate(`document.querySelector('#filter-button').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 200));
+await evaluate(`const form = document.querySelector('#home-filter-form'); form.elements.days.value = '0'; form.querySelector('[name="types"][value="VIDEO"]').checked = true; form.querySelectorAll('[name="genres"]').forEach((control) => { control.checked = control.value === 'Sci-Fi'; }); document.querySelector('#apply-home-filters').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 250));
-const filterResult = await evaluate(`({cards: document.querySelectorAll('.workshop-card').length, focus: document.activeElement?.id, dialogOpen: document.querySelector('#filter-dialog').open})`);
-if (filterResult.cards !== 2 || filterResult.focus !== 'filter-button' || filterResult.dialogOpen) {
-  throw new Error(`Filter application or focus restoration failed: ${JSON.stringify(filterResult)}`);
-}
+const filterResult = await evaluate(`({cards: document.querySelectorAll('.workshop-card').length, focus: document.activeElement?.id, filterText: document.querySelector('#filter-button').textContent})`);
+if (filterResult.cards < 1 || filterResult.focus !== 'filter-button' || !filterResult.filterText.includes('已启用')) throw new Error(`Filter application or focus restoration failed: ${JSON.stringify(filterResult)}`);
+await evaluate(`document.querySelector('[data-card-menu]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 200));
+if (!(await evaluate(`document.querySelector('#home-context-dialog').open && document.querySelectorAll('[data-context-action]').length === 6`))) throw new Error('Home card context actions did not open');
+await evaluate(`document.querySelector('[data-context-action="author"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 150));
+if (!(await evaluate(`document.querySelector('#search').value.length > 0 && document.activeElement?.id === 'search'`))) throw new Error('Home context author search did not update query');
 const favoriteState = await evaluate(`({id: document.querySelector('[data-favorite]').dataset.favorite, text: document.querySelector('[data-favorite]').textContent.trim()})`);
 await evaluate(`document.querySelector('[data-favorite]').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 100));
