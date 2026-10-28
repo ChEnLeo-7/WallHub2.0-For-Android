@@ -84,6 +84,19 @@ test('exact phrase distinguishes exact fields from partial matches', () => {
   assert.deepEqual(backend.listWorkshops().items.map((item) => item.id), ['3357929793']);
 });
 
+test('discover rails and feedback remain deterministic', () => {
+  const storage = memoryStorage();
+  const backend = new FakeBackend(storage);
+  assert.deepEqual(backend.discoverRails().rails.map((rail) => rail.id), [
+    'trending-month', 'audio-responsive', 'creator-showcase',
+  ]);
+  backend.setDiscoverFeedback('trending-month', {rating: 'like', favorite: true});
+  backend.update({discoverResultColumns: 1});
+  const restored = new FakeBackend(storage).snapshot();
+  assert.deepEqual(restored.discoverFeedback['trending-month'], {rating: 'like', favorite: true});
+  assert.equal(restored.discoverResultColumns, 1);
+});
+
 test('detail comments remain deterministic and immutable', () => {
   const backend = new FakeBackend(memoryStorage());
   assert.equal(backend.comments('3357929793').length, 2);

@@ -96,6 +96,8 @@ function requestedScenario() {
 
 function currentTopRoute() {
   if (location.pathname.startsWith('/workshop/')) return '/';
+  if (location.pathname.startsWith('/discover/')) return '/discover';
+  if (location.pathname.startsWith('/profile/')) return '/profile';
   return destinations.some((item) => item.route === location.pathname) ? location.pathname : '/';
 }
 
@@ -107,6 +109,9 @@ function navigate(destination) {
 
 function renderNavigation() {
   const route = currentTopRoute();
+  const secondary = !destinations.some((item) => item.route === location.pathname);
+  nav.hidden = secondary;
+  document.documentElement.dataset.secondary = String(secondary);
   nav.innerHTML = destinations.map((item) => `
     <button class="nav-item" type="button" data-route="${item.route}"
       aria-current="${item.route === route ? 'page' : 'false'}">
@@ -201,6 +206,70 @@ function renderHome() {
   document.title = '首页 · WallHub Web Preview';
 }
 
+function renderDiscover() {
+  const snapshot = backend.snapshot();
+  const result = backend.discoverRails();
+  let body;
+  if (result.status === 'loading') {
+    body = '<div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress><p>正在准备发现内容…</p></div>';
+  } else if (result.status === 'error') {
+    body = '<div class="center-state" role="alert"><div class="state-icon">!</div><h2>无法载入发现内容</h2><md-filled-button id="retry-discover">重试</md-filled-button></div>';
+  } else if (result.status === 'empty') {
+    body = '<div class="center-state"><h2>暂无推荐内容</h2></div>';
+  } else {
+    const visibleRails = result.rails.filter((rail) => snapshot.discoverFeedback[rail.id]?.rating !== 'dislike');
+    body = visibleRails.length ? visibleRails.map((rail) => {
+      const feedback = snapshot.discoverFeedback[rail.id] ?? {rating: 'none', favorite: false};
+      return `<section class="discover-rail" data-rail-id="${rail.id}" tabindex="-1" aria-labelledby="rail-${rail.id}-title">
+        <div class="rail-header"><h2 id="rail-${rail.id}-title">${escapeHtml(rail.title)}</h2><button type="button" data-open-rail="${rail.id}">查看全部 →</button></div>
+        <div class="discover-row">${rail.items.map((item) => `
+          <button type="button" class="discover-card" data-open-workshop="${item.id}" aria-label="查看 ${escapeHtml(item.title)}">
+            <div class="discover-cover card-media-${item.accent}"><span>${item.type}</span></div>
+            <strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.author)}</small>
+          </button>`).join('')}</div>
+        <div class="rail-feedback" aria-label="${escapeHtml(rail.title)} 反馈">
+          <button type="button" data-rail-rating="like" data-rail="${rail.id}" aria-pressed="${feedback.rating === 'like'}">喜欢</button>
+          <button type="button" data-rail-rating="dislike" data-rail="${rail.id}" aria-pressed="${feedback.rating === 'dislike'}">不感兴趣</button>
+          <button type="button" data-rail-favorite="${rail.id}" aria-pressed="${feedback.favorite}">${feedback.favorite ? '已保存' : '保存'}</button>
+        </div>
+      </section>`;
+    }).join('') : '<div class="center-state"><h2>已隐藏所有推荐内容</h2><p>可在状态实验室重置反馈。</p></div>';
+  }
+  main.innerHTML = `
+    <header class="top-bar discover-top-bar">
+      <div class="title-group"><p class="eyebrow">CURRENT UI · WEB MIRROR</p><details class="discover-content-menu"><summary>你的内容 <span aria-hidden="true">⌄</span></summary><div aria-label="你的内容">
+        <button type="button" data-discover-route="following">我的关注</button>
+        <button type="button" data-discover-route="friend-favorites">好友收藏</button>
+        <button type="button" data-discover-route="friend-created">好友作品</button>
+      </div></details></div>
+      <md-outlined-button id="theme-toggle">${theme === 'dark' ? '浅色外观' : '深色外观'}</md-outlined-button>
+    </header>
+    ${isLabVisible() ? renderStateLab(snapshot) : ''}
+    <p id="discover-status" class="sr-only" aria-live="polite"></p>
+    <div class="discover-feed">${body}</div>`;
+  document.title = '发现 · WallHub Web Preview';
+}
+
+function renderDiscoverResults() {
+  const railId = location.pathname.match(/^\/discover\/results\/([a-z0-9-]+)$/u)?.[1];
+  const snapshot = backend.snapshot();
+  const result = backend.discoverRails();
+  const rail = result.rails?.find((entry) => entry.id === railId);
+  const title = rail?.title ?? '发现结果';
+  let content;
+  if (result.status === 'loading') {
+    content = '<div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress></div>';
+  } else if (result.status === 'error') {
+    content = '<div class="center-state" role="alert"><h2>无法载入结果</h2><md-filled-button id="retry-discover">重试</md-filled-button></div>';
+  } else if (!rail || result.status === 'empty') {
+    content = '<div class="center-state"><h2>没有匹配的壁纸</h2></div>';
+  } else {
+    content = `<div class="workshop-grid discover-results-grid columns-${snapshot.discoverResultColumns}">${rail.items.map((item) => workshopCard(item, snapshot)).join('')}</div>`;
+  }
+  main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回发现">←</button><h1>${escapeHtml(title)}</h1><md-outlined-button id="discover-result-columns">${snapshot.discoverResultColumns === 1 ? '单列' : '双列'}</md-outlined-button></header><div class="discover-results">${content}</div>`;
+  document.title = `${title} · WallHub Web Preview`;
+}
+
 function relativeTime(timestamp, now) {
   const hours = Math.max(1, Math.round((now - timestamp) / 3_600_000));
   return hours < 24 ? `${hours} 小时前` : `${Math.round(hours / 24)} 天前`;
@@ -267,7 +336,10 @@ function renderDetail() {
 
 function renderPlaceholder() {
   const selected = destinations.find((item) => item.route === currentTopRoute()) ?? destinations[0];
-  main.innerHTML = `${shellHeader(selected.label)}<section class="placeholder"><h2>${selected.label} · Current UI</h2><p>此页面将在后续垂直切片中接入确定性状态。</p></section>`;
+  const secondary = location.pathname !== selected.route;
+  main.innerHTML = secondary
+    ? `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回">←</button><h1>${selected.label}</h1></header><section class="placeholder"><h2>${selected.label} · Current UI</h2><p>此页面将在后续垂直切片中接入确定性状态。</p></section>`
+    : `${shellHeader(selected.label)}<section class="placeholder"><h2>${selected.label} · Current UI</h2><p>此页面将在后续垂直切片中接入确定性状态。</p></section>`;
   document.title = `${selected.label} · WallHub Web Preview`;
 }
 
@@ -301,6 +373,40 @@ function bindSharedControls() {
   });
   document.querySelectorAll('[data-view-mode]').forEach((button) => button.addEventListener('click', () => backend.setViewMode(button.dataset.viewMode)));
   document.querySelectorAll('[data-open-workshop]').forEach((button) => button.addEventListener('click', () => navigate(`/workshop/${button.dataset.openWorkshop}`)));
+  document.querySelector('#retry-discover')?.addEventListener('click', () => {
+    const url = new URL(location.href);
+    url.searchParams.delete('scenario');
+    history.replaceState(history.state, '', url);
+    backend.setScenario('content');
+  });
+  document.querySelector('#discover-result-columns')?.addEventListener('click', () => backend.update({discoverResultColumns: backend.snapshot().discoverResultColumns === 1 ? 2 : 1}));
+  document.querySelectorAll('[data-open-rail]').forEach((button) => button.addEventListener('click', () => navigate(`/discover/results/${button.dataset.openRail}`)));
+  document.querySelector('.discover-content-menu')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.currentTarget.removeAttribute('open');
+      event.currentTarget.querySelector('summary')?.focus();
+    }
+  });
+  document.querySelectorAll('[data-discover-route]').forEach((button) => button.addEventListener('click', () => navigate(`/discover/${button.dataset.discoverRoute}`)));
+  document.querySelectorAll('[data-rail-rating]').forEach((button) => button.addEventListener('click', () => {
+    const current = backend.snapshot().discoverFeedback[button.dataset.rail]?.rating ?? 'none';
+    const next = current === button.dataset.railRating ? 'none' : button.dataset.railRating;
+    const rail = button.closest('.discover-rail');
+    const visibleRails = [...document.querySelectorAll('.discover-rail')];
+    const railIndex = visibleRails.indexOf(rail);
+    const focusRailId = visibleRails[railIndex + 1]?.dataset.railId ?? visibleRails[railIndex - 1]?.dataset.railId;
+    const hiddenTitle = rail?.querySelector('h2')?.textContent?.trim() ?? '推荐内容';
+    backend.setDiscoverFeedback(button.dataset.rail, {rating: next});
+    if (next === 'dislike') requestAnimationFrame(() => {
+      (focusRailId ? document.querySelector(`[data-rail-id="${CSS.escape(focusRailId)}"]`) : main)?.focus();
+      const status = document.querySelector('#discover-status');
+      if (status) status.textContent = `已隐藏${hiddenTitle}`;
+    });
+  }));
+  document.querySelectorAll('[data-rail-favorite]').forEach((button) => button.addEventListener('click', () => {
+    const current = backend.snapshot().discoverFeedback[button.dataset.railFavorite]?.favorite === true;
+    backend.setDiscoverFeedback(button.dataset.railFavorite, {favorite: !current});
+  }));
   document.querySelectorAll('[data-favorite]').forEach((button) => button.addEventListener('click', () => backend.toggleFavorite(button.dataset.favorite)));
   document.querySelectorAll('[data-download]').forEach((button) => button.addEventListener('click', () => backend.requestDownload(button.dataset.download)));
   document.querySelectorAll('[data-subscribe]').forEach((button) => button.addEventListener('click', () => backend.toggleSubscription(button.dataset.subscribe)));
@@ -308,7 +414,8 @@ function bindSharedControls() {
     if (history.state?.wallhub === true && String(history.state.from).startsWith('/')) {
       history.back();
     } else {
-      history.replaceState({wallhub: true, route: '/'}, '', '/');
+      const fallback = location.pathname.startsWith('/discover/') ? '/discover' : '/';
+      history.replaceState({wallhub: true, route: fallback}, '', fallback);
       renderApp();
       main.focus();
     }
@@ -395,6 +502,8 @@ function renderApp() {
   }
   renderNavigation();
   if (location.pathname === '/') renderHome();
+  else if (location.pathname === '/discover') renderDiscover();
+  else if (/^\/discover\/results\/[a-z0-9-]+$/u.test(location.pathname)) renderDiscoverResults();
   else if (/^\/workshop\/\d+$/u.test(location.pathname)) renderDetail();
   else renderPlaceholder();
   bindSharedControls();
@@ -418,6 +527,8 @@ backend.subscribe(() => {
   const focusSelector =
     active?.dataset?.favorite ? `[data-favorite="${active.dataset.favorite}"]` :
     active?.dataset?.subscribe ? `[data-subscribe="${active.dataset.subscribe}"]` :
+    active?.dataset?.railRating ? `[data-rail-rating="${active.dataset.railRating}"][data-rail="${active.dataset.rail}"]` :
+    active?.dataset?.railFavorite ? `[data-rail-favorite="${active.dataset.railFavorite}"]` :
     active?.dataset?.download ? `[data-download="${active.dataset.download}"]` :
     active?.dataset?.viewMode ? `[data-view-mode="${active.dataset.viewMode}"]` :
     active?.id ? `#${CSS.escape(active.id)}` : null;

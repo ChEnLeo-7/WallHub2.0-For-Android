@@ -192,7 +192,7 @@ await evaluate(`document.querySelector('#reset-lab').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 100));
 await evaluate(`document.querySelector('[data-open-workshop="3357929793"]').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 150));
-if (!(await evaluate(`location.pathname === '/workshop/3357929793' && Boolean(document.querySelector('.detail-overview'))`))) {
+if (!(await evaluate(`location.pathname === '/workshop/3357929793' && Boolean(document.querySelector('.detail-overview')) && document.querySelector('.primary-nav').hidden`))) {
   throw new Error('Home card did not open deterministic Workshop Detail');
 }
 await evaluate(`document.querySelector('.play-button').click(); true`);
@@ -239,7 +239,49 @@ const directBack = await evaluate(`({path: location.pathname, length: history.le
 if (directBack.path !== '/' || directBack.length !== directHistoryLength || directBack.route !== '/') {
   throw new Error(`Direct-entry Detail Back did not replace with Home: ${JSON.stringify(directBack)}`);
 }
+await evaluate(`document.querySelector('[data-route="/discover"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/discover' && document.querySelectorAll('.discover-rail').length === 3`))) {
+  throw new Error('Discover did not render deterministic rails');
+}
+await evaluate(`document.querySelector('.discover-content-menu summary').focus(); document.querySelector('.discover-content-menu summary').click(); true`);
+await call('Input.dispatchKeyEvent', {type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27});
+await call('Input.dispatchKeyEvent', {type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27});
+if (!(await evaluate(`!document.querySelector('.discover-content-menu').open && document.activeElement?.matches('.discover-content-menu summary')`))) {
+  throw new Error('Discover content menu did not close and restore focus on Escape');
+}
+await evaluate(`document.querySelector('[data-rail-rating="dislike"][data-rail="audio-responsive"]').focus(); document.querySelector('[data-rail-rating="dislike"][data-rail="audio-responsive"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`!document.querySelector('[data-rail-id="audio-responsive"]') && document.activeElement?.dataset.railId === 'creator-showcase' && document.querySelector('#discover-status').textContent.includes('音频响应')`))) {
+  throw new Error('Discover rail suppression did not preserve focus and announce removal');
+}
+await evaluate(`document.querySelector('[data-rail-favorite="trending-month"]').focus(); document.querySelector('[data-rail-favorite="trending-month"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`document.activeElement?.dataset.railFavorite === 'trending-month' && document.activeElement?.getAttribute('aria-pressed') === 'true'`))) {
+  throw new Error('Discover feedback did not persist with focus');
+}
+await evaluate(`document.querySelector('[data-open-rail="trending-month"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/discover/results/trending-month' && document.querySelectorAll('.workshop-card').length === 3 && document.querySelector('.primary-nav').hidden`))) {
+  throw new Error('Discover rail did not open deterministic results');
+}
+for (const width of [599, 600, 839, 840]) {
+  await call('Emulation.setDeviceMetricsOverride', {width, height: 900, screenWidth: width, screenHeight: 900, deviceScaleFactor: 1, mobile: true});
+  await evaluate(`dispatchEvent(new Event('resize')); true`);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const geometry = await evaluate(`({columns: getComputedStyle(document.querySelector('.discover-results-grid')).gridTemplateColumns.split(' ').length, marginLeft: Math.round(parseFloat(getComputedStyle(document.querySelector('main')).marginLeft)), navHidden: document.querySelector('.primary-nav').hidden})`);
+  if (geometry.columns !== 2 || geometry.marginLeft !== 0 || !geometry.navHidden) throw new Error(`${width}px Discover results geometry failed: ${JSON.stringify(geometry)}`);
+}
+await call('Emulation.clearDeviceMetricsOverride');
+await evaluate(`dispatchEvent(new Event('resize')); document.querySelector('#discover-result-columns').focus(); document.querySelector('#discover-result-columns').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`document.activeElement?.id === 'discover-result-columns' && document.querySelector('.discover-results-grid').classList.contains('columns-1') && getComputedStyle(document.querySelector('.discover-results-grid')).gridTemplateColumns.split(' ').length === 1`))) {
+  throw new Error('Discover result columns did not persist with focus');
+}
+await evaluate(`document.querySelector('#detail-back').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/discover'`))) throw new Error('Discover results Back did not restore feed');
 await evaluate(`localStorage.setItem('wallhub.preview.dom.theme', 'dark'); document.documentElement.dataset.theme = 'dark'; true`);
 
 socket.close();
-console.log('WEB_DOM_ACCEPTANCE=OK breakpoints=599/600/839/840 dialog_focus=trapped theme=persistent history=restored state_lab=deterministic detail=interactive');
+console.log('WEB_DOM_ACCEPTANCE=OK breakpoints=599/600/839/840 dialog_focus=trapped theme=persistent history=restored state_lab=deterministic detail=interactive discover=interactive');

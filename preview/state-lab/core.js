@@ -19,6 +19,8 @@ function defaultState() {
     filters: {type: 'ALL', sort: 'TRENDING', exactPhrase: false},
     favorites: [],
     subscriptions: [],
+    discoverFeedback: {},
+    discoverResultColumns: 2,
     downloads: [],
   };
 }
@@ -40,6 +42,12 @@ function normalizedState(candidate) {
     },
     favorites: Array.isArray(candidate.favorites) ? [...new Set(candidate.favorites.map(String))] : [],
     subscriptions: Array.isArray(candidate.subscriptions) ? [...new Set(candidate.subscriptions.map(String))] : [],
+    discoverFeedback: candidate.discoverFeedback && typeof candidate.discoverFeedback === 'object'
+      ? Object.fromEntries(Object.entries(candidate.discoverFeedback).filter(([, value]) =>
+        value && typeof value === 'object' && ['none', 'like', 'dislike'].includes(value.rating)
+      ).map(([key, value]) => [String(key).slice(0, 64), {rating: value.rating, favorite: value.favorite === true}]))
+      : {},
+    discoverResultColumns: candidate.discoverResultColumns === 1 ? 1 : 2,
     downloads: Array.isArray(candidate.downloads)
       ? candidate.downloads.filter((entry) =>
         entry && typeof entry === 'object' && typeof entry.workshopId === 'string' &&
@@ -126,6 +134,26 @@ export class FakeBackend {
       items = [...items].sort((left, right) => right.subscriptions - left.subscriptions);
     }
     return {status: items.length ? 'content' : 'empty', items};
+  }
+
+  discoverRails() {
+    if (this.state.scenario === 'loading') return {status: 'loading', rails: []};
+    if (this.state.scenario === 'error') return {status: 'error', rails: []};
+    if (this.state.scenario === 'empty') return {status: 'empty', rails: []};
+    const rails = [
+      {id: 'trending-month', title: '本月热门', itemIds: ['3357929793', '3174098802', '3048819267']},
+      {id: 'audio-responsive', title: '音频响应', itemIds: ['3048819267', '2985110421', '2769012550']},
+      {id: 'creator-showcase', title: '创作者精选', itemIds: ['2871466005', '3357929793', '3174098802']},
+    ].map((rail) => ({...rail, items: rail.itemIds.map((id) => this.workshop(id)).filter(Boolean)}));
+    return {status: 'content', rails};
+  }
+
+  setDiscoverFeedback(railId, patch) {
+    const current = this.state.discoverFeedback[railId] ?? {rating: 'none', favorite: false};
+    return this.update({discoverFeedback: {
+      ...this.state.discoverFeedback,
+      [railId]: {...current, ...patch},
+    }});
   }
 
   workshop(id) {
