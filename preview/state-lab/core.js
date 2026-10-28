@@ -9,6 +9,9 @@ export const FAKE_BACKEND_STORAGE_KEY = 'wallhub.preview.fake-backend';
 export const stateLabScenarios = Object.freeze(['content', 'loading', 'empty', 'error']);
 const MPKG_PRESET_ALIASES = Object.freeze({PERFORMANCE: 'COMPATIBILITY', QUALITY: 'HIGH_QUALITY', COMPATIBILITY: 'COMPATIBILITY', BALANCED: 'BALANCED', HIGH_QUALITY: 'HIGH_QUALITY', EXTREME_QUALITY: 'EXTREME_QUALITY'});
 const normalizeMpkgPreset = (value) => MPKG_PRESET_ALIASES[value] ?? 'BALANCED';
+function validProxyUrl(value) {
+  try { const parsed = new URL(value); return ['http:', 'https:', 'socks:', 'socks5:'].includes(parsed.protocol) && Boolean(parsed.hostname) && !parsed.username && !parsed.password && !parsed.search && !parsed.hash && ['', '/'].includes(parsed.pathname) && (!parsed.port || (Number(parsed.port) >= 1 && Number(parsed.port) <= 65535)); } catch { return false; }
+}
 
 function defaultState() {
   return {
@@ -50,7 +53,7 @@ function defaultState() {
     detailDownloadPreset: 'HIGH_QUALITY',
     detailPreserveAudio: false,
     userComments: [],
-    settings: {matureContent: false, enhancedAccess: true, outputDirectory: 'WallHub Downloads', language: 'SYSTEM', notificationsGranted: false, diagnosticMessage: '', themePreference: 'SYSTEM', useSystemMonet: true, themedLauncherIcon: true, accent: 'DEFAULT', customAccentColor: '#5B7AA0', homePageSize: 30, homePaginationMode: 'INFINITE', homeColumns: 2, homeSearchFab: true, homeFilterMultiSelect: true, homeCardAction: 'DOWNLOAD'},
+    settings: {matureContent: false, enhancedAccess: true, outputDirectory: 'WallHub Downloads', language: 'SYSTEM', notificationsGranted: false, diagnosticMessage: '', themePreference: 'SYSTEM', useSystemMonet: true, themedLauncherIcon: true, accent: 'DEFAULT', customAccentColor: '#5B7AA0', homePageSize: 30, homePaginationMode: 'INFINITE', homeColumns: 2, homeSearchFab: true, homeFilterMultiSelect: true, homeCardAction: 'DOWNLOAD', outputDirectoryCustom: false, workshopSourceCacheEnabled: true, workshopSourceCacheBudgetGiB: 5, workshopSourceCacheRetainedBytes: 402653184, maxConcurrentDownloads: 1, chunkDownloadConcurrency: 24, onlineChunkPlaybackEnabled: false, onlineStreamCacheLimitMb: 512, onlineStreamCacheBytes: 134217728, downloadProxyUrl: '', downloadProxyEnabled: false, aboutUpdatePhase: 'IDLE', aboutUpdateMessage: '', setupRestartRequested: false},
     downloads: [],
   };
 }
@@ -142,6 +145,20 @@ function normalizedState(candidate) {
       homeSearchFab: candidate.settings?.homeSearchFab !== false,
       homeFilterMultiSelect: candidate.settings?.homeFilterMultiSelect === true,
       homeCardAction: ['DOWNLOAD', 'PLAY', 'STEAM'].includes(candidate.settings?.homeCardAction) ? candidate.settings.homeCardAction : fallback.settings.homeCardAction,
+      outputDirectoryCustom: candidate.settings?.outputDirectoryCustom === true,
+      workshopSourceCacheEnabled: candidate.settings?.workshopSourceCacheEnabled !== false,
+      workshopSourceCacheBudgetGiB: Number.isSafeInteger(candidate.settings?.workshopSourceCacheBudgetGiB) && candidate.settings.workshopSourceCacheBudgetGiB > 0 ? candidate.settings.workshopSourceCacheBudgetGiB : fallback.settings.workshopSourceCacheBudgetGiB,
+      workshopSourceCacheRetainedBytes: Number.isSafeInteger(candidate.settings?.workshopSourceCacheRetainedBytes) && candidate.settings.workshopSourceCacheRetainedBytes >= 0 ? candidate.settings.workshopSourceCacheRetainedBytes : fallback.settings.workshopSourceCacheRetainedBytes,
+      maxConcurrentDownloads: Number.isInteger(candidate.settings?.maxConcurrentDownloads) && candidate.settings.maxConcurrentDownloads >= 1 && candidate.settings.maxConcurrentDownloads <= 8 ? candidate.settings.maxConcurrentDownloads : fallback.settings.maxConcurrentDownloads,
+      chunkDownloadConcurrency: [1, 2, 4, 8, 12, 16, 24, 32, 48].includes(candidate.settings?.chunkDownloadConcurrency) ? candidate.settings.chunkDownloadConcurrency : fallback.settings.chunkDownloadConcurrency,
+      onlineChunkPlaybackEnabled: candidate.settings?.onlineChunkPlaybackEnabled === true,
+      onlineStreamCacheLimitMb: Number.isSafeInteger(candidate.settings?.onlineStreamCacheLimitMb) && candidate.settings.onlineStreamCacheLimitMb >= 128 ? candidate.settings.onlineStreamCacheLimitMb : fallback.settings.onlineStreamCacheLimitMb,
+      onlineStreamCacheBytes: Number.isSafeInteger(candidate.settings?.onlineStreamCacheBytes) && candidate.settings.onlineStreamCacheBytes >= 0 ? candidate.settings.onlineStreamCacheBytes : fallback.settings.onlineStreamCacheBytes,
+      downloadProxyUrl: typeof candidate.settings?.downloadProxyUrl === 'string' ? candidate.settings.downloadProxyUrl.slice(0, 240) : '',
+      downloadProxyEnabled: candidate.settings?.downloadProxyEnabled === true && validProxyUrl(candidate.settings?.downloadProxyUrl ?? ''),
+      aboutUpdatePhase: ['IDLE', 'CHECKING', 'AVAILABLE', 'UP_TO_DATE', 'DOWNLOADING', 'DOWNLOADED', 'FAILED'].includes(candidate.settings?.aboutUpdatePhase) ? candidate.settings.aboutUpdatePhase : 'IDLE',
+      aboutUpdateMessage: typeof candidate.settings?.aboutUpdateMessage === 'string' ? candidate.settings.aboutUpdateMessage.slice(0, 160) : '',
+      setupRestartRequested: candidate.settings?.setupRestartRequested === true,
     },
     downloads: normalizedDownloads,
   };
@@ -156,6 +173,9 @@ export class FakeBackend {
     this.state = normalizedState(persisted);
     if (['device-confirmation', 'waiting-code'].includes(this.state.steamAuthPhase)) {
       this.state = normalizedState({...this.state, steamAuthPhase: 'idle', profileSession: 'signed-out'});
+    }
+    if (['CHECKING', 'DOWNLOADING'].includes(this.state.settings.aboutUpdatePhase)) {
+      this.state = normalizedState({...this.state, settings: {...this.state.settings, aboutUpdatePhase: 'FAILED', aboutUpdateMessage: '上次更新操作已中断，请重试'}});
     }
     this.persist();
   }
@@ -232,16 +252,17 @@ export class FakeBackend {
 
   settingsState() {
     const steamPhase = this.state.scenario === 'loading' ? 'restoring' : this.state.scenario === 'empty' ? 'signed-out' : this.state.scenario === 'error' ? 'failed' : this.state.profileSession === 'signed-out' && this.state.steamAuthPhase !== 'idle' ? this.state.steamAuthPhase : this.state.profileSession;
-    return {preferences: {...this.state.settings}, steamPhase};
+    return {preferences: {...this.state.settings, detailDownloadPreset: this.state.detailDownloadPreset}, steamPhase};
   }
 
   toggleSetting(key) {
-    if (!['matureContent', 'enhancedAccess', 'notificationsGranted', 'useSystemMonet', 'themedLauncherIcon', 'homeSearchFab', 'homeFilterMultiSelect'].includes(key)) return this.snapshot();
+    if (!['matureContent', 'enhancedAccess', 'notificationsGranted', 'useSystemMonet', 'themedLauncherIcon', 'homeSearchFab', 'homeFilterMultiSelect', 'workshopSourceCacheEnabled', 'onlineChunkPlaybackEnabled', 'downloadProxyEnabled'].includes(key)) return this.snapshot();
+    if (key === 'downloadProxyEnabled' && !validProxyUrl(this.state.settings.downloadProxyUrl)) return this.snapshot();
     return this.update({settings: {...this.state.settings, [key]: !this.state.settings[key]}});
   }
 
   setSetting(key, value) {
-    const allowed = ['language', 'themePreference', 'accent', 'customAccentColor', 'homePageSize', 'homePaginationMode', 'homeColumns', 'homeCardAction'];
+    const allowed = ['language', 'themePreference', 'accent', 'customAccentColor', 'homePageSize', 'homePaginationMode', 'homeColumns', 'homeCardAction', 'workshopSourceCacheBudgetGiB', 'maxConcurrentDownloads', 'chunkDownloadConcurrency', 'onlineStreamCacheLimitMb'];
     if (!allowed.includes(key)) return this.snapshot();
     return this.update({settings: {...this.state.settings, [key]: value}});
   }
@@ -249,6 +270,29 @@ export class FakeBackend {
   exportDiagnostics() {
     return this.update({settings: {...this.state.settings, diagnosticMessage: '诊断日志已导出'}});
   }
+
+  setOutputDirectory(label) {
+    const value = String(label).trim().slice(0, 100);
+    return this.update({settings: {...this.state.settings, outputDirectory: value || 'WallHub Downloads', outputDirectoryCustom: Boolean(value)}});
+  }
+
+  clearWorkshopSourceCache() { return this.update({settings: {...this.state.settings, workshopSourceCacheRetainedBytes: 0}}); }
+  clearOnlineStreamCache() { return this.update({settings: {...this.state.settings, onlineStreamCacheBytes: 0}}); }
+  saveDownloadProxy(url) {
+    const value = String(url).trim().slice(0, 240);
+    let valid = false;
+    try { const parsed = new URL(value); valid = ['http:', 'https:', 'socks:', 'socks5:'].includes(parsed.protocol) && Boolean(parsed.hostname) && !parsed.username && !parsed.password && !parsed.search && !parsed.hash && ['', '/'].includes(parsed.pathname) && (!parsed.port || (Number(parsed.port) >= 1 && Number(parsed.port) <= 65535)); } catch { valid = value === ''; }
+    return this.update({settings: {...this.state.settings, downloadProxyUrl: value, downloadProxyEnabled: valid && value ? this.state.settings.downloadProxyEnabled : false}});
+  }
+
+  setAboutUpdatePhase(phase) {
+    if (!['IDLE', 'CHECKING', 'AVAILABLE', 'UP_TO_DATE', 'DOWNLOADING', 'DOWNLOADED', 'FAILED'].includes(phase)) return this.snapshot();
+    const messages = {AVAILABLE: '发现新版本 2.1.0', UP_TO_DATE: '当前已是最新版本', DOWNLOADED: '更新包已下载', FAILED: '检查更新失败'};
+    return this.update({settings: {...this.state.settings, aboutUpdatePhase: phase, aboutUpdateMessage: messages[phase] ?? ''}});
+  }
+
+  restartSetupWizard() { return this.update({settings: {...this.state.settings, setupRestartRequested: true}}); }
+  completeSetupWizard() { return this.update({settings: {...this.state.settings, setupRestartRequested: false}}); }
 
   setAccent(accent, customColor = this.state.settings.customAccentColor) {
     if (!['DEFAULT', 'BLUE', 'GREEN', 'RED', 'PURPLE', 'CUSTOM'].includes(accent) || !/^#[0-9a-f]{6}$/iu.test(customColor)) return this.snapshot();

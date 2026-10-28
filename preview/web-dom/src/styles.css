@@ -211,6 +211,14 @@ md-outlined-text-field { width: min(100%, 560px); }
 .custom-accent-editor input[type='color'] { width: 64px; height: 48px; }
 .hue-presets { display: grid; grid-template-columns: repeat(6, 40px); gap: var(--wallhub-space-1); }
 .hue-presets button { width: 40px; height: 40px; border: 2px solid var(--md-sys-color-outline); border-radius: 50%; }
+.settings-field { padding: var(--wallhub-space-2); display: grid; gap: var(--wallhub-space-1); }
+.settings-field input { min-height: 48px; padding-inline: 12px; border: 1px solid var(--md-sys-color-outline); border-radius: var(--wallhub-shape-small); color: inherit; background: var(--md-sys-color-surface); }
+.about-hero { padding: 32px var(--wallhub-space-2); display: grid; justify-items: center; text-align: center; }
+.about-logo { width: 156px; height: 156px; display: grid; place-items: center; border-radius: 36px; color: var(--md-sys-color-on-primary); background: var(--md-sys-color-primary); font-size: 72px; font-weight: 800; }
+.about-hero h2 { margin-bottom: 0; font-size: 32px; }
+.update-actions { padding: var(--wallhub-space-2); display: grid; gap: var(--wallhub-space-1); }
+.settings-page { max-width: 760px; margin-inline: auto; }
+.setup-wizard { min-height: 100dvh; padding: var(--wallhub-space-3); display: grid; place-content: center; justify-items: center; gap: var(--wallhub-space-2); text-align: center; }
 .steam-account-card { min-height: 220px; padding: var(--wallhub-space-3); place-items: center; align-content: center; text-align: center; }
 .steam-account-card h2, .steam-account-card p { margin: 0; }
 .steam-account-card md-outlined-text-field, .steam-account-card md-filled-button, .steam-account-card md-outlined-button { width: min(100%, 480px); }

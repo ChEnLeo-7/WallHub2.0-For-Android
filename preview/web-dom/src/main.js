@@ -122,6 +122,10 @@ let reconvertDismissed = false;
 let pendingDetailDownload = null;
 let downloadDismissed = false;
 let detailDownloadFeedbackTimer = null;
+let clearSourceDismissed = false;
+let clearSourceModalActive = false;
+let pendingClearSource = false;
+let updateDownloadAttempt = 0;
 let fullscreenVideoId = null;
 let inlineVideo = {id: null, state: 'idle', attempt: 0, timer: null};
 let renderedWorkshopId = null;
@@ -279,6 +283,10 @@ function renderHome() {
   document.title = '首页 · WallHub Web Preview';
 }
 
+function isValidDownloadProxy(value) {
+  try { const parsed = new URL(value); return ['http:', 'https:', 'socks:', 'socks5:'].includes(parsed.protocol) && Boolean(parsed.hostname) && !parsed.username && !parsed.password && !parsed.search && !parsed.hash && ['', '/'].includes(parsed.pathname) && (!parsed.port || (Number(parsed.port) >= 1 && Number(parsed.port) <= 65535)); } catch { return false; }
+}
+
 function settingsSelect(title, key, selected, options, disabled = false) {
   return `<label class="settings-select"><span><strong>${title}</strong></span><select data-setting-select="${key}" ${disabled ? 'disabled' : ''}>${options.map(([value, label]) => `<option value="${value}" ${String(selected) === String(value) ? 'selected' : ''}>${label}</option>`).join('')}</select></label>`;
 }
@@ -315,9 +323,13 @@ function renderSettings() {
   } else if (slug === 'appearance') {
     body = `<section class="settings-section"><h2>主题</h2>${settingsSelect('外观模式', 'themePreference', state.preferences.themePreference, [['SYSTEM','跟随系统'],['LIGHT','浅色'],['DARK','深色']])}</section><section class="settings-section"><h2>个性化颜色</h2><label class="settings-switch"><span><strong>系统动态颜色</strong><small>${state.preferences.useSystemMonet ? 'Web 使用 WallHub 兼容动态配色' : '使用静态调色板'}</small></span><input type="checkbox" data-setting-toggle="useSystemMonet" ${state.preferences.useSystemMonet ? 'checked' : ''}></label><label class="settings-switch"><span><strong>主题应用图标</strong><small>Android 13 及以上版本</small></span><input type="checkbox" data-setting-toggle="themedLauncherIcon" ${state.preferences.themedLauncherIcon ? 'checked' : ''}></label>${settingsSelect('静态调色板', 'accent', state.preferences.accent, [['DEFAULT','默认'],['BLUE','蓝色'],['GREEN','绿色'],['RED','红色'],['PURPLE','紫色'],['CUSTOM','自定义']], state.preferences.useSystemMonet)}</section><section class="settings-section"><h2>发现</h2>${settingsSelect('每页项目数', 'homePageSize', state.preferences.homePageSize, [[10,'10'],[15,'15'],[30,'30'],[50,'50']])}${settingsSelect('分页方式', 'homePaginationMode', state.preferences.homePaginationMode, [['INFINITE','无限滚动'],['PAGED','网页式分页']])}${settingsSelect('手机列数', 'homeColumns', state.preferences.homeColumns, [[1,'1 列'],[2,'2 列'],[3,'3 列'],[4,'4 列']])}<label class="settings-switch"><span><strong>首页浮动搜索</strong><small>显示浮动搜索按钮</small></span><input type="checkbox" data-setting-toggle="homeSearchFab" ${state.preferences.homeSearchFab ? 'checked' : ''}></label><label class="settings-switch"><span><strong>多选类型与分级</strong><small>筛选器允许同时选择多个选项</small></span><input type="checkbox" data-setting-toggle="homeFilterMultiSelect" ${state.preferences.homeFilterMultiSelect ? 'checked' : ''}></label>${settingsSelect('默认卡片操作', 'homeCardAction', state.preferences.homeCardAction, [['DOWNLOAD','下载'],['PLAY','播放'],['STEAM','Steam']])}</section><md-dialog id="custom-accent-dialog" aria-label="自定义调色板"><div slot="headline">自定义调色板</div><div slot="content" class="custom-accent-editor"><div id="custom-accent-preview" style="background:${escapeHtml(state.preferences.customAccentColor)}"></div><label>自定义颜色<input id="custom-accent-color" type="color" value="${escapeHtml(state.preferences.customAccentColor)}"></label><div class="hue-presets" aria-label="色相预设">${['#A33B4E','#B44B28','#9A6500','#6F7300','#356A3F','#006B5E','#006590','#385CA8','#5B5FB5','#76518D','#92506F','#9E4057'].map((color) => `<button type="button" data-custom-accent="${color}" aria-label="选择 ${color}" style="background:${color}"></button>`).join('')}</div></div><div slot="actions"><md-text-button id="cancel-custom-accent">取消</md-text-button><md-filled-button id="apply-custom-accent">应用</md-filled-button></div></md-dialog>`;
   } else if (slug === 'downloads') {
-    body = `<section class="settings-group"><div class="settings-row"><span><strong>输出目录</strong><small>${escapeHtml(state.preferences.outputDirectory)}</small></span></div><label class="settings-switch"><span><strong>增强访问</strong><small>改进 Steam 下载连接</small></span><input type="checkbox" data-setting-toggle="enhancedAccess" ${state.preferences.enhancedAccess ? 'checked' : ''}></label></section>`;
+    const sourceCache = formatBytes(state.preferences.workshopSourceCacheRetainedBytes);
+    const streamCache = formatBytes(state.preferences.onlineStreamCacheBytes);
+    body = `<section class="settings-section"><h2>存储位置</h2><div class="settings-row"><span><strong>当前导出目录</strong><small>${escapeHtml(state.preferences.outputDirectoryCustom ? state.preferences.outputDirectory : '默认：Download/WallHub')}</small></span></div><button type="button" class="settings-row" id="choose-output-directory"><span><strong>${state.preferences.outputDirectoryCustom ? '更改自定义目录' : '选择自定义目录'}</strong></span><span>›</span></button>${state.preferences.outputDirectoryCustom ? '<button type="button" class="settings-row" id="restore-output-directory"><span><strong>恢复默认目录</strong></span><span>›</span></button>' : ''}</section><section class="settings-section"><h2>MPKG 转换</h2>${settingsSelect('默认转换质量', 'detailDownloadPreset', state.preferences.detailDownloadPreset, [['BALANCED','性能优先'],['COMPATIBILITY','高性能'],['HIGH_QUALITY','高质量'],['EXTREME_QUALITY','极致质量']])}</section><section class="settings-section"><h2>创意工坊源文件缓存</h2><label class="settings-switch"><span><strong>保留已下载源文件</strong><small>用于重新转换和恢复</small></span><input type="checkbox" data-setting-toggle="workshopSourceCacheEnabled" ${state.preferences.workshopSourceCacheEnabled ? 'checked' : ''}></label>${settingsSelect('请求缓存上限', 'workshopSourceCacheBudgetGiB', [1,2,5,10].includes(state.preferences.workshopSourceCacheBudgetGiB) ? state.preferences.workshopSourceCacheBudgetGiB : 'CUSTOM', [[1,'1 GiB'],[2,'2 GiB'],[5,'5 GiB'],[10,'10 GiB'],['CUSTOM',`自定义 · ${state.preferences.workshopSourceCacheBudgetGiB} GiB`]])}<div class="settings-row"><span><strong>已保留</strong><small>${sourceCache}</small></span></div><p class="settings-notice">有效上限取请求值、可用空间 10% 与 5 GiB 中的最小值。</p><button type="button" class="settings-row" id="clear-source-cache"><span><strong>立即清除</strong><small>不删除已导出的壁纸</small></span><span>›</span></button></section><section class="settings-section"><h2>下载性能</h2>${settingsSelect('并发下载任务', 'maxConcurrentDownloads', state.preferences.maxConcurrentDownloads, [1,2,3,4,5,6,7,8].map((value) => [value,String(value)]))}${settingsSelect('每个任务分块数', 'chunkDownloadConcurrency', state.preferences.chunkDownloadConcurrency, [1,2,4,8,12,16,24,32,48].map((value) => [value,String(value)]))}</section><section class="settings-section"><h2>在线播放</h2><label class="settings-switch"><span><strong>Steam 分块流式播放</strong><small>关闭时先完整下载</small></span><input type="checkbox" data-setting-toggle="onlineChunkPlaybackEnabled" ${state.preferences.onlineChunkPlaybackEnabled ? 'checked' : ''}></label>${settingsSelect('在线播放缓存', 'onlineStreamCacheLimitMb', [512,1024,2048,5120,8192].includes(state.preferences.onlineStreamCacheLimitMb) ? state.preferences.onlineStreamCacheLimitMb : 'CUSTOM', [[512,'512 MB'],[1024,'1 GB'],[2048,'2 GB'],[5120,'5 GB'],[8192,'8 GB'],['CUSTOM',`自定义 · ${state.preferences.onlineStreamCacheLimitMb} MB`]])}<div class="settings-row"><span><strong>当前缓存</strong><small>${streamCache}</small></span></div><button type="button" class="settings-row" id="clear-stream-cache"><span><strong>清除播放缓存</strong></span><span>›</span></button></section><section class="settings-section"><h2>网络代理</h2><label class="settings-switch"><span><strong>启用下载代理</strong><small>${state.preferences.downloadProxyUrl || '请先保存有效代理地址'}</small></span><input type="checkbox" data-setting-toggle="downloadProxyEnabled" ${state.preferences.downloadProxyEnabled ? 'checked' : ''} ${isValidDownloadProxy(state.preferences.downloadProxyUrl) ? '' : 'disabled'}></label><label class="settings-field">代理地址<input id="download-proxy-url" value="${escapeHtml(state.preferences.downloadProxyUrl)}" placeholder="socks5://127.0.0.1:1080"></label><md-filled-button id="save-download-proxy">保存</md-filled-button></section><md-dialog id="clear-source-dialog" aria-label="清除源文件缓存"><div slot="headline">清除源文件缓存？</div><div slot="content">将删除私有暂存、检查点与转换计划，但不会删除已导出的壁纸。</div><div slot="actions"><md-text-button id="cancel-clear-source">取消</md-text-button><md-filled-button id="confirm-clear-source">立即清除</md-filled-button></div></md-dialog><md-dialog id="custom-source-cache-dialog" aria-label="自定义源文件缓存"><div slot="headline">自定义缓存上限</div><label slot="content" class="settings-field">GiB<input id="custom-source-cache" type="number" min="1" step="1" value="${state.preferences.workshopSourceCacheBudgetGiB}"></label><div slot="actions"><md-text-button id="cancel-custom-source">取消</md-text-button><md-filled-button id="apply-custom-source">应用</md-filled-button></div></md-dialog><md-dialog id="custom-stream-cache-dialog" aria-label="自定义在线播放缓存"><div slot="headline">自定义在线播放缓存</div><label slot="content" class="settings-field">MB<input id="custom-stream-cache" type="number" min="128" step="1" value="${state.preferences.onlineStreamCacheLimitMb}"></label><div slot="actions"><md-text-button id="cancel-custom-stream">取消</md-text-button><md-filled-button id="apply-custom-stream">应用</md-filled-button></div></md-dialog>`;
   } else {
-    body = '<section class="settings-group"><h2>关于 WallHub</h2><p>Current Web Mirror · 确定性预览</p><md-outlined-button id="check-updates">检查更新</md-outlined-button></section>';
+    const update = state.preferences.aboutUpdatePhase;
+    const updateAction = update === 'AVAILABLE' || update === 'FAILED' ? '<md-filled-button id="download-update">下载最新通用 APK</md-filled-button>' : update === 'DOWNLOADING' ? '<progress max="1" value="0.54" aria-label="更新下载进度 54%"></progress><p>27.0 / 50.0 MB</p><md-text-button id="cancel-update">取消</md-text-button>' : update === 'DOWNLOADED' ? '<md-filled-button id="install-update">安装更新</md-filled-button>' : '';
+    body = `<section class="about-hero"><div class="about-logo" aria-hidden="true">W</div><h2>WallHub</h2><p>面向 Wallpaper Engine 创意工坊的开源 Android 客户端</p></section><section class="settings-section"><h2>开发者</h2>${['CHENLEO_7','uwugl'].map((name) => `<button type="button" class="settings-row" data-about-person="${name}" data-about-account="${name === 'CHENLEO_7' ? 'ChEnLeo-7' : name === 'uwugl' ? 'uwu-gl' : name}"><span><strong>${name}</strong><small>${name === 'CHENLEO_7' ? '作者、后端维护与问题修复' : '前端、设计与指导'}</small></span><span>↗</span></button>`).join('')}</section><section class="settings-section"><h2>贡献者</h2>${['cccp114','hf5203344'].map((name) => `<button type="button" class="settings-row" data-about-person="${name}" data-about-account="${name === 'CHENLEO_7' ? 'ChEnLeo-7' : name === 'uwugl' ? 'uwu-gl' : name}"><span><strong>${name}</strong><small>${name === 'cccp114' ? 'Logo 与 UI' : '早期测试与 UI'}</small></span><span>↗</span></button>`).join('')}</section><section class="settings-section"><h2>应用</h2><button type="button" class="settings-row" id="check-updates" ${['CHECKING','DOWNLOADING'].includes(update) ? 'disabled' : ''}><span><strong>${update === 'CHECKING' ? '正在检查…' : '版本 2.0.0'}</strong><small>检查 GitHub 更新</small></span><span>›</span></button><div class="settings-row"><span><strong>更新日期</strong><small>2026-10-28</small></span></div>${state.preferences.aboutUpdateMessage ? `<p class="settings-notice" role="status">${escapeHtml(state.preferences.aboutUpdateMessage)}</p>` : ''}<div class="update-actions">${updateAction}</div></section><section class="settings-section"><h2>项目链接</h2><button type="button" class="settings-row" id="open-repository"><span><strong>GitHub 仓库</strong><small>ChEnLeo-7/WallHub2.0-For-Android</small></span><span>↗</span></button><button type="button" class="settings-row" id="open-qq-group"><span><strong>QQ 群</strong><small>1082323527</small></span><span>↗</span></button><button type="button" class="settings-row" id="restart-setup"><span><strong>重新运行设置向导</strong></span><span>›</span></button></section>`;
   }
   main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回">←</button><h1>${slug ? categories.find((category) => category.slug === slug)?.title ?? '关于 WallHub' : '设置'}</h1></header>${isLabVisible() ? renderStateLab(snapshot) : ''}<p id="settings-status" class="sr-only" aria-live="polite"></p><section class="settings-page">${body}</section>`;
   document.title = `${slug ? '设置 · ' + slug : '设置'} · WallHub Web Preview`;
@@ -677,9 +689,12 @@ function bindSharedControls() {
   document.querySelectorAll('[data-setting-toggle]').forEach((control) => control.addEventListener('change', () => { backend.toggleSetting(control.dataset.settingToggle); if (control.dataset.settingToggle === 'useSystemMonet') applyAppearance(); }));
   document.querySelectorAll('[data-setting-select]').forEach((control) => control.addEventListener('change', () => {
     const key = control.dataset.settingSelect;
-    const numericKeys = new Set(['homePageSize', 'homeColumns']);
+    const numericKeys = new Set(['homePageSize', 'homeColumns', 'workshopSourceCacheBudgetGiB', 'maxConcurrentDownloads', 'chunkDownloadConcurrency', 'onlineStreamCacheLimitMb']);
     if (key === 'accent' && control.value === 'CUSTOM') { document.querySelector('#custom-accent-dialog')?.show(); return; }
+    if (key === 'workshopSourceCacheBudgetGiB' && control.value === 'CUSTOM') { document.querySelector('#custom-source-cache-dialog')?.show(); return; }
+    if (key === 'onlineStreamCacheLimitMb' && control.value === 'CUSTOM') { document.querySelector('#custom-stream-cache-dialog')?.show(); return; }
     if (key === 'accent') backend.setAccent(control.value);
+    else if (key === 'detailDownloadPreset') backend.setDetailDownloadPreferences(control.value, backend.snapshot().detailPreserveAudio);
     else backend.setSetting(key, numericKeys.has(key) ? Number(control.value) : control.value);
     if (['themePreference', 'accent'].includes(key)) applyAppearance();
   }));
@@ -694,6 +709,35 @@ function bindSharedControls() {
   document.querySelectorAll('[data-custom-accent]').forEach((button) => button.addEventListener('click', () => updateAccentPreview(button.dataset.customAccent)));
   document.querySelector('#cancel-custom-accent')?.addEventListener('click', () => { customAccentDialog?.close(); const accent = document.querySelector('[data-setting-select="accent"]'); if (accent) accent.value = backend.snapshot().settings.accent; });
   document.querySelector('#apply-custom-accent')?.addEventListener('click', () => { const color = document.querySelector('#custom-accent-color')?.value.toUpperCase(); backend.setAccent('CUSTOM', color); applyAppearance(); customAccentDialog?.close(); requestAnimationFrame(() => document.querySelector('[data-setting-select="accent"]')?.focus()); });
+  document.querySelector('#choose-output-directory')?.addEventListener('click', () => backend.setOutputDirectory('Web 选择的 WallHub 目录'));
+  document.querySelector('#restore-output-directory')?.addEventListener('click', () => backend.setOutputDirectory(''));
+  const clearSourceDialog = document.querySelector('#clear-source-dialog');
+  document.querySelector('#clear-source-cache')?.addEventListener('click', () => {
+    history.pushState({...history.state, modal: 'clear-source-cache'}, '', location.href);
+    clearSourceModalActive = true;
+    clearSourceDialog?.addEventListener('closed', () => { if (history.state?.modal === 'clear-source-cache') { clearSourceDismissed = true; history.back(); } }, {once: true});
+    clearSourceDialog?.show();
+  });
+  document.querySelector('#cancel-clear-source')?.addEventListener('click', () => history.back());
+  document.querySelector('#confirm-clear-source')?.addEventListener('click', () => { pendingClearSource = true; history.back(); });
+  document.querySelector('#clear-stream-cache')?.addEventListener('click', () => { const hadBytes = backend.settingsState().preferences.onlineStreamCacheBytes > 0; backend.clearOnlineStreamCache(); requestAnimationFrame(() => { document.querySelector('#clear-stream-cache')?.focus(); const status = document.querySelector('#settings-status'); if (status) status.textContent = hadBytes ? '在线播放缓存已清除' : '在线播放缓存已经为空'; }); });
+  const customSourceDialog = document.querySelector('#custom-source-cache-dialog');
+  document.querySelector('#cancel-custom-source')?.addEventListener('click', () => customSourceDialog?.close());
+  document.querySelector('#apply-custom-source')?.addEventListener('click', () => { const value = Number(document.querySelector('#custom-source-cache')?.value); if (Number.isInteger(value) && value > 0) { backend.setSetting('workshopSourceCacheBudgetGiB', value); customSourceDialog?.close(); } });
+  const customStreamDialog = document.querySelector('#custom-stream-cache-dialog');
+  document.querySelector('#cancel-custom-stream')?.addEventListener('click', () => customStreamDialog?.close());
+  document.querySelector('#apply-custom-stream')?.addEventListener('click', () => { const value = Number(document.querySelector('#custom-stream-cache')?.value); if (Number.isInteger(value) && value >= 128) { backend.setSetting('onlineStreamCacheLimitMb', value); customStreamDialog?.close(); } });
+  const proxyField = document.querySelector('#download-proxy-url');
+  proxyField?.addEventListener('input', () => { const button = document.querySelector('#save-download-proxy'); const proxyToggle = document.querySelector('[data-setting-toggle="downloadProxyEnabled"]'); const changed = proxyField.value.trim() !== backend.settingsState().preferences.downloadProxyUrl; if (button) button.disabled = !changed; if (proxyToggle) proxyToggle.disabled = changed || !isValidDownloadProxy(backend.settingsState().preferences.downloadProxyUrl); const status = document.querySelector('#settings-status'); if (status && changed) status.textContent = '代理地址有未保存的更改'; });
+  document.querySelector('#save-download-proxy')?.addEventListener('click', () => backend.saveDownloadProxy(proxyField?.value));
+  document.querySelectorAll('[data-about-person]').forEach((button) => button.addEventListener('click', () => { window.open(`https://github.com/${encodeURIComponent(button.dataset.aboutAccount)}`, '_blank', 'noopener,noreferrer'); const status = document.querySelector('#settings-status'); if (status) status.textContent = `已请求打开 ${button.dataset.aboutPerson} 的 GitHub`; }));
+  document.querySelector('#open-repository')?.addEventListener('click', () => { window.open('https://github.com/ChEnLeo-7/WallHub2.0-For-Android', '_blank', 'noopener,noreferrer'); const status = document.querySelector('#settings-status'); if (status) status.textContent = '已请求打开 GitHub 仓库'; });
+  document.querySelector('#open-qq-group')?.addEventListener('click', () => { const status = document.querySelector('#settings-status'); if (status) status.textContent = '已请求加入 QQ 群 1082323527'; });
+  document.querySelector('#restart-setup')?.addEventListener('click', () => backend.restartSetupWizard());
+  document.querySelector('#check-updates')?.addEventListener('click', () => { backend.setAboutUpdatePhase('CHECKING'); setTimeout(() => backend.setAboutUpdatePhase('AVAILABLE'), 250); });
+  document.querySelector('#download-update')?.addEventListener('click', () => { const attempt = ++updateDownloadAttempt; backend.setAboutUpdatePhase('DOWNLOADING'); setTimeout(() => { if (attempt === updateDownloadAttempt && backend.settingsState().preferences.aboutUpdatePhase === 'DOWNLOADING') backend.setAboutUpdatePhase('DOWNLOADED'); }, 450); });
+  document.querySelector('#cancel-update')?.addEventListener('click', () => { updateDownloadAttempt += 1; backend.setAboutUpdatePhase('AVAILABLE'); });
+  document.querySelector('#install-update')?.addEventListener('click', () => { const status = document.querySelector('#settings-status'); if (status) status.textContent = '已请求打开 Android 安装器'; });
   const completeSteamTransition = (message, focusSelector = '#steam-account-status') => requestAnimationFrame(() => {
     document.querySelector(focusSelector)?.focus();
     const status = document.querySelector('#settings-status'); if (status) status.textContent = message;
@@ -715,7 +759,6 @@ function bindSharedControls() {
   });
   document.querySelector('#settings-theme-toggle')?.addEventListener('click', () => document.querySelector('#theme-toggle')?.click());
   document.querySelector('#notifications-setting')?.addEventListener('click', () => { backend.toggleSetting('notificationsGranted'); requestAnimationFrame(() => { document.querySelector('#notifications-setting')?.focus(); const status = document.querySelector('#settings-status'); if (status) status.textContent = '通知权限状态已更新'; }); });
-  document.querySelector('#check-updates')?.addEventListener('click', () => { const status = document.querySelector('#settings-status'); if (status) status.textContent = '当前已是最新版本'; });
   const setLocalActionStatus = (message) => { const status = document.querySelector('#local-status'); if (status) status.textContent = message; };
   document.querySelector('#local-open-native')?.addEventListener('click', () => setLocalActionStatus('已请求打开本地壁纸'));
   document.querySelector('#local-share')?.addEventListener('click', () => setLocalActionStatus('已准备分享本地壁纸'));
@@ -1102,6 +1145,12 @@ function bindSharedControls() {
 }
 
 function renderApp() {
+  if (backend.snapshot().settings.setupRestartRequested) {
+    nav.hidden = true; document.documentElement.dataset.secondary = 'true';
+    main.innerHTML = '<section class="setup-wizard" role="main"><div class="about-logo" aria-hidden="true">W</div><h1>欢迎使用 WallHub</h1><p>重新配置语言、存储、网络与 Steam。</p><md-filled-button id="complete-setup">完成设置</md-filled-button></section>';
+    document.querySelector('#complete-setup')?.addEventListener('click', () => backend.completeSetupWizard());
+    return;
+  }
   const nextWorkshopId = location.pathname.match(/^\/workshop\/(\d+)$/u)?.[1] ?? null;
   if (renderedWorkshopId && renderedWorkshopId !== nextWorkshopId) resetInlineVideo();
   renderedWorkshopId = nextWorkshopId;
@@ -1153,6 +1202,18 @@ window.addEventListener('popstate', () => {
     fullscreenVideoId = null;
     renderApp();
     requestAnimationFrame(() => document.querySelector('#open-video-fullscreen')?.focus());
+    return;
+  }
+  const clearSourceDialog = document.querySelector('#clear-source-dialog');
+  if (clearSourceModalActive || clearSourceDialog?.open || clearSourceDismissed) {
+    if (clearSourceDialog?.open) {
+      clearSourceDialog.addEventListener('closed', () => setTimeout(() => document.querySelector('#clear-source-cache')?.focus(), 0), {once: true});
+      setTimeout(() => clearSourceDialog.close(), 0);
+    }
+    clearSourceDismissed = false;
+    clearSourceModalActive = false;
+    if (pendingClearSource) { const hadBytes = backend.settingsState().preferences.workshopSourceCacheRetainedBytes > 0; pendingClearSource = false; backend.clearWorkshopSourceCache(); setTimeout(() => { document.querySelector('#clear-source-cache')?.focus(); const status = document.querySelector('#settings-status'); if (status) status.textContent = hadBytes ? '源文件缓存已清除' : '源文件缓存已经为空'; }, 100); }
+    else setTimeout(() => document.querySelector('#clear-source-cache')?.focus(), 100);
     return;
   }
   if (downloadDialog?.open && history.state?.modal === 'detail-download-format') {
