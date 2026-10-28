@@ -77,6 +77,8 @@ const main = document.querySelector('#main-content');
 const dialog = document.querySelector('#focus-dialog');
 const filterDialog = document.querySelector('#filter-dialog');
 const downloadDialog = document.querySelector('#download-dialog');
+let pendingLibraryRemoval = null;
+let confirmLibraryRemoval = false;
 
 const escapeHtml = (value) => String(value)
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -204,6 +206,30 @@ function renderHome() {
     </section>
     <section class="home-results" aria-label="创意工坊结果">${results}</section>`;
   document.title = '首页 · WallHub Web Preview';
+}
+
+function renderLibrary() {
+  const collection = location.pathname.endsWith('/favorites') ? 'favorites' : 'subscriptions';
+  const result = backend.library(collection);
+  const labels = {subscriptions: '订阅', favorites: '收藏'};
+  let content;
+  if (result.status === 'loading') content = '<div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress></div>';
+  else if (result.status === 'error') content = '<div class="center-state" role="alert"><h2>无法载入资料库</h2><md-filled-button id="retry-library">重试</md-filled-button></div>';
+  else if (result.status === 'restoring') content = '<div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress><h2>正在恢复 Steam 会话…</h2></div>';
+  else if (result.status === 'auth') content = '<div class="center-state"><h2>登录后查看资料库</h2><md-filled-button id="library-login">登录 Steam</md-filled-button></div>';
+  else if (result.status === 'empty') content = `<div class="center-state"><h2>${labels[collection]}中暂无项目</h2></div>`;
+  else content = `<div class="workshop-grid library-grid">${result.items.map((item) => `<div class="library-item">${workshopCard(item, backend.snapshot())}<md-text-button data-library-remove="${item.id}">从${labels[collection]}移除</md-text-button></div>`).join('')}</div>`;
+  main.innerHTML = `
+    <header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回我的">←</button><h1>资料库</h1><div class="toolbar-actions"><md-outlined-button id="retry-library-toolbar">刷新</md-outlined-button></div></header>
+    ${isLabVisible() ? renderStateLab(backend.snapshot()) : ''}
+    <div class="library-tabs" role="tablist" aria-label="资料库分类">
+      <button type="button" role="tab" data-library-tab="subscriptions" aria-selected="${collection === 'subscriptions'}" tabindex="${collection === 'subscriptions' ? '0' : '-1'}">订阅</button>
+      <button type="button" role="tab" data-library-tab="favorites" aria-selected="${collection === 'favorites'}" tabindex="${collection === 'favorites' ? '0' : '-1'}">收藏</button>
+    </div>
+    <p id="library-status" class="sr-only" aria-live="polite"></p>
+    <section class="library-page" aria-label="${labels[collection]}">${content}</section>
+    <md-dialog id="library-remove-dialog" aria-label="确认移除"><div slot="headline">从${labels[collection]}移除？</div><div slot="content">此操作只更新当前确定性预览。</div><div slot="actions"><md-text-button id="cancel-library-remove">取消</md-text-button><md-filled-button id="confirm-library-remove">移除</md-filled-button></div></md-dialog>`;
+  document.title = `${labels[collection]} · WallHub Web Preview`;
 }
 
 function renderProfile() {
@@ -402,6 +428,46 @@ function bindSharedControls() {
   });
   document.querySelectorAll('[data-view-mode]').forEach((button) => button.addEventListener('click', () => backend.setViewMode(button.dataset.viewMode)));
   document.querySelectorAll('[data-open-workshop]').forEach((button) => button.addEventListener('click', () => navigate(`/workshop/${button.dataset.openWorkshop}`)));
+  const recoverLibrary = () => {
+    const url = new URL(location.href);
+    url.searchParams.delete('scenario');
+    history.replaceState(history.state, '', url);
+    backend.setScenario('content');
+  };
+  document.querySelector('#retry-library')?.addEventListener('click', recoverLibrary);
+  document.querySelector('#retry-library-toolbar')?.addEventListener('click', recoverLibrary);
+  document.querySelector('#library-login')?.addEventListener('click', () => navigate('/settings/steam'));
+  document.querySelectorAll('[data-library-tab]').forEach((button) => {
+    const activate = () => {
+      const target = button.dataset.libraryTab;
+      history.replaceState({...history.state, route: `/library/${target}`}, '', `/library/${target}`);
+      renderApp();
+      requestAnimationFrame(() => document.querySelector(`[data-library-tab="${target}"]`)?.focus());
+    };
+    button.addEventListener('click', activate);
+    button.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const target = ['ArrowRight', 'End'].includes(event.key) ? 'favorites' : 'subscriptions';
+      history.replaceState({...history.state, route: `/library/${target}`}, '', `/library/${target}`);
+      renderApp();
+      requestAnimationFrame(() => document.querySelector(`[data-library-tab="${target}"]`)?.focus());
+    });
+  });
+  document.querySelectorAll('[data-library-remove]').forEach((button) => button.addEventListener('click', () => {
+    pendingLibraryRemoval = button.dataset.libraryRemove;
+    history.pushState({...history.state, modal: 'library-remove'}, '', location.href);
+    const removeDialog = document.querySelector('#library-remove-dialog');
+    removeDialog.addEventListener('closed', () => {
+      if (history.state?.modal === 'library-remove') history.back();
+    }, {once: true});
+    removeDialog.show();
+  }));
+  document.querySelector('#cancel-library-remove')?.addEventListener('click', () => history.back());
+  document.querySelector('#confirm-library-remove')?.addEventListener('click', () => {
+    confirmLibraryRemoval = true;
+    history.back();
+  });
   document.querySelector('#open-settings')?.addEventListener('click', () => navigate('/settings'));
   document.querySelector('#profile-login')?.addEventListener('click', () => navigate('/settings/steam'));
   document.querySelectorAll('[data-profile-route]').forEach((button) => button.addEventListener('click', () => navigate(button.dataset.profileRoute)));
@@ -555,6 +621,7 @@ function renderApp() {
   if (location.pathname === '/') renderHome();
   else if (location.pathname === '/discover') renderDiscover();
   else if (location.pathname === '/profile') renderProfile();
+  else if (/^\/library\/(subscriptions|favorites)$/u.test(location.pathname)) renderLibrary();
   else if (/^\/discover\/results\/[a-z0-9-]+$/u.test(location.pathname)) renderDiscoverResults();
   else if (/^\/workshop\/\d+$/u.test(location.pathname)) renderDetail();
   else renderPlaceholder();
@@ -571,7 +638,26 @@ nav.addEventListener('click', (event) => {
   const button = event.target.closest('[data-route]');
   if (button) navigate(button.dataset.route);
 });
-window.addEventListener('popstate', renderApp);
+window.addEventListener('popstate', () => {
+  const removeDialog = document.querySelector('#library-remove-dialog');
+  if (removeDialog?.open) {
+    removeDialog.close();
+    if (confirmLibraryRemoval && pendingLibraryRemoval) {
+      const collection = location.pathname.endsWith('/favorites') ? 'favorites' : 'subscriptions';
+      confirmLibraryRemoval = false;
+      backend.removeFromLibrary(collection, pendingLibraryRemoval);
+      requestAnimationFrame(() => {
+        document.querySelector(`[data-library-tab="${collection}"]`)?.focus();
+        const status = document.querySelector('#library-status');
+        if (status) status.textContent = '项目已移除';
+      });
+    }
+    pendingLibraryRemoval = null;
+    confirmLibraryRemoval = false;
+    return;
+  }
+  renderApp();
+});
 window.addEventListener('resize', applyWindowSizeClass);
 window.visualViewport?.addEventListener('resize', applyWindowSizeClass);
 backend.subscribe(() => {

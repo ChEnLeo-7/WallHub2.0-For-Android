@@ -17,8 +17,9 @@ function defaultState() {
     query: '',
     viewMode: 'grid',
     filters: {type: 'ALL', sort: 'TRENDING', exactPhrase: false},
-    favorites: [],
-    subscriptions: [],
+    favorites: ['3357929793', '3048819267', '2871466005'],
+    subscriptions: ['3174098802', '2985110421', '2769012550'],
+    libraryInitialized: true,
     discoverFeedback: {},
     discoverResultColumns: 2,
     profileSession: 'signed-in',
@@ -35,6 +36,11 @@ function normalizedState(candidate) {
     subscriptions: Number.isSafeInteger(candidate.profileCounts.subscriptions) && candidate.profileCounts.subscriptions >= 0 ? candidate.profileCounts.subscriptions : null,
     favorites: Number.isSafeInteger(candidate.profileCounts.favorites) && candidate.profileCounts.favorites >= 0 ? candidate.profileCounts.favorites : null,
   } : {...fallback.profileCounts};
+  const libraryInitialized = candidate.libraryInitialized === true;
+  const normalizeMembership = (key) => {
+    const persisted = Array.isArray(candidate[key]) ? candidate[key].map(String) : [];
+    return [...new Set(libraryInitialized ? persisted : [...fallback[key], ...persisted])];
+  };
   return {
     schemaVersion: FIXTURE_SCHEMA_VERSION,
     seed: typeof candidate.seed === 'string' ? candidate.seed.slice(0, 64) : fallback.seed,
@@ -47,8 +53,9 @@ function normalizedState(candidate) {
       sort: ['TRENDING', 'MOST_SUBSCRIBED'].includes(candidate.filters?.sort) ? candidate.filters.sort : fallback.filters.sort,
       exactPhrase: candidate.filters?.exactPhrase === true,
     },
-    favorites: Array.isArray(candidate.favorites) ? [...new Set(candidate.favorites.map(String))] : [],
-    subscriptions: Array.isArray(candidate.subscriptions) ? [...new Set(candidate.subscriptions.map(String))] : [],
+    favorites: normalizeMembership('favorites'),
+    subscriptions: normalizeMembership('subscriptions'),
+    libraryInitialized: true,
     discoverFeedback: candidate.discoverFeedback && typeof candidate.discoverFeedback === 'object'
       ? Object.fromEntries(Object.entries(candidate.discoverFeedback).filter(([, value]) =>
         value && typeof value === 'object' && ['none', 'like', 'dislike'].includes(value.rating)
@@ -143,6 +150,22 @@ export class FakeBackend {
       items = [...items].sort((left, right) => right.subscriptions - left.subscriptions);
     }
     return {status: items.length ? 'content' : 'empty', items};
+  }
+
+  library(collection) {
+    const key = collection === 'favorites' ? 'favorites' : 'subscriptions';
+    if (this.state.profileSession === 'restoring') return {status: 'restoring', items: []};
+    if (this.state.profileSession !== 'signed-in') return {status: 'auth', items: []};
+    if (this.state.scenario === 'loading') return {status: 'loading', items: []};
+    if (this.state.scenario === 'error') return {status: 'error', items: []};
+    if (this.state.scenario === 'empty') return {status: 'empty', items: []};
+    const items = this.state[key].map((id) => this.workshop(id)).filter(Boolean);
+    return {status: items.length ? 'content' : 'empty', items};
+  }
+
+  removeFromLibrary(collection, id) {
+    const key = collection === 'favorites' ? 'favorites' : 'subscriptions';
+    return this.update({[key]: this.state[key].filter((value) => value !== String(id))});
   }
 
   profile() {

@@ -182,11 +182,11 @@ const filterResult = await evaluate(`({cards: document.querySelectorAll('.worksh
 if (filterResult.cards !== 2 || filterResult.focus !== 'filter-button' || filterResult.dialogOpen) {
   throw new Error(`Filter application or focus restoration failed: ${JSON.stringify(filterResult)}`);
 }
-const favoriteId = await evaluate(`document.querySelector('[data-favorite]').dataset.favorite`);
+const favoriteState = await evaluate(`({id: document.querySelector('[data-favorite]').dataset.favorite, text: document.querySelector('[data-favorite]').textContent.trim()})`);
 await evaluate(`document.querySelector('[data-favorite]').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 100));
-if (!(await evaluate(`document.activeElement?.dataset.favorite === ${JSON.stringify(favoriteId)} && document.activeElement?.textContent.trim() === '已收藏'`))) {
-  throw new Error('Mutation focus was not restored to the updated favorite action');
+if (!(await evaluate(`document.activeElement?.dataset.favorite === ${JSON.stringify(favoriteState.id)} && document.activeElement?.textContent.trim() !== ${JSON.stringify(favoriteState.text)}`))) {
+  throw new Error(`Mutation focus was not restored to the updated favorite action: ${JSON.stringify(await evaluate(`({id: document.activeElement?.dataset.favorite, pressed: document.activeElement?.getAttribute('aria-pressed'), text: document.activeElement?.textContent})`))}`);
 }
 await evaluate(`document.querySelector('#reset-lab').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 100));
@@ -306,8 +306,42 @@ if (!(await evaluate(`!location.search.includes('scenario=') && document.querySe
 }
 await evaluate(`document.querySelector('[data-profile-collection="subscriptions"]').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 100));
-if (!(await evaluate(`location.pathname === '/library/subscriptions' && document.querySelector('.primary-nav').hidden && Boolean(document.querySelector('#detail-back'))`))) {
-  throw new Error('Profile collection route did not use secondary chrome');
+if (!(await evaluate(`location.pathname === '/library/subscriptions' && document.querySelector('.primary-nav').hidden && document.querySelectorAll('.library-item').length >= 3`))) {
+  throw new Error('Profile collection route did not render Library content with secondary chrome');
+}
+await call('Page.navigate', {url: `${previewOrigin}/library/subscriptions?lab=1&scenario=error`});
+await new Promise((resolve) => setTimeout(resolve, 150));
+await evaluate(`document.querySelector('#retry-library-toolbar').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`!location.search.includes('scenario=') && document.querySelectorAll('.library-item').length >= 3`))) throw new Error('Library toolbar refresh did not clear URL-driven error');
+for (const width of [599, 600, 839, 840]) {
+  await call('Emulation.setDeviceMetricsOverride', {width, height: 900, screenWidth: width, screenHeight: 900, deviceScaleFactor: 1, mobile: true});
+  await evaluate(`dispatchEvent(new Event('resize')); true`);
+  const overlaps = await evaluate(`(() => { const item = document.querySelector('.library-item'); const remove = item.querySelector('[data-library-remove]').getBoundingClientRect(); const actions = item.querySelector('.card-actions').getBoundingClientRect(); return !(remove.top >= actions.bottom || remove.bottom <= actions.top || remove.left >= actions.right || remove.right <= actions.left); })()`);
+  if (overlaps) throw new Error(`${width}px Library remove action overlaps card actions`);
+}
+await call('Emulation.clearDeviceMetricsOverride');
+await evaluate(`dispatchEvent(new Event('resize')); document.querySelector('[data-library-tab="subscriptions"]').focus(); true`);
+await call('Input.dispatchKeyEvent', {type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39});
+await call('Input.dispatchKeyEvent', {type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39});
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`location.pathname === '/library/favorites' && document.activeElement?.dataset.libraryTab === 'favorites' && document.querySelectorAll('.library-item').length >= 3`))) {
+  throw new Error('Library tabs did not support keyboard navigation');
+}
+await evaluate(`document.querySelector('[data-library-remove]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`document.querySelector('#library-remove-dialog').open`))) throw new Error('Library removal confirmation did not open');
+await evaluate(`history.back(); true`);
+await new Promise((resolve) => setTimeout(resolve, 400));
+if (!(await evaluate(`location.pathname === '/library/favorites' && !document.querySelector('#library-remove-dialog').open && document.querySelectorAll('.library-item').length >= 3`))) {
+  throw new Error(`Browser Back did not dismiss Library dialog before leaving route: ${JSON.stringify(await evaluate(`({path: location.pathname, open: document.querySelector('#library-remove-dialog')?.open, count: document.querySelectorAll('.library-item').length, state: history.state})`))}`);
+}
+await evaluate(`document.querySelector('[data-library-remove]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+await evaluate(`document.querySelector('#confirm-library-remove').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 150));
+if (!(await evaluate(`document.querySelectorAll('.library-item').length === 2 && document.activeElement?.dataset.libraryTab === 'favorites' && document.querySelector('#library-status').textContent === '项目已移除'`))) {
+  throw new Error('Library removal did not preserve focus and announcement');
 }
 await evaluate(`document.querySelector('#detail-back').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 100));

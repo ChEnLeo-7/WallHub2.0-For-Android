@@ -101,6 +101,38 @@ test('exact phrase distinguishes exact fields from partial matches', () => {
   assert.deepEqual(backend.listWorkshops().items.map((item) => item.id), ['3357929793']);
 });
 
+test('migrates pre-Library schema-v1 membership without losing user additions', () => {
+  const storage = memoryStorage({
+    [FAKE_BACKEND_STORAGE_KEY]: JSON.stringify({
+      schemaVersion: FIXTURE_SCHEMA_VERSION,
+      favorites: ['2985110421'],
+      subscriptions: [],
+    }),
+  });
+  const backend = new FakeBackend(storage);
+  assert.equal(backend.library('subscriptions').items.length, 3);
+  assert.equal(backend.library('favorites').items.length, 4);
+  assert.equal(backend.snapshot().libraryInitialized, true);
+});
+
+test('library collections and removals remain deterministic', () => {
+  const storage = memoryStorage();
+  const backend = new FakeBackend(storage);
+  assert.equal(backend.library('subscriptions').items.length, 3);
+  backend.removeFromLibrary('subscriptions', '3174098802');
+  assert.equal(new FakeBackend(storage).library('subscriptions').items.length, 2);
+  backend.removeFromLibrary('subscriptions', '2985110421');
+  backend.removeFromLibrary('subscriptions', '2769012550');
+  assert.equal(backend.library('subscriptions').status, 'empty');
+  backend.setScenario('empty');
+  assert.equal(backend.library('favorites').status, 'empty');
+  backend.setScenario('content');
+  backend.update({profileSession: 'restoring'});
+  assert.equal(backend.library('favorites').status, 'restoring');
+  backend.update({profileSession: 'signed-out'});
+  assert.equal(backend.library('favorites').status, 'auth');
+});
+
 test('profile session and partial count states remain deterministic', () => {
   const backend = new FakeBackend(memoryStorage());
   assert.deepEqual(backend.profile(), {session: 'signed-in', counts: {subscriptions: 42, favorites: 18}});
@@ -143,8 +175,8 @@ test('search and mutations remain deterministic across reloads', () => {
   backend.requestDownload('3048819267', 'ZIP');
   backend.requestDownload('3048819267', 'ZIP');
   const restored = new FakeBackend(storage);
-  assert.deepEqual(restored.snapshot().favorites, ['3048819267']);
-  assert.deepEqual(restored.snapshot().subscriptions, ['3048819267']);
+  assert.equal(restored.snapshot().favorites.includes('3048819267'), false);
+  assert.equal(restored.snapshot().subscriptions.includes('3048819267'), true);
   assert.equal(restored.snapshot().downloads[0].createdAt, FIXTURE_CLOCK_EPOCH_MS);
   assert.deepEqual(restored.snapshot().downloads.map((entry) => entry.format), ['MPKG', 'ZIP']);
 });

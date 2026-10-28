@@ -175,6 +175,13 @@ md-outlined-text-field { width: min(100%, 560px); }
 .center-state md-circular-progress { --md-circular-progress-size: 48px; }
 .state-icon { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); font-size: 30px; }
 .placeholder { max-width: var(--wallhub-content-max); padding: var(--wallhub-space-2); }
+.library-tabs { max-width: var(--wallhub-content-max); margin: 0 auto; display: grid; grid-template-columns: repeat(2, 1fr); border-bottom: 1px solid var(--md-sys-color-outline-variant); }
+.library-tabs button { min-height: 52px; border: 0; border-bottom: 3px solid transparent; color: var(--md-sys-color-on-surface-variant); background: transparent; cursor: pointer; }
+.library-tabs button[aria-selected='true'] { border-bottom-color: var(--md-sys-color-primary); color: var(--md-sys-color-primary); font-weight: 700; }
+.library-page { max-width: var(--wallhub-content-max); margin: 0 auto; padding: var(--wallhub-space-2) var(--wallhub-space-2) var(--wallhub-space-3); }
+.library-item { min-width: 0; display: grid; align-content: start; }
+.library-item > md-text-button { justify-self: stretch; margin-top: var(--wallhub-space-1); }
+
 .profile-page { max-width: 920px; margin: 0 auto; padding: 0 var(--wallhub-space-2) var(--wallhub-space-3); display: grid; gap: var(--wallhub-space-3); }
 .profile-identity { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--wallhub-space-2); }
 .profile-avatar { width: 112px; height: 112px; display: grid; place-items: center; border-radius: var(--wallhub-shape-large); color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); font-size: 42px; }
