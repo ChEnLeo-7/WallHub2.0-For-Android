@@ -9,13 +9,20 @@ function deepFreeze(value) {
   return value;
 }
 
+export const workshopComments = deepFreeze({
+  '3357929793': [
+    {id: 'comment-1', author: 'Astra Studio', text: '感谢大家的反馈，下一版会加入更柔和的雨量选项。', isCreator: true, timestamp: FIXTURE_CLOCK_EPOCH_MS - 3_600_000 * 6},
+    {id: 'comment-2', author: 'Nova', text: '夜间放在副屏上很舒服，循环衔接也很自然。', isCreator: false, timestamp: FIXTURE_CLOCK_EPOCH_MS - 3_600_000 * 30},
+  ],
+});
+
 export const workshopFixtures = deepFreeze([
   {
     id: '3357929793',
     title: '雨夜霓虹 · Neon Rain',
     author: 'Astra Studio',
     creatorId: '76561198000000001',
-    type: 'SCENE',
+    type: 'VIDEO',
     tags: ['Cyberpunk', 'Relaxing', '4K'],
     subscriptions: 284231,
     favorites: 18420,
@@ -31,7 +38,7 @@ export const workshopFixtures = deepFreeze([
     title: '山海之间',
     author: '北屿',
     creatorId: '76561198000000002',
-    type: 'VIDEO',
+    type: 'SCENE',
     tags: ['Nature', 'Landscape', 'Ultrawide'],
     subscriptions: 176905,
     favorites: 12808,

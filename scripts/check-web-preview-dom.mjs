@@ -190,7 +190,56 @@ if (!(await evaluate(`document.activeElement?.dataset.favorite === ${JSON.string
 }
 await evaluate(`document.querySelector('#reset-lab').click(); true`);
 await new Promise((resolve) => setTimeout(resolve, 100));
+await evaluate(`document.querySelector('[data-open-workshop="3357929793"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 150));
+if (!(await evaluate(`location.pathname === '/workshop/3357929793' && Boolean(document.querySelector('.detail-overview'))`))) {
+  throw new Error('Home card did not open deterministic Workshop Detail');
+}
+await evaluate(`document.querySelector('.play-button').click(); true`);
+if (!(await evaluate(`document.querySelector('.play-button').getAttribute('aria-pressed') === 'true'`))) {
+  throw new Error('Detail video preview control did not toggle');
+}
+await evaluate(`document.querySelector('[data-detail-tab="comments"]').click(); true`);
+if (!(await evaluate(`location.search.includes('tab=comments') && document.querySelectorAll('.comment').length === 2 && document.activeElement?.dataset.detailTab === 'comments'`))) {
+  throw new Error('Workshop Detail comments tab did not render with restored focus');
+}
+await call('Input.dispatchKeyEvent', {type: 'keyDown', key: 'ArrowLeft', code: 'ArrowLeft', windowsVirtualKeyCode: 37});
+await call('Input.dispatchKeyEvent', {type: 'keyUp', key: 'ArrowLeft', code: 'ArrowLeft', windowsVirtualKeyCode: 37});
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`!location.search.includes('tab=comments') && document.activeElement?.dataset.detailTab === 'details' && document.querySelector('[data-detail-tab="details"]').getAttribute('aria-selected') === 'true'`))) {
+  throw new Error('Workshop Detail tabs did not support ArrowLeft navigation');
+}
+await evaluate(`document.querySelector('[data-detail-tab="comments"]').click(); true`);
+await evaluate(`document.querySelector('[data-subscribe]').focus(); document.querySelector('[data-subscribe]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!(await evaluate(`document.activeElement?.dataset.subscribe === '3357929793' && document.activeElement?.getAttribute('aria-pressed') === 'true'`))) {
+  throw new Error('Workshop subscription state/focus did not update');
+}
+await evaluate(`document.querySelector('#detail-download').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 150));
+if (!(await evaluate(`document.querySelector('#download-dialog').open`))) throw new Error('Download format dialog did not open');
+await evaluate(`document.querySelector('[data-download-format="MPKG"]').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 400));
+const downloadResult = await evaluate(`({open: document.querySelector('#download-dialog').open, downloads: JSON.parse(localStorage.getItem('wallhub.preview.fake-backend')).downloads})`);
+downloadResult.focus = await evaluate(`document.activeElement?.id`);
+if (downloadResult.open || downloadResult.downloads.length !== 1 || downloadResult.downloads[0].format !== 'MPKG' || downloadResult.focus !== 'detail-download') {
+  throw new Error(`Download request did not persist: ${JSON.stringify(downloadResult)}`);
+}
+await call('Page.navigate', {url: `${previewOrigin}/workshop/3357929793?lab=1&scenario=error`});
+await new Promise((resolve) => setTimeout(resolve, 250));
+await evaluate(`document.querySelector('#retry-detail').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 150));
+if (!(await evaluate(`!location.search.includes('scenario=') && Boolean(document.querySelector('.detail-overview'))`))) {
+  throw new Error('Detail retry did not clear the URL-driven error state');
+}
+const directHistoryLength = await evaluate(`history.replaceState(null, '', location.href); history.length`);
+await evaluate(`document.querySelector('#detail-back').click(); true`);
+await new Promise((resolve) => setTimeout(resolve, 100));
+const directBack = await evaluate(`({path: location.pathname, length: history.length, route: history.state?.route})`);
+if (directBack.path !== '/' || directBack.length !== directHistoryLength || directBack.route !== '/') {
+  throw new Error(`Direct-entry Detail Back did not replace with Home: ${JSON.stringify(directBack)}`);
+}
 await evaluate(`localStorage.setItem('wallhub.preview.dom.theme', 'dark'); document.documentElement.dataset.theme = 'dark'; true`);
 
 socket.close();
-console.log('WEB_DOM_ACCEPTANCE=OK breakpoints=599/600/839/840 dialog_focus=trapped theme=persistent history=restored state_lab=deterministic');
+console.log('WEB_DOM_ACCEPTANCE=OK breakpoints=599/600/839/840 dialog_focus=trapped theme=persistent history=restored state_lab=deterministic detail=interactive');

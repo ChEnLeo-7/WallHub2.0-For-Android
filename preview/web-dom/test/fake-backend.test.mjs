@@ -50,6 +50,19 @@ test('normalizes malformed fields in the current schema', () => {
   assert.equal(backend.listWorkshops().status, 'content');
 });
 
+test('migrates schema-v1 downloads without format to MPKG', () => {
+  const storage = memoryStorage({
+    [FAKE_BACKEND_STORAGE_KEY]: JSON.stringify({
+      schemaVersion: FIXTURE_SCHEMA_VERSION,
+      downloads: [{
+        id: 'download-legacy', workshopId: '3357929793', state: 'queued', createdAt: FIXTURE_CLOCK_EPOCH_MS,
+      }],
+    }),
+  });
+  const backend = new FakeBackend(storage);
+  assert.equal(backend.snapshot().downloads[0].format, 'MPKG');
+});
+
 test('supports repeatable state-lab scenarios and virtual time', () => {
   const backend = new FakeBackend(memoryStorage());
   backend.setScenario('loading');
@@ -71,14 +84,26 @@ test('exact phrase distinguishes exact fields from partial matches', () => {
   assert.deepEqual(backend.listWorkshops().items.map((item) => item.id), ['3357929793']);
 });
 
+test('detail comments remain deterministic and immutable', () => {
+  const backend = new FakeBackend(memoryStorage());
+  assert.equal(backend.comments('3357929793').length, 2);
+  assert.throws(() => backend.comments('3357929793').push({}));
+  assert.deepEqual(backend.comments('unknown'), []);
+});
+
 test('search and mutations remain deterministic across reloads', () => {
   const storage = memoryStorage();
   const backend = new FakeBackend(storage);
   backend.setQuery('像素');
   assert.deepEqual(backend.listWorkshops().items.map((item) => item.id), ['3048819267']);
   backend.toggleFavorite('3048819267');
-  backend.requestDownload('3048819267');
+  backend.toggleSubscription('3048819267');
+  backend.requestDownload('3048819267', 'MPKG');
+  backend.requestDownload('3048819267', 'ZIP');
+  backend.requestDownload('3048819267', 'ZIP');
   const restored = new FakeBackend(storage);
   assert.deepEqual(restored.snapshot().favorites, ['3048819267']);
+  assert.deepEqual(restored.snapshot().subscriptions, ['3048819267']);
   assert.equal(restored.snapshot().downloads[0].createdAt, FIXTURE_CLOCK_EPOCH_MS);
+  assert.deepEqual(restored.snapshot().downloads.map((entry) => entry.format), ['MPKG', 'ZIP']);
 });

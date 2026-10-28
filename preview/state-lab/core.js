@@ -1,6 +1,7 @@
 import {
   FIXTURE_CLOCK_EPOCH_MS,
   FIXTURE_SCHEMA_VERSION,
+  workshopComments,
   workshopFixtures,
 } from './fixtures-v1.js';
 
@@ -42,9 +43,11 @@ function normalizedState(candidate) {
     downloads: Array.isArray(candidate.downloads)
       ? candidate.downloads.filter((entry) =>
         entry && typeof entry === 'object' && typeof entry.workshopId === 'string' &&
-        typeof entry.id === 'string' && entry.state === 'queued' && Number.isSafeInteger(entry.createdAt)
+        typeof entry.id === 'string' && (entry.format === undefined || ['MPKG', 'ZIP'].includes(entry.format)) &&
+        entry.state === 'queued' && Number.isSafeInteger(entry.createdAt)
       ).map((entry) => ({
-        id: entry.id.slice(0, 128), workshopId: entry.workshopId.slice(0, 32), state: 'queued', createdAt: entry.createdAt,
+        id: entry.id.slice(0, 128), workshopId: entry.workshopId.slice(0, 32), format: entry.format ?? 'MPKG',
+        state: 'queued', createdAt: entry.createdAt,
       }))
       : [],
   };
@@ -129,6 +132,10 @@ export class FakeBackend {
     return workshopFixtures.find((item) => item.id === String(id)) ?? null;
   }
 
+  comments(id) {
+    return workshopComments[String(id)] ?? [];
+  }
+
   toggleFavorite(id) {
     const value = String(id);
     const set = new Set(this.state.favorites);
@@ -143,13 +150,17 @@ export class FakeBackend {
     return this.update({subscriptions: [...set]});
   }
 
-  requestDownload(id) {
+  requestDownload(id, format = 'MPKG') {
     const value = String(id);
-    if (this.state.downloads.some((download) => download.workshopId === value)) return this.snapshot();
+    const normalizedFormat = ['MPKG', 'ZIP'].includes(format) ? format : 'MPKG';
+    if (this.state.downloads.some((download) => download.workshopId === value && download.format === normalizedFormat)) {
+      return this.snapshot();
+    }
     return this.update({
       downloads: [...this.state.downloads, {
-        id: `download-${value}`,
+        id: `download-${value}-${normalizedFormat.toLowerCase()}`,
         workshopId: value,
+        format: normalizedFormat,
         state: 'queued',
         createdAt: this.state.clockMs,
       }],

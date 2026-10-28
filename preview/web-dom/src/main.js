@@ -63,11 +63,20 @@ app.innerHTML = `
       <md-filled-button id="apply-filters">应用</md-filled-button>
     </div>
   </md-dialog>
+  <md-dialog id="download-dialog" aria-label="选择下载格式">
+    <div slot="headline">下载壁纸</div>
+    <div slot="content" class="download-options">
+      <button type="button" data-download-format="MPKG"><strong>MPKG</strong><span>推荐 · 保留 WallHub 动态功能</span></button>
+      <button type="button" data-download-format="ZIP"><strong>ZIP</strong><span>原始创意工坊文件</span></button>
+    </div>
+    <div slot="actions"><md-text-button id="close-download">关闭</md-text-button></div>
+  </md-dialog>
 `;
 const nav = document.querySelector('.primary-nav');
 const main = document.querySelector('#main-content');
 const dialog = document.querySelector('#focus-dialog');
 const filterDialog = document.querySelector('#filter-dialog');
+const downloadDialog = document.querySelector('#download-dialog');
 
 const escapeHtml = (value) => String(value)
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -91,7 +100,7 @@ function currentTopRoute() {
 }
 
 function navigate(destination) {
-  history.pushState({route: destination}, '', destination);
+  history.pushState({wallhub: true, from: `${location.pathname}${location.search}`, route: destination}, '', destination);
   renderApp();
   main.focus();
 }
@@ -192,6 +201,70 @@ function renderHome() {
   document.title = '首页 · WallHub Web Preview';
 }
 
+function relativeTime(timestamp, now) {
+  const hours = Math.max(1, Math.round((now - timestamp) / 3_600_000));
+  return hours < 24 ? `${hours} 小时前` : `${Math.round(hours / 24)} 天前`;
+}
+
+function renderDetail() {
+  const id = location.pathname.match(/^\/workshop\/(\d+)$/u)?.[1];
+  const item = id ? backend.workshop(id) : null;
+  const snapshot = backend.snapshot();
+  const scenario = snapshot.scenario;
+  if (scenario === 'loading') {
+    main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back">←</button><h1>壁纸详情</h1></header><div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress></div>`;
+    return;
+  }
+  if (scenario === 'error' || !item) {
+    main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back">←</button><h1>壁纸详情</h1></header><div class="center-state" role="alert"><div class="state-icon">!</div><h2>${item ? '无法载入此创意工坊项目' : '找不到此创意工坊项目'}</h2><md-filled-button id="${item ? 'retry-detail' : 'missing-detail-home'}">${item ? '重试' : '返回首页'}</md-filled-button></div>`;
+    return;
+  }
+  const params = new URLSearchParams(location.search);
+  const tab = scenario === 'empty' || params.get('tab') === 'comments' ? 'comments' : 'details';
+  const comments = scenario === 'empty' ? [] : backend.comments(id);
+  const favorite = snapshot.favorites.includes(id);
+  const subscribed = snapshot.subscriptions.includes(id);
+  const tabContent = tab === 'comments' ? `
+    <section class="comment-list" id="detail-tabpanel" role="tabpanel" aria-labelledby="detail-tab-comments" tabindex="0">
+      ${comments.length ? comments.map((comment) => `<article class="comment"><div class="avatar" aria-hidden="true">${escapeHtml(comment.author.slice(0, 1))}</div><div><h3>${escapeHtml(comment.author)} ${comment.isCreator ? '<span>作者</span>' : ''}</h3><p class="comment-time">${relativeTime(comment.timestamp, snapshot.clockMs)}</p><p>${escapeHtml(comment.text)}</p></div></article>`).join('') : '<div class="center-state"><h2>暂无评论</h2></div>'}
+    </section>` : `
+    <section class="detail-overview" id="detail-tabpanel" role="tabpanel" aria-labelledby="detail-tab-details" tabindex="0">
+      <div class="description"><h2>描述</h2><p>${escapeHtml(item.description || '未提供描述')}</p></div>
+      <dl class="detail-metrics">
+        <div><dt>作者</dt><dd>${escapeHtml(item.author)}</dd></div>
+        <div><dt>项目 ID</dt><dd>${item.id}</dd></div>
+        <div><dt>订阅</dt><dd>${compactNumber.format(item.subscriptions)}</dd></div>
+        <div><dt>收藏</dt><dd>${compactNumber.format(item.favorites)}</dd></div>
+        <div><dt>查看</dt><dd>${compactNumber.format(item.views)}</dd></div>
+        <div><dt>文件大小</dt><dd>${formatBytes(item.fileSizeBytes)}</dd></div>
+        <div><dt>类型</dt><dd>${item.type}</dd></div>
+        <div><dt>最后更新</dt><dd>${new Date(item.updatedAt).toISOString().slice(0, 10)}</dd></div>
+      </dl>
+      <div class="tag-list" aria-label="标签">${item.tags.map((tag) => `<button type="button" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('')}</div>
+    </section>`;
+  main.innerHTML = `
+    <header class="detail-top-bar">
+      <button type="button" class="back-button" id="detail-back" aria-label="返回">←</button>
+      <h1>${escapeHtml(item.title)}</h1>
+      <div class="toolbar-actions"><md-outlined-button id="copy-title">复制标题</md-outlined-button><md-outlined-button id="open-steam">Steam</md-outlined-button></div>
+    </header>
+    ${isLabVisible() ? renderStateLab(snapshot) : ''}
+    <article class="detail-page">
+      <div class="detail-media card-media-${item.accent}" role="img" aria-label="${escapeHtml(item.title)} 预览"><span>${item.type}</span>${item.type === 'VIDEO' ? '<button type="button" class="play-button" aria-label="播放预览" aria-pressed="false">▶</button>' : ''}</div>
+      <div class="detail-tabs" role="tablist" aria-label="详情内容">
+        <button type="button" role="tab" id="detail-tab-details" aria-controls="detail-tabpanel" tabindex="${tab === 'details' ? '0' : '-1'}" data-detail-tab="details" aria-selected="${tab === 'details'}">详情</button>
+        <button type="button" role="tab" id="detail-tab-comments" aria-controls="detail-tabpanel" tabindex="${tab === 'comments' ? '0' : '-1'}" data-detail-tab="comments" aria-selected="${tab === 'comments'}">评论${comments.length ? ` · ${comments.length}` : ''}</button>
+      </div>
+      ${tabContent}
+    </article>
+    <div class="detail-actions" aria-label="壁纸操作">
+      <button type="button" data-subscribe="${id}" aria-pressed="${subscribed}">${subscribed ? '已订阅' : '订阅'}</button>
+      <button type="button" data-favorite="${id}" aria-pressed="${favorite}">${favorite ? '已收藏' : '收藏'}</button>
+      <md-filled-button id="detail-download">下载</md-filled-button>
+    </div>`;
+  document.title = `${item.title} · WallHub Web Preview`;
+}
+
 function renderPlaceholder() {
   const selected = destinations.find((item) => item.route === currentTopRoute()) ?? destinations[0];
   main.innerHTML = `${shellHeader(selected.label)}<section class="placeholder"><h2>${selected.label} · Current UI</h2><p>此页面将在后续垂直切片中接入确定性状态。</p></section>`;
@@ -230,6 +303,66 @@ function bindSharedControls() {
   document.querySelectorAll('[data-open-workshop]').forEach((button) => button.addEventListener('click', () => navigate(`/workshop/${button.dataset.openWorkshop}`)));
   document.querySelectorAll('[data-favorite]').forEach((button) => button.addEventListener('click', () => backend.toggleFavorite(button.dataset.favorite)));
   document.querySelectorAll('[data-download]').forEach((button) => button.addEventListener('click', () => backend.requestDownload(button.dataset.download)));
+  document.querySelectorAll('[data-subscribe]').forEach((button) => button.addEventListener('click', () => backend.toggleSubscription(button.dataset.subscribe)));
+  document.querySelector('#detail-back')?.addEventListener('click', () => {
+    if (history.state?.wallhub === true && String(history.state.from).startsWith('/')) {
+      history.back();
+    } else {
+      history.replaceState({wallhub: true, route: '/'}, '', '/');
+      renderApp();
+      main.focus();
+    }
+  });
+  document.querySelector('#retry-detail')?.addEventListener('click', () => {
+    const url = new URL(location.href);
+    url.searchParams.delete('scenario');
+    history.replaceState(history.state, '', url);
+    backend.setScenario('content');
+  });
+  document.querySelector('#missing-detail-home')?.addEventListener('click', () => navigate('/'));
+  const activateDetailTab = (tab, restoreFocus = false) => {
+    const url = new URL(location.href);
+    if (tab === 'comments') url.searchParams.set('tab', 'comments');
+    else url.searchParams.delete('tab');
+    history.replaceState(history.state, '', url);
+    renderApp();
+    if (restoreFocus) requestAnimationFrame(() => document.querySelector(`[data-detail-tab="${tab}"]`)?.focus());
+  };
+  document.querySelectorAll('[data-detail-tab]').forEach((button) => {
+    button.addEventListener('click', () => activateDetailTab(button.dataset.detailTab, true));
+    button.addEventListener('keydown', (event) => {
+      const next = ['ArrowRight', 'End'].includes(event.key) ? 'comments' : ['ArrowLeft', 'Home'].includes(event.key) ? 'details' : null;
+      if (next) {
+        event.preventDefault();
+        activateDetailTab(next, true);
+      }
+    });
+  });
+  document.querySelectorAll('[data-tag]').forEach((button) => button.addEventListener('click', () => {
+    backend.setQuery(button.dataset.tag);
+    navigate('/');
+  }));
+  document.querySelector('#copy-title')?.addEventListener('click', () => {
+    const item = backend.workshop(location.pathname.split('/').pop());
+    navigator.clipboard?.writeText(item?.title ?? '').catch(() => {});
+  });
+  document.querySelector('#open-steam')?.addEventListener('click', () => {
+    const id = location.pathname.split('/').pop();
+    window.open(`https://steamcommunity.com/sharedfiles/filedetails/?id=${encodeURIComponent(id)}`, '_blank', 'noopener,noreferrer');
+  });
+  document.querySelector('.play-button')?.addEventListener('click', (event) => {
+    const playing = event.currentTarget.getAttribute('aria-pressed') === 'true';
+    event.currentTarget.setAttribute('aria-pressed', String(!playing));
+    event.currentTarget.textContent = playing ? '▶' : '❚❚';
+  });
+  document.querySelector('#detail-download')?.addEventListener('click', () => downloadDialog.show());
+  document.querySelector('#close-download').onclick = () => downloadDialog.close();
+  document.querySelectorAll('[data-download-format]').forEach((button) => button.onclick = () => {
+    const id = location.pathname.split('/').pop();
+    downloadDialog.addEventListener('closed', () => document.querySelector('#detail-download')?.focus(), {once: true});
+    downloadDialog.close();
+    backend.requestDownload(id, button.dataset.downloadFormat);
+  });
   document.querySelector('#filter-button')?.addEventListener('click', () => {
     const snapshot = backend.snapshot();
     document.querySelector('#filter-sort').value = snapshot.filters.sort;
@@ -262,6 +395,7 @@ function renderApp() {
   }
   renderNavigation();
   if (location.pathname === '/') renderHome();
+  else if (/^\/workshop\/\d+$/u.test(location.pathname)) renderDetail();
   else renderPlaceholder();
   bindSharedControls();
 }
@@ -283,6 +417,7 @@ backend.subscribe(() => {
   const active = document.activeElement;
   const focusSelector =
     active?.dataset?.favorite ? `[data-favorite="${active.dataset.favorite}"]` :
+    active?.dataset?.subscribe ? `[data-subscribe="${active.dataset.subscribe}"]` :
     active?.dataset?.download ? `[data-download="${active.dataset.download}"]` :
     active?.dataset?.viewMode ? `[data-view-mode="${active.dataset.viewMode}"]` :
     active?.id ? `#${CSS.escape(active.id)}` : null;
