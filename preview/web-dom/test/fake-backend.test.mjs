@@ -115,7 +115,24 @@ test('settings and Steam session states persist deterministically', () => {
     preferences: {matureContent: true, enhancedAccess: false, outputDirectory: 'WallHub Downloads'},
     steamPhase: 'signed-out',
   });
-  restored.setProfileSession('signed-in');
+  restored.submitSteamCredentials('fixture-user', 'not-persisted-secret');
+  assert.equal(restored.settingsState().steamPhase, 'device-confirmation');
+  assert.equal(JSON.stringify(restored.snapshot()).includes('not-persisted-secret'), false);
+  restored.approveSteamDeviceConfirmation();
+  assert.equal(restored.settingsState().steamPhase, 'signed-in');
+  restored.setProfileSession('signed-out');
+  restored.submitSteamCredentials('fixture-user', 'secret');
+  restored.cancelSteamAuthentication();
+  assert.equal(restored.settingsState().steamPhase, 'signed-out');
+  restored.submitSteamCredentials('fixture-user', 'secret');
+  restored.useManualSteamGuard();
+  const afterChallengeReload = new FakeBackend(storage);
+  assert.equal(afterChallengeReload.settingsState().steamPhase, 'signed-out');
+  afterChallengeReload.submitSteamGuardCode('stale-code');
+  assert.equal(afterChallengeReload.settingsState().steamPhase, 'signed-out');
+  afterChallengeReload.submitSteamCredentials('fixture-user', 'secret');
+  afterChallengeReload.useManualSteamGuard();
+  afterChallengeReload.submitSteamGuardCode('12345');
   assert.deepEqual(new FakeBackend(storage).profile().counts, {subscriptions: 42, favorites: 18});
   restored.setScenario('loading');
   assert.equal(restored.settingsState().steamPhase, 'restoring');

@@ -154,6 +154,7 @@ function renderStateLab(snapshot) {
       </label>
       <span>虚拟时间 ${new Date(snapshot.clockMs).toISOString().slice(0, 16).replace('T', ' ')}</span>
       <button type="button" id="advance-clock">+1 小时</button>
+      ${snapshot.steamAuthPhase === 'device-confirmation' ? '<button type="button" id="lab-confirm-steam">模拟 Steam 后端批准</button>' : ''}
       <button type="button" id="reset-lab">重置</button>
     </aside>`;
 }
@@ -226,8 +227,18 @@ function renderSettings() {
   if (!slug) {
     body = `<div class="settings-list">${categories.map((category) => `<button type="button" data-settings-category="${category.slug}"><span><strong>${category.title}</strong><small>${category.description}</small></span><span aria-hidden="true">›</span></button>`).join('')}<button type="button" data-settings-category="about"><span><strong>关于 WallHub</strong><small>版本、更新与诊断</small></span><span aria-hidden="true">›</span></button></div>`;
   } else if (slug === 'steam') {
-    const steamBody = state.steamPhase === 'signed-in' ? '<h2>Astra</h2><p>Steam 会话已连接</p><md-outlined-button id="steam-logout">退出登录</md-outlined-button>' : state.steamPhase === 'restoring' ? '<md-circular-progress indeterminate></md-circular-progress><h2>正在恢复 Steam 会话…</h2>' : state.steamPhase === 'failed' ? '<h2>Steam 连接失败</h2><p>可重试恢复已有会话。</p><md-filled-button id="steam-retry">重试</md-filled-button>' : '<h2>登录 Steam</h2><p>登录后同步订阅、收藏和好友活动。</p><md-filled-button id="steam-login">登录</md-filled-button>';
-    body = `<section class="settings-group steam-account-card" id="steam-account-status" tabindex="-1" role="status" aria-live="polite">${steamBody}</section><section class="settings-group"><label class="settings-switch"><span><strong>增强访问</strong><small>通过兼容连接路径访问 Steam</small></span><input type="checkbox" data-setting-toggle="enhancedAccess" ${state.preferences.enhancedAccess ? 'checked' : ''}></label></section>`;
+    const steamBody = state.steamPhase === 'signed-in'
+      ? '<h2>Astra</h2><p>Steam 会话已连接</p><md-outlined-button id="steam-logout">退出登录</md-outlined-button>'
+      : state.steamPhase === 'restoring'
+        ? '<md-circular-progress indeterminate></md-circular-progress><h2>正在恢复 Steam 会话…</h2>'
+        : state.steamPhase === 'failed'
+          ? '<h2>Steam 连接失败</h2><p>可重试恢复已有会话。</p><md-filled-button id="steam-retry">重试</md-filled-button>'
+          : state.steamPhase === 'device-confirmation'
+            ? `<h2>在 Steam 手机应用中确认</h2><p>批准登录请求，或改用 Steam Guard 验证码。</p><md-outlined-button id="steam-use-code">使用验证码</md-outlined-button><md-text-button id="steam-cancel-auth">取消</md-text-button>`
+            : state.steamPhase === 'waiting-code'
+              ? '<h2>输入 Steam Guard 验证码</h2><md-outlined-text-field id="steam-guard-code" label="手机验证码" inputmode="numeric" autocomplete="one-time-code"></md-outlined-text-field><md-filled-button id="steam-submit-code" disabled>提交验证码</md-filled-button><md-text-button id="steam-cancel-auth">取消</md-text-button>'
+              : '<h2>登录 Steam</h2><p>登录后同步订阅、收藏和好友活动。</p><md-outlined-text-field id="steam-account" label="账户名称" autocomplete="username"></md-outlined-text-field><md-outlined-text-field id="steam-password" label="密码" type="password" autocomplete="current-password"></md-outlined-text-field><md-filled-button id="steam-login" disabled>登录</md-filled-button>';
+    body = `<section class="settings-group steam-account-card" id="steam-account-status" tabindex="-1">${steamBody}</section><section class="settings-group"><label class="settings-switch"><span><strong>增强访问</strong><small>通过兼容连接路径访问 Steam</small></span><input type="checkbox" data-setting-toggle="enhancedAccess" ${state.preferences.enhancedAccess ? 'checked' : ''}></label></section>`;
   } else if (slug === 'basic') {
     body = `<section class="settings-group"><label class="settings-switch"><span><strong>成人内容</strong><small>在浏览与搜索中允许成熟内容</small></span><input type="checkbox" data-setting-toggle="matureContent" ${state.preferences.matureContent ? 'checked' : ''}></label><button type="button" class="settings-row" id="notifications-setting"><span><strong>通知</strong><small>下载与更新通知</small></span><span>›</span></button></section>`;
   } else if (slug === 'appearance') {
@@ -490,6 +501,13 @@ function bindSharedControls() {
     backend.setScenario(event.target.value);
   });
   document.querySelector('#advance-clock')?.addEventListener('click', () => backend.advanceClock(3_600_000));
+  document.querySelector('#lab-confirm-steam')?.addEventListener('click', () => {
+    backend.approveSteamDeviceConfirmation();
+    requestAnimationFrame(() => {
+      document.querySelector('#steam-logout')?.focus();
+      const status = document.querySelector('#settings-status'); if (status) status.textContent = 'Steam 后端已确认设备批准';
+    });
+  });
   document.querySelector('#reset-lab')?.addEventListener('click', () => {
     const url = new URL(location.href);
     url.searchParams.delete('scenario');
@@ -505,14 +523,24 @@ function bindSharedControls() {
   document.querySelectorAll('[data-open-workshop]').forEach((button) => button.addEventListener('click', () => navigate(`/workshop/${button.dataset.openWorkshop}`)));
   document.querySelectorAll('[data-settings-category]').forEach((button) => button.addEventListener('click', () => { settingsReturnFocus = button.dataset.settingsCategory; navigate(`/settings/${button.dataset.settingsCategory}`); }));
   document.querySelectorAll('[data-setting-toggle]').forEach((control) => control.addEventListener('change', () => backend.toggleSetting(control.dataset.settingToggle)));
-  const completeSteamTransition = (message) => requestAnimationFrame(() => {
-    document.querySelector('#steam-account-status')?.focus();
+  const completeSteamTransition = (message, focusSelector = '#steam-account-status') => requestAnimationFrame(() => {
+    document.querySelector(focusSelector)?.focus();
     const status = document.querySelector('#settings-status'); if (status) status.textContent = message;
   });
-  document.querySelector('#steam-login')?.addEventListener('click', () => { backend.setProfileSession('signed-in'); completeSteamTransition('Steam 登录成功'); });
-  document.querySelector('#steam-logout')?.addEventListener('click', () => { backend.setProfileSession('signed-out'); completeSteamTransition('已退出 Steam'); });
+  const accountField = document.querySelector('#steam-account');
+  const passwordField = document.querySelector('#steam-password');
+  const updateSteamLoginEnabled = () => { const button = document.querySelector('#steam-login'); if (button) button.disabled = !(accountField?.value.trim() && passwordField?.value); };
+  accountField?.addEventListener('input', updateSteamLoginEnabled);
+  passwordField?.addEventListener('input', updateSteamLoginEnabled);
+  document.querySelector('#steam-login')?.addEventListener('click', () => { backend.submitSteamCredentials(accountField?.value, passwordField?.value); completeSteamTransition('请在 Steam 手机应用中确认', isLabVisible() ? '#lab-confirm-steam' : '#steam-use-code'); });
+  document.querySelector('#steam-use-code')?.addEventListener('click', () => { backend.useManualSteamGuard(); completeSteamTransition('请输入 Steam Guard 验证码', '#steam-guard-code'); });
+  document.querySelector('#steam-cancel-auth')?.addEventListener('click', () => { backend.cancelSteamAuthentication(); completeSteamTransition('Steam 登录已取消', '#steam-account'); });
+  const guardField = document.querySelector('#steam-guard-code');
+  guardField?.addEventListener('input', () => { const button = document.querySelector('#steam-submit-code'); if (button) button.disabled = !guardField.value.trim(); });
+  document.querySelector('#steam-submit-code')?.addEventListener('click', () => { backend.submitSteamGuardCode(guardField?.value); completeSteamTransition('Steam 登录成功', '#steam-logout'); });
+  document.querySelector('#steam-logout')?.addEventListener('click', () => { backend.setProfileSession('signed-out'); completeSteamTransition('已退出 Steam', '#steam-account'); });
   document.querySelector('#steam-retry')?.addEventListener('click', () => {
-    const url = new URL(location.href); url.searchParams.delete('scenario'); history.replaceState(history.state, '', url); backend.setScenario('content'); backend.setProfileSession('signed-in'); completeSteamTransition('Steam 会话已恢复');
+    const url = new URL(location.href); url.searchParams.delete('scenario'); history.replaceState(history.state, '', url); backend.setScenario('content'); backend.setProfileSession('signed-in'); completeSteamTransition('Steam 会话已恢复', '#steam-logout');
   });
   document.querySelector('#settings-theme-toggle')?.addEventListener('click', () => document.querySelector('#theme-toggle')?.click());
   document.querySelector('#notifications-setting')?.addEventListener('click', () => { const status = document.querySelector('#settings-status'); if (status) status.textContent = '通知设置已打开'; });

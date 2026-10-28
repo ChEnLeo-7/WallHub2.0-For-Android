@@ -37,6 +37,7 @@ function defaultState() {
     discoverFeedback: {},
     discoverResultColumns: 2,
     profileSession: 'signed-in',
+    steamAuthPhase: 'idle',
     profileCounts: {subscriptions: 42, favorites: 18},
     settings: {matureContent: false, enhancedAccess: true, outputDirectory: 'WallHub Downloads'},
     downloads: [],
@@ -106,6 +107,7 @@ function normalizedState(candidate) {
       : {},
     discoverResultColumns: candidate.discoverResultColumns === 1 ? 1 : 2,
     profileSession,
+    steamAuthPhase: ['idle', 'device-confirmation', 'waiting-code'].includes(candidate.steamAuthPhase) ? candidate.steamAuthPhase : fallback.steamAuthPhase,
     profileCounts,
     settings: {
       matureContent: candidate.settings?.matureContent === true,
@@ -123,6 +125,9 @@ export class FakeBackend {
     let persisted = null;
     try { persisted = JSON.parse(storage.get(FAKE_BACKEND_STORAGE_KEY)); } catch { /* Reset below. */ }
     this.state = normalizedState(persisted);
+    if (['device-confirmation', 'waiting-code'].includes(this.state.steamAuthPhase)) {
+      this.state = normalizedState({...this.state, steamAuthPhase: 'idle', profileSession: 'signed-out'});
+    }
     this.persist();
   }
 
@@ -192,7 +197,7 @@ export class FakeBackend {
   }
 
   settingsState() {
-    const steamPhase = this.state.scenario === 'loading' ? 'restoring' : this.state.scenario === 'empty' ? 'signed-out' : this.state.scenario === 'error' ? 'failed' : this.state.profileSession;
+    const steamPhase = this.state.scenario === 'loading' ? 'restoring' : this.state.scenario === 'empty' ? 'signed-out' : this.state.scenario === 'error' ? 'failed' : this.state.profileSession === 'signed-out' && this.state.steamAuthPhase !== 'idle' ? this.state.steamAuthPhase : this.state.profileSession;
     return {preferences: {...this.state.settings}, steamPhase};
   }
 
@@ -203,7 +208,32 @@ export class FakeBackend {
 
   setProfileSession(session) {
     if (!['signed-out', 'restoring', 'signed-in'].includes(session)) return this.snapshot();
-    return this.update({profileSession: session});
+    return this.update({profileSession: session, steamAuthPhase: 'idle'});
+  }
+
+  submitSteamCredentials(accountName, password) {
+    if (!String(accountName).trim() || !String(password)) return this.snapshot();
+    return this.update({profileSession: 'signed-out', steamAuthPhase: 'device-confirmation'});
+  }
+
+  approveSteamDeviceConfirmation() {
+    if (this.state.steamAuthPhase !== 'device-confirmation') return this.snapshot();
+    return this.update({profileSession: 'signed-in', steamAuthPhase: 'idle'});
+  }
+
+  cancelSteamAuthentication() {
+    if (!['device-confirmation', 'waiting-code'].includes(this.state.steamAuthPhase)) return this.snapshot();
+    return this.update({profileSession: 'signed-out', steamAuthPhase: 'idle'});
+  }
+
+  useManualSteamGuard() {
+    if (this.state.steamAuthPhase !== 'device-confirmation') return this.snapshot();
+    return this.update({steamAuthPhase: 'waiting-code'});
+  }
+
+  submitSteamGuardCode(code) {
+    if (this.state.steamAuthPhase !== 'waiting-code' || !String(code).trim()) return this.snapshot();
+    return this.update({profileSession: 'signed-in', steamAuthPhase: 'idle'});
   }
 
   localWallpaper(id) {

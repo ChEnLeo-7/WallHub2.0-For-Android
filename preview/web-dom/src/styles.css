@@ -186,6 +186,8 @@ md-outlined-text-field { width: min(100%, 560px); }
 .settings-switch input { width: 42px; height: 24px; accent-color: var(--md-sys-color-primary); }
 .steam-account-card { min-height: 220px; padding: var(--wallhub-space-3); place-items: center; align-content: center; text-align: center; }
 .steam-account-card h2, .steam-account-card p { margin: 0; }
+.steam-account-card md-outlined-text-field, .steam-account-card md-filled-button, .steam-account-card md-outlined-button { width: min(100%, 480px); }
+.steam-account-card md-filled-button, .steam-account-card md-outlined-button { min-height: 48px; }
 
 .local-tools, .local-page { max-width: var(--wallhub-content-max); margin: 0 auto; padding: 0 var(--wallhub-space-2) var(--wallhub-space-2); }
 .local-page { padding-bottom: var(--wallhub-space-3); }
