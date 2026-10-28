@@ -103,6 +103,27 @@ test('exact phrase distinguishes exact fields from partial matches', () => {
   assert.deepEqual(backend.listWorkshops().items.map((item) => item.id), ['3357929793']);
 });
 
+test('saved Discover queries and friend access remain deterministic', () => {
+  const storage = memoryStorage();
+  const backend = new FakeBackend(storage);
+  assert.equal(backend.savedQueryList().items.length, 2);
+  backend.saveDiscoverQuery({category: 'COLLECTION', input: '123456', sort: 'COLLECTION'});
+  const created = backend.snapshot().savedQueries.find((query) => query.input === '123456');
+  assert.equal(backend.savedQueryResults(created.id).query.title, '合集 123456');
+  backend.removeDiscoverQuery('query-neon');
+  assert.equal(new FakeBackend(storage).savedQueryList().items.length, 2);
+  assert.equal(backend.friendDiscover('favorites').items.length, 2);
+  backend.setProfileSession('signed-out');
+  assert.equal(backend.friendDiscover('favorites').status, 'auth');
+  assert.equal(backend.savedQueryList().status, 'auth');
+  assert.equal(backend.savedQueryResults(created.id), null);
+  backend.saveDiscoverQuery({category: 'KEYWORD', input: 'blocked', sort: 'TREND_YEAR'});
+  assert.equal(backend.snapshot().savedQueries.length, 2);
+  backend.setProfileSession('restoring');
+  assert.equal(backend.friendDiscover('created').status, 'restoring');
+  assert.equal(backend.savedQueryList().status, 'restoring');
+});
+
 test('settings and Steam session states persist deterministically', () => {
   const storage = memoryStorage();
   const backend = new FakeBackend(storage);

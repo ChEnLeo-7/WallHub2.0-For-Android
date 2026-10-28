@@ -175,6 +175,19 @@ md-outlined-text-field { width: min(100%, 560px); }
 .center-state md-circular-progress { --md-circular-progress-size: 48px; }
 .state-icon { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); font-size: 30px; }
 .placeholder { max-width: var(--wallhub-content-max); padding: var(--wallhub-space-2); }
+.discover-secondary, .query-editor { max-width: 840px; margin: 0 auto; padding: 0 var(--wallhub-space-2) var(--wallhub-space-3); }
+.following-list { display: grid; gap: var(--wallhub-space-1); }
+.following-list article { display: grid; grid-template-columns: 1fr auto; align-items: center; border-radius: var(--wallhub-shape-large); background: var(--md-sys-color-surface-container-low); }
+.following-list button { min-height: 72px; padding: var(--wallhub-space-1) var(--wallhub-space-2); display: flex; align-items: center; gap: var(--wallhub-space-2); border: 0; text-align: start; color: inherit; background: transparent; }
+.following-list button > span:nth-child(2) { display: grid; }
+.following-list small { color: var(--md-sys-color-on-surface-variant); }
+.saved-query-icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 12px; background: var(--md-sys-color-secondary-container); }
+.query-editor { display: grid; gap: var(--wallhub-space-2); }
+.query-editor fieldset { display: flex; flex-wrap: wrap; gap: var(--wallhub-space-2); border: 0; padding: 0; }
+.query-editor > label { display: grid; gap: var(--wallhub-space-1); }
+.query-editor select { min-height: 48px; padding: 0 var(--wallhub-space-1); border: 1px solid var(--md-sys-color-outline); border-radius: var(--wallhub-shape-small); color: inherit; background: var(--md-sys-color-surface); }
+.query-actions { display: flex; justify-content: flex-end; gap: var(--wallhub-space-1); }
+
 .settings-page { max-width: 840px; margin: 0 auto; padding: 0 var(--wallhub-space-2) var(--wallhub-space-3); }
 .settings-list, .settings-group { overflow: hidden; display: grid; border-radius: var(--wallhub-shape-large); background: var(--md-sys-color-surface-container-low); }
 .settings-list button, .settings-row, .settings-switch { min-height: 72px; padding: var(--wallhub-space-1) var(--wallhub-space-2); display: flex; align-items: center; justify-content: space-between; gap: var(--wallhub-space-2); border: 0; border-bottom: 1px solid var(--md-sys-color-outline-variant); text-align: start; color: inherit; background: transparent; }

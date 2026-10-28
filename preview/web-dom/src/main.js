@@ -388,14 +388,58 @@ function renderDiscover() {
   document.title = '发现 · WallHub Web Preview';
 }
 
+function renderDiscoverFollowing() {
+  const snapshot = backend.snapshot();
+  const result = backend.savedQueryList();
+  let content;
+  if (result.status === 'auth') content = '<div class="center-state"><h2>需要登录 Steam</h2><md-filled-button id="following-login">登录</md-filled-button></div>';
+  else if (result.status === 'restoring' || result.status === 'loading') content = '<div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress><p>正在恢复 Steam 会话…</p></div>';
+  else if (result.status === 'error') content = '<div class="center-state" role="alert"><h2>无法载入关注</h2></div>';
+  else if (result.status === 'empty') content = '<div class="center-state"><h2>还没有关注的查询</h2><md-filled-button id="add-discover-query-empty">创建查询</md-filled-button></div>';
+  else content = `<div class="following-list">${result.items.map((query) => `<article data-saved-query="${query.id}" tabindex="-1"><button type="button" data-open-saved-query="${query.id}"><span class="saved-query-icon">${query.category === 'KEYWORD' ? '⌕' : query.category === 'CREATOR' ? '♙' : '▣'}</span><span><strong>${escapeHtml(query.title)}</strong><small>${query.category === 'KEYWORD' ? '关键词' : query.category === 'CREATOR' ? '创作者' : '合集'} · ${escapeHtml(query.sort)}</small></span></button><button type="button" data-remove-saved-query="${query.id}" aria-label="移除 ${escapeHtml(query.title)}">删除</button></article>`).join('')}</div>`;
+  main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back">←</button><h1>我的关注</h1>${snapshot.profileSession === 'signed-in' ? '<md-filled-button id="add-discover-query">创建查询</md-filled-button>' : ''}</header>${isLabVisible() ? renderStateLab(snapshot) : ''}<p id="discover-status" class="sr-only" aria-live="polite"></p><section class="discover-secondary">${content}</section>`;
+  document.title = '我的关注 · WallHub Web Preview';
+}
+
+function renderDiscoverQueryEditor() {
+  const session = backend.profile().session;
+  if (session !== 'signed-in') {
+    main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back">←</button><h1>创建查询</h1></header><div class="center-state">${session === 'restoring' ? '<md-circular-progress indeterminate></md-circular-progress><h2>正在恢复 Steam 会话…</h2>' : '<h2>需要登录 Steam</h2><md-filled-button id="following-login">登录</md-filled-button>'}</div>`;
+    return;
+  }
+  main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back">←</button><h1>创建查询</h1></header><form class="query-editor" id="query-editor"><fieldset><legend>查询类别</legend>${[['KEYWORD','关键词'],['CREATOR','创作者'],['COLLECTION','合集']].map(([value,label], index) => `<label><input type="radio" name="query-category" value="${value}" ${index === 0 ? 'checked' : ''}>${label}</label>`).join('')}</fieldset><label>排序<select id="query-sort"><option value="TREND_YEAR">年度趋势</option><option value="TREND_WEEK">本周趋势</option><option value="RECENT">最近发布</option><option value="SUBSCRIPTIONS">订阅最多</option></select></label><md-outlined-text-field id="query-input" label="关键词" required></md-outlined-text-field><p id="query-error" role="alert"></p><div class="query-actions"><md-text-button type="button" id="cancel-query">取消</md-text-button><md-filled-button type="submit" id="save-query" disabled>保存</md-filled-button></div></form>`;
+  document.title = '创建查询 · WallHub Web Preview';
+}
+
+function renderFriendDiscover() {
+  const kind = location.pathname.endsWith('friend-created') ? 'created' : 'favorites';
+  const result = backend.friendDiscover(kind);
+  const title = kind === 'created' ? '好友作品' : '好友收藏';
+  let content;
+  if (result.status === 'auth') content = '<div class="center-state"><h2>需要登录 Steam</h2><md-filled-button id="friend-login">登录</md-filled-button></div>';
+  else if (result.status === 'restoring' || result.status === 'loading') content = '<div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress><p>正在载入好友活动…</p></div>';
+  else if (result.status === 'error') content = '<div class="center-state" role="alert"><h2>无法载入好友活动</h2><md-filled-button id="retry-friends">重试</md-filled-button></div>';
+  else if (result.status === 'empty') content = '<div class="center-state"><h2>暂无好友活动</h2></div>';
+  else content = `<div class="workshop-grid discover-results-grid columns-2">${result.items.map((item) => workshopCard(item, backend.snapshot())).join('')}</div>`;
+  main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back">←</button><h1>${title}</h1></header><section class="discover-results">${content}</section>`;
+  document.title = `${title} · WallHub Web Preview`;
+}
+
 function renderDiscoverResults() {
   const railId = location.pathname.match(/^\/discover\/results\/([a-z0-9-]+)$/u)?.[1];
   const snapshot = backend.snapshot();
+  const savedRoute = railId?.startsWith('query-') === true;
+  const saved = savedRoute ? backend.savedQueryResults(railId.slice(6)) : null;
+  const savedSession = savedRoute ? backend.profile().session : 'signed-in';
   const result = backend.discoverRails();
-  const rail = result.rails?.find((entry) => entry.id === railId);
+  const rail = saved ? {id: railId, title: saved.query.title, items: saved.items} : result.rails?.find((entry) => entry.id === railId);
   const title = rail?.title ?? '发现结果';
   let content;
-  if (result.status === 'loading') {
+  if (savedRoute && savedSession === 'signed-out') {
+    content = '<div class="center-state"><h2>需要登录 Steam</h2><md-filled-button id="following-login">登录</md-filled-button></div>';
+  } else if (savedRoute && savedSession === 'restoring') {
+    content = '<div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress><p>正在恢复 Steam 会话…</p></div>';
+  } else if (result.status === 'loading') {
     content = '<div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress></div>';
   } else if (result.status === 'error') {
     content = '<div class="center-state" role="alert"><h2>无法载入结果</h2><md-filled-button id="retry-discover">重试</md-filled-button></div>';
@@ -690,6 +734,42 @@ function bindSharedControls() {
     }
   });
   document.querySelectorAll('[data-discover-route]').forEach((button) => button.addEventListener('click', () => navigate(`/discover/${button.dataset.discoverRoute}`)));
+  document.querySelectorAll('#add-discover-query, #add-discover-query-empty').forEach((button) => button.addEventListener('click', () => navigate('/discover/query/new')));
+  document.querySelector('#cancel-query')?.addEventListener('click', () => document.querySelector('#detail-back')?.click());
+  const queryInput = document.querySelector('#query-input');
+  const updateQueryValidity = () => {
+    const category = document.querySelector('[name="query-category"]:checked')?.value ?? 'KEYWORD';
+    const valid = Boolean(queryInput?.value.trim()) && (category === 'KEYWORD' || /^\d+$/u.test(queryInput.value.trim()));
+    const save = document.querySelector('#save-query'); if (save) save.disabled = !valid;
+    const error = document.querySelector('#query-error'); if (error) error.textContent = queryInput?.value && !valid ? '请输入有效的数字 ID' : '';
+    if (queryInput) queryInput.label = category === 'KEYWORD' ? '关键词' : category === 'CREATOR' ? '创作者 ID' : '合集 ID';
+  };
+  const updateQuerySorts = () => {
+    const category = document.querySelector('[name="query-category"]:checked')?.value ?? 'KEYWORD';
+    const options = {
+      KEYWORD: [['TREND_YEAR', '年度趋势'], ['TREND_WEEK', '本周趋势'], ['RECENT', '最近发布'], ['SUBSCRIPTIONS', '订阅最多']],
+      CREATOR: [['CREATOR_VOTES', '获赞最多'], ['CREATOR_RECENT', '最近发布']],
+      COLLECTION: [['COLLECTION', '合集']],
+    }[category];
+    const select = document.querySelector('#query-sort');
+    if (select) select.innerHTML = options.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
+  };
+  queryInput?.addEventListener('input', updateQueryValidity);
+  document.querySelectorAll('[name="query-category"]').forEach((radio) => radio.addEventListener('change', () => { updateQuerySorts(); updateQueryValidity(); }));
+  document.querySelector('#query-editor')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const before = backend.snapshot().savedQueries;
+    backend.saveDiscoverQuery({category: document.querySelector('[name="query-category"]:checked')?.value, input: queryInput?.value, sort: document.querySelector('#query-sort')?.value});
+    const created = backend.snapshot().savedQueries.find((query) => !before.some((item) => item.id === query.id));
+    if (created) navigate(`/discover/results/query-${created.id}`);
+  });
+  document.querySelectorAll('[data-open-saved-query]').forEach((button) => button.addEventListener('click', () => navigate(`/discover/results/query-${button.dataset.openSavedQuery}`)));
+  document.querySelectorAll('[data-remove-saved-query]').forEach((button) => button.addEventListener('click', () => {
+    backend.removeDiscoverQuery(button.dataset.removeSavedQuery);
+    requestAnimationFrame(() => { (document.querySelector('[data-saved-query]') ?? document.querySelector('#add-discover-query'))?.focus(); const status = document.querySelector('#discover-status'); if (status) status.textContent = '关注已移除'; });
+  }));
+  document.querySelectorAll('#friend-login, #following-login').forEach((button) => button.addEventListener('click', () => navigate('/settings/steam')));
+  document.querySelector('#retry-friends')?.addEventListener('click', () => backend.setScenario('content'));
   document.querySelectorAll('[data-rail-rating]').forEach((button) => button.addEventListener('click', () => {
     const current = backend.snapshot().discoverFeedback[button.dataset.rail]?.rating ?? 'none';
     const next = current === button.dataset.railRating ? 'none' : button.dataset.railRating;
@@ -811,6 +891,9 @@ function renderApp() {
   else if (location.pathname === '/local') renderLocal();
   else if (/^\/local\/[a-z0-9-]+$/u.test(location.pathname)) renderLocalDetail();
   else if (/^\/library\/(subscriptions|favorites)$/u.test(location.pathname)) renderLibrary();
+  else if (location.pathname === '/discover/following') renderDiscoverFollowing();
+  else if (location.pathname === '/discover/query/new') renderDiscoverQueryEditor();
+  else if (/^\/discover\/friend-(favorites|created)$/u.test(location.pathname)) renderFriendDiscover();
   else if (/^\/discover\/results\/[a-z0-9-]+$/u.test(location.pathname)) renderDiscoverResults();
   else if (/^\/workshop\/\d+$/u.test(location.pathname)) renderDetail();
   else renderPlaceholder();

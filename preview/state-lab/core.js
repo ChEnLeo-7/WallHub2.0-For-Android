@@ -36,6 +36,10 @@ function defaultState() {
     ],
     discoverFeedback: {},
     discoverResultColumns: 2,
+    savedQueries: [
+      {id: 'query-neon', title: '霓虹城市', category: 'KEYWORD', input: '霓虹', sort: 'TREND_YEAR'},
+      {id: 'query-creator', title: '创作者 76561198000000001', category: 'CREATOR', input: '76561198000000001', sort: 'CREATOR_VOTES'},
+    ],
     profileSession: 'signed-in',
     steamAuthPhase: 'idle',
     profileCounts: {subscriptions: 42, favorites: 18},
@@ -106,6 +110,7 @@ function normalizedState(candidate) {
       ).map(([key, value]) => [String(key).slice(0, 64), {rating: value.rating, favorite: value.favorite === true}]))
       : {},
     discoverResultColumns: candidate.discoverResultColumns === 1 ? 1 : 2,
+    savedQueries: Array.isArray(candidate.savedQueries) ? candidate.savedQueries.filter((query) => query && /^[a-z0-9-]{1,64}$/u.test(query.id) && typeof query.title === 'string' && ['KEYWORD', 'CREATOR', 'COLLECTION'].includes(query.category) && typeof query.input === 'string').map((query) => ({id: query.id, title: query.title.slice(0, 120), category: query.category, input: query.input.slice(0, 120), sort: String(query.sort ?? 'TREND_YEAR').slice(0, 32)})) : fallback.savedQueries.map((query) => ({...query})),
     profileSession,
     steamAuthPhase: ['idle', 'device-confirmation', 'waiting-code'].includes(candidate.steamAuthPhase) ? candidate.steamAuthPhase : fallback.steamAuthPhase,
     profileCounts,
@@ -322,6 +327,47 @@ export class FakeBackend {
     if (scenario === 'empty') return {session: 'signed-out', counts: {subscriptions: null, favorites: null}};
     if (scenario === 'error') return {session: 'signed-in', counts: {subscriptions: null, favorites: 18}};
     return {session: this.state.profileSession, counts: this.state.profileSession === 'signed-in' ? {...this.state.profileCounts} : {subscriptions: null, favorites: null}};
+  }
+
+  savedQueryList() {
+    if (this.state.profileSession !== 'signed-in') return {status: this.state.profileSession === 'restoring' ? 'restoring' : 'auth', items: []};
+    if (this.state.scenario === 'loading') return {status: 'loading', items: []};
+    if (this.state.scenario === 'error') return {status: 'error', items: []};
+    if (this.state.scenario === 'empty') return {status: 'empty', items: []};
+    return {status: this.state.savedQueries.length ? 'content' : 'empty', items: this.state.savedQueries.map((query) => ({...query}))};
+  }
+
+  saveDiscoverQuery({category, input, sort}) {
+    if (this.state.profileSession !== 'signed-in') return this.snapshot();
+    const normalizedCategory = ['KEYWORD', 'CREATOR', 'COLLECTION'].includes(category) ? category : 'KEYWORD';
+    const normalizedInput = String(input).trim().slice(0, 120);
+    const allowedSorts = {KEYWORD: ['TREND_YEAR', 'TREND_WEEK', 'RECENT', 'SUBSCRIPTIONS'], CREATOR: ['CREATOR_VOTES', 'CREATOR_RECENT'], COLLECTION: ['COLLECTION']}[normalizedCategory];
+    if (!normalizedInput || (normalizedCategory !== 'KEYWORD' && !/^\d+$/u.test(normalizedInput)) || !allowedSorts.includes(sort)) return this.snapshot();
+    let suffix = this.state.savedQueries.length + 1;
+    while (this.state.savedQueries.some((query) => query.id === `custom-${suffix}`)) suffix += 1;
+    const title = normalizedCategory === 'KEYWORD' ? normalizedInput : `${normalizedCategory === 'CREATOR' ? '创作者' : '合集'} ${normalizedInput}`;
+    return this.update({savedQueries: [...this.state.savedQueries, {id: `custom-${suffix}`, title, category: normalizedCategory, input: normalizedInput, sort: String(sort ?? 'TREND_YEAR').slice(0, 32)}]});
+  }
+
+  removeDiscoverQuery(id) { return this.state.profileSession === 'signed-in' ? this.update({savedQueries: this.state.savedQueries.filter((query) => query.id !== String(id))}) : this.snapshot(); }
+
+  savedQueryResults(id) {
+    if (this.state.profileSession !== 'signed-in') return null;
+    const query = this.state.savedQueries.find((candidate) => candidate.id === String(id));
+    if (!query) return null;
+    const needle = query.category === 'KEYWORD' ? query.input.toLocaleLowerCase('zh-CN') : '';
+    const matching = workshopFixtures.filter((item) => !needle || [item.title, item.author, ...item.tags].some((value) => value.toLocaleLowerCase('zh-CN').includes(needle)));
+    return {query: {...query}, items: (matching.length ? matching : workshopFixtures).slice(0, 4)};
+  }
+
+  friendDiscover(kind) {
+    const session = this.profile().session;
+    if (session !== 'signed-in') return {status: session === 'restoring' ? 'restoring' : 'auth', items: []};
+    if (this.state.scenario === 'loading') return {status: 'loading', items: []};
+    if (this.state.scenario === 'error') return {status: 'error', items: []};
+    if (this.state.scenario === 'empty') return {status: 'empty', items: []};
+    const ids = kind === 'created' ? ['2871466005', '2985110421'] : ['3357929793', '3048819267'];
+    return {status: 'content', items: ids.map((id) => this.workshop(id)).filter(Boolean)};
   }
 
   discoverRails() {
