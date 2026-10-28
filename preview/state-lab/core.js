@@ -23,6 +23,7 @@ function defaultState() {
     downloadTasks: [
       {id: 'task-neon', workshopId: '3357929793', status: 'DOWNLOADING', progress: 0.62, format: 'MPKG', preset: 'BALANCED', preserveAudio: true, message: ''},
       {id: 'task-mountain', workshopId: '3174098802', status: 'FAILED', progress: 0.34, format: 'ZIP', preset: 'BALANCED', preserveAudio: true, message: '网络连接中断，暂存文件仍然完整。'},
+      {id: 'task-resolving', workshopId: '2985110421', status: 'RESOLVING', progress: 0.08, format: 'MPKG', preset: 'BALANCED', preserveAudio: true, message: ''},
       {id: 'task-cafe', workshopId: '3048819267', status: 'COMPLETED', progress: 1, format: 'MPKG', preset: 'QUALITY', preserveAudio: false, message: ''},
       {id: 'task-video', workshopId: '3357929793', status: 'COMPLETED', progress: 1, format: 'ZIP', preset: 'BALANCED', preserveAudio: true, message: ''},
     ],
@@ -74,7 +75,7 @@ function normalizedState(candidate) {
     : [];
   const normalizedTasks = Array.isArray(candidate.downloadTasks) ? candidate.downloadTasks.filter((task) =>
     task && typeof task === 'object' && typeof task.id === 'string' && /^[a-z0-9-]{1,64}$/u.test(task.id) && typeof task.workshopId === 'string' &&
-    ['QUEUED', 'DOWNLOADING', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(task.status) &&
+    ['QUEUED', 'RESOLVING', 'DOWNLOADING', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(task.status) &&
     Number.isFinite(task.progress) && ['MPKG', 'ZIP'].includes(task.format)
   ).map((task) => ({id: task.id.slice(0, 64), workshopId: task.workshopId.slice(0, 32), status: task.status, progress: Math.min(1, Math.max(0, task.progress)), format: task.format, preset: ['PERFORMANCE', 'BALANCED', 'QUALITY'].includes(task.preset) ? task.preset : 'BALANCED', preserveAudio: task.preserveAudio !== false, message: typeof task.message === 'string' ? task.message.slice(0, 240) : '', rawZipExported: task.rawZipExported === true, hasIntactStaging: task.hasIntactStaging !== false, stagingAvailable: task.stagingAvailable !== false})) : [];
   const normalizedLocalItems = candidate.localInitialized === true && Array.isArray(candidate.localItems)
@@ -287,12 +288,28 @@ export class FakeBackend {
     return this.update({downloadTasks: this.state.downloadTasks.map((task) => task.id === id && task.status === 'FAILED' && task.hasIntactStaging ? {...task, rawZipExported: true} : task)});
   }
 
+  moveDownloadTask(id, direction) {
+    const active = this.state.downloadTasks.filter((task) => task.status !== 'COMPLETED');
+    const completed = this.state.downloadTasks.filter((task) => task.status === 'COMPLETED');
+    const canReorder = (task) => ['QUEUED', 'RESOLVING', 'DOWNLOADING', 'PAUSED'].includes(task.status);
+    const eligible = active.filter(canReorder);
+    const index = eligible.findIndex((task) => task.id === id);
+    if (index < 0) return this.snapshot();
+    const targetIndex = direction === 'up' ? index - 1 : direction === 'down' ? index + 1 : index;
+    if (targetIndex < 0 || targetIndex >= eligible.length || targetIndex === index) return this.snapshot();
+    const reorderedEligible = [...eligible];
+    [reorderedEligible[index], reorderedEligible[targetIndex]] = [reorderedEligible[targetIndex], reorderedEligible[index]];
+    let eligibleIndex = 0;
+    const merged = active.map((task) => canReorder(task) ? reorderedEligible[eligibleIndex++] : task);
+    return this.update({downloadTasks: [...merged, ...completed]});
+  }
+
   requestDownloadTaskAction(id, action) {
     const transitions = {
-      PAUSE: {from: ['DOWNLOADING', 'QUEUED'], to: 'PAUSED'},
+      PAUSE: {from: ['DOWNLOADING', 'QUEUED', 'RESOLVING'], to: 'PAUSED'},
       RESUME: {from: ['PAUSED'], to: 'DOWNLOADING'},
       RETRY: {from: ['FAILED', 'CANCELLED'], to: 'QUEUED'},
-      CANCEL: {from: ['QUEUED', 'DOWNLOADING', 'PAUSED', 'FAILED'], to: 'CANCELLED'},
+      CANCEL: {from: ['QUEUED', 'RESOLVING', 'DOWNLOADING', 'PAUSED', 'FAILED'], to: 'CANCELLED'},
     };
     if (action === 'DELETE') {
       const target = this.state.downloadTasks.find((task) => task.id === id);

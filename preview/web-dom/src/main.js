@@ -285,7 +285,7 @@ function renderDownloadTaskDetail() {
     return;
   }
   const title = task.workshop?.title ?? task.workshopId;
-  const statusLabels = {QUEUED: '等待中', DOWNLOADING: '下载中', PAUSED: '已暂停', COMPLETED: '已完成', FAILED: '失败', CANCELLED: '已取消'};
+  const statusLabels = {QUEUED: '等待中', RESOLVING: '正在解析', DOWNLOADING: '下载中', PAUSED: '已暂停', COMPLETED: '已完成', FAILED: '失败', CANCELLED: '已取消'};
   const canReconvert = task.status === 'COMPLETED' && task.format === 'MPKG' && task.workshop?.type === 'SCENE';
   const canPlay = task.status === 'COMPLETED' && task.workshop?.type === 'VIDEO' && task.stagingAvailable;
   const canExport = task.status === 'FAILED' && task.hasIntactStaging;
@@ -297,17 +297,19 @@ function renderDownloadTaskDetail() {
 function renderDownloads() {
   const result = backend.downloadTaskGroups();
   const tab = new URLSearchParams(location.search).get('tab') === 'completed' ? 'completed' : 'active';
-  const statusLabels = {QUEUED: '等待中', DOWNLOADING: '下载中', PAUSED: '已暂停', COMPLETED: '已完成', FAILED: '失败', CANCELLED: '已取消'};
+  const statusLabels = {QUEUED: '等待中', RESOLVING: '正在解析', DOWNLOADING: '下载中', PAUSED: '已暂停', COMPLETED: '已完成', FAILED: '失败', CANCELLED: '已取消'};
   const tasks = tab === 'completed' ? result.completed : result.active;
+  const reorderableTasks = result.active.filter((task) => ['QUEUED', 'RESOLVING', 'DOWNLOADING', 'PAUSED'].includes(task.status));
   let content;
   if (result.status === 'loading') content = '<div class="center-state" role="status"><md-circular-progress indeterminate></md-circular-progress></div>';
   else if (result.status === 'error') content = '<div class="center-state" role="alert"><h2>无法载入下载任务</h2><md-filled-button id="retry-downloads">重试</md-filled-button></div>';
   else if (result.status === 'empty' || tasks.length === 0) content = `<div class="center-state"><h2>${tab === 'active' ? '没有活动任务' : '没有已完成任务'}</h2></div>`;
-  else content = `<div class="download-task-list">${tasks.map((task) => {
+  else content = `<div class="download-task-list">${tasks.map((task, index) => {
     const title = task.workshop?.title ?? task.workshopId;
-    const primaryAction = ['DOWNLOADING', 'QUEUED'].includes(task.status) ? 'PAUSE' : task.status === 'PAUSED' ? 'RESUME' : ['FAILED', 'CANCELLED'].includes(task.status) ? 'RETRY' : null;
+    const primaryAction = ['DOWNLOADING', 'QUEUED', 'RESOLVING'].includes(task.status) ? 'PAUSE' : task.status === 'PAUSED' ? 'RESUME' : ['FAILED', 'CANCELLED'].includes(task.status) ? 'RETRY' : null;
     const secondaryAction = task.status === 'CANCELLED' ? 'DELETE' : tab === 'active' ? 'CANCEL' : null;
-    return `<article class="download-task" data-download-task="${task.id}" tabindex="-1"><div class="download-task-icon" aria-hidden="true">↓</div><button type="button" class="download-task-open" data-open-download-task="${task.id}"><h2>${escapeHtml(title)}</h2><p>${statusLabels[task.status]} · ${task.format}</p><progress max="1" value="${task.progress}" aria-label="${escapeHtml(title)} ${Math.round(task.progress * 100)}%"></progress></button><div class="download-task-actions">${primaryAction ? `<md-outlined-button data-task-action="${primaryAction}" data-task-id="${task.id}">${{PAUSE: '暂停', RESUME: '继续', RETRY: '重试'}[primaryAction]}</md-outlined-button>` : ''}${secondaryAction ? `<md-text-button data-task-action="${secondaryAction}" data-task-id="${task.id}">${secondaryAction === 'DELETE' ? '删除' : '取消'}</md-text-button>` : ''}</div></article>`;
+    const reorderIndex = reorderableTasks.findIndex((candidate) => candidate.id === task.id);
+    return `<article class="download-task" data-download-task="${task.id}" tabindex="-1"><div class="download-task-icon" aria-hidden="true">↓</div><button type="button" class="download-task-open" data-open-download-task="${task.id}"><h2>${escapeHtml(title)}</h2><p>${statusLabels[task.status]} · ${task.format}</p><progress max="1" value="${task.progress}" aria-label="${escapeHtml(title)} ${Math.round(task.progress * 100)}%"></progress></button><div class="download-task-actions">${tab === 'active' && reorderIndex >= 0 ? `<div class="download-reorder" role="group" aria-label="调整 ${escapeHtml(title)} 的队列位置"><button type="button" data-task-move="up" data-task-id="${task.id}" aria-label="上移 ${escapeHtml(title)}" ${reorderIndex === 0 ? 'disabled' : ''}>↑</button><button type="button" data-task-move="down" data-task-id="${task.id}" aria-label="下移 ${escapeHtml(title)}" ${reorderIndex === reorderableTasks.length - 1 ? 'disabled' : ''}>↓</button></div>` : ''}${primaryAction ? `<md-outlined-button data-task-action="${primaryAction}" data-task-id="${task.id}">${{PAUSE: '暂停', RESUME: '继续', RETRY: '重试'}[primaryAction]}</md-outlined-button>` : ''}${secondaryAction ? `<md-text-button data-task-action="${secondaryAction}" data-task-id="${task.id}">${secondaryAction === 'DELETE' ? '删除' : '取消'}</md-text-button>` : ''}</div></article>`;
   }).join('')}</div>`;
   main.innerHTML = `<header class="detail-top-bar"><button type="button" class="back-button" id="detail-back" aria-label="返回我的">←</button><h1>下载</h1><div class="toolbar-actions"><md-outlined-button id="retry-failed-downloads">重试失败项</md-outlined-button><md-text-button id="clear-finished-downloads">清除已完成</md-text-button></div></header>${isLabVisible() ? renderStateLab(backend.snapshot()) : ''}<div class="library-tabs" role="tablist" aria-label="下载分类"><button type="button" role="tab" data-download-tab="active" aria-selected="${tab === 'active'}" tabindex="${tab === 'active' ? '0' : '-1'}">活动</button><button type="button" role="tab" data-download-tab="completed" aria-selected="${tab === 'completed'}" tabindex="${tab === 'completed' ? '0' : '-1'}">已完成</button></div><p id="downloads-status" class="sr-only" aria-live="polite"></p><section class="downloads-page">${content}</section>`;
   document.title = '下载 · WallHub Web Preview';
@@ -686,6 +688,17 @@ function bindSharedControls() {
       activateDownloadTab(['ArrowRight', 'End'].includes(event.key) ? 'completed' : 'active');
     });
   });
+  document.querySelectorAll('[data-task-move]').forEach((button) => button.addEventListener('click', () => {
+    const taskId = button.dataset.taskId;
+    const direction = button.dataset.taskMove;
+    backend.moveDownloadTask(taskId, direction);
+    requestAnimationFrame(() => {
+      (document.querySelector(`[data-task-move="${direction}"][data-task-id="${taskId}"]:not(:disabled)`) ?? document.querySelector(`[data-task-move][data-task-id="${taskId}"]:not(:disabled)`))?.focus();
+      const task = backend.downloadTask(taskId);
+      const position = backend.downloadTaskGroups().active.filter((item) => ['QUEUED', 'RESOLVING', 'DOWNLOADING', 'PAUSED'].includes(item.status)).findIndex((item) => item.id === taskId) + 1;
+      const status = document.querySelector('#downloads-status'); if (status) status.textContent = `${task?.workshop?.title ?? '任务'}已移至第 ${position} 位`;
+    });
+  }));
   document.querySelectorAll('[data-task-action]').forEach((button) => button.addEventListener('click', () => {
     const taskId = button.dataset.taskId;
     backend.requestDownloadTaskAction(taskId, button.dataset.taskAction);

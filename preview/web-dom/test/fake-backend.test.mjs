@@ -196,8 +196,11 @@ test('download task controls and migration remain deterministic', () => {
     downloads: [{id: 'download-legacy-zip', workshopId: '2985110421', state: 'queued', createdAt: FIXTURE_CLOCK_EPOCH_MS, format: 'ZIP'}],
   })});
   const backend = new FakeBackend(legacy);
-  assert.equal(backend.downloadTaskGroups().active.length, 3);
+  assert.equal(backend.downloadTaskGroups().active.length, 4);
   assert.equal(backend.snapshot().downloadTasks.find((task) => task.id === 'download-legacy-zip').status, 'QUEUED');
+  backend.moveDownloadTask('task-neon', 'down');
+  assert.deepEqual(backend.downloadTaskGroups().active.slice(0, 3).map((task) => task.id), ['task-resolving', 'task-mountain', 'task-neon']);
+  assert.deepEqual(new FakeBackend(legacy).downloadTaskGroups().active.slice(0, 3).map((task) => task.id), ['task-resolving', 'task-mountain', 'task-neon']);
   backend.requestDownloadTaskAction('task-neon', 'PAUSE');
   assert.equal(backend.snapshot().downloadTasks.find((task) => task.id === 'task-neon').status, 'PAUSED');
   backend.retryFailedDownloadTasks();

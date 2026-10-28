@@ -235,6 +235,9 @@ md-outlined-text-field { width: min(100%, 560px); }
 .download-task-icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); font-size: 24px; }
 .download-task progress { width: 100%; height: 6px; margin-top: var(--wallhub-space-1); accent-color: var(--md-sys-color-primary); }
 .download-task-actions { display: flex; align-items: center; gap: 4px; }
+.download-reorder { display: flex; gap: 2px; }
+.download-reorder button { width: 48px; height: 48px; border: 0; border-radius: 50%; color: var(--md-sys-color-on-surface); background: var(--md-sys-color-surface-container-high); cursor: pointer; }
+.download-reorder button:disabled { opacity: .38; cursor: default; }
 :root[data-window-class='compact'] .download-task { grid-template-columns: auto 1fr; }
 :root[data-window-class='compact'] .download-task-actions { grid-column: 1 / -1; justify-content: flex-end; }
 
