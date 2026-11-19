@@ -28,8 +28,10 @@ val sdkRepo =
         ?: listOf(
             // The repository may sit one level below the workspace (WallHub for Android-repo/),
             // so the sibling SDK checkout can be a direct sibling or a grandparent sibling.
+            // The SDK itself may also be reorganized into a "Steam Content SDK-repo" folder.
             rootDir.resolve("../Steam Content SDK"),
             rootDir.resolve("../../Steam Content SDK"),
+            rootDir.resolve("../../Steam Content SDK/Steam Content SDK-repo"),
             rootDir.resolve("../sdk-source"),
         ).firstOrNull { it.resolve(".git").exists() }
 val sdkCommitFile = rootDir.resolve("config/steam-content-sdk.commit")
